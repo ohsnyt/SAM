@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct PersonDetailView: View {
-    let person: PersonRowModel
+    let person: PersonDetailModel
 
     var body: some View {
         ScrollView {

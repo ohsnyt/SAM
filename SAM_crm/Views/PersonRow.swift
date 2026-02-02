@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct PersonRow: View {
-    let person: PersonRowModel
+    let person: PersonListItemModel
 
     var body: some View {
         HStack(spacing: 10) {

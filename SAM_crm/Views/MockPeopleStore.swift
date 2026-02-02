@@ -1,70 +1,15 @@
 //
-//  PersonRowModel.swift
+//  MockPeopleStore.swift
 //  SAM_crm
 //
-//  Created by David Snyder on 1/31/26.
+//  Created by David Snyder on 2/1/26.
 //
 
 import SwiftUI
 
-// MARK: - Row Model
-
-struct PersonRowModel: Identifiable {
-    let id: UUID
-    let displayName: String
-
-    // Role badges: include your new types here
-    let roleBadges: [String]
-
-    // Alerts
-    let consentAlertsCount: Int
-    let reviewAlertsCount: Int
-
-    // Contexts
-    let contexts: [ContextChip]
-
-    // Obligations
-    let responsibilityNotes: [String]
-
-    // Interactions
-    let recentInteractions: [InteractionChip]
-
-    // Insights (re-using your InsightDisplayable abstraction)
-    let insights: [PersonMockInsight]
-}
-
-// MARK: - Context / Interaction
-
-struct ContextChip: Identifiable {
-    let id = UUID()
-    let name: String
-    let kindDisplay: String
-    let icon: String
-}
-
-struct InteractionChip: Identifiable {
-    let id = UUID()
-    let title: String
-    let subtitle: String
-    let whenText: String
-    let icon: String
-}
-
-// MARK: - Mock Insight compatible with InsightCardView
-
-struct PersonMockInsight: InsightDisplayable {
-    let kind: InsightKind
-    let message: String
-    let confidence: Double
-    let interactionsCount: Int
-    let consentsCount: Int
-}
-
-// MARK: - Sample data
-
-enum MockPeopleData {
-    static let allPeople: [PersonRowModel] = [
-        PersonRowModel(
+enum MockPeopleStore {
+    static let all: [PersonDetailModel] = [
+        PersonDetailModel(
             id: UUID(),
             displayName: "Mary Smith",
             roleBadges: ["Client", "Household", "Joint Signer"],
@@ -94,7 +39,7 @@ enum MockPeopleData {
                                   consentsCount: 2)
             ]
         ),
-        PersonRowModel(
+        PersonDetailModel(
             id: UUID(),
             displayName: "Evan Patel",
             roleBadges: ["Referral Partner", "Estate Planning Attorney"],
@@ -109,7 +54,7 @@ enum MockPeopleData {
             ],
             insights: []
         ),
-        PersonRowModel(
+        PersonDetailModel(
             id: UUID(),
             displayName: "Cynthia Lopez",
             roleBadges: ["Vendor", "Underwriting Liaison"],
@@ -131,4 +76,17 @@ enum MockPeopleData {
             ]
         )
     ]
+
+    static let byID: [UUID: PersonDetailModel] =
+        Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
+
+    static let listItems: [PersonListItemModel] = all.map { p in
+        PersonListItemModel(
+            id: p.id,
+            displayName: p.displayName,
+            roleBadges: p.roleBadges,
+            consentAlertsCount: p.consentAlertsCount,
+            reviewAlertsCount: p.reviewAlertsCount
+        )
+    }
 }

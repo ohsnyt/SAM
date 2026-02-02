@@ -13,6 +13,6 @@ struct SAM_crmApp: App {
         WindowGroup {
             AppShellView()
         }
-//        .defaultSize(width: 1100, height: 720)   // set default window size
+        .defaultSize(width: 1100, height: 720)
     }
 }
