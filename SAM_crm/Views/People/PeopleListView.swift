@@ -52,6 +52,7 @@ struct PeopleListView: View {
                 }
             )
         }
+        .navigationSplitViewColumnWidth(min: 300, ideal: 360, max: 520)
     }
     
     private var filteredPeople: [PersonListItemModel] {

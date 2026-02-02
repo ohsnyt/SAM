@@ -39,12 +39,21 @@ struct AppShellView: View {
     var body: some View {
         let selection = SidebarItem(rawValue: selectionRaw) ?? .awareness
 
-        if selection == .awareness {
+        if selection == .awareness || selection == .inbox {
             // 2-column: Sidebar + Detail (no middle column exists)
             NavigationSplitView {
                 sidebar
             } detail: {
-                AwarenessHost()
+                switch selection {
+                case .awareness:
+                    AwarenessHost()
+
+                case .inbox:
+                    InboxHost()
+                case .people, .contexts:
+                    // unreachable in this branch
+                    AwarenessHost()
+                }
             }
         } else {
             // 3-column: Sidebar + Content + Detail
@@ -56,7 +65,7 @@ struct AppShellView: View {
                     PeopleListView(selectedPersonID: selectedPersonIDBinding)
                 case .contexts:
                     ContextListView(selectedContextID: selectedContextIDBinding)
-                case .awareness:
+                case .awareness, .inbox:
                     EmptyView()
                 }
             } detail: {
@@ -69,6 +78,9 @@ struct AppShellView: View {
 
                 case .awareness:
                     AwarenessHost()
+
+                case .inbox:
+                    InboxHost()
                 }
             }
         }
@@ -81,7 +93,7 @@ struct AppShellView: View {
         }
         .listStyle(.sidebar)
         .navigationTitle("SAM")
-        .navigationSplitViewColumnWidth(min: 160, ideal: 190, max: 240)
+        .navigationSplitViewColumnWidth(min: 120, ideal: 140, max: 200)
         .onChange(of: selectionRaw) { _, newValue in
             // Optional: clear stale selections when switching sections
             if newValue == SidebarItem.people.rawValue {
@@ -95,12 +107,7 @@ struct AppShellView: View {
 
 struct ContextDetailRouter: View {
     let selectedContextID: UUID?
-    private var store = MockContextRuntimeStore.shared
-
-    init(selectedContextID: UUID?) {
-        self.selectedContextID = selectedContextID
-        self.store = MockContextRuntimeStore.shared
-    }
+    @State private var store = MockContextRuntimeStore.shared
 
     var body: some View {
         if let id = selectedContextID, let ctx = store.byID[id] {

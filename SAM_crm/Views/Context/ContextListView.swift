@@ -69,7 +69,7 @@ struct ContextListView: View {
                 }
             )
         }
-        .navigationSplitViewColumnWidth(min: 280, ideal: 340, max: 460)
+        .navigationSplitViewColumnWidth(min: 300, ideal: 360, max: 520)
         .task { autoSelectIfNeeded() }
         .onChange(of: filterRaw) { _, _ in
             ensureSelectionIsVisible()

@@ -9,6 +9,7 @@ import SwiftUI
 
 enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
     case awareness = "Awareness"
+    case inbox = "Inbox"
     case people = "People"
     case contexts = "Contexts"
 
@@ -17,6 +18,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
     var systemImage: String {
         switch self {
         case .awareness: return "sparkles"
+        case .inbox: return "tray"
         case .people: return "person.2"
         case .contexts: return "square.3.layers.3d"
         }
