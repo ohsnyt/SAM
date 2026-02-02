@@ -45,6 +45,11 @@
 			path = SAM_crmUITests;
 			sourceTree = "<group>";
 		};
+		63B0A4622F30FB6500D87E2F /* Documentation */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Documentation;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -75,6 +80,7 @@
 		63B0A3BB2F2EC49800D87E2F = {
 			isa = PBXGroup;
 			children = (
+				63B0A4622F30FB6500D87E2F /* Documentation */,
 				63B0A3C62F2EC49800D87E2F /* SAM_crm */,
 				63B0A3D42F2EC49A00D87E2F /* SAM_crmTests */,
 				63B0A3DE2F2EC49A00D87E2F /* SAM_crmUITests */,
@@ -109,6 +115,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				63B0A3C62F2EC49800D87E2F /* SAM_crm */,
+				63B0A4622F30FB6500D87E2F /* Documentation */,
 			);
 			name = SAM_crm;
 			packageProductDependencies = (

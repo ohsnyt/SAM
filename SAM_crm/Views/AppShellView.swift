@@ -93,11 +93,17 @@ struct AppShellView: View {
     }
 }
 
-private struct ContextDetailRouter: View {
+struct ContextDetailRouter: View {
     let selectedContextID: UUID?
+    private var store = MockContextRuntimeStore.shared
+
+    init(selectedContextID: UUID?) {
+        self.selectedContextID = selectedContextID
+        self.store = MockContextRuntimeStore.shared
+    }
 
     var body: some View {
-        if let id = selectedContextID, let ctx = MockContextStore.byID[id] {
+        if let id = selectedContextID, let ctx = store.byID[id] {
             ContextDetailView(context: ctx)
         } else {
             ContextDetailPlaceholderView()
@@ -126,3 +132,4 @@ enum MockContextStore {
         )
     }
 }
+

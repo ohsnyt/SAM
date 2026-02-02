@@ -2,7 +2,7 @@
 //  PersonDetailView.swift
 //  SAM_crm
 //
-//  Created by David Snyder on 1/31/26.
+//  Created by David Snyder on 2/1/26.
 //
 
 import SwiftUI
@@ -18,13 +18,19 @@ struct PersonDetailView: View {
 
                 GroupBox("Contexts") {
                     VStack(alignment: .leading, spacing: 8) {
-                        ForEach(person.contexts) { ctx in
-                            HStack {
-                                Label(ctx.name, systemImage: ctx.icon)
-                                Spacer()
-                                Text(ctx.kindDisplay)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                        if person.contexts.isEmpty {
+                            Text("No contexts yet.")
+                                .foregroundStyle(.secondary)
+                        } else {
+                            ForEach(Array(person.contexts.enumerated()), id: \.offset) { pair in
+                                let ctx = pair.element
+                                HStack {
+                                    Label(ctx.name, systemImage: ctx.icon)
+                                    Spacer()
+                                    Text(ctx.kindDisplay)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
                             }
                         }
                     }
@@ -56,7 +62,8 @@ struct PersonDetailView: View {
                             Text("No recent interactions recorded.")
                                 .foregroundStyle(.secondary)
                         } else {
-                            ForEach(person.recentInteractions) { i in
+                            ForEach(Array(person.recentInteractions.enumerated()), id: \.offset) { pair in
+                                let i = pair.element
                                 HStack(alignment: .top) {
                                     Image(systemName: i.icon)
                                         .foregroundStyle(.secondary)
@@ -78,7 +85,7 @@ struct PersonDetailView: View {
                 }
 
                 GroupBox("SAM Insights") {
-                    VStack(alignment: .leading, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 12) {
                         if person.insights.isEmpty {
                             Text("No insights for this person right now.")
                                 .foregroundStyle(.secondary)
@@ -93,7 +100,6 @@ struct PersonDetailView: View {
             .padding(.horizontal, 20)
             .padding(.vertical, 16)
             .frame(maxWidth: 760, alignment: .topLeading)
-            .frame(maxWidth: .infinity, alignment: .topLeading) // <- pins to leading edge
         }
         .navigationTitle(person.displayName)
     }

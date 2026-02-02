@@ -10,8 +10,9 @@ import SwiftUI
 struct PeopleListView: View {
     @Binding var selectedPersonID: UUID?
     @AppStorage("sam.people.searchText") private var searchText: String = ""
+    @State private var showingNewPersonSheet = false
     
-    private let people = MockPeopleStore.listItems
+    private let store = MockPeopleRuntimeStore.shared  // ✅ plain property
     
     var body: some View {
         List(filteredPeople, selection: $selectedPersonID) { person in
@@ -20,11 +21,41 @@ struct PeopleListView: View {
         }
         .navigationTitle("People")
         .searchable(text: $searchText, placement: .toolbar, prompt: "Search people")
-        .navigationSplitViewColumnWidth(min: 260, ideal: 320, max: 420)
-        .task { autoSelectIfNeeded() }
+        .toolbar {
+            ToolbarItemGroup {
+                Button {
+                    showingNewPersonSheet = true
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .buttonStyle(.glass)
+                .help("New Person")
+                .keyboardShortcut("n", modifiers: [.command])
+            }
+        }
+        .sheet(isPresented: $showingNewPersonSheet) {
+            NewPersonSheet(
+                existingCandidates: store.all.map { p in
+                    PersonDuplicateCandidate(
+                        id: p.id,
+                        displayName: p.displayName,
+                        addressLine: nil,   // TODO: fill from Contacts later
+                        phoneLine: nil      // TODO: fill from Contacts later
+                    )
+                },
+                onCreate: { draft in
+                    let newID = store.add(draft)
+                    selectedPersonID = newID
+                },
+                onOpenExisting: { existingID in
+                    selectedPersonID = existingID
+                }
+            )
+        }
     }
     
     private var filteredPeople: [PersonListItemModel] {
+        let people = store.listItems  // reading observable state here triggers updates
         let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !q.isEmpty else { return people }
         return people.filter {
@@ -39,7 +70,7 @@ struct PeopleListView: View {
         let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.isEmpty else { return }
         
-        let pool = filteredPeople.isEmpty ? people : filteredPeople
+        let pool = filteredPeople.isEmpty ? store.listItems : filteredPeople
         guard let best = pool.max(by: { score($0) < score($1) }) else { return }
         
         selectedPersonID = score(best) > 0 ? best.id : pool.first?.id
@@ -49,3 +80,4 @@ struct PeopleListView: View {
         p.consentAlertsCount * 3 + p.reviewAlertsCount * 2
     }
 }
+

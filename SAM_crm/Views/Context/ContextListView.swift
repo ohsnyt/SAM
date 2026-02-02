@@ -10,10 +10,17 @@ import SwiftUI
 struct ContextListView: View {
     @Binding var selectedContextID: UUID?
 
+    init(selectedContextID: Binding<UUID?>) {
+        self._selectedContextID = selectedContextID
+    }
+
     @AppStorage("sam.contexts.searchText") private var searchText: String = ""
     @AppStorage("sam.contexts.filter") private var filterRaw: String = ContextKindFilter.all.rawValue
 
-    private let contexts: [ContextListItemModel] = MockContextStore.listItems
+    @State private var showingNewContextSheet = false
+    private var store = MockContextRuntimeStore.shared
+    
+    private var contexts: [ContextListItemModel] { store.listItems }
     
     private var filter: ContextKindFilter {
         get { ContextKindFilter(rawValue: filterRaw) ?? .all }
@@ -39,7 +46,28 @@ struct ContextListView: View {
                 }
                 .pickerStyle(.segmented)
                 .help("Filter contexts")
+
+                Button {
+                    showingNewContextSheet = true
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .buttonStyle(.glass)
+                .help("New Context")
+                .keyboardShortcut("n", modifiers: [.command])
             }
+        }
+        .sheet(isPresented: $showingNewContextSheet) {
+            NewContextSheet(
+                existingContexts: store.listItems,
+                onCreate: { draft in
+                    let newID = store.add(draft)
+                    selectedContextID = newID
+                },
+                onOpenExisting: { existingID in
+                    selectedContextID = existingID
+                }
+            )
         }
         .navigationSplitViewColumnWidth(min: 280, ideal: 340, max: 460)
         .task { autoSelectIfNeeded() }
@@ -176,3 +204,4 @@ private struct ContextPill: View {
         )
     }
 }
+
