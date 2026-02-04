@@ -461,7 +461,7 @@ final class Coverage {
 /// Upsert key: `sourceUID`.  Pruning is driven by the source's
 /// canonical UID set (see `CalendarImportCoordinator`).
 @Model
-final class EvidenceItem {
+final class SamEvidenceItem {
     @Attribute(.unique) var id: UUID
 
     /// Stable, source-provided identifier used for idempotent upsert.
@@ -518,12 +518,12 @@ final class EvidenceItem {
     init(
         id: UUID,
         state: EvidenceTriageState,
-        sourceUID: String?     = nil,
+        sourceUID: String?        = nil,
         source: EvidenceSource,
         occurredAt: Date,
         title: String,
         snippet: String,
-        bodyText: String?      = nil,
+        bodyText: String?         = nil,
         participantHints: [ParticipantHint] = [],
         signals: [EvidenceSignal]           = [],
         proposedLinks: [ProposedLink]       = [],
@@ -545,3 +545,4 @@ final class EvidenceItem {
         self.linkedContexts   = linkedContexts
     }
 }
+

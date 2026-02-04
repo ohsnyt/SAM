@@ -8,10 +8,11 @@ import SwiftUI
 import Contacts
 // import ContactsUI
 import AppKit
+import _SwiftData_SwiftUI
 #endif
 
 struct InboxDetailView: View {
-    let store: MockEvidenceRuntimeStore
+    let repo: EvidenceRepository
     let evidenceID: UUID?
 
     @State private var showFullText: Bool = true
@@ -19,7 +20,8 @@ struct InboxDetailView: View {
     @State private var alertMessage: String? = nil
     @State private var pendingContactPrompt: PendingContactPrompt? = nil
     
-    // Optional: for quick linking actions, we access these stores.
+    // People & Context stores remain mock-backed for now;
+    // they will migrate to SwiftData in a later phase.
     private let peopleStore = MockPeopleRuntimeStore.shared
     private let contextStore = MockContextRuntimeStore.shared
 
@@ -28,10 +30,18 @@ struct InboxDetailView: View {
     @State private var popoverAnchorView: NSView?
     #endif
 
+    // ── SwiftData-driven lookup ───────────────────────────────────────
+    // A static @Query keyed on evidenceID keeps SwiftUI in the loop when
+    // the selected item mutates (state change, link added, etc.).
+    // We use a helper view so that the @Query predicate can close over the
+    // concrete (non-optional) ID; when evidenceID is nil we short-circuit
+    // to EmptyDetailView without ever issuing a query.
     var body: some View {
-        if let item = store.item(id: evidenceID) {
-            LoadedDetailView(
-                item: item,
+        if let id = evidenceID {
+#if os(macOS)
+            InboxDetailLoader(
+                id: id,
+                repo: repo,
                 showFullText: $showFullText,
                 selectedFilter: $selectedFilter,
                 alertMessage: $alertMessage,
@@ -39,25 +49,20 @@ struct InboxDetailView: View {
                 peopleStore: peopleStore,
                 contextStore: contextStore,
                 contactPresenter: contactPresenter,
-                popoverAnchorView: $popoverAnchorView,
-                onMarkDone: { store.markDone(item.id) },
-                onReopen: { store.reopen(item.id) },
-                onAcceptSuggestion: { store.acceptSuggestion(evidenceID: item.id, suggestionID: $0) },
-                onDeclineSuggestion: { store.declineSuggestion(evidenceID: item.id, suggestionID: $0) },
-                onRemoveConfirmedLink: { target, targetID, revert in
-                    store.removeConfirmedLink(
-                        evidenceID: item.id,
-                        target: target,
-                        targetID: targetID,
-                        revertSuggestionTo: revert
-                    )
-                },
-                onResetSuggestion: { store.resetSuggestionToPending(evidenceID: item.id, suggestionID: $0) },
-                onSuggestCreateContact: { first, last, email in
-                    pendingContactPrompt = PendingContactPrompt(firstName: first, lastName: last, email: email)
-                },
-                refreshParticipants: { refreshParticipantsAfterDelay(evidenceID: item.id) }
+                popoverAnchorView: $popoverAnchorView
             )
+#else
+            InboxDetailLoader(
+                id: id,
+                repo: repo,
+                showFullText: $showFullText,
+                selectedFilter: $selectedFilter,
+                alertMessage: $alertMessage,
+                pendingContactPrompt: $pendingContactPrompt,
+                peopleStore: peopleStore,
+                contextStore: contextStore
+            )
+#endif
         } else {
             EmptyDetailView()
                 .padding()
@@ -102,34 +107,53 @@ struct InboxDetailView: View {
     
     #if os(macOS)
     private func refreshParticipantsAfterDelay(evidenceID: UUID) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-            Task { @MainActor in
-                await refreshParticipantsNow(evidenceID: evidenceID)
-            }
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            await refreshParticipantsNow(evidenceID: evidenceID)
         }
     }
-    
+
+    /// A value type carrying the resolved contact data back from the
+    /// background thread — avoids holding CNContact references across
+    /// actor boundaries.
+    private struct ResolvedContact {
+        let index: Int
+        let hint: ParticipantHint        // original, for isOrganizer etc.
+        let displayName: String
+        let email: String
+        let contactIdentifier: String
+    }
+
     @MainActor
     private func refreshParticipantsNow(evidenceID: UUID) async {
         guard CNContactStore.authorizationStatus(for: .contacts) == .authorized else { return }
-        guard var current = store.item(id: evidenceID) else { return }
+        guard let current = try? repo.item(id: evidenceID) else { return }
         let unverified = current.participantHints.filter { !$0.isVerified && $0.rawEmail != nil }
         guard !unverified.isEmpty else { return }
-        let store = CNContactStore()
-        let keysToFetch: [CNKeyDescriptor] = [
-            CNContactGivenNameKey as CNKeyDescriptor,
-            CNContactFamilyNameKey as CNKeyDescriptor,
-            CNContactEmailAddressesKey as CNKeyDescriptor
-        ]
-        var resolvedAny = false
-        var newHints: [ParticipantHint] = current.participantHints
-        for (index, hint) in current.participantHints.enumerated() {
-            guard !hint.isVerified, let email = hint.rawEmail else { continue }
-            let predicate = CNContact.predicateForContacts(matchingEmailAddress: email)
-            if let contact = try? store.unifiedContacts(matching: predicate, keysToFetch: keysToFetch).first {
-                let given = contact.givenName
-                let family = contact.familyName
-                let full = [given, family].filter { !$0.isEmpty }.joined(separator: " ")
+
+        // Snapshot everything the background closure needs so we don't
+        // capture MainActor-isolated state.
+        let hints = current.participantHints
+
+        // --- perform all CNContactStore I/O off the main actor ---
+        let resolved: [ResolvedContact] = await Task.detached(priority: .userInitiated) {
+            let contactStore = CNContactStore()
+            let keysToFetch: [CNKeyDescriptor] = [
+                CNContactGivenNameKey as CNKeyDescriptor,
+                CNContactFamilyNameKey as CNKeyDescriptor,
+                CNContactEmailAddressesKey as CNKeyDescriptor,
+                CNContactIdentifierKey as CNKeyDescriptor
+            ]
+
+            var results: [ResolvedContact] = []
+            for (index, hint) in hints.enumerated() {
+                guard !hint.isVerified, let email = hint.rawEmail else { continue }
+                let predicate = CNContact.predicateForContacts(matchingEmailAddress: email)
+                guard let contact = try? contactStore.unifiedContacts(matching: predicate, keysToFetch: keysToFetch).first else { continue }
+
+                let given   = contact.givenName
+                let family  = contact.familyName
+                let full    = [given, family].filter { !$0.isEmpty }.joined(separator: " ")
                 let display: String
                 if full.isEmpty {
                     display = email
@@ -138,34 +162,188 @@ struct InboxDetailView: View {
                 } else {
                     display = full
                 }
-                let updated = ParticipantHint(
+
+                results.append(ResolvedContact(
+                    index: index,
+                    hint: hint,
                     displayName: display,
-                    isOrganizer: hint.isOrganizer,
-                    isVerified: true,
-                    rawEmail: email
-                )
-                newHints[index] = updated
-                resolvedAny = true
+                    email: email,
+                    contactIdentifier: contact.identifier
+                ))
             }
-        }
-        if resolvedAny {
-            let updatedItem = EvidenceItem(
-                id: current.id,
-                state: current.state,
-                sourceUID: current.sourceUID,
-                source: current.source,
-                occurredAt: current.occurredAt,
-                title: current.title,
-                snippet: current.snippet,
-                bodyText: current.bodyText,
-                participantHints: newHints,
-                signals: current.signals,
-                proposedLinks: current.proposedLinks,
-                linkedPeople: current.linkedPeople,
-                linkedContexts: current.linkedContexts
+            return results
+        }.value
+
+        guard !resolved.isEmpty else { return }
+
+        // --- back on the main actor: mutate the @Model instance directly ---
+        // SamEvidenceItem is a SwiftData @Model class; property mutations
+        // are automatically tracked and persisted.
+        var newHints = hints
+        for r in resolved {
+            newHints[r.index] = ParticipantHint(
+                displayName: r.displayName,
+                isOrganizer: r.hint.isOrganizer,
+                isVerified: true,
+                rawEmail: r.email
             )
-            self.store.upsert(updatedItem)
+
+            // --- Person creation / identifier sync ---
+            ensurePersonExists(
+                displayName: r.displayName,
+                email: r.email,
+                contactIdentifier: r.contactIdentifier
+            )
         }
+
+        current.participantHints = newHints
+    }
+
+    /// If no Person with this email exists yet, create one from the resolved
+    /// contact data.  If one already exists but lacks a `contactIdentifier`,
+    /// patch it in.  Either way the person ends up with both fields populated
+    /// so `ContactPhotoFetcher` uses the fast identifier path.
+    private func ensurePersonExists(displayName: String, email: String, contactIdentifier: String) {
+        let peopleStore = MockPeopleRuntimeStore.shared
+
+        if let existing = peopleStore.all.first(where: { $0.email == email }) {
+            // Person already exists — just make sure the identifier is set.
+            if existing.contactIdentifier == nil {
+                peopleStore.patchContactIdentifier(personID: existing.id, identifier: contactIdentifier)
+            }
+        } else {
+            // No Person yet — create one.  Use .individualClient as the
+            // default role; the user can change it later in the People list.
+            let draft = NewPersonDraft(
+                fullName: displayName,
+                rolePreset: .individualClient,
+                email: email,
+                contactIdentifier: contactIdentifier
+            )
+            _ = peopleStore.add(draft)
+        }
+    }
+    #endif
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// MARK: - InboxDetailLoader  (query-driven wrapper)
+// ─────────────────────────────────────────────────────────────────────
+
+/// Wraps the detail pane so that SwiftData keeps it live.
+///
+/// We deliberately avoid building a `#Predicate` inside a hand-written
+/// `init` — that combination triggers a Swift-compiler crash in the
+/// constraint solver (recordOpenedTypes assertion, Swift 6.2).
+///
+/// Instead we fetch the full evidence set with an unfiltered `@Query`
+/// (the Inbox table is small) and filter to the selected `id` in
+/// Swift.  The `@Query` still gives us automatic invalidation when
+/// *any* `SamEvidenceItem` changes, which is exactly what we need:
+/// the detail pane re-renders whenever its item is mutated.
+private struct InboxDetailLoader: View {
+    let id: UUID
+    let repo: EvidenceRepository
+
+    @Binding var showFullText: Bool
+    @Binding var selectedFilter: LinkSuggestionStatus
+    @Binding var alertMessage: String?
+    @Binding var pendingContactPrompt: InboxDetailView.PendingContactPrompt?
+
+    let peopleStore: MockPeopleRuntimeStore
+    let contextStore: MockContextRuntimeStore
+
+    #if os(macOS)
+    var contactPresenter: ContactPresenter
+    @Binding var popoverAnchorView: NSView?
+    #endif
+
+    // Unfiltered query — SwiftData invalidates this whenever any
+    // SamEvidenceItem row changes, so the computed `item` below
+    // automatically picks up mutations to the selected item.
+    @Query(sort: \SamEvidenceItem.occurredAt, order: .reverse)
+    private var allItems: [SamEvidenceItem]
+
+    /// The single item we actually want to display.
+    private var item: SamEvidenceItem? {
+        allItems.first { $0.id == id }
+    }
+
+    var body: some View {
+        if let item = item {
+#if os(macOS)
+            LoadedDetailView(
+                item: item,
+                showFullText: $showFullText,
+                selectedFilter: $selectedFilter,
+                alertMessage: $alertMessage,
+                pendingContactPrompt: $pendingContactPrompt,
+                peopleStore: peopleStore,
+                contextStore: contextStore,
+                contactPresenter: contactPresenter,
+                popoverAnchorView: $popoverAnchorView,
+                onMarkDone: { try? repo.markDone(item.id) },
+                onReopen: { try? repo.reopen(item.id) },
+                onAcceptSuggestion: { try? repo.acceptSuggestion(evidenceID: item.id, suggestionID: $0) },
+                onDeclineSuggestion: { try? repo.declineSuggestion(evidenceID: item.id, suggestionID: $0) },
+                onRemoveConfirmedLink: { target, targetID, revert in
+                    try? repo.removeConfirmedLink(
+                        evidenceID: item.id,
+                        target: target,
+                        targetID: targetID,
+                        revertSuggestionTo: revert
+                    )
+                },
+                onResetSuggestion: { try? repo.resetSuggestionToPending(evidenceID: item.id, suggestionID: $0) },
+                onSuggestCreateContact: { first, last, email in
+                    pendingContactPrompt = InboxDetailView.PendingContactPrompt(firstName: first, lastName: last, email: email)
+                },
+                refreshParticipants: { refreshParticipantsAfterDelay(evidenceID: item.id) }
+            )
+#else
+            LoadedDetailView(
+                item: item,
+                showFullText: $showFullText,
+                selectedFilter: $selectedFilter,
+                alertMessage: $alertMessage,
+                pendingContactPrompt: $pendingContactPrompt,
+                peopleStore: peopleStore,
+                contextStore: contextStore,
+                onMarkDone: { try? repo.markDone(item.id) },
+                onReopen: { try? repo.reopen(item.id) },
+                onAcceptSuggestion: { try? repo.acceptSuggestion(evidenceID: item.id, suggestionID: $0) },
+                onDeclineSuggestion: { try? repo.declineSuggestion(evidenceID: item.id, suggestionID: $0) },
+                onRemoveConfirmedLink: { target, targetID, revert in
+                    try? repo.removeConfirmedLink(
+                        evidenceID: item.id,
+                        target: target,
+                        targetID: targetID,
+                        revertSuggestionTo: revert
+                    )
+                },
+                onResetSuggestion: { try? repo.resetSuggestionToPending(evidenceID: item.id, suggestionID: $0) },
+                onSuggestCreateContact: { first, last, email in
+                    pendingContactPrompt = InboxDetailView.PendingContactPrompt(firstName: first, lastName: last, email: email)
+                },
+                refreshParticipants: { refreshParticipantsAfterDelay(evidenceID: item.id) }
+            )
+#endif
+        } else {
+            EmptyDetailView()
+                .padding()
+        }
+    }
+
+    #if os(macOS)
+    private func refreshParticipantsAfterDelay(evidenceID: UUID) {
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            guard let _ = try? repo.item(id: evidenceID) else { return }
+        }
+    }
+    #else
+    private func refreshParticipantsAfterDelay(evidenceID: UUID) {
+        // No-op on non-macOS for now; participant refresh is macOS-only.
     }
     #endif
 }
@@ -180,7 +358,7 @@ private struct EmptyDetailView: View {
     }
 }
 private struct LoadedDetailView: View {
-    let item: EvidenceItem
+    let item: SamEvidenceItem
     @Binding var showFullText: Bool
     @Binding var selectedFilter: LinkSuggestionStatus
     @Binding var alertMessage: String?

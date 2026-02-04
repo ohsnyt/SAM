@@ -10,6 +10,17 @@ import Foundation
 struct NewPersonDraft {
     let fullName: String
     let rolePreset: PersonRolePreset
+
+    /// The email address that prompted this person's creation (e.g. from an
+    /// Inbox participant hint).  Nil when the person is created manually via
+    /// the "New Person" sheet with no hint context.
+    var email: String? = nil
+
+    /// The stable `CNContact.identifier` resolved at creation time, when
+    /// available.  Nil for manually-created people or when Contacts access
+    /// hasn't been granted yet.  Can be filled in later by
+    /// `MockPeopleRuntimeStore.resolveContactIdentifier(personID:)`.
+    var contactIdentifier: String? = nil
 }
 
 enum PersonRolePreset: String, CaseIterable, Identifiable {

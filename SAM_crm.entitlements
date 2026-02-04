@@ -2,25 +2,9 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-
-    <!-- Sandbox: required for App Store distribution and for SwiftData to write to the container path -->
     <key>com.apple.security.app-sandbox</key>
     <true/>
-
-    <!-- Keychain: required for BackupCrypto's password-save-to-Keychain path (BackupTab) -->
-    <key>keychain-access-groups</key>
-    <array>
-        <string>$(TeamID).com.sam-crm.keychain</string>
-    </array>
-
-    <!-- Calendar: read + write (CalendarImportCoordinator uses full access) -->
     <key>com.apple.security.automation.apple-events</key>
     <true/>
-
-    <!-- iCloud / CloudKit: needed when we enable CloudKit sync on the ModelContainer -->
-    <!-- Uncomment when you wire CloudKit into SAMModelContainer -->
-    <!-- <key>com.apple.developer.icloud-ubiquitous-key-value-store</key> -->
-    <!-- <true/> -->
-
 </dict>
 </plist>

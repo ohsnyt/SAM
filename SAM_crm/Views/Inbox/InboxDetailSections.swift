@@ -1,8 +1,9 @@
 import SwiftUI
+import SwiftData
 
 // MARK: - Main Scroll Content
 struct DetailScrollContent: View {
-    let item: EvidenceItem
+    let item: SamEvidenceItem
     @Binding var showFullText: Bool
     @Binding var selectedFilter: LinkSuggestionStatus
     @Binding var alertMessage: String?
@@ -48,7 +49,7 @@ struct DetailScrollContent: View {
 
 // MARK: - Sections
 struct HeaderSection: View {
-    let item: EvidenceItem
+    let item: SamEvidenceItem
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline) {
@@ -85,7 +86,7 @@ struct HeaderSection: View {
 }
 
 struct EvidenceSection: View {
-    let item: EvidenceItem
+    let item: SamEvidenceItem
     let showFullText: Bool
     var body: some View {
         GroupBox("Evidence") {
@@ -107,7 +108,7 @@ struct EvidenceSection: View {
 }
 
 struct ParticipantsSection: View {
-    let item: EvidenceItem
+    let item: SamEvidenceItem
     @Binding var alertMessage: String?
     let onSuggestCreateContact: (String, String, String) -> Void
     var body: some View {
@@ -131,7 +132,7 @@ struct ParticipantsSection: View {
 }
 
 struct SignalsSection: View {
-    let item: EvidenceItem
+    let item: SamEvidenceItem
     var body: some View {
         if !item.signals.isEmpty {
             GroupBox("Signals") {
@@ -162,7 +163,7 @@ struct SignalsSection: View {
 }
 
 struct SuggestedLinksSection: View {
-    let item: EvidenceItem
+    let item: SamEvidenceItem
     @Binding var selectedFilter: LinkSuggestionStatus
 
     let onAcceptSuggestion: (UUID) -> Void
@@ -179,7 +180,7 @@ struct SuggestedLinksSection: View {
             } else {
                 VStack(alignment: .leading, spacing: 12) {
                     Picker("Filter", selection: $selectedFilter) {
-                        ForEach(LinkSuggestionStatus.allCases) { status in
+                        ForEach(LinkSuggestionStatus.allCases, id: \.self) { status in
                             Text(filterTitle(status, for: item)).tag(status)
                         }
                     }
@@ -265,12 +266,12 @@ struct SuggestedLinksSection: View {
         }
     }
 
-    private func filterTitle(_ status: LinkSuggestionStatus, for item: EvidenceItem) -> String {
+    private func filterTitle(_ status: LinkSuggestionStatus, for item: SamEvidenceItem) -> String {
         let count = item.proposedLinks.filter { $0.status == status }.count
         return count > 0 ? "\(status.title) (\(count))" : status.title
     }
 
-    private func isEmptyForSelectedFilter(_ item: EvidenceItem) -> Bool {
+    private func isEmptyForSelectedFilter(_ item: SamEvidenceItem) -> Bool {
         item.proposedLinks.first(where: { $0.status == selectedFilter }) == nil
     }
 
@@ -290,7 +291,7 @@ struct SuggestedLinksSection: View {
         }
     }
 
-    private func primaryAction(for item: EvidenceItem, link: ProposedLink) {
+    private func primaryAction(for item: SamEvidenceItem, link: ProposedLink) {
         switch link.status {
         case .pending:
             onAcceptSuggestion(link.id)
@@ -302,7 +303,7 @@ struct SuggestedLinksSection: View {
     }
 
     @ViewBuilder
-    private func suggestionContextMenu(item: EvidenceItem, link: ProposedLink) -> some View {
+    private func suggestionContextMenu(item: SamEvidenceItem, link: ProposedLink) -> some View {
         switch link.status {
         case .pending:
             Button("Accept") { onAcceptSuggestion(link.id) }
@@ -317,7 +318,7 @@ struct SuggestedLinksSection: View {
 }
 
 struct ConfirmedLinksSection: View {
-    let item: EvidenceItem
+    let item: SamEvidenceItem
     let peopleStore: MockPeopleRuntimeStore
     let contextStore: MockContextRuntimeStore
     let onRemoveConfirmedLink: (EvidenceLinkTarget, UUID, LinkSuggestionStatus) -> Void

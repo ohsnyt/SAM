@@ -209,11 +209,20 @@ private struct PermissionNudgeSheet: View {
                     // Write the target tab before opening so SwiftUI's
                     // Settings scene lands on Permissions immediately.
                     SamSettingsView.selectedTab = 0
-                    // Use the environment action — it is the reliable,
-                    // supported way to bring up the Settings window from
-                    // any SwiftUI view, including sheets.
-                    openSettings()
+
+                    // Dismiss the sheet first, then open Settings on the
+                    // next run-loop tick.  On macOS the sheet is a modal
+                    // window; dismissing it while it is still key can
+                    // race with the Settings scene appearing and cause the
+                    // Settings window to land behind the main window or
+                    // never become key at all.  A single-tick delay after
+                    // dismiss gives AppKit time to resign the sheet and
+                    // return key-window status to the main window cleanly
+                    // before we ask SwiftUI to present the Settings scene.
                     dismiss()
+                    DispatchQueue.main.async {
+                        openSettings()
+                    }
                 }
                 .buttonStyle(.borderedProminent)
 

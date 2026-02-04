@@ -4,12 +4,25 @@
 //
 
 import SwiftUI
+import SwiftData
 
 struct InboxListView: View {
-    let store: MockEvidenceRuntimeStore
     @Binding var selectedEvidenceID: UUID?
 
-    @State private var searchText: String = ""
+    /// Search text is owned by InboxHost and applied as .searchable there
+    /// (on the HSplitView on macOS, on the NavigationStack on iOS).  We
+    /// receive it as a binding so the filtering logic stays local to the
+    /// list without this view needing to know where the search bar lives.
+    @Binding var searchText: String
+
+    // ── SwiftData query ───────────────────────────────────────────────
+    // Single unfiltered query; state partitioning is done in-memory.
+    // #Predicate cannot capture RawRepresentable enum cases or traverse
+    // .rawValue as a key path, so filtering on EvidenceTriageState inside
+    // a static @Query is not possible.  The inbox dataset is small enough
+    // that in-memory partitioning is the right tradeoff.
+    @Query(sort: \SamEvidenceItem.occurredAt, order: .reverse)
+    private var allItems: [SamEvidenceItem]
 
     var body: some View {
         List(selection: $selectedEvidenceID) {
@@ -45,19 +58,28 @@ struct InboxListView: View {
         .listSectionSeparator(.hidden)
         .scrollContentBackground(.hidden)
         .background(listBackground)
-        .searchable(text: $searchText, placement: .toolbar, prompt: "Search inbox")
         .navigationSplitViewColumnWidth(min: 300, ideal: 360, max: 520)
     }
 
-    private var filteredNeedsReview: [EvidenceItem] {
-        filter(store.needsReview)
+    // ── Partitioned + filtered views ──────────────────────────────────
+
+    private var needsReviewItems: [SamEvidenceItem] {
+        allItems.filter { $0.state == .needsReview }
     }
 
-    private var filteredDone: [EvidenceItem] {
-        filter(store.done)
+    private var doneItems: [SamEvidenceItem] {
+        allItems.filter { $0.state == .done }
     }
 
-    private func filter(_ items: [EvidenceItem]) -> [EvidenceItem] {
+    private var filteredNeedsReview: [SamEvidenceItem] {
+        filter(needsReviewItems)
+    }
+
+    private var filteredDone: [SamEvidenceItem] {
+        filter(doneItems)
+    }
+
+    private func filter(_ items: [SamEvidenceItem]) -> [SamEvidenceItem] {
         let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !q.isEmpty else { return items }
         return items.filter { e in
@@ -66,6 +88,8 @@ struct InboxListView: View {
             e.source.title.lowercased().contains(q)
         }
     }
+
+    // ── Background ────────────────────────────────────────────────────
 
     private var listBackground: some View {
         ZStack {
@@ -77,8 +101,11 @@ struct InboxListView: View {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// MARK: - InboxRow
+// ─────────────────────────────────────────────────────────────────────
 private struct InboxRow: View {
-    let item: EvidenceItem
+    let item: SamEvidenceItem
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -106,7 +133,7 @@ private struct InboxRow: View {
                             .foregroundStyle(.secondary)
                     }
 
-                    if item.state == .needsReview {
+                    if item.state == EvidenceTriageState.needsReview {
                         Text("Review")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
@@ -126,13 +153,13 @@ private struct InboxRow: View {
         .listRowBackground(Color.clear)
         .contentShape(Rectangle())
         .contextMenu {
-            if item.state == .needsReview {
+            if item.state == EvidenceTriageState.needsReview {
                 Button("Mark Done") {
-                    MockEvidenceRuntimeStore.shared.markDone(item.id)
+                    try? EvidenceRepository.shared.markDone(item.id)
                 }
             } else {
                 Button("Reopen") {
-                    MockEvidenceRuntimeStore.shared.reopen(item.id)
+                    try? EvidenceRepository.shared.reopen(item.id)
                 }
             }
         }

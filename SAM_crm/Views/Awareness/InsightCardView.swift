@@ -1,15 +1,8 @@
 import SwiftUI
 import SwiftData
 
-enum InsightKind: String {
-    case consentMissing
-    case followUp
-    case relationshipAtRisk
-    case opportunity
-    case complianceWarning
-}
-
 protocol InsightDisplayable {
+    // Uses the shared model's InsightKind
     var kind: InsightKind { get }
     var message: String { get }
     var confidence: Double { get }
@@ -20,11 +13,11 @@ protocol InsightDisplayable {
 extension InsightDisplayable {
     var typeDisplayName: String {
         switch kind {
-        case .consentMissing: return "Consent Missing"
-        case .followUp: return "Follow Up"
-        case .relationshipAtRisk: return "Relationship At Risk"
-        case .opportunity: return "Opportunity"
-        case .complianceWarning: return "Compliance Warning"
+        case InsightKind.consentMissing: return "Consent Missing"
+        case InsightKind.followUp: return "Follow Up"
+        case InsightKind.relationshipAtRisk: return "Relationship At Risk"
+        case InsightKind.opportunity: return "Opportunity"
+        case InsightKind.complianceWarning: return "Compliance Warning"
         }
     }
 }
@@ -140,15 +133,15 @@ private extension InsightCardView {
 
     var explanationText: String {
         switch insight.kind {
-        case .consentMissing:
+        case InsightKind.consentMissing:
             return "An active product or relationship currently requires consent that has not been recorded."
-        case .followUp:
+        case InsightKind.followUp:
             return "Recent interaction patterns suggest a follow-up may be helpful."
-        case .relationshipAtRisk:
+        case InsightKind.relationshipAtRisk:
             return "Changes in interaction patterns may indicate a relationship change worth confirming."
-        case .opportunity:
+        case InsightKind.opportunity:
             return "Recent activity suggests a potential planning or coverage opportunity."
-        case .complianceWarning:
+        case InsightKind.complianceWarning:
             return "A structural or legal dependency may require review to remain compliant."
         }
     }
@@ -264,22 +257,22 @@ private extension InsightCardView {
 
     var iconName: String {
         switch insight.kind {
-        case .consentMissing:
+        case InsightKind.consentMissing:
             return "checkmark.seal"
-        case .followUp:
+        case InsightKind.followUp:
             return "arrow.turn.down.right"
-        case .relationshipAtRisk:
+        case InsightKind.relationshipAtRisk:
             return "person.2.wave.2"
-        case .opportunity:
+        case InsightKind.opportunity:
             return "lightbulb"
-        case .complianceWarning:
+        case InsightKind.complianceWarning:
             return "exclamationmark.triangle"
         }
     }
 
     var iconColor: Color {
         switch insight.kind {
-        case .complianceWarning:
+        case InsightKind.complianceWarning:
             return .orange
         default:
             return .secondary
@@ -287,8 +280,9 @@ private extension InsightCardView {
     }
 }
 
-#Preview {
-    struct MockInsight: InsightDisplayable {
+private struct InsightCardPreviewContent: View {
+    struct InsightCardMock: InsightDisplayable, Identifiable {
+        let id = UUID()
         var kind: InsightKind
         var message: String
         var confidence: Double
@@ -296,29 +290,35 @@ private extension InsightCardView {
         var consentsCount: Int
     }
 
-    let insights: [MockInsight] = [
-        .init(kind: .relationshipAtRisk,
+    let insights: [InsightCardMock] = [
+        .init(kind: InsightKind.relationshipAtRisk,
               message: "Possible household structure change detected for John and Mary Smith.",
               confidence: 0.72,
               interactionsCount: 3,
               consentsCount: 0),
-        .init(kind: .consentMissing,
+        .init(kind: InsightKind.consentMissing,
               message: "Spousal consent is no longer valid for an active household policy.",
               confidence: 0.95,
               interactionsCount: 1,
               consentsCount: 2),
-        .init(kind: .complianceWarning,
+        .init(kind: InsightKind.complianceWarning,
               message: "Household survivorship structure requires review following relationship change.",
               confidence: 0.88,
               interactionsCount: 2,
               consentsCount: 1)
     ]
 
-    return VStack(spacing: 16) {
-        ForEach(Array(insights.enumerated()), id: \.offset) { pair in
-            InsightCardView(insight: pair.element)
+    var body: some View {
+        VStack(spacing: 16) {
+            ForEach(insights) { mock in
+                InsightCardView(insight: mock)
+            }
         }
+        .padding()
+        .frame(maxWidth: 520)
     }
-    .padding()
-    .frame(maxWidth: 520)
 }
+#Preview {
+    InsightCardPreviewContent()
+}
+

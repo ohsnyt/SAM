@@ -7,7 +7,7 @@
 
 import SwiftUI
 
-struct PersonDetailModel: Identifiable {
+struct PersonDetailModel: Identifiable, Codable {
     let id: UUID
     let displayName: String
     let roleBadges: [String]
@@ -40,22 +40,7 @@ struct PersonDetailModel: Identifiable {
 
 // MARK: - Supporting types
 
-struct ContextChip: Identifiable {
-    let id = UUID()
-    let name: String
-    let kindDisplay: String
-    let icon: String
-}
-
-struct InteractionChip: Identifiable {
-    let id = UUID()
-    let title: String
-    let subtitle: String
-    let whenText: String
-    let icon: String
-}
-
-struct PersonMockInsight: InsightDisplayable {
+struct PersonMockInsight: InsightDisplayable, Codable {
     let kind: InsightKind
     let message: String
     let confidence: Double

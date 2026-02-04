@@ -15,6 +15,11 @@ final class MockContextRuntimeStore {
 
     private(set) var all: [ContextDetailModel] = MockContextStore.all
 
+    /// Wholesale replace — used by backup restore.
+    func replaceAll(with newContexts: [ContextDetailModel]) {
+        all = newContexts
+    }
+
     var byID: [UUID: ContextDetailModel] {
         Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
     }
@@ -99,3 +104,4 @@ final class MockContextRuntimeStore {
         all[idx] = ctx
     }
 }
+

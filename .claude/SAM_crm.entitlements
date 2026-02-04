@@ -2,52 +2,13 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-
-    <!-- ── Sandbox ── -->
-    <key>com.apple.security.app-sandbox</key>
-    <true/>
-
-    <!-- ── File access ── -->
-    <!--
-        read-write is required so that NSSavePanel can present.
-        read-only alone is sufficient for NSOpenPanel but the sandbox
-        enforces read-write for any panel that can create or overwrite a file.
-    -->
-    <key>com.apple.security.files.user-selected.read-write</key>
-    <true/>
-
-    <!-- ── Contacts ── -->
-    <!--
-        Allows CNContactStore access.  The usage-description string that
-        the user sees is still driven by the Info.plist
-        NSContactsUsageDescription key; this entitlement just opts the
-        sandbox into the capability.
-    -->
-    <key>com.apple.security.contacts.contacts-read</key>
-    <true/>
-
-    <!-- ── Calendar ── -->
-    <!--
-        Allows EKEventStore access.  Full-access vs. add-only is
-        decided at runtime by the user; we request the broadest
-        capability here so the runtime prompt can offer both options.
-    -->
-    <key>com.apple.security.calendars.calendar-access</key>
-    <true/>
-
-    <!-- ── Keychain (iCloud Keychain sync) ── -->
-    <!--
-        BackupTab writes the backup password into a generic-password
-        Keychain item with kSecAttrSynchronizable = true so that it
-        appears in the system Passwords app.  iCloud Keychain sync
-        requires this keychain-access group.  The team ID placeholder
-        below must be replaced with the actual Team ID from App Store
-        Connect (or removed entirely for development signing).
-    -->
-    <key>com.apple.security.keychains.keychain-access-groups</key>
-    <array>
-        <string>$(TeamIdentifier).com.sam-crm.keychain</string>
-    </array>
-
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<key>com.apple.security.files.user-selected.read-write</key>
+	<true/>
+	<key>com.apple.security.contacts.contacts-read</key>
+	<true/>
+	<key>com.apple.security.calendars.calendar-access</key>
+	<true/>
 </dict>
 </plist>

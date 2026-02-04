@@ -10,7 +10,7 @@ import SwiftUI
 // MARK: - Models used by ContextDetailView (mock-first)
 
 
-struct ContextDetailModel: Identifiable {
+struct ContextDetailModel: Identifiable, Codable {
     let id: UUID
     let name: String
     let kind: ContextKind
@@ -33,13 +33,13 @@ extension ContextDetailModel {
     }
 }
 
-struct ContextAlerts {
+struct ContextAlerts: Codable {
     let consentCount: Int
     let reviewCount: Int
     let followUpCount: Int
 }
 
-struct ContextParticipantModel: Identifiable {
+struct ContextParticipantModel: Identifiable, Codable {
     let id: UUID
     let displayName: String
     let roleBadges: [String]
@@ -48,16 +48,9 @@ struct ContextParticipantModel: Identifiable {
     let note: String?
 }
 
-struct ContextProductModel: Identifiable {
-    let id: UUID
-    let title: String
-    let subtitle: String?
-    let statusDisplay: String
-    let icon: String
-}
-
-struct ConsentRequirementModel: Identifiable {
-    enum Status {
+struct ConsentRequirementModel: Identifiable, Codable {
+    /// Raw-value enum so the synthesised `Codable` conformance works.
+    enum Status: String, Codable {
         case required, satisfied, revoked, expired
     }
 
@@ -67,6 +60,11 @@ struct ConsentRequirementModel: Identifiable {
     let jurisdiction: String?
     let status: Status
 
+    // MARK: - Derived (not persisted)
+
+    /// Only the five stored properties above are encoded/decoded.
+    /// The computed display helpers below are excluded automatically
+    /// because they have no backing storage.
     var statusDisplay: String {
         switch status {
         case .required:  return "Required"
@@ -95,17 +93,9 @@ struct ConsentRequirementModel: Identifiable {
     }
 }
 
-struct InteractionModel: Identifiable {
-    let id: UUID
-    let title: String
-    let subtitle: String
-    let whenText: String
-    let icon: String
-}
-
 // MARK: - Insight type compatible with InsightCardView
 
-struct ContextMockInsight: InsightDisplayable {
+struct ContextMockInsight: InsightDisplayable, Codable {
     let kind: InsightKind
     let message: String
     let confidence: Double

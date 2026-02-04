@@ -16,20 +16,21 @@ struct EvidenceDrillInSheet: View {
     let title: String
     let evidenceIDs: [UUID]
 
-    // mock-first store
-    private let evidenceStore = MockEvidenceRuntimeStore.shared
+    // SwiftData-backed evidence repository
+    private let evidenceStore = EvidenceRepository.shared
 
     @State private var selectedEvidenceID: UUID?
 
-    private var evidenceItems: [EvidenceItem] {
-        let wanted = Set(evidenceIDs)
-        return evidenceStore.items
-            .filter { wanted.contains($0.id) }
+    /// Fetch each requested ID individually and sort newest-first.
+    /// The set is small (it's the evidence backing a single insight card)
+    /// so the per-item round-trip is fine.
+    private var evidenceItems: [SamEvidenceItem] {
+        evidenceIDs.compactMap { try? evidenceStore.item(id: $0) }
             .sorted { $0.occurredAt > $1.occurredAt }
     }
-    
-    private func item(for id: UUID) -> EvidenceItem? {
-        evidenceStore.items.first(where: { $0.id == id })
+
+    private func item(for id: UUID) -> SamEvidenceItem? {
+        try? evidenceStore.item(id: id)
     }
 
     var body: some View {
@@ -107,7 +108,7 @@ struct EvidenceDrillInSheet: View {
 }
 
 private struct EvidenceRow: View {
-    let item: EvidenceItem
+    let item: SamEvidenceItem
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -153,7 +154,7 @@ private struct EvidenceRow: View {
 }
 
 private struct EvidenceDetailPane: View {
-    let item: EvidenceItem?
+    let item: SamEvidenceItem?
 
     var body: some View {
         if let item {

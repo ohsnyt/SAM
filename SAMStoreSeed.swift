@@ -253,11 +253,12 @@ extension SAMStoreSeed {
 // MARK: - Pass 3 — Evidence
 // ─────────────────────────────────────────────────────────────────────
 //
-// Reads from the current MockEvidenceRuntimeStore.  The tricky part
-// is proposedLinks: their `targetID` fields were generated against
-// the mock stores' in-memory UUIDs.  We re-derive them by looking
-// up the target's `displayName` in the people/context maps we built
-// in passes 1 & 2.
+// Reads previously-seeded SamEvidenceItem objects from the ModelContext
+// (they may have been inserted by FixtureSeeder or by an earlier run of
+// this seeder).  The tricky part is proposedLinks: their `targetID`
+// fields were generated against the mock stores' in-memory UUIDs.  We
+// re-derive them by looking up the target's `displayName` in the
+// people/context maps we built in passes 1 & 2.
 // ─────────────────────────────────────────────────────────────────────
 
 extension SAMStoreSeed {
@@ -267,12 +268,14 @@ extension SAMStoreSeed {
         people:   [String: SamPerson],
         contexts: [String: SamContext]
     ) {
-        let store = MockEvidenceRuntimeStore.shared
+        // Fetch all evidence that is already in the store (inserted by
+        // FixtureSeeder or a previous incomplete run of this seeder).
+        let existing: [SamEvidenceItem] = (try? context.fetch(FetchDescriptor<SamEvidenceItem>())) ?? []
 
-        for mock in store.items {
+        for item in existing {
             // Re-map proposedLinks so targetIDs point at the real
             // SwiftData objects' UUIDs rather than the ephemeral mock UUIDs.
-            let remapped = mock.proposedLinks.map { link -> ProposedLink in
+            item.proposedLinks = item.proposedLinks.map { link -> ProposedLink in
                 let resolvedID: UUID
                 switch link.target {
                 case .person:
@@ -294,33 +297,12 @@ extension SAMStoreSeed {
             }
 
             // Same treatment for linkedPeople / linkedContexts
-            let remappedPeople = mock.linkedPeople.compactMap { oldID -> UUID? in
-                // The mock store stores UUIDs directly; find the person
-                // whose mock id matches and return the seeded id.
-                // In practice these are the same object so this is a
-                // no-op, but it's explicit for clarity.
+            item.linkedPeople = item.linkedPeople.compactMap { oldID -> UUID? in
                 people.values.first(where: { $0.id == oldID })?.id
             }
-            let remappedContexts = mock.linkedContexts.compactMap { oldID -> UUID? in
+            item.linkedContexts = item.linkedContexts.compactMap { oldID -> UUID? in
                 contexts.values.first(where: { $0.id == oldID })?.id
             }
-
-            let evidence = EvidenceItem(
-                id:               mock.id,
-                state:            mock.state,
-                sourceUID:        mock.sourceUID,
-                source:           mock.source,
-                occurredAt:       mock.occurredAt,
-                title:            mock.title,
-                snippet:          mock.snippet,
-                bodyText:         mock.bodyText,
-                participantHints: mock.participantHints,
-                signals:          mock.signals,
-                proposedLinks:    remapped,
-                linkedPeople:     remappedPeople,
-                linkedContexts:   remappedContexts
-            )
-            context.insert(evidence)
         }
     }
 }

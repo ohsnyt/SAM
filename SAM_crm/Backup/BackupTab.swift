@@ -9,6 +9,7 @@
 
 import SwiftUI
 import UniformTypeIdentifiers
+import SwiftData
 
 // MARK: - Tab root
 
@@ -71,6 +72,18 @@ struct BackupTab: View {
                     .foregroundStyle(.secondary)
                 }
 
+                #if DEBUG
+                GroupBox("Developer") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Quickly replace all data with a deterministic developer fixture.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        DeveloperFixtureButton()
+                    }
+                }
+                #endif
+
                 Spacer(minLength: 0)
             }
             .padding(.vertical, 4)
@@ -123,6 +136,7 @@ struct BackupTab: View {
 
 private struct ExportBackupSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
 
     let onSuccess: (String) -> Void
     let onError:   (String) -> Void
@@ -185,7 +199,7 @@ private struct ExportBackupSheet: View {
         defer { isWorking = false }
 
         // 1. Serialise
-        let payload = BackupPayload.current()
+        let payload = BackupPayload.current(using: modelContext.container)
         guard let json = try? JSONEncoder().encode(payload) else {
             onError(BackupError.serializationFailed.localizedDescription)
             dismiss()
@@ -246,9 +260,15 @@ private struct ExportBackupSheet: View {
 
 private struct RestoreBackupSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
 
     let onSuccess: (String) -> Void
     let onError:   (String) -> Void
+
+    /// Raw bytes of the file the user picked, held until decryption succeeds.
+    @State private var pendingData: Data? = nil
+    /// Human-readable filename shown so the user knows which file they picked.
+    @State private var pendingFileName: String = ""
 
     @State private var password = ""
     @State private var isWorking = false
@@ -256,31 +276,59 @@ private struct RestoreBackupSheet: View {
     /// Decoded payload held in memory between "preview" and "confirm" steps.
     @State private var pendingPayload: BackupPayload? = nil
 
+    /// Whether we have moved past file selection into the password stage.
+    private var fileChosen: Bool { pendingData != nil }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Restore from Backup")
                 .font(.title2).bold()
 
-            Text("Select a .sam-backup file and enter the password that was used when it was created. All current data will be replaced.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
+            if !fileChosen {
+                // ── Step 1: pick the file ────────────────────────────────
+                Text("Choose a .sam-backup file to restore from.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
 
-            Form {
-                SecureField("Backup password", text: $password)
+                HStack {
+                    Button("Cancel") { dismiss() }
+                        .keyboardShortcut(.cancelAction)
+
+                    Spacer()
+
+                    Button("Choose File…") { Task { await chooseFile() } }
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(isWorking)
+                }
+                .padding(.top, 4)
+
+            } else {
+                // ── Step 2: enter the password ───────────────────────────
+                Text("Enter the password that was used when \(pendingFileName) was created.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+
+                Form {
+                    SecureField("Backup password", text: $password)
+                }
+                .formStyle(.grouped)
+
+                HStack {
+                    Button("Back") {
+                        // Let the user re-pick a different file.
+                        pendingData     = nil
+                        pendingFileName = ""
+                        password        = ""
+                    }
+
+                    Spacer()
+
+                    Button("Decrypt…") { Task { await decryptAndValidate() } }
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(password.isEmpty || isWorking)
+                }
+                .padding(.top, 4)
             }
-            .formStyle(.grouped)
-
-            HStack {
-                Button("Cancel") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-
-                Spacer()
-
-                Button("Choose File…") { Task { await chooseAndDecrypt() } }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(password.isEmpty || isWorking)
-            }
-            .padding(.top, 4)
         }
         .padding(24)
         .frame(width: 440)
@@ -305,12 +353,13 @@ private struct RestoreBackupSheet: View {
 
     // MARK: - Actions
 
+    /// Step 1 — open the file picker and read the chosen file into memory.
+    /// No decryption happens here; we just need the raw bytes.
     @MainActor
-    private func chooseAndDecrypt() async {
+    private func chooseFile() async {
         isWorking = true
         defer { isWorking = false }
 
-        // 1. Open panel
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.samBackup]
         panel.allowsMultipleSelection = false
@@ -321,19 +370,26 @@ private struct RestoreBackupSheet: View {
         }
         guard let url = panel.urls.first else { return }
 
-        // 2. Read
-        let blob: Data
         do {
-            blob = try Data(contentsOf: url)
+            pendingData     = try Data(contentsOf: url)
+            pendingFileName = url.lastPathComponent
         } catch {
             onError("Could not read file: \(error.localizedDescription)")
-            return
         }
+    }
 
-        // 3. Decrypt
+    /// Step 2 — decrypt and decode the file the user already picked.
+    @MainActor
+    private func decryptAndValidate() async {
+        guard let data = pendingData else { return }
+
+        isWorking = true
+        defer { isWorking = false }
+
+        // Decrypt
         let json: Data
         do {
-            json = try BackupCrypto.decrypt(blob, password: password)
+            json = try BackupCrypto.decrypt(data, password: password)
         } catch let e as BackupError {
             onError(e.localizedDescription)
             return
@@ -342,7 +398,7 @@ private struct RestoreBackupSheet: View {
             return
         }
 
-        // 4. Decode
+        // Decode
         do {
             let payload = try JSONDecoder().decode(BackupPayload.self, from: json)
             guard payload.version <= BackupPayload.currentVersion else {
@@ -359,7 +415,7 @@ private struct RestoreBackupSheet: View {
     @MainActor
     private func commitRestore() async {
         guard let payload = pendingPayload else { return }
-        payload.restore()
+        payload.restore(into: modelContext.container)
         pendingPayload = nil
         onSuccess("Data restored successfully.")
         dismiss()
@@ -398,13 +454,99 @@ private final class CredentialSaveDelegate {
     }
 }
 
+#if DEBUG
+private struct DeveloperFixtureButton: View {
+    @Environment(\.modelContext) private var modelContext
+    @State private var isWorking = false
+    @State private var message: String? = nil
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                Task { await wipeAndReseed() }
+            } label: {
+                Label("Restore developer fixture", systemImage: "arrow.counterclockwise.circle")
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(isWorking)
+
+            if let message {
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    @MainActor
+    private func wipeAndReseed() async {
+        isWorking = true
+        defer { isWorking = false }
+
+        let container = modelContext.container
+
+        // Simple wipe: delete all instances of these models.
+        do {
+            try modelContext.delete(model: SamEvidenceItem.self)
+            try modelContext.delete(model: SamPerson.self)
+            try modelContext.delete(model: SamContext.self)
+            try modelContext.delete(model: Product.self)
+            try modelContext.delete(model: ConsentRequirement.self)
+            try modelContext.delete(model: Responsibility.self)
+            try modelContext.delete(model: JointInterest.self)
+            try modelContext.delete(model: ContextParticipation.self)
+            try modelContext.delete(model: Coverage.self)
+        } catch {
+            message = "Failed to clear store: \(error.localizedDescription)"
+            return
+        }
+
+        // Reseed using the DEBUG seeder.
+        FixtureSeeder.seedIfNeeded(using: container)
+        message = "Developer fixture restored."
+    }
+}
+#endif
+
 // MARK: - UTType for .sam-backup
 
 extension UTType {
     /// Custom uniform type for SAM backup files.
-    /// Register this in the app's Info.plist under "Exported Type Identifiers":
-    ///   identifier: com.sam-crm.sam-backup
-    ///   conforms to: public.data
-    ///   file extension: sam-backup
+    ///
+    /// This constant just gives us a compile-time handle on the identifier.
+    /// For the OS to actually know that `.sam-backup` files belong to this
+    /// type, the type must be **exported** in the app target's Info.plist.
+    ///
+    /// In Xcode → select the app target → Info tab → Exported Type Identifiers,
+    /// add one entry with these values:
+    ///
+    ///   Type Identifier:   com.sam-crm.sam-backup
+    ///   Conforms to:       public.data
+    ///   File Extension:    sam-backup
+    ///
+    /// Alternatively, if you have a manual Info.plist, add this XML:
+    ///
+    ///   <key>UTExportedTypeDeclarations</key>
+    ///   <array>
+    ///     <dict>
+    ///       <key>UTTypeIdentifier</key>
+    ///       <string>com.sam-crm.sam-backup</string>
+    ///       <key>UTTypeConformsTo</key>
+    ///       <array>
+    ///         <string>public.data</string>
+    ///       </array>
+    ///       <key>UTTypeTagSpecification</key>
+    ///       <dict>
+    ///         <key>public.filename-extension</key>
+    ///         <array>
+    ///           <string>sam-backup</string>
+    ///         </array>
+    ///       </dict>
+    ///     </dict>
+    ///   </array>
+    ///
+    /// Without this registration the NSSavePanel / NSOpenPanel filters
+    /// will not reliably match .sam-backup files on disk.
     static let samBackup = UTType("com.sam-crm.sam-backup")!
 }
+

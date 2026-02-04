@@ -6,6 +6,13 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		63B0A5432F33013A00D87E2F /* SAMModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63B0A5422F33013A00D87E2F /* SAMModels.swift */; };
+		63B0A5452F33017200D87E2F /* SAMModelEnums.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63B0A5442F33017200D87E2F /* SAMModelEnums.swift */; };
+		63B0A5472F33021300D87E2F /* SAMStoreSeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63B0A5462F33021300D87E2F /* SAMStoreSeed.swift */; };
+		63B0A5492F33022900D87E2F /* SAMModelContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63B0A5482F33022900D87E2F /* SAMModelContainer.swift */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		63B0A3D22F2EC49A00D87E2F /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -27,6 +34,10 @@
 		63B0A3C42F2EC49800D87E2F /* SAM_crm.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SAM_crm.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		63B0A3D12F2EC49A00D87E2F /* SAM_crmTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SAM_crmTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		63B0A3DB2F2EC49A00D87E2F /* SAM_crmUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SAM_crmUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		63B0A5422F33013A00D87E2F /* SAMModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SAMModels.swift; sourceTree = "<group>"; };
+		63B0A5442F33017200D87E2F /* SAMModelEnums.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SAMModelEnums.swift; sourceTree = "<group>"; };
+		63B0A5462F33021300D87E2F /* SAMStoreSeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SAMStoreSeed.swift; sourceTree = "<group>"; };
+		63B0A5482F33022900D87E2F /* SAMModelContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SAMModelContainer.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -91,6 +102,10 @@
 				63B0A3D42F2EC49A00D87E2F /* SAM_crmTests */,
 				63B0A3DE2F2EC49A00D87E2F /* SAM_crmUITests */,
 				63B0A3C52F2EC49800D87E2F /* Products */,
+				63B0A5422F33013A00D87E2F /* SAMModels.swift */,
+				63B0A5442F33017200D87E2F /* SAMModelEnums.swift */,
+				63B0A5462F33021300D87E2F /* SAMStoreSeed.swift */,
+				63B0A5482F33022900D87E2F /* SAMModelContainer.swift */,
 			);
 			sourceTree = "<group>";
 		};
@@ -250,6 +265,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				63B0A5492F33022900D87E2F /* SAMModelContainer.swift in Sources */,
+				63B0A5472F33021300D87E2F /* SAMStoreSeed.swift in Sources */,
+				63B0A5432F33013A00D87E2F /* SAMModels.swift in Sources */,
+				63B0A5452F33017200D87E2F /* SAMModelEnums.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -316,6 +335,7 @@
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_ENTITLEMENTS = SAM_crm.entitlements;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -379,6 +399,7 @@
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_ENTITLEMENTS = SAM_crm.entitlements;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;

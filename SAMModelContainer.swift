@@ -29,7 +29,7 @@ enum SAMSchema {
         ConsentRequirement.self,
         Product.self,
         Coverage.self,
-        EvidenceItem.self,
+        SamEvidenceItem.self,
     ]
 }
 

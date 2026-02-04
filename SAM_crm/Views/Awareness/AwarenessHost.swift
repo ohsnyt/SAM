@@ -10,8 +10,8 @@ import Foundation
 
 struct AwarenessHost: View {
 
-    // mock-first evidence store
-    private let evidenceStore = MockEvidenceRuntimeStore.shared
+    // SwiftData-backed evidence repository
+    private let evidenceStore = EvidenceRepository.shared
 
     @State private var whySheet: WhySheetItem? = nil
 
@@ -37,11 +37,11 @@ struct AwarenessHost: View {
 
     private var awarenessInsights: [EvidenceBackedInsight] {
         // “Needs review” should be your triage list (not archived/done).
-        let items = evidenceStore.needsReview
+        let items = (try? evidenceStore.needsReview()) ?? []
 
         // Group by the strongest signal “bucket” so we produce a few high-quality cards,
         // rather than dozens of tiny ones.
-        var buckets: [SignalBucket: [EvidenceItem]] = [:]
+        var buckets: [SignalBucket: [SamEvidenceItem]] = [:]
 
         for item in items {
             // choose the highest-confidence signal in this item
@@ -97,7 +97,7 @@ struct AwarenessHost: View {
         return out
     }
 
-    private func bestTargetName(from evidence: [EvidenceItem]) -> String? {
+    private func bestTargetName(from evidence: [SamEvidenceItem]) -> String? {
         // Prefer confirmed links (user action) over proposed links.
         let contextStore = MockContextRuntimeStore.shared
         let peopleStore  = MockPeopleRuntimeStore.shared

@@ -64,11 +64,19 @@ struct PopoverAnchorView: NSViewRepresentable {
     @Binding var anchorView: NSView?
 
     func makeNSView(context: Context) -> NSView {
-        let v = NSView(frame: .zero)
-        DispatchQueue.main.async { self.anchorView = v }
-        return v
+        // Return the view immediately; the binding is set in
+        // updateNSView which runs after layout is complete.
+        NSView(frame: .zero)
     }
-    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        // Only write once — avoids redundant binding updates on
+        // every SwiftUI re-render while also guaranteeing we set
+        // it after the view is laid out.
+        if anchorView !== nsView {
+            anchorView = nsView
+        }
+    }
 }
 #endif
 

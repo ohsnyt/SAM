@@ -190,7 +190,7 @@ enum ContactPhotoFetcher {
 
         // Move the synchronous CNContactStore I/O off the main actor.
         return await Task.detached(priority: .userInitiated) {
-            fetchThumbnailSync(
+            await fetchThumbnailSync(
                 contactIdentifier: person.contactIdentifier,
                 email: person.email
             )

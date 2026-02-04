@@ -24,14 +24,14 @@ enum BackupCrypto {
     static func encrypt(_ plaintext: Data, password: String) throws -> Data {
         let salt   = generateRandom(16)
         let key    = deriveKey(password: password, salt: salt)
-        let nonce  = AES.GCM.Nonce(data: generateRandom(12))!
+        let nonce  = try AES.GCM.Nonce(data: generateRandom(12))
         let sealed = try AES.GCM.seal(plaintext, using: key, nonce: nonce)
 
         // nonce is already inside sealedBox but we store it explicitly for
         // clarity and so the wire format is self-describing.
         var out = Data()
         out.append(salt)
-        out.append(nonce.data)
+        out.append(Data(nonce))
         out.append(sealed.ciphertext)
         out.append(sealed.tag)
         return out
@@ -50,15 +50,29 @@ enum BackupCrypto {
 
         let salt      = extractBytes(&offset, count: 16, from: blob)
         let nonceData = extractBytes(&offset, count: 12, from: blob)
-        let remainder = blob[offset...]                          // ciphertext + tag
+        let remainder = Data(blob[offset...])                    // ciphertext + tag
 
-        guard let nonce = AES.GCM.Nonce(data: nonceData) else {
+        let nonce: AES.GCM.Nonce
+        do {
+            nonce = try AES.GCM.Nonce(data: nonceData)
+        } catch {
             throw BackupError.invalidFile
         }
 
-        // CryptoKit expects ciphertext and tag as a single contiguous block;
-        // AES.GCM.SealedBox's combined initialiser takes exactly that.
-        guard let sealedBox = try? AES.GCM.SealedBox(combined: Data(remainder)) else {
+        // The last 16 bytes of remainder are the GCM auth tag; everything
+        // before that is the raw ciphertext.  Use the three-argument
+        // initialiser so nonce, ciphertext and tag are passed separately.
+        guard remainder.count >= 16 else {
+            throw BackupError.invalidFile
+        }
+        let ciphertext = remainder.dropLast(16)
+        let tag        = remainder.suffix(16)
+
+        guard let sealedBox = try? AES.GCM.SealedBox(
+            nonce:      nonce,
+            ciphertext: Data(ciphertext),
+            tag:        Data(tag)
+        ) else {
             throw BackupError.invalidFile
         }
 
@@ -101,7 +115,7 @@ enum BackupCrypto {
     }
 }
 
-// MARK: - PBKDF2 helper (not in CryptoKit on macOS; wrap CommonCrypto)
+// MARK: - PBKDF2 helper (CommonCrypto – works on macOS)
 
 import CommonCrypto
 
@@ -109,21 +123,23 @@ private enum PBKDF2 {
     static func deriveKey(password: Data, salt: Data, iterations: Int, keyLength: Int) -> Data {
         var derivedKey = [UInt8](repeating: 0, count: keyLength)
 
-        password.withUnsafeBytes { passwordPtr in
-            salt.withUnsafeBytes { saltPtr in
-                _ = CCPBKDFDeriveKey(
-                    kCCPBKDF2,                                          // algorithm
+        let status = password.withUnsafeBytes { passwordPtr -> Int32 in
+            salt.withUnsafeBytes { saltPtr -> Int32 in
+                CCKeyDerivationPBKDF(
+                    CCPBKDFAlgorithm(kCCPBKDF2),                        // algorithm
                     passwordPtr.baseAddress?.assumingMemoryBound(to: Int8.self),
                     password.count,
                     saltPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
                     salt.count,
-                    kCCPRFHmacAlgoSHA256,                               // PRF
+                    UInt32(2),                                          // kCCPRFHmacAlgoSHA256 == 2 (not bridged on macOS)
                     UInt32(iterations),
                     &derivedKey,
                     keyLength
                 )
             }
         }
+        // kCCSuccess == 0; anything else is a programmer error.
+        assert(status == kCCSuccess, "CCKeyDerivationPBKDF failed: \(status)")
 
         return Data(derivedKey)
     }

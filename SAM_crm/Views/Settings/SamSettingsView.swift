@@ -21,19 +21,41 @@ struct SamSettingsView: View {
     @AppStorage("sam.contacts.enabled") private var contactsEnabled: Bool = true
 
     /// The tab index that the Settings window should open to.
-    /// Backed by UserDefaults directly (not @AppStorage) so that the static
-    /// helper `openToPermissions()` can write it without needing a View instance.
+    /// The static helper writes directly to UserDefaults so that the nudge
+    /// sheet (or any other call-site) can set the target tab *before* the
+    /// Settings window is created.  The `@AppStorage` property below reads
+    /// the same key, so SwiftUI will observe the value and keep the TabView
+    /// selection in sync.
     static var selectedTab: Int {
         get { UserDefaults.standard.integer(forKey: "sam.settings.selectedTab") }
         set { UserDefaults.standard.set(newValue, forKey: "sam.settings.selectedTab") }
     }
 
+    /// Instance-level, SwiftUI-observable mirror of the static key.
+    /// This is what the TabView binds to; @AppStorage publishes changes
+    /// whenever the underlying UserDefaults value is written.
+    @AppStorage("sam.settings.selectedTab")
+    private var _selectedTab: Int = 0
+
     @State private var calendars: [EKCalendar] = []
     @State private var calendarAuthStatus: EKAuthorizationStatus = EKEventStore.authorizationStatus(for: .event)
     @State private var contactsAuthStatus: CNAuthorizationStatus = CNContactStore.authorizationStatus(for: .contacts)
 
-    private let eventStore = EKEventStore()
-    private let contactStore = CNContactStore()
+    // -------------------------------------------------------------------
+    // Shared, long-lived store instances.  CNContactStore registers an
+    // internal change-watcher on init; creating one inside a View struct
+    // means a fresh instance on every body re-eval, which races the
+    // watcher registration and produces:
+    //   "CNAccountCollectionUpdateWatcher … store registration failed"
+    // A static singleton avoids that entirely.  ContactsResolver already
+    // uses the same pattern for its CNContactStore.
+    //
+    // EKEventStore: use the single shared instance on the coordinator.
+    // On macOS the per-instance auth cache means the instance that
+    // requests permission must be the same one that later queries
+    // calendars/events.
+    // -------------------------------------------------------------------
+    private static let contactStore = CNContactStore()
 
     // MARK: - Static helpers
 
@@ -52,14 +74,11 @@ struct SamSettingsView: View {
     }
 
     var body: some View {
-        TabView(selection: Binding(
-            get: { SamSettingsView.selectedTab },
-            set: { SamSettingsView.selectedTab = $0 }
-        )) {
+        TabView(selection: $_selectedTab) {
             PermissionsTab(
                 calendars: $calendars,
-                calendarAuthStatus: calendarAuthStatus,
-                contactsAuthStatus: contactsAuthStatus,
+                calendarAuthStatus: $calendarAuthStatus,
+                contactsAuthStatus: $contactsAuthStatus,
                 selectedCalendarID: $selectedCalendarID,
                 requestCalendarAccessAndReload: requestCalendarAccessAndReload,
                 requestContactsAccess: requestContactsAccess,
@@ -74,7 +93,7 @@ struct SamSettingsView: View {
             ImportTab(
                 calendarImportEnabled: $calendarImportEnabled,
                 selectedCalendarID: $selectedCalendarID,
-                calendarAuthStatus: calendarAuthStatus,
+                calendarAuthStatus: $calendarAuthStatus,
                 pastDays: $pastDays,
                 futureDays: $futureDays,
                 importNow: importCalendarEvidenceNow
@@ -86,12 +105,18 @@ struct SamSettingsView: View {
 
             ContactsTab(
                 contactsEnabled: $contactsEnabled,
-                contactsAuthStatus: contactsAuthStatus
+                contactsAuthStatus: $contactsAuthStatus
             )
             .tabItem {
                 Label("Contacts", systemImage: "person.crop.circle")
             }
             .tag(2)
+
+            BackupTab()
+            .tabItem {
+                Label("Backup", systemImage: "lock.shield")
+            }
+            .tag(3)
         }
         .padding(20)
         .frame(width: 680, height: 460)
@@ -143,7 +168,7 @@ struct SamSettingsView: View {
     private func requestCalendarAccessAndReload() async {
         do {
             // Requesting permissions should occur on the main actor for consistent UI/status updates.
-            _ = try await eventStore.requestFullAccessToEvents()
+            _ = try await CalendarImportCoordinator.eventStore.requestFullAccessToEvents()
         } catch {
             // optional: show a gentle message later
         }
@@ -155,6 +180,10 @@ struct SamSettingsView: View {
         refreshAuthStatuses()
         if calendarAuthStatus == .fullAccess || calendarAuthStatus == .writeOnly {
             reloadCalendars()
+            // Permission just became available — tell the import coordinator
+            // to try again.  (The coordinator's EKEventStore will refresh its
+            // own cache via requestFullAccessToEvents inside importCalendarEvidence.)
+            CalendarImportCoordinator.shared.kick(reason: "calendar permission granted")
         }
     }
     
@@ -162,7 +191,7 @@ struct SamSettingsView: View {
     private func requestContactsAccess() async {
         do {
             _ = try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Bool, Error>) in
-                contactStore.requestAccess(for: .contacts) { granted, error in
+                Self.contactStore.requestAccess(for: .contacts) { granted, error in
                     if let error {
                         cont.resume(throwing: error)
                     } else {
@@ -179,7 +208,7 @@ struct SamSettingsView: View {
     // MARK: - Calendars
 
     private func reloadCalendars() {
-        calendars = eventStore.calendars(for: .event)
+        calendars = CalendarImportCoordinator.eventStore.calendars(for: .event)
             .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
 
         // If the selected calendar no longer exists, clear selection.
@@ -192,18 +221,18 @@ struct SamSettingsView: View {
     private func createAndSelectSAMCalendar() async {
         guard calendarAuthStatus == .fullAccess || calendarAuthStatus == .writeOnly else { return }
 
-        let cal = EKCalendar(for: .event, eventStore: eventStore)
+        let cal = EKCalendar(for: .event, eventStore: CalendarImportCoordinator.eventStore)
         cal.title = "SAM"
 
         // Best default: same source as the default calendar for new events.
-        if let source = eventStore.defaultCalendarForNewEvents?.source {
+        if let source = CalendarImportCoordinator.eventStore.defaultCalendarForNewEvents?.source {
             cal.source = source
-        } else if let firstSource = eventStore.sources.first {
+        } else if let firstSource = CalendarImportCoordinator.eventStore.sources.first {
             cal.source = firstSource
         }
 
         do {
-            try eventStore.saveCalendar(cal, commit: true)
+            try CalendarImportCoordinator.eventStore.saveCalendar(cal, commit: true)
             reloadCalendars()
             selectedCalendarID = cal.calendarIdentifier
         } catch {
@@ -217,8 +246,8 @@ struct SamSettingsView: View {
 private struct PermissionsTab: View {
     @Binding var calendars: [EKCalendar]
 
-    let calendarAuthStatus: EKAuthorizationStatus
-    let contactsAuthStatus: CNAuthorizationStatus
+    @Binding var calendarAuthStatus: EKAuthorizationStatus
+    @Binding var contactsAuthStatus: CNAuthorizationStatus
 
     @Binding var selectedCalendarID: String
 
@@ -280,6 +309,15 @@ private struct PermissionsTab: View {
                                 if !selectedCalendarID.isEmpty,
                                    !newValue.contains(where: { $0.calendarIdentifier == selectedCalendarID }) {
                                     selectedCalendarID = ""
+                                }
+                            }
+                            .onChange(of: selectedCalendarID) { _, newValue in
+                                // A calendar was just picked (or cleared).
+                                // Kick the coordinator so it imports
+                                // immediately rather than waiting for the
+                                // next throttle window.
+                                if !newValue.isEmpty {
+                                    CalendarImportCoordinator.shared.kick(reason: "calendar selection changed")
                                 }
                             }
                         }
@@ -373,7 +411,7 @@ private struct PermissionsTab: View {
 private struct ImportTab: View {
     @Binding var calendarImportEnabled: Bool
     @Binding var selectedCalendarID: String
-    let calendarAuthStatus: EKAuthorizationStatus
+    @Binding var calendarAuthStatus: EKAuthorizationStatus
 
     @Binding var pastDays: Int
     @Binding var futureDays: Int
@@ -438,7 +476,7 @@ private struct ImportTab: View {
 
 private struct ContactsTab: View {
     @Binding var contactsEnabled: Bool
-    let contactsAuthStatus: CNAuthorizationStatus
+    @Binding var contactsAuthStatus: CNAuthorizationStatus
 
     var body: some View {
         ScrollView {

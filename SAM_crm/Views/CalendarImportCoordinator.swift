@@ -15,8 +15,14 @@ final class CalendarImportCoordinator {
 
     static let shared = CalendarImportCoordinator()
 
-    private let eventStore = EKEventStore()
-    private let evidenceStore = MockEvidenceRuntimeStore.shared
+    /// The single, process-lifetime EKEventStore.  On macOS the
+    /// authorization cache is per-instance: the instance that calls
+    /// requestFullAccessToEvents() is the one whose
+    /// authorizationStatus() reflects the grant.  Every other part of
+    /// the app (Settings, coordinator) must use this same instance.
+    static let eventStore = EKEventStore()
+
+    private let evidenceStore = EvidenceRepository.shared
 
     @AppStorage("sam.calendar.import.enabled") private var importEnabled: Bool = true
     @AppStorage("sam.calendar.selectedCalendarID") private var selectedCalendarID: String = ""
@@ -50,9 +56,12 @@ final class CalendarImportCoordinator {
         guard !selectedCalendarID.isEmpty else { return }
 
         let now = Date().timeIntervalSince1970
-        let minInterval = reason.lowercased().contains("changed")
-            ? minimumIntervalChanged
-            : minimumIntervalNormal
+        // Only the normal periodic triggers (app launch / app became active)
+        // get the conservative 5-minute throttle.  Anything event-driven
+        // (calendar changed, permission granted, selection changed) should
+        // run as soon as the 10-second guard clears.
+        let isPeriodicTrigger = reason == "app launch" || reason == "app became active"
+        let minInterval = isPeriodicTrigger ? minimumIntervalNormal : minimumIntervalChanged
 
         guard now - lastRunAt > minInterval else { return }
 
@@ -61,17 +70,29 @@ final class CalendarImportCoordinator {
 
     private func importCalendarEvidence() async {
         let status = EKEventStore.authorizationStatus(for: .event)
-        // Reading events requires full access.
         guard status == .fullAccess else { return }
 
-        guard let calendar = eventStore.calendars(for: .event)
+        // Ensure *this* EKEventStore instance has been granted access.
+        // requestFullAccessToEvents() is idempotent when permission is
+        // already granted — it just resolves immediately.  Without this
+        // the instance's internal calendar cache may be stale if it was
+        // created before the user granted permission (which is the normal
+        // flow: the coordinator's singleton is created at app launch,
+        // permission is granted later in Settings on a different instance).
+        do {
+            try await Self.eventStore.requestFullAccessToEvents()
+        } catch {
+            return
+        }
+
+        guard let calendar = Self.eventStore.calendars(for: .event)
             .first(where: { $0.calendarIdentifier == selectedCalendarID }) else { return }
 
         let start = Calendar.current.date(byAdding: .day, value: -pastDays, to: Date())!
         let end = Calendar.current.date(byAdding: .day, value: futureDays, to: Date())!
 
-        let predicate = eventStore.predicateForEvents(withStart: start, end: end, calendars: [calendar])
-        let events = eventStore.events(matching: predicate)
+        let predicate = Self.eventStore.predicateForEvents(withStart: start, end: end, calendars: [calendar])
+        let events = Self.eventStore.events(matching: predicate)
 
         // Track what currently exists in the observed calendar for this window.
         let currentUIDs: Set<String> = Set(events.map { "eventkit:\($0.calendarItemIdentifier)" })
@@ -88,11 +109,11 @@ final class CalendarImportCoordinator {
 
             let hints = await ContactsResolver.resolve(event: event)
 
-            let item = EvidenceItem(
+            let item = SamEvidenceItem(
                 id: UUID(),
-                state: .needsReview,
+                state: EvidenceTriageState.needsReview,
                 sourceUID: sourceUID,
-                source: .calendar,
+                source: EvidenceSource.calendar,
                 occurredAt: event.startDate,
                 title: (event.title?.isEmpty == false ? event.title! : "Untitled Event"),
                 snippet: event.location ?? event.notes ?? "",
@@ -104,7 +125,7 @@ final class CalendarImportCoordinator {
                 linkedContexts: []
             )
 
-            evidenceStore.upsert(item)
+            try? evidenceStore.upsert(item)
         }
 
         lastRunAt = Date().timeIntervalSince1970
@@ -151,7 +172,7 @@ enum ContactsResolver {
                         for: participant,
                         contactStore: hasContacts ? contactStore : nil
                     )
-                    return ParticipantHint(
+                    return await ParticipantHint(
                         displayName: displayName,
                         isOrganizer: isOrganizer,
                         isVerified: isVerified,

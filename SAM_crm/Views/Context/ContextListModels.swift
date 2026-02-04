@@ -7,29 +7,7 @@
 
 import SwiftUI
 
-enum ContextKind: String, Codable, Hashable {
-    case household
-    case business
-    case recruiting
-
-    var displayName: String {
-        switch self {
-        case .household: return "Household"
-        case .business: return "Business"
-        case .recruiting: return "Recruiting"
-        }
-    }
-
-    var icon: String {
-        switch self {
-        case .household: return "house"
-        case .business: return "building.2"
-        case .recruiting: return "person.3"
-        }
-    }
-}
-
-struct ContextListItemModel: Identifiable {
+struct ContextListItemModel: Identifiable, Codable {
     let id: UUID
     let name: String
     let subtitle: String

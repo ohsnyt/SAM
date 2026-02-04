@@ -9,7 +9,7 @@ import SwiftUI
 
 struct ContentView: View {
 
-    struct MockInsight: InsightDisplayable, Identifiable {
+    struct ContentViewMockInsight: InsightDisplayable, Identifiable {
         let id = UUID()
         let kind: InsightKind
         let message: String
@@ -18,7 +18,7 @@ struct ContentView: View {
         let consentsCount: Int
     }
 
-    let insights: [MockInsight] = [
+    let insights: [ContentViewMockInsight] = [
         .init(kind: .relationshipAtRisk,
               message: "Possible household structure change detected for John and Mary Smith.",
               confidence: 0.72,

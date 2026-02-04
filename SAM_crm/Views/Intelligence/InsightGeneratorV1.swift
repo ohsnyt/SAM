@@ -10,7 +10,7 @@ import Foundation
 /// Produces EvidenceSignal entries that AwarenessHost already knows how to display.
 enum InsightGeneratorV1 {
 
-    static func signals(for evidence: EvidenceItem, now: Date = .now) -> [EvidenceSignal] {
+    static func signals(for evidence: SamEvidenceItem, now: Date = .now) -> [EvidenceSignal] {
         var out: [EvidenceSignal] = []
 
         // Build analysis text (very conservative / explainable)
@@ -117,7 +117,7 @@ enum InsightGeneratorV1 {
         }
     }
 
-    private static func unlinkedConfidence(for e: EvidenceItem, now: Date) -> Double {
+    private static func unlinkedConfidence(for e: SamEvidenceItem, now: Date) -> Double {
         // Unlinked is “real” but not urgent by itself.
         // Slight bump if the event is upcoming or just happened.
         let deltaDays = abs(Calendar.current.dateComponents([.day], from: e.occurredAt, to: now).day ?? 0)
@@ -150,7 +150,7 @@ enum InsightGeneratorV1 {
     }
 
     private static func collapseByKind(_ signals: [EvidenceSignal]) -> [EvidenceSignal] {
-        var best: [EvidenceSignalKind: EvidenceSignal] = [:]
+        var best: [SignalKind: EvidenceSignal] = [:]
         for s in signals {
             if let existing = best[s.kind] {
                 if s.confidence > existing.confidence { best[s.kind] = s }
