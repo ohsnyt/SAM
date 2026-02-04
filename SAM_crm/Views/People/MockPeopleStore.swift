@@ -13,6 +13,7 @@ enum MockPeopleStore {
             id: UUID(),
             displayName: "Mary Smith",
             roleBadges: ["Client", "Household", "Joint Signer"],
+            email: "mary.smith@example.com",
             consentAlertsCount: 2,
             reviewAlertsCount: 1,
             contexts: [
@@ -43,6 +44,7 @@ enum MockPeopleStore {
             id: UUID(),
             displayName: "Evan Patel",
             roleBadges: ["Referral Partner", "Estate Planning Attorney"],
+            email: "evan.patel@example.com",
             consentAlertsCount: 0,
             reviewAlertsCount: 0,
             contexts: [
@@ -58,6 +60,7 @@ enum MockPeopleStore {
             id: UUID(),
             displayName: "Cynthia Lopez",
             roleBadges: ["Vendor", "Underwriting Liaison"],
+            email: "cynthia.lopez@example.com",
             consentAlertsCount: 0,
             reviewAlertsCount: 1,
             contexts: [

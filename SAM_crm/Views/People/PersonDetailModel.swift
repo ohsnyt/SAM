@@ -12,6 +12,15 @@ struct PersonDetailModel: Identifiable {
     let displayName: String
     let roleBadges: [String]
 
+    /// The stable `CNContact.identifier` for this person, when known.
+    /// Used to fetch the contact photo directly without a predicate query.
+    var contactIdentifier: String? = nil
+
+    /// A known email address for this person.  Used as a fallback lookup key
+    /// when `contactIdentifier` is not available (e.g. people created from
+    /// Inbox evidence before they were matched to a CNContact).
+    var email: String? = nil
+
     // Alerts
     let consentAlertsCount: Int
     let reviewAlertsCount: Int
