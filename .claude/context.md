@@ -30,18 +30,21 @@ A native macOS SwiftUI application for independent financial strategists (insura
 - Accept/decline proposed links
 - Mark done, reverse decisions
 - EvidenceDrillInSheet for details
+- **InboxListView is fully migrated to SwiftData** — uses `@Query` directly against `SamEvidenceItem`
 
 **Awareness**
 - Groups signals into EvidenceBackedInsights
 - Three categories: Needs Attention, Suggested Follow-Ups, Opportunities
 - Shows message, confidence, evidence count
 - Drill into supporting evidence
+- **AwarenessHost migrated** — uses `EvidenceRepository.shared` and `SamEvidenceItem` (see migration log below)
 
 **People & Contexts**
 - Create/manage People (individuals, business owners, recruits, vendors, partners)
 - Create/manage Contexts (Household, Business, Recruiting)
 - Duplicate detection on creation
 - ContextDetailView shows participants, products, consent, interactions, insights
+- **Still backed by `MockPeopleRuntimeStore` / `MockContextRuntimeStore`** — next migration phase
 
 **Settings (macOS style)**
 - Calendar permission management
@@ -50,123 +53,108 @@ A native macOS SwiftUI application for independent financial strategists (insura
 - Import window configuration
 - Toggle calendar import on/off
 
+**Backup & Restore (SwiftData)**
+- Versioned DTOs for export/import with JSON envelope format
+- AES-256-GCM + PBKDF2 encryption for secure backups
+- Password stored securely in system Keychain (accessible via Passwords app)
+- UI integration for export and restore flows under Settings → Backup
+- `BackupPayload` already reads/writes `SamPerson`, `SamContext`, `SamEvidenceItem` directly — fully SwiftData-native
+
+**Developer Fixtures**
+- DEBUG-only seeding of SwiftData stores at app startup for rapid dev iteration
+- `FixtureSeeder` seeds `SamPerson`, `SamContext`, and `SamEvidenceItem` with stable UUIDs
+- `SAMStoreSeed` is the one-time migration path from mock arrays → SwiftData (guarded by `sam.swiftdata.seeded` flag)
+- Developer-only restore button in Settings → Backup to reset app state to known fixture set
+
+---
+
 ### 🏗️ Architecture
 
-**Navigation:** NavigationSplitView with sidebar (Awareness, People, Contexts, Inbox)
+**Navigation:** `NavigationSplitView` with sidebar (Awareness, People, Contexts, Inbox). No nested `NavigationStack`s.
 
-**Data Flow:**
-```
-Calendar App 
-→ CalendarImportCoordinator 
-→ MockEvidenceRuntimeStore.upsert()
-→ EvidenceItem created/updated
-→ InsightGeneratorV1 adds signals
-→ AwarenessHost derives EvidenceBackedInsights
-→ User reviews in Awareness & Inbox
-```
+**Data layer (three tiers, mid-migration):**
 
-**Core Models:**
-
-- **EvidenceItem:** id, state, sourceUID ("eventkit:\<calendarItemIdentifier\>"), source, occurredAt, title, snippet, bodyText, signals, proposedLinks, linkedPeople, linkedContexts
-- **EvidenceSignal:** kind, confidence, reason (explainable)
-- **EvidenceBackedInsight:** message, confidence, evidence count, supporting items
-
-**Key Files (~25 Swift files total):**
-- `CalendarImportCoordinator.swift` - calendar event import
-- `MockEvidenceRuntimeStore.swift` - Evidence storage & operations
-- `EvidenceModels.swift` - core data models
-- `AwarenessHost.swift` - Insight generation & UI
-- `InboxHost.swift` - Inbox UI
-- `SamSettingsView.swift` - Settings UI
-- `AppShellView.swift` - NavigationSplitView layout
+| Tier | Evidence | People | Contexts |
+|---|---|---|---|
+| `@Model` class | `SamEvidenceItem` ✅ | `SamPerson` ✅ | `SamContext` ✅ |
+| Repository / store | `EvidenceRepository` ✅ | `MockPeopleRuntimeStore` ⏳ | `MockContextRuntimeStore` ⏳ |
+| Views using SwiftData | `InboxListView`, `AwarenessHost` ✅ | — | — |
+| Views still using mock store | `EvidenceDrillInSheet` ⏳ | `PersonDetailHost`, `InboxDetailView`, `InboxDetailSections` ⏳ | `ContextListView`, `AppShellView` (context detail host), `InboxDetailView`, `InboxDetailSections`, `PersonDetailHost` ⏳ |
 
 ---
 
-## Build & Run
+## Migration Notes (SwiftData)
 
-**Requirements:**
-- macOS target
-- SwiftUI
-- Sandbox enabled with Calendar & Contacts entitlements
-- Info.plist usage descriptions for Calendar and Contacts access
-
-**To run:**
-1. Open Xcode project
-2. Build and run
-3. Grant Calendar permission in Settings
-4. Create or select "SAM" calendar
-5. Events from that calendar will import automatically
+- **Naming strategy:** SwiftData `@Model` types use `Sam…` prefixes (e.g., `SamEvidenceItem`, `SamPerson`, `SamContext`). Enums and embedded value types live in `SAMModelEnums.swift` (e.g., `ContextKind`, `EvidenceSignal`, `SignalKind`, `InsightKind`). UI-only helpers are scoped or renamed to avoid collisions.
+- **Codable boundaries:** `@Model` types are **not** `Codable`. Only Backup DTOs (`BackupPerson`, `BackupContext`, `BackupEvidenceItem`) and embedded value types are `Codable` for export/import.
+- **Backup path:** `BackupPayload.current(using: ModelContainer)` snapshots SwiftData; `payload.restore(into: ModelContainer)` replaces live data. Encryption uses AES-256-GCM with PBKDF2-derived key.
+- **Seeder:** `FixtureSeeder.seedIfNeeded(using:)` runs in DEBUG only at app startup and is idempotent (stable UUIDs for deterministic relationships).
+- **One-time migration:** `SAMStoreSeed.seedIfNeeded(into:)` migrates the original mock arrays into SwiftData once per install. Three-pass ordering: Contexts → People → Evidence (Evidence's `proposedLinks` resolve `targetID`s against freshly-inserted People/Contexts).
+- **Previews:** Use in-memory `ModelContainer` with minimal seeding; avoid mock-era stores in previews.
+- **Developer tooling:** Settings → Backup includes a DEBUG-only "Restore developer fixture" that wipes and reseeds.
+- **Schema hygiene:** The app's `ModelContainer` must list every `@Model` type. Keep the schema list and model declarations in sync.
 
 ---
 
-## Known Issues & Constraints
+## Migration Log
 
-**Critical Constraints:**
-- ❌ Do NOT use nested NavigationStacks inside NavigationSplitView
-- ❌ Only ONE calendar import path (CalendarImportCoordinator only)
-- ✅ Always use sourceUID format: `"eventkit:<calendarItemIdentifier>"`
-- ✅ Prune logic must run when calendar changes
-- Always use code complient with macOS 26+ for mac apps, and iOS 18+ for iOS apps
+### 2026-02-04 — Evidence layer fully migrated
 
-**Current Limitations:**
-- Contacts integration not yet implemented (permission UI exists)
-- Mail and Zoom integration not yet implemented
-- InsightGenerator is currently rule-based (v1), not AI-powered
+**`MockEvidenceRuntimeStore.swift` rewritten → `EvidenceRepository`**
+- The file still has its old filename (`MockEvidenceRuntimeStore.swift`) but the class inside is now `EvidenceRepository`.
+- It accepts a `ModelContainer`, runs `FetchDescriptor` queries against `SamEvidenceItem`, and persists through `ModelContext`.
+- All CRUD: `needsReview()`, `done()`, `item(id:)`, `upsert(_:)`, `pruneCalendarEvidenceNotIn(…)`, `markDone`, `reopen`, link/unlink, suggestion accept/decline, `replaceAll(with:)` for backup restore.
+- **Rename pending:** `MockEvidenceRuntimeStore.swift` → `EvidenceRepository.swift`
 
----
-
-## Immediate Priorities
-
-### ✅ Completed This Session (2/3/26)
-
-1. **Consolidated to single calendar import path.**
-   - Removed the old `importCalendarEvents` / `upsertEvidenceFromCalendar` methods from `MockEvidenceRuntimeStore` (the v0 path).
-   - Removed the now-unused `import EventKit` from that file.
-   - Rewired `SamSettingsView`'s "Import Now" button to call `CalendarImportCoordinator.shared.importNow()` instead of the old store method. The coordinator already guards on auth status, enabled toggle, and selected calendar — the redundant guards in Settings were removed.
-   - **Invariant enforced:** `CalendarImportCoordinator` is the only path that writes calendar evidence. The store exposes only `upsert()` and `pruneCalendarEvidenceNotIn()`.
-
-2. **Removed duplicate `MockContextStore` from `AppShellView.swift`.**
-   - `enum MockContextStore` (with `all`, `byID`, `listItems`) was stranded in `AppShellView` but only `all` was ever referenced — by `MockContextRuntimeStore`'s seed initialiser.
-   - `byID` and `listItems` on the static enum were completely unused; the live `MockContextRuntimeStore` already exposes identical observable properties.
-   - Deleted the enum. Changed `MockContextRuntimeStore.all`'s initialiser to `[MockContexts.smithHousehold]` directly (the enum in `ContextDetailModel.swift` that was always the real seed source).
-
-### 📋 Remaining Tasks (priority order)
-
-3. **Wire or remove `autoSelectIfNeeded` in `PeopleListView`.**
-   - The method and its `score()` helper exist but are never called. `ContextListView` does the equivalent via `.task { autoSelectIfNeeded() }`. Either add the same `.task` call, or delete the dead code.
-
-4. **Contacts integration (read-only).**
-   - Permission UI already exists in Settings → Contacts tab.
-   - Next step: use `CNContactStore` to populate `participantHints` on calendar-imported evidence, and optionally seed `MockPeopleRuntimeStore` from real contacts.
-
-5. **Replace `Mock*RuntimeStore` singletons with SwiftData.**
-   - All three stores (`Evidence`, `People`, `Context`) are in-memory only — app restart loses everything.
-   - SwiftData is the lightest path to persistence on macOS. Seed data should move to a one-time migration or "first launch" flow.
-
-6. **Upgrade `InsightGeneratorV1` with on-device LLM (Foundation Models).**
-   - Keyword rules are a solid baseline; an on-device model handles long-tail cases (implied referrals, tone shifts) without network or privacy risk.
-   - Consult `FoundationModels-Using-on-device-LLM-in-your-app.md` when starting.
-
-### 📝 Known Remaining Nits
-
-- `cynthia` placeholder in `MockEvidenceRuntimeStore.seedIfNeeded()` — looked up then immediately discarded with `_ = cynthia`. Wire into a fourth seed evidence item or remove.
-- `DateFormatter` in `InboxDetailView.formatDate()` and `SuggestedLinkRow.format()` is created per-call. Minor; a static formatter is an easy cleanup.
+**`AwarenessHost.swift` migrated to `EvidenceRepository`**
+- `MockEvidenceRuntimeStore.shared` → `EvidenceRepository.shared`
+- `evidenceStore.needsReview` (old property) → `(try? evidenceStore.needsReview()) ?? []` (now a throwing `FetchDescriptor` query)
+- All `EvidenceItem` type references → `SamEvidenceItem`
+- `bestTargetName(from:)` still uses `MockPeopleRuntimeStore` / `MockContextRuntimeStore` for UUID → name resolution; will update when People/Contexts migrate
 
 ---
 
-## Design Guidelines
+## 📋 Planned Tasks (next phases)
 
-**SwiftUI Best Practices:**
-- macOS Human Interface Guidelines
-- Use Inspectors and sheets, not alerts
-- Local-first processing where possible
-- Trust, transparency, reversibility in UX
+### Phase A — Finish Evidence surface migration (quick wins)
 
-**Code Style:**
-- SwiftUI-first approach
-- Clear separation of concerns (Coordinators, Stores, Views)
-- Deterministic, explainable logic (especially for signals)
-- With respect to incorporating LLM, consult Apple documentation FoundationModels-Using-on-device-LLM-in-your-app.md
-- With repsect to UX, consult Apple documentation SwiftUI-Implementing-Liquid-Glass-Design.md
----
+1. **Rename file:** `MockEvidenceRuntimeStore.swift` → `EvidenceRepository.swift` (cosmetic, no code change)
+2. **`EvidenceDrillInSheet.swift`** — still references `MockEvidenceRuntimeStore.shared` and the old `EvidenceItem` type / `.items` property. Swap to `EvidenceRepository` the same way `AwarenessHost` was updated. Note: the sheet fetches by a set of IDs, so it will need a helper or loop over `evidenceStore.item(id:)` rather than filtering a flat array.
 
+### Phase B — People repository (mirrors Evidence pattern)
+
+3. **Create `PeopleRepository`** in a new file (or rewrite `MockPeopleRuntimeStore.swift` in place). Pattern to follow: `EvidenceRepository`. Key operations needed by current call-sites:
+   - `byID: [UUID: SamPerson]` (or async `person(id:)`)
+   - `listItems` (derived from `SamPerson` fetch)
+   - `add(_:)` / `resolveContactIdentifier(personID:)` / `patchContactIdentifier(…)`
+   - `addContext(personID:context:)` — updates the denormalised `contextChips` array on `SamPerson`
+4. **Migrate call-sites:**
+   - `PersonDetailHost.swift` — `peopleStore` and `contextStore` refs
+   - `InboxDetailView.swift` — `peopleStore`, `contextStore`, and the nested `ensurePersonExists` helper
+   - `InboxDetailSections.swift` — passed-down `peopleStore` / `contextStore` props
+   - `AwarenessHost.swift` → `bestTargetName` — the two remaining mock store refs
+
+### Phase C — Contexts repository (mirrors Evidence pattern)
+
+5. **Create `ContextRepository`** (or rewrite `MockContextRuntimeStore.swift`). Key operations:
+   - `byID: [UUID: SamContext]`
+   - `listItems` (derived)
+   - `add(_:)` / `addParticipant(…)`
+   - Fix the `ContextKind` vs `SamContextKind` type mismatch surfaced in `listItems` — confirm which enum the `ContextListItemModel.kind` field expects and align
+6. **Migrate call-sites:**
+   - `ContextListView.swift` — `store` ref
+   - `AppShellView.swift` — context-detail host `store` ref
+   - All sites already listed in Phase B that also touch `contextStore`
+
+### Phase D — Clean up legacy scaffolding
+
+7. **Remove `MockPeopleStore` / `MockContextStore` static seed arrays** from `AppShellView.swift` (and wherever else they live) once Phases B & C are complete — `FixtureSeeder` and `SAMStoreSeed` are the sole source of seed data now.
+8. **Remove `SAMStoreSeed`** once confidence is high that all installs have migrated (the `sam.swiftdata.seeded` flag can be checked for a release or two before deleting).
+9. **Audit `ContextDetailModel` / `PersonDetailModel` structs** — these are the view-layer value types that the mock stores returned. Decide: keep as lightweight view-models populated from `@Model` objects, or replace detail views with direct `@Model` bindings.
+
+### Phase E — `ContextKind` vs `SamContextKind` error
+
+10. **Resolve the compile error** reported in `MockContextRuntimeStore.swift:33` — `ContextListItemModel.kind` expects `SamContextKind` but `ContextDetailModel.kind` is `ContextKind`. Either:
+    - Align both to `ContextKind` (the enum that already exists in `SAMModelEnums.swift` and is used by `SamContext`), or
+    - Add a mapping step in the repository layer when constructing list items.
+    - This will naturally resolve when Phase C replaces the mock store.

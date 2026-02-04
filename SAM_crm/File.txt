@@ -1,0 +1,12 @@
+
+Showing All Messages
+ComputeTargetDependencyGraph
+
+note: Building targets in dependency order
+note: Target dependency graph (1 target)
+    Target 'SAM_crm' in project 'SAM_crm' (no dependencies)
+
+Building targets in dependency order
+
+Target dependency graph (1 target)
+
