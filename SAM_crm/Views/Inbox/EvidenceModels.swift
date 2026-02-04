@@ -38,6 +38,7 @@ enum EvidenceSource: String, Codable, Hashable, CaseIterable, Identifiable {
 }
 
 enum EvidenceSignalKind: String, Codable, Hashable, CaseIterable, Identifiable {
+    case unlinkedEvidence
     case divorce
     case comingOfAge
     case partnerLeft
@@ -48,6 +49,7 @@ enum EvidenceSignalKind: String, Codable, Hashable, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
+        case .unlinkedEvidence: return "Unlinked Evidence"
         case .divorce: return "Divorce / Separation"
         case .comingOfAge: return "Coming of Age"
         case .partnerLeft: return "Partner Left"
@@ -58,6 +60,7 @@ enum EvidenceSignalKind: String, Codable, Hashable, CaseIterable, Identifiable {
 
     var systemImage: String {
         switch self {
+        case .unlinkedEvidence: return "link.badge.plus"
         case .divorce: return "heart.slash"
         case .comingOfAge: return "birthday.cake"
         case .partnerLeft: return "person.badge.minus"
@@ -87,6 +90,9 @@ struct ProposedLink: Identifiable, Hashable, Codable {
     let secondaryLine: String?
     let confidence: Double
     let reason: String
+
+    var status: LinkSuggestionStatus = .pending
+    var decidedAt: Date? = nil
 }
 
 enum EvidenceTriageState: String, Codable, Hashable {
@@ -94,20 +100,47 @@ enum EvidenceTriageState: String, Codable, Hashable {
     case done
 }
 
+/// A single resolved participant extracted from an event or message.
+/// `isOrganizer` is true for the event host / message sender so the UI can
+/// differentiate them from other invitees.
+struct ParticipantHint: Identifiable, Hashable, Codable {
+    /// Stable identity: use the display string itself so ForEach works
+    /// without an extra stored ID.
+    var id: String { displayName }
+
+    /// Human-readable label: "Full Name <email>", a bare email, or a
+    /// fallback like "Unknown Participant".
+    let displayName: String
+
+    /// True when this participant is the organiser / host of the event.
+    let isOrganizer: Bool
+
+    /// True when the participant was successfully matched to a CNContact.
+    /// False for bare-email or placeholder fall-backs.
+    let isVerified: Bool
+
+    /// The raw email address extracted from the mailto: URL, when available.
+    /// Used by the UI to deep-link into Contacts.app for unverified participants.
+    let rawEmail: String?
+}
+
 struct EvidenceItem: Identifiable, Hashable, Codable {
     let id: UUID
     var state: EvidenceTriageState
 
+    /// Stable identity for upsert (e.g. eventkit:<calendarItemIdentifier>)
+    var sourceUID: String = ""
+
     let source: EvidenceSource
-    let occurredAt: Date
-    let title: String
-    let snippet: String
+    var occurredAt: Date
+    var title: String
+    var snippet: String
 
     // Optional long text (email body, transcript, note body)
     var bodyText: String?
 
-    // Lightweight extracted hints (e.g., emails/phones)
-    var participantHints: [String]
+    // Resolved participant hints (name + organiser flag)
+    var participantHints: [ParticipantHint]
 
     // What the system thinks this might imply
     var signals: [EvidenceSignal]
@@ -118,4 +151,20 @@ struct EvidenceItem: Identifiable, Hashable, Codable {
     // Confirmed links (user action)
     var linkedPeople: [UUID]
     var linkedContexts: [UUID]
+}
+
+enum LinkSuggestionStatus: String, Codable, Hashable, CaseIterable, Identifiable {
+    case pending
+    case accepted
+    case declined
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .pending: return "Pending"
+        case .accepted: return "Accepted"
+        case .declined: return "Declined"
+        }
+    }
 }

@@ -82,13 +82,37 @@ private extension InsightCardView {
 
             Spacer()
 
+            // Evidence affordance (visible even when collapsed)
+            if hasEvidence {
+                HStack(spacing: 6) {
+                    if insight.interactionsCount > 0 {
+                        EvidencePill(
+                            icon: "bubble.left.and.bubble.right",
+                            text: "\(insight.interactionsCount)"
+                        )
+                        .accessibilityLabel("\(insight.interactionsCount) interactions")
+                    }
+
+                    if insight.consentsCount > 0 {
+                        EvidencePill(
+                            icon: "checkmark.seal",
+                            text: "\(insight.consentsCount)"
+                        )
+                        .accessibilityLabel("\(insight.consentsCount) consent requirements")
+                    }
+                }
+                .padding(.top, 2)
+            }
+
             Button {
                 isExpanded.toggle()
             } label: {
                 Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                     .foregroundStyle(.secondary)
+                    .imageScale(.medium)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(isExpanded ? "Collapse" : "Expand")
         }
     }
 }
@@ -182,6 +206,32 @@ private struct EvidenceRow: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+    }
+}
+
+private struct EvidencePill: View {
+    let icon: String
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .imageScale(.small)
+                .foregroundStyle(.secondary)
+            Text(text)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(
+            Capsule(style: .continuous)
+                .fill(Color.secondary.opacity(0.12))
+        )
+        .overlay(
+            Capsule(style: .continuous)
+                .stroke(Color.secondary.opacity(0.18))
+        )
     }
 }
 

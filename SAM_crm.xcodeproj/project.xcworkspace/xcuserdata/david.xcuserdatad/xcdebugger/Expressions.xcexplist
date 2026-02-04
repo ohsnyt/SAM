@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<VariablesViewState
+   version = "1.0">
+   <ContextStates>
+      <ContextState
+         contextName = "AppShellView.body.getter:AppShellView.swift">
+         <PersistentStrings>
+            <PersistentString
+               value = "nudgeAlreadyShown">
+            </PersistentString>
+         </PersistentStrings>
+      </ContextState>
+      <ContextState
+         contextName = "property wrapper backing initializer of AppShellView.nudgeAlreadyShown:AppShellView.swift">
+      </ContextState>
+   </ContextStates>
+</VariablesViewState>

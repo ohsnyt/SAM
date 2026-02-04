@@ -53,6 +53,15 @@ struct PeopleListView: View {
             )
         }
         .navigationSplitViewColumnWidth(min: 300, ideal: 360, max: 520)
+        .task { autoSelectIfNeeded() }
+        .onChange(of: searchText) { _, _ in
+            // If the current selection is still visible under the new query, keep it.
+            // Otherwise clear so the detail pane shows the placeholder until the user picks.
+            if let current = selectedPersonID,
+               !filteredPeople.contains(where: { $0.id == current }) {
+                selectedPersonID = nil
+            }
+        }
     }
     
     private var filteredPeople: [PersonListItemModel] {

@@ -1,36 +1,41 @@
+/// AwarenessView.swift
+///
 import SwiftUI
 
 /// Home screen: a calm, prioritized awareness feed.
 /// Works with any insight type that conforms to InsightDisplayable.
 struct AwarenessView<I: InsightDisplayable>: View {
-    
+
     let insights: [I]
-    
+    /// Optional tap action for drill-in (e.g. “Why?” evidence).
+    var onInsightTapped: ((I) -> Void)? = nil
+
     @State private var searchText: String = ""
     @State private var selection: InsightSelection? = nil
-    
+
     var body: some View {
-        GlassEffectContainer(spacing: 16) {
-            List(selection: $selection) {
-                if filteredInsights.isEmpty {
-                    emptyState
-                } else {
-                    if !needsAttention.isEmpty {
-                        Section("Needs Attention") { insightCards(needsAttention) }
-                    }
-                    if !followUps.isEmpty {
-                        Section("Suggested Follow-Ups") { insightCards(followUps) }
-                    }
-                    if !opportunities.isEmpty {
-                        Section("Opportunities") { insightCards(opportunities) }
-                    }
+        List(selection: $selection) {
+
+            if filteredInsights.isEmpty {
+                emptyState
+            } else {
+                if !needsAttention.isEmpty {
+                    Section("Needs Attention") { insightCards(needsAttention) }
+                }
+
+                if !followUps.isEmpty {
+                    Section("Suggested Follow-Ups") { insightCards(followUps) }
+                }
+
+                if !opportunities.isEmpty {
+                    Section("Opportunities") { insightCards(opportunities) }
                 }
             }
-            .listStyle(.inset)
-            .listSectionSeparator(.hidden)
-            .scrollContentBackground(.hidden)
-            .background(listBackground)
         }
+        .listStyle(.inset)
+        .listSectionSeparator(.hidden)
+        .scrollContentBackground(.hidden)
+        .background(listBackground)
         .navigationTitle("Awareness")
         .searchable(text: $searchText, placement: .toolbar, prompt: "Search insights")
         .toolbar {
@@ -39,7 +44,7 @@ struct AwarenessView<I: InsightDisplayable>: View {
                     .buttonStyle(.glass)
                     .help("Refresh")
                     .keyboardShortcut("r", modifiers: [.command])
-                
+
                 Button { searchText = "" } label: { Image(systemName: "xmark.circle") }
                     .buttonStyle(.glass)
                     .help("Clear Search")
@@ -47,19 +52,9 @@ struct AwarenessView<I: InsightDisplayable>: View {
             }
         }
     }
-    
-    private var listBackground: some View {
-        ZStack {
-            Color(nsColor: .windowBackgroundColor)
-            
-            Rectangle()
-                .fill(.regularMaterial)
-                .opacity(0.25)
-        }
-    }
 }
 
-// MARK: - Sections + Filtering
+// MARK: - Filtering & Sections
 
 private extension AwarenessView {
 
@@ -117,11 +112,28 @@ private extension AwarenessView {
     @ViewBuilder
     func insightCards(_ items: [I]) -> some View {
         ForEach(Array(items.enumerated()), id: \.offset) { pair in
-            InsightCardView(insight: pair.element)
+            let insight = pair.element
+
+            let card = InsightCardView(insight: insight)
                 .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8))
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
                 .padding(.vertical, 2)
+
+            if let onInsightTapped {
+                Button {
+                    onInsightTapped(insight)
+                } label: {
+                    card
+                }
+                .buttonStyle(.plain)           // keep card visuals
+                .contentShape(Rectangle())     // ensure full-row click target
+                .contextMenu {
+                    Button("Why?") { onInsightTapped(insight) }
+                }
+            } else {
+                card
+            }
         }
     }
 
@@ -143,6 +155,13 @@ private extension AwarenessView {
         .listRowSeparator(.hidden)
         .listRowBackground(Color.clear)
         .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8))
+    }
+
+    var listBackground: some View {
+        ZStack {
+            Color(nsColor: .windowBackgroundColor)
+            Rectangle().fill(.regularMaterial).opacity(0.25)
+        }
     }
 }
 

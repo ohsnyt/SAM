@@ -50,6 +50,11 @@
 			path = Documentation;
 			sourceTree = "<group>";
 		};
+		63B0A5242F326CA700D87E2F /* .claude */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = .claude;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -80,6 +85,7 @@
 		63B0A3BB2F2EC49800D87E2F = {
 			isa = PBXGroup;
 			children = (
+				63B0A5242F326CA700D87E2F /* .claude */,
 				63B0A4622F30FB6500D87E2F /* Documentation */,
 				63B0A3C62F2EC49800D87E2F /* SAM_crm */,
 				63B0A3D42F2EC49A00D87E2F /* SAM_crmTests */,
@@ -116,6 +122,7 @@
 			fileSystemSynchronizedGroups = (
 				63B0A3C62F2EC49800D87E2F /* SAM_crm */,
 				63B0A4622F30FB6500D87E2F /* Documentation */,
+				63B0A5242F326CA700D87E2F /* .claude */,
 			);
 			name = SAM_crm;
 			packageProductDependencies = (
@@ -403,9 +410,22 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_APP_SANDBOX = YES;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = NO;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = NO;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_BLUETOOTH = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = YES;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = YES;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
+				ENABLE_RESOURCE_ACCESS_USB = NO;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSApplicationCategoryType = "";
+				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "\"SAM reads events from the calendar you select to track meetings and reminders and to suggest follow-ups. SAM does not create or edit events without your action.\"";
+				INFOPLIST_KEY_NSContactsUsageDescription = "“SAM uses Contacts as the source of names and contact details so you can link relationships and keep client records accurate. SAM does not modify Contacts without your action.”";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -433,9 +453,22 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_APP_SANDBOX = YES;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = NO;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = NO;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_BLUETOOTH = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = YES;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = YES;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
+				ENABLE_RESOURCE_ACCESS_USB = NO;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSApplicationCategoryType = "";
+				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "\"SAM reads events from the calendar you select to track meetings and reminders and to suggest follow-ups. SAM does not create or edit events without your action.\"";
+				INFOPLIST_KEY_NSContactsUsageDescription = "“SAM uses Contacts as the source of names and contact details so you can link relationships and keep client records accurate. SAM does not modify Contacts without your action.”";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

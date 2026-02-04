@@ -21,7 +21,7 @@ struct ContextDetailView: View {
                 GroupBox("Participants") {
                     VStack(alignment: .leading, spacing: 10) {
                         ForEach(context.participants) { p in
-                            ParticipantRow(participant: p)
+                            ContextParticipantRow(participant: p)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -136,7 +136,7 @@ struct ContextDetailView: View {
 
 // MARK: - Rows
 
-private struct ParticipantRow: View {
+private struct ContextParticipantRow: View {
     let participant: ContextParticipantModel
 
     var body: some View {
