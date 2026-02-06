@@ -9,7 +9,6 @@
 /* Begin PBXBuildFile section */
 		63B0A5432F33013A00D87E2F /* SAMModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63B0A5422F33013A00D87E2F /* SAMModels.swift */; };
 		63B0A5452F33017200D87E2F /* SAMModelEnums.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63B0A5442F33017200D87E2F /* SAMModelEnums.swift */; };
-		63B0A5472F33021300D87E2F /* SAMStoreSeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63B0A5462F33021300D87E2F /* SAMStoreSeed.swift */; };
 		63B0A5492F33022900D87E2F /* SAMModelContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63B0A5482F33022900D87E2F /* SAMModelContainer.swift */; };
 /* End PBXBuildFile section */
 
@@ -36,7 +35,6 @@
 		63B0A3DB2F2EC49A00D87E2F /* SAM_crmUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SAM_crmUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		63B0A5422F33013A00D87E2F /* SAMModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SAMModels.swift; sourceTree = "<group>"; };
 		63B0A5442F33017200D87E2F /* SAMModelEnums.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SAMModelEnums.swift; sourceTree = "<group>"; };
-		63B0A5462F33021300D87E2F /* SAMStoreSeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SAMStoreSeed.swift; sourceTree = "<group>"; };
 		63B0A5482F33022900D87E2F /* SAMModelContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SAMModelContainer.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -104,7 +102,6 @@
 				63B0A3C52F2EC49800D87E2F /* Products */,
 				63B0A5422F33013A00D87E2F /* SAMModels.swift */,
 				63B0A5442F33017200D87E2F /* SAMModelEnums.swift */,
-				63B0A5462F33021300D87E2F /* SAMStoreSeed.swift */,
 				63B0A5482F33022900D87E2F /* SAMModelContainer.swift */,
 			);
 			sourceTree = "<group>";
@@ -266,7 +263,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				63B0A5492F33022900D87E2F /* SAMModelContainer.swift in Sources */,
-				63B0A5472F33021300D87E2F /* SAMStoreSeed.swift in Sources */,
 				63B0A5432F33013A00D87E2F /* SAMModels.swift in Sources */,
 				63B0A5452F33017200D87E2F /* SAMModelEnums.swift in Sources */,
 			);
@@ -442,8 +438,9 @@
 				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
 				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
 				ENABLE_RESOURCE_ACCESS_USB = NO;
-				ENABLE_USER_SELECTED_FILES = readonly;
+				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "SAM-crm-Info.plist";
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "\"SAM reads events from the calendar you select to track meetings and reminders and to suggest follow-ups. SAM does not create or edit events without your action.\"";
 				INFOPLIST_KEY_NSContactsUsageDescription = "“SAM uses Contacts as the source of names and contact details so you can link relationships and keep client records accurate. SAM does not modify Contacts without your action.”";
@@ -485,8 +482,9 @@
 				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
 				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
 				ENABLE_RESOURCE_ACCESS_USB = NO;
-				ENABLE_USER_SELECTED_FILES = readonly;
+				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "SAM-crm-Info.plist";
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "\"SAM reads events from the calendar you select to track meetings and reminders and to suggest follow-ups. SAM does not create or edit events without your action.\"";
 				INFOPLIST_KEY_NSContactsUsageDescription = "“SAM uses Contacts as the source of names and contact details so you can link relationships and keep client records accurate. SAM does not modify Contacts without your action.”";

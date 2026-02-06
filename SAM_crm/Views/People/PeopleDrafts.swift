@@ -18,8 +18,8 @@ struct NewPersonDraft {
 
     /// The stable `CNContact.identifier` resolved at creation time, when
     /// available.  Nil for manually-created people or when Contacts access
-    /// hasn't been granted yet.  Can be filled in later by
-    /// `MockPeopleRuntimeStore.resolveContactIdentifier(personID:)`.
+    /// hasn't been granted yet.  Can be filled in later via
+    /// `PeopleRepository` once the contact is matched.
     var contactIdentifier: String? = nil
 }
 

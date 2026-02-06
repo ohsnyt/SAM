@@ -8,6 +8,7 @@
 import SwiftUI
 import EventKit
 import Contacts
+import SwiftData
 
 private enum PermissionChecker {
     static func calendarAccessGranted() -> Bool {
@@ -102,10 +103,10 @@ struct AppShellView: View {
                 } detail: {
                     switch selection {
                     case .people:
-                        PersonDetailHost(selectedPersonID: UUID(uuidString: selectedPersonIDRaw))
+                        PersonDetailHost(selectedPersonID: selectedPersonIDBinding.wrappedValue)
 
                     case .contexts:
-                        ContextDetailRouter(selectedContextID: UUID(uuidString: selectedContextIDRaw))
+                        ContextDetailRouter(selectedContextID: selectedContextIDBinding.wrappedValue)
 
                     case .awareness:
                         AwarenessHost()
@@ -256,36 +257,77 @@ private struct PermissionNudgeSheet: View {
 
 struct ContextDetailRouter: View {
     let selectedContextID: UUID?
-    @State private var store = MockContextRuntimeStore.shared
+
+    @Query private var contexts: [SamContext]
+
+    init(selectedContextID: UUID?) {
+        self.selectedContextID = selectedContextID
+        if let id = selectedContextID {
+            _contexts = Query(filter: #Predicate<SamContext> { $0.id == id })
+        } else {
+            _contexts = Query()
+        }
+    }
 
     var body: some View {
-        if let id = selectedContextID, let ctx = store.byID[id] {
-            ContextDetailView(context: ctx)
+        if let ctx = contexts.first {
+            ContextDetailView(context: mapToDetailModel(ctx))
         } else {
             ContextDetailPlaceholderView()
         }
     }
-}
 
-enum MockContextStore {
-    static let all: [ContextDetailModel] = [
-        MockContexts.smithHousehold
-        // Add more ContextDetailModel here
-    ]
+    private func mapToDetailModel(_ c: SamContext) -> ContextDetailModel {
+        // Participants
+        let participants: [ContextParticipantModel] = c.participations.compactMap { part in
+            let name = part.person?.displayName ?? "Unknown Person"
+            let pid  = part.person?.id ?? part.id
+            return ContextParticipantModel(
+                id: pid,
+                displayName: name,
+                roleBadges: part.roleBadges,
+                icon: "person.crop.circle",
+                isPrimary: part.isPrimary,
+                note: part.note
+            )
+        }
 
-    static let byID: [UUID: ContextDetailModel] =
-        Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
+        // Products (embedded cards)
+        let products: [ContextProductModel] = c.productCards
 
-    static let listItems: [ContextListItemModel] = all.map { ctx in
-        ContextListItemModel(
-            id: ctx.id,
-            name: ctx.name,
-            subtitle: ctx.listSubtitle,
-            kind: ctx.kind,
-            consentCount: ctx.alerts.consentCount,
-            reviewCount: ctx.alerts.reviewCount,
-            followUpCount: ctx.alerts.followUpCount
+        // Consent requirements (map from SwiftData model)
+        let consents: [ConsentRequirementModel] = c.consentRequirements.map { req in
+            ConsentRequirementModel(
+                id: req.id,
+                title: req.title,
+                reason: req.reason,
+                jurisdiction: req.jurisdiction,
+                status: ConsentRequirementModel.Status(rawValue: req.status.rawValue) ?? .required
+            )
+        }
+
+        // Interactions and insights (embedded arrays — types match directly)
+        let interactions: [InteractionModel] = c.recentInteractions
+        let insights: [ContextInsight] = c.insights
+
+        return ContextDetailModel(
+            id: c.id,
+            name: c.name,
+            kind: c.kind,
+            alerts: ContextAlerts(
+                consentCount: c.consentAlertCount,
+                reviewCount: c.reviewAlertCount,
+                followUpCount: c.followUpAlertCount
+            ),
+            participants: participants,
+            products: products,
+            consentRequirements: consents,
+            recentInteractions: interactions,
+            insights: insights
         )
     }
 }
+
+
+
 

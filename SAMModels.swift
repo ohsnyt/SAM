@@ -509,11 +509,13 @@ final class SamEvidenceItem {
     /// UUIDs of confirmed person links (accepted suggestions or
     /// manual links).  Will become a `@Relationship` to `[SamPerson]`
     /// once the seed path is ready to resolve UUIDs into live objects.
-    var linkedPeople: [UUID] = []
+    @Relationship(deleteRule: .nullify)
+    var linkedPeople: [SamPerson] = []
 
     /// UUIDs of confirmed context links.  Same migration note as
     /// `linkedPeople`.
-    var linkedContexts: [UUID] = []
+    @Relationship(deleteRule: .nullify)
+    var linkedContexts: [SamContext] = []
 
     init(
         id: UUID,
@@ -526,9 +528,7 @@ final class SamEvidenceItem {
         bodyText: String?         = nil,
         participantHints: [ParticipantHint] = [],
         signals: [EvidenceSignal]           = [],
-        proposedLinks: [ProposedLink]       = [],
-        linkedPeople: [UUID]                = [],
-        linkedContexts: [UUID]              = []
+        proposedLinks: [ProposedLink]       = []
     ) {
         self.id               = id
         self.state            = state
@@ -541,8 +541,6 @@ final class SamEvidenceItem {
         self.participantHints = participantHints
         self.signals          = signals
         self.proposedLinks    = proposedLinks
-        self.linkedPeople     = linkedPeople
-        self.linkedContexts   = linkedContexts
     }
 }
 

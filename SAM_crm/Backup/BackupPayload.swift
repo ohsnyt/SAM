@@ -59,11 +59,13 @@ struct BackupPayload: Codable {
     func restore(into container: ModelContainer) {
         let context = ModelContext(container)
 
-        // Clear existing data (simple approach for now)
-        // Note: In a production restore you may want upsert/merge semantics.
+        // Delete in reverse-dependency order: Evidence first (it holds
+        // relationships to People and Contexts), then Contexts, then People.
+        // Deleting a parent before its dependents can trigger unexpected
+        // cascade behaviour in SwiftData.
         let _ = try? context.delete(model: SamEvidenceItem.self)
-        let _ = try? context.delete(model: SamPerson.self)
         let _ = try? context.delete(model: SamContext.self)
+        let _ = try? context.delete(model: SamPerson.self)
 
         // Recreate in order: people, contexts, evidence (to satisfy references)
         let peopleModels = people.map { $0.makeModel() }
@@ -73,6 +75,19 @@ struct BackupPayload: Codable {
         for m in peopleModels { context.insert(m) }
         for m in contextModels { context.insert(m) }
         for m in evidenceModels { context.insert(m) }
+
+        // Re-link evidence relationships by UUID after all models are inserted
+        let peopleByID = Dictionary(uniqueKeysWithValues: peopleModels.map { ($0.id, $0) })
+        let contextsByID = Dictionary(uniqueKeysWithValues: contextModels.map { ($0.id, $0) })
+
+        for (i, dto) in evidence.enumerated() {
+            guard i < evidenceModels.count else { continue }
+            let model = evidenceModels[i]
+            // Link people
+            model.linkedPeople = dto.linkedPeople.compactMap { peopleByID[$0] }
+            // Link contexts
+            model.linkedContexts = dto.linkedContexts.compactMap { contextsByID[$0] }
+        }
 
         try? context.save()
     }
@@ -198,8 +213,8 @@ struct BackupEvidenceItem: Codable, Identifiable {
         self.signals = model.signals
         self.participantHints = model.participantHints
         self.proposedLinks = model.proposedLinks
-        self.linkedPeople = model.linkedPeople
-        self.linkedContexts = model.linkedContexts
+        self.linkedPeople = model.linkedPeople.map { $0.id }
+        self.linkedContexts = model.linkedContexts.map { $0.id }
     }
 
     func makeModel() -> SamEvidenceItem {
@@ -214,9 +229,7 @@ struct BackupEvidenceItem: Codable, Identifiable {
             bodyText: bodyText,
             participantHints: participantHints,
             signals: signals,
-            proposedLinks: proposedLinks,
-            linkedPeople: linkedPeople,
-            linkedContexts: linkedContexts
+            proposedLinks: proposedLinks
         )
     }
 }

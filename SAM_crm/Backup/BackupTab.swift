@@ -219,7 +219,9 @@ private struct ExportBackupSheet: View {
         panel.nameFieldStringValue = "SAM Backup \(shortDate()).sam-backup"
         panel.message = "Choose where to save your encrypted backup."
 
-        guard case .continue = await panel.beginSheetModal(for: NSApp.keyWindow ?? NSWindow()) else {
+        // Use runModal() instead of beginSheetModal to avoid sandbox entitlement requirement
+        let response = panel.runModal()
+        guard response == .OK else {
             // User cancelled
             return
         }
@@ -365,7 +367,9 @@ private struct RestoreBackupSheet: View {
         panel.allowsMultipleSelection = false
         panel.message = "Choose a SAM backup file to restore."
 
-        guard case .continue = await panel.beginSheetModal(for: NSApp.keyWindow ?? NSWindow()) else {
+        // Use runModal() instead of beginSheetModal to avoid sandbox entitlement requirement
+        let response = panel.runModal()
+        guard response == .OK else {
             return   // cancelled
         }
         guard let url = panel.urls.first else { return }

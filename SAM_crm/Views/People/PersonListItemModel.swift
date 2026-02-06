@@ -13,4 +13,5 @@ struct PersonListItemModel: Identifiable {
     let roleBadges: [String]
     let consentAlertsCount: Int
     let reviewAlertsCount: Int
+    let contactIdentifier: String?
 }

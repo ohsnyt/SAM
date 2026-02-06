@@ -120,18 +120,27 @@ enum BackupCrypto {
 import CommonCrypto
 
 private enum PBKDF2 {
+
+    // kCCPRFHmacAlgoSHA256 / CCPseudoRandomFunction are not reliably
+    // bridged to Swift across all platforms, so we use the raw UInt32
+    // value directly.  The value has been 2 since CommonCrypto's
+    // inception; the comment below serves as an auditable marker if
+    // this ever needs revisiting.
+    // Corresponds to: kCCPRFHmacAlgoSHA256 == 2
+    private static let hmacSHA256: UInt32 = 2
+
     static func deriveKey(password: Data, salt: Data, iterations: Int, keyLength: Int) -> Data {
         var derivedKey = [UInt8](repeating: 0, count: keyLength)
 
         let status = password.withUnsafeBytes { passwordPtr -> Int32 in
             salt.withUnsafeBytes { saltPtr -> Int32 in
                 CCKeyDerivationPBKDF(
-                    CCPBKDFAlgorithm(kCCPBKDF2),                        // algorithm
+                    CCPBKDFAlgorithm(kCCPBKDF2),
                     passwordPtr.baseAddress?.assumingMemoryBound(to: Int8.self),
                     password.count,
                     saltPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
                     salt.count,
-                    UInt32(2),                                          // kCCPRFHmacAlgoSHA256 == 2 (not bridged on macOS)
+                    hmacSHA256,
                     UInt32(iterations),
                     &derivedKey,
                     keyLength

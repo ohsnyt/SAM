@@ -4,4 +4,10 @@
    <FileRef
       location = "self:">
    </FileRef>
+   <FileRef
+      location = "group:ContactValidationDebugView.swift">
+   </FileRef>
+   <FileRef
+      location = "group:CONTACT_VALIDATION_FIX.md">
+   </FileRef>
 </Workspace>

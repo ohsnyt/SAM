@@ -280,45 +280,40 @@ private extension InsightCardView {
     }
 }
 
-private struct InsightCardPreviewContent: View {
-    struct InsightCardMock: InsightDisplayable, Identifiable {
-        let id = UUID()
-        var kind: InsightKind
-        var message: String
-        var confidence: Double
-        var interactionsCount: Int
-        var consentsCount: Int
-    }
+// MARK: - Preview
+// Uses PersonInsight directly. 
 
-    let insights: [InsightCardMock] = [
-        .init(kind: InsightKind.relationshipAtRisk,
-              message: "Possible household structure change detected for John and Mary Smith.",
-              confidence: 0.72,
-              interactionsCount: 3,
-              consentsCount: 0),
-        .init(kind: InsightKind.consentMissing,
-              message: "Spousal consent is no longer valid for an active household policy.",
-              confidence: 0.95,
-              interactionsCount: 1,
-              consentsCount: 2),
-        .init(kind: InsightKind.complianceWarning,
-              message: "Household survivorship structure requires review following relationship change.",
-              confidence: 0.88,
-              interactionsCount: 2,
-              consentsCount: 1)
+#Preview("Insight Cards") {
+    let insights: [PersonInsight] = [
+        PersonInsight(
+            kind: .relationshipAtRisk,
+            message: "Possible household structure change detected for John and Mary Smith.",
+            confidence: 0.72,
+            interactionsCount: 3,
+            consentsCount: 0
+        ),
+        PersonInsight(
+            kind: .consentMissing,
+            message: "Spousal consent is no longer valid for an active household policy.",
+            confidence: 0.95,
+            interactionsCount: 1,
+            consentsCount: 2
+        ),
+        PersonInsight(
+            kind: .complianceWarning,
+            message: "Household survivorship structure requires review following relationship change.",
+            confidence: 0.88,
+            interactionsCount: 2,
+            consentsCount: 1
+        )
     ]
 
-    var body: some View {
-        VStack(spacing: 16) {
-            ForEach(insights) { mock in
-                InsightCardView(insight: mock)
-            }
+    VStack(spacing: 16) {
+        ForEach(insights) { insight in
+            InsightCardView(insight: insight)
         }
-        .padding()
-        .frame(maxWidth: 520)
     }
-}
-#Preview {
-    InsightCardPreviewContent()
+    .padding()
+    .frame(maxWidth: 520)
 }
 

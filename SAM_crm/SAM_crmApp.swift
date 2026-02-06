@@ -8,6 +8,7 @@
 import SwiftUI
 import EventKit
 import SwiftData
+import Contacts
 
 @main
 struct SAM_crmApp: App {
@@ -25,14 +26,19 @@ struct SAM_crmApp: App {
                     // so that its writes land in the same store that @Query
                     // observes.  Must happen before the first calendar kick.
                     EvidenceRepository.shared.configure(container: SAMModelContainer.shared)
+                    PeopleRepository.shared.configure(container: SAMModelContainer.shared)
 
                     CalendarImportCoordinator.shared.kick(reason: "app launch")
+                    ContactsImportCoordinator.shared.kick(reason: "app launch")
                 }
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                     CalendarImportCoordinator.shared.kick(reason: "app became active")
                 }
                 .onReceive(NotificationCenter.default.publisher(for: .EKEventStoreChanged)) { _ in
                     CalendarImportCoordinator.shared.kick(reason: "calendar changed")
+                }
+                .onReceive(NotificationCenter.default.publisher(for: .CNContactStoreDidChange)) { _ in
+                    ContactsImportCoordinator.shared.kick(reason: "contacts changed")
                 }
         }
 
@@ -42,3 +48,4 @@ struct SAM_crmApp: App {
         }
     }
 }
+

@@ -9,6 +9,7 @@ import SwiftUI
 
 struct PersonRow: View {
     let person: PersonListItemModel
+    var onLinkContactTapped: (() -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 10) {
@@ -36,6 +37,18 @@ struct PersonRow: View {
             }
             if person.reviewAlertsCount > 0 {
                 Badge(count: person.reviewAlertsCount, systemImage: "exclamationmark.triangle")
+            }
+            if person.contactIdentifier == nil || person.contactIdentifier?.isEmpty == true {
+                Button {
+                    onLinkContactTapped?()
+                } label: {
+                    Label("Unlinked", systemImage: "person.crop.circle.badge.questionmark")
+                        .labelStyle(.iconOnly)
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.orange)
+                .help("Link to an existing contact or create a new one")
+                .accessibilityLabel("Unlinked contact. Tap to link.")
             }
         }
         .padding(.vertical, 2)

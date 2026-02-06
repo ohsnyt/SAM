@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import SwiftData
 
 struct ContextListView: View {
     @Binding var selectedContextID: UUID?
@@ -17,11 +18,23 @@ struct ContextListView: View {
     @AppStorage("sam.contexts.searchText") private var searchText: String = ""
     @AppStorage("sam.contexts.filter") private var filterRaw: String = ContextKindFilter.all.rawValue
 
-    @State private var showingNewContextSheet = false
-    private var store = MockContextRuntimeStore.shared
-    
-    private var contexts: [ContextListItemModel] { store.listItems }
-    
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: [SortDescriptor(\SamContext.name, comparator: .localizedStandard)]) private var allContexts: [SamContext]
+
+    private var contexts: [ContextListItemModel] {
+        allContexts.map { ctx in
+            ContextListItemModel(
+                id: ctx.id,
+                name: ctx.name,
+                subtitle: ctx.kind.displayName,
+                kind: ctx.kind,
+                consentCount: ctx.consentAlertCount,
+                reviewCount: ctx.reviewAlertCount,
+                followUpCount: ctx.followUpAlertCount
+            )
+        }
+    }
+
     private var filter: ContextKindFilter {
         get { ContextKindFilter(rawValue: filterRaw) ?? .all }
         set { filterRaw = newValue.rawValue }
@@ -59,9 +72,16 @@ struct ContextListView: View {
         }
         .sheet(isPresented: $showingNewContextSheet) {
             NewContextSheet(
-                existingContexts: store.listItems,
+                existingContexts: contexts,
                 onCreate: { draft in
-                    let newID = store.add(draft)
+                    let newID = UUID()
+                    let sam = SamContext(
+                        id: newID,
+                        name: draft.name,
+                        kind: draft.kind
+                    )
+                    modelContext.insert(sam)
+                    try? modelContext.save()
                     selectedContextID = newID
                 },
                 onOpenExisting: { existingID in
@@ -78,6 +98,8 @@ struct ContextListView: View {
             ensureSelectionIsVisible()
         }
     }
+
+    @State private var showingNewContextSheet = false
 
     private var filteredContexts: [ContextListItemModel] {
         let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()

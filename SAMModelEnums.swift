@@ -495,6 +495,12 @@ enum InsightKind: String, Codable, Hashable, CaseIterable {
     case complianceWarning
 }
 
+// Both embedded insight structs already carry every property that
+// InsightDisplayable requires; these extensions just declare the
+// conformance so InsightCardView<I> can accept them.
+extension PersonInsight:  InsightDisplayable {}
+extension ContextInsight: InsightDisplayable {}
+
 // ─────────────────────────────────────────────────────────────────────
 // MARK: - IntegrityStatus (design doc §integrity)
 // ─────────────────────────────────────────────────────────────────────

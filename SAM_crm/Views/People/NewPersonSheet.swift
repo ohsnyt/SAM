@@ -286,6 +286,10 @@ struct PersonDuplicateCandidate: Identifiable, Hashable {
     let addressLine: String?
     let phoneLine: String?
 
+    /// The stable CNContact.identifier, when this person is linked.
+    /// Used by LinkContactSheet to decide whether "Merge" is available.
+    var contactIdentifier: String? = nil
+
     var secondaryLine: String? {
         if let a = addressLine, !a.isEmpty { return a }
         if let p = phoneLine, !p.isEmpty { return p }

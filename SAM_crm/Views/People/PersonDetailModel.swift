@@ -35,15 +35,6 @@ struct PersonDetailModel: Identifiable, Codable {
     let recentInteractions: [InteractionChip]
 
     // Insights
-    let insights: [PersonMockInsight]
+    let insights: [PersonInsight]
 }
 
-// MARK: - Supporting types
-
-struct PersonMockInsight: InsightDisplayable, Codable {
-    let kind: InsightKind
-    let message: String
-    let confidence: Double
-    let interactionsCount: Int
-    let consentsCount: Int
-}

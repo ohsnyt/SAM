@@ -16,6 +16,9 @@ struct PersonDetailView: View {
     /// Cached contact photo for the current person.  Nil until the async
     /// lookup completes (or if no photo is available).
     @State private var contactPhoto: Image? = nil
+    
+    /// Flag to trigger a refresh when a contact link is invalidated.
+    @State private var contactWasInvalidated = false
 
     var body: some View {
         ScrollView {
@@ -111,9 +114,53 @@ struct PersonDetailView: View {
         .navigationTitle(person.displayName)
         // Fetch the photo once when the view appears, and again if the
         // selected person changes (e.g. navigating between rows).
+        // Only attempt a lookup when the person is actually linked to a
+        // CNContact — avoids the email-fallback path for unlinked people.
         .task(id: person.id) {
-            contactPhoto = await ContactPhotoFetcher.thumbnail(for: person)
+            guard person.contactIdentifier != nil else {
+                contactPhoto = nil
+                return
+            }
+            
+            // Validate the contact still exists before fetching the photo.
+            let (isValid, photo) = await validateAndFetchPhoto(for: person)
+            
+            if !isValid {
+                contactWasInvalidated = true
+            }
+            
+            contactPhoto = photo
         }
+    }
+    
+    // MARK: - Contact Validation
+    
+    /// Validate that the person's contactIdentifier still points to a valid
+    /// contact, then fetch the photo if valid.
+    ///
+    /// Returns a tuple of (isValid, photo?).  If the contact is invalid,
+    /// the photo will be nil and the caller should notify the user (or
+    /// trigger a UI refresh so the "Unlinked" badge appears).
+    private func validateAndFetchPhoto(for person: PersonDetailModel) async -> (Bool, Image?) {
+        guard let identifier = person.contactIdentifier else {
+            return (true, nil)  // No link to validate
+        }
+        
+        // Validate on a background thread.
+        let isValid = await Task.detached(priority: .userInitiated) {
+            ContactValidator.isValid(identifier)
+        }.value
+        
+        guard isValid else {
+            // Contact was deleted or is inaccessible.
+            // The ContactsSyncManager will clear the link eventually,
+            // but we can surface it immediately here.
+            return (false, nil)
+        }
+        
+        // Contact is valid — proceed with photo fetch.
+        let photo = await ContactPhotoFetcher.thumbnail(for: person)
+        return (true, photo)
     }
 
     // MARK: - Header with watermark photo
@@ -166,6 +213,13 @@ struct PersonDetailView: View {
                         )
                     )
             }
+            else if person.contactIdentifier != nil {
+                // Linked but no image: unobtrusive placeholder at 72x72
+                Image(systemName: "person.circle")
+                    .font(.system(size: 72))
+                    .foregroundStyle(.secondary.opacity(0.33))
+                    .frame(width: 72, height: 72)
+            }
         }
     }
 }
@@ -181,9 +235,10 @@ enum ContactPhotoFetcher {
     /// if no photo is available or Contacts access hasn't been granted.
     ///
     /// Resolution order:
-    ///   1. Direct identifier lookup  (`contactIdentifier`)  — O(1), no predicate.
-    ///   2. Email predicate lookup    (`email`)              — one predicate query.
-    ///   3. nil.
+    ///   1. Validate contact still exists (if identifier provided)
+    ///   2. Direct identifier lookup  (`contactIdentifier`)  — O(1), no predicate.
+    ///   3. Email predicate lookup    (`email`)              — one predicate query.
+    ///   4. nil.
     static func thumbnail(for person: PersonDetailModel) async -> Image? {
         // Guard: we need at least one lookup key.
         guard person.contactIdentifier != nil || person.email != nil else { return nil }
@@ -206,7 +261,14 @@ enum ContactPhotoFetcher {
         let store = CNContactStore()
 
         // 1. Try direct identifier hit first (fastest path).
+        //    But validate it exists before attempting to fetch the image.
         if let identifier = contactIdentifier {
+            // Quick validation: does this contact still exist?
+            guard ContactValidator.isValid(identifier) else {
+                // Contact was deleted; don't attempt to fetch.
+                return nil
+            }
+            
             if let image = imageFromContact(store: store, identifier: identifier) {
                 return image
             }
@@ -259,3 +321,4 @@ enum ContactPhotoFetcher {
         #endif
     }
 }
+

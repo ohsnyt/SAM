@@ -4,11 +4,11 @@
 //
 
 import SwiftUI
+import SwiftData
 #if os(macOS)
 import Contacts
 // import ContactsUI
 import AppKit
-import _SwiftData_SwiftUI
 #endif
 
 struct InboxDetailView: View {
@@ -19,11 +19,8 @@ struct InboxDetailView: View {
     @State private var selectedFilter: LinkSuggestionStatus = .pending
     @State private var alertMessage: String? = nil
     @State private var pendingContactPrompt: PendingContactPrompt? = nil
-    
-    // People & Context stores remain mock-backed for now;
-    // they will migrate to SwiftData in a later phase.
-    private let peopleStore = MockPeopleRuntimeStore.shared
-    private let contextStore = MockContextRuntimeStore.shared
+
+    @Environment(\.modelContext) private var modelContext
 
     #if os(macOS)
     @State private var contactPresenter = ContactPresenter()
@@ -46,8 +43,6 @@ struct InboxDetailView: View {
                 selectedFilter: $selectedFilter,
                 alertMessage: $alertMessage,
                 pendingContactPrompt: $pendingContactPrompt,
-                peopleStore: peopleStore,
-                contextStore: contextStore,
                 contactPresenter: contactPresenter,
                 popoverAnchorView: $popoverAnchorView
             )
@@ -58,9 +53,7 @@ struct InboxDetailView: View {
                 showFullText: $showFullText,
                 selectedFilter: $selectedFilter,
                 alertMessage: $alertMessage,
-                pendingContactPrompt: $pendingContactPrompt,
-                peopleStore: peopleStore,
-                contextStore: contextStore
+                pendingContactPrompt: $pendingContactPrompt
             )
 #endif
         } else {
@@ -126,7 +119,8 @@ struct InboxDetailView: View {
 
     @MainActor
     private func refreshParticipantsNow(evidenceID: UUID) async {
-        guard CNContactStore.authorizationStatus(for: .contacts) == .authorized else { return }
+        // Use centralized permissions manager to check access (no dialog)
+        guard PermissionsManager.shared.hasContactsAccess else { return }
         guard let current = try? repo.item(id: evidenceID) else { return }
         let unverified = current.participantHints.filter { !$0.isVerified && $0.rawEmail != nil }
         guard !unverified.isEmpty else { return }
@@ -134,10 +128,12 @@ struct InboxDetailView: View {
         // Snapshot everything the background closure needs so we don't
         // capture MainActor-isolated state.
         let hints = current.participantHints
+        
+        // Use the shared contact store from PermissionsManager
+        let contactStore = PermissionsManager.shared.contactStore
 
         // --- perform all CNContactStore I/O off the main actor ---
         let resolved: [ResolvedContact] = await Task.detached(priority: .userInitiated) {
-            let contactStore = CNContactStore()
             let keysToFetch: [CNKeyDescriptor] = [
                 CNContactGivenNameKey as CNKeyDescriptor,
                 CNContactFamilyNameKey as CNKeyDescriptor,
@@ -204,24 +200,33 @@ struct InboxDetailView: View {
     /// patch it in.  Either way the person ends up with both fields populated
     /// so `ContactPhotoFetcher` uses the fast identifier path.
     private func ensurePersonExists(displayName: String, email: String, contactIdentifier: String) {
-        let peopleStore = MockPeopleRuntimeStore.shared
+        // SwiftData-backed: find by email, patch identifier if missing, or create.
+        // 1) Try to fetch an existing SamPerson by email.
+        let fetch = FetchDescriptor<SamPerson>(
+            predicate: #Predicate { $0.email == email }
+        )
+        let existing = try? modelContext.fetch(fetch).first
 
-        if let existing = peopleStore.all.first(where: { $0.email == email }) {
-            // Person already exists — just make sure the identifier is set.
-            if existing.contactIdentifier == nil {
-                peopleStore.patchContactIdentifier(personID: existing.id, identifier: contactIdentifier)
+        if let person = existing {
+            if person.contactIdentifier == nil {
+                person.contactIdentifier = contactIdentifier
+                try? modelContext.save()
             }
-        } else {
-            // No Person yet — create one.  Use .individualClient as the
-            // default role; the user can change it later in the People list.
-            let draft = NewPersonDraft(
-                fullName: displayName,
-                rolePreset: .individualClient,
-                email: email,
-                contactIdentifier: contactIdentifier
-            )
-            _ = peopleStore.add(draft)
+            return
         }
+
+        // 2) Create a new person using the resolved contact details.
+        let newPerson = SamPerson(
+            id: UUID(),
+            displayName: displayName,
+            roleBadges: ["Client"],
+            contactIdentifier: contactIdentifier,
+            email: email,
+            consentAlertsCount: 0,
+            reviewAlertsCount: 0
+        )
+        modelContext.insert(newPerson)
+        try? modelContext.save()
     }
     #endif
 }
@@ -250,9 +255,6 @@ private struct InboxDetailLoader: View {
     @Binding var alertMessage: String?
     @Binding var pendingContactPrompt: InboxDetailView.PendingContactPrompt?
 
-    let peopleStore: MockPeopleRuntimeStore
-    let contextStore: MockContextRuntimeStore
-
     #if os(macOS)
     var contactPresenter: ContactPresenter
     @Binding var popoverAnchorView: NSView?
@@ -278,8 +280,6 @@ private struct InboxDetailLoader: View {
                 selectedFilter: $selectedFilter,
                 alertMessage: $alertMessage,
                 pendingContactPrompt: $pendingContactPrompt,
-                peopleStore: peopleStore,
-                contextStore: contextStore,
                 contactPresenter: contactPresenter,
                 popoverAnchorView: $popoverAnchorView,
                 onMarkDone: { try? repo.markDone(item.id) },
@@ -307,8 +307,6 @@ private struct InboxDetailLoader: View {
                 selectedFilter: $selectedFilter,
                 alertMessage: $alertMessage,
                 pendingContactPrompt: $pendingContactPrompt,
-                peopleStore: peopleStore,
-                contextStore: contextStore,
                 onMarkDone: { try? repo.markDone(item.id) },
                 onReopen: { try? repo.reopen(item.id) },
                 onAcceptSuggestion: { try? repo.acceptSuggestion(evidenceID: item.id, suggestionID: $0) },
@@ -364,9 +362,6 @@ private struct LoadedDetailView: View {
     @Binding var alertMessage: String?
     @Binding var pendingContactPrompt: InboxDetailView.PendingContactPrompt?
 
-    let peopleStore: MockPeopleRuntimeStore
-    let contextStore: MockContextRuntimeStore
-
     #if os(macOS)
     var contactPresenter: ContactPresenter
     @Binding var popoverAnchorView: NSView?
@@ -388,8 +383,6 @@ private struct LoadedDetailView: View {
             selectedFilter: $selectedFilter,
             alertMessage: $alertMessage,
             pendingContactPrompt: $pendingContactPrompt,
-            peopleStore: peopleStore,
-            contextStore: contextStore,
             onMarkDone: onMarkDone,
             onReopen: onReopen,
             onAcceptSuggestion: onAcceptSuggestion,

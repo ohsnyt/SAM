@@ -19,6 +19,7 @@ struct SamSettingsView: View {
 
     // Contacts settings (for later)
     @AppStorage("sam.contacts.enabled") private var contactsEnabled: Bool = true
+    @AppStorage("sam.contacts.selectedGroupIdentifier") private var selectedGroupIdentifier: String = ""
 
     /// The tab index that the Settings window should open to.
     /// The static helper writes directly to UserDefaults so that the nudge
@@ -38,24 +39,10 @@ struct SamSettingsView: View {
     private var _selectedTab: Int = 0
 
     @State private var calendars: [EKCalendar] = []
-    @State private var calendarAuthStatus: EKAuthorizationStatus = EKEventStore.authorizationStatus(for: .event)
-    @State private var contactsAuthStatus: CNAuthorizationStatus = CNContactStore.authorizationStatus(for: .contacts)
+    @State private var contactGroups: [CNGroup] = []
 
-    // -------------------------------------------------------------------
-    // Shared, long-lived store instances.  CNContactStore registers an
-    // internal change-watcher on init; creating one inside a View struct
-    // means a fresh instance on every body re-eval, which races the
-    // watcher registration and produces:
-    //   "CNAccountCollectionUpdateWatcher … store registration failed"
-    // A static singleton avoids that entirely.  ContactsResolver already
-    // uses the same pattern for its CNContactStore.
-    //
-    // EKEventStore: use the single shared instance on the coordinator.
-    // On macOS the per-instance auth cache means the instance that
-    // requests permission must be the same one that later queries
-    // calendars/events.
-    // -------------------------------------------------------------------
-    private static let contactStore = CNContactStore()
+    // Use the centralized permissions manager
+    @ObservedObject private var permissions = PermissionsManager.shared
 
     // MARK: - Static helpers
 
@@ -77,13 +64,17 @@ struct SamSettingsView: View {
         TabView(selection: $_selectedTab) {
             PermissionsTab(
                 calendars: $calendars,
-                calendarAuthStatus: $calendarAuthStatus,
-                contactsAuthStatus: $contactsAuthStatus,
+                calendarAuthStatus: permissions.calendarStatus,
+                contactsAuthStatus: permissions.contactsStatus,
                 selectedCalendarID: $selectedCalendarID,
+                selectedGroupIdentifier: $selectedGroupIdentifier,
+                contactGroups: $contactGroups,
                 requestCalendarAccessAndReload: requestCalendarAccessAndReload,
                 requestContactsAccess: requestContactsAccess,
                 reloadCalendars: reloadCalendars,
-                createAndSelectSAMCalendar: createAndSelectSAMCalendar
+                reloadContactGroups: reloadContactGroups,
+                createAndSelectSAMCalendar: createAndSelectSAMCalendar,
+                createAndSelectSAMGroup: createAndSelectSAMGroup
             )
             .tabItem {
                 Label("Permissions", systemImage: "hand.raised")
@@ -93,7 +84,7 @@ struct SamSettingsView: View {
             ImportTab(
                 calendarImportEnabled: $calendarImportEnabled,
                 selectedCalendarID: $selectedCalendarID,
-                calendarAuthStatus: $calendarAuthStatus,
+                calendarAuthStatus: permissions.calendarStatus,
                 pastDays: $pastDays,
                 futureDays: $futureDays,
                 importNow: importCalendarEvidenceNow
@@ -105,7 +96,7 @@ struct SamSettingsView: View {
 
             ContactsTab(
                 contactsEnabled: $contactsEnabled,
-                contactsAuthStatus: $contactsAuthStatus
+                contactsAuthStatus: permissions.contactsStatus
             )
             .tabItem {
                 Label("Contacts", systemImage: "person.crop.circle")
@@ -122,10 +113,13 @@ struct SamSettingsView: View {
         .frame(width: 680, height: 460)
         .onAppear {
             Task { @MainActor in
-                refreshAuthStatuses()
+                permissions.refreshStatus()
                 await Task.yield()
-                if calendarAuthStatus == .fullAccess || calendarAuthStatus == .writeOnly {
+                if permissions.hasCalendarAccess {
                     reloadCalendars()
+                }
+                if permissions.hasContactsAccess {
+                    reloadContactGroups()
                 }
             }
         }
@@ -134,81 +128,37 @@ struct SamSettingsView: View {
     private func importCalendarEvidenceNow() async {
         await CalendarImportCoordinator.shared.importNow()
     }
-    
-    private func statusText(_ status: EKAuthorizationStatus) -> String {
-        switch status {
-        case .notDetermined: return "Not requested"
-        case .restricted:    return "Restricted"
-        case .denied:        return "Denied"
-        case .fullAccess:    return "Granted (Full Access)"
-        case .writeOnly:     return "Granted (Add Only)"
-        @unknown default:    return "Unknown"
-        }
-    }
-
-    private func statusText(_ status: CNAuthorizationStatus) -> String {
-        switch status {
-        case .notDetermined: return "Not requested"
-        case .restricted:    return "Restricted"
-        case .denied:        return "Denied"
-        case .authorized:    return "Granted"
-        case .limited:       return "Limited"
-        @unknown default:    return "Unknown"
-        }
-    }
-
-    private func refreshAuthStatuses() {
-        calendarAuthStatus = EKEventStore.authorizationStatus(for: .event)
-        contactsAuthStatus = CNContactStore.authorizationStatus(for: .contacts)
-    }
 
     // MARK: - Permissions
 
     @MainActor
     private func requestCalendarAccessAndReload() async {
-        do {
-            // Requesting permissions should occur on the main actor for consistent UI/status updates.
-            _ = try await CalendarImportCoordinator.eventStore.requestFullAccessToEvents()
-        } catch {
-            // optional: show a gentle message later
-        }
+        // Request calendar access via the centralized manager
+        let granted = await permissions.requestCalendarAccess()
 
-        // Give the system a moment to commit the new authorization state.
-        // (This avoids cases where authorizationStatus still reads as .notDetermined immediately after the prompt.)
-        await Task.yield()
-
-        refreshAuthStatuses()
-        if calendarAuthStatus == .fullAccess || calendarAuthStatus == .writeOnly {
+        if granted {
             reloadCalendars()
             // Permission just became available — tell the import coordinator
-            // to try again.  (The coordinator's EKEventStore will refresh its
-            // own cache via requestFullAccessToEvents inside importCalendarEvidence.)
+            // to try again.
             CalendarImportCoordinator.shared.kick(reason: "calendar permission granted")
         }
     }
     
     
     private func requestContactsAccess() async {
-        do {
-            _ = try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Bool, Error>) in
-                Self.contactStore.requestAccess(for: .contacts) { granted, error in
-                    if let error {
-                        cont.resume(throwing: error)
-                    } else {
-                        cont.resume(returning: granted)
-                    }
-                }
-            }
-        } catch {
-            // Gentle alert later
+        // Request contacts access via the centralized manager
+        let granted = await permissions.requestContactsAccess()
+        
+        if granted {
+            reloadContactGroups()
+            ContactsImportCoordinator.shared.kick(reason: "contacts permission granted")
         }
-        refreshAuthStatuses()
     }
 
     // MARK: - Calendars
 
     private func reloadCalendars() {
-        calendars = CalendarImportCoordinator.eventStore.calendars(for: .event)
+        calendars = permissions.eventStore.calendars(for: .event)
             .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
 
         // If the selected calendar no longer exists, clear selection.
@@ -219,22 +169,58 @@ struct SamSettingsView: View {
     }
 
     private func createAndSelectSAMCalendar() async {
-        guard calendarAuthStatus == .fullAccess || calendarAuthStatus == .writeOnly else { return }
+        guard permissions.hasCalendarAccess else { return }
 
-        let cal = EKCalendar(for: .event, eventStore: CalendarImportCoordinator.eventStore)
+        let eventStore = permissions.eventStore
+        let cal = EKCalendar(for: .event, eventStore: eventStore)
         cal.title = "SAM"
 
         // Best default: same source as the default calendar for new events.
-        if let source = CalendarImportCoordinator.eventStore.defaultCalendarForNewEvents?.source {
+        if let source = eventStore.defaultCalendarForNewEvents?.source {
             cal.source = source
-        } else if let firstSource = CalendarImportCoordinator.eventStore.sources.first {
+        } else if let firstSource = eventStore.sources.first {
             cal.source = firstSource
         }
 
         do {
-            try CalendarImportCoordinator.eventStore.saveCalendar(cal, commit: true)
+            try eventStore.saveCalendar(cal, commit: true)
             reloadCalendars()
             selectedCalendarID = cal.calendarIdentifier
+        } catch {
+            // Gentle alert later
+        }
+    }
+
+    // MARK: - Contacts Groups
+
+    private func reloadContactGroups() {
+        do {
+            contactGroups = try permissions.contactStore.groups(matching: nil)
+                .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            if !selectedGroupIdentifier.isEmpty,
+               !contactGroups.contains(where: { $0.identifier == selectedGroupIdentifier }) {
+                selectedGroupIdentifier = ""
+            }
+        } catch {
+            contactGroups = []
+        }
+    }
+
+    private func createAndSelectSAMGroup() async {
+        guard permissions.hasContactsAccess else { return }
+        do {
+            let store = permissions.contactStore
+            let newGroup = CNMutableGroup()
+            newGroup.name = "SAM"
+
+            let request = CNSaveRequest()
+            request.add(newGroup, toContainerWithIdentifier: nil)
+            try store.execute(request)
+
+            reloadContactGroups()
+            if let created = contactGroups.first(where: { $0.name.trimmingCharacters(in: .whitespacesAndNewlines) == "SAM" }) {
+                selectedGroupIdentifier = created.identifier
+            }
         } catch {
             // Gentle alert later
         }
@@ -246,15 +232,19 @@ struct SamSettingsView: View {
 private struct PermissionsTab: View {
     @Binding var calendars: [EKCalendar]
 
-    @Binding var calendarAuthStatus: EKAuthorizationStatus
-    @Binding var contactsAuthStatus: CNAuthorizationStatus
+    let calendarAuthStatus: EKAuthorizationStatus
+    let contactsAuthStatus: CNAuthorizationStatus
 
     @Binding var selectedCalendarID: String
+    @Binding var selectedGroupIdentifier: String
+    @Binding var contactGroups: [CNGroup]
 
     let requestCalendarAccessAndReload: () async -> Void
     let requestContactsAccess: () async -> Void
     let reloadCalendars: () -> Void
+    let reloadContactGroups: () -> Void
     let createAndSelectSAMCalendar: () async -> Void
+    let createAndSelectSAMGroup: () async -> Void
 
     var body: some View {
         ScrollView {
@@ -364,12 +354,76 @@ private struct PermissionsTab: View {
                                 .foregroundStyle(.secondary)
                         }
 
-                        Button(contactsAuthStatus == .authorized ? "Granted" : "Request Contacts Access") {
-                            Task { await requestContactsAccess() }
-                        }
-                        .disabled(contactsAuthStatus == .authorized)
+                        HStack(spacing: 12) {
+                            Button(contactsAuthStatus == .authorized ? "Reload Groups" : "Request Contacts Access") {
+                                Task {
+                                    if contactsAuthStatus == .authorized {
+                                        reloadContactGroups()
+                                    } else {
+                                        await requestContactsAccess()
+                                        if contactsAuthStatus == .authorized {
+                                            reloadContactGroups()
+                                        }
+                                    }
+                                }
+                            }
 
-                        Text("SAM uses Contacts as the source of identity. SAM will not modify Contacts without your action.")
+                            if contactsAuthStatus == .authorized {
+                                Button("Sync Now") {
+                                    Task {
+                                        await ContactsImportCoordinator.shared.importNow()
+                                    }
+                                }
+                            }
+                        }
+
+                        HStack {
+                            Text("Observed group")
+                            Spacer()
+                            Picker("", selection: Binding(
+                                get: {
+                                    contactGroups.contains(where: { $0.identifier == selectedGroupIdentifier })
+                                    ? selectedGroupIdentifier
+                                    : ""
+                                },
+                                set: { selectedGroupIdentifier = $0 }
+                            )) {
+                                Text("Not selected").tag("")
+                                ForEach(contactGroups, id: \.identifier) { group in
+                                    Text(group.name).tag(group.identifier)
+                                }
+                            }
+                            .labelsHidden()
+                            .frame(minWidth: 320)
+                            .disabled(contactsAuthStatus != .authorized)
+                            .onChange(of: contactGroups) { _, newValue in
+                                if !selectedGroupIdentifier.isEmpty,
+                                   !newValue.contains(where: { $0.identifier == selectedGroupIdentifier }) {
+                                    selectedGroupIdentifier = ""
+                                }
+                            }
+                            .onChange(of: selectedGroupIdentifier) { _, newValue in
+                                if !newValue.isEmpty {
+                                    ContactsImportCoordinator.shared.kick(reason: "contacts group selection changed")
+                                }
+                            }
+                        }
+
+                        HStack(spacing: 12) {
+                            if !samGroupExists {
+                                Button("Create \"SAM\" Group") {
+                                    Task { await createAndSelectSAMGroup() }
+                                }
+                                .disabled(contactsAuthStatus != .authorized)
+                            }
+
+                            Button("Open Contacts") {
+                                let appURL = URL(fileURLWithPath: "/System/Applications/Contacts.app")
+                                NSWorkspace.shared.open(appURL)
+                            }
+                        }
+
+                        Text("SAM will only read contacts from the selected group.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -383,6 +437,10 @@ private struct PermissionsTab: View {
 
     private var samCalendarExists: Bool {
         calendars.contains { $0.title.trimmingCharacters(in: .whitespacesAndNewlines) == "SAM" }
+    }
+
+    private var samGroupExists: Bool {
+        contactGroups.contains { $0.name.trimmingCharacters(in: .whitespacesAndNewlines) == "SAM" }
     }
 
     private func statusText(_ status: EKAuthorizationStatus) -> String {
@@ -411,7 +469,7 @@ private struct PermissionsTab: View {
 private struct ImportTab: View {
     @Binding var calendarImportEnabled: Bool
     @Binding var selectedCalendarID: String
-    @Binding var calendarAuthStatus: EKAuthorizationStatus
+    let calendarAuthStatus: EKAuthorizationStatus
 
     @Binding var pastDays: Int
     @Binding var futureDays: Int
@@ -476,7 +534,7 @@ private struct ImportTab: View {
 
 private struct ContactsTab: View {
     @Binding var contactsEnabled: Bool
-    @Binding var contactsAuthStatus: CNAuthorizationStatus
+    let contactsAuthStatus: CNAuthorizationStatus
 
     var body: some View {
         ScrollView {
@@ -486,6 +544,15 @@ private struct ContactsTab: View {
                     VStack(alignment: .leading, spacing: 12) {
                         Toggle("Enable Contacts Integration", isOn: $contactsEnabled)
                             .disabled(contactsAuthStatus != .authorized)
+
+                        HStack(spacing: 12) {
+                            Button("Sync Now") {
+                                Task {
+                                    await ContactsImportCoordinator.shared.importNow()
+                                }
+                            }
+                            .disabled(contactsAuthStatus != .authorized)
+                        }
 
                         Text("Contacts integration will let SAM link people to contexts and avoid duplicates. You can keep this off until you are ready.")
                             .font(.caption)
@@ -499,3 +566,5 @@ private struct ContactsTab: View {
         }
     }
 }
+
+

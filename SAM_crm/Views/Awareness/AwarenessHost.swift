@@ -7,13 +7,20 @@
 
 import SwiftUI
 import Foundation
+import SwiftData
+import EventKit
+import Contacts
 
 struct AwarenessHost: View {
 
     // SwiftData-backed evidence repository
     private let evidenceStore = EvidenceRepository.shared
+    @Environment(\.modelContext) private var modelContext
 
     @State private var whySheet: WhySheetItem? = nil
+    @State private var cachedContextNames: [UUID: String] = [:]
+    @State private var cachedPersonNames:  [UUID: String] = [:]
+    @State private var lastEvidenceSignature: Int? = nil
 
     var body: some View {
         AwarenessView(
@@ -31,6 +38,18 @@ struct AwarenessHost: View {
         .sheet(item: $whySheet) { item in
             EvidenceDrillInSheet(title: item.title, evidenceIDs: item.evidenceIDs)
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            cachedContextNames.removeAll()
+            cachedPersonNames.removeAll()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .EKEventStoreChanged)) { _ in
+            cachedContextNames.removeAll()
+            cachedPersonNames.removeAll()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .CNContactStoreDidChange)) { _ in
+            cachedContextNames.removeAll()
+            cachedPersonNames.removeAll()
+        }
     }
 
     // MARK: - Build insights from evidence
@@ -38,6 +57,20 @@ struct AwarenessHost: View {
     private var awarenessInsights: [EvidenceBackedInsight] {
         // “Needs review” should be your triage list (not archived/done).
         let items = (try? evidenceStore.needsReview()) ?? []
+
+        // Compute a simple signature of the evidence set (order-independent)
+        let currentSignature: Int = {
+            var hasher = Hasher()
+            let ids = items.map(\.id).sorted(by: { $0.uuidString < $1.uuidString })
+            for id in ids { hasher.combine(id) }
+            return hasher.finalize()
+        }()
+
+        if lastEvidenceSignature != currentSignature {
+            cachedContextNames.removeAll()
+            cachedPersonNames.removeAll()
+            lastEvidenceSignature = currentSignature
+        }
 
         // Group by the strongest signal “bucket” so we produce a few high-quality cards,
         // rather than dozens of tiny ones.
@@ -99,18 +132,45 @@ struct AwarenessHost: View {
 
     private func bestTargetName(from evidence: [SamEvidenceItem]) -> String? {
         // Prefer confirmed links (user action) over proposed links.
-        let contextStore = MockContextRuntimeStore.shared
-        let peopleStore  = MockPeopleRuntimeStore.shared
+
+        // Collect unique IDs from the evidence set
+        var contextIDs = Set<UUID>()
+        var personIDs  = Set<UUID>()
+        for item in evidence {
+            if let ctxID = item.linkedContexts.first?.id { contextIDs.insert(ctxID) }
+            if let personID = item.linkedPeople.first?.id { personIDs.insert(personID) }
+        }
+
+        // Remove IDs we already have cached
+        contextIDs.subtract(cachedContextNames.keys)
+        personIDs.subtract(cachedPersonNames.keys)
+
+        // Build lookup maps with batched fetches
+        var contextByID: [UUID: SamContext] = [:]
+        if !contextIDs.isEmpty {
+            let fetch = FetchDescriptor<SamContext>(predicate: #Predicate { contextIDs.contains($0.id) })
+            if let contexts = try? modelContext.fetch(fetch) {
+                for c in contexts { contextByID[c.id] = c }
+            }
+            for (id, ctx) in contextByID { cachedContextNames[id] = ctx.name }
+        }
+
+        var personByID: [UUID: SamPerson] = [:]
+        if !personIDs.isEmpty {
+            let fetch = FetchDescriptor<SamPerson>(predicate: #Predicate { personIDs.contains($0.id) })
+            if let people = try? modelContext.fetch(fetch) {
+                for p in people { personByID[p.id] = p }
+            }
+            for (id, person) in personByID { cachedPersonNames[id] = person.displayName }
+        }
 
         // 1) Confirmed context/person links
         for item in evidence {
-            if let ctxID = item.linkedContexts.first,
-               let ctx = contextStore.byID[ctxID] {
-                return ctx.name
+            if let ctxID = item.linkedContexts.first?.id, let name = cachedContextNames[ctxID] {
+                return name
             }
-            if let personID = item.linkedPeople.first,
-               let person = peopleStore.byID[personID] {
-                return person.displayName
+            if let personID = item.linkedPeople.first?.id, let name = cachedPersonNames[personID] {
+                return name
             }
         }
 
@@ -222,3 +282,4 @@ private enum SignalBucket: Hashable {
         }
     }
 }
+

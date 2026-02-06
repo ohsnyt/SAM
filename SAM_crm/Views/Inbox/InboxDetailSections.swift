@@ -9,9 +9,6 @@ struct DetailScrollContent: View {
     @Binding var alertMessage: String?
     @Binding var pendingContactPrompt: InboxDetailView.PendingContactPrompt?
 
-    let peopleStore: MockPeopleRuntimeStore
-    let contextStore: MockContextRuntimeStore
-
     let onMarkDone: () -> Void
     let onReopen: () -> Void
 
@@ -28,7 +25,7 @@ struct DetailScrollContent: View {
                 EvidenceSection(item: item, showFullText: showFullText)
                 ParticipantsSection(item: item, alertMessage: $alertMessage, onSuggestCreateContact: onSuggestCreateContact)
                 SignalsSection(item: item)
-                ConfirmedLinksSection(item: item, peopleStore: peopleStore, contextStore: contextStore, onRemoveConfirmedLink: onRemoveConfirmedLink)
+                ConfirmedLinksSection(item: item, onRemoveConfirmedLink: onRemoveConfirmedLink)
                 SuggestedLinksSection(
                     item: item,
                     selectedFilter: $selectedFilter,
@@ -319,9 +316,33 @@ struct SuggestedLinksSection: View {
 
 struct ConfirmedLinksSection: View {
     let item: SamEvidenceItem
-    let peopleStore: MockPeopleRuntimeStore
-    let contextStore: MockContextRuntimeStore
     let onRemoveConfirmedLink: (EvidenceLinkTarget, UUID, LinkSuggestionStatus) -> Void
+
+    @Query private var people: [SamPerson]
+    @Query private var contexts: [SamContext]
+
+    init(
+        item: SamEvidenceItem,
+        onRemoveConfirmedLink: @escaping (EvidenceLinkTarget, UUID, LinkSuggestionStatus) -> Void
+    ) {
+        self.item = item
+        self.onRemoveConfirmedLink = onRemoveConfirmedLink
+
+        let linkedPeopleIDs = Set(item.linkedPeople.map { $0.id })
+        if linkedPeopleIDs.isEmpty {
+            _people = Query()
+        } else {
+            _people = Query(filter: #Predicate<SamPerson> { linkedPeopleIDs.contains($0.id) })
+        }
+
+        let linkedContextIDs = Set(item.linkedContexts.map { $0.id })
+        if linkedContextIDs.isEmpty {
+            _contexts = Query()
+        } else {
+            _contexts = Query(filter: #Predicate<SamContext> { linkedContextIDs.contains($0.id) })
+        }
+    }
+
     var body: some View {
         GroupBox("Confirmed Links") {
             if item.linkedPeople.isEmpty && item.linkedContexts.isEmpty {
@@ -332,14 +353,14 @@ struct ConfirmedLinksSection: View {
                     if !item.linkedPeople.isEmpty {
                         Text("People")
                             .font(.headline)
-                        ForEach(item.linkedPeople, id: \.self) { pid in
-                            let name = peopleStore.byID[pid]?.displayName ?? "Unknown Person"
+                        ForEach(item.linkedPeople, id: \.id) { p in
+                            let name = p.displayName
                             HStack {
                                 Label(name, systemImage: "person.crop.circle")
                                     .foregroundStyle(.primary)
                                 Spacer()
                                 Button(role: .destructive) {
-                                    onRemoveConfirmedLink(.person, pid, .pending)
+                                    onRemoveConfirmedLink(.person, p.id, .pending)
                                 } label: {
                                     Image(systemName: "xmark.circle")
                                         .foregroundStyle(.secondary)
@@ -348,7 +369,7 @@ struct ConfirmedLinksSection: View {
                                 .help("Remove link")
                                 .contextMenu {
                                     Button("Remove & Decline Suggestion") {
-                                        onRemoveConfirmedLink(.person, pid, .declined)
+                                        onRemoveConfirmedLink(.person, p.id, .declined)
                                     }
                                 }
                             }
@@ -358,14 +379,14 @@ struct ConfirmedLinksSection: View {
                         if !item.linkedPeople.isEmpty { Divider().padding(.vertical, 6) }
                         Text("Contexts")
                             .font(.headline)
-                        ForEach(item.linkedContexts, id: \.self) { cid in
-                            let name = contextStore.byID[cid]?.name ?? "Unknown Context"
+                        ForEach(item.linkedContexts, id: \.id) { c in
+                            let name = c.name
                             HStack {
                                 Label(name, systemImage: "square.3.layers.3d")
                                     .foregroundStyle(.primary)
                                 Spacer()
                                 Button(role: .destructive) {
-                                    onRemoveConfirmedLink(.context, cid, .pending)
+                                    onRemoveConfirmedLink(.context, c.id, .pending)
                                 } label: {
                                     Image(systemName: "xmark.circle")
                                         .foregroundStyle(.secondary)
@@ -374,7 +395,7 @@ struct ConfirmedLinksSection: View {
                                 .help("Remove link")
                                 .contextMenu {
                                     Button("Remove & Decline Suggestion") {
-                                        onRemoveConfirmedLink(.context, cid, .declined)
+                                        onRemoveConfirmedLink(.context, c.id, .declined)
                                     }
                                 }
                             }
@@ -407,3 +428,4 @@ struct ActionsRow: View {
         .padding(.top, 4)
     }
 }
+
