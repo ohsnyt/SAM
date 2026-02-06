@@ -20,13 +20,17 @@ struct SAM_crmApp: App {
                 .task {
                     // Phase-2 seed: populate SwiftData on first launch.
                     // No-op on every subsequent launch.
-                    SAMModelContainer.seedOnFirstLaunch()
+                    seedModelContainerOnFirstLaunch()
 
                     // Wire the shared repository to the app-wide container
                     // so that its writes land in the same store that @Query
                     // observes.  Must happen before the first calendar kick.
                     EvidenceRepository.shared.configure(container: SAMModelContainer.shared)
                     PeopleRepository.shared.configure(container: SAMModelContainer.shared)
+
+                    // Startup safety net: generate insights at launch
+                    CalendarImportCoordinator.kickOnStartup()
+                    ContactsImportCoordinator.kickOnStartup()
 
                     CalendarImportCoordinator.shared.kick(reason: "app launch")
                     ContactsImportCoordinator.shared.kick(reason: "app launch")
@@ -42,10 +46,12 @@ struct SAM_crmApp: App {
                 }
         }
 
-        Settings {
+        #if os(macOS)
+        SwiftUI.Settings {
             SamSettingsView()
                 .modelContainer(SAMModelContainer.shared)
         }
+        #endif
     }
 }
 

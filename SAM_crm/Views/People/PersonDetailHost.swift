@@ -128,6 +128,9 @@ struct PersonDetailHost: View {
                 )
             }
         }
+        
+        // Convert domain insights to view-model insights
+        let insights: [SamInsight] = p.insights
 
         return PersonDetailModel(
             id: p.id,
@@ -140,7 +143,7 @@ struct PersonDetailHost: View {
             contexts: chips,
             responsibilityNotes: p.responsibilityNotes,
             recentInteractions: p.recentInteractions,
-            insights: p.insights
+            insights: insights
         )
     }
 }

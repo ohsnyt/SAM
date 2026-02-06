@@ -6,6 +6,13 @@ import SwiftUI
 final class ContactsImportCoordinator {
 
     static let shared = ContactsImportCoordinator()
+    
+    /// Expose a shared CNContactStore instance for use across the app.
+    /// All Contacts validation should use this instance to avoid duplicate permission requests.
+    ///
+    /// **Thread-safety:** CNContactStore is thread-safe and can be called from any actor context.
+    /// This property is nonisolated to allow use in background tasks without actor hopping.
+    nonisolated static let contactStore: CNContactStore = CNContactStore()
 
     private let peopleRepo = PeopleRepository.shared
     private let permissions = PermissionsManager.shared
@@ -24,7 +31,7 @@ final class ContactsImportCoordinator {
     func kick(reason: String) {
         debounceTask?.cancel()
         debounceTask = Task {
-            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            try? await Task.sleep(for: .seconds(1.5))
             await importIfNeeded(reason: reason)
         }
     }
@@ -51,7 +58,7 @@ final class ContactsImportCoordinator {
         // Check permissions WITHOUT requesting (no dialogs from background tasks)
         guard permissions.hasContactsAccess else { return }
 
-        let contactStore = permissions.contactStore
+        let contactStore = Self.contactStore
 
         // Resolve the selected group
         let groups: [CNGroup]
@@ -93,6 +100,19 @@ final class ContactsImportCoordinator {
             }
         }
 
+        // Trigger Phase 2 insight generation after contacts import (Option A)
+        Task {
+            await DebouncedInsightRunner.shared.run()
+        }
+        DevLogger.info("Contacts import processed \(contacts.count) contacts in group \(group.name)")
+
         lastRunAt = Date().timeIntervalSince1970
+    }
+
+    static func kickOnStartup() {
+        // Generate insights at startup as a safety net
+        Task {
+            await DebouncedInsightRunner.shared.run()
+        }
     }
 }

@@ -37,19 +37,29 @@ final class EvidenceRepository {
     // MARK: - Fetching Items
 
     func needsReview() throws -> [SamEvidenceItem] {
+        // Capture the raw value outside the predicate to avoid key path issues
+        let targetState = "needsReview"
+        let predicate = #Predicate<SamEvidenceItem> { 
+            $0.state.rawValue == targetState
+        }
         let fetchDescriptor = FetchDescriptor<SamEvidenceItem>(
+            predicate: predicate,
             sortBy: [SortDescriptor(\.occurredAt, order: .reverse)]
         )
         return try container.mainContext.fetch(fetchDescriptor)
-            .filter { $0.state == .needsReview }
     }
 
     func done() throws -> [SamEvidenceItem] {
+        // Capture the raw value outside the predicate to avoid key path issues
+        let targetState = "done"
+        let predicate = #Predicate<SamEvidenceItem> { 
+            $0.state.rawValue == targetState
+        }
         let fetchDescriptor = FetchDescriptor<SamEvidenceItem>(
+            predicate: predicate,
             sortBy: [SortDescriptor(\.occurredAt, order: .reverse)]
         )
         return try container.mainContext.fetch(fetchDescriptor)
-            .filter { $0.state == .done }
     }
 
     func item(id: UUID?) throws -> SamEvidenceItem? {

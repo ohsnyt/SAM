@@ -12,18 +12,22 @@
 
 import Foundation
 #if canImport(Contacts)
-import Contacts
+@preconcurrency import Contacts
 #endif
 
 /// Stateless utility for checking contact validity and group membership.
-enum ContactValidator {
+/// All methods are nonisolated and safe to call from any actor context.
+///
+/// **Important:** Always pass the shared CNContactStore from ContactsImportCoordinator
+/// to avoid triggering duplicate permission requests.
+enum ContactValidator: Sendable {
     
     // MARK: - Debugging
     
     /// Returns detailed information about the Contacts authorization status
     /// and basic store access. Use this for debugging when validation isn't
     /// working as expected.
-    static func diagnose() -> String {
+    static func diagnose(using store: CNContactStore) -> String {
         #if canImport(Contacts)
         let status = CNContactStore.authorizationStatus(for: .contacts)
         var output = "Contacts Authorization Status: "
@@ -42,7 +46,6 @@ enum ContactValidator {
         }
         
         // Try a basic store operation to confirm access works
-        let store = CNContactStore()
         do {
             let contacts = try store.unifiedContacts(
                 matching: CNContact.predicateForContacts(matchingName: "test"),
@@ -71,12 +74,12 @@ enum ContactValidator {
     ///
     /// This is a synchronous CNContactStore lookup, so call it from a
     /// background task when checking multiple contacts.
-    static func isValid(_ identifier: String) -> Bool {
+    ///
+    /// - Parameters:
+    ///   - identifier: The CNContact identifier to validate
+    ///   - store: The shared CNContactStore instance (from ContactsImportCoordinator)
+    nonisolated static func isValid(_ identifier: String, using store: CNContactStore) -> Bool {
         #if canImport(Contacts)
-        // Note: On macOS, authorization status checking is less strict than iOS.
-        // We'll attempt the lookup and let CNContactStore handle authorization
-        // internally. If access is denied, the fetch will throw.
-        let store = CNContactStore()
         do {
             // Provide a minimal valid keys array to reduce internal work and avoid issues with empty keys.
             // This also helps reduce the time a high-QoS caller might block on lower-QoS internal work.
@@ -86,11 +89,7 @@ enum ContactValidator {
                 keysToFetch: keys
             )
             return true
-        } catch let error as NSError {
-            // Log the error in debug mode to help diagnose issues
-            if ContactSyncConfiguration.enableDebugLogging {
-                print("⚠️ ContactValidator.isValid(\(identifier)): \(error.localizedDescription)")
-            }
+        } catch {
             // Contact doesn't exist, was deleted, or can't be accessed.
             return false
         }
@@ -102,12 +101,12 @@ enum ContactValidator {
     /// Async convenience that validates on a background priority to avoid
     /// blocking User-initiated threads and potential QoS inversion.
     @discardableResult
-    static func isValidAsync(_ identifier: String) async -> Bool {
+    static func isValidAsync(_ identifier: String, using store: CNContactStore) async -> Bool {
         #if canImport(Contacts)
         return await withCheckedContinuation { continuation in
             let queue = DispatchQueue(label: "ContactValidator.Validation", qos: .utility)
             queue.async {
-                let result = isValid(identifier)
+                let result = isValid(identifier, using: store)
                 continuation.resume(returning: result)
             }
         }
@@ -128,19 +127,18 @@ enum ContactValidator {
     ///
     /// **Note:** Group membership checking is currently only supported on macOS.
     /// On iOS, groups are read-only and this will always return `false`.
-    static func isInSAMGroup(_ identifier: String) -> Bool {
+    ///
+    /// - Parameters:
+    ///   - identifier: The CNContact identifier to check
+    ///   - store: The shared CNContactStore instance (from ContactsImportCoordinator)
+    nonisolated static func isInSAMGroup(_ identifier: String, using store: CNContactStore) -> Bool {
         #if canImport(Contacts) && os(macOS)
-        // Remove the authorization guard - let CNContactStore handle it
-        let store = CNContactStore()
         
         do {
             // 1. Find the SAM group by name.
             let allGroups = try store.groups(matching: nil)
             guard let samGroup = allGroups.first(where: { $0.name == "SAM" }) else {
                 // No SAM group exists.
-                if ContactSyncConfiguration.enableDebugLogging {
-                    print("⚠️ ContactValidator.isInSAMGroup: SAM group not found")
-                }
                 return false
             }
             
@@ -154,10 +152,7 @@ enum ContactValidator {
             // 3. Check if our identifier is in the group.
             return contactsInGroup.contains { $0.identifier == identifier }
             
-        } catch let error as NSError {
-            if ContactSyncConfiguration.enableDebugLogging {
-                print("⚠️ ContactValidator.isInSAMGroup(\(identifier)): \(error.localizedDescription)")
-            }
+        } catch {
             return false
         }
         #else
@@ -169,7 +164,7 @@ enum ContactValidator {
     // MARK: - Combined Validation
     
     /// Validation result with granular failure reasons.
-    enum ValidationResult {
+    enum ValidationResult: Sendable, Equatable {
         case valid
         case contactDeleted
         case notInSAMGroup
@@ -180,16 +175,21 @@ enum ContactValidator {
     ///
     /// Checks both existence and (on macOS) SAM group membership.
     /// Use this when you need to know *why* a link is invalid.
-    static func validate(_ identifier: String, requireSAMGroup: Bool = false) -> ValidationResult {
+    ///
+    /// - Parameters:
+    ///   - identifier: The CNContact identifier to validate
+    ///   - requireSAMGroup: If true, checks SAM group membership (macOS only)
+    ///   - store: The shared CNContactStore instance (from ContactsImportCoordinator)
+    nonisolated static func validate(_ identifier: String, requireSAMGroup: Bool = false, using store: CNContactStore) -> ValidationResult {
         #if canImport(Contacts)
         // 1. Check existence first.
-        guard isValid(identifier) else {
+        guard isValid(identifier, using: store) else {
             return .contactDeleted
         }
         
         // 2. Optionally check group membership (macOS only).
         #if os(macOS)
-        if requireSAMGroup && !isInSAMGroup(identifier) {
+        if requireSAMGroup && !isInSAMGroup(identifier, using: store) {
             return .notInSAMGroup
         }
         #endif

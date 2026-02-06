@@ -61,8 +61,10 @@ struct Example2_DetailViewWithValidation: View {
         }
         
         // Check if contact still exists
+        // Obtain the contact store (nonisolated), then pass it into the detached task
+        let store = ContactsImportCoordinator.contactStore
         let isValid = await Task.detached {
-            ContactValidator.isValid(identifier)
+            ContactValidator.isValid(identifier, using: store)
         }.value
         
         guard isValid else {
@@ -229,8 +231,9 @@ struct Example5_CustomValidation: View {
         validationState = .checking
         
         // Run full validation with detailed results
+        let store = ContactsImportCoordinator.contactStore
         let result = await Task.detached {
-            ContactValidator.validate(identifier, requireSAMGroup: true)
+            ContactValidator.validate(identifier, requireSAMGroup: true, using: store)
         }.value
         
         // Map result to UI state
@@ -333,3 +336,4 @@ private struct InfoBanner: View {
 }
 
 #endif  // DEBUG
+

@@ -154,7 +154,7 @@ These are decisions baked into the current code. The *why* matters more than the
 - **`EvidenceRepository.configure(container:)` must be called before the first calendar import.** The default `init` creates its own private `ModelContainer`. If you skip `configure`, writes are invisible to every `@Query` in the view hierarchy.
 - **`InboxDetailLoader` uses an unfiltered `@Query` + `.first { $0.id == id }`.** Do *not* replace this with a dynamic `#Predicate` in a custom `init` — that combination triggers a Swift 6.2 compiler crash (`recordOpenedTypes` / `TypeOfReference.cpp:656`). The Inbox table is small; the unfiltered fetch is fine.
 - **`.searchable` must not be placed on a bare `List` inside an `HSplitView`.** On macOS it injects a search-bar toolbar region that flickers on selection change. Attach it to the `HSplitView` (macOS) or `NavigationStack` (iOS) instead.
-- **`#Predicate` cannot expand enum-case key paths for `RawRepresentable` types.** All enum comparisons in predicates use `.rawValue` on both sides.
+- **`#Predicate` cannot expand enum-case key paths for `RawRepresentable` types.** All enum comparisons in predicates must compare raw values, and the enum case must be captured outside the predicate to avoid key path creation. Use: `let targetState = "needsReview"; #Predicate<Item> { $0.state.rawValue == targetState }`. Do NOT use `$0.state == .needsReview` or `$0.state == EvidenceTriageState.needsReview` or even `$0.state.rawValue == EvidenceTriageState.needsReview.rawValue` — the macro tries to create key paths to enum cases which always fails. Capture the raw value as a variable or string literal outside the predicate.
 - **Throttle logic is inverted by design.** Periodic triggers (`"app launch"` / `"app became active"`) get the 5-min interval; *everything else* gets 10 sec. Don't flip this back to `reason.contains("changed")` — permission-grant kicks would silently throttle.
 - **`PopoverAnchorView` sets its binding in `updateNSView`, not `makeNSView`.** An async dispatch in `makeNSView` can land during a layout pass and trigger a recursion warning. The identity guard `if anchorView !== nsView` prevents redundant updates.
 - **Settings auth-status props must be `@Binding`, not `let`.** SwiftUI can skip re-rendering stable child identities inside a `TabView`; plain `let` values never update after initial render.
@@ -166,55 +166,100 @@ These are decisions baked into the current code. The *why* matters more than the
 - **`bulkUpsertFromContacts` is best-effort with visible failures.** Per-item errors are logged and returned; the session still commits for successful items. Only `endImportSession` failure aborts everything.
 - **`SAMStoreSeed` Passes 1 & 2 are snapshot-only; Pass 3 is a no-op on fresh installs.** `FixtureSeeder` pre-populates People and Evidence with stable `SeedIDs`; `SAMStoreSeed` only re-maps `proposedLink.targetID`s as a safety net. Don't add new seed logic here — put it in `FixtureSeeder`. Dead helper functions (`inferProductType`, `extractPersonName`) have been removed.
 - **Previews use the real embedded value types directly.** `PersonInsight` and `ContextInsight` already conform to `InsightDisplayable`. Do not create parallel mock insight structs (`ContentViewMockInsight`, `InsightCardMock`, `ContextMockInsight`, etc.) — they are redundant and drift silently.
-- **`ContextDetailModel.insights` is `[ContextInsight]`.** The router in `AppShellView` passes `SamContext.insights` straight through — no `.map` conversion needed. Don't reintroduce a mock insight type here.
+- **`PersonDetailModel` and `ContextDetailModel` are view models, not DTOs.** Neither conforms to `Codable`; the backup layer has dedicated DTOs (`BackupPerson`, `BackupContext`, `BackupInsight`). Both pass `[SamInsight]` directly from SwiftData to views.
 - **`MockEvidenceRuntimeStore.swift` still exists on disk but contains `EvidenceRepository`.** The filename is stale; the class is live.
 - **File panels use `runModal()` not `beginSheetModal(for:)`.** The async sheet API requires sandbox entitlements (`User Selected File: Read/Write`). The legacy synchronous `runModal()` works without additional entitlements and is acceptable for developer/single-user tools.
 - **`UTType.samBackup` is registered in Info.plist.** Exported Type Identifiers entry added (identifier `com.sam-crm.sam-backup`, conforms to `public.data`, extension `sam-backup`). File panels now properly filter `.sam-backup` files.
 - **`ContactValidator` must not check `CNContactStore.authorizationStatus(for:)` before attempting lookups.** On macOS, even when access is granted, this check can fail or return stale values. The correct approach: attempt the `CNContactStore` operation directly and catch errors. Let the framework handle authorization state internally. See `BUG_FIX_SUMMARY.md` for the full story.
+- **Phase 3 schema migration is automatic but non-reversible.** SwiftData performs a lightweight migration from `evidenceIDs: [UUID]` to `@Relationship basedOnEvidence: [SamEvidenceItem]`. Existing insights lose their evidence links on first launch (empty arrays). This is acceptable for developer builds. Production apps would need custom migration code to preserve links.
 
 ---
 
 ## Recently Completed
 
-### ✅ Contact Validation & Sync System (February 2026)
-**Problem:** When contacts were deleted from Contacts.app or removed from the SAM group, their `contactIdentifier` values remained in SAM indefinitely, creating stale links and failed photo fetches.
+- Phase 1: Persisted Insights ✅ **COMPLETE**
+  - Promoted insights from embedded value types to a first-class `@Model`:
+    - `SamInsight` added and included in `SAMModelContainer` schema.
+    - `SamPerson.insights` and `SamContext.insights` now `@Relationship [SamInsight]`.
+  - Updated view models and hosts:
+    - `PersonDetailModel.insights` and `ContextDetailModel.insights` now `[SamInsight]` (not `Codable`).
+    - Removed `Codable` conformance from both `PersonDetailModel` and `ContextDetailModel` (backup layer uses DTOs).
+    - Removed transitional mappers in `PersonDetailHost` and `ContextDetailRouter`; views pass `p.insights`/`c.insights` directly.
+  - Fixtures and one-time seed:
+    - `FixtureSeeder` seeds `SamInsight` for both person and context.
+    - `SAMStoreSeed` creates a default `SamContext` with a `SamInsight`.
+  - Backup/Restore integration:
+    - Added `BackupInsight` DTO.
+    - `BackupPayload.current(using:)` serializes `SamInsight` and relationships.
+    - `BackupPayload.restore(into:)` restores `SamInsight` and re-links to people/contexts via explicit `personByID` and `contextByID` maps.
 
-**Solution implemented:**
-- `ContactValidator` — Low-level validation utilities (contact existence + optional SAM group membership checking on macOS)
-- `ContactsSyncManager` (@Observable) monitors `CNContactStoreDidChange` notifications and automatically validates all linked contacts
-- `ContactSyncStatusView` — UI banner notification when links are auto-cleared
-- `ContactSyncConfiguration` — App-wide settings (SAM group filtering, launch validation, banner timing, debug logging)
-- `ContactValidationModifiers` — SwiftUI convenience helpers for views
+- Phase 2 (initial): Insight generation pipeline
+  - `InsightGenerator` actor scaffolded:
+    - Generates `SamInsight` from `SamEvidenceItem.signals`.
+    - Chooses highest-confidence signal per evidence; stores `evidenceIDs` for explainability.
+    - Avoids duplicates by checking for existing insights referencing the evidence ID.
+  - Integration points:
+    - Option A: Triggered after Calendar and Contacts imports (debounced runner).
+    - Option B: Startup safety net triggers on app launch.
+  - Debounced runner and logging:
+    - `DebouncedInsightRunner` coalesces bursts into a single generator run.
+    - `DevLogger` logs to both `NSLog` and console; extended to append into `DevLogStore` for export.
 
-**Integration points:**
-- `PeopleListView` instantiates and observes `ContactsSyncManager`, displays banner when `lastClearedCount` updates
-- `PersonDetailView` validates contact on navigation (via `.task(id: person.id)`), skips photo fetch if invalid
-- All CNContactStore I/O happens on background threads; SwiftData updates on main actor
+- Phase 2: Mature the insight generation pipeline — ✅ **COMPLETE**
+  - ✅ **Duplicate prevention improved** — Composite uniqueness (person + context + kind) prevents duplicate insights
+  - ✅ **Message templates enhanced** — Context-aware messages include target suffix (person/context name)
+  - ✅ **Evidence aggregation** — Groups related signals into single insights (5 divorce signals → 1 insight with 5 evidence IDs)
+  - ✅ **`DebouncedInsightRunner` implemented** — 1-second debounce window coalesces rapid imports
+  - ✅ **Automatic generation wired** — Both `CalendarImportCoordinator` and `ContactsImportCoordinator` trigger generation after imports
+  - ✅ **Logging enhanced** — Generation lifecycle logged to console for debugging
 
-**Testing surface:** Delete a linked contact in Contacts.app → SAM shows banner and "Unlinked" badge automatically
+- Developer Tooling (Settings → Development) — ✅ **COMPLETE**
+  - New “Development” tab:
+    - Export developer logs as a text file.
+    - Clear logs.
+    - Moved “Restore developer fixture” button from Backup to Development tab.
+  - `DevLogStore`: in-memory log buffer used by `DevLogger`.
 
-**Known issue resolved:** Initial implementation incorrectly called `CNContactStore.authorizationStatus(for: .contacts)` *before* attempting lookups, which caused all contacts to be marked invalid on macOS. Fixed by removing premature auth guards and letting CNContactStore throw errors naturally. See `BUG_FIX_SUMMARY.md`.
+- App Launch Integration
+  - `SAM_crmApp` updated to:
+    - Seed on first launch.
+    - Configure repositories with the shared container.
+    - Startup safety net: run insight generation at launch via `kickOnStartup()` for both Calendar and Contacts coordinators.
+    - Continue to kick imports on launch, app-activate, and change notifications.
 
-**Status:** ✅ Complete, documented (`CONTACT_VALIDATION_README.md`, `COMPLETE.md`, examples in `ContactValidationExamples.swift`)
-
-### ✅ Validation Testing & Refinement (February 2026)
-- Completed end-to-end testing of contact validation across scenarios: deletion in Contacts.app, removal from SAM group (macOS), and normal retention.
-- Enabled and verified SAM group filtering where applicable (macOS); confirmed iOS path validates existence only.
-- Verified banner notifications, performance on larger contact sets, and background revalidation on `CNContactStoreDidChange`.
-- Temporarily enabled debug logging to trace validation; disabled after confirmation.
-- Outcome: Validation is stable and behaving as designed; no further action required.
+- Phase 3: Evidence relationships — ✅ **COMPLETE**
+  - ✅ **Schema update** — Replaced `evidenceIDs: [UUID]` with `@Relationship var basedOnEvidence: [SamEvidenceItem]`
+  - ✅ **Inverse relationship** — Added `supportingInsights` to `SamEvidenceItem`
+  - ✅ **InsightGenerator updated** — All generation methods now link evidence via relationships
+  - ✅ **Backup/Restore integration** — `BackupInsight` DTO preserves evidence links across restore cycles
+  - ✅ **Computed property** — `interactionsCount` now computed from `basedOnEvidence.count`
+  - ✅ **Delete rule** — `.nullify` ensures deleting evidence doesn't cascade-delete insights
 
 ---
 
 ## Planned Tasks (prioritised)
 
-1. **Promote Insights to a first-class `@Model`** — Insights are currently denormalized `PersonInsight` / `ContextInsight` value types embedded on `SamPerson` and `SamContext`. Promoting them enables persistence across launches, dismissal memory, and the explainability links (back to evidence) that the Awareness drill-through needs. **Scope question to resolve first:** `AwarenessHost` derives its own `EvidenceBackedInsight` structs independently from `SamEvidenceItem.signals` — it does not use `PersonInsight` or `ContextInsight` at all. The design doc (`data-model.md §13`) calls for a single unified `Insight @Model` that both Person/Context detail and Awareness share. Confirm that intent before starting; the migration surface is larger than it first appears.
+**Note: Phases 1, 2, and 3 complete. All core insight infrastructure is now fully relational.**
 
-2. **Awareness → Person/Context drill-through** — Tapping an insight card in Awareness should navigate to the relevant person or context. **Blocked on #1:** `EvidenceBackedInsight` currently carries only `evidenceIDs`; it has no person or context reference, so there is nothing to navigate to until Insight becomes a persisted model with explicit `samContact`/`context` relationships. The sidebar-selection bindings (`selectedPersonID`, `selectedContextID`) are also scoped to `AppShellView` and will need to be surfaced via an `EnvironmentKey` or passed closure once the target is known.
+0. **Addressing concurrency issues** Move to 100% Swift 6 concurrency strategies.
 
-3. **Contact validation enhancements (optional)** — Once basic validation is proven stable, consider: (a) inline warnings in `PersonDetailView` when contact is invalid, (b) smart re-linking suggestions when a contact with the same email is created, (c) undo support for auto-unlinking, (d) audit log tracking when/why links were cleared, (e) conflict resolution UI (offer to re-add to SAM group instead of unlinking). See `CONTACT_VALIDATION_README.md` "Future Enhancements" section.
+1. **Testing & Validation** ⏭️ **NEXT**
+   - Add Swift Testing coverage for insight generation with relationships
+   - Add Swift Testing coverage for deduplication with evidence merging
+   - Add Swift Testing coverage for backup/restore preserving evidence links
+   - Test full backup/restore cycle end-to-end
+   - Verify evidence deletion properly nullifies insight links
 
+2. **FixtureSeeder Update**
+   - Update seeded insights to use `basedOnEvidence` relationships instead of `evidenceIDs`
+   - Ensure stable UUIDs for deterministic testing
 
+3. **Developer Tooling Enhancements** (Future)
+   - Persist dev logs to disk (or SwiftData) to survive restarts; add filters and search.
+   - Provide a "Send Logs" helper (share panel or mail composer).
 
+4. **Testing & Monitoring** (Future)
+   - Observe performance; tune debouncing windows based on real-world import frequencies.
+   - Monitor insight generation quality and user feedback.
 
 

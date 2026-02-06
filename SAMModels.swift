@@ -96,7 +96,8 @@ final class SamPerson {
     /// Insights surfaced on this person's detail card.
     /// Will become a @Relationship to a standalone Insight @Model
     /// once insights are promoted (see design doc §13).
-    var insights: [PersonInsight] = []
+    @Relationship(deleteRule: .cascade)
+    var insights: [SamInsight] = []
 
     // ── Context chips (denormalised snapshot for list / search) ────
     /// Lightweight context membership chips.  Kept in sync with
@@ -163,7 +164,8 @@ final class SamContext {
     var recentInteractions: [InteractionModel] = []
 
     /// Insights surfaced on this context's detail card.
-    var insights: [ContextInsight] = []
+    @Relationship(deleteRule: .cascade)
+    var insights: [SamInsight] = []
 
     init(
         id: UUID,
@@ -517,6 +519,10 @@ final class SamEvidenceItem {
     @Relationship(deleteRule: .nullify)
     var linkedContexts: [SamContext] = []
 
+    /// Insights that reference this evidence item as supporting material.
+    /// Phase 3: inverse of SamInsight.basedOnEvidence.
+    var supportingInsights: [SamInsight]? = []
+
     init(
         id: UUID,
         state: EvidenceTriageState,
@@ -541,6 +547,64 @@ final class SamEvidenceItem {
         self.participantHints = participantHints
         self.signals          = signals
         self.proposedLinks    = proposedLinks
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// MARK: - 10. Insights (promoted from embedded value types)
+// ─────────────────────────────────────────────────────────────────────
+/// A persisted AI recommendation or observation attached to a person,
+/// context, or product.
+///
+/// Phase 1: basic @Model with entity relationships and lifecycle.
+/// Phase 3: replaced evidenceIDs with @Relationship to SamEvidenceItem.
+@Model
+final class SamInsight {
+    @Attribute(.unique) var id: UUID
+
+    // Relationships (entity this insight is about)
+    var samPerson: SamPerson?
+    var samContext: SamContext?
+    var product: Product?
+
+    // Core properties
+    var kind: InsightKind
+    var message: String
+    var confidence: Double
+
+    // Supporting evidence (Phase 3: proper relationship)
+    @Relationship(deleteRule: .nullify, inverse: \SamEvidenceItem.supportingInsights)
+    var basedOnEvidence: [SamEvidenceItem] = []
+
+    // Lifecycle
+    var createdAt: Date
+    var dismissedAt: Date?
+
+    // Display helpers (computed from basedOnEvidence)
+    var interactionsCount: Int {
+        basedOnEvidence.count
+    }
+    var consentsCount: Int = 0
+
+    init(
+        id: UUID = UUID(),
+        samPerson: SamPerson? = nil,
+        samContext: SamContext? = nil,
+        product: Product? = nil,
+        kind: InsightKind,
+        message: String,
+        confidence: Double,
+        basedOnEvidence: [SamEvidenceItem] = []
+    ) {
+        self.id = id
+        self.samPerson = samPerson
+        self.samContext = samContext
+        self.product = product
+        self.kind = kind
+        self.message = message
+        self.confidence = confidence
+        self.basedOnEvidence = basedOnEvidence
+        self.createdAt = .now
     }
 }
 

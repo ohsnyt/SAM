@@ -6,8 +6,9 @@
 //
 
 import SwiftUI
+import SwiftData
 
-struct PersonDetailModel: Identifiable, Codable {
+struct PersonDetailModel: Identifiable {
     let id: UUID
     let displayName: String
     let roleBadges: [String]
@@ -34,7 +35,7 @@ struct PersonDetailModel: Identifiable, Codable {
     // Interactions
     let recentInteractions: [InteractionChip]
 
-    // Insights
-    let insights: [PersonInsight]
+    // Insights (Phase 1: promoted to @Model)
+    let insights: [SamInsight]
 }
 

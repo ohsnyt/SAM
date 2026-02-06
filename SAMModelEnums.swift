@@ -336,7 +336,7 @@ enum EvidenceTriageState: String, Codable, CaseIterable {
 /// it gives us compile-time exhaustiveness and lets the UI switch on
 /// kind for icons/titles.  The raw value is the string that would
 /// appear in JSON.
-enum SignalKind: String, Codable, CaseIterable {
+enum SignalKind: String, Codable, CaseIterable, Sendable {
     case unlinkedEvidence
     case divorce
     case comingOfAge
@@ -487,7 +487,7 @@ enum LinkSuggestionStatus: String, Codable, CaseIterable, Hashable {
 
 /// The category of an insight card.  Shared between Person and
 /// Context embedded insights and the Awareness bucketing logic.
-enum InsightKind: String, Codable, Hashable, CaseIterable {
+enum InsightKind: String, Codable, Hashable, CaseIterable, Sendable {
     case followUp
     case consentMissing
     case relationshipAtRisk
@@ -500,6 +500,7 @@ enum InsightKind: String, Codable, Hashable, CaseIterable {
 // conformance so InsightCardView<I> can accept them.
 extension PersonInsight:  InsightDisplayable {}
 extension ContextInsight: InsightDisplayable {}
+extension SamInsight: InsightDisplayable {}
 
 // ─────────────────────────────────────────────────────────────────────
 // MARK: - IntegrityStatus (design doc §integrity)
@@ -514,3 +515,4 @@ enum IntegrityStatus: String, Codable, CaseIterable {
     case needsReview
     case orphaned
 }
+

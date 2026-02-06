@@ -1,6 +1,7 @@
 /// AwarenessView.swift
 ///
 import SwiftUI
+import SwiftData
 
 /// Home screen: a calm, prioritized awareness feed.
 /// Works with any insight type that conforms to InsightDisplayable.
@@ -12,6 +13,8 @@ struct AwarenessView<I: InsightDisplayable>: View {
 
     @State private var searchText: String = ""
     @State private var selection: InsightSelection? = nil
+
+    @Environment(\._awarenessDismissAction) private var dismissAction
 
     var body: some View {
         List(selection: $selection) {
@@ -130,9 +133,22 @@ private extension AwarenessView {
                 .contentShape(Rectangle())     // ensure full-row click target
                 .contextMenu {
                     Button("Why?") { onInsightTapped(insight) }
+                    #if os(macOS)
+                    if let dismiss = dismissAction, let sam = insight as? SamInsight {
+                        Divider()
+                        Button("Dismiss") { dismiss(sam) }
+                    }
+                    #endif
                 }
             } else {
                 card
+                    .contextMenu {
+                        #if os(macOS)
+                        if let dismiss = dismissAction, let sam = insight as? SamInsight {
+                            Button("Dismiss") { dismiss(sam) }
+                        }
+                        #endif
+                    }
             }
         }
     }
@@ -170,3 +186,4 @@ private extension AwarenessView {
 private struct InsightSelection: Hashable {
     let id = UUID()
 }
+

@@ -10,6 +10,65 @@ import EventKit
 @preconcurrency import Contacts
 import SwiftUI
 
+// MARK: - Shared debounced insight runner + logger
+
+/// Actor-based insight runner with automatic debouncing.
+/// Replaces manual locking with Swift 6 actor isolation.
+actor DebouncedInsightRunner {
+    static let shared = DebouncedInsightRunner()
+    
+    private var runningTask: Task<Void, Never>?
+    
+    func run() {
+        // Cancel any existing task to debounce
+        runningTask?.cancel()
+        
+        DevLogger.info("🧠 [InsightRunner] Scheduled insight generation (debounce: 1.0s)")
+        
+        // Start new debounced task
+        runningTask = Task {
+            // Debounce: wait briefly to coalesce bursts of imports
+            try? await Task.sleep(for: .seconds(1.0))
+            
+            // Check for cancellation after sleep
+            guard !Task.isCancelled else {
+                DevLogger.info("⏭️ [InsightRunner] Cancelled during debounce")
+                return
+            }
+            
+            DevLogger.info("🧠 [InsightRunner] Starting insight generation...")
+            let ctx = SAMModelContainer.newContext()
+            let generator = InsightGenerator(context: ctx)
+            await generator.generatePendingInsights()
+            await generator.deduplicateInsights()
+            DevLogger.info("✅ [InsightGenerator] Insight generation complete")
+            
+            // Clear running task (no await needed - actor-isolated)
+            clearRunningTask()
+        }
+    }
+    
+    private func clearRunningTask() {
+        runningTask = nil
+    }
+}
+
+enum DevLogger {
+    nonisolated static func info(_ message: String) {
+        NSLog("[SAM] INFO: %@", message)
+        print("[SAM] INFO: \(message)")
+        // TODO: logToStore when DevLogStore is implemented
+    }
+    nonisolated static func error(_ message: String) {
+        NSLog("[SAM] ERROR: %@", message)
+        print("[SAM] ERROR: \(message)")
+        // TODO: logToStore when DevLogStore is implemented
+    }
+    nonisolated static func log(_ message: String) {
+        info(message)
+    }
+}
+
 @MainActor
 final class CalendarImportCoordinator {
 
@@ -36,7 +95,7 @@ final class CalendarImportCoordinator {
 
         debounceTask = Task {
             // Debounce bursts of EKEventStoreChanged / app activation.
-            try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5s
+            try? await Task.sleep(for: .seconds(1.5))
             await importIfNeeded(reason: reason)
         }
     }
@@ -95,6 +154,8 @@ final class CalendarImportCoordinator {
             windowStart: start,
             windowEnd: end
         )
+        
+        DevLogger.info("Calendar import processed \(events.count) events for window [\(start) – \(end)]")
 
         for event in events {
             let sourceUID = "eventkit:\(event.calendarItemIdentifier)"
@@ -118,7 +179,19 @@ final class CalendarImportCoordinator {
             try? evidenceStore.upsert(item)
         }
 
+        // Trigger Phase 2 insight generation after import completes (Option A)
+        Task {
+            await DebouncedInsightRunner.shared.run()
+        }
+
         lastRunAt = Date().timeIntervalSince1970
+    }
+    
+    static func kickOnStartup() {
+        // Generate insights at startup as a safety net
+        Task {
+            await DebouncedInsightRunner.shared.run()
+        }
     }
 }
 // MARK: - Contacts Resolution

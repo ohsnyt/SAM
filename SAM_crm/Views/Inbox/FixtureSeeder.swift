@@ -78,6 +78,23 @@ enum FixtureSeeder {
         for model in [smithHH, abc] as [any PersistentModel] {
             context.insert(model)
         }
+
+        // ── Seed initial persisted insights (Phase 1) ───────────────
+        let maryFollowUp = SamInsight(
+            samPerson: mary,
+            kind: .followUp,
+            message: "Consider scheduling annual review.",
+            confidence: 0.72,
+        )
+        context.insert(maryFollowUp)
+
+        let smithConsent = SamInsight(
+            samContext: smithHH,
+            kind: .consentMissing,
+            message: "Spousal consent may need review after recent household change.",
+            confidence: 0.88,
+        )
+        context.insert(smithConsent)
     }
 
     // ── Scenario: Divorce / household change ─────────────────────────

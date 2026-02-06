@@ -131,6 +131,27 @@ struct AppShellView: View {
                 showPermissionNudge = true
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            // Handle app activation if needed
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .EKEventStoreChanged)) { _ in
+            // Handle event store changes
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .CNContactStoreDidChange)) { _ in
+            // Handle contact store changes
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .samNavigateToPerson)) { note in
+            if let id = note.object as? UUID {
+                selectionRaw = SidebarItem.people.rawValue
+                selectedPersonIDRaw = id.uuidString
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .samNavigateToContext)) { note in
+            if let id = note.object as? UUID {
+                selectionRaw = SidebarItem.contexts.rawValue
+                selectedContextIDRaw = id.uuidString
+            }
+        }
     }
 
     private var sidebar: some View {
@@ -306,9 +327,9 @@ struct ContextDetailRouter: View {
             )
         }
 
-        // Interactions and insights (embedded arrays — types match directly)
+        // Interactions and insights
         let interactions: [InteractionModel] = c.recentInteractions
-        let insights: [ContextInsight] = c.insights
+        let insights: [SamInsight] = c.insights
 
         return ContextDetailModel(
             id: c.id,
@@ -327,7 +348,4 @@ struct ContextDetailRouter: View {
         )
     }
 }
-
-
-
 

@@ -148,7 +148,8 @@ struct PersonDetailView: View {
         
         // Validate on a background thread.
         let isValid = await Task.detached(priority: .userInitiated) {
-            ContactValidator.isValid(identifier)
+            let store = ContactsImportCoordinator.contactStore
+            return ContactValidator.isValid(identifier, using: store)
         }.value
         
         guard isValid else {
@@ -264,7 +265,9 @@ enum ContactPhotoFetcher {
         //    But validate it exists before attempting to fetch the image.
         if let identifier = contactIdentifier {
             // Quick validation: does this contact still exist?
-            guard ContactValidator.isValid(identifier) else {
+            // Use the shared store from ContactsImportCoordinator
+            let sharedStore = ContactsImportCoordinator.contactStore
+            guard ContactValidator.isValid(identifier, using: sharedStore) else {
                 // Contact was deleted; don't attempt to fetch.
                 return nil
             }

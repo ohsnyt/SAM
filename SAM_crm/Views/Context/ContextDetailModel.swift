@@ -6,8 +6,9 @@
 //
 
 import SwiftUI
+import SwiftData
 
-struct ContextDetailModel: Identifiable, Codable {
+struct ContextDetailModel: Identifiable {
     let id: UUID
     let name: String
     let kind: ContextKind
@@ -17,7 +18,9 @@ struct ContextDetailModel: Identifiable, Codable {
     let products: [ContextProductModel]
     let consentRequirements: [ConsentRequirementModel]
     let recentInteractions: [InteractionModel]
-    let insights: [ContextInsight]
+    
+    // Insights (Phase 1: promoted to @Model)
+    let insights: [SamInsight]
 
     var kindDisplay: String { kind.displayName }
 }
@@ -89,3 +92,4 @@ struct ConsentRequirementModel: Identifiable, Codable {
         }
     }
 }
+

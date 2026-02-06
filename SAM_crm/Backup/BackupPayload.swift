@@ -28,6 +28,7 @@ struct BackupPayload: Codable {
     let evidence: [BackupEvidenceItem]
     let people:   [BackupPerson]
     let contexts: [BackupContext]
+    let insights: [BackupInsight]
 
     // MARK: - Factory (SwiftData)
     @MainActor
@@ -37,10 +38,12 @@ struct BackupPayload: Codable {
         let people: [SamPerson] = (try? context.fetch(FetchDescriptor<SamPerson>())) ?? []
         let contextsModels: [SamContext] = (try? context.fetch(FetchDescriptor<SamContext>())) ?? []
         let evidenceModels: [SamEvidenceItem] = (try? context.fetch(FetchDescriptor<SamEvidenceItem>())) ?? []
+        let insightsModels: [SamInsight] = (try? context.fetch(FetchDescriptor<SamInsight>())) ?? []
 
         let dtoPeople   = people.map(BackupPerson.init)
         let dtoContexts = contextsModels.map(BackupContext.init)
         let dtoEvidence = evidenceModels.map(BackupEvidenceItem.init)
+        let dtoInsights = insightsModels.map(BackupInsight.init)
 
         let iso = ISO8601DateFormatter()
         iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -50,7 +53,8 @@ struct BackupPayload: Codable {
             createdAt: iso.string(from: .now),
             evidence: dtoEvidence,
             people: dtoPeople,
-            contexts: dtoContexts
+            contexts: dtoContexts,
+            insights: dtoInsights
         )
     }
 
@@ -59,34 +63,44 @@ struct BackupPayload: Codable {
     func restore(into container: ModelContainer) {
         let context = ModelContext(container)
 
-        // Delete in reverse-dependency order: Evidence first (it holds
-        // relationships to People and Contexts), then Contexts, then People.
-        // Deleting a parent before its dependents can trigger unexpected
-        // cascade behaviour in SwiftData.
+        // Delete in reverse-dependency order: Insights first (references evidence),
+        // then Evidence (references People and Contexts), then Contexts, then People.
+        let _ = try? context.delete(model: SamInsight.self)
         let _ = try? context.delete(model: SamEvidenceItem.self)
         let _ = try? context.delete(model: SamContext.self)
         let _ = try? context.delete(model: SamPerson.self)
 
-        // Recreate in order: people, contexts, evidence (to satisfy references)
+        // Recreate in order: people, contexts, evidence, insights
         let peopleModels = people.map { $0.makeModel() }
         let contextModels = contexts.map { $0.makeModel() }
         let evidenceModels = evidence.map { $0.makeModel() }
+        let insightModels = insights.map { $0.makeModel() }
 
         for m in peopleModels { context.insert(m) }
         for m in contextModels { context.insert(m) }
         for m in evidenceModels { context.insert(m) }
+        for m in insightModels { context.insert(m) }
 
-        // Re-link evidence relationships by UUID after all models are inserted
+        // Re-link relationships by UUID after all models are inserted
         let peopleByID = Dictionary(uniqueKeysWithValues: peopleModels.map { ($0.id, $0) })
         let contextsByID = Dictionary(uniqueKeysWithValues: contextModels.map { ($0.id, $0) })
+        let evidenceByID = Dictionary(uniqueKeysWithValues: evidenceModels.map { ($0.id, $0) })
 
+        // Link evidence to people/contexts
         for (i, dto) in evidence.enumerated() {
             guard i < evidenceModels.count else { continue }
             let model = evidenceModels[i]
-            // Link people
             model.linkedPeople = dto.linkedPeople.compactMap { peopleByID[$0] }
-            // Link contexts
             model.linkedContexts = dto.linkedContexts.compactMap { contextsByID[$0] }
+        }
+
+        // Link insights to people/contexts/evidence
+        for (i, dto) in insights.enumerated() {
+            guard i < insightModels.count else { continue }
+            let model = insightModels[i]
+            model.samPerson = dto.personID.flatMap { peopleByID[$0] }
+            model.samContext = dto.contextID.flatMap { contextsByID[$0] }
+            model.basedOnEvidence = dto.evidenceIDs.compactMap { evidenceByID[$0] }
         }
 
         try? context.save()
@@ -118,7 +132,7 @@ struct BackupPerson: Codable, Identifiable {
         self.reviewAlertsCount = model.reviewAlertsCount
         self.responsibilityNotes = model.responsibilityNotes
         self.recentInteractions = model.recentInteractions
-        self.insights = model.insights
+        self.insights = [] // migrated to SamInsight @Model (Phase 1)
         self.contextChips = model.contextChips
     }
 
@@ -149,7 +163,7 @@ struct BackupPerson: Codable, Identifiable {
         )
         m.responsibilityNotes = responsibilityNotes
         m.recentInteractions = recentInteractions
-        m.insights = insights
+        // insights migrated to SamInsight; nothing to write back.
         m.contextChips = contextChips
         return m
     }
@@ -174,14 +188,14 @@ struct BackupContext: Codable, Identifiable {
         self.followUpAlertCount = model.followUpAlertCount
         self.productCards = model.productCards
         self.recentInteractions = model.recentInteractions
-        self.insights = model.insights
+        self.insights = [] // migrated to SamInsight @Model (Phase 1)
     }
 
     func makeModel() -> SamContext {
         let m = SamContext(id: id, name: name, kind: kind, consentAlertCount: consentAlertCount, reviewAlertCount: reviewAlertCount, followUpAlertCount: followUpAlertCount)
         m.productCards = productCards
         m.recentInteractions = recentInteractions
-        m.insights = insights
+        // insights migrated to SamInsight; nothing to write back.
         return m
     }
 }
@@ -233,4 +247,46 @@ struct BackupEvidenceItem: Codable, Identifiable {
         )
     }
 }
+
+struct BackupInsight: Codable, Identifiable {
+    let id: UUID
+    let personID: UUID?
+    let contextID: UUID?
+    let productID: UUID?
+    let kind: InsightKind
+    let message: String
+    let confidence: Double
+    let evidenceIDs: [UUID]
+    let createdAt: Date
+    let dismissedAt: Date?
+    let consentsCount: Int
+    init(from model: SamInsight) {
+        self.id = model.id
+        self.personID = model.samPerson?.id
+        self.contextID = model.samContext?.id
+        self.productID = model.product?.id
+        self.kind = model.kind
+        self.message = model.message
+        self.confidence = model.confidence
+        self.evidenceIDs = model.basedOnEvidence.map { $0.id }
+        self.createdAt = model.createdAt
+        self.dismissedAt = model.dismissedAt
+        self.consentsCount = model.consentsCount
+    }
+
+    func makeModel() -> SamInsight {
+        let m = SamInsight(
+            id: id,
+            kind: kind,
+            message: message,
+            confidence: confidence
+        )
+        // Relationships (person, context, evidence) are linked after insert in restore()
+        m.createdAt = createdAt
+        m.dismissedAt = dismissedAt
+        m.consentsCount = consentsCount
+        return m
+    }
+}
+
 

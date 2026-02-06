@@ -42,7 +42,8 @@ struct SamSettingsView: View {
     @State private var contactGroups: [CNGroup] = []
 
     // Use the centralized permissions manager
-    @ObservedObject private var permissions = PermissionsManager.shared
+    // With @Observable, no property wrapper is needed
+    private let permissions = PermissionsManager.shared
 
     // MARK: - Static helpers
 

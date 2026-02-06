@@ -22,19 +22,50 @@ struct AwarenessHost: View {
     @State private var cachedPersonNames:  [UUID: String] = [:]
     @State private var lastEvidenceSignature: Int? = nil
 
-    var body: some View {
-        AwarenessView(
-            insights: awarenessInsights,
-            onInsightTapped: { insight in
-                let e = insight.evidenceIDs
-                guard !e.isEmpty else { return }
+    @AppStorage("sam.awareness.usePersistedInsights") private var usePersistedInsights: Bool = true
 
-                whySheet = WhySheetItem(
-                    title: insight.message,
-                    evidenceIDs: e
+    @Query(filter: #Predicate<SamInsight> { $0.dismissedAt == nil })
+    private var persistedInsights: [SamInsight]
+
+    var body: some View {
+        Group {
+            if usePersistedInsights {
+                AwarenessView(
+                    insights: sortedPersisted,
+                    onInsightTapped: { insight in
+                        if let person = insight.samPerson {
+                            NotificationCenter.default.post(name: .samNavigateToPerson, object: person.id)
+                        } else if let context = insight.samContext {
+                            NotificationCenter.default.post(name: .samNavigateToContext, object: context.id)
+                        } else {
+                            // Phase 3: basedOnEvidence is now a relationship
+                            let e = insight.basedOnEvidence.map(\.id)
+                            guard !e.isEmpty else { return }
+                            whySheet = WhySheetItem(
+                                title: insight.message,
+                                evidenceIDs: e
+                            )
+                        }
+                    }
+                )
+                .environment(\._awarenessDismissAction, { insight in
+                    dismiss(insight)
+                })
+            } else {
+                AwarenessView(
+                    insights: awarenessInsights,
+                    onInsightTapped: { insight in
+                        let e = insight.evidenceIDs
+                        guard !e.isEmpty else { return }
+
+                        whySheet = WhySheetItem(
+                            title: insight.message,
+                            evidenceIDs: e
+                        )
+                    }
                 )
             }
-        )
+        }
         .sheet(item: $whySheet) { item in
             EvidenceDrillInSheet(title: item.title, evidenceIDs: item.evidenceIDs)
         }
@@ -49,6 +80,20 @@ struct AwarenessHost: View {
         .onReceive(NotificationCenter.default.publisher(for: .CNContactStoreDidChange)) { _ in
             cachedContextNames.removeAll()
             cachedPersonNames.removeAll()
+        }
+    }
+
+    private func dismiss(_ insight: SamInsight) {
+        insight.dismissedAt = Date()
+        try? modelContext.save()
+    }
+
+    private var sortedPersisted: [SamInsight] {
+        persistedInsights.sorted { a, b in
+            let pa = priority(for: a.kind)
+            let pb = priority(for: b.kind)
+            if pa != pb { return pa < pb }
+            return a.confidence > b.confidence
         }
     }
 
@@ -280,6 +325,21 @@ private enum SignalBucket: Hashable {
         case .opportunity:
             return "Possible opportunity\(suffix). Consider reviewing options."
         }
+    }
+}
+
+extension Notification.Name {
+    static let samNavigateToPerson  = Notification.Name("samNavigateToPerson")
+    static let samNavigateToContext = Notification.Name("samNavigateToContext")
+}
+private struct AwarenessDismissActionKey: EnvironmentKey {
+    static let defaultValue: ((SamInsight) -> Void)? = nil
+}
+
+extension EnvironmentValues {
+    var _awarenessDismissAction: ((SamInsight) -> Void)? {
+        get { self[AwarenessDismissActionKey.self] }
+        set { self[AwarenessDismissActionKey.self] = newValue }
     }
 }
 

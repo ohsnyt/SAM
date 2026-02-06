@@ -221,9 +221,16 @@ final class ContactsSyncManager {
         isValidating = true
         defer { isValidating = false }
         
+        // Get the shared contact store
+        #if canImport(Contacts)
+        let contactStore = ContactsImportCoordinator.contactStore
+        #endif
+        
         if ContactSyncConfiguration.enableDebugLogging {
             print("📱 ContactsSyncManager: Starting validation...")
-            print(ContactValidator.diagnose())
+            #if canImport(Contacts)
+            print(ContactValidator.diagnose(using: contactStore))
+            #endif
         }
         
         // Fetch all people with a contactIdentifier.
@@ -259,11 +266,16 @@ final class ContactsSyncManager {
             return (person.id, identifier)
         }
         
+        // Capture debug flag BEFORE entering the detached task (main-actor isolated)
+        let debugLoggingEnabled = ContactSyncConfiguration.enableDebugLogging
+        
         // Validate each contact on a background thread (CNContactStore I/O is synchronous).
-        let results: [(UUID, Bool)] = await Task.detached(priority: .userInitiated) { [requireSAMGroupMembership] in
-            // Capture debug flag in a local constant to avoid main-actor cross isolation in Swift 6
-            let debugLoggingEnabled = ContactSyncConfiguration.enableDebugLogging
-
+        let results: [(UUID, Bool)] = await Task.detached(priority: .userInitiated) { [requireSAMGroupMembership, debugLoggingEnabled] in
+            #if canImport(Contacts)
+            // Use the shared contact store
+            let contactStore = ContactsImportCoordinator.contactStore
+            #endif
+            
             return await withTaskGroup(of: (UUID, Bool).self, returning: [(UUID, Bool)].self) { group in
                 for (personID, identifier) in validationTasks {
                     group.addTask {
@@ -271,20 +283,20 @@ final class ContactsSyncManager {
 
                         #if os(macOS)
                         if requireSAMGroupMembership {
-                            let isValidOnMain: Bool = await MainActor.run {
-                                let result = ContactValidator.validate(identifier, requireSAMGroup: true)
-                                if ContactSyncConfiguration.enableDebugLogging {
-                                    print("  • Contact \(identifier): \(result)")
-                                }
-                                switch result {
-                                case .valid: return true
-                                default: return false
-                                }
+                            // ContactValidator is now nonisolated, can call directly
+                            let result = ContactValidator.validate(identifier, requireSAMGroup: true, using: contactStore)
+                            if debugLoggingEnabled {
+                                print("  • Contact \(identifier): \(result)")
                             }
-                            isValid = isValidOnMain
+                            switch result {
+                            case .valid: 
+                                isValid = true
+                            default: 
+                                isValid = false
+                            }
                         } else {
                             // Just check existence.
-                            isValid = await ContactValidator.isValid(identifier)
+                            isValid = ContactValidator.isValid(identifier, using: contactStore)
 
                             if debugLoggingEnabled {
                                 print("  • Contact \(identifier): \(isValid ? "✅ valid" : "❌ invalid")")
@@ -292,7 +304,7 @@ final class ContactsSyncManager {
                         }
                         #else
                         // On iOS, always just check existence (groups are not fully supported).
-                        isValid = ContactValidator.isValid(identifier)
+                        isValid = ContactValidator.isValid(identifier, using: contactStore)
 
                         if debugLoggingEnabled {
                             print("  • Contact \(identifier): \(isValid ? "✅ valid" : "❌ invalid")")
@@ -371,15 +383,24 @@ final class ContactsSyncManager {
         
         // Validate on a background thread.
         let isValid = await Task.detached(priority: .userInitiated) { [requireSAMGroupMembership] in
+            #if canImport(Contacts)
+            let contactStore = ContactsImportCoordinator.contactStore
+            
             #if os(macOS)
             if requireSAMGroupMembership {
-                let result = ContactValidator.validate(identifier, requireSAMGroup: true)
-                return result == .valid
+                let result = ContactValidator.validate(identifier, requireSAMGroup: true, using: contactStore)
+                switch result {
+                case .valid: return true
+                default: return false
+                }
             } else {
-                return ContactValidator.isValid(identifier)
+                return ContactValidator.isValid(identifier, using: contactStore)
             }
             #else
-            return ContactValidator.isValid(identifier)
+            return ContactValidator.isValid(identifier, using: contactStore)
+            #endif
+            #else
+            return false
             #endif
         }.value
         

@@ -13,7 +13,6 @@
 import Foundation
 import EventKit
 import Contacts
-import Combine
 
 /// Notification posted whenever Calendar or Contacts authorization status changes.
 /// Coordinators should listen for this and re-check their permissions.
@@ -22,19 +21,20 @@ extension Notification.Name {
 }
 
 @MainActor
-final class PermissionsManager: ObservableObject {
+@Observable
+final class PermissionsManager {
     
     static let shared = PermissionsManager()
     
-    // MARK: - Published State
+    // MARK: - Observable State
     
     /// Current Calendar authorization status.
     /// Observing this triggers UI updates in Settings.
-    @Published private(set) var calendarStatus: EKAuthorizationStatus
+    private(set) var calendarStatus: EKAuthorizationStatus
     
     /// Current Contacts authorization status.
     /// Observing this triggers UI updates in Settings.
-    @Published private(set) var contactsStatus: CNAuthorizationStatus
+    private(set) var contactsStatus: CNAuthorizationStatus
     
     // MARK: - Derived Properties
     
@@ -186,32 +186,17 @@ final class PermissionsManager: ObservableObject {
     // MARK: - Private: System Observers
     
     private func setupObservers() {
-        // Listen for Calendar database changes (includes permission changes)
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(handleEventStoreChanged),
-            name: .EKEventStoreChanged,
-            object: nil
-        )
-        
-        // Listen for Contacts database changes (includes permission changes)
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(handleContactsChanged),
-            name: .CNContactStoreDidChange,
-            object: nil
-        )
-    }
-    
-    @objc private func handleEventStoreChanged() {
-        Task { @MainActor in
-            refreshStatus()
+        // ✅ Swift 6: Async notification sequences
+        Task {
+            for await _ in NotificationCenter.default.notifications(named: .EKEventStoreChanged) {
+                refreshStatus()
+            }
         }
-    }
-    
-    @objc private func handleContactsChanged() {
-        Task { @MainActor in
-            refreshStatus()
+        
+        Task {
+            for await _ in NotificationCenter.default.notifications(named: .CNContactStoreDidChange) {
+                refreshStatus()
+            }
         }
     }
 }

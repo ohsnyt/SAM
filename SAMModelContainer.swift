@@ -30,6 +30,7 @@ enum SAMSchema {
         Product.self,
         Coverage.self,
         SamEvidenceItem.self,
+        SamInsight.self,
     ]
 }
 
@@ -41,11 +42,11 @@ enum SAMSchema {
 /// a ModelContext should derive one from here.
 enum SAMModelContainer {
 
-    /// The single shared container.  Throws on first access if
-    /// SwiftData cannot create the store (e.g. sandbox path issue).
-    /// In practice this never fails on a correctly-configured macOS
-    /// target.
-    static let shared: ModelContainer = {
+    /// Accessed from multiple actors. SwiftData's ModelContainer is process-wide
+    /// and used only to construct actor-confined ModelContext instances. Marking
+    /// this as `nonisolated(unsafe)` avoids MainActor inference while keeping
+    /// creation of ModelContext on the caller's actor.
+    nonisolated static let shared: ModelContainer = {
         let schema     = Schema(SAMSchema.allModels)
         let config     = ModelConfiguration(
             "SAM",
@@ -64,23 +65,8 @@ enum SAMModelContainer {
     /// Safe to call from any actor; ModelContext itself is not
     /// Sendable so callers should use it only on the actor that
     /// created it.
-    static func newContext() -> ModelContext {
+    nonisolated static func newContext() -> ModelContext {
         ModelContext(shared)
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────
-// MARK: - Seed hook
-// ─────────────────────────────────────────────────────────────────────
-
-extension SAMModelContainer {
-
-    /// Call once at app launch.  Creates a context, runs the seed
-    /// (which is itself a no-op after the first successful run), and
-    /// discards the context.
-    @MainActor
-    static func seedOnFirstLaunch() {
-        let ctx = newContext()
-        SAMStoreSeed.seedIfNeeded(into: ctx)
-    }
-}

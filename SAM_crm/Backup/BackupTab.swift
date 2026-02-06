@@ -72,18 +72,6 @@ struct BackupTab: View {
                     .foregroundStyle(.secondary)
                 }
 
-                #if DEBUG
-                GroupBox("Developer") {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Quickly replace all data with a deterministic developer fixture.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
-                        DeveloperFixtureButton()
-                    }
-                }
-                #endif
-
                 Spacer(minLength: 0)
             }
             .padding(.vertical, 4)
