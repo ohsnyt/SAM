@@ -31,6 +31,8 @@ enum SAMSchema {
         Coverage.self,
         SamEvidenceItem.self,
         SamInsight.self,
+        SamNote.self,  // Added for Phase 5 notes feature
+        SamAnalysisArtifact.self,  // Added for note/email/zoom analysis storage
     ]
 }
 
@@ -47,7 +49,7 @@ enum SAMModelContainer {
     nonisolated(unsafe) private static var _shared: ModelContainer = {
         let schema     = Schema(SAMSchema.allModels)
         let config     = ModelConfiguration(
-            "SAM_v2",  // Changed from "SAM" to force fresh schema
+            "SAM_v5",  // v5: Clean migration after insight message improvements
             schema: schema,
             isStoredInMemoryOnly: false   // persistent on disk
         )
@@ -66,7 +68,7 @@ enum SAMModelContainer {
     nonisolated static func makeFreshContainer() -> ModelContainer {
         let schema = Schema(SAMSchema.allModels)
         let config = ModelConfiguration(
-            "SAM_v2",  // Changed from "SAM" to force fresh schema
+            "SAM_v5",  // v5: Clean migration after insight message improvements
             schema: schema,
             isStoredInMemoryOnly: false
         )
@@ -86,7 +88,7 @@ enum SAMModelContainer {
     nonisolated static let shared: ModelContainer = {
         let schema     = Schema(SAMSchema.allModels)
         let config     = ModelConfiguration(
-            "SAM_v2",  // Changed from "SAM" to force fresh schema
+            "SAM_v5",  // v5: Clean migration after insight message improvements
             schema: schema,
             isStoredInMemoryOnly: false   // persistent on disk
         )

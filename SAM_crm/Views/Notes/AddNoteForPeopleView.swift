@@ -14,6 +14,8 @@ public struct AddNoteForPeopleView: View {
     public init(people: [PersonItem], onSave: @escaping (_ text: String, _ selectedPeopleIDs: [UUID]) -> Void) {
         self.people = people
         self.onSave = onSave
+        // Pre-select all provided people when sheet opens
+        self._selected = State(initialValue: Set(people.map { $0.id }))
     }
 
     public var body: some View {
@@ -28,7 +30,6 @@ public struct AddNoteForPeopleView: View {
                     }
                 }
                 .frame(minWidth: 220, minHeight: 220)
-                .environment(\.editMode, .constant(.active))
 
                 TextEditor(text: $text)
                     .font(.body)

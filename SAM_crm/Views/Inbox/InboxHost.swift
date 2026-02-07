@@ -13,6 +13,12 @@ struct InboxHost: View {
     @State private var selectedEvidenceID: UUID? = nil
     @State private var searchText: String = ""
 
+    @Query private var allPeople: [SamPerson]
+
+    private var notePeopleItems: [AddNoteForPeopleView.PersonItem] {
+        allPeople.map { AddNoteForPeopleView.PersonItem(id: $0.id, displayName: $0.displayName) }
+    }
+
     var body: some View {
         // IMPORTANT:
         // Do not nest NavigationSplitView / NavigationStack inside AppShellView's detail column.
@@ -33,11 +39,13 @@ struct InboxHost: View {
         // properly manage the search-bar lifecycle.
         .searchable(text: $searchText, placement: .toolbar, prompt: "Search inbox")
         .navigationTitle("Inbox")
+        .addNoteToolbar(people: notePeopleItems, container: SAMModelContainer.shared)
         .task {
             if selectedEvidenceID == nil {
-                let newestNeeds = try? repo.needsReview().first?.id
-                let newestDone  = try? repo.done().first?.id
-                selectedEvidenceID = newestNeeds ?? newestDone
+                // Yield to ensure app-wide container configuration completes before first fetch
+                await Task.yield()
+                let pair = repo.newestIDs()
+                selectedEvidenceID = pair.needs ?? pair.done
             }
         }
 #else
@@ -47,15 +55,20 @@ struct InboxHost: View {
             InboxListView(selectedEvidenceID: $selectedEvidenceID, searchText: $searchText)
                 .navigationTitle("Inbox")
                 .searchable(text: $searchText, placement: .toolbar, prompt: "Search inbox")
+                .addNoteToolbar(people: notePeopleItems, container: SAMModelContainer.shared)
                 .navigationDestination(for: UUID.self) { id in
                     InboxDetailView(repo: repo, evidenceID: id)
                 }
         }
         .task {
             if selectedEvidenceID == nil {
-                selectedEvidenceID = try? repo.needsReview().first?.id ?? try? repo.done().first?.id
+                // Yield to ensure app-wide container configuration completes before first fetch
+                await Task.yield()
+                let pair = repo.newestIDs()
+                selectedEvidenceID = pair.needs ?? pair.done
             }
         }
 #endif
     }
 }
+

@@ -259,15 +259,14 @@ enum ContactPhotoFetcher {
         #if canImport(Contacts)
         guard CNContactStore.authorizationStatus(for: .contacts) == .authorized else { return nil }
 
-        let store = CNContactStore()
+        // Use the shared store to avoid triggering duplicate permission dialogs
+        let store = ContactsImportCoordinator.contactStore
 
         // 1. Try direct identifier hit first (fastest path).
         //    But validate it exists before attempting to fetch the image.
         if let identifier = contactIdentifier {
             // Quick validation: does this contact still exist?
-            // Use the shared store from ContactsImportCoordinator
-            let sharedStore = ContactsImportCoordinator.contactStore
-            guard ContactValidator.isValid(identifier, using: sharedStore) else {
+            guard ContactValidator.isValid(identifier, using: store) else {
                 // Contact was deleted; don't attempt to fetch.
                 return nil
             }

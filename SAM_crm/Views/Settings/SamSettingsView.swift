@@ -109,6 +109,14 @@ struct SamSettingsView: View {
                 Label("Backup", systemImage: "lock.shield")
             }
             .tag(3)
+
+            #if DEBUG
+            DevelopmentTab()
+            .tabItem {
+                Label("Development", systemImage: "hammer")
+            }
+            .tag(4)
+            #endif
         }
         .padding(20)
         .frame(width: 680, height: 460)
@@ -362,9 +370,6 @@ private struct PermissionsTab: View {
                                         reloadContactGroups()
                                     } else {
                                         await requestContactsAccess()
-                                        if contactsAuthStatus == .authorized {
-                                            reloadContactGroups()
-                                        }
                                     }
                                 }
                             }

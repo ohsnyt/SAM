@@ -27,6 +27,8 @@ struct AwarenessHost: View {
     @Query(filter: #Predicate<SamInsight> { $0.dismissedAt == nil })
     private var persistedInsights: [SamInsight]
 
+    @Query private var allPeople: [SamPerson]
+
     var body: some View {
         Group {
             if usePersistedInsights {
@@ -66,6 +68,7 @@ struct AwarenessHost: View {
                 )
             }
         }
+        .addNoteToolbar(people: notePeopleItems, container: SAMModelContainer.shared)
         .sheet(item: $whySheet) { item in
             EvidenceDrillInSheet(title: item.title, evidenceIDs: item.evidenceIDs)
         }
@@ -81,6 +84,10 @@ struct AwarenessHost: View {
             cachedContextNames.removeAll()
             cachedPersonNames.removeAll()
         }
+    }
+
+    private var notePeopleItems: [AddNoteForPeopleView.PersonItem] {
+        allPeople.map { AddNoteForPeopleView.PersonItem(id: $0.id, displayName: $0.displayName) }
     }
 
     private func dismiss(_ insight: SamInsight) {

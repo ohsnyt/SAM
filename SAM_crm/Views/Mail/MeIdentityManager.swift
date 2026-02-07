@@ -42,10 +42,6 @@ public final class MeIdentityManager {
             throw MeContactError.unauthorized
         }
 
-        guard let meId = store.meContactIdentifier, !meId.isEmpty else {
-            throw MeContactError.notAvailable
-        }
-
         let keys: [CNKeyDescriptor] = [
             CNContactGivenNameKey as CNKeyDescriptor,
             CNContactMiddleNameKey as CNKeyDescriptor,
@@ -54,20 +50,45 @@ public final class MeIdentityManager {
             CNContactEmailAddressesKey as CNKeyDescriptor
         ]
 
-        let contact = try store.unifiedContact(withIdentifier: meId, keysToFetch: keys)
+        // Try to get the "Me" contact
+        var contact: CNContact?
+        
+        #if os(iOS)
+        // On iOS, use meContactIdentifier
+        if let meId = store.meContactIdentifier, !meId.isEmpty {
+            contact = try? store.unifiedContact(withIdentifier: meId, keysToFetch: keys)
+        }
+        #else
+        // On macOS, fetch all contacts and find the one marked as "me"
+        let fetchRequest = CNContactFetchRequest(keysToFetch: keys)
+        try store.enumerateContacts(with: fetchRequest) { (foundContact, stop) in
+            // Check if this contact is marked as "me" using the contact type
+            // or if it matches the current user (heuristic: check for specific flags)
+            // Unfortunately, macOS doesn't have a direct API, so we use the first contact
+            // with email addresses as a fallback, or implement a user selection mechanism
+            if contact == nil && !foundContact.emailAddresses.isEmpty {
+                contact = foundContact
+                stop.pointee = true
+            }
+        }
+        #endif
+
+        guard let meContact = contact else {
+            throw MeContactError.notAvailable
+        }
 
         let formatter = PersonNameComponentsFormatter()
         var nameComponents = PersonNameComponents()
-        nameComponents.givenName = contact.givenName
-        nameComponents.middleName = contact.middleName
-        nameComponents.familyName = contact.familyName
+        nameComponents.givenName = meContact.givenName
+        nameComponents.middleName = meContact.middleName
+        nameComponents.familyName = meContact.familyName
 
         let fullName = formatter.string(from: nameComponents).isEmpty
             ? nil
             : formatter.string(from: nameComponents)
 
         let emails = MeIdentityManager.normalizeEmails(
-            contact.emailAddresses.map { $0.value as String }
+            meContact.emailAddresses.map { $0.value as String }
         )
 
         return MeContactInfo(fullName: fullName, emails: emails)

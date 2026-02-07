@@ -10,7 +10,7 @@ import EventKit
 @preconcurrency import Contacts
 import SwiftUI
 
-// MARK: - Shared debounced insight runner + logger
+// MARK: - Shared debounced insight runner
 
 /// Actor-based insight runner with automatic debouncing.
 /// Replaces manual locking with Swift 6 actor isolation.
@@ -50,22 +50,6 @@ actor DebouncedInsightRunner {
     
     private func clearRunningTask() {
         runningTask = nil
-    }
-}
-
-enum DevLogger {
-    nonisolated static func info(_ message: String) {
-        NSLog("[SAM] INFO: %@", message)
-        print("[SAM] INFO: \(message)")
-        // TODO: logToStore when DevLogStore is implemented
-    }
-    nonisolated static func error(_ message: String) {
-        NSLog("[SAM] ERROR: %@", message)
-        print("[SAM] ERROR: \(message)")
-        // TODO: logToStore when DevLogStore is implemented
-    }
-    nonisolated static func log(_ message: String) {
-        info(message)
     }
 }
 
@@ -126,15 +110,6 @@ final class CalendarImportCoordinator {
         guard permissions.hasFullCalendarAccess else { return }
 
         let eventStore = permissions.eventStore
-
-        // Ensure *this* EKEventStore instance has been granted access.
-        // requestFullAccessToEvents() is idempotent when permission is
-        // already granted — it just resolves immediately.
-        do {
-            try await eventStore.requestFullAccessToEvents()
-        } catch {
-            return
-        }
 
         guard let calendar = eventStore.calendars(for: .event)
             .first(where: { $0.calendarIdentifier == selectedCalendarID }) else { return }

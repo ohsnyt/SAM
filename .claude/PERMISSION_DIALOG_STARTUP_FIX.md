@@ -3,21 +3,43 @@
 ## Problem
 The Contacts permission system dialog was appearing at app startup, before the user had a chance to go through the Settings → Permissions flow. This created a confusing experience where users were prompted for permissions without context.
 
-## Root Cause
+## Root Causes
+
+### Issue 1: New CNContactStore Instance
 In `PersonDetailView.swift`, the `ContactPhotoFetcher.fetchThumbnailSync()` method was creating a **new CNContactStore instance** on every photo fetch:
 
 ```swift
 let store = CNContactStore()  // ❌ Creates new store, can trigger permission dialog
 ```
 
-Even though the code checked authorization status first, creating a new store instance could trigger the system permission dialog.
+### Issue 2: ContactValidator Missing Authorization Checks ⚠️ **PRIMARY CULPRIT**
+In `ContactValidator.swift`, the `isValid()` and `isInSAMGroup()` methods were calling CNContactStore APIs **without checking authorization first**:
+
+```swift
+// In ContactValidator.isValid()
+_ = try store.unifiedContact(withIdentifier: identifier, keysToFetch: keys)  // ❌ No auth check!
+```
+
+This was the real problem because `PersonDetailView` calls `ContactValidator.isValid()` to validate contacts before fetching photos, triggering the permission dialog.
 
 ## Solution
+
+### Fix 1: Use Shared Store
 Changed `ContactPhotoFetcher.fetchThumbnailSync()` to use the **shared CNContactStore** from `ContactsImportCoordinator`:
 
 ```swift
 // Use the shared store to avoid triggering duplicate permission dialogs
 let store = ContactsImportCoordinator.contactStore  // ✅ Uses singleton
+```
+
+### Fix 2: Add Authorization Guards to ContactValidator ✅ **KEY FIX**
+Added authorization checks at the top of both validation methods:
+
+```swift
+// In ContactValidator.isValid()
+guard CNContactStore.authorizationStatus(for: .contacts) == .authorized else {
+    return false  // ✅ Exit early without triggering dialog
+}
 ```
 
 ## Why This Works
@@ -43,8 +65,26 @@ Using a shared store instance:
 - **After:** `let store = ContactsImportCoordinator.contactStore`
 
 Also cleaned up redundant store references:
-- Removed duplicate `sharedStore` variable on line 275
+- Removed duplicate `sharedStore` variable
 - Now uses single `store` variable consistently throughout method
+
+### ContactValidator.swift ✅ **CRITICAL FIX**
+
+**Line 78** - `isValid()` method:
+- **Added:** Authorization check before any CNContactStore operations
+```swift
+guard CNContactStore.authorizationStatus(for: .contacts) == .authorized else {
+    return false
+}
+```
+
+**Line 130** - `isInSAMGroup()` method:
+- **Added:** Authorization check before any CNContactStore operations
+```swift
+guard CNContactStore.authorizationStatus(for: .contacts) == .authorized else {
+    return false
+}
+```
 
 ## Permission Flow Now
 
@@ -59,10 +99,44 @@ Also cleaned up redundant store references:
 
 ### What Was Happening (Before Fix)
 1. **App launches**
-2. **PersonDetailView loads** and tries to fetch contact photo
-3. **New CNContactStore() created** 
-4. **System permission dialog appears** ❌ (unexpected, no context)
-5. User confused about why permissions are being requested
+2. **PersonDetailView loads** and tries to validate/fetch contact photo
+3. **Calls `ContactValidator.isValid()`** to check if contact exists
+4. **`ContactValidator.isValid()` immediately calls `store.unifiedContact()`** ❌
+5. **System permission dialog appears** ❌ (unexpected, no context)
+6. User confused about why permissions are being requested
+
+## Call Chain Analysis
+
+### The Permission Dialog Trigger Path
+```
+App Launch
+  → PersonDetailView.body
+    → .task(id: person.id)
+      → validateAndFetchPhoto()
+        → ContactValidator.isValid(identifier, using: store)  ⚠️
+          → store.unifiedContact(withIdentifier:keysToFetch:)  💥 DIALOG!
+```
+
+### Why Authorization Checks Are Critical
+
+**Safe calls (no dialog):**
+```swift
+CNContactStore.authorizationStatus(for: .contacts)  // ✅ Read-only check
+EKEventStore.authorizationStatus(for: .event)       // ✅ Read-only check
+```
+
+**Unsafe calls (trigger dialog if not authorized):**
+```swift
+store.unifiedContact(withIdentifier:keysToFetch:)           // ❌ Fetch contact
+store.unifiedContacts(matching:keysToFetch:)                // ❌ Query contacts
+store.enumerateContacts(with:)                              // ❌ Enumerate
+store.groups(matching:)                                      // ❌ Fetch groups
+store.execute(saveRequest)                                   // ❌ Save/modify
+eventStore.calendars(for:)                                   // ❌ Fetch calendars
+eventStore.events(matching:)                                 // ❌ Fetch events
+```
+
+**The Rule:** Always check authorization BEFORE any CNContactStore/EKEventStore data access.
 
 ## Related Components
 

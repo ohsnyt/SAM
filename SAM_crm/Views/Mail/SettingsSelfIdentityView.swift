@@ -1,5 +1,6 @@
 import SwiftUI
 import Contacts
+import Combine
 
 public class SelfIdentitySettings: ObservableObject {
     @Published var selfEmails: [String] = []
@@ -64,7 +65,9 @@ public struct SettingsSelfIdentityView: View {
                 TextField("Add new email", text: $newEmail)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
                     .disableAutocorrection(true)
+                #if os(iOS)
                     .textInputAutocapitalization(.never)
+                #endif
                 
                 Button("Add") {
                     let normalized = newEmail.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()

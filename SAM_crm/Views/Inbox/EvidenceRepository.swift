@@ -10,7 +10,6 @@ import Foundation
 import Observation
 import SwiftData
 
-@MainActor
 @Observable
 final class EvidenceRepository {
     static let shared = EvidenceRepository()
@@ -23,7 +22,26 @@ final class EvidenceRepository {
     private var container: ModelContainer
 
     init(container: ModelContainer? = nil) {
-        self.container = container ?? (try! ModelContainer(for: SamEvidenceItem.self))
+#if DEBUG
+        // In DEBUG builds, allow a fallback container but include the full schema
+        // to avoid schema mismatches during ad-hoc testing.
+        if let container {
+            self.container = container
+        } else {
+            // Use the full schema to match SAMModelContainer
+            let schema = Schema(SAMSchema.allModels)
+            let config = ModelConfiguration(
+                "SAM_v2",
+                schema: schema,
+                isStoredInMemoryOnly: false
+            )
+            self.container = try! ModelContainer(for: schema, configurations: config)
+        }
+#else
+        // In production, the repository must be configured with the app-wide container
+        precondition(container != nil, "EvidenceRepository must be configured with the app-wide ModelContainer before use.")
+        self.container = container!
+#endif
     }
 
     /// Replaces the container with the app-wide one.  Must be called
@@ -31,50 +49,82 @@ final class EvidenceRepository {
     /// this repository's writes land in the same store that SwiftUI's
     /// `@Query` properties observe.
     func configure(container: ModelContainer) {
+        print("[EvidenceRepository] configure(container:) with:", Unmanaged.passUnretained(container).toOpaque())
         self.container = container
     }
 
     // MARK: - Fetching Items
 
+    @MainActor
+    func newestIDs() -> (needs: UUID?, done: UUID?) {
+        print("[EvidenceRepository] newestIDs() using container:", Unmanaged.passUnretained(container).toOpaque())
+        let ctx = ModelContext(container)
+        do {
+            let needsPredicate = #Predicate<SamEvidenceItem> { $0.stateRawValue == "needsReview" }
+            let needsFetch = FetchDescriptor<SamEvidenceItem>(
+                predicate: needsPredicate,
+                sortBy: [SortDescriptor(\.occurredAt, order: .reverse)]
+            )
+            let needs = try ctx.fetch(needsFetch).first?.id
+
+            let donePredicate = #Predicate<SamEvidenceItem> { $0.stateRawValue == "done" }
+            let doneFetch = FetchDescriptor<SamEvidenceItem>(
+                predicate: donePredicate,
+                sortBy: [SortDescriptor(\.occurredAt, order: .reverse)]
+            )
+            let done = try ctx.fetch(doneFetch).first?.id
+
+            return (needs, done)
+        } catch {
+            return (nil, nil)
+        }
+    }
+
+    @MainActor
     func needsReview() throws -> [SamEvidenceItem] {
-        // Capture the raw value outside the predicate to avoid key path issues
+        let ctx = ModelContext(container)
+        // Use stored property directly to avoid predicate macro issues
         let targetState = "needsReview"
-        let predicate = #Predicate<SamEvidenceItem> { 
-            $0.state.rawValue == targetState
+        let predicate = #Predicate<SamEvidenceItem> {
+            $0.stateRawValue == targetState
         }
         let fetchDescriptor = FetchDescriptor<SamEvidenceItem>(
             predicate: predicate,
             sortBy: [SortDescriptor(\.occurredAt, order: .reverse)]
         )
-        return try container.mainContext.fetch(fetchDescriptor)
+        return try ctx.fetch(fetchDescriptor)
     }
 
+    @MainActor
     func done() throws -> [SamEvidenceItem] {
-        // Capture the raw value outside the predicate to avoid key path issues
+        let ctx = ModelContext(container)
+        // Use stored property directly to avoid predicate macro issues
         let targetState = "done"
-        let predicate = #Predicate<SamEvidenceItem> { 
-            $0.state.rawValue == targetState
+        let predicate = #Predicate<SamEvidenceItem> {
+            $0.stateRawValue == targetState
         }
         let fetchDescriptor = FetchDescriptor<SamEvidenceItem>(
             predicate: predicate,
             sortBy: [SortDescriptor(\.occurredAt, order: .reverse)]
         )
-        return try container.mainContext.fetch(fetchDescriptor)
+        return try ctx.fetch(fetchDescriptor)
     }
 
+    @MainActor
     func item(id: UUID?) throws -> SamEvidenceItem? {
         guard let id else { return nil }
+        let ctx = ModelContext(container)
         let fetchDescriptor = FetchDescriptor<SamEvidenceItem>(
             predicate: #Predicate { $0.id == id }
         )
-        return try container.mainContext.fetch(fetchDescriptor).first
+        return try ctx.fetch(fetchDescriptor).first
     }
 
     // MARK: - Upsert & Prune (Calendar import)
 
     /// Inserts or updates a SamEvidenceItem by sourceUID when present; otherwise inserts.
     func upsert(_ newItem: SamEvidenceItem) throws {
-        let ctx = container.mainContext
+        let ctx = ModelContext(container)
         if let uid = newItem.sourceUID {
             let fetch = FetchDescriptor<SamEvidenceItem>(
                 predicate: #Predicate { $0.sourceUID == uid }
@@ -100,7 +150,7 @@ final class EvidenceRepository {
 
     /// Deletes calendar-sourced evidence in the given window whose sourceUID is not in currentUIDs.
     func pruneCalendarEvidenceNotIn(_ currentUIDs: Set<String>, windowStart: Date, windowEnd: Date) {
-        let ctx = container.mainContext
+        let ctx = ModelContext(container)
         // Date comparisons are fine in #Predicate; source is a
         // RawRepresentable enum so we filter that in Swift after fetch.
         let fetch = FetchDescriptor<SamEvidenceItem>(
@@ -120,43 +170,60 @@ final class EvidenceRepository {
 
     // MARK: - Mutations
 
+    @MainActor
     func markDone(_ evidenceID: UUID) throws {
-        guard let item = try item(id: evidenceID) else { return }
+        let ctx = ModelContext(container)
+        let fetch = FetchDescriptor<SamEvidenceItem>(predicate: #Predicate { $0.id == evidenceID })
+        guard let item = try ctx.fetch(fetch).first else { return }
         item.state = .done
-        try container.mainContext.save()
+        try ctx.save()
     }
 
+    @MainActor
     func reopen(_ evidenceID: UUID) throws {
-        guard let item = try item(id: evidenceID) else { return }
+        let ctx = ModelContext(container)
+        let fetch = FetchDescriptor<SamEvidenceItem>(predicate: #Predicate { $0.id == evidenceID })
+        guard let item = try ctx.fetch(fetch).first else { return }
         item.state = .needsReview
-        try container.mainContext.save()
+        try ctx.save()
     }
 
+    @MainActor
     func linkToPerson(evidenceID: UUID, personID: UUID) throws {
-        guard let item = try item(id: evidenceID) else { return }
+        let ctx = ModelContext(container)
+        // Fetch item
+        let itemFetch = FetchDescriptor<SamEvidenceItem>(predicate: #Predicate { $0.id == evidenceID })
+        guard let item = try ctx.fetch(itemFetch).first else { return }
         // Fetch person
-        let fetch = FetchDescriptor<SamPerson>(predicate: #Predicate { $0.id == personID })
-        guard let person = try container.mainContext.fetch(fetch).first else { return }
+        let personFetch = FetchDescriptor<SamPerson>(predicate: #Predicate { $0.id == personID })
+        guard let person = try ctx.fetch(personFetch).first else { return }
         // Avoid duplicates by id
         if !item.linkedPeople.contains(where: { $0.id == person.id }) {
             item.linkedPeople.append(person)
-            try container.mainContext.save()
+            try ctx.save()
         }
     }
 
+    @MainActor
     func linkToContext(evidenceID: UUID, contextID: UUID) throws {
-        guard let item = try item(id: evidenceID) else { return }
+        let ctx = ModelContext(container)
+        // Fetch item
+        let itemFetch = FetchDescriptor<SamEvidenceItem>(predicate: #Predicate { $0.id == evidenceID })
+        guard let item = try ctx.fetch(itemFetch).first else { return }
         // Fetch context
-        let fetch = FetchDescriptor<SamContext>(predicate: #Predicate { $0.id == contextID })
-        guard let context = try container.mainContext.fetch(fetch).first else { return }
+        let contextFetch = FetchDescriptor<SamContext>(predicate: #Predicate { $0.id == contextID })
+        guard let context = try ctx.fetch(contextFetch).first else { return }
         if !item.linkedContexts.contains(where: { $0.id == context.id }) {
             item.linkedContexts.append(context)
-            try container.mainContext.save()
+            try ctx.save()
         }
     }
 
+    @MainActor
     func acceptSuggestion(evidenceID: UUID, suggestionID: UUID) throws {
-        guard let item = try item(id: evidenceID) else { return }
+        let ctx = ModelContext(container)
+        let itemFetch = FetchDescriptor<SamEvidenceItem>(predicate: #Predicate { $0.id == evidenceID })
+        guard let item = try ctx.fetch(itemFetch).first else { return }
         guard let sIdx = item.proposedLinks.firstIndex(where: { $0.id == suggestionID }) else { return }
 
         item.proposedLinks[sIdx].status = .accepted
@@ -167,50 +234,59 @@ final class EvidenceRepository {
         switch s.target {
         case .person:
             let fetch = FetchDescriptor<SamPerson>(predicate: #Predicate { $0.id == s.targetID })
-            if let person = try? container.mainContext.fetch(fetch).first {
+            if let person = try? ctx.fetch(fetch).first {
                 if !item.linkedPeople.contains(where: { $0.id == person.id }) {
                     item.linkedPeople.append(person)
                 }
             }
         case .context:
             let fetch = FetchDescriptor<SamContext>(predicate: #Predicate { $0.id == s.targetID })
-            if let context = try? container.mainContext.fetch(fetch).first {
+            if let context = try? ctx.fetch(fetch).first {
                 if !item.linkedContexts.contains(where: { $0.id == context.id }) {
                     item.linkedContexts.append(context)
                 }
             }
         }
 
-        try container.mainContext.save()
+        try ctx.save()
     }
 
+    @MainActor
     func declineSuggestion(evidenceID: UUID, suggestionID: UUID) throws {
-        guard let item = try item(id: evidenceID) else { return }
+        let ctx = ModelContext(container)
+        let fetch = FetchDescriptor<SamEvidenceItem>(predicate: #Predicate { $0.id == evidenceID })
+        guard let item = try ctx.fetch(fetch).first else { return }
         guard let sIdx = item.proposedLinks.firstIndex(where: { $0.id == suggestionID }) else { return }
 
         item.proposedLinks[sIdx].status = .declined
         item.proposedLinks[sIdx].decidedAt = Date()
 
-        try container.mainContext.save()
+        try ctx.save()
     }
 
+    @MainActor
     func resetSuggestionToPending(evidenceID: UUID, suggestionID: UUID) throws {
-        guard let item = try item(id: evidenceID) else { return }
+        let ctx = ModelContext(container)
+        let fetch = FetchDescriptor<SamEvidenceItem>(predicate: #Predicate { $0.id == evidenceID })
+        guard let item = try ctx.fetch(fetch).first else { return }
         guard let sIdx = item.proposedLinks.firstIndex(where: { $0.id == suggestionID }) else { return }
 
         item.proposedLinks[sIdx].status = .pending
         item.proposedLinks[sIdx].decidedAt = Date()
 
-        try container.mainContext.save()
+        try ctx.save()
     }
 
+    @MainActor
     func removeConfirmedLink(
         evidenceID: UUID,
         target: EvidenceLinkTarget,
         targetID: UUID,
         revertSuggestionTo: LinkSuggestionStatus = .pending
     ) throws {
-        guard let item = try item(id: evidenceID) else { return }
+        let ctx = ModelContext(container)
+        let fetch = FetchDescriptor<SamEvidenceItem>(predicate: #Predicate { $0.id == evidenceID })
+        guard let item = try ctx.fetch(fetch).first else { return }
 
         switch target {
         case .person:
@@ -226,23 +302,24 @@ final class EvidenceRepository {
             item.proposedLinks[sIdx].decidedAt = Date()
         }
 
-        try container.mainContext.save()
+        try ctx.save()
     }
 
     /// Wholesale replace — used by backup restore. Bypasses upsert/prune
     /// logic; the payload is authoritative.
     func replaceAll(with newItems: [SamEvidenceItem]) throws {
+        let ctx = ModelContext(container)
         // Delete all existing items
         let fetchDescriptor = FetchDescriptor<SamEvidenceItem>()
-        let existingItems = try container.mainContext.fetch(fetchDescriptor)
+        let existingItems = try ctx.fetch(fetchDescriptor)
         for item in existingItems {
-            container.mainContext.delete(item)
+            ctx.delete(item)
         }
         // Insert new items
         for newItem in newItems {
-            container.mainContext.insert(newItem)
+            ctx.insert(newItem)
         }
-        try container.mainContext.save()
+        try ctx.save()
     }
 
     // Seeding is handled exclusively by FixtureSeeder at app launch.

@@ -16,8 +16,13 @@ public struct AddNotePresenter: ViewModifier {
             AddNoteForPeopleView(people: people) { text, ids in
                 do {
                     let note = try NoteSavingHelper.saveNote(text: text, selectedPeopleIDs: ids, container: container)
-                    Task { await InsightGeneratorNotesAdapter.shared.analyzeNote(text: note.text, noteID: note.id) }
+                    print("✅ Note saved with ID: \(note.id)")
+                    Task { 
+                        await InsightGeneratorNotesAdapter.shared.analyzeNote(text: note.text, noteID: note.id)
+                        print("✅ Note analysis initiated for ID: \(note.id)")
+                    }
                 } catch {
+                    print("❌ Error saving note: \(error)")
                     // TODO: Surface error via DevLogger/alert as appropriate
                 }
             }

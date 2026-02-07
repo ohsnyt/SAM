@@ -10,6 +10,39 @@ import EventKit
 import Contacts
 import SwiftData
 
+// MARK: - Badge Counts
+
+/// Observable object that provides badge counts for sidebar items.
+/// Queries SwiftData for real-time counts.
+@Observable
+final class SidebarBadgeCounter {
+    var needsAttentionCount: Int = 0
+    var inboxNeedsReviewCount: Int = 0
+    
+    func refresh(modelContext: ModelContext) {
+        // Count evidence needing review
+        let evidenceDescriptor = FetchDescriptor<SamEvidenceItem>(
+            predicate: #Predicate { $0.stateRawValue == "needsReview" }
+        )
+        inboxNeedsReviewCount = (try? modelContext.fetchCount(evidenceDescriptor)) ?? 0
+        
+        // Count people and contexts with alerts (needs attention)
+        let peopleDescriptor = FetchDescriptor<SamPerson>(
+            predicate: #Predicate { $0.consentAlertsCount > 0 || $0.reviewAlertsCount > 0 }
+        )
+        let contextsDescriptor = FetchDescriptor<SamContext>(
+            predicate: #Predicate { $0.consentAlertCount > 0 || $0.reviewAlertCount > 0 || $0.followUpAlertCount > 0 }
+        )
+        
+        let peopleCount = (try? modelContext.fetchCount(peopleDescriptor)) ?? 0
+        let contextsCount = (try? modelContext.fetchCount(contextsDescriptor)) ?? 0
+        
+        needsAttentionCount = peopleCount + contextsCount
+    }
+}
+
+// MARK: - Permission Checker
+
 private enum PermissionChecker {
     static func calendarAccessGranted() -> Bool {
         let status = EKEventStore.authorizationStatus(for: .event)
@@ -42,6 +75,14 @@ struct AppShellView: View {
 
     /// Drives the sheet.  Evaluated once in `.task`; never re-shown after dismissal.
     @State private var showPermissionNudge: Bool = false
+    
+    /// Badge counter for sidebar items
+    @State private var badgeCounter = SidebarBadgeCounter()
+    
+    /// Keyboard shortcuts palette
+    @State private var showKeyboardShortcuts: Bool = false
+    
+    @Environment(\.modelContext) private var modelContext
 
     private var selectionBinding: Binding<SidebarItem> {
         Binding(
@@ -121,6 +162,13 @@ struct AppShellView: View {
         .sheet(isPresented: $showPermissionNudge) {
             PermissionNudgeSheet()
         }
+        // ── keyboard shortcuts palette ───────────────────────────────────
+        .sheet(isPresented: $showKeyboardShortcuts) {
+            KeyboardShortcutsView()
+        }
+        // ── focused values for app commands ──────────────────────────────
+        .focusedSceneValue(\.showKeyboardShortcuts, $showKeyboardShortcuts)
+        .focusedSceneValue(\.sidebarSelection, $selectionRaw)
         .task {
             // Evaluate permissions once per startup. If missing, show the nudge.
             // We rely on `showPermissionNudge` (a @State) to ensure the sheet is not
@@ -132,13 +180,22 @@ struct AppShellView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            // Handle app activation if needed
+            // Refresh badge counts when app becomes active
+            badgeCounter.refresh(modelContext: modelContext)
         }
         .onReceive(NotificationCenter.default.publisher(for: .EKEventStoreChanged)) { _ in
-            // Handle event store changes
+            // Refresh badges when calendar changes (may affect evidence counts)
+            Task {
+                try? await Task.sleep(for: .seconds(2)) // Debounce
+                badgeCounter.refresh(modelContext: modelContext)
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .CNContactStoreDidChange)) { _ in
-            // Handle contact store changes
+            // Refresh badges when contacts change
+            Task {
+                try? await Task.sleep(for: .seconds(2)) // Debounce
+                badgeCounter.refresh(modelContext: modelContext)
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .samNavigateToPerson)) { note in
             if let id = note.object as? UUID {
@@ -156,8 +213,24 @@ struct AppShellView: View {
 
     private var sidebar: some View {
         List(SidebarItem.allCases, selection: selectionBinding) { item in
-            Label(item.rawValue, systemImage: item.systemImage)
-                .tag(item)
+            HStack {
+                Label(item.rawValue, systemImage: item.systemImage)
+                Spacer()
+                if let badge = badgeCount(for: item), badge > 0 {
+                    Text("\(badge)")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(
+                            Capsule()
+                                .fill(badgeColor(for: item))
+                        )
+                        .help("\(badge) item\(badge == 1 ? "" : "s") need attention")
+                }
+            }
+            .tag(item)
         }
         .listStyle(.sidebar)
         .navigationTitle("SAM")
@@ -169,6 +242,40 @@ struct AppShellView: View {
             } else if newValue == SidebarItem.contexts.rawValue {
                 selectedPersonIDRaw = ""
             }
+        }
+        .task {
+            // Initial badge count
+            badgeCounter.refresh(modelContext: modelContext)
+            
+            // Refresh badges periodically (every 30 seconds)
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(30))
+                badgeCounter.refresh(modelContext: modelContext)
+            }
+        }
+    }
+    
+    /// Returns the badge count for a sidebar item, or nil if no badge should be shown
+    private func badgeCount(for item: SidebarItem) -> Int? {
+        switch item {
+        case .awareness:
+            return badgeCounter.needsAttentionCount > 0 ? badgeCounter.needsAttentionCount : nil
+        case .inbox:
+            return badgeCounter.inboxNeedsReviewCount > 0 ? badgeCounter.inboxNeedsReviewCount : nil
+        case .people, .contexts:
+            return nil // No badges for these sections (counts shown in filter chips)
+        }
+    }
+    
+    /// Returns the badge color for a sidebar item
+    private func badgeColor(for item: SidebarItem) -> Color {
+        switch item {
+        case .awareness:
+            return .orange // Needs attention = warning color
+        case .inbox:
+            return .blue // Inbox = informational color
+        case .people, .contexts:
+            return .gray
         }
     }
 }
@@ -292,7 +399,13 @@ struct ContextDetailRouter: View {
 
     var body: some View {
         if let ctx = contexts.first {
+            let peopleItems: [AddNoteForPeopleView.PersonItem] = ctx.participations.compactMap { part in
+                guard let p = part.person else { return nil }
+                return AddNoteForPeopleView.PersonItem(id: p.id, displayName: p.displayName)
+            }
+
             ContextDetailView(context: mapToDetailModel(ctx))
+                .addNoteToolbar(people: peopleItems, container: SAMModelContainer.shared)
         } else {
             ContextDetailPlaceholderView()
         }

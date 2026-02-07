@@ -45,7 +45,11 @@ SAM must deeply integrate with Apple’s core system apps while respecting data 
     •    SAM may annotate and reference events but should not reimplement calendaring
     •    Mail
     •    Used as a source of interaction history and context
-    •    SAM should observe, summarize, and link—not replicate email functionality
+    •    Notes-first: Validate intelligence on dictated/pasted notes before ingesting Mail.
+    •    Account scope: Limit access strictly to the user-designated SAM work account in Mail; no other accounts are accessed.
+    •    Analysis policy: Automated fetching and on-device analysis of message bodies is allowed; raw bodies are not stored. Persist only summaries and analysis artifacts used to build Inbox Evidence and Awareness.
+    •    Metadata posture: Always collect envelope/header fields (from/to/cc/bcc, subject, date, thread/message ids) to power interaction history. Attach analysis outputs, not raw bodies.
+    •    SAM should observe, summarize, and link — not replicate email functionality
 
 ⸻
 
@@ -104,5 +108,23 @@ The finished product should feel like:
 
 “A native Mac assistant that quietly helps me steward relationships well.”
 
-If a feature compromises clarity, predictability, or trust, it should be reconsidered.
+⸻
+
+Documentation Maintenance
+- Keep SAM’s documentation actionable and concise.
+- Whenever a key progress point is reached (e.g., schema changes, UX milestones, permission flow adjustments, pipeline updates):
+  - Update context.md to reflect the current architecture, guardrails, and next steps.
+  - Add a dated entry to changelog.md summarizing what changed, why it matters, and any migration notes.
+- Add cross-links between relevant sections (e.g., Recent Fixes in context.md should point to detailed entries in changelog.md).
+- Prefer anchors and stable section ids in context.md for deep-linking from issues and PRs.
+- Avoid duplicating verbose history in context.md; move it to changelog.md.
+⸻
+
+PR Hygiene
+- Use the repository PR template (.github/pull_request_template.md) for all changes.
+- Do not merge unless:
+  - context.md is current and its Last updated timestamp is refreshed.
+  - changelog.md contains a dated entry for notable changes.
+  - Cross-links between context.md and changelog.md are intact.
+- Prefer small, well-labeled commits that reference section anchors (e.g., `#swiftdata`, `#permissions`).
 

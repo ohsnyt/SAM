@@ -17,13 +17,13 @@ final class DevLogStore: @unchecked Sendable {
 
     private init() {}
 
-    nonisolated func append(_ line: String) {
+    func append(_ line: String) {
         queue.async { [weak self] in
             self?.lines.append(line)
         }
     }
 
-    nonisolated func snapshot() -> String {
+    func snapshot() -> String {
         var snapshot: String = ""
         queue.sync {
             snapshot = lines.joined(separator: "\n")
@@ -31,9 +31,43 @@ final class DevLogStore: @unchecked Sendable {
         return snapshot
     }
 
-    nonisolated func clear() {
+    func clear() {
         queue.async { [weak self] in
             self?.lines.removeAll()
         }
     }
 }
+/// Developer logger - marked Sendable and nonisolated explicitly.
+enum DevLogger: Sendable {
+    nonisolated static func info(_ message: String) {
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let formatted = "[INFO] \(timestamp): \(message)"
+        NSLog("[SAM] \(formatted)")
+        Task { @MainActor in
+            DevLogStore.shared.append(formatted)
+        }
+    }
+    
+    nonisolated static func warning(_ message: String) {
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let formatted = "[WARNING] \(timestamp): \(message)"
+        NSLog("[SAM] \(formatted)")
+        Task { @MainActor in
+            DevLogStore.shared.append(formatted)
+        }
+    }
+    
+    nonisolated static func error(_ message: String) {
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let formatted = "[ERROR] \(timestamp): \(message)"
+        NSLog("[SAM] \(formatted)")
+        Task { @MainActor in
+            DevLogStore.shared.append(formatted)
+        }
+    }
+    
+    nonisolated static func log(_ message: String) {
+        info(message)
+    }
+}
+

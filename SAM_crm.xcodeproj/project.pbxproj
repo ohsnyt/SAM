@@ -7,16 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		6319BE5E2F358F5A00C04A75 /* InsightGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6319BE5D2F358F5A00C04A75 /* InsightGenerator.swift */; };
-		6319BE602F35921C00C04A75 /* DevelopmentTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6319BE5F2F35921C00C04A75 /* DevelopmentTab.swift */; };
-		63A8DDDF2F3643B7003E5BEC /* SWIFT6_CONCURRENCY_FIX_SUMMARY.md in Resources */ = {isa = PBXBuildFile; fileRef = 63A8DDDE2F3643B7003E5BEC /* SWIFT6_CONCURRENCY_FIX_SUMMARY.md */; };
-		63A8DDF72F364FDE003E5BEC /* SWIFT6_CONCURRENCY_WARNINGS_FIXED.md in Resources */ = {isa = PBXBuildFile; fileRef = 63A8DDF62F364FDE003E5BEC /* SWIFT6_CONCURRENCY_WARNINGS_FIXED.md */; };
 		63A8DDF92F36505F003E5BEC /* DUPLICATE_TYPES_FIX.md in Resources */ = {isa = PBXBuildFile; fileRef = 63A8DDF82F36505F003E5BEC /* DUPLICATE_TYPES_FIX.md */; };
 		63A8DDFB2F3652CE003E5BEC /* InsightGeneratorTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63A8DDFA2F3652CD003E5BEC /* InsightGeneratorTypes.swift */; };
 		63A8DDFD2F3656B6003E5BEC /* SeedHook.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63A8DDFC2F3656B6003E5BEC /* SeedHook.swift */; };
-		63B0A5432F33013A00D87E2F /* SAMModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63B0A5422F33013A00D87E2F /* SAMModels.swift */; };
-		63B0A5452F33017200D87E2F /* SAMModelEnums.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63B0A5442F33017200D87E2F /* SAMModelEnums.swift */; };
-		63B0A5492F33022900D87E2F /* SAMModelContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63B0A5482F33022900D87E2F /* SAMModelContainer.swift */; };
+		63C555E22F367D24001123CA /* DevLogStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63C555E12F367D24001123CA /* DevLogStore.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -37,19 +31,13 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		6319BE5D2F358F5A00C04A75 /* InsightGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightGenerator.swift; sourceTree = "<group>"; };
-		6319BE5F2F35921C00C04A75 /* DevelopmentTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevelopmentTab.swift; sourceTree = "<group>"; };
-		63A8DDDE2F3643B7003E5BEC /* SWIFT6_CONCURRENCY_FIX_SUMMARY.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = SWIFT6_CONCURRENCY_FIX_SUMMARY.md; sourceTree = "<group>"; };
-		63A8DDF62F364FDE003E5BEC /* SWIFT6_CONCURRENCY_WARNINGS_FIXED.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = SWIFT6_CONCURRENCY_WARNINGS_FIXED.md; sourceTree = "<group>"; };
 		63A8DDF82F36505F003E5BEC /* DUPLICATE_TYPES_FIX.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = DUPLICATE_TYPES_FIX.md; sourceTree = "<group>"; };
 		63A8DDFA2F3652CD003E5BEC /* InsightGeneratorTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightGeneratorTypes.swift; sourceTree = "<group>"; };
 		63A8DDFC2F3656B6003E5BEC /* SeedHook.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SeedHook.swift; sourceTree = "<group>"; };
 		63B0A3C42F2EC49800D87E2F /* SAM_crm.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SAM_crm.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		63B0A3D12F2EC49A00D87E2F /* SAM_crmTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SAM_crmTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		63B0A3DB2F2EC49A00D87E2F /* SAM_crmUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SAM_crmUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		63B0A5422F33013A00D87E2F /* SAMModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SAMModels.swift; sourceTree = "<group>"; };
-		63B0A5442F33017200D87E2F /* SAMModelEnums.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SAMModelEnums.swift; sourceTree = "<group>"; };
-		63B0A5482F33022900D87E2F /* SAMModelContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SAMModelContainer.swift; sourceTree = "<group>"; };
+		63C555E12F367D24001123CA /* DevLogStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevLogStore.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -114,16 +102,10 @@
 				63B0A3D42F2EC49A00D87E2F /* SAM_crmTests */,
 				63B0A3DE2F2EC49A00D87E2F /* SAM_crmUITests */,
 				63B0A3C52F2EC49800D87E2F /* Products */,
-				63B0A5422F33013A00D87E2F /* SAMModels.swift */,
-				63B0A5442F33017200D87E2F /* SAMModelEnums.swift */,
-				63B0A5482F33022900D87E2F /* SAMModelContainer.swift */,
-				6319BE5D2F358F5A00C04A75 /* InsightGenerator.swift */,
-				6319BE5F2F35921C00C04A75 /* DevelopmentTab.swift */,
-				63A8DDDE2F3643B7003E5BEC /* SWIFT6_CONCURRENCY_FIX_SUMMARY.md */,
-				63A8DDF62F364FDE003E5BEC /* SWIFT6_CONCURRENCY_WARNINGS_FIXED.md */,
 				63A8DDF82F36505F003E5BEC /* DUPLICATE_TYPES_FIX.md */,
 				63A8DDFA2F3652CD003E5BEC /* InsightGeneratorTypes.swift */,
 				63A8DDFC2F3656B6003E5BEC /* SeedHook.swift */,
+				63C555E12F367D24001123CA /* DevLogStore.swift */,
 			);
 			sourceTree = "<group>";
 		};
@@ -260,8 +242,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				63A8DDF92F36505F003E5BEC /* DUPLICATE_TYPES_FIX.md in Resources */,
-				63A8DDF72F364FDE003E5BEC /* SWIFT6_CONCURRENCY_WARNINGS_FIXED.md in Resources */,
-				63A8DDDF2F3643B7003E5BEC /* SWIFT6_CONCURRENCY_FIX_SUMMARY.md in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -286,13 +266,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				63B0A5492F33022900D87E2F /* SAMModelContainer.swift in Sources */,
 				63A8DDFB2F3652CE003E5BEC /* InsightGeneratorTypes.swift in Sources */,
 				63A8DDFD2F3656B6003E5BEC /* SeedHook.swift in Sources */,
-				63B0A5432F33013A00D87E2F /* SAMModels.swift in Sources */,
-				63B0A5452F33017200D87E2F /* SAMModelEnums.swift in Sources */,
-				6319BE5E2F358F5A00C04A75 /* InsightGenerator.swift in Sources */,
-				6319BE602F35921C00C04A75 /* DevelopmentTab.swift in Sources */,
+				63C555E22F367D24001123CA /* DevLogStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -11,10 +11,18 @@ import SwiftData
 import Contacts
 #endif
 
+// MARK: - People List View
+
 struct PeopleListView: View {
     @Binding var selectedPersonID: UUID?
     @AppStorage("sam.people.searchText") private var searchText: String = ""
+    @AppStorage("sam.people.filter") private var filterRaw: String = PeopleFilter.all.rawValue
     @State private var showingNewPersonSheet = false
+    
+    private var filter: PeopleFilter {
+        get { PeopleFilter(rawValue: filterRaw) ?? .all }
+        set { filterRaw = newValue.rawValue }
+    }
 
     /// The person whose unlinked badge was tapped; drives LinkContactSheet.
     @State private var personToLink: PersonListItemModel? = nil
@@ -58,6 +66,17 @@ struct PeopleListView: View {
         .searchable(text: $searchText, placement: .toolbar, prompt: "Search people")
         .toolbar {
             ToolbarItemGroup {
+                Picker("Filter", selection: Binding(
+                    get: { filter },
+                    set: { filterRaw = $0.rawValue }
+                )) {
+                    ForEach(PeopleFilter.allCases) { f in
+                        Text(f.title).tag(f)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .help("Filter people")
+                
                 Button {
                     showingNewPersonSheet = true
                 } label: {
@@ -138,6 +157,13 @@ struct PeopleListView: View {
                 selectedPersonID = nil
             }
         }
+        .onChange(of: filterRaw) { _, _ in
+            // Clear selection if it's no longer visible after filter change
+            if let current = selectedPersonID,
+               !filteredListItems.contains(where: { $0.id == current }) {
+                selectedPersonID = nil
+            }
+        }
     }
     
     private var listItems: [PersonListItemModel] {
@@ -167,9 +193,28 @@ struct PeopleListView: View {
 
     private var filteredListItems: [PersonListItemModel] {
         let items = listItems
+        
+        // Apply category filter first
+        let categoryFiltered: [PersonListItemModel]
+        switch filter {
+        case .all:
+            categoryFiltered = items
+        case .clients:
+            categoryFiltered = items.filter { $0.roleBadges.contains("Client") }
+        case .prospects:
+            categoryFiltered = items.filter { $0.roleBadges.contains("Prospect") }
+        case .partners:
+            categoryFiltered = items.filter { $0.roleBadges.contains("Partner") }
+        case .vendors:
+            categoryFiltered = items.filter { $0.roleBadges.contains("Vendor") }
+        case .recruits:
+            categoryFiltered = items.filter { $0.roleBadges.contains("Recruit") }
+        }
+        
+        // Then apply search filter
         let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !q.isEmpty else { return items }
-        return items.filter {
+        guard !q.isEmpty else { return categoryFiltered }
+        return categoryFiltered.filter {
             $0.displayName.lowercased().contains(q) ||
             $0.roleBadges.joined(separator: " ").lowercased().contains(q)
         }

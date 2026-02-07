@@ -411,18 +411,20 @@ private struct LoadedDetailView: View {
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
-        ToolbarItemGroup {
+        ToolbarItemGroup(placement: .primaryAction) {
             Toggle(isOn: $showFullText) {
                 Image(systemName: showFullText ? "doc.text" : "text.quote")
             }
             .toggleStyle(.button)
             .help(showFullText ? "Show full text" : "Show snippet")
+            .keyboardShortcut("t", modifiers: [.command])
 
             Button(action: onMarkDone) {
                 Label("Mark Done", systemImage: "checkmark.circle")
             }
             .buttonStyle(.glass)
-            .help("Mark this evidence as reviewed")
+            .help("Mark this evidence as reviewed (⌘D)")
+            .keyboardShortcut("d", modifiers: [.command])
             .disabled(item.state == .done)
         }
     }

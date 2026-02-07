@@ -13,7 +13,18 @@ final class PeopleRepository {
 
     init(container: ModelContainer? = nil) {
         // Fallback container for tests; production calls configure(container:)
-        self.container = container ?? (try! ModelContainer(for: SamPerson.self))
+        if let container {
+            self.container = container
+        } else {
+            // Use the full schema to match SAMModelContainer
+            let schema = Schema(SAMSchema.allModels)
+            let config = ModelConfiguration(
+                "SAM_v2",
+                schema: schema,
+                isStoredInMemoryOnly: false
+            )
+            self.container = try! ModelContainer(for: schema, configurations: config)
+        }
     }
 
     func configure(container: ModelContainer) {

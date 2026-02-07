@@ -80,6 +80,12 @@ enum ContactValidator: Sendable {
     ///   - store: The shared CNContactStore instance (from ContactsImportCoordinator)
     nonisolated static func isValid(_ identifier: String, using store: CNContactStore) -> Bool {
         #if canImport(Contacts)
+        // ✅ Check authorization BEFORE attempting any contact lookup to prevent
+        // triggering permission dialogs during normal operation
+        guard CNContactStore.authorizationStatus(for: .contacts) == .authorized else {
+            return false
+        }
+        
         do {
             // Provide a minimal valid keys array to reduce internal work and avoid issues with empty keys.
             // This also helps reduce the time a high-QoS caller might block on lower-QoS internal work.
@@ -133,6 +139,11 @@ enum ContactValidator: Sendable {
     ///   - store: The shared CNContactStore instance (from ContactsImportCoordinator)
     nonisolated static func isInSAMGroup(_ identifier: String, using store: CNContactStore) -> Bool {
         #if canImport(Contacts) && os(macOS)
+        
+        // ✅ Check authorization BEFORE attempting any contact lookup
+        guard CNContactStore.authorizationStatus(for: .contacts) == .authorized else {
+            return false
+        }
         
         do {
             // 1. Find the SAM group by name.

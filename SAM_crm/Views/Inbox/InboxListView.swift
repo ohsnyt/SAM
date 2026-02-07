@@ -6,6 +6,26 @@
 import SwiftUI
 import SwiftData
 
+// MARK: - Evidence State Filter
+
+enum EvidenceStateFilter: String, CaseIterable, Identifiable {
+    case all
+    case needsReview
+    case done
+    
+    var id: String { rawValue }
+    
+    var title: String {
+        switch self {
+        case .all: return "All"
+        case .needsReview: return "Needs Review"
+        case .done: return "Done"
+        }
+    }
+}
+
+// MARK: - Inbox List View
+
 struct InboxListView: View {
     @Binding var selectedEvidenceID: UUID?
 
@@ -14,6 +34,14 @@ struct InboxListView: View {
     /// receive it as a binding so the filtering logic stays local to the
     /// list without this view needing to know where the search bar lives.
     @Binding var searchText: String
+    
+    /// Filter state persisted to AppStorage
+    @AppStorage("sam.inbox.filter") private var filterRaw: String = EvidenceStateFilter.all.rawValue
+    
+    private var filter: EvidenceStateFilter {
+        get { EvidenceStateFilter(rawValue: filterRaw) ?? .all }
+        set { filterRaw = newValue.rawValue }
+    }
 
     // ── SwiftData query ───────────────────────────────────────────────
     // Single unfiltered query; state partitioning is done in-memory.
@@ -26,7 +54,17 @@ struct InboxListView: View {
 
     var body: some View {
         List(selection: $selectedEvidenceID) {
-            if filteredNeedsReview.isEmpty && filteredDone.isEmpty {
+            // DEBUG: Show counts
+            Section("Debug Info") {
+                Text("Total items: \(allItems.count)")
+                Text("Needs review: \(needsReviewItems.count)")
+                Text("Done: \(doneItems.count)")
+                Text("Note items: \(allItems.filter { $0.source == .note }.count)")
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            
+            if displayedNeedsReview.isEmpty && displayedDone.isEmpty {
                 ContentUnavailableView(
                     "No evidence",
                     systemImage: "tray",
@@ -35,18 +73,20 @@ struct InboxListView: View {
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
             } else {
-                if !filteredNeedsReview.isEmpty {
+                // Show "Needs Review" section only if filter allows it
+                if !displayedNeedsReview.isEmpty && (filter == .all || filter == .needsReview) {
                     Section("Needs Review") {
-                        ForEach(filteredNeedsReview) { item in
+                        ForEach(displayedNeedsReview) { item in
                             InboxRow(item: item)
                                 .tag(item.id as UUID?)
                         }
                     }
                 }
 
-                if !filteredDone.isEmpty {
+                // Show "Done" section only if filter allows it
+                if !displayedDone.isEmpty && (filter == .all || filter == .done) {
                     Section("Done") {
-                        ForEach(filteredDone) { item in
+                        ForEach(displayedDone) { item in
                             InboxRow(item: item)
                                 .tag(item.id as UUID?)
                         }
@@ -59,6 +99,26 @@ struct InboxListView: View {
         .scrollContentBackground(.hidden)
         .background(listBackground)
         .navigationSplitViewColumnWidth(min: 300, ideal: 360, max: 520)
+        .toolbar {
+            ToolbarItemGroup {
+                Picker("Filter", selection: Binding(
+                    get: { filter },
+                    set: { filterRaw = $0.rawValue }
+                )) {
+                    ForEach(EvidenceStateFilter.allCases) { f in
+                        Text(f.title).tag(f)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .help("Filter evidence items")
+            }
+        }
+        .onChange(of: filterRaw) { _, _ in
+            ensureSelectionIsVisible()
+        }
+        .onChange(of: searchText) { _, _ in
+            ensureSelectionIsVisible()
+        }
     }
 
     // ── Partitioned + filtered views ──────────────────────────────────
@@ -71,21 +131,35 @@ struct InboxListView: View {
         allItems.filter { $0.state == .done }
     }
 
-    private var filteredNeedsReview: [SamEvidenceItem] {
-        filter(needsReviewItems)
+    /// Apply search filter to needs review items
+    private var displayedNeedsReview: [SamEvidenceItem] {
+        applySearchFilter(needsReviewItems)
     }
 
-    private var filteredDone: [SamEvidenceItem] {
-        filter(doneItems)
+    /// Apply search filter to done items
+    private var displayedDone: [SamEvidenceItem] {
+        applySearchFilter(doneItems)
     }
 
-    private func filter(_ items: [SamEvidenceItem]) -> [SamEvidenceItem] {
+    /// Apply search text filtering to a list of items
+    private func applySearchFilter(_ items: [SamEvidenceItem]) -> [SamEvidenceItem] {
         let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !q.isEmpty else { return items }
         return items.filter { e in
             e.title.lowercased().contains(q) ||
             e.snippet.lowercased().contains(q) ||
             e.source.title.lowercased().contains(q)
+        }
+    }
+    
+    /// Ensure the selected item is visible after filter/search changes
+    private func ensureSelectionIsVisible() {
+        guard let current = selectedEvidenceID else { return }
+        
+        // Check if current selection is still visible under current filter/search
+        let allDisplayed = displayedNeedsReview + displayedDone
+        if !allDisplayed.contains(where: { $0.id == current }) {
+            selectedEvidenceID = nil
         }
     }
 

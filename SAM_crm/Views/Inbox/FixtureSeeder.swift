@@ -3,6 +3,14 @@ import SwiftData
 
 #if DEBUG
 
+private func _validateSeedEnums(_ context: ModelContext) {
+    let validStates = Set(["needsReview", "done"])
+    let items: [SamEvidenceItem] = (try? context.fetch(FetchDescriptor<SamEvidenceItem>())) ?? []
+    for item in items {
+        assert(validStates.contains(item.state.rawValue), "Invalid state value found in seeded SamEvidenceItem: \(item.state.rawValue)")
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // MARK: - Well-known seed UUIDs
 // ─────────────────────────────────────────────────────────────────────
@@ -37,6 +45,8 @@ enum FixtureSeeder {
         seedReferralIntroScenario(into: context)
 
         try? context.save()
+
+        _validateSeedEnums(context)
     }
 
     // ── People & Contexts ─────────────────────────────────────────────
