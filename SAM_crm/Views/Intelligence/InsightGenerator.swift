@@ -278,26 +278,67 @@ actor InsightGenerator {
                 )
                 if let artifact = try? self.context.fetch(artifactFetch).first {
                     print("🔍 [InsightGenerator] Found analysis artifact")
-                    // Include topics in the message
-                    let topicStr = artifact.note.flatMap { note in
-                        // Try to extract topics from the note text
-                        let text = note.text.lowercased()
-                        var topics: [String] = []
-                        if text.contains("life insurance") { topics.append("life insurance") }
-                        if text.contains("retirement") { topics.append("retirement") }
-                        if text.contains("annuity") { topics.append("annuity") }
-                        if text.contains("401k") || text.contains("ira") { topics.append("retirement savings") }
-                        print("🔍 [InsightGenerator] Extracted topics from note: \(topics)")
-                        return topics.isEmpty ? nil : topics.joined(separator: ", ")
+                    
+                    // Use structured topic data from LLM (when available)
+                    var topicDescriptions: [String] = []
+                    
+                    if artifact.usedLLM && !artifact.topics.isEmpty {
+                        print("🔍 [InsightGenerator] Using structured LLM topics: \(artifact.topics.count)")
+                        for topic in artifact.topics {
+                            var desc = topic.productType
+                            // Include amount if available
+                            if let amount = topic.amount {
+                                desc += " (\(amount))"
+                            }
+                            // Include beneficiary if available
+                            if let beneficiary = topic.beneficiary {
+                                desc += " for \(beneficiary)"
+                            }
+                            topicDescriptions.append(desc)
+                        }
+                    } else {
+                        // Fallback: Extract topics from note text (heuristic)
+                        if let noteText = artifact.note?.text {
+                            let text = noteText.lowercased()
+                            if text.contains("life insurance") { topicDescriptions.append("life insurance") }
+                            if text.contains("retirement") { topicDescriptions.append("retirement") }
+                            if text.contains("annuity") { topicDescriptions.append("annuity") }
+                            if text.contains("401k") || text.contains("ira") { topicDescriptions.append("retirement savings") }
+                        }
                     }
                     
-                    if let topics = topicStr, !topics.isEmpty {
-                        print("✅ [InsightGenerator] Using topics in message: \(topics)")
+                    print("🔍 [InsightGenerator] Topic descriptions: \(topicDescriptions)")
+                    
+                    // Include new people in message
+                    var newPeopleStr: String?
+                    if artifact.usedLLM {
+                        let newPeople = artifact.people.filter { $0.isNewPerson }
+                        if !newPeople.isEmpty {
+                            let names = newPeople.map { person in
+                                if let rel = person.relationship {
+                                    return "\(person.name) (\(rel))"
+                                } else {
+                                    return person.name
+                                }
+                            }.joined(separator: ", ")
+                            newPeopleStr = names
+                            print("🔍 [InsightGenerator] New people: \(names)")
+                        }
+                    }
+                    
+                    if !topicDescriptions.isEmpty {
+                        let topicsStr = topicDescriptions.joined(separator: ", ")
+                        print("✅ [InsightGenerator] Using topics in message: \(topicsStr)")
+                        
                         switch kind {
                         case .opportunity:
-                            return "Possible opportunity regarding \(topics)\(targetSuffix). Consider reviewing options."
+                            if let newPeople = newPeopleStr {
+                                return "Possible opportunity regarding \(topicsStr) for \(newPeople)\(targetSuffix)."
+                            } else {
+                                return "Possible opportunity regarding \(topicsStr)\(targetSuffix)."
+                            }
                         case .followUp:
-                            return "Suggested follow-up regarding \(topics)\(targetSuffix)."
+                            return "Suggested follow-up regarding \(topicsStr)\(targetSuffix)."
                         default:
                             break
                         }

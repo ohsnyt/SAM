@@ -49,7 +49,7 @@ enum SAMModelContainer {
     nonisolated(unsafe) private static var _shared: ModelContainer = {
         let schema     = Schema(SAMSchema.allModels)
         let config     = ModelConfiguration(
-            "SAM_v5",  // v5: Clean migration after insight message improvements
+            "SAM_v6",  // v6: Added structured entity storage (peopleJSON, topicsJSON, actions, usedLLM)
             schema: schema,
             isStoredInMemoryOnly: false   // persistent on disk
         )
@@ -68,7 +68,7 @@ enum SAMModelContainer {
     nonisolated static func makeFreshContainer() -> ModelContainer {
         let schema = Schema(SAMSchema.allModels)
         let config = ModelConfiguration(
-            "SAM_v5",  // v5: Clean migration after insight message improvements
+            "SAM_v6",  // v6: Added structured entity storage (peopleJSON, topicsJSON, actions, usedLLM)
             schema: schema,
             isStoredInMemoryOnly: false
         )
@@ -88,7 +88,7 @@ enum SAMModelContainer {
     nonisolated static let shared: ModelContainer = {
         let schema     = Schema(SAMSchema.allModels)
         let config     = ModelConfiguration(
-            "SAM_v5",  // v5: Clean migration after insight message improvements
+            "SAM_v6",  // v6: Added structured entity storage (peopleJSON, topicsJSON, actions, usedLLM)
             schema: schema,
             isStoredInMemoryOnly: false   // persistent on disk
         )

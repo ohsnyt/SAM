@@ -1,5 +1,7 @@
 import SwiftUI
+import SwiftUI
 import SwiftData
+import Contacts
 
 // MARK: - Main Scroll Content
 struct DetailScrollContent: View {
@@ -22,6 +24,14 @@ struct DetailScrollContent: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 HeaderSection(item: item)
+                
+                // Display LLM analysis for note-based evidence
+                if item.source == .note,
+                   let noteID = item.sourceUID,
+                   let noteUUID = UUID(uuidString: noteID) {
+                    NoteArtifactDisplay(noteID: noteUUID, item: item, onSuggestCreateContact: onSuggestCreateContact)
+                }
+                
                 EvidenceSection(item: item, showFullText: showFullText)
                 ParticipantsSection(item: item, alertMessage: $alertMessage, onSuggestCreateContact: onSuggestCreateContact)
                 SignalsSection(item: item)
@@ -427,5 +437,295 @@ struct ActionsRow: View {
         }
         .padding(.top, 4)
     }
+}
+
+// MARK: - Note Artifact Display
+/// Displays the analysis artifact for a given note-based evidence item
+private struct NoteArtifactDisplay: View {
+    let noteID: UUID
+    let item: SamEvidenceItem
+    let onSuggestCreateContact: (String, String, String) -> Void
+    
+    @Query private var notes: [SamNote]
+    @State private var showAddRelationship = false
+    @State private var pendingPerson: StoredPersonEntity?
+    @State private var targetParent: SamPerson?
+    @State private var successMessage: String?
+    @State private var errorMessage: String?
+    
+    init(noteID: UUID, item: SamEvidenceItem, onSuggestCreateContact: @escaping (String, String, String) -> Void) {
+        self.noteID = noteID
+        self.item = item
+        self.onSuggestCreateContact = onSuggestCreateContact
+        // Query for the specific note
+        _notes = Query(
+            filter: #Predicate<SamNote> { $0.id == noteID },
+            sort: \SamNote.createdAt
+        )
+    }
+    
+    private var note: SamNote? {
+        notes.first { $0.id == noteID }
+    }
+    
+    private var artifact: SamAnalysisArtifact? {
+        note?.analysisArtifact
+    }
+    
+    var body: some View {
+        VStack(spacing: 8) {
+            if let artifact = artifact {
+                AnalysisArtifactCard(artifact: artifact) { person in
+                    handlePersonAction(person)
+                }
+            }
+            
+            // Success/Error banners
+            if let success = successMessage {
+                HStack {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                    Text(success)
+                        .font(.callout)
+                    Spacer()
+                    Button("Dismiss") {
+                        withAnimation {
+                            successMessage = nil
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding()
+                .background(.green.opacity(0.1))
+                .cornerRadius(8)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+            
+            if let error = errorMessage {
+                HStack {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.red)
+                    Text(error)
+                        .font(.callout)
+                    Spacer()
+                    Button("Dismiss") {
+                        withAnimation {
+                            errorMessage = nil
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding()
+                .background(.red.opacity(0.1))
+                .cornerRadius(8)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .sheet(isPresented: $showAddRelationship) {
+            if let person = pendingPerson, let parent = targetParent {
+                AddRelationshipSheet(
+                    parentPerson: parent,
+                    suggestedName: person.name,
+                    suggestedLabel: relationshipLabel(from: person.relationship),
+                    onAdd: { name, label in
+                        addToFamily(name: name, label: label, parent: parent)
+                        showAddRelationship = false
+                    },
+                    onCancel: {
+                        showAddRelationship = false
+                        pendingPerson = nil
+                        targetParent = nil
+                    }
+                )
+            }
+        }
+    }
+    
+    private func handlePersonAction(_ person: StoredPersonEntity) {
+        // Detect if person is a dependent
+        if isDependent(person.relationship),
+           let parent = item.linkedPeople.first {
+            // Show editable relationship sheet
+            pendingPerson = person
+            targetParent = parent
+            showAddRelationship = true
+        } else {
+            // Fallback: Create separate contact
+            let components = person.name.split(separator: " ", maxSplits: 1)
+            let firstName = components.first.map(String.init) ?? person.name
+            let lastName = components.count > 1 ? String(components[1]) : ""
+            onSuggestCreateContact(firstName, lastName, "")
+        }
+    }
+    
+    private func isDependent(_ relationship: String?) -> Bool {
+        guard let rel = relationship?.lowercased() else { return false }
+        return rel.contains("son") ||
+               rel.contains("daughter") ||
+               rel.contains("child") ||
+               rel.contains("dependent")
+    }
+    
+    private func relationshipLabel(from relationship: String?) -> String {
+        guard let rel = relationship?.lowercased() else {
+            return CNLabelContactRelationChild
+        }
+        
+        if rel.contains("son") && !rel.contains("step") {
+            return CNLabelContactRelationSon
+        } else if rel.contains("daughter") && !rel.contains("step") {
+            return CNLabelContactRelationDaughter
+        } else if rel.contains("step-son") || rel.contains("stepson") {
+            return "step-son"
+        } else if rel.contains("step-daughter") || rel.contains("stepdaughter") {
+            return "step-daughter"
+        } else if rel.contains("child") {
+            return CNLabelContactRelationChild
+        } else if rel.contains("dependent") {
+            return "dependent"
+        }
+        
+        return CNLabelContactRelationChild
+    }
+    
+    private func addToFamily(name: String, label: String, parent: SamPerson) {
+        Task {
+            do {
+                try ContactSyncService.shared.addRelationship(
+                    name: name,
+                    label: label,
+                    to: parent
+                )
+                
+                withAnimation {
+                    successMessage = "Added \(name) to \(parent.displayNameCache ?? "contact")'s family in Contacts"
+                }
+                
+                // Auto-dismiss success after 5 seconds
+                Task {
+                    try? await Task.sleep(for: .seconds(5))
+                    withAnimation {
+                        successMessage = nil
+                    }
+                }
+            } catch {
+                withAnimation {
+                    errorMessage = "Failed to add family member: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+    
+    private func applyAllSuggestions(_ actions: SuggestionActions) {
+        Task {
+            do {
+                // 1. Add family members to contacts
+                for update in actions.contactUpdates {
+                    try await MainActor.run {
+                        try ContactSyncService.shared.addRelationship(
+                            name: update.personName,
+                            label: relationshipLabel(from: update.relationship),
+                            to: update.targetPerson
+                        )
+                    }
+                }
+                
+                // 2. Update summary note
+                if let noteText = actions.noteUpdate,
+                   let person = item.linkedPeople.first {
+                    try await MainActor.run {
+                        try ContactSyncService.shared.updateSummaryNote(noteText, for: person)
+                    }
+                }
+                
+                // Success feedback
+                await MainActor.run {
+                    withAnimation {
+                        let contactCount = actions.contactUpdates.count
+                        let noteAdded = actions.noteUpdate != nil
+                        
+                        var parts: [String] = []
+                        if contactCount > 0 {
+                            parts.append("\(contactCount) family member(s) added")
+                        }
+                        if noteAdded {
+                            parts.append("Summary note updated")
+                        }
+                        
+                        successMessage = "✅ " + parts.joined(separator: ", ")
+                    }
+                }
+                
+                // Auto-dismiss after 5 seconds
+                Task {
+                    try? await Task.sleep(for: .seconds(5))
+                    await MainActor.run {
+                        withAnimation {
+                            successMessage = nil
+                        }
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    withAnimation {
+                        errorMessage = "Failed to apply suggestions: \(error.localizedDescription)"
+                    }
+                }
+            }
+        }
+    }
+    
+    private func openInContacts(_ identifier: String?) {
+        guard let identifier = identifier else { return }
+        #if os(macOS)
+        let url = URL(string: "addressbook://\(identifier)")!
+        NSWorkspace.shared.open(url)
+        #endif
+    }
+}
+
+// MARK: - Suggestion Actions Data Models
+
+/// Actions that can be applied from analyzing a note
+struct SuggestionActions {
+    let contactUpdates: [ContactUpdate]
+    let noteUpdate: String?
+    let messages: [SuggestedMessage]
+}
+
+struct ContactUpdate {
+    enum UpdateType {
+        case addFamilyMember
+        case updateInfo
+    }
+    
+    let type: UpdateType
+    let personName: String
+    let relationship: String
+    let targetPerson: SamPerson
+    let description: String
+}
+
+struct SuggestedMessage {
+    enum MessageType {
+        case sms
+        case email
+    }
+    
+    let type: MessageType
+    let subject: String?
+    let body: String
+    let recipient: String
+}
+
+struct LifeEvent {
+    enum EventType {
+        case birth
+        case workSuccess
+    }
+    
+    let type: EventType
+    let personName: String
+    let details: String
 }
 

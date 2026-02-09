@@ -5,9 +5,15 @@
       location = "self:">
    </FileRef>
    <FileRef
-      location = "group:ContactValidationDebugView.swift">
+      location = "group:NOTES_ENTITLEMENT_SETUP.md">
    </FileRef>
    <FileRef
-      location = "group:CONTACT_VALIDATION_FIX.md">
+      location = "group:SWIFT6_CONCURRENCY_FIXES.md">
+   </FileRef>
+   <FileRef
+      location = "group:SmartSuggestionCard.swift">
+   </FileRef>
+   <FileRef
+      location = "group:SMART_SUGGESTION_SYSTEM.md">
    </FileRef>
 </Workspace>

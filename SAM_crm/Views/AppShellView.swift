@@ -158,6 +158,10 @@ struct AppShellView: View {
                 }
             }
         }
+        // ── LLM status indicator ──────────────────────────────────────────
+        .safeAreaInset(edge: .bottom) {
+            LLMStatusBar()
+        }
         // ── one-time permission nudge ────────────────────────────────────
         .sheet(isPresented: $showPermissionNudge) {
             PermissionNudgeSheet()
@@ -276,6 +280,35 @@ struct AppShellView: View {
             return .blue // Inbox = informational color
         case .people, .contexts:
             return .gray
+        }
+    }
+}
+
+// MARK: - LLM Status Bar
+
+/// A collapsible status bar that shows when the LLM is analyzing content.
+/// Displayed at the bottom of the window as a subtle indicator.
+private struct LLMStatusBar: View {
+    @State private var tracker = LLMStatusTracker.shared
+    
+    var body: some View {
+        if tracker.isAnalyzing {
+            HStack(spacing: 8) {
+                ProgressView()
+                    .controlSize(.small)
+                    .scaleEffect(0.8)
+                
+                Text(tracker.statusMessage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(.regularMaterial)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .animation(.easeInOut(duration: 0.2), value: tracker.isAnalyzing)
         }
     }
 }

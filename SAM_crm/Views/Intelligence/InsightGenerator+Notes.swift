@@ -7,9 +7,20 @@ public actor InsightGeneratorNotesAdapter {
 
     public func analyzeNote(text: String, noteID: UUID?) async {
         print("🔍 [InsightGeneratorNotesAdapter] Starting analysis for note: \(noteID?.uuidString ?? "nil")")
+        
+        // Notify UI that LLM analysis is starting
+        await MainActor.run {
+            LLMStatusTracker.shared.beginAnalysis(message: "Analyzing note...")
+        }
+        
         do {
             let artifact = try await NoteLLMAnalyzer.analyze(text: text)
             print("🔍 [InsightGeneratorNotesAdapter] LLM analysis complete")
+            
+            // Notify UI that LLM analysis is complete
+            await MainActor.run {
+                LLMStatusTracker.shared.endAnalysis()
+            }
             if let noteID {
                 await MainActor.run {
                     let container = SAMModelContainer.shared
@@ -59,6 +70,10 @@ public actor InsightGeneratorNotesAdapter {
             print("✅ [InsightGeneratorNotesAdapter] DebouncedInsightRunner triggered")
         } catch {
             print("❌ [InsightGeneratorNotesAdapter] Error during analysis: \(error)")
+            // Ensure status is reset even on error
+            await MainActor.run {
+                LLMStatusTracker.shared.endAnalysis()
+            }
         }
     }
 }

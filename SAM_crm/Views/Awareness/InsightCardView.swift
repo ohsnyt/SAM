@@ -256,7 +256,9 @@ private extension InsightCardView {
 private extension InsightCardView {
 
     var iconName: String {
-        switch insight.kind {
+        // Force fault resolution by accessing kind in a safe way
+        let insightKind = insight.kind
+        switch insightKind {
         case InsightKind.consentMissing:
             return "checkmark.seal"
         case InsightKind.followUp:

@@ -7,9 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		63A8DDF92F36505F003E5BEC /* DUPLICATE_TYPES_FIX.md in Resources */ = {isa = PBXBuildFile; fileRef = 63A8DDF82F36505F003E5BEC /* DUPLICATE_TYPES_FIX.md */; };
+		635E1E8C2F39870600649FB2 /* NEW_FIXTURE_APPROACH.md in Resources */ = {isa = PBXBuildFile; fileRef = 635E1E8B2F39870600649FB2 /* NEW_FIXTURE_APPROACH.md */; };
 		63A8DDFB2F3652CE003E5BEC /* InsightGeneratorTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63A8DDFA2F3652CD003E5BEC /* InsightGeneratorTypes.swift */; };
 		63A8DDFD2F3656B6003E5BEC /* SeedHook.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63A8DDFC2F3656B6003E5BEC /* SeedHook.swift */; };
+		63ADABDA2F3990640008C58D /* FIXTURE_DELETION_FIX.md in Resources */ = {isa = PBXBuildFile; fileRef = 63ADABD92F3990640008C58D /* FIXTURE_DELETION_FIX.md */; };
 		63C555E22F367D24001123CA /* DevLogStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63C555E12F367D24001123CA /* DevLogStore.swift */; };
 /* End PBXBuildFile section */
 
@@ -31,9 +32,10 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		63A8DDF82F36505F003E5BEC /* DUPLICATE_TYPES_FIX.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = DUPLICATE_TYPES_FIX.md; sourceTree = "<group>"; };
+		635E1E8B2F39870600649FB2 /* NEW_FIXTURE_APPROACH.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = NEW_FIXTURE_APPROACH.md; sourceTree = "<group>"; };
 		63A8DDFA2F3652CD003E5BEC /* InsightGeneratorTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightGeneratorTypes.swift; sourceTree = "<group>"; };
 		63A8DDFC2F3656B6003E5BEC /* SeedHook.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SeedHook.swift; sourceTree = "<group>"; };
+		63ADABD92F3990640008C58D /* FIXTURE_DELETION_FIX.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = FIXTURE_DELETION_FIX.md; sourceTree = "<group>"; };
 		63B0A3C42F2EC49800D87E2F /* SAM_crm.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SAM_crm.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		63B0A3D12F2EC49A00D87E2F /* SAM_crmTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SAM_crmTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		63B0A3DB2F2EC49A00D87E2F /* SAM_crmUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SAM_crmUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -102,10 +104,11 @@
 				63B0A3D42F2EC49A00D87E2F /* SAM_crmTests */,
 				63B0A3DE2F2EC49A00D87E2F /* SAM_crmUITests */,
 				63B0A3C52F2EC49800D87E2F /* Products */,
-				63A8DDF82F36505F003E5BEC /* DUPLICATE_TYPES_FIX.md */,
 				63A8DDFA2F3652CD003E5BEC /* InsightGeneratorTypes.swift */,
 				63A8DDFC2F3656B6003E5BEC /* SeedHook.swift */,
 				63C555E12F367D24001123CA /* DevLogStore.swift */,
+				635E1E8B2F39870600649FB2 /* NEW_FIXTURE_APPROACH.md */,
+				63ADABD92F3990640008C58D /* FIXTURE_DELETION_FIX.md */,
 			);
 			sourceTree = "<group>";
 		};
@@ -241,7 +244,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				63A8DDF92F36505F003E5BEC /* DUPLICATE_TYPES_FIX.md in Resources */,
+				63ADABDA2F3990640008C58D /* FIXTURE_DELETION_FIX.md in Resources */,
+				635E1E8C2F39870600649FB2 /* NEW_FIXTURE_APPROACH.md in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -447,7 +451,7 @@
 				INFOPLIST_FILE = "SAM-crm-Info.plist";
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "\"SAM reads events from the calendar you select to track meetings and reminders and to suggest follow-ups. SAM does not create or edit events without your action.\"";
-				INFOPLIST_KEY_NSContactsUsageDescription = "“SAM uses Contacts as the source of names and contact details so you can link relationships and keep client records accurate. SAM does not modify Contacts without your action.”";
+				INFOPLIST_KEY_NSContactsUsageDescription = "“SAM uses Contacts as the source of names, relationships, contact details, and summary notes so you can link relationships and keep client records accurate. SAM does not modify Contacts without your action.”";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -491,7 +495,7 @@
 				INFOPLIST_FILE = "SAM-crm-Info.plist";
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "\"SAM reads events from the calendar you select to track meetings and reminders and to suggest follow-ups. SAM does not create or edit events without your action.\"";
-				INFOPLIST_KEY_NSContactsUsageDescription = "“SAM uses Contacts as the source of names and contact details so you can link relationships and keep client records accurate. SAM does not modify Contacts without your action.”";
+				INFOPLIST_KEY_NSContactsUsageDescription = "“SAM uses Contacts as the source of names, relationships, contact details, and summary notes so you can link relationships and keep client records accurate. SAM does not modify Contacts without your action.”";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

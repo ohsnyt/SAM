@@ -22,33 +22,50 @@ import Foundation
 
 /// The CRM overlay for a person SAM knows about.
 ///
-/// **Design-doc note:** the long-term target is to anchor identity
-/// exclusively on `PersonRef` (a `CNContact.identifier` wrapper) and
-/// never store a name or email.  Today, not every person has been
-/// matched to a CNContact — people created from Inbox evidence start
-/// as email-only — so `displayName` and `email` are stored here as
-/// transitional fields.  `contactIdentifier` is the bridge: once set,
-/// photo and name lookups use the fast CNContact path.
+/// **Architecture (Phase 5 - Contacts-as-Identity):**
+/// Apple Contacts is the system of record for identity. SamPerson stores
+/// only `contactIdentifier` as anchor plus cached display fields for list
+/// performance. Full CNContact data (family, contact info, dates) is
+/// lazy-loaded in detail views via ContactSyncService.
 @Model
 public final class SamPerson {
     @Attribute(.unique) public var id: UUID
 
-    /// Human-readable name.  Sourced from CNContact when available;
-    /// falls back to the email address for unverified people.
+    /// Stable `CNContact.identifier`. Required for all active people.
+    /// When nil, person is in temporary state (needs matching to contact).
+    public var contactIdentifier: String?
+
+    // ── Cached display fields (refreshed on sync) ───────────────────
+    
+    /// Human-readable name cached from CNContact for list performance.
+    /// Refreshed by ContactSyncService when Contacts data changes.
+    public var displayNameCache: String?
+    
+    /// Primary email cached from CNContact.emailAddresses.first
+    public var emailCache: String?
+    
+    /// Thumbnail image cached from CNContact.thumbnailImageData
+    public var photoThumbnailCache: Data?
+    
+    /// Timestamp of last successful cache refresh
+    public var lastSyncedAt: Date?
+    
+    /// True when contact deleted externally; triggers "Unlinked" badge
+    public var isArchived: Bool = false
+
+    // ── DEPRECATED: Transitional fields (remove in SAM_v7) ─────────
+    // These fields exist for backward compatibility during migration.
+    // New code should use displayNameCache/emailCache instead.
+    
+    /// @deprecated Use displayNameCache
     public var displayName: String
+    
+    /// @deprecated Use emailCache
+    public var email: String?
 
     /// Role badges that appear next to the person's name in lists and
     /// detail views (e.g. "Client", "Referral Partner").
     public var roleBadges: [String]
-
-    /// Stable `CNContact.identifier`.  `nil` until the person has been
-    /// matched to a contact (see `ContactPhotoFetcher` and
-    /// `ensurePersonExists`).
-    public var contactIdentifier: String?
-
-    /// A known email address.  Used as a fallback lookup key when
-    /// `contactIdentifier` is not yet available.
-    public var email: String?
 
     // ── Alert counters (denormalised for list badges) ──────────────
     public var consentAlertsCount: Int
@@ -114,11 +131,16 @@ public final class SamPerson {
     ) {
         self.id                 = id
         self.displayName        = displayName
+        self.displayNameCache   = displayName  // Initialize cache with current value
         self.roleBadges         = roleBadges
         self.contactIdentifier  = contactIdentifier
         self.email              = email
+        self.emailCache         = email  // Initialize cache with current value
         self.consentAlertsCount = consentAlertsCount
         self.reviewAlertsCount  = reviewAlertsCount
+        self.isArchived         = false
+        self.lastSyncedAt       = nil
+        self.photoThumbnailCache = nil
     }
 }
 
@@ -615,4 +637,7 @@ public final class SamInsight {
         self.createdAt = .now
     }
 }
+
+// MARK: - InsightDisplayable Conformance
+extension SamInsight: InsightDisplayable {}
 

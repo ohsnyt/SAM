@@ -8,6 +8,8 @@ public final class SamNote {
     public var text: String
     @Relationship
     public var people: [SamPerson]
+    @Relationship(inverse: \SamAnalysisArtifact.note)
+    public var analysisArtifact: SamAnalysisArtifact?
 
     public init(id: UUID = UUID(), createdAt: Date = Date(), text: String, people: [SamPerson] = []) {
         self.id = id

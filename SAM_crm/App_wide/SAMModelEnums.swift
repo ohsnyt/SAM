@@ -523,7 +523,7 @@ public enum InsightKind: String, Codable, Hashable, CaseIterable, Sendable {
 // conformance so InsightCardView<I> can accept them.
 extension PersonInsight:  InsightDisplayable {}
 extension ContextInsight: InsightDisplayable {}
-extension SamInsight: InsightDisplayable {}
+// Note: SamInsight conformance to InsightDisplayable is in SAMModels.swift
 
 // ─────────────────────────────────────────────────────────────────────
 // MARK: - IntegrityStatus (design doc §integrity)

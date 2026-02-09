@@ -106,7 +106,7 @@ Data Integrity & Safety
 Overall Goal
 The finished product should feel like:
 
-“A native Mac assistant that quietly helps me steward relationships well.”
+“A native Mac assistant that quietly helps me steward relationships well. SAM must reduce as much friction as possible in my work as I build and maintain great relationships with my clients to serve their financial needs and reduce their concerns about their financial future.”
 
 ⸻
 

@@ -153,7 +153,7 @@ struct SamSettingsView: View {
         }
     }
     
-    
+    @MainActor
     private func requestContactsAccess() async {
         // Request contacts access via the centralized manager
         let granted = await permissions.requestContactsAccess()

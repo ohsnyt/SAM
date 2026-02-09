@@ -259,8 +259,9 @@ public enum NoteLLMAnalyzer {
         
         // Add topic-specific implications
         for topic in topics {
-            if let sentiment = topic.sentiment?.lowercased(), sentiment.contains("want") || sentiment.contains("interest") {
-                implications.append("Potential opportunity: \(topic.productType)")
+            if let sentiment = topic.sentiment?.lowercased(), sentiment.contains("want") || sentiment.contains("interest") || sentiment.contains("increase") || sentiment.contains("consider") {
+                let beneficiaryNote = topic.beneficiary.map { " for \($0)" } ?? ""
+                implications.append("Potential opportunity: \(topic.productType)\(beneficiaryNote)")
             }
         }
         

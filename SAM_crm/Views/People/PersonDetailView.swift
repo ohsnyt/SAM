@@ -17,6 +17,10 @@ struct PersonDetailView: View {
     /// lookup completes (or if no photo is available).
     @State private var contactPhoto: Image? = nil
     
+    /// Full CNContact loaded for display sections
+    @State private var contact: CNContact? = nil
+    @State private var isLoadingContact = false
+    
     /// Flag to trigger a refresh when a contact link is invalidated.
     @State private var contactWasInvalidated = false
 
@@ -25,6 +29,20 @@ struct PersonDetailView: View {
             VStack(alignment: .leading, spacing: 16) {
 
                 header
+                
+                // NEW: Contact-rich sections (if contact loaded)
+                if let contact = contact {
+                    FamilySection(contact: contact, person: person.asSamPerson())
+                    ContactInfoSection(contact: contact)
+                    ProfessionalSection(contact: contact)
+                    SummaryNoteSection(contact: contact, person: person.asSamPerson())
+                } else if isLoadingContact {
+                    ProgressView("Loading contact info...")
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                } else if person.contactIdentifier != nil && contactWasInvalidated {
+                    UnlinkedContactBanner(person: person.asSamPerson())
+                }
 
                 GroupBox("Contexts") {
                     VStack(alignment: .leading, spacing: 8) {
@@ -112,25 +130,70 @@ struct PersonDetailView: View {
             .frame(maxWidth: 760, alignment: .topLeading)
         }
         .navigationTitle(person.displayName)
-        // Fetch the photo once when the view appears, and again if the
-        // selected person changes (e.g. navigating between rows).
-        // Only attempt a lookup when the person is actually linked to a
-        // CNContact — avoids the email-fallback path for unlinked people.
+        // Fetch the photo and full contact when the view appears
         .task(id: person.id) {
             guard person.contactIdentifier != nil else {
                 contactPhoto = nil
+                contact = nil
                 return
             }
             
-            // Validate the contact still exists before fetching the photo.
-            let (isValid, photo) = await validateAndFetchPhoto(for: person)
-            
-            if !isValid {
-                contactWasInvalidated = true
+            // Validate and load contact data
+            await loadContactData()
+        }
+    }
+    
+    // MARK: - Contact Loading
+    
+    /// Load full CNContact data for display sections
+    private func loadContactData() async {
+        isLoadingContact = true
+        defer { isLoadingContact = false }
+        
+        guard let identifier = person.contactIdentifier else {
+            contact = nil
+            return
+        }
+        
+        // Validate and fetch on background thread
+        let result = await Task.detached(priority: .userInitiated) {
+            // Check if contact still exists
+            let store = ContactsImportCoordinator.contactStore
+            guard ContactValidator.isValid(identifier, using: store) else {
+                return (valid: false, contact: nil as CNContact?, photo: nil as Image?)
             }
             
-            contactPhoto = photo
+            // Fetch full contact
+            do {
+                let contact = try await ContactSyncService.shared.contact(withIdentifier: identifier)
+                // Convert thumbnail data to Image on background thread
+                let photo = Self.imageFromContactData(contact?.thumbnailImageData)
+                return (valid: true, contact: contact, photo: photo)
+            } catch {
+                return (valid: false, contact: nil, photo: nil)
+            }
+        }.value
+        
+        if !result.valid {
+            contactWasInvalidated = true
+            contact = nil
+            contactPhoto = nil
+        } else {
+            contact = result.contact
+            contactPhoto = result.photo
         }
+    }
+    
+    // Make this nonisolated and static so it can be called from any context
+    nonisolated private static func imageFromContactData(_ data: Data?) -> Image? {
+        guard let data else { return nil }
+        #if os(macOS)
+        guard let nsImage = NSImage(data: data) else { return nil }
+        return Image(nsImage: nsImage)
+        #else
+        guard let uiImage = UIImage(data: data) else { return nil }
+        return Image(uiImage: uiImage)
+        #endif
     }
     
     // MARK: - Contact Validation
@@ -323,4 +386,75 @@ enum ContactPhotoFetcher {
         #endif
     }
 }
+
+// MARK: - Helper Extensions
+extension PersonDetailModel {
+    /// Convert to SamPerson for ContactSyncService operations
+    /// This is a temporary bridge until PersonDetailModel is fully migrated
+    func asSamPerson() -> SamPerson {
+        let samPerson = SamPerson(
+            id: self.id,
+            displayName: self.displayName,
+            roleBadges: self.roleBadges,
+            contactIdentifier: self.contactIdentifier,
+            email: self.email
+        )
+        // Copy over the counts for display
+        samPerson.consentAlertsCount = self.consentAlertsCount
+        samPerson.reviewAlertsCount = self.reviewAlertsCount
+        return samPerson
+    }
+}
+
+// MARK: - Unlinked Contact Banner
+
+struct UnlinkedContactBanner: View {
+    let person: SamPerson
+    
+    @State private var showingOptions = false
+    
+    var body: some View {
+        HStack {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Contact Not Found")
+                    .font(.headline)
+                Text("This person's contact was deleted or moved.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            
+            Spacer()
+            
+            Button("Options") {
+                showingOptions = true
+            }
+            .buttonStyle(.bordered)
+        }
+        .padding()
+        .background(.orange.opacity(0.1))
+        .cornerRadius(8)
+        .confirmationDialog("Contact Not Found", isPresented: $showingOptions) {
+            Button("Archive") {
+                // Archive the person
+                person.isArchived = true
+                // Save handled by caller
+            }
+            
+            Button("Resync") {
+                Task {
+                    // Attempt to refresh cache
+                    try? ContactSyncService.shared.refreshCache(for: person)
+                }
+            }
+            
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This contact no longer exists in Contacts.app. You can archive it, attempt to resync, or keep it as-is.")
+        }
+    }
+}
+
 

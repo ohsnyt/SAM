@@ -55,7 +55,9 @@ struct SAM_crmApp: App {
         SAMModelContainer.replaceShared(with: fresh)
         EvidenceRepository.shared.configure(container: fresh)
         PeopleRepository.shared.configure(container: fresh)
-        FixtureSeeder.seedIfNeeded(using: fresh)
+        Task {
+            await FixtureSeeder.seedIfNeeded(using: fresh)
+        }
         #endif
     }
 
@@ -81,6 +83,16 @@ struct SAM_crmApp: App {
                     EvidenceRepository.shared.configure(container: SAMModelContainer.shared)
                     PeopleRepository.shared.configure(container: SAMModelContainer.shared)
                     print("[App] Repositories configured.")
+                    
+                    // Configure ContactSyncService with main context
+                    ContactSyncService.shared.configure(modelContext: SAMModelContainer.shared.mainContext)
+                    print("[App] ContactSyncService configured.")
+                    
+                    // Initial cache refresh (background, low priority)
+                    Task(priority: .low) {
+                        try? await ContactSyncService.shared.refreshAllCaches()
+                        print("[App] Contact cache refresh complete.")
+                    }
 
                     // Startup safety net: generate insights at launch
                     CalendarImportCoordinator.kickOnStartup()
@@ -97,6 +109,12 @@ struct SAM_crmApp: App {
                 }
                 .onReceive(NotificationCenter.default.publisher(for: .CNContactStoreDidChange)) { _ in
                     ContactsImportCoordinator.shared.kick(reason: "contacts changed")
+                    
+                    // Refresh contact caches when Contacts.app data changes
+                    Task(priority: .low) {
+                        try? await ContactSyncService.shared.refreshAllCaches()
+                        print("[App] Contact cache refreshed after external change.")
+                    }
                 }
         }
         .commands {

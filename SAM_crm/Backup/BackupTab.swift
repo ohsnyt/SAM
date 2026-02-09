@@ -461,12 +461,44 @@ private struct DeveloperFixtureButton: View {
             }
             .buttonStyle(.borderedProminent)
             .disabled(isWorking)
+            
+            Button {
+                Task { await cleanupCorruptedInsights() }
+            } label: {
+                Label("Clean up corrupted insights", systemImage: "trash.circle")
+            }
+            .buttonStyle(.bordered)
+            .disabled(isWorking)
 
             if let message {
                 Text(message)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+        }
+    }
+    
+    @MainActor
+    private func cleanupCorruptedInsights() async {
+        isWorking = true
+        defer { isWorking = false }
+        
+        do {
+            // Delete all insights - they'll be regenerated from evidence
+            try modelContext.delete(model: SamInsight.self)
+            try modelContext.save()
+            message = "Corrupted insights removed. Triggering data sync..."
+            
+            // Trigger Calendar and Contacts sync to regenerate insights
+            CalendarImportCoordinator.shared.kick(reason: "insights cleanup")
+            ContactsImportCoordinator.shared.kick(reason: "insights cleanup")
+            
+            // Give the coordinators a moment to start
+            try? await Task.sleep(for: .seconds(1))
+            
+            message = "Insights cleaned. Calendar & Contacts sync initiated."
+        } catch {
+            message = "Failed to clean insights: \(error.localizedDescription)"
         }
     }
 
@@ -477,25 +509,44 @@ private struct DeveloperFixtureButton: View {
 
         let container = modelContext.container
 
-        // Simple wipe: delete all instances of these models.
+        // Delete in dependency order (most dependent first)
         do {
+            // Delete insights first (they reference people/contexts/products)
+            try modelContext.delete(model: SamInsight.self)
+            // Delete notes and artifacts
+            try modelContext.delete(model: SamAnalysisArtifact.self)
+            try modelContext.delete(model: SamNote.self)
+            // Delete evidence items
             try modelContext.delete(model: SamEvidenceItem.self)
-            try modelContext.delete(model: SamPerson.self)
-            try modelContext.delete(model: SamContext.self)
-            try modelContext.delete(model: Product.self)
-            try modelContext.delete(model: ConsentRequirement.self)
-            try modelContext.delete(model: Responsibility.self)
-            try modelContext.delete(model: JointInterest.self)
+            // Delete relationship tables
             try modelContext.delete(model: ContextParticipation.self)
             try modelContext.delete(model: Coverage.self)
+            try modelContext.delete(model: Responsibility.self)
+            try modelContext.delete(model: JointInterest.self)
+            try modelContext.delete(model: ConsentRequirement.self)
+            // Delete products
+            try modelContext.delete(model: Product.self)
+            // Delete main entities last
+            try modelContext.delete(model: SamContext.self)
+            try modelContext.delete(model: SamPerson.self)
+            
+            try modelContext.save()
         } catch {
             message = "Failed to clear store: \(error.localizedDescription)"
             return
         }
 
         // Reseed using the DEBUG seeder.
-        FixtureSeeder.seedIfNeeded(using: container)
-        message = "Developer fixture restored."
+        await FixtureSeeder.seedIfNeeded(using: container)
+        
+        // Trigger Calendar and Contacts sync to supplement fixture data
+        CalendarImportCoordinator.shared.kick(reason: "fixture restore")
+        ContactsImportCoordinator.shared.kick(reason: "fixture restore")
+        
+        // Give the coordinators a moment to start
+        try? await Task.sleep(for: .seconds(1))
+        
+        message = "Developer fixture restored. Calendar & Contacts sync initiated."
     }
 }
 #endif

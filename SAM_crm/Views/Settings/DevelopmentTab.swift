@@ -203,6 +203,9 @@ private struct DeveloperFixtureButton: View {
             
             try modelContext.save()
             DevLogger.info("Successfully cleared all models")
+            
+            // Small delay to let SwiftUI process the changes
+            try? await Task.sleep(for: .milliseconds(100))
         } catch {
             DevLogger.error("Failed to clear store: \(error.localizedDescription)")
             message = "Failed to clear store: \(error.localizedDescription)"
@@ -210,7 +213,7 @@ private struct DeveloperFixtureButton: View {
         }
 
         // Reseed using the DEBUG seeder - this will re-import contacts and calendar events
-        FixtureSeeder.seedIfNeeded(using: container)
+        await FixtureSeeder.seedIfNeeded(using: container)
         DevLogger.info("Developer fixture restored successfully")
         message = "Developer fixture restored. Contacts and calendar events re-imported."
     }
