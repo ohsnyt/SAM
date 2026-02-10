@@ -7,11 +7,21 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		635E1E8C2F39870600649FB2 /* NEW_FIXTURE_APPROACH.md in Resources */ = {isa = PBXBuildFile; fileRef = 635E1E8B2F39870600649FB2 /* NEW_FIXTURE_APPROACH.md */; };
-		63A8DDFB2F3652CE003E5BEC /* InsightGeneratorTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63A8DDFA2F3652CD003E5BEC /* InsightGeneratorTypes.swift */; };
-		63A8DDFD2F3656B6003E5BEC /* SeedHook.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63A8DDFC2F3656B6003E5BEC /* SeedHook.swift */; };
-		63ADABDA2F3990640008C58D /* FIXTURE_DELETION_FIX.md in Resources */ = {isa = PBXBuildFile; fileRef = 63ADABD92F3990640008C58D /* FIXTURE_DELETION_FIX.md */; };
-		63C555E22F367D24001123CA /* DevLogStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63C555E12F367D24001123CA /* DevLogStore.swift */; };
+		639D22DA2F3AD76B00736E5E /* ContactDTO.swift in Sources */ = {isa = PBXBuildFile; fileRef = 639D22D92F3AD76B00736E5E /* ContactDTO.swift */; };
+		639D22DC2F3AD79500736E5E /* ContactsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 639D22DB2F3AD79500736E5E /* ContactsService.swift */; };
+		639D22DE2F3AD7AA00736E5E /* ContactsTestView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 639D22DD2F3AD7AA00736E5E /* ContactsTestView.swift */; };
+		63ADAE922F3ACC010008C58D /* SAMModelContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63ADAE282F3ACC010008C58D /* SAMModelContainer.swift */; };
+		63ADAEC92F3ACC010008C58D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 63ADAE252F3ACC010008C58D /* Assets.xcassets */; };
+		63ADAF892F3ACDA40008C58D /* AppShellView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63ADAF1D2F3ACDA40008C58D /* AppShellView.swift */; };
+		63ADAFA12F3ACDA40008C58D /* DevLogStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63ADAF7D2F3ACDA40008C58D /* DevLogStore.swift */; };
+		63ADAFAA2F3ACDA40008C58D /* PeopleRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63ADAF222F3ACDA40008C58D /* PeopleRepository.swift */; };
+		63ADAFAF2F3ACDA40008C58D /* PermissionsManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63ADAF232F3ACDA40008C58D /* PermissionsManager.swift */; };
+		63ADAFE42F3ACDA50008C58D /* SAMApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63ADAF262F3ACDA40008C58D /* SAMApp.swift */; };
+		63ADAFE82F3ACDA50008C58D /* EvidenceRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63ADAF202F3ACDA40008C58D /* EvidenceRepository.swift */; };
+		63ADAFE92F3ACDA50008C58D /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63ADAF272F3ACDA40008C58D /* SettingsView.swift */; };
+		63ADB0272F3AD18C0008C58D /* SAMModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63ADAF152F3ACDA40008C58D /* SAMModels.swift */; };
+		63ADB0292F3AD3300008C58D /* SAMModels-Supporting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63ADB0282F3AD3300008C58D /* SAMModels-Supporting.swift */; };
+		63ADB02B2F3AD33F0008C58D /* SAMModels-Notes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63ADB02A2F3AD33F0008C58D /* SAMModels-Notes.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -32,20 +42,31 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		635E1E8B2F39870600649FB2 /* NEW_FIXTURE_APPROACH.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = NEW_FIXTURE_APPROACH.md; sourceTree = "<group>"; };
-		63A8DDFA2F3652CD003E5BEC /* InsightGeneratorTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightGeneratorTypes.swift; sourceTree = "<group>"; };
-		63A8DDFC2F3656B6003E5BEC /* SeedHook.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SeedHook.swift; sourceTree = "<group>"; };
-		63ADABD92F3990640008C58D /* FIXTURE_DELETION_FIX.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = FIXTURE_DELETION_FIX.md; sourceTree = "<group>"; };
+		639D22D92F3AD76B00736E5E /* ContactDTO.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactDTO.swift; sourceTree = "<group>"; };
+		639D22DB2F3AD79500736E5E /* ContactsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactsService.swift; sourceTree = "<group>"; };
+		639D22DD2F3AD7AA00736E5E /* ContactsTestView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactsTestView.swift; sourceTree = "<group>"; };
+		63ADAE252F3ACC010008C58D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		63ADAE262F3ACC010008C58D /* SAM_crm.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SAM_crm.entitlements; sourceTree = "<group>"; };
+		63ADAE282F3ACC010008C58D /* SAMModelContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SAMModelContainer.swift; sourceTree = "<group>"; };
+		63ADAF152F3ACDA40008C58D /* SAMModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SAMModels.swift; sourceTree = "<group>"; };
+		63ADAF1D2F3ACDA40008C58D /* AppShellView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppShellView.swift; sourceTree = "<group>"; };
+		63ADAF202F3ACDA40008C58D /* EvidenceRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EvidenceRepository.swift; sourceTree = "<group>"; };
+		63ADAF222F3ACDA40008C58D /* PeopleRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeopleRepository.swift; sourceTree = "<group>"; };
+		63ADAF232F3ACDA40008C58D /* PermissionsManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionsManager.swift; sourceTree = "<group>"; };
+		63ADAF262F3ACDA40008C58D /* SAMApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SAMApp.swift; sourceTree = "<group>"; };
+		63ADAF272F3ACDA40008C58D /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		63ADAF7D2F3ACDA40008C58D /* DevLogStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevLogStore.swift; sourceTree = "<group>"; };
+		63ADB0282F3AD3300008C58D /* SAMModels-Supporting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SAMModels-Supporting.swift"; sourceTree = "<group>"; };
+		63ADB02A2F3AD33F0008C58D /* SAMModels-Notes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SAMModels-Notes.swift"; sourceTree = "<group>"; };
 		63B0A3C42F2EC49800D87E2F /* SAM_crm.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SAM_crm.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		63B0A3D12F2EC49A00D87E2F /* SAM_crmTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SAM_crmTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		63B0A3DB2F2EC49A00D87E2F /* SAM_crmUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SAM_crmUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		63C555E12F367D24001123CA /* DevLogStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevLogStore.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		63B0A3C62F2EC49800D87E2F /* SAM_crm */ = {
+		63ADAF872F3ACDA40008C58D /* old_code */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = SAM_crm;
+			path = old_code;
 			sourceTree = "<group>";
 		};
 		63B0A3D42F2EC49A00D87E2F /* SAM_crmTests */ = {
@@ -56,11 +77,6 @@
 		63B0A3DE2F2EC49A00D87E2F /* SAM_crmUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = SAM_crmUITests;
-			sourceTree = "<group>";
-		};
-		63B0A4622F30FB6500D87E2F /* Documentation */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = Documentation;
 			sourceTree = "<group>";
 		};
 		63B0A5242F326CA700D87E2F /* .claude */ = {
@@ -95,20 +111,150 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		63ADAECA2F3ACC780008C58D /* App */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		63ADAECB2F3ACC9E0008C58D /* SAM */ = {
+			isa = PBXGroup;
+			children = (
+				63ADAE252F3ACC010008C58D /* Assets.xcassets */,
+				63ADAE262F3ACC010008C58D /* SAM_crm.entitlements */,
+				63ADAF262F3ACDA40008C58D /* SAMApp.swift */,
+				63ADAE282F3ACC010008C58D /* SAMModelContainer.swift */,
+				63ADAF872F3ACDA40008C58D /* old_code */,
+				63ADAED82F3ACD800008C58D /* Utilities */,
+				63ADAED22F3ACD370008C58D /* Views */,
+				63ADAECF2F3ACD000008C58D /* Models */,
+				63ADAECE2F3ACCE90008C58D /* Repositories */,
+				63ADAECD2F3ACCD90008C58D /* Coordinators */,
+				63ADAECC2F3ACCCF0008C58D /* Services */,
+				63ADAECA2F3ACC780008C58D /* App */,
+			);
+			path = SAM;
+			sourceTree = "<group>";
+		};
+		63ADAECC2F3ACCCF0008C58D /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				639D22DB2F3AD79500736E5E /* ContactsService.swift */,
+				63ADAF232F3ACDA40008C58D /* PermissionsManager.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		63ADAECD2F3ACCD90008C58D /* Coordinators */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = Coordinators;
+			sourceTree = "<group>";
+		};
+		63ADAECE2F3ACCE90008C58D /* Repositories */ = {
+			isa = PBXGroup;
+			children = (
+				63ADAF222F3ACDA40008C58D /* PeopleRepository.swift */,
+				63ADAF202F3ACDA40008C58D /* EvidenceRepository.swift */,
+			);
+			path = Repositories;
+			sourceTree = "<group>";
+		};
+		63ADAECF2F3ACD000008C58D /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				63ADAED12F3ACD190008C58D /* DTOs */,
+				63ADAED02F3ACD0F0008C58D /* SwiftData */,
+				63ADAF152F3ACDA40008C58D /* SAMModels.swift */,
+				63ADB0282F3AD3300008C58D /* SAMModels-Supporting.swift */,
+				63ADB02A2F3AD33F0008C58D /* SAMModels-Notes.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		63ADAED02F3ACD0F0008C58D /* SwiftData */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = SwiftData;
+			sourceTree = "<group>";
+		};
+		63ADAED12F3ACD190008C58D /* DTOs */ = {
+			isa = PBXGroup;
+			children = (
+				639D22D92F3AD76B00736E5E /* ContactDTO.swift */,
+			);
+			path = DTOs;
+			sourceTree = "<group>";
+		};
+		63ADAED22F3ACD370008C58D /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				63ADAED72F3ACD730008C58D /* Settings */,
+				63ADAED62F3ACD680008C58D /* Awareness */,
+				63ADAED52F3ACD5F0008C58D /* Contexts */,
+				63ADAED42F3ACD4D0008C58D /* Inbox */,
+				63ADAED32F3ACD420008C58D /* People */,
+				63ADAF1D2F3ACDA40008C58D /* AppShellView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		63ADAED32F3ACD420008C58D /* People */ = {
+			isa = PBXGroup;
+			children = (
+				639D22DD2F3AD7AA00736E5E /* ContactsTestView.swift */,
+			);
+			path = People;
+			sourceTree = "<group>";
+		};
+		63ADAED42F3ACD4D0008C58D /* Inbox */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = Inbox;
+			sourceTree = "<group>";
+		};
+		63ADAED52F3ACD5F0008C58D /* Contexts */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = Contexts;
+			sourceTree = "<group>";
+		};
+		63ADAED62F3ACD680008C58D /* Awareness */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = Awareness;
+			sourceTree = "<group>";
+		};
+		63ADAED72F3ACD730008C58D /* Settings */ = {
+			isa = PBXGroup;
+			children = (
+				63ADAF272F3ACDA40008C58D /* SettingsView.swift */,
+			);
+			path = Settings;
+			sourceTree = "<group>";
+		};
+		63ADAED82F3ACD800008C58D /* Utilities */ = {
+			isa = PBXGroup;
+			children = (
+				63ADAF7D2F3ACDA40008C58D /* DevLogStore.swift */,
+			);
+			path = Utilities;
+			sourceTree = "<group>";
+		};
 		63B0A3BB2F2EC49800D87E2F = {
 			isa = PBXGroup;
 			children = (
+				63ADAECB2F3ACC9E0008C58D /* SAM */,
 				63B0A5242F326CA700D87E2F /* .claude */,
-				63B0A4622F30FB6500D87E2F /* Documentation */,
-				63B0A3C62F2EC49800D87E2F /* SAM_crm */,
 				63B0A3D42F2EC49A00D87E2F /* SAM_crmTests */,
 				63B0A3DE2F2EC49A00D87E2F /* SAM_crmUITests */,
 				63B0A3C52F2EC49800D87E2F /* Products */,
-				63A8DDFA2F3652CD003E5BEC /* InsightGeneratorTypes.swift */,
-				63A8DDFC2F3656B6003E5BEC /* SeedHook.swift */,
-				63C555E12F367D24001123CA /* DevLogStore.swift */,
-				635E1E8B2F39870600649FB2 /* NEW_FIXTURE_APPROACH.md */,
-				63ADABD92F3990640008C58D /* FIXTURE_DELETION_FIX.md */,
 			);
 			sourceTree = "<group>";
 		};
@@ -138,8 +284,6 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				63B0A3C62F2EC49800D87E2F /* SAM_crm */,
-				63B0A4622F30FB6500D87E2F /* Documentation */,
 				63B0A5242F326CA700D87E2F /* .claude */,
 			);
 			name = SAM_crm;
@@ -244,8 +388,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				63ADABDA2F3990640008C58D /* FIXTURE_DELETION_FIX.md in Resources */,
-				635E1E8C2F39870600649FB2 /* NEW_FIXTURE_APPROACH.md in Resources */,
+				63ADAEC92F3ACC010008C58D /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -270,9 +413,20 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				63A8DDFB2F3652CE003E5BEC /* InsightGeneratorTypes.swift in Sources */,
-				63A8DDFD2F3656B6003E5BEC /* SeedHook.swift in Sources */,
-				63C555E22F367D24001123CA /* DevLogStore.swift in Sources */,
+				63ADAFA12F3ACDA40008C58D /* DevLogStore.swift in Sources */,
+				63ADB02B2F3AD33F0008C58D /* SAMModels-Notes.swift in Sources */,
+				63ADAFE42F3ACDA50008C58D /* SAMApp.swift in Sources */,
+				63ADAE922F3ACC010008C58D /* SAMModelContainer.swift in Sources */,
+				639D22DC2F3AD79500736E5E /* ContactsService.swift in Sources */,
+				63ADB0272F3AD18C0008C58D /* SAMModels.swift in Sources */,
+				63ADAFE92F3ACDA50008C58D /* SettingsView.swift in Sources */,
+				639D22DA2F3AD76B00736E5E /* ContactDTO.swift in Sources */,
+				63ADAF892F3ACDA40008C58D /* AppShellView.swift in Sources */,
+				63ADAFE82F3ACDA50008C58D /* EvidenceRepository.swift in Sources */,
+				63ADAFAF2F3ACDA40008C58D /* PermissionsManager.swift in Sources */,
+				639D22DE2F3AD7AA00736E5E /* ContactsTestView.swift in Sources */,
+				63ADB0292F3AD3300008C58D /* SAMModels-Supporting.swift in Sources */,
+				63ADAFAA2F3ACDA40008C58D /* PeopleRepository.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -466,7 +620,7 @@
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 			};
 			name = Debug;
 		};
@@ -510,7 +664,7 @@
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 			};
 			name = Release;
 		};

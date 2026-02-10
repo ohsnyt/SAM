@@ -5,15 +5,15 @@
       location = "self:">
    </FileRef>
    <FileRef
-      location = "group:NOTES_ENTITLEMENT_SETUP.md">
+      location = "absolute:/Users/david/Swift/SAM/SAM_crm/SAM_crm.xcodeproj/ContactDTO.swift">
    </FileRef>
    <FileRef
-      location = "group:SWIFT6_CONCURRENCY_FIXES.md">
+      location = "group:ContactsService.swift">
    </FileRef>
    <FileRef
-      location = "group:SmartSuggestionCard.swift">
+      location = "group:ContactsTestView.swift">
    </FileRef>
    <FileRef
-      location = "group:SMART_SUGGESTION_SYSTEM.md">
+      location = "group:SAM_crmSAM_crmPHASE_B_SETUP.md">
    </FileRef>
 </Workspace>
