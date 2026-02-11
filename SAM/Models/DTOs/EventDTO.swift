@@ -216,7 +216,7 @@ struct EventDTO: Sendable {
     
     // MARK: - Helper Mapping Functions
     
-    private static func mapParticipantStatus(_ status: EKParticipantStatus) -> AttendeeDTO.ParticipantStatus {
+    private nonisolated static func mapParticipantStatus(_ status: EKParticipantStatus) -> AttendeeDTO.ParticipantStatus {
         switch status {
         case .unknown:
             return .unknown
@@ -239,7 +239,7 @@ struct EventDTO: Sendable {
         }
     }
     
-    private static func mapParticipantRole(_ role: EKParticipantRole) -> AttendeeDTO.ParticipantRole {
+    private nonisolated static func mapParticipantRole(_ role: EKParticipantRole) -> AttendeeDTO.ParticipantRole {
         switch role {
         case .unknown:
             return .unknown
@@ -256,7 +256,7 @@ struct EventDTO: Sendable {
         }
     }
     
-    private static func mapParticipantType(_ type: EKParticipantType) -> AttendeeDTO.ParticipantType {
+    private nonisolated static func mapParticipantType(_ type: EKParticipantType) -> AttendeeDTO.ParticipantType {
         switch type {
         case .unknown:
             return .unknown

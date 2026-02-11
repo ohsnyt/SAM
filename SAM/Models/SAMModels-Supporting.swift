@@ -275,6 +275,122 @@ public struct InteractionModel: Codable, Sendable, Identifiable {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// MARK: - Note Analysis Types (Phase H)
+// ─────────────────────────────────────────────────────────────────────
+
+/// A person mentioned in a note, extracted by LLM
+public struct ExtractedPersonMention: Codable, Sendable, Identifiable {
+    public var id: UUID
+    public var name: String                         // As written in the note
+    public var role: String?                        // "client", "spouse", "child", "referral source", etc.
+    public var relationshipTo: String?              // "spouse of John Smith", "referred by Tom Davis"
+    public var contactUpdates: [ContactFieldUpdate] // New info to apply to their Contact record
+    public var matchedPersonID: UUID?               // Auto-matched SamPerson (nil = unresolved)
+    public var confidence: Double
+    
+    public init(
+        id: UUID = UUID(),
+        name: String,
+        role: String? = nil,
+        relationshipTo: String? = nil,
+        contactUpdates: [ContactFieldUpdate] = [],
+        matchedPersonID: UUID? = nil,
+        confidence: Double
+    ) {
+        self.id = id
+        self.name = name
+        self.role = role
+        self.relationshipTo = relationshipTo
+        self.contactUpdates = contactUpdates
+        self.matchedPersonID = matchedPersonID
+        self.confidence = confidence
+    }
+}
+
+/// A single contact field that the LLM says should be added/updated
+public struct ContactFieldUpdate: Codable, Sendable {
+    public var field: ContactUpdateField
+    public var value: String
+    public var confidence: Double
+    
+    public init(field: ContactUpdateField, value: String, confidence: Double) {
+        self.field = field
+        self.value = value
+        self.confidence = confidence
+    }
+    
+    public enum ContactUpdateField: String, Codable, Sendable {
+        case birthday, anniversary
+        case spouse, child, parent, sibling
+        case company, jobTitle
+        case phone, email, address
+        case nickname
+    }
+}
+
+/// An actionable item extracted from a note
+public struct NoteActionItem: Codable, Sendable, Identifiable {
+    public var id: UUID
+    public var type: ActionType
+    public var description: String                  // What needs to be done
+    public var suggestedText: String?               // For messages: draft text
+    public var suggestedChannel: MessageChannel?    // SMS, email, phone
+    public var urgency: Urgency
+    public var linkedPersonName: String?
+    public var linkedPersonID: UUID?
+    public var status: ActionStatus
+    
+    public init(
+        id: UUID = UUID(),
+        type: ActionType,
+        description: String,
+        suggestedText: String? = nil,
+        suggestedChannel: MessageChannel? = nil,
+        urgency: Urgency = .standard,
+        linkedPersonName: String? = nil,
+        linkedPersonID: UUID? = nil,
+        status: ActionStatus = .pending
+    ) {
+        self.id = id
+        self.type = type
+        self.description = description
+        self.suggestedText = suggestedText
+        self.suggestedChannel = suggestedChannel
+        self.urgency = urgency
+        self.linkedPersonName = linkedPersonName
+        self.linkedPersonID = linkedPersonID
+        self.status = status
+    }
+    
+    public enum ActionType: String, Codable, Sendable {
+        case updateContact          // Add/change contact fields
+        case sendCongratulations    // Birth, wedding, promotion, etc.
+        case sendReminder           // Book meeting, renewal, review, etc.
+        case scheduleMeeting        // Follow-up, annual review, etc.
+        case createProposal         // Product recommendation
+        case updateBeneficiary      // Beneficiary changes needed
+        case generalFollowUp        // Generic "circle back on X"
+    }
+    
+    public enum Urgency: String, Codable, Sendable {
+        case immediate              // Today
+        case soon                   // This week
+        case standard               // This month
+        case low                    // When convenient
+    }
+    
+    public enum ActionStatus: String, Codable, Sendable {
+        case pending
+        case completed
+        case dismissed
+    }
+    
+    public enum MessageChannel: String, Codable, Sendable {
+        case sms, email, phone
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // MARK: - Protocols
 // ─────────────────────────────────────────────────────────────────────
 

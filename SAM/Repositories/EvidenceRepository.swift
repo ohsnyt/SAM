@@ -105,8 +105,61 @@ final class EvidenceRepository {
         return allItems.first { $0.sourceUID == sourceUID }
     }
     
+    // MARK: - Create Operations
+
+    /// Create or update an evidence item from any source (notes, manual, etc.).
+    /// Uses sourceUID for idempotent upsert — if an item with the same sourceUID
+    /// exists, it is updated; otherwise a new item is created.
+    @discardableResult
+    func create(
+        sourceUID: String,
+        source: EvidenceSource,
+        occurredAt: Date,
+        title: String,
+        snippet: String,
+        bodyText: String? = nil,
+        linkedPeople: [SamPerson] = [],
+        linkedContexts: [SamContext] = []
+    ) throws -> SamEvidenceItem {
+        guard let context = context else {
+            throw RepositoryError.notConfigured
+        }
+
+        // Idempotent: update if sourceUID already exists
+        if let existing = try fetch(sourceUID: sourceUID) {
+            existing.title = title
+            existing.snippet = snippet
+            existing.bodyText = bodyText
+            existing.occurredAt = occurredAt
+            existing.linkedPeople = linkedPeople
+            existing.linkedContexts = linkedContexts
+            try context.save()
+            print("📦 [EvidenceRepository] Updated evidence: \(title)")
+            return existing
+        }
+
+        let evidence = SamEvidenceItem(
+            id: UUID(),
+            state: .needsReview,
+            sourceUID: sourceUID,
+            source: source,
+            occurredAt: occurredAt,
+            title: title,
+            snippet: snippet,
+            bodyText: bodyText
+        )
+        evidence.linkedPeople = linkedPeople
+        evidence.linkedContexts = linkedContexts
+
+        context.insert(evidence)
+        try context.save()
+
+        print("📦 [EvidenceRepository] Created evidence: \(title)")
+        return evidence
+    }
+
     // MARK: - Upsert Operations
-    
+
     /// Upsert evidence item from calendar event.
     /// Creates new item if sourceUID doesn't exist, updates if it does.
     func upsert(event: EventDTO) throws {

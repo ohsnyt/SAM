@@ -4,6 +4,257 @@
 
 ---
 
+## February 11, 2026 - Phase I Complete: Insights & Awareness
+
+**What Changed**:
+- ✅ **InsightGenerator** - Coordinator that generates insights from notes, relationships, calendar
+- ✅ **AwarenessView** - Dashboard with filtering, triage, real-time generation
+- ✅ **Real data wiring** - Replaced mock data with actual insight generation
+- ✅ **Three insight sources** - Note action items, relationship patterns, calendar prep
+
+**See**: `PHASE_I_COMPLETE.md` and `PHASE_I_WIRING_COMPLETE.md` for full details
+
+### Key Features
+
+**InsightGenerator** creates insights from:
+1. Note action items (from Phase H LLM extraction)
+2. Relationship patterns (people with no contact in 60+ days)
+3. Upcoming calendar events (0-2 days away preparation reminders)
+
+**AwarenessView** provides:
+- Filter by category (All/High Priority/Follow-ups/Opportunities/Risks)
+- Expandable insight cards with full details
+- Triage actions (Mark Done, Dismiss, View Person)
+- Quick stats dashboard (high priority count, follow-ups, opportunities)
+- Empty state with friendly guidance
+- Real-time generation button
+
+### Architecture Decisions
+
+- **In-memory insights**: Not persisted to SwiftData yet (Phase J+)
+- **Deduplication**: Same person + same kind within 24 hours = duplicate
+- **Priority sorting**: High → Medium → Low, then by creation date
+- **Configurable thresholds**: Days-since-contact setting (default 60)
+
+### What's Next
+
+- Auto-generation triggers (after imports, on schedule)
+- Person navigation (make "View Person" button work)
+- Persistence (store in SamInsight model for history)
+
+---
+
+## February 11, 2026 - Phase H Complete: Notes & Note Intelligence
+
+**What Changed**:
+- ✅ **NotesRepository** - Full CRUD with analysis storage
+- ✅ **NoteAnalysisService** - On-device LLM via Apple Foundation Models
+- ✅ **NoteAnalysisCoordinator** - save → analyze → store pipeline
+- ✅ **NoteEditorView** - Create/edit notes with entity linking
+- ✅ **NoteActionItemsView** - Review extracted action items
+- ✅ **Evidence pipeline** - Notes create evidence items (appear in Inbox)
+
+**See**: `PHASE_H_COMPLETE.md` for full implementation details
+
+### Key Features
+
+**On-Device LLM Analysis** extracts:
+- People mentioned with roles and relationships
+- Contact field updates (birthdays, job titles, family members)
+- Action items with urgency and suggested text
+- Topics (financial products, life events)
+- 1-2 sentence summaries
+
+**User Experience**:
+- Notes save instantly (sheet closes immediately)
+- Analysis happens in background (3-4 seconds)
+- Results appear automatically via SwiftData observation
+- Notes show in PersonDetailView, ContextDetailView, and Inbox
+
+### Bug Fixes During Implementation
+
+1. **LLM JSON Parsing**: Fixed markdown code block stripping (backticks)
+2. **SwiftData Context Violations**: Fixed NotesRepository creating multiple contexts
+3. **ModelContext Boundaries**: Pass IDs between repositories, not objects
+4. **NoteAnalysisCoordinator**: Fixed evidence creation context violations
+
+### Files Created
+
+- NotesRepository.swift (226 lines)
+- NoteAnalysisService.swift (239 lines)
+- NoteAnalysisCoordinator.swift (251 lines)
+- NoteAnalysisDTO.swift (118 lines)
+- NoteEditorView.swift (400 lines)
+- NoteActionItemsView.swift (362 lines)
+
+### Files Modified
+
+- SAMApp.swift (added NotesRepository configuration)
+- PersonDetailView.swift (added Notes section)
+- ContextDetailView.swift (added Notes section)
+- InboxDetailView.swift (added "Attach Note" button)
+
+---
+
+## February 11, 2026 - Phase G Complete: Contexts
+
+**What Changed**:
+- ✅ **ContextsRepository** - Full CRUD for SamContext with participant management
+- ✅ **ContextListView** - List, filter (household/business), search, create contexts
+- ✅ **ContextDetailView** - View/edit contexts, add participants with roles
+- ✅ **Three-column layout** - Contexts integrated into AppShellView navigation
+- ✅ **Feature complete** - Users can organize people into households and businesses
+
+### Implementation Details
+
+**New Files Created**:
+1. **ContextsRepository.swift** (228 lines)
+   - `fetchAll()`, `fetch(id:)`, `create()`, `update()`, `delete()`
+   - `search(query:)`, `filter(by:)` for finding contexts
+   - `addParticipant()`, `removeParticipant()` for managing membership
+   - Follows same pattern as PeopleRepository and EvidenceRepository
+
+2. **ContextListView.swift** (370 lines)
+   - Filter picker (All / Household / Business)
+   - Search functionality
+   - Create context sheet with name and type selection
+   - Empty state with call-to-action
+   - ContextRowView showing icon, name, participant count, alerts
+
+3. **ContextDetailView.swift** (520 lines)
+   - Header with context icon, name, type, participant count
+   - Participants section showing photo, name, roles, primary flag, notes
+   - Edit context sheet (name and type)
+   - Add participant sheet (select person, assign roles, mark as primary)
+   - Delete confirmation dialog
+   - Metadata section with context ID and type
+
+**Files Modified**:
+- `AppShellView.swift`:
+  - Added `selectedContextID: UUID?` state
+  - Updated `body` to include "contexts" in three-column layout condition
+  - Added `ContextListView` to `threeColumnContent`
+  - Added `contextsDetailView` to `threeColumnDetail`
+  - Created `ContextsDetailContainer` helper view
+  - Removed `ContextsPlaceholder` (no longer needed)
+
+- `SAMApp.swift`:
+  - Added `ContextsRepository.shared.configure(container:)` to `configureDataLayer()`
+
+- `SettingsView.swift`:
+  - Updated feature status: "Contexts" → `.complete`
+  - Updated version string: "Phase G Complete"
+
+- `context.md`:
+  - Updated last modified date
+  - Moved Phase G from "Next Up" to "Completed Phases"
+  - Updated project structure to show ContextsRepository as complete
+  - Updated Views section to show Context views as complete
+  - Added Phase G completion details
+
+### Architecture Patterns
+
+**Followed Established Patterns**:
+- ✅ Repository singleton with `configure(container:)` at app launch
+- ✅ Three-column navigation (sidebar → list → detail)
+- ✅ @Query in detail container views for stable model access
+- ✅ UUID-based selection binding (not model references)
+- ✅ Loading, empty, and error states in list view
+- ✅ Filter and search with `@State` and `onChange`
+- ✅ Sheet-based creation/editing flows
+- ✅ Confirmation dialogs for destructive actions
+
+**ContextKind Extensions**:
+```swift
+extension ContextKind {
+    var displayName: String  // "Household", "Business"
+    var icon: String         // "house.fill", "building.2.fill"
+    var color: Color         // .blue, .purple
+}
+```
+
+**Participant Management**:
+- Participations link people to contexts with roles
+- Roles are string arrays (e.g., ["Client", "Primary Insured"])
+- Primary flag determines sort order and layout
+- Optional notes field for context-specific annotations
+
+### What This Enables
+
+**Immediate Value**:
+- Organize people into households (Smith Family, Johnson Household)
+- Track business relationships (Acme Corp, local referral partners)
+- Assign roles within contexts (Primary Insured, Spouse, Decision Maker)
+- Mark primary participants for prioritized display
+- Add context-specific notes (e.g., "Consent must be provided by guardian")
+
+**Future Phases Unblocked**:
+- **Phase H (Notes)**: Notes can link to contexts as well as people
+- **Phase I (Insights)**: AI can generate household-level insights (e.g., "Smith family has coverage gap")
+- **Phase K (Time Tracking)**: Track time spent on context-level activities
+- **Products**: When product management is added, products can belong to contexts
+
+### User Experience Flow
+
+1. **Create Context**:
+   - Click "+" in toolbar → "New Context" sheet
+   - Enter name (e.g., "Smith Family")
+   - Select type (Household or Business)
+   - Click "Create"
+
+2. **Add Participants**:
+   - Open context detail
+   - Click "Add Person" → select from available people
+   - Assign roles (comma-separated, e.g., "Client, Primary Insured")
+   - Toggle "Primary participant" if needed
+   - Add optional note
+   - Click "Add"
+
+3. **View Participants**:
+   - Each participant shows photo, name, roles, and primary badge
+   - Notes appear in italic below name
+   - Easy to scan who's in each context
+
+4. **Filter & Search**:
+   - Filter picker: All / Household / Business
+   - Search bar finds contexts by name
+   - Empty state when no results
+
+### Testing Notes
+
+**Previews Added**:
+- `ContextListView`: "With Contexts" and "Empty" states
+- `ContextDetailView`: "Household with Participants" and "Business Context"
+- Both previews set up sample data for visual testing
+
+**Manual Testing**:
+1. ✅ Create household context
+2. ✅ Create business context
+3. ✅ Add participants to context
+4. ✅ Edit context name/type
+5. ✅ Remove participant
+6. ✅ Delete context
+7. ✅ Filter by kind
+8. ✅ Search by name
+9. ✅ Navigation between list and detail
+
+### Next Steps
+
+**Phase H: Notes & Note Intelligence**
+- User-created notes (freeform text)
+- Link notes to people, contexts, and evidence
+- On-device LLM analysis with Foundation Models
+- Extract people, topics, action items
+- Generate summaries
+- Suggest contact updates
+
+**Phase H Will Enable**:
+- "Met with John and Sarah Smith. New baby Emma born Jan 15..." → Extract Emma as new person, suggest adding to contacts
+- "Bob's daughter graduating college in May. Send card." → Create action item
+- "Annual review with the Garcias. Updated risk tolerance to conservative." → Generate insight
+
+---
+
 ## February 10, 2026 - Critical Fixes: Notes Entitlement & Permission Race Condition
 
 **What Changed**:

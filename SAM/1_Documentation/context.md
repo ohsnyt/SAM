@@ -3,7 +3,7 @@
 **Language**: Swift 6  
 **Architecture**: Clean layered architecture with strict separation of concerns  
 **Framework**: SwiftUI + SwiftData  
-**Last Updated**: February 10, 2026 (Added §2.4 Coordinator API Standards, §6.7 Coordinator Consistency)  
+**Last Updated**: February 11, 2026 (Phase I complete — Insights & Awareness)
 
 **Related Docs**: 
 - See `agent.md` for product philosophy and UX principles
@@ -38,15 +38,15 @@ SAM is a **native macOS relationship management application** for independent fi
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                    Views (SwiftUI)                   │
-│          PeopleListView, PersonDetailView, etc.      │
+│                    Views (SwiftUI)                  │
+│          PeopleListView, PersonDetailView, etc.     │
 └──────────────────────┬──────────────────────────────┘
                        │ Uses DTOs
                        ▼
 ┌─────────────────────────────────────────────────────┐
-│                   Coordinators                       │
-│     ContactsImportCoordinator, InsightGenerator      │
-│            (Business Logic Orchestration)            │
+│                   Coordinators                      │
+│     ContactsImportCoordinator, InsightGenerator     │
+│            (Business Logic Orchestration)           │
 └───────────┬─────────────────────┬───────────────────┘
             │                     │
             │ Reads from          │ Writes to
@@ -1408,20 +1408,4 @@ When reporting bugs or architectural concerns:
 - **Zoom/Teams Integration**: Alternative to iMessage/FaceTime if APIs unavailable
 - **Advanced Analytics**: Relationship health scoring, engagement metrics
 - **Calendar Writing**: Create follow-up events from insights (requires calendar write permission)
-- **Contact Editing**: Limited contact field editing from SAM (sync back to Contacts)
-- **Custom Activity Types**: User-defined time tracking categories
-- **Undo Compression**: Archive old undo entries to reduce storage
 
-**Long-term**:
-- **iOS Companion**: Read-only iOS app (separate architecture, phase TBD)
-- **Team Collaboration**: Shared contexts and evidence (multi-user support)
-- **API Integration**: Connect to financial planning software (CRM sync)
-- **Advanced AI**: Custom LLM fine-tuning for financial advisor insights
-- **Relationship Graph**: Visual network of people, contexts, and connections
-
----
-
-**Document Version**: 3.0 (Clean Rebuild + Extended Roadmap)  
-**Previous Versions**: See `changelog.md` for version history  
-**Last Major Update**: February 10, 2026 - Added Phases J-M, created changelog.md  
-**Clean Rebuild Started**: February 9, 2026  

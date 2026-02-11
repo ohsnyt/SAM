@@ -22,6 +22,7 @@ struct PersonDetailView: View {
     // MARK: - Dependencies
     
     @State private var contactsService = ContactsService.shared
+    @State private var notesRepository = NotesRepository.shared
     
     // MARK: - State
     
@@ -29,6 +30,8 @@ struct PersonDetailView: View {
     @State private var isLoadingContact = false
     @State private var showingError = false
     @State private var errorMessage = ""
+    @State private var showingNoteEditor = false
+    @State private var personNotes: [SamNote] = []
     
     // MARK: - Body
     
@@ -67,6 +70,13 @@ struct PersonDetailView: View {
         .toolbar {
             ToolbarItemGroup {
                 Button {
+                    showingNoteEditor = true
+                } label: {
+                    Label("Add Note", systemImage: "note.text.badge.plus")
+                }
+                .help("Add a note about this person")
+                
+                Button {
                     openInContacts()
                 } label: {
                     Label("Open in Contacts", systemImage: "person.crop.circle")
@@ -74,10 +84,6 @@ struct PersonDetailView: View {
                 .help("Open this person in Apple Contacts")
                 
                 Menu {
-                    Button("Add Note", systemImage: "note.text.badge.plus") {
-                        // TODO: Phase J - Add note
-                    }
-                    
                     Button("Add to Context", systemImage: "building.2") {
                         // TODO: Phase G - Add to context
                     }
@@ -96,6 +102,12 @@ struct PersonDetailView: View {
         }
         .task(id: person.id) {
             await loadFullContact()
+            loadNotes()
+        }
+        .sheet(isPresented: $showingNoteEditor) {
+            NoteEditorView(linkedPerson: person) {
+                loadNotes()
+            }
         }
         .alert("Error", isPresented: $showingError) {
             Button("OK") { }
@@ -442,6 +454,9 @@ struct PersonDetailView: View {
                 }
             }
             
+            // Notes (Phase H)
+            notesSection
+            
             // Insights
             if !person.insights.isEmpty {
                 samSection(title: "Insights") {
@@ -635,6 +650,45 @@ struct PersonDetailView: View {
         }
     }
     
+    // Notes section (Phase H)
+    private var notesSection: some View {
+        samSection(title: "Notes") {
+            if personNotes.isEmpty {
+                VStack(spacing: 8) {
+                    Text("No notes yet")
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                    
+                    Button(action: {
+                        showingNoteEditor = true
+                    }) {
+                        Label("Add First Note", systemImage: "plus.circle")
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .padding(.vertical, 8)
+            } else {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(personNotes.prefix(5), id: \.id) { note in
+                        NoteRowView(note: note)
+                            .padding(.vertical, 4)
+                    }
+                    
+                    if personNotes.count > 5 {
+                        Button(action: {
+                            // TODO: Show all notes view
+                        }) {
+                            Text("Show all \(personNotes.count) notes")
+                                .font(.caption)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.vertical, 4)
+                    }
+                }
+            }
+        }
+    }
+    
     private var syncInfoContent: some View {
         VStack(alignment: .leading, spacing: 8) {
             if let syncedAt = person.lastSyncedAt {
@@ -668,6 +722,19 @@ struct PersonDetailView: View {
                         .font(.caption)
                         .foregroundStyle(.orange)
                 }
+            }
+        }
+    }
+    
+    // MARK: - Data Loading
+    
+    private func loadNotes() {
+        Task {
+            do {
+                personNotes = try notesRepository.fetchNotes(forPerson: person)
+                print("📝 [PersonDetailView] Loaded \(personNotes.count) notes for \(person.displayNameCache ?? person.displayName)")
+            } catch {
+                print("❌ [PersonDetailView] Failed to load notes: \(error)")
             }
         }
     }
@@ -751,6 +818,71 @@ struct PersonDetailView: View {
             formatter.setLocalizedDateFormatFromTemplate("MMMM d, yyyy")
         }
         return formatter.string(from: date)
+    }
+}
+
+// MARK: - Note Row View (Phase H)
+
+private struct NoteRowView: View {
+    let note: SamNote
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Image(systemName: note.isAnalyzed ? "brain.head.profile" : "note.text")
+                    .foregroundStyle(note.isAnalyzed ? .purple : .secondary)
+                    .font(.caption)
+                
+                Text(note.createdAt, style: .relative)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                
+                Spacer()
+                
+                if !note.extractedActionItems.isEmpty {
+                    let pendingCount = note.extractedActionItems.filter { $0.status == .pending }.count
+                    if pendingCount > 0 {
+                        Text("\(pendingCount)")
+                            .font(.caption2)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(.orange.opacity(0.2))
+                            .foregroundStyle(.orange)
+                            .clipShape(Capsule())
+                    }
+                }
+            }
+            
+            if let summary = note.summary {
+                Text(summary)
+                    .font(.body)
+                    .lineLimit(2)
+            } else {
+                Text(note.content)
+                    .font(.body)
+                    .lineLimit(2)
+                    .foregroundStyle(.secondary)
+            }
+            
+            if !note.extractedTopics.isEmpty {
+                HStack(spacing: 4) {
+                    ForEach(note.extractedTopics.prefix(3), id: \.self) { topic in
+                        Text(topic)
+                            .font(.caption2)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(.blue.opacity(0.1))
+                            .foregroundStyle(.blue)
+                            .clipShape(Capsule())
+                    }
+                    if note.extractedTopics.count > 3 {
+                        Text("+\(note.extractedTopics.count - 3)")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
     }
 }
 

@@ -15,14 +15,16 @@ import EventKit
 struct SAMApp: App {
     
     // Check onboarding status immediately
-    // Note: We need to use the full expression here, not just the boolean value
-    // because @State needs to capture the initial value correctly
     @State private var showOnboarding: Bool
     @State private var hasCheckedPermissions = false
     
     // MARK: - Lifecycle
     
     init() {
+        // Initialize showOnboarding FIRST before any other operations
+        let hasCompletedOnboarding = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
+        _showOnboarding = State(initialValue: !hasCompletedOnboarding)
+        
         #if DEBUG
         // DEVELOPMENT ONLY: Uncomment the next line to force reset onboarding on every launch
         // UserDefaults.standard.set(false, forKey: "hasCompletedOnboarding")
@@ -35,10 +37,6 @@ struct SAMApp: App {
             UserDefaults.standard.set(false, forKey: "calendarAutoImportEnabled")
         }
         #endif
-        
-        // Initialize showOnboarding based on whether onboarding was completed
-        let hasCompletedOnboarding = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
-        _showOnboarding = State(initialValue: !hasCompletedOnboarding)
         
         print("🚀 [SAMApp] Initializing...")
         print("🔍 [SAMApp] hasCompletedOnboarding = \(hasCompletedOnboarding)")
@@ -114,6 +112,8 @@ struct SAMApp: App {
         // This ensures all SwiftData operations hit the same store
         PeopleRepository.shared.configure(container: SAMModelContainer.shared)
         EvidenceRepository.shared.configure(container: SAMModelContainer.shared)
+        ContextsRepository.shared.configure(container: SAMModelContainer.shared)
+        NotesRepository.shared.configure(container: SAMModelContainer.shared)
         
         print("📊 [SAMApp] Data layer configured with container: \(Unmanaged.passUnretained(SAMModelContainer.shared).toOpaque())")
     }
@@ -131,8 +131,74 @@ struct SAMApp: App {
             return
         }
         
-        // Onboarding is marked complete - trigger imports
+        // Onboarding is marked complete - verify permissions are still valid
+        // This handles the case where app was rebuilt and macOS revoked permissions
+        let shouldResetOnboarding = await checkIfPermissionsLost()
+        
+        if shouldResetOnboarding {
+            print("⚠️ [SAMApp] Permissions were lost (likely due to rebuild) - resetting onboarding")
+            await MainActor.run {
+                UserDefaults.standard.set(false, forKey: "hasCompletedOnboarding")
+                showOnboarding = true
+            }
+            return
+        }
+        
+        // Onboarding is marked complete and permissions are valid - trigger imports
         await triggerImportsForEnabledSources()
+    }
+    
+    /// Check if permissions that should be granted (based on settings) are actually missing
+    /// Returns true if onboarding should be reset due to lost permissions
+    private func checkIfPermissionsLost() async -> Bool {
+        // Check if auto-detection is enabled
+        let autoDetectEnabled = UserDefaults.standard.bool(forKey: "autoDetectPermissionLoss")
+        
+        // Default to true if never set (first launch)
+        let shouldAutoDetect = UserDefaults.standard.object(forKey: "autoDetectPermissionLoss") == nil ? true : autoDetectEnabled
+        
+        if !shouldAutoDetect {
+            print("🔍 [SAMApp] Auto-detect permission loss is disabled - skipping check")
+            return false
+        }
+        
+        let contactsEnabled = UserDefaults.standard.bool(forKey: "sam.contacts.enabled")
+        let calendarEnabled = UserDefaults.standard.bool(forKey: "calendarAutoImportEnabled")
+        
+        print("🔍 [SAMApp] Checking permission state...")
+        print("🔍 [SAMApp] Settings say - Contacts: \(contactsEnabled), Calendar: \(calendarEnabled)")
+        
+        // If nothing was ever enabled, don't reset (user might have skipped everything)
+        if !contactsEnabled && !calendarEnabled {
+            print("🔍 [SAMApp] No sources were ever enabled - no reset needed")
+            return false
+        }
+        
+        var permissionsLost = false
+        
+        // Check contacts if it was enabled
+        if contactsEnabled {
+            let contactsAuth = await ContactsService.shared.authorizationStatus()
+            print("🔍 [SAMApp] Contacts permission status: \(contactsAuth.rawValue)")
+            
+            if contactsAuth != .authorized {
+                print("⚠️ [SAMApp] Contacts was enabled but permission is now \(contactsAuth.rawValue)")
+                permissionsLost = true
+            }
+        }
+        
+        // Check calendar if it was enabled
+        if calendarEnabled {
+            let calendarAuth = await CalendarService.shared.authorizationStatus()
+            print("🔍 [SAMApp] Calendar permission status: \(calendarAuth.rawValue)")
+            
+            if calendarAuth != .fullAccess {
+                print("⚠️ [SAMApp] Calendar was enabled but permission is now \(calendarAuth.rawValue)")
+                permissionsLost = true
+            }
+        }
+        
+        return permissionsLost
     }
     
     /// Triggers imports after onboarding completes in the same session

@@ -18,21 +18,23 @@ struct AppShellView: View {
     
     @AppStorage("sam.sidebar.selection") private var sidebarSelection: String = "awareness"
     @State private var selectedPersonID: UUID?
+    @State private var selectedEvidenceID: UUID?
+    @State private var selectedContextID: UUID?
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     
     // MARK: - Body
     
     var body: some View {
-        if sidebarSelection == "people" {
-            // Three-column layout for People section
+        if sidebarSelection == "people" || sidebarSelection == "inbox" || sidebarSelection == "contexts" {
+            // Three-column layout for People, Inbox, and Contexts sections
             NavigationSplitView(columnVisibility: $columnVisibility) {
                 sidebar
                     .navigationSplitViewColumnWidth(min: 120, ideal: 130, max: 200)
             } content: {
-                PeopleListView(selectedPersonID: $selectedPersonID)
+                threeColumnContent
                     .navigationSplitViewColumnWidth(min: 200, ideal: 280, max: 500)
             } detail: {
-                peopleDetailView
+                threeColumnDetail
             }
             .navigationTitle("SAM")
         } else {
@@ -80,14 +82,8 @@ struct AppShellView: View {
     private var detailView: some View {
         switch sidebarSelection {
         case "awareness":
-            AwarenessPlaceholder()
-            
-        case "inbox":
-            InboxPlaceholder()
-            
-        case "contexts":
-            ContextsPlaceholder()
-            
+            AwarenessView()
+
         default:
             ContentUnavailableView(
                 "Select an item",
@@ -96,19 +92,83 @@ struct AppShellView: View {
             )
         }
     }
-    
+
+    // MARK: - Three-Column Content (list column)
+
+    @ViewBuilder
+    private var threeColumnContent: some View {
+        switch sidebarSelection {
+        case "people":
+            PeopleListView(selectedPersonID: $selectedPersonID)
+        case "inbox":
+            InboxListView(selectedEvidenceID: $selectedEvidenceID)
+        case "contexts":
+            ContextListView(selectedContextID: $selectedContextID)
+        default:
+            EmptyView()
+        }
+    }
+
+    // MARK: - Three-Column Detail
+
+    @ViewBuilder
+    private var threeColumnDetail: some View {
+        switch sidebarSelection {
+        case "people":
+            peopleDetailView
+        case "inbox":
+            inboxDetailView
+        case "contexts":
+            contextsDetailView
+        default:
+            EmptyView()
+        }
+    }
+
     // MARK: - People Detail View
-    
+
     @ViewBuilder
     private var peopleDetailView: some View {
         if let selectedID = selectedPersonID {
             PeopleDetailContainer(personID: selectedID)
-                .id(selectedID)  // Force view to recreate when ID changes
+                .id(selectedID)
         } else {
             ContentUnavailableView(
                 "Select a Person",
                 systemImage: "person.circle",
                 description: Text("Choose someone from the list to view their details")
+            )
+        }
+    }
+
+    // MARK: - Inbox Detail View
+
+    @ViewBuilder
+    private var inboxDetailView: some View {
+        if let selectedID = selectedEvidenceID {
+            InboxDetailContainer(evidenceID: selectedID)
+                .id(selectedID)
+        } else {
+            ContentUnavailableView(
+                "Select an Item",
+                systemImage: "tray",
+                description: Text("Choose an evidence item from the list to view its details")
+            )
+        }
+    }
+
+    // MARK: - Contexts Detail View
+
+    @ViewBuilder
+    private var contextsDetailView: some View {
+        if let selectedID = selectedContextID {
+            ContextsDetailContainer(contextID: selectedID)
+                .id(selectedID)
+        } else {
+            ContentUnavailableView(
+                "Select a Context",
+                systemImage: "building.2",
+                description: Text("Choose a context from the list to view its details")
             )
         }
     }
@@ -140,68 +200,55 @@ private struct PeopleDetailContainer: View {
     }
 }
 
-// MARK: - Placeholders (Phase A)
+// MARK: - Inbox Detail Container
 
-private struct AwarenessPlaceholder: View {
+/// Helper view that fetches an evidence item by ID and displays InboxDetailView
+private struct InboxDetailContainer: View {
+    let evidenceID: UUID
+
+    @Query private var allItems: [SamEvidenceItem]
+
+    var item: SamEvidenceItem? {
+        allItems.first(where: { $0.id == evidenceID })
+    }
+
     var body: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "brain.head.profile")
-                .font(.system(size: 64))
-                .foregroundStyle(.secondary)
-            
-            Text("Awareness")
-                .font(.title)
-            
-            Text("AI-powered insights will appear here")
-                .foregroundStyle(.secondary)
-            
-            Text("Coming in Phase H")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
+        if let item = item {
+            InboxDetailView(item: item)
+                .id(evidenceID)
+        } else {
+            ContentUnavailableView(
+                "Item Not Found",
+                systemImage: "tray.slash",
+                description: Text("This evidence item may have been deleted")
+            )
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
-private struct InboxPlaceholder: View {
-    var body: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "tray")
-                .font(.system(size: 64))
-                .foregroundStyle(.secondary)
-            
-            Text("Inbox")
-                .font(.title)
-            
-            Text("Evidence items needing review will appear here")
-                .foregroundStyle(.secondary)
-            
-            Text("Coming in Phase F")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
+// MARK: - Contexts Detail Container
 
-private struct ContextsPlaceholder: View {
+/// Helper view that fetches a context by ID and displays ContextDetailView
+private struct ContextsDetailContainer: View {
+    let contextID: UUID
+
+    @Query private var allContexts: [SamContext]
+
+    var context: SamContext? {
+        allContexts.first(where: { $0.id == contextID })
+    }
+
     var body: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "building.2")
-                .font(.system(size: 64))
-                .foregroundStyle(.secondary)
-            
-            Text("Contexts")
-                .font(.title)
-            
-            Text("Households, businesses, and recruiting contexts will appear here")
-                .foregroundStyle(.secondary)
-            
-            Text("Coming in Phase G")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
+        if let context = context {
+            ContextDetailView(context: context)
+                .id(contextID)
+        } else {
+            ContentUnavailableView(
+                "Context Not Found",
+                systemImage: "building.2.crop.circle.badge.questionmark",
+                description: Text("This context may have been deleted")
+            )
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 

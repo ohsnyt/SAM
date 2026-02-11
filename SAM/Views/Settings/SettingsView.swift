@@ -800,6 +800,16 @@ struct GeneralSettingsView: View {
     
     @State private var showResetConfirmation = false
     @State private var showOnboardingResetConfirmation = false
+    @AppStorage("autoResetOnVersionChange") private var autoResetOnVersionChange = false
+    @AppStorage("autoDetectPermissionLoss") private var autoDetectPermissionLoss = true
+    
+    private var appVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
+    }
+    
+    private var buildNumber: String {
+        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
+    }
     
     var body: some View {
         Form {
@@ -816,13 +826,13 @@ struct GeneralSettingsView: View {
                         HStack {
                             Text("Version:")
                                 .foregroundStyle(.secondary)
-                            Text("1.0.0 (Phase E Complete)")
+                            Text("\(appVersion) (Phase H Complete)")
                         }
                         
                         HStack {
                             Text("Build:")
                                 .foregroundStyle(.secondary)
-                            Text("2026.02.10")
+                            Text(buildNumber)
                         }
                     }
                     
@@ -835,17 +845,66 @@ struct GeneralSettingsView: View {
                         
                         FeatureStatusRow(name: "People", status: .complete)
                         FeatureStatusRow(name: "Calendar Import", status: .complete)
-                        FeatureStatusRow(name: "Evidence Inbox", status: .planned)
-                        FeatureStatusRow(name: "Contexts", status: .planned)
+                        FeatureStatusRow(name: "Evidence Inbox", status: .complete)
+                        FeatureStatusRow(name: "Contexts", status: .complete)
+                        FeatureStatusRow(name: "Notes & AI Analysis", status: .complete)
                         FeatureStatusRow(name: "Insights", status: .planned)
-                        FeatureStatusRow(name: "Notes", status: .planned)
+                    }
+                    
+                    Divider()
+                    
+                    // Auto-reset section
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Automatic Reset")
+                            .font(.headline)
+                        
+                        Toggle("Auto-detect permission loss (recommended)", isOn: $autoDetectPermissionLoss)
+                        
+                        Text("When enabled, SAM will automatically reset onboarding if permissions are lost (e.g., after rebuilding the app in Xcode). This saves you from manually resetting permissions.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        
+                        if !autoDetectPermissionLoss {
+                            HStack(spacing: 4) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundStyle(.orange)
+                                    .font(.caption)
+                                
+                                Text("Auto-detection disabled. You'll need to manually reset if permissions are lost.")
+                                    .font(.caption)
+                                    .foregroundStyle(.orange)
+                            }
+                            .padding(.top, 4)
+                        }
+                        
+                        Divider()
+                            .padding(.vertical, 4)
+                        
+                        Toggle("Reset on version change", isOn: $autoResetOnVersionChange)
+                        
+                        Text("When enabled, SAM will automatically reset onboarding and clear all data whenever the app version changes. Useful for development and testing.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        
+                        if autoResetOnVersionChange {
+                            HStack(spacing: 4) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundStyle(.orange)
+                                    .font(.caption)
+                                
+                                Text("Automatic reset is enabled. Your data will be cleared on version updates.")
+                                    .font(.caption)
+                                    .foregroundStyle(.orange)
+                            }
+                            .padding(.top, 4)
+                        }
                     }
                     
                     Divider()
                     
                     // Development / Reset section
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Development")
+                        Text("Manual Reset")
                             .font(.headline)
                         
                         Text("These actions are intended for development and testing.")
