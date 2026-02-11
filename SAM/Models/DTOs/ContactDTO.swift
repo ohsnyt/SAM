@@ -24,7 +24,8 @@ struct ContactDTO: Sendable, Identifiable {
     let emailAddresses: [String]
     let postalAddresses: [PostalAddressDTO]
     let birthday: DateComponents?
-    let note: String
+    // Note: CNContactNoteKey requires Notes entitlement - removed until approved
+    // let note: String
     let imageData: Data?
     let thumbnailImageData: Data?
     let contactRelations: [RelationDTO]
@@ -103,26 +104,29 @@ extension ContactDTO {
 extension ContactDTO {
     /// Creates a DTO from a CNContact
     /// This is the ONLY place in the codebase where we read CNContact properties
-    init(from contact: CNContact) {
+    /// nonisolated: Can be called from any actor context (including ContactsService actor)
+    nonisolated init(from contact: CNContact) {
         self.id = contact.identifier
         self.identifier = contact.identifier
         self.givenName = contact.givenName
         self.familyName = contact.familyName
         self.nickname = contact.nickname
         self.organizationName = contact.organizationName
-        self.departmentName = contact.departmentName
-        self.jobTitle = contact.jobTitle
         
-        self.phoneNumbers = contact.phoneNumbers.map { phone in
+        // Safe property access - only read if key was fetched
+        self.departmentName = contact.isKeyAvailable(CNContactDepartmentNameKey) ? contact.departmentName : ""
+        self.jobTitle = contact.isKeyAvailable(CNContactJobTitleKey) ? contact.jobTitle : ""
+        
+        self.phoneNumbers = contact.isKeyAvailable(CNContactPhoneNumbersKey) ? contact.phoneNumbers.map { phone in
             PhoneNumberDTO(
                 label: phone.label.flatMap { CNLabeledValue<NSString>.localizedString(forLabel: $0) },
                 number: phone.value.stringValue
             )
-        }
+        } : []
         
-        self.emailAddresses = contact.emailAddresses.map { $0.value as String }
+        self.emailAddresses = contact.isKeyAvailable(CNContactEmailAddressesKey) ? contact.emailAddresses.map { $0.value as String } : []
         
-        self.postalAddresses = contact.postalAddresses.map { address in
+        self.postalAddresses = contact.isKeyAvailable(CNContactPostalAddressesKey) ? contact.postalAddresses.map { address in
             let postal = address.value
             return PostalAddressDTO(
                 label: address.label.flatMap { CNLabeledValue<NSString>.localizedString(forLabel: $0) },
@@ -132,37 +136,38 @@ extension ContactDTO {
                 postalCode: postal.postalCode,
                 country: postal.country
             )
-        }
+        } : []
         
-        self.birthday = contact.birthday
-        self.note = contact.note
-        self.imageData = contact.imageData
-        self.thumbnailImageData = contact.thumbnailImageData
+        self.birthday = contact.isKeyAvailable(CNContactBirthdayKey) ? contact.birthday : nil
+        // Note: CNContactNoteKey requires Notes entitlement - removed until approved
+        // self.note = contact.isKeyAvailable(CNContactNoteKey) ? contact.note : ""
+        self.imageData = contact.isKeyAvailable(CNContactImageDataKey) ? contact.imageData : nil
+        self.thumbnailImageData = contact.isKeyAvailable(CNContactThumbnailImageDataKey) ? contact.thumbnailImageData : nil
         
-        self.contactRelations = contact.contactRelations.map { relation in
+        self.contactRelations = contact.isKeyAvailable(CNContactRelationsKey) ? contact.contactRelations.map { relation in
             RelationDTO(
                 label: relation.label.flatMap { CNLabeledValue<NSString>.localizedString(forLabel: $0) },
                 name: relation.value.name
             )
-        }
+        } : []
         
-        self.socialProfiles = contact.socialProfiles.map { profile in
+        self.socialProfiles = contact.isKeyAvailable(CNContactSocialProfilesKey) ? contact.socialProfiles.map { profile in
             let social = profile.value
             return SocialProfileDTO(
                 service: social.service,
                 username: social.username,
                 urlString: social.urlString
             )
-        }
+        } : []
         
-        self.instantMessageAddresses = contact.instantMessageAddresses.map { im in
+        self.instantMessageAddresses = contact.isKeyAvailable(CNContactInstantMessageAddressesKey) ? contact.instantMessageAddresses.map { im in
             InstantMessageDTO(
                 service: im.value.service,
                 username: im.value.username
             )
-        }
+        } : []
         
-        self.urlAddresses = contact.urlAddresses.map { $0.value as String }
+        self.urlAddresses = contact.isKeyAvailable(CNContactUrlAddressesKey) ? contact.urlAddresses.map { $0.value as String } : []
     }
 }
 
@@ -176,7 +181,8 @@ extension ContactDTO {
         case detail     // For detail view: everything except relations
         case full       // Everything including relations
         
-        var keys: [CNKeyDescriptor] {
+        /// nonisolated: Can be accessed from any actor context
+        nonisolated var keys: [CNKeyDescriptor] {
             switch self {
             case .minimal:
                 return [
@@ -201,7 +207,7 @@ extension ContactDTO {
                     CNContactEmailAddressesKey,
                     CNContactPostalAddressesKey,
                     CNContactBirthdayKey,
-                    CNContactNoteKey,
+                    // CNContactNoteKey,  // Requires Notes entitlement - removed
                     CNContactImageDataKey,
                     CNContactThumbnailImageDataKey,
                     CNContactSocialProfilesKey,
@@ -222,10 +228,10 @@ extension ContactDTO {
                     CNContactEmailAddressesKey,
                     CNContactPostalAddressesKey,
                     CNContactBirthdayKey,
-                    CNContactNoteKey,
+                    // CNContactNoteKey,  // Requires Notes entitlement - removed
                     CNContactImageDataKey,
                     CNContactThumbnailImageDataKey,
-                    CNContactContactRelationsKey,
+                    CNContactRelationsKey,
                     CNContactSocialProfilesKey,
                     CNContactInstantMessageAddressesKey,
                     CNContactUrlAddressesKey

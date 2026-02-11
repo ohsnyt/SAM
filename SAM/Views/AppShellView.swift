@@ -17,16 +17,34 @@ struct AppShellView: View {
     // MARK: - Navigation State
     
     @AppStorage("sam.sidebar.selection") private var sidebarSelection: String = "awareness"
+    @State private var selectedPersonID: UUID?
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
     
     // MARK: - Body
     
     var body: some View {
-        NavigationSplitView {
-            sidebar
-        } detail: {
-            detailView
+        if sidebarSelection == "people" {
+            // Three-column layout for People section
+            NavigationSplitView(columnVisibility: $columnVisibility) {
+                sidebar
+                    .navigationSplitViewColumnWidth(min: 120, ideal: 130, max: 200)
+            } content: {
+                PeopleListView(selectedPersonID: $selectedPersonID)
+                    .navigationSplitViewColumnWidth(min: 200, ideal: 280, max: 500)
+            } detail: {
+                peopleDetailView
+            }
+            .navigationTitle("SAM")
+        } else {
+            // Two-column layout for other sections
+            NavigationSplitView {
+                sidebar
+                    .navigationSplitViewColumnWidth(min: 120, ideal: 130, max: 200)
+            } detail: {
+                detailView
+            }
+            .navigationTitle("SAM")
         }
-        .navigationTitle("SAM")
     }
     
     // MARK: - Sidebar
@@ -54,7 +72,6 @@ struct AppShellView: View {
             }
         }
         .navigationTitle("SAM")
-        .frame(minWidth: 200)
     }
     
     // MARK: - Detail Routing
@@ -68,9 +85,6 @@ struct AppShellView: View {
         case "inbox":
             InboxPlaceholder()
             
-        case "people":
-            PeoplePlaceholder()
-            
         case "contexts":
             ContextsPlaceholder()
             
@@ -79,6 +93,48 @@ struct AppShellView: View {
                 "Select an item",
                 systemImage: "sidebar.left",
                 description: Text("Choose a section from the sidebar")
+            )
+        }
+    }
+    
+    // MARK: - People Detail View
+    
+    @ViewBuilder
+    private var peopleDetailView: some View {
+        if let selectedID = selectedPersonID {
+            PeopleDetailContainer(personID: selectedID)
+                .id(selectedID)  // Force view to recreate when ID changes
+        } else {
+            ContentUnavailableView(
+                "Select a Person",
+                systemImage: "person.circle",
+                description: Text("Choose someone from the list to view their details")
+            )
+        }
+    }
+}
+
+// MARK: - People Detail Container
+
+/// Helper view that fetches a person by ID and displays PersonDetailView
+private struct PeopleDetailContainer: View {
+    let personID: UUID
+    
+    @Query private var allPeople: [SamPerson]
+    
+    var person: SamPerson? {
+        allPeople.first(where: { $0.id == personID })
+    }
+    
+    var body: some View {
+        if let person = person {
+            PersonDetailView(person: person)
+                .id(personID)  // Force PersonDetailView to recreate when person changes
+        } else {
+            ContentUnavailableView(
+                "Person Not Found",
+                systemImage: "person.crop.circle.badge.questionmark",
+                description: Text("This person may have been deleted")
             )
         }
     }
@@ -128,27 +184,6 @@ private struct InboxPlaceholder: View {
     }
 }
 
-private struct PeoplePlaceholder: View {
-    var body: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "person.2")
-                .font(.system(size: 64))
-                .foregroundStyle(.secondary)
-            
-            Text("People")
-                .font(.title)
-            
-            Text("Your contacts and relationships will appear here")
-                .foregroundStyle(.secondary)
-            
-            Text("Coming in Phase D")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
-
 private struct ContextsPlaceholder: View {
     var body: some View {
         VStack(spacing: 20) {
@@ -175,5 +210,5 @@ private struct ContextsPlaceholder: View {
 #Preview {
     AppShellView()
         .modelContainer(SAMModelContainer.shared)
-        .frame(width: 900, height: 600)
+        .frame(width: 900, height: 800)
 }

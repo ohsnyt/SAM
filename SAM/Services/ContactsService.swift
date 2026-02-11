@@ -12,6 +12,8 @@ import os.log
 
 /// Actor-based service for all Contacts framework operations
 /// This is the ONLY place in the codebase that creates/uses CNContactStore
+///
+/// Phase B: Clean architecture - Services own their external API access
 actor ContactsService {
     
     // MARK: - Singleton
@@ -20,12 +22,17 @@ actor ContactsService {
     
     // MARK: - Properties
     
-    private let store = CNContactStore()
+    /// Shared CNContactStore instance (singleton pattern required on macOS)
+    /// This is the single source of truth for Contacts access in the app
+    private let store: CNContactStore
     private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "ContactsService")
     
     // MARK: - Initialization
     
-    private init() {}
+    private init() {
+        self.store = CNContactStore()
+        logger.info("ContactsService initialized with dedicated CNContactStore")
+    }
     
     // MARK: - Authorization
     
@@ -62,6 +69,11 @@ actor ContactsService {
             logger.warning("Unknown contacts authorization status")
             return false
         }
+    }
+    
+    /// Alias for requestAccess() to match CalendarService naming
+    func requestAuthorization() async -> Bool {
+        await requestAccess()
     }
     
     // MARK: - Fetch Operations
@@ -152,6 +164,27 @@ actor ContactsService {
         }
     }
     
+    /// Fetch contacts from a specific group by identifier
+    func fetchContacts(inGroupWithIdentifier groupIdentifier: String, keys: ContactDTO.KeySet) async -> [ContactDTO] {
+        guard authorizationStatus() == .authorized else {
+            logger.warning("Attempted to fetch contacts without authorization")
+            return []
+        }
+        
+        do {
+            // Fetch contacts in group
+            let predicate = CNContact.predicateForContactsInGroup(withIdentifier: groupIdentifier)
+            let contacts = try store.unifiedContacts(matching: predicate, keysToFetch: keys.keys)
+            
+            logger.info("Fetched \(contacts.count) contacts from group ID '\(groupIdentifier)'")
+            return contacts.map { ContactDTO(from: $0) }
+            
+        } catch {
+            logger.error("Failed to fetch contacts from group ID '\(groupIdentifier)': \(error.localizedDescription)")
+            return []
+        }
+    }
+    
     /// Fetch all available groups
     func fetchGroups() async -> [ContactGroupDTO] {
         guard authorizationStatus() == .authorized else {
@@ -173,19 +206,19 @@ actor ContactsService {
         }
     }
     
-    /// Get the "me" contact
+    /// Get the "me" contact (requires MeCardManager to be configured by user)
+    /// Note: macOS Contacts framework does not provide a direct "me" contact API.
+    /// This method should be integrated with MeCardManager once that dependency is available.
     func fetchMeContact(keys: ContactDTO.KeySet) async -> ContactDTO? {
         guard authorizationStatus() == .authorized else {
             logger.warning("Attempted to fetch me contact without authorization")
             return nil
         }
         
-        guard let meIdentifier = store.defaultContainerIdentifier() else {
-            logger.warning("No me contact identifier found")
-            return nil
-        }
-        
-        return await fetchContact(identifier: meIdentifier, keys: keys)
+        // TODO: Integrate with MeCardManager.shared.meContactIdentifier when available
+        // For now, this method is not functional on macOS
+        logger.info("fetchMeContact called - requires MeCardManager integration")
+        return nil
     }
     
     // MARK: - Search Operations
@@ -212,6 +245,82 @@ actor ContactsService {
             return []
         }
     }
+    
+    // MARK: - Validation Operations
+    
+    /// Check if a contact identifier is still valid (contact exists and is accessible)
+    /// Returns false if the contact was deleted or is no longer accessible
+    func isValidContact(identifier: String) async -> Bool {
+        guard authorizationStatus() == .authorized else {
+            logger.warning("Attempted to validate contact without authorization")
+            return false
+        }
+        
+        do {
+            // Try to fetch the contact with minimal keys
+            let keys: [CNKeyDescriptor] = [CNContactIdentifierKey as CNKeyDescriptor]
+            _ = try store.unifiedContact(withIdentifier: identifier, keysToFetch: keys)
+            return true
+        } catch {
+            // Contact not found or access error
+            logger.debug("Contact \(identifier) validation failed: \(error.localizedDescription)")
+            return false
+        }
+    }
+    
+    /// Check if a contact is in a specific group
+    func isContactInGroup(identifier: String, groupName: String) async -> Bool {
+        guard authorizationStatus() == .authorized else {
+            logger.warning("Attempted to check group membership without authorization")
+            return false
+        }
+        
+        do {
+            // Find the group
+            let groups = try store.groups(matching: nil)
+            guard let targetGroup = groups.first(where: { $0.name == groupName }) else {
+                logger.warning("Group '\(groupName)' not found")
+                return false
+            }
+            
+            // Check if contact is in group
+            let predicate = CNContact.predicateForContactsInGroup(withIdentifier: targetGroup.identifier)
+            let keys: [CNKeyDescriptor] = [CNContactIdentifierKey as CNKeyDescriptor]
+            let contacts = try store.unifiedContacts(matching: predicate, keysToFetch: keys)
+            
+            return contacts.contains { $0.identifier == identifier }
+        } catch {
+            logger.error("Failed to check group membership: \(error.localizedDescription)")
+            return false
+        }
+    }
+    
+    // MARK: - Write Operations
+    
+    /// Create a new contact group
+    /// Returns true if successful
+    func createGroup(named name: String) async -> Bool {
+        guard authorizationStatus() == .authorized else {
+            logger.warning("Attempted to create group without authorization")
+            return false
+        }
+        
+        do {
+            let newGroup = CNMutableGroup()
+            newGroup.name = name
+            
+            let saveRequest = CNSaveRequest()
+            saveRequest.add(newGroup, toContainerWithIdentifier: nil)
+            
+            try store.execute(saveRequest)
+            
+            logger.info("Successfully created group '\(name)'")
+            return true
+        } catch {
+            logger.error("Failed to create group '\(name)': \(error.localizedDescription)")
+            return false
+        }
+    }
 }
 
 // MARK: - Supporting Types
@@ -222,7 +331,8 @@ struct ContactGroupDTO: Sendable, Identifiable {
     let identifier: String
     let name: String
     
-    init(identifier: String, name: String) {
+    /// nonisolated: Can be called from any actor context (including ContactsService actor)
+    nonisolated init(identifier: String, name: String) {
         self.id = identifier
         self.identifier = identifier
         self.name = name
