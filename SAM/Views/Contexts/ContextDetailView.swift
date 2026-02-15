@@ -300,9 +300,8 @@ struct ContextDetailView: View {
         Task {
             do {
                 try ContextsRepository.shared.delete(context: context)
-                print("✅ [ContextDetailView] Deleted context: \(context.name)")
             } catch {
-                print("❌ [ContextDetailView] Failed to delete context: \(error)")
+                // Error is non-recoverable in this context
             }
         }
     }
@@ -311,9 +310,8 @@ struct ContextDetailView: View {
         Task {
             do {
                 contextNotes = try repository.fetchNotes(forContext: context)
-                print("📝 [ContextDetailView] Loaded \(contextNotes.count) notes for \(context.name)")
             } catch {
-                print("❌ [ContextDetailView] Failed to load notes: \(error)")
+                // Notes loading failure is non-critical
             }
         }
     }

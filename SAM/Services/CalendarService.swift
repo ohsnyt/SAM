@@ -13,6 +13,7 @@
 import Foundation
 import EventKit
 import AppKit  // Required for NSColor color space conversion
+import os.log
 
 /// Actor-isolated service that owns the EKEventStore and provides
 /// thread-safe access to calendar data.
@@ -32,12 +33,11 @@ actor CalendarService {
     // MARK: - Properties
     
     private let eventStore = EKEventStore()
-    
+    private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "CalendarService")
+
     // MARK: - Initialization
-    
-    private init() {
-        print("📅 [CalendarService] Initialized")
-    }
+
+    private init() {}
     
     // MARK: - Authorization
     
@@ -54,15 +54,15 @@ actor CalendarService {
     /// Request authorization (Settings-only, never call from background).
     /// Returns true if authorized.
     func requestAuthorization() async -> Bool {
-        print("📅 [CalendarService] Requesting calendar authorization...")
-        
+        logger.info("Requesting calendar authorization")
+
         if #available(macOS 14.0, *) {
             do {
                 let granted = try await eventStore.requestFullAccessToEvents()
-                print("📅 [CalendarService] Authorization result: \(granted)")
+                logger.info("Authorization result: \(granted)")
                 return granted
             } catch {
-                print("❌ [CalendarService] Authorization error: \(error)")
+                logger.error("Authorization error: \(error)")
                 return false
             }
         } else {
@@ -70,7 +70,7 @@ actor CalendarService {
             return await withCheckedContinuation { continuation in
                 eventStore.requestAccess(to: .event) { granted, error in
                     if let error = error {
-                        print("❌ [CalendarService] Authorization error: \(error)")
+                        self.logger.error("Authorization error: \(error)")
                     }
                     continuation.resume(returning: granted)
                 }
@@ -84,7 +84,7 @@ actor CalendarService {
     /// Returns nil if not authorized.
     func fetchCalendars() -> [CalendarDTO]? {
         guard authorizationStatus() == .fullAccess else {
-            print("⚠️ [CalendarService] Not authorized to fetch calendars")
+            logger.warning("Not authorized to fetch calendars")
             return nil
         }
         
@@ -105,7 +105,7 @@ actor CalendarService {
     /// Find calendar by identifier.
     func findCalendar(byIdentifier identifier: String) -> CalendarDTO? {
         guard authorizationStatus() == .fullAccess else {
-            print("⚠️ [CalendarService] Not authorized to fetch calendar")
+            logger.warning("Not authorized to fetch calendar")
             return nil
         }
         
@@ -126,32 +126,30 @@ actor CalendarService {
         endDate: Date
     ) -> [EventDTO]? {
         guard authorizationStatus() == .fullAccess else {
-            print("⚠️ [CalendarService] Not authorized to fetch events")
+            logger.warning("Not authorized to fetch events")
             return nil
         }
-        
+
         // Find EKCalendar objects by identifier
         let ekCalendars = calendars.compactMap { identifier in
             eventStore.calendar(withIdentifier: identifier)
         }
-        
+
         guard !ekCalendars.isEmpty else {
-            print("⚠️ [CalendarService] No valid calendars found")
+            logger.warning("No valid calendars found for identifiers")
             return []
         }
-        
+
         // Create predicate
         let predicate = eventStore.predicateForEvents(
             withStart: startDate,
             end: endDate,
             calendars: ekCalendars
         )
-        
+
         // Fetch events
         let events = eventStore.events(matching: predicate)
-        
-        print("📅 [CalendarService] Fetched \(events.count) events from \(calendars.count) calendars")
-        
+
         return events.map { EventDTO(from: $0) }
     }
     
@@ -176,12 +174,12 @@ actor CalendarService {
     /// Fetch a single event by identifier.
     func fetchEvent(identifier: String) -> EventDTO? {
         guard authorizationStatus() == .fullAccess else {
-            print("⚠️ [CalendarService] Not authorized to fetch event")
+            logger.warning("Not authorized to fetch event")
             return nil
         }
-        
+
         guard let event = eventStore.event(withIdentifier: identifier) else {
-            print("⚠️ [CalendarService] Event not found: \(identifier)")
+            logger.debug("Event not found: \(identifier, privacy: .public)")
             return nil
         }
         
@@ -205,28 +203,28 @@ actor CalendarService {
     /// Returns true if successful.
     func createCalendar(titled title: String) async -> Bool {
         guard authorizationStatus() == .fullAccess else {
-            print("⚠️ [CalendarService] Not authorized to create calendar")
+            logger.warning("Not authorized to create calendar")
             return false
         }
-        
+
         do {
             let newCalendar = EKCalendar(for: .event, eventStore: eventStore)
             newCalendar.title = title
-            
+
             // Find the local source (iCloud or On My Mac)
             guard let source = eventStore.sources.first(where: { $0.sourceType == .local || $0.sourceType == .calDAV }) else {
-                print("⚠️ [CalendarService] No suitable calendar source found")
+                logger.error("No suitable calendar source found")
                 return false
             }
-            
+
             newCalendar.source = source
-            
+
             try eventStore.saveCalendar(newCalendar, commit: true)
-            
-            print("✅ [CalendarService] Successfully created calendar '\(title)'")
+
+            logger.notice("Created calendar '\(title, privacy: .public)'")
             return true
         } catch {
-            print("❌ [CalendarService] Failed to create calendar '\(title)': \(error)")
+            logger.error("Failed to create calendar '\(title, privacy: .public)': \(error)")
             return false
         }
     }

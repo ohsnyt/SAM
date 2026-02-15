@@ -231,10 +231,8 @@ struct InboxListView: View {
                 }
             }
 
-            print("📬 [InboxListView] Loaded \(items.count) items (filter: \(filter.label))")
         } catch {
             errorMessage = error.localizedDescription
-            print("❌ [InboxListView] Load failed: \(error)")
         }
 
         isLoading = false

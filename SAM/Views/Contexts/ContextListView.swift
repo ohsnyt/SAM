@@ -166,14 +166,11 @@ struct ContextListView: View {
         do {
             if let filter = selectedFilter {
                 contexts = try repository.filter(by: filter)
-                print("📱 [ContextListView] Loaded \(contexts.count) contexts (filter: \(filter.rawValue))")
             } else {
                 contexts = try repository.fetchAll()
-                print("📱 [ContextListView] Loaded \(contexts.count) contexts")
             }
         } catch {
             errorMessage = error.localizedDescription
-            print("❌ [ContextListView] Load failed: \(error)")
         }
         
         isLoading = false
@@ -187,10 +184,8 @@ struct ContextListView: View {
         
         do {
             contexts = try repository.search(query: searchText)
-            print("🔍 [ContextListView] Search '\(searchText)' returned \(contexts.count) results")
         } catch {
             errorMessage = error.localizedDescription
-            print("❌ [ContextListView] Search failed: \(error)")
         }
     }
 }

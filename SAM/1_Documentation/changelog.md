@@ -4,6 +4,228 @@
 
 ---
 
+## February 14, 2026 - Phase J (Part 3a) Complete: "Me" Contact + Email Integration UX
+
+**What Changed** — Implemented "Me" contact identification and reworked email onboarding/settings UX:
+
+### Me Contact Identification (Part A)
+- **ContactsService.swift** — Replaced `fetchMeContact()` stub with real implementation using `CNContactStore.unifiedMeContactWithKeys(toFetch:)`
+- **SAMModels.swift** — Added `isMe: Bool = false` to `SamPerson` model and updated initializer
+- **PeopleRepository.swift** — Added `fetchMe()` (predicate query) and `upsertMe(contact:)` with uniqueness enforcement (clears existing `isMe` flags before setting new one)
+- **ContactsImportCoordinator.swift** — After every group bulk upsert, fetches and upserts the Me contact (imported even if not in the SAM contacts group)
+
+### Email Integration UX Tweaks (Part B)
+- **MailSettingsView.swift** — Replaced free-text "Inbox Filters" section with toggle list driven by Me contact's `emailAliases`. Uses `PeopleRepository.shared.fetchMe()` loaded in `.task`. Shows explanatory messages when no Me card or no emails exist.
+- **OnboardingView.swift** — Major rework of mail permission step:
+  - Added `mailAddressSelection` step to `OnboardingStep` enum
+  - Mail step footer now uses **Skip** + **Enable Email** button pair (replaces old inline Enable button + Next)
+  - Enable button greyed out with explanatory note when no Me card exists in Contacts
+  - After mail authorization succeeds, auto-advances to email address selection sub-step
+  - All Me emails selected by default; user can toggle individual addresses
+  - Selected addresses become `MailFilterRule` entries via `applyMailFilterRules()`
+  - Back navigation from `.complete` goes to `.mailAddressSelection` (if mail enabled) or `.mailPermission` (if skipped)
+
+### Bug Fix
+- **MailSettingsView.swift** — Fixed `@Query(filter: #Predicate<SamPerson> { $0.isMe == true })` not filtering correctly (SwiftData Bool predicate returned all records). Replaced with explicit `PeopleRepository.shared.fetchMe()` call.
+
+**Architecture Decision — Repository fetch over @Query for Me contact**:
+- `@Query` with Bool predicates can silently return unfiltered results in SwiftData
+- Explicit `PeopleRepository.fetchMe()` is reliable and consistent with onboarding approach
+- `@Query` is still preferred for list views where reactive updates are needed
+
+**Files Modified**:
+| # | File | Action |
+|---|------|--------|
+| 1 | `Services/ContactsService.swift` | Implemented `fetchMeContact()` with `unifiedMeContactWithKeys` |
+| 2 | `Models/SAMModels.swift` | Added `isMe: Bool = false` to SamPerson + init |
+| 3 | `Repositories/PeopleRepository.swift` | Added `fetchMe()` and `upsertMe(contact:)` |
+| 4 | `Coordinators/ContactsImportCoordinator.swift` | Import Me contact after group import |
+| 5 | `Views/Settings/MailSettingsView.swift` | Replaced free-text filters with Me email toggles |
+| 6 | `Models/DTOs/OnboardingView.swift` | Reworked mail step: Skip/Enable, Me prerequisite, address selection |
+
+**Build & Test Status**:
+- Build succeeds (0 errors)
+
+---
+
+## February 14, 2026 - Phase J (Part 2) Complete: Mail.app AppleScript Integration
+
+**What Changed** — Replaced IMAP stubs with working Mail.app AppleScript bridge:
+- ✅ **MailService.swift** (REWRITTEN) — NSAppleScript-based Mail.app bridge with `checkAccess()`, `fetchAccounts()`, `fetchEmails()`. Bulk metadata sweep + per-message body fetch. Performance-optimized parallel array access pattern.
+- ✅ **MailImportCoordinator.swift** (REWRITTEN) — Removed IMAP config (host/port/username), KeychainHelper usage, testConnection/saveCredentials/removeCredentials. Added `selectedAccountIDs`, `availableAccounts`, `loadAccounts()`, `checkMailAccess()`. Fixed pruning safety (only prune if fetch returned results).
+- ✅ **MailSettingsView.swift** (REWRITTEN) — Replaced IMAP credential fields with Mail.app account picker (toggle checkboxes per account). Shows access errors. Loads accounts on appear.
+- ✅ **EmailAnalysisService.swift** (BUG FIXES) — Fixed EntityKind rawValue mapping ("financial_instrument" → `.financialInstrument` via explicit switch). Fixed Swift 6 Codable isolation warning (`nonisolated` on private LLM response structs).
+- ✅ **SAM_crm.entitlements** — Added `com.apple.security.temporary-exception.apple-events` for `com.apple.mail`
+- ✅ **Info.plist** — Added `NSAppleEventsUsageDescription`
+- ✅ **KeychainHelper.swift** (DELETED) — No longer needed; Mail.app manages its own credentials
+- ✅ **MailAccountDTO** — New lightweight struct for Settings UI account picker
+
+**Architecture Decision — Mail.app over IMAP**:
+- SAM's philosophy is "observe Apple apps, don't replace them" — Mail.app AppleScript aligns with Contacts/Calendar pattern
+- Zero credential friction (Mail.app already has user's accounts)
+- No SwiftNIO dependency or MIME parsing needed
+- Sandbox workaround: `com.apple.security.temporary-exception.apple-events` entitlement (acceptable for non-App Store app)
+
+**Build & Test Status**:
+- ✅ Build succeeds (0 errors, 0 warnings)
+- ✅ All tests pass
+
+---
+
+## February 13, 2026 - Phase J (Part 1) Complete: Email Integration
+
+**What Changed**:
+- ✅ **MailService.swift** (167 lines) - Actor-isolated IMAP client (placeholder stubs for SwiftNIO implementation)
+- ✅ **EmailAnalysisService.swift** (165 lines) - Actor-isolated on-device LLM analysis via Apple Foundation Models
+- ✅ **EmailDTO.swift** (32 lines) - Sendable email message wrapper
+- ✅ **EmailAnalysisDTO.swift** (59 lines) - Sendable LLM analysis results (summary, entities, topics, temporal events, sentiment)
+- ✅ **MailImportCoordinator.swift** (224 lines) - @MainActor @Observable coordinator (standard pattern)
+- ✅ **KeychainHelper.swift** (59 lines) - Secure IMAP password storage using macOS Keychain API
+- ✅ **MailFilterRule.swift** (31 lines) - Sender filtering rules (address/domain suffix matching)
+- ✅ **MailSettingsView.swift** (208 lines) - SwiftUI IMAP configuration UI with connection testing
+- ✅ **EvidenceRepository.swift** - Added `bulkUpsertEmails()` and `pruneMailOrphans()` methods
+- ✅ **SettingsView.swift** - Added Mail tab to settings with MailSettingsView integration
+- ✅ **SAMApp.swift** - Wired MailImportCoordinator into import triggers and Debug menu
+
+**Architecture**:
+- Email evidence items use `EvidenceSource.mail` with `sourceUID: "mail:<messageID>"`
+- Raw email bodies never stored (CLAUDE.md policy) — only LLM summaries and analysis artifacts
+- Participant resolution reuses existing email canonicalization and contact matching logic
+- UserDefaults-backed settings with `@ObservationIgnored` computed properties (avoids @Observable conflict)
+- On-device processing only (Foundation Models), no data leaves device
+
+**API Pattern Established**:
+- **Services**: MailService and EmailAnalysisService follow actor pattern with Sendable DTOs
+- **Coordinator**: MailImportCoordinator follows standard ImportStatus pattern (consistent with CalendarImportCoordinator)
+- **DTOs**: EmailDTO includes sourceUID, allParticipantEmails helpers; EmailAnalysisDTO captures LLM extraction results
+
+**Files Modified**:
+- `EvidenceRepository.swift` — Added bulk upsert and pruning for email evidence
+- `SettingsView.swift` — Integrated Mail tab
+- `SAMApp.swift` — Added mail import trigger and Debug menu reset
+
+**Build & Test Status**:
+- ✅ Build succeeds (0 errors, 6 warnings from pre-existing code)
+- ✅ All 67 unit tests pass (no regressions)
+- ✅ No compilation errors after fixing duplicate enum declarations and actor isolation issues
+
+**Known Limitations**:
+- MailService.testConnection() and .fetchEmails() use placeholder stubs (SwiftNIO IMAP implementation deferred)
+- Requires manual SPM dependency addition: `swift-nio-imap` from Apple
+- No onboarding integration yet (Phase J Part 2)
+
+**Why It Matters**:
+- Establishes third data source (after Calendar and Contacts)
+- Proves on-device LLM analysis architecture works with Foundation Models
+- Email is critical evidence for relationship management (communication history)
+- Sets pattern for future integrations (iMessage, Teams, Zoom)
+
+**Testing Outcome**:
+- ✅ Coordinator properly wired in SAMApp
+- ✅ Settings UI displays all IMAP configuration options
+- ✅ Filter rules (sender address/domain) correctly implemented
+- ✅ Keychain integration follows Security.framework best practices
+- ✅ No permission dialogs (Keychain access is implicit)
+
+---
+
+## February 12, 2026 - Documentation Review & Reconciliation
+
+**What Changed**:
+- 📝 Reconciled `context.md` with actual codebase — phases E through I were all complete but context.md still listed them as "NOT STARTED"
+- 📝 Updated project structure in context.md to reflect all actual files (SAMModels-Notes.swift, SAMModels-Supporting.swift, NoteAnalysisService.swift, NoteAnalysisCoordinator.swift, InsightGenerator.swift, DevLogStore.swift, NoteAnalysisDTO.swift, OnboardingView.swift, NoteEditorView.swift, NoteActionItemsView.swift, etc.)
+- 📝 Added missing Phase E and Phase F changelog entries (below)
+- 📝 Updated "Next Steps" to reflect actual current state: Phase J (polish, bug fixes, hardening)
+- 📝 Documented known bugs: calendar participant matching, debug statement cleanup needed
+- 📝 Updated coordinator API standards status (NoteAnalysisCoordinator, InsightGenerator now follow standard)
+- 📝 Updated SamEvidenceItem model docs to match actual implementation (EvidenceSource enum, participantHints, signals)
+- 📝 Updated document version to 4.0
+
+**Known Bugs Documented**:
+- Calendar participant matching: no participant is ever identified as "Not in Contacts" even when they should be
+- Email matching recently adjusted to check all known addresses (emailCache + emailAliases) rather than just the first one, but participant identification issue persists
+
+**Cleanup Identified**:
+- ~200+ debug print statements across codebase (heaviest in SAMApp, ContactsService, EvidenceRepository, PeopleRepository)
+- ContactsImportCoordinator still uses older API pattern (needs standardization)
+- CalendarService uses print() while ContactsService uses Logger (inconsistent)
+- Debug utilities (ContactsTestView, ContactValidationDebugView) should be excluded from production
+
+---
+
+## February 11, 2026 - Phase E Complete: Calendar & Evidence
+
+**What Changed**:
+- ✅ **CalendarService.swift** - Actor-isolated EKEventStore access, returns EventDTO
+- ✅ **EventDTO.swift** - Sendable EKEvent wrapper with AttendeeDTO, participant resolution helpers
+- ✅ **CalendarImportCoordinator.swift** - Standard coordinator pattern (ImportStatus enum, importNow async, debouncing)
+- ✅ **EvidenceRepository.swift** - Full CRUD with bulk upsert, email resolution, orphan pruning, participant re-resolution
+- ✅ **OnboardingView.swift** - First-run permission flow for Contacts + Calendar
+- ✅ **Calendar permission flow** - Integrated into PermissionsManager and Settings
+
+### Key Features
+
+**CalendarService** provides:
+- Fetch calendars, find by title/ID
+- Fetch events in date range (default: 30 days back + 90 days forward)
+- Single event fetch, calendar creation
+- Change notification observation
+- Auth checking before every operation
+
+**EvidenceRepository** provides:
+- Idempotent upsert by sourceUID (no duplicates)
+- Bulk upsert with email-based participant resolution (matches attendee emails to SamPerson)
+- Orphan pruning (removes evidence for deleted calendar events)
+- Re-resolution of participants for previously unlinked evidence
+- Triage state management (needsReview ↔ done)
+
+**CalendarImportCoordinator** provides:
+- Standard coordinator API (ImportStatus, importNow, lastImportedAt)
+- Defers import while contacts import is in progress (ensures contacts imported first)
+- Configurable debouncing interval
+- Auto-triggers InsightGenerator after import
+- Settings persistence (auto-import, calendar selection, import interval)
+
+### Architecture Decisions
+- Events become SamEvidenceItem with source = .calendar
+- ParticipantHints store attendee info for deferred email resolution
+- Calendar import waits for contacts to be imported first (sequential dependency)
+- Orphan pruning removes evidence for events deleted from calendar
+
+---
+
+## February 11, 2026 - Phase F Complete: Inbox UI
+
+**What Changed**:
+- ✅ **InboxListView.swift** - Evidence triage list with filter/search
+- ✅ **InboxDetailView.swift** - Evidence detail with triage actions, note attachment
+- ✅ **AppShellView.swift** - Three-column layout for inbox (sidebar → list → detail)
+
+### Key Features
+
+**InboxListView** provides:
+- Filter by triage state (Needs Review, Done, All)
+- Search functionality
+- Import status badge and "Import Now" button
+- Context-aware empty states
+- Selection binding for detail view
+
+**InboxDetailView** provides:
+- Evidence header (title, source badge, triage state, date)
+- Content sections: snippet, participants, signals, linked people/contexts, metadata
+- Triage toggle (needs review ↔ done)
+- "Attach Note" button (opens NoteEditorView as sheet)
+- Delete with confirmation dialog
+- Source-specific icons and colors
+
+### Architecture Patterns
+- Three-column navigation: sidebar → InboxListView → InboxDetailView
+- InboxDetailContainer uses @Query to fetch evidence by UUID (stable model access)
+- UUID-based selection binding (not model references)
+- Evidence triage is two-state: needsReview and done
+
+---
+
 ## February 11, 2026 - Phase I Complete: Insights & Awareness
 
 **What Changed**:

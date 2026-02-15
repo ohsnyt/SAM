@@ -67,9 +67,8 @@ struct NoteActionItemsView: View {
         Task {
             do {
                 try repository.updateActionItem(note: note, actionItemID: itemID, status: status)
-                print("✅ [NoteActionItemsView] Updated action item status to \(status.rawValue)")
             } catch {
-                print("❌ [NoteActionItemsView] Failed to update action item: \(error)")
+                // Action item update error — will revert on next load
             }
         }
     }
@@ -200,7 +199,6 @@ private struct ActionItemRow: View {
                             if let channel = item.suggestedChannel {
                                 Button(action: {
                                     // TODO: Open compose sheet for message
-                                    print("📧 Send via \(channel.rawValue)")
                                 }) {
                                     Label("Send \(channel.displayName)", systemImage: channel.icon)
                                 }

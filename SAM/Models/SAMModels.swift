@@ -44,6 +44,9 @@ public final class SamPerson {
     /// Primary email cached from CNContact.emailAddresses.first
     public var emailCache: String?
     
+    /// All known canonical email addresses for matching
+    public var emailAliases: [String] = []
+    
     /// Thumbnail image cached from CNContact.thumbnailImageData
     public var photoThumbnailCache: Data?
     
@@ -52,6 +55,9 @@ public final class SamPerson {
     
     /// True when contact deleted externally; triggers "Unlinked" badge
     public var isArchived: Bool = false
+
+    /// True when this person is the user's own "Me" contact card
+    public var isMe: Bool = false
 
     // ── DEPRECATED: Transitional fields (remove in SAM_v7) ─────────
     // These fields exist for backward compatibility during migration.
@@ -127,7 +133,8 @@ public final class SamPerson {
         contactIdentifier: String? = nil,
         email: String? = nil,
         consentAlertsCount: Int = 0,
-        reviewAlertsCount: Int = 0
+        reviewAlertsCount: Int = 0,
+        isMe: Bool = false
     ) {
         self.id                 = id
         self.displayName        = displayName
@@ -139,6 +146,7 @@ public final class SamPerson {
         self.consentAlertsCount = consentAlertsCount
         self.reviewAlertsCount  = reviewAlertsCount
         self.isArchived         = false
+        self.isMe               = isMe
         self.lastSyncedAt       = nil
         self.photoThumbnailCache = nil
     }

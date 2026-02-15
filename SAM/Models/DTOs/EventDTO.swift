@@ -130,8 +130,49 @@ struct EventDTO: Sendable {
         }
     }
     
+    // MARK: - Memberwise Initializer
+
+    /// Direct memberwise init for constructing EventDTO without an EKEvent (used by tests).
+    init(
+        identifier: String,
+        calendarIdentifier: String,
+        title: String,
+        location: String?,
+        notes: String?,
+        startDate: Date,
+        endDate: Date,
+        isAllDay: Bool,
+        status: EventStatus,
+        availability: EventAvailability,
+        attendees: [AttendeeDTO],
+        organizer: AttendeeDTO?,
+        hasRecurrenceRules: Bool,
+        isDetached: Bool,
+        creationDate: Date?,
+        lastModifiedDate: Date?,
+        url: URL?
+    ) {
+        self.identifier = identifier
+        self.calendarIdentifier = calendarIdentifier
+        self.title = title
+        self.location = location
+        self.notes = notes
+        self.startDate = startDate
+        self.endDate = endDate
+        self.isAllDay = isAllDay
+        self.status = status
+        self.availability = availability
+        self.attendees = attendees
+        self.organizer = organizer
+        self.hasRecurrenceRules = hasRecurrenceRules
+        self.isDetached = isDetached
+        self.creationDate = creationDate
+        self.lastModifiedDate = lastModifiedDate
+        self.url = url
+    }
+
     // MARK: - Initialization from EKEvent
-    
+
     nonisolated init(from event: EKEvent) {
         self.identifier = event.eventIdentifier
         self.calendarIdentifier = event.calendar?.calendarIdentifier ?? ""

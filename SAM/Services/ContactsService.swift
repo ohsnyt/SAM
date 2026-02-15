@@ -34,6 +34,54 @@ actor ContactsService {
         logger.info("ContactsService initialized with dedicated CNContactStore")
     }
     
+    // MARK: - Debug Helpers
+    /// Formats a CNContact's salient fields for detailed logging
+    private func debugDescription(for contact: CNContact) -> String {
+        let identifier = contact.identifier
+        // Names and org are commonly fetched in our KeySets, but still guard by availability
+        let given: String = contact.isKeyAvailable(CNContactGivenNameKey) ? contact.givenName : "<unfetched>"
+        let family: String = contact.isKeyAvailable(CNContactFamilyNameKey) ? contact.familyName : "<unfetched>"
+        let org: String = contact.isKeyAvailable(CNContactOrganizationNameKey) ? contact.organizationName : "<unfetched>"
+
+        let emails: String = {
+            let key = CNContactEmailAddressesKey
+            guard contact.isKeyAvailable(key) else { return "<unfetched>" }
+            return contact.emailAddresses.map { labeled in
+                let label = CNLabeledValue<NSString>.localizedString(forLabel: labeled.label ?? "")
+                return "\(label): \(labeled.value as String)"
+            }.joined(separator: ", ")
+        }()
+
+        let phones: String = {
+            let key = CNContactPhoneNumbersKey
+            guard contact.isKeyAvailable(key) else { return "<unfetched>" }
+            return contact.phoneNumbers.map { labeled in
+                let label = CNLabeledValue<CNPhoneNumber>.localizedString(forLabel: labeled.label ?? "")
+                return "\(label): \(labeled.value.stringValue)"
+            }.joined(separator: ", ")
+        }()
+
+        let displayName: String
+        if given != "<unfetched>" || family != "<unfetched>" {
+            let combined = [given == "<unfetched>" ? "" : given,
+                            family == "<unfetched>" ? "" : family]
+                .joined(separator: " ")
+                .trimmingCharacters(in: .whitespaces)
+            displayName = combined.isEmpty ? org : combined
+        } else {
+            displayName = org
+        }
+
+        return "id=\(identifier) name=\(displayName) emails=[\(emails)] phones=[\(phones)]"
+    }
+
+    /// Formats the keys requested for fetches to verify email keys are included
+    private func debugKeysDescription(_ keys: [CNKeyDescriptor]) -> String {
+        // Swift 6: Avoid bridging/casting across existential CNKeyDescriptor
+        // Use descriptive fallback so logs remain useful across OS versions
+        return keys.map { String(describing: $0) }.joined(separator: ", ")
+    }
+    
     // MARK: - Authorization
     
     /// Check current authorization status
@@ -87,6 +135,8 @@ actor ContactsService {
         
         do {
             let contact = try store.unifiedContact(withIdentifier: identifier, keysToFetch: keys.keys)
+            logger.debug("fetchContact keys: \(self.debugKeysDescription(keys.keys), privacy: .public)")
+            logger.debug("fetchContact contact: \(self.debugDescription(for: contact), privacy: .public)")
             return ContactDTO(from: contact)
         } catch {
             logger.error("Failed to fetch contact \(identifier): \(error.localizedDescription)")
@@ -103,6 +153,8 @@ actor ContactsService {
             logger.warning("Attempted to fetch contacts without authorization")
             return []
         }
+        
+        logger.debug("fetchContacts keys: \(self.debugKeysDescription(keys.keys), privacy: .public)")
         
         var contacts: [CNContact] = []
         let fetchRequest = CNContactFetchRequest(keysToFetch: keys.keys)
@@ -132,8 +184,16 @@ actor ContactsService {
             }
         }
         
+        for c in contacts {
+            logger.debug("contact: \(self.debugDescription(for: c), privacy: .public)")
+        }
+        
         logger.info("Fetched \(contacts.count) contacts")
-        return contacts.map { ContactDTO(from: $0) }
+        let results = contacts.map { ContactDTO(from: $0) }
+        #if DEBUG
+        for dto in results { if dto.emailAddresses.isEmpty { logger.debug("Contact has no emails: \(dto.displayName, privacy: .public)") } }
+        #endif
+        return results
     }
     
     /// Fetch contacts from a specific group
@@ -142,6 +202,8 @@ actor ContactsService {
             logger.warning("Attempted to fetch contacts without authorization")
             return []
         }
+        
+        logger.debug("fetchContacts(inGroupNamed:) keys: \(self.debugKeysDescription(keys.keys), privacy: .public)")
         
         do {
             // Find the group
@@ -155,8 +217,16 @@ actor ContactsService {
             let predicate = CNContact.predicateForContactsInGroup(withIdentifier: targetGroup.identifier)
             let contacts = try store.unifiedContacts(matching: predicate, keysToFetch: keys.keys)
             
+            for c in contacts {
+                logger.debug("group contact: \(self.debugDescription(for: c), privacy: .public)")
+            }
+            
             logger.info("Fetched \(contacts.count) contacts from group '\(groupName)'")
-            return contacts.map { ContactDTO(from: $0) }
+            let results = contacts.map { ContactDTO(from: $0) }
+            #if DEBUG
+            for dto in results { if dto.emailAddresses.isEmpty { logger.debug("Contact has no emails: \(dto.displayName, privacy: .public)") } }
+            #endif
+            return results
             
         } catch {
             logger.error("Failed to fetch contacts from group '\(groupName)': \(error.localizedDescription)")
@@ -171,13 +241,23 @@ actor ContactsService {
             return []
         }
         
+        logger.debug("fetchContacts(inGroupWithIdentifier:) keys: \(self.debugKeysDescription(keys.keys), privacy: .public)")
+        
         do {
             // Fetch contacts in group
             let predicate = CNContact.predicateForContactsInGroup(withIdentifier: groupIdentifier)
             let contacts = try store.unifiedContacts(matching: predicate, keysToFetch: keys.keys)
             
+            for c in contacts {
+                logger.debug("group(id) contact: \(self.debugDescription(for: c), privacy: .public)")
+            }
+            
             logger.info("Fetched \(contacts.count) contacts from group ID '\(groupIdentifier)'")
-            return contacts.map { ContactDTO(from: $0) }
+            let results = contacts.map { ContactDTO(from: $0) }
+            #if DEBUG
+            for dto in results { if dto.emailAddresses.isEmpty { logger.debug("Contact has no emails: \(dto.displayName, privacy: .public)") } }
+            #endif
+            return results
             
         } catch {
             logger.error("Failed to fetch contacts from group ID '\(groupIdentifier)': \(error.localizedDescription)")
@@ -206,19 +286,21 @@ actor ContactsService {
         }
     }
     
-    /// Get the "me" contact (requires MeCardManager to be configured by user)
-    /// Note: macOS Contacts framework does not provide a direct "me" contact API.
-    /// This method should be integrated with MeCardManager once that dependency is available.
+    /// Fetch the user's "Me" contact card via CNContactStore.
     func fetchMeContact(keys: ContactDTO.KeySet) async -> ContactDTO? {
         guard authorizationStatus() == .authorized else {
             logger.warning("Attempted to fetch me contact without authorization")
             return nil
         }
-        
-        // TODO: Integrate with MeCardManager.shared.meContactIdentifier when available
-        // For now, this method is not functional on macOS
-        logger.info("fetchMeContact called - requires MeCardManager integration")
-        return nil
+
+        do {
+            let me = try store.unifiedMeContactWithKeys(toFetch: keys.keys)
+            logger.info("Fetched Me contact: \(self.debugDescription(for: me), privacy: .public)")
+            return ContactDTO(from: me)
+        } catch {
+            logger.info("No Me card configured: \(error.localizedDescription)")
+            return nil
+        }
     }
     
     // MARK: - Search Operations
@@ -234,12 +316,23 @@ actor ContactsService {
             return []
         }
         
+        logger.debug("searchContacts keys: \(self.debugKeysDescription(keys.keys), privacy: .public)")
+        
         let predicate = CNContact.predicateForContacts(matchingName: query)
         
         do {
             let contacts = try store.unifiedContacts(matching: predicate, keysToFetch: keys.keys)
+            
+            for c in contacts {
+                logger.debug("search contact: \(self.debugDescription(for: c), privacy: .public)")
+            }
+            
             logger.info("Found \(contacts.count) contacts matching '\(query)'")
-            return contacts.map { ContactDTO(from: $0) }
+            let results = contacts.map { ContactDTO(from: $0) }
+            #if DEBUG
+            for dto in results { if dto.emailAddresses.isEmpty { logger.debug("Contact has no emails: \(dto.displayName, privacy: .public)") } }
+            #endif
+            return results
         } catch {
             logger.error("Failed to search contacts: \(error.localizedDescription)")
             return []
@@ -321,6 +414,52 @@ actor ContactsService {
             return false
         }
     }
+    
+    /// Create a new contact with minimal fields (name, email). Optionally include a note (stored when entitlement available).
+    /// Returns the created ContactDTO on success, or nil on failure.
+    func createContact(fullName: String, email: String?, note: String?) async -> ContactDTO? {
+        guard authorizationStatus() == .authorized else {
+            logger.warning("Attempted to create contact without authorization")
+            return nil
+        }
+
+        do {
+            let mutable = CNMutableContact()
+
+            // Split full name into given/family heuristically (last token as family name)
+            let parts = fullName.split(separator: " ")
+            if parts.count >= 2 {
+                mutable.givenName = parts.dropLast().joined(separator: " ")
+                mutable.familyName = String(parts.last!)
+            } else {
+                mutable.givenName = fullName
+            }
+
+            if let email = email, !email.isEmpty {
+                let labeled = CNLabeledValue(label: CNLabelWork, value: NSString(string: email))
+                mutable.emailAddresses = [labeled]
+            }
+
+            // Notes field requires special entitlement; store placeholder comment in future
+            // When entitlement is granted, uncomment the following line:
+            // mutable.note = note ?? ""
+
+            let save = CNSaveRequest()
+            save.add(mutable, toContainerWithIdentifier: nil)
+            try store.execute(save)
+
+            logger.info("Created contact: \(fullName, privacy: .public)")
+
+            // Fetch minimal keys for DTO
+            let keys = ContactDTO.KeySet.minimal.keys
+            let created = try store.unifiedContact(withIdentifier: mutable.identifier, keysToFetch: keys)
+            logger.debug("created contact: \(self.debugDescription(for: created), privacy: .public)")
+            return ContactDTO(from: created)
+        } catch {
+            logger.error("Failed to create contact: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+    }
 }
 
 // MARK: - Supporting Types
@@ -338,3 +477,4 @@ struct ContactGroupDTO: Sendable, Identifiable {
         self.name = name
     }
 }
+

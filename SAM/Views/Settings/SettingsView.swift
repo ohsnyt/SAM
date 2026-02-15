@@ -11,6 +11,9 @@
 import SwiftUI
 import EventKit
 import Contacts
+import os.log
+
+private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "SettingsView")
 
 struct SettingsView: View {
     
@@ -20,15 +23,17 @@ struct SettingsView: View {
         case permissions = "Permissions"
         case contacts = "Contacts"
         case calendar = "Calendar"
+        case mail = "Mail"
         case general = "General"
-        
+
         var id: String { rawValue }
-        
+
         var icon: String {
             switch self {
             case .permissions: return "lock.shield"
             case .contacts: return "person.crop.circle"
             case .calendar: return "calendar"
+            case .mail: return "envelope"
             case .general: return "gearshape"
             }
         }
@@ -53,7 +58,13 @@ struct SettingsView: View {
                     Label("Calendar", systemImage: "calendar")
                 }
                 .tag(SettingsTab.calendar)
-            
+
+            MailSettingsView()
+                .tabItem {
+                    Label("Mail", systemImage: "envelope")
+                }
+                .tag(SettingsTab.mail)
+
             GeneralSettingsView()
                 .tabItem {
                     Label("General", systemImage: "gearshape")
@@ -249,6 +260,8 @@ struct PermissionsSettingsView: View {
                 isRequestingContacts = false
                 
                 if granted {
+                    // Notify contacts coordinator of permission grant
+                    ContactsImportCoordinator.shared.permissionGranted()
                     // Trigger import automatically after authorization
                     Task {
                         // Give UI a moment to update
@@ -370,6 +383,9 @@ struct ContactsSettingsView: View {
                                 .labelsHidden()
                                 .onChange(of: selectedGroupIdentifier) { _, newValue in
                                     handleGroupSelection(newValue)
+                                    if !newValue.isEmpty && newValue != "__create_sam__" {
+                                        ContactsImportCoordinator.shared.selectedGroupDidChange()
+                                    }
                                 }
                                 
                                 if let error = errorMessage {
@@ -408,44 +424,47 @@ struct ContactsSettingsView: View {
                     HStack {
                         Text("Import Status:")
                             .foregroundStyle(.secondary)
-                        
-                        Text(coordinator.isImporting ? "Importing..." : "Idle")
+
+                        Text(coordinator.importStatus.displayText)
                             .bold()
-                            .foregroundStyle(coordinator.isImporting ? .orange : .primary)
-                        
+
                         Spacer()
-                        
-                        if let result = coordinator.lastImportResult {
-                            Text(result.summary)
+
+                        if let date = coordinator.lastImportedAt {
+                            Text("\(coordinator.lastImportCount) contacts, \(date, style: .relative) ago")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
                     }
-                    
-                    if coordinator.isImporting {
+
+                    if let error = coordinator.lastError {
+                        Text(error)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+
+                    if coordinator.importStatus == .importing {
                         ProgressView()
                             .progressViewStyle(.linear)
                     }
-                    
+
                     // Manual import button
                     Button("Import Now") {
                         Task {
                             await coordinator.importNow()
                         }
                     }
-                    .disabled(coordinator.isImporting || selectedGroupIdentifier.isEmpty || authorizationStatus != .authorized)
+                    .disabled(coordinator.importStatus == .importing || selectedGroupIdentifier.isEmpty || authorizationStatus != .authorized)
                 }
                 .padding()
             }
         }
         .formStyle(.grouped)
         .task {
-            print("🔧 [ContactsSettingsView] Task started")
             await checkAuthAndLoadGroups()
         }
         .onChange(of: authorizationStatus) { _, newStatus in
             if newStatus == .authorized {
-                print("🔧 [ContactsSettingsView] Authorization granted, loading groups")
                 Task {
                     await loadGroups()
                 }
@@ -454,12 +473,10 @@ struct ContactsSettingsView: View {
     }
     
     private func checkAuthAndLoadGroups() async {
-        print("🔧 [ContactsSettingsView] Checking authorization...")
         let status = await ContactsService.shared.authorizationStatus()
-        
+
         await MainActor.run {
             authorizationStatus = status
-            print("🔧 [ContactsSettingsView] Authorization status: \(status)")
         }
         
         if status == .authorized {
@@ -468,7 +485,6 @@ struct ContactsSettingsView: View {
     }
     
     private func loadGroups() async {
-        print("🔧 [ContactsSettingsView] Loading groups...")
         isLoadingGroups = true
         errorMessage = nil
         
@@ -477,34 +493,22 @@ struct ContactsSettingsView: View {
         await MainActor.run {
             availableGroups = groups
             isLoadingGroups = false
-            
-            print("🔧 [ContactsSettingsView] Loaded \(groups.count) groups")
-            
-            // Debug: Print all group names
-            for group in groups {
-                print("🔧   - Group: '\(group.name)' (ID: \(group.identifier))")
-            }
-            
+
             // Auto-select SAM group if it exists and nothing is selected
             if selectedGroupIdentifier.isEmpty,
                let samGroup = groups.first(where: { $0.name == "SAM" }) {
-                print("🔧 [ContactsSettingsView] Auto-selecting SAM group: \(samGroup.identifier)")
                 selectedGroupIdentifier = samGroup.identifier
-            } else if !selectedGroupIdentifier.isEmpty {
-                print("🔧 [ContactsSettingsView] Group already selected: \(selectedGroupIdentifier)")
             }
         }
     }
     
     private func handleGroupSelection(_ newValue: String) {
-        print("🔧 [ContactsSettingsView] Group selection changed to: \(newValue)")
         if newValue == "__create_sam__" {
             createSAMGroup()
         }
     }
     
     private func createSAMGroup() {
-        print("🔧 [ContactsSettingsView] Creating SAM group...")
         isCreatingGroup = true
         errorMessage = nil
         
@@ -515,18 +519,17 @@ struct ContactsSettingsView: View {
                 isCreatingGroup = false
                 
                 if success {
-                    print("🔧 [ContactsSettingsView] SAM group created successfully")
                     // Reload groups and select the new one
                     Task {
                         await loadGroups()
-                        
+
                         if let samGroup = availableGroups.first(where: { $0.name == "SAM" }) {
                             selectedGroupIdentifier = samGroup.identifier
-                            print("🔧 [ContactsSettingsView] Auto-selected new SAM group")
+                            ContactsImportCoordinator.shared.selectedGroupDidChange()
                         }
                     }
                 } else {
-                    print("🔧 [ContactsSettingsView] Failed to create SAM group")
+                    logger.error("Failed to create SAM contact group")
                     errorMessage = "Failed to create SAM group. Please create it manually in Contacts."
                     selectedGroupIdentifier = "" // Reset selection
                 }
@@ -696,12 +699,10 @@ struct CalendarSettingsView: View {
         }
         .formStyle(.grouped)
         .task {
-            print("🔧 [CalendarSettingsView] Task started")
             await checkAuthAndLoadCalendars()
         }
         .onChange(of: authorizationStatus) { _, newStatus in
             if newStatus == .fullAccess {
-                print("🔧 [CalendarSettingsView] Authorization granted, loading calendars")
                 Task {
                     await loadCalendars()
                 }
@@ -710,12 +711,10 @@ struct CalendarSettingsView: View {
     }
     
     private func checkAuthAndLoadCalendars() async {
-        print("🔧 [CalendarSettingsView] Checking authorization...")
         let status = await CalendarService.shared.authorizationStatus()
-        
+
         await MainActor.run {
             authorizationStatus = status
-            print("🔧 [CalendarSettingsView] Authorization status: \(status)")
         }
         
         if status == .fullAccess {
@@ -724,7 +723,6 @@ struct CalendarSettingsView: View {
     }
     
     private func loadCalendars() async {
-        print("🔧 [CalendarSettingsView] Loading calendars...")
         isLoadingCalendars = true
         errorMessage = nil
         
@@ -733,21 +731,11 @@ struct CalendarSettingsView: View {
         await MainActor.run {
             if let calendars = calendars {
                 availableCalendars = calendars
-                
-                print("🔧 [CalendarSettingsView] Loaded \(calendars.count) calendars")
-                
-                // Debug: Print all calendar names
-                for calendar in calendars {
-                    print("🔧   - Calendar: '\(calendar.title)' (ID: \(calendar.id))")
-                }
-                
+
                 // Auto-select SAM calendar if it exists and nothing is selected
                 if selectedCalendarIdentifier.isEmpty,
                    let samCalendar = calendars.first(where: { $0.title == "SAM" }) {
-                    print("🔧 [CalendarSettingsView] Auto-selecting SAM calendar: \(samCalendar.id)")
                     selectedCalendarIdentifier = samCalendar.id
-                } else if !selectedCalendarIdentifier.isEmpty {
-                    print("🔧 [CalendarSettingsView] Calendar already selected: \(selectedCalendarIdentifier)")
                 }
             }
             
@@ -756,14 +744,12 @@ struct CalendarSettingsView: View {
     }
     
     private func handleCalendarSelection(_ newValue: String) {
-        print("🔧 [CalendarSettingsView] Calendar selection changed to: \(newValue)")
         if newValue == "__create_sam__" {
             createSAMCalendar()
         }
     }
     
     private func createSAMCalendar() {
-        print("🔧 [CalendarSettingsView] Creating SAM calendar...")
         isCreatingCalendar = true
         errorMessage = nil
         
@@ -774,18 +760,16 @@ struct CalendarSettingsView: View {
                 isCreatingCalendar = false
                 
                 if success {
-                    print("🔧 [CalendarSettingsView] SAM calendar created successfully")
                     // Reload calendars and select the new one
                     Task {
                         await loadCalendars()
-                        
+
                         if let samCalendar = availableCalendars.first(where: { $0.title == "SAM" }) {
                             selectedCalendarIdentifier = samCalendar.id
-                            print("🔧 [CalendarSettingsView] Auto-selected new SAM calendar")
                         }
                     }
                 } else {
-                    print("🔧 [CalendarSettingsView] Failed to create SAM calendar")
+                    logger.error("Failed to create SAM calendar")
                     errorMessage = "Failed to create SAM calendar. Please create it manually in Calendar."
                     selectedCalendarIdentifier = "" // Reset selection
                 }
@@ -955,7 +939,7 @@ struct GeneralSettingsView: View {
     
     private func resetOnboarding() {
         UserDefaults.standard.removeObject(forKey: "hasCompletedOnboarding")
-        print("🔧 [GeneralSettings] Onboarding reset - will show on next launch")
+        logger.notice("Onboarding reset — will show on next launch")
     }
     
     private func clearAllData() {
@@ -968,10 +952,7 @@ struct GeneralSettingsView: View {
         UserDefaults.standard.removeObject(forKey: "lastCalendarImport")
         
         // Note: Clearing SwiftData requires restart
-        // The ModelContainer is already initialized, so we just log
-        print("🔧 [GeneralSettings] All settings cleared")
-        print("⚠️  SwiftData cannot be cleared while app is running")
-        print("⚠️  To fully reset, quit app and delete: ~/Library/Application Support/SAM_crm/")
+        logger.notice("All settings cleared. SwiftData requires app restart to fully reset.")
     }
 }
 
@@ -1031,3 +1012,4 @@ struct FeatureStatusRow: View {
 #Preview {
     SettingsView()
 }
+

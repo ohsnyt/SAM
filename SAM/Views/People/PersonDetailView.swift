@@ -12,6 +12,9 @@
 import SwiftUI
 import SwiftData
 import Contacts
+import os.log
+
+private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "PersonDetailView")
 
 struct PersonDetailView: View {
     
@@ -31,6 +34,7 @@ struct PersonDetailView: View {
     @State private var showingError = false
     @State private var errorMessage = ""
     @State private var showingNoteEditor = false
+    @State private var showingContextPicker = false
     @State private var personNotes: [SamNote] = []
     
     // MARK: - Body
@@ -85,7 +89,7 @@ struct PersonDetailView: View {
                 
                 Menu {
                     Button("Add to Context", systemImage: "building.2") {
-                        // TODO: Phase G - Add to context
+                        showingContextPicker = true
                     }
                     
                     Divider()
@@ -108,6 +112,9 @@ struct PersonDetailView: View {
             NoteEditorView(linkedPerson: person) {
                 loadNotes()
             }
+        }
+        .sheet(isPresented: $showingContextPicker) {
+            ContextPickerSheet(person: person)
         }
         .alert("Error", isPresented: $showingError) {
             Button("OK") { }
@@ -732,9 +739,8 @@ struct PersonDetailView: View {
         Task {
             do {
                 personNotes = try notesRepository.fetchNotes(forPerson: person)
-                print("📝 [PersonDetailView] Loaded \(personNotes.count) notes for \(person.displayNameCache ?? person.displayName)")
             } catch {
-                print("❌ [PersonDetailView] Failed to load notes: \(error)")
+                logger.error("Failed to load notes: \(error)")
             }
         }
     }
@@ -743,7 +749,6 @@ struct PersonDetailView: View {
     
     private func loadFullContact() async {
         guard let identifier = person.contactIdentifier else {
-            print("⚠️ [PersonDetailView] No contact identifier for person: \(person.displayNameCache ?? "Unknown")")
             errorMessage = "This person has no linked contact identifier"
             return
         }
@@ -751,13 +756,12 @@ struct PersonDetailView: View {
         // Check authorization first
         let authStatus = await contactsService.authorizationStatus()
         if authStatus != .authorized {
-            print("⚠️ [PersonDetailView] Not authorized to access Contacts (status: \(authStatus))")
+            logger.warning("Not authorized to access Contacts (status: \(authStatus.rawValue))")
             errorMessage = "Contacts access not granted. Please grant permission in Settings → Privacy & Security → Contacts"
             showingError = true
             return
         }
         
-        print("📱 [PersonDetailView] Loading full contact for identifier: \(identifier)")
         isLoadingContact = true
         
         // Fetch full contact with all keys
@@ -768,19 +772,8 @@ struct PersonDetailView: View {
         
         if let contact = contact {
             fullContact = contact
-            print("✅ [PersonDetailView] Loaded contact: \(contact.givenName) \(contact.familyName)")
-            print("   - Phone numbers: \(contact.phoneNumbers.count)")
-            print("   - Email addresses: \(contact.emailAddresses.count)")
-            print("   - Postal addresses: \(contact.postalAddresses.count)")
-            print("   - URLs: \(contact.urlAddresses.count)")
-            print("   - Social profiles: \(contact.socialProfiles.count)")
-            print("   - Instant messages: \(contact.instantMessageAddresses.count)")
-            print("   - Relations: \(contact.contactRelations.count)")
-            print("   - Organization: \(contact.organizationName)")
-            print("   - Job title: \(contact.jobTitle)")
-            print("   - Birthday: \(contact.birthday != nil ? "Yes" : "No")")
         } else {
-            print("❌ [PersonDetailView] Failed to load contact for identifier: \(identifier)")
+            logger.error("Failed to load contact for identifier: \(identifier, privacy: .public)")
             errorMessage = "Could not load contact details. The contact may have been deleted from Apple Contacts."
             showingError = true
         }
@@ -882,6 +875,70 @@ private struct NoteRowView: View {
                     }
                 }
             }
+        }
+    }
+}
+
+// MARK: - Context Picker Sheet
+
+private struct ContextPickerSheet: View {
+    let person: SamPerson
+    @Environment(\.dismiss) private var dismiss
+    @Query(sort: \SamContext.name) private var contexts: [SamContext]
+    @State private var searchText = ""
+
+    private var filteredContexts: [SamContext] {
+        if searchText.isEmpty { return contexts }
+        return contexts.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if filteredContexts.isEmpty {
+                    Text("No contexts found")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(filteredContexts, id: \.id) { context in
+                        Button {
+                            addPerson(to: context)
+                        } label: {
+                            HStack {
+                                Text(context.name)
+                                    .foregroundStyle(.primary)
+
+                                Spacer()
+
+                                Text(context.kind.rawValue)
+                                    .font(.caption2)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(.purple.opacity(0.2))
+                                    .foregroundStyle(.purple)
+                                    .clipShape(Capsule())
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .searchable(text: $searchText, prompt: "Search contexts")
+            .navigationTitle("Add to Context")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+        }
+        .frame(minWidth: 350, minHeight: 300)
+    }
+
+    private func addPerson(to context: SamContext) {
+        do {
+            try ContextsRepository.shared.addParticipant(person: person, to: context)
+            dismiss()
+        } catch {
+            logger.error("Failed to add person to context: \(error)")
         }
     }
 }

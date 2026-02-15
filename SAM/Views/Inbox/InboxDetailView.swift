@@ -198,6 +198,16 @@ struct InboxDetailView: View {
                                         .foregroundStyle(.blue)
                                         .clipShape(Capsule())
                                 }
+
+                                if !participant.isVerified {
+                                    Text("Not in Contacts")
+                                        .font(.caption2)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(.orange.opacity(0.2))
+                                        .foregroundStyle(.orange)
+                                        .clipShape(Capsule())
+                                }
                             }
 
                             if let email = participant.rawEmail {
@@ -401,7 +411,7 @@ struct InboxDetailView: View {
                 try repository.markAsNeedsReview(item: item)
             }
         } catch {
-            print("❌ [InboxDetailView] Triage toggle failed: \(error)")
+            // Triage toggle error — state will revert on next load
         }
     }
 
@@ -409,7 +419,7 @@ struct InboxDetailView: View {
         do {
             try repository.delete(item: item)
         } catch {
-            print("❌ [InboxDetailView] Delete failed: \(error)")
+            // Delete error — item will reappear on next load
         }
     }
 }
@@ -450,3 +460,4 @@ struct InboxDetailView: View {
     }
     .frame(width: 700, height: 800)
 }
+

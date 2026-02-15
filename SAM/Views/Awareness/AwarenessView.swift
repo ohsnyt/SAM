@@ -282,19 +282,16 @@ struct AwarenessView: View {
     private func markInsightAsDone(_ insight: GeneratedInsight) {
         // Remove from list (in full implementation, update SamInsight model)
         insights.removeAll(where: { $0.id == insight.id })
-        print("✅ [AwarenessView] Marked insight as done: \(insight.title)")
     }
     
     private func dismissInsight(_ insight: GeneratedInsight) {
         // Remove from list (in full implementation, mark as dismissed)
         insights.removeAll(where: { $0.id == insight.id })
-        print("🗑️ [AwarenessView] Dismissed insight: \(insight.title)")
     }
     
     private func viewPerson(_ personID: UUID?) {
-        guard let personID = personID else { return }
+        guard personID != nil else { return }
         // TODO: Navigate to person detail view
-        print("👤 [AwarenessView] View person: \(personID)")
     }
 }
 

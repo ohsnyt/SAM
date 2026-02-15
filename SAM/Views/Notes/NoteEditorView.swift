@@ -216,7 +216,6 @@ struct NoteEditorView: View {
                         evidenceIDs: selectedEvidence.map { $0.id }
                     )
                     noteToAnalyze = existingNote
-                    print("📝 [NoteEditorView] Updated note \(existingNote.id)")
                 } else {
                     // Create new note - pass IDs instead of objects
                     let newNote = try repository.create(
@@ -226,7 +225,6 @@ struct NoteEditorView: View {
                         linkedEvidenceIDs: selectedEvidence.map { $0.id }
                     )
                     noteToAnalyze = newNote
-                    print("📝 [NoteEditorView] Created note \(newNote.id)")
                 }
                 
                 // Success - notify and dismiss immediately
@@ -237,14 +235,12 @@ struct NoteEditorView: View {
                 // This allows the sheet to close immediately while analysis happens
                 Task {
                     await coordinator.analyzeNote(noteToAnalyze)
-                    print("📝 [NoteEditorView] Analysis complete for note \(noteToAnalyze.id)")
                 }
                 
             } catch {
                 // Error - show message and re-enable button
                 errorMessage = error.localizedDescription
                 isSaving = false
-                print("❌ [NoteEditorView] Error saving note: \(error)")
             }
         }
     }

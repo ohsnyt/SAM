@@ -58,7 +58,7 @@ struct PeopleListView: View {
                 } label: {
                     Label("Import Now", systemImage: "arrow.clockwise")
                 }
-                .disabled(importCoordinator.isImporting)
+                .disabled(importCoordinator.importStatus == .importing)
                 .help("Import contacts from Apple Contacts")
             }
         }
@@ -139,7 +139,7 @@ struct PeopleListView: View {
     
     @ViewBuilder
     private var importStatusBadge: some View {
-        if importCoordinator.isImporting {
+        if importCoordinator.importStatus == .importing {
             HStack(spacing: 4) {
                 ProgressView()
                     .scaleEffect(0.7)
@@ -147,10 +147,10 @@ struct PeopleListView: View {
                     .font(.caption)
             }
             .foregroundStyle(.secondary)
-        } else if let result = importCoordinator.lastImportResult {
-            Text(result.summary)
+        } else if let date = importCoordinator.lastImportedAt {
+            Text("\(importCoordinator.lastImportCount) contacts, \(date, style: .relative) ago")
                 .font(.caption)
-                .foregroundStyle(result.success ? .green : .red)
+                .foregroundStyle(importCoordinator.importStatus == .failed ? .red : .green)
         }
     }
     
@@ -162,10 +162,8 @@ struct PeopleListView: View {
         
         do {
             people = try repository.fetchAll()
-            print("📱 [PeopleListView] Loaded \(people.count) people")
         } catch {
             errorMessage = error.localizedDescription
-            print("❌ [PeopleListView] Load failed: \(error)")
         }
         
         isLoading = false
@@ -179,10 +177,8 @@ struct PeopleListView: View {
         
         do {
             people = try repository.search(query: searchText)
-            print("🔍 [PeopleListView] Search '\(searchText)' returned \(people.count) results")
         } catch {
             errorMessage = error.localizedDescription
-            print("❌ [PeopleListView] Search failed: \(error)")
         }
     }
 }

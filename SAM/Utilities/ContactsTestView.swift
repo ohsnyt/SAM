@@ -1,3 +1,4 @@
+#if DEBUG
 //
 //  ContactsTestView.swift
 //  SAM
@@ -210,3 +211,4 @@ struct ContactRowView: View {
 // MARK: - Import Missing
 
 import Contacts
+#endif

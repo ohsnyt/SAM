@@ -11,6 +11,7 @@
 
 import Foundation
 import FoundationModels
+import os.log
 
 /// Actor-isolated service for analyzing notes with on-device LLM
 actor NoteAnalysisService {
@@ -18,7 +19,8 @@ actor NoteAnalysisService {
     // MARK: - Singleton
     
     static let shared = NoteAnalysisService()
-    
+    private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "NoteAnalysisService")
+
     private init() {}
     
     // MARK: - Configuration
@@ -71,8 +73,8 @@ actor NoteAnalysisService {
         // Parse JSON response
         let analysis = try parseResponse(response.content)
         
-        print("📝 [NoteAnalysisService] Analyzed note: \(analysis.people.count) people, \(analysis.actionItems.count) actions")
-        
+        logger.info("Analyzed note: \(analysis.people.count) people, \(analysis.actionItems.count) actions")
+
         return analysis
     }
     
@@ -157,11 +159,10 @@ actor NoteAnalysisService {
         // Remove any remaining leading/trailing whitespace
         cleaned = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
         
-        // Log the cleaned JSON for debugging
-        print("📝 [NoteAnalysisService] Cleaned JSON length: \(cleaned.count) characters")
-        
+        logger.debug("Cleaned JSON length: \(cleaned.count) characters")
+
         guard let data = cleaned.data(using: .utf8) else {
-            print("❌ [NoteAnalysisService] Failed to convert string to data")
+            logger.error("Failed to convert cleaned JSON string to data")
             throw AnalysisError.invalidResponse
         }
         
@@ -202,9 +203,7 @@ actor NoteAnalysisService {
                 analysisVersion: Self.currentAnalysisVersion
             )
         } catch {
-            // Log the actual JSON that failed to parse
-            print("❌ [NoteAnalysisService] JSON parsing failed. First 500 chars of cleaned response:")
-            print(String(cleaned.prefix(500)))
+            logger.error("JSON parsing failed. First 500 chars: \(String(cleaned.prefix(500)))")
             throw error
         }
     }

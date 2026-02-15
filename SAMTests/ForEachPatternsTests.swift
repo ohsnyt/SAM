@@ -18,6 +18,7 @@ struct ForEachPatternsTests {
     @Test("Phone numbers can be enumerated for ForEach")
     func testPhoneNumbersEnumerated() async throws {
         let dto = ContactDTO(
+            id: "test-123",
             identifier: "test-123",
             givenName: "John",
             familyName: "Doe",
@@ -26,14 +27,13 @@ struct ForEachPatternsTests {
             departmentName: "",
             jobTitle: "",
             phoneNumbers: [
-                ContactDTO.PhoneNumberDTO(label: "mobile", value: "555-1234"),
-                ContactDTO.PhoneNumberDTO(label: "work", value: "555-5678"),
-                ContactDTO.PhoneNumberDTO(label: "home", value: "555-9999")
+                ContactDTO.PhoneNumberDTO(label: "mobile", number: "555-1234"),
+                ContactDTO.PhoneNumberDTO(label: "work", number: "555-5678"),
+                ContactDTO.PhoneNumberDTO(label: "home", number: "555-9999")
             ],
             emailAddresses: [],
             postalAddresses: [],
             birthday: nil,
-            note: "",
             imageData: nil,
             thumbnailImageData: nil,
             contactRelations: [],
@@ -41,22 +41,23 @@ struct ForEachPatternsTests {
             instantMessageAddresses: [],
             urlAddresses: []
         )
-        
+
         // Pattern used in PersonDetailView
         let enumerated = Array(dto.phoneNumbers.enumerated())
-        
+
         #expect(enumerated.count == 3)
         #expect(enumerated[0].offset == 0)
-        #expect(enumerated[0].element.value == "555-1234")
+        #expect(enumerated[0].element.number == "555-1234")
         #expect(enumerated[1].offset == 1)
-        #expect(enumerated[1].element.value == "555-5678")
+        #expect(enumerated[1].element.number == "555-5678")
         #expect(enumerated[2].offset == 2)
-        #expect(enumerated[2].element.value == "555-9999")
+        #expect(enumerated[2].element.number == "555-9999")
     }
     
     @Test("Empty phone numbers array enumerates correctly")
     func testEmptyPhoneNumbers() async throws {
         let dto = ContactDTO(
+            id: "test-123",
             identifier: "test-123",
             givenName: "John",
             familyName: "Doe",
@@ -68,7 +69,6 @@ struct ForEachPatternsTests {
             emailAddresses: [],
             postalAddresses: [],
             birthday: nil,
-            note: "",
             imageData: nil,
             thumbnailImageData: nil,
             contactRelations: [],
@@ -76,9 +76,9 @@ struct ForEachPatternsTests {
             instantMessageAddresses: [],
             urlAddresses: []
         )
-        
+
         let enumerated = Array(dto.phoneNumbers.enumerated())
-        
+
         #expect(enumerated.isEmpty)
     }
     
@@ -87,6 +87,7 @@ struct ForEachPatternsTests {
     @Test("Email addresses can be enumerated for ForEach")
     func testEmailAddressesEnumerated() async throws {
         let dto = ContactDTO(
+            id: "test-123",
             identifier: "test-123",
             givenName: "John",
             familyName: "Doe",
@@ -102,7 +103,6 @@ struct ForEachPatternsTests {
             ],
             postalAddresses: [],
             birthday: nil,
-            note: "",
             imageData: nil,
             thumbnailImageData: nil,
             contactRelations: [],

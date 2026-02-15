@@ -56,9 +56,28 @@ final class ContactsImportCoordinator {
     }
     
     // MARK: - State
-    
-    private(set) var isImporting = false
-    private(set) var lastImportResult: ImportResult?
+
+    private(set) var importStatus: ImportStatus = .idle
+    private(set) var lastImportedAt: Date?
+    private(set) var lastImportCount: Int = 0
+    private(set) var lastError: String?
+
+    /// Global flag for other coordinators to check if contacts import is running
+    static var isImportingContacts: Bool {
+        ContactsImportCoordinator.shared.importStatus == .importing
+    }
+
+    enum ImportStatus: Equatable {
+        case idle, importing, success, failed
+        var displayText: String {
+            switch self {
+            case .idle: "Ready"
+            case .importing: "Importing..."
+            case .success: "Synced"
+            case .failed: "Failed"
+            }
+        }
+    }
     
     // MARK: - Debouncing
     
@@ -71,6 +90,11 @@ final class ContactsImportCoordinator {
     private init() {
         logger.info("ContactsImportCoordinator initialized")
         setupObservers()
+        
+        // Attempt an immediate import if conditions are already satisfied at init
+        Task { [weak self] in
+            await self?.importIfConditionsMet(reason: "coordinator init")
+        }
     }
     
     // MARK: - Public API
@@ -100,7 +124,25 @@ final class ContactsImportCoordinator {
         return await contactsService.fetchGroups()
     }
     
+    /// Attempt import when both permission is granted and a group is selected
+    func attemptImportAfterConfigChange(reason: String) {
+        debounceTask?.cancel()
+        debounceTask = Task {
+            // small debounce to coalesce rapid changes
+            try? await Task.sleep(for: .milliseconds(400))
+            await importIfConditionsMet(reason: reason)
+        }
+    }
+    
     // MARK: - Private Implementation
+    
+    /// Import immediately if user has granted permission and selected a group
+    private func importIfConditionsMet(reason: String) async {
+        guard importEnabled else { return }
+        guard !selectedGroupIdentifier.isEmpty else { return }
+        guard await contactsService.authorizationStatus() == .authorized else { return }
+        await performImport()
+    }
     
     /// Check conditions and import if needed
     private func importIfNeeded(reason: String) async {
@@ -139,72 +181,69 @@ final class ContactsImportCoordinator {
     
     /// Perform the actual import operation
     private func performImport() async {
-        guard !isImporting else {
+        guard importStatus != .importing else {
             logger.warning("Import already in progress")
             return
         }
-        
-        isImporting = true
-        defer { isImporting = false }
-        
+
+        importStatus = .importing
+        lastError = nil
+
         let startTime = Date()
         logger.info("Starting import from group ID '\(self.selectedGroupIdentifier)'")
-        
+
         do {
             // Fetch contacts from ContactsService
             let contacts = await contactsService.fetchContacts(
                 inGroupWithIdentifier: self.selectedGroupIdentifier,
-                keys: .minimal  // Just need identifier, name, email, thumbnail
+                keys: .detail  // includes emailAddresses
             )
-            
+
             guard !contacts.isEmpty else {
                 logger.warning("No contacts found in group ID '\(self.selectedGroupIdentifier)'")
-                lastImportResult = ImportResult(
-                    success: true,
-                    created: 0,
-                    updated: 0,
-                    errors: 0,
-                    duration: Date().timeIntervalSince(startTime)
-                )
+                importStatus = .success
+                lastImportedAt = Date()
+                lastImportCount = 0
                 return
             }
-            
+
             logger.info("Fetched \(contacts.count) contacts from ContactsService")
-            
+
             // Upsert into PeopleRepository
             let (created, updated) = try peopleRepo.bulkUpsert(contacts: contacts)
-            
+
             // Update last run timestamp
             lastRunAt = Date().timeIntervalSince1970
-            
-            // Store result
+
+            importStatus = .success
+            lastImportedAt = Date()
+            lastImportCount = created + updated
+
+            // Import the Me contact (even if not in the SAM group)
+            if let meContact = await contactsService.fetchMeContact(keys: .detail) {
+                try peopleRepo.upsertMe(contact: meContact)
+            }
+
+            // After importing contacts, re-run participant resolution on existing evidence
+            do {
+                try EvidenceRepository.shared.reresolveParticipantsForUnlinkedEvidence()
+            } catch {
+                logger.error("Failed to re-resolve participants after contacts import: \(error.localizedDescription)")
+            }
+
             let duration = Date().timeIntervalSince(startTime)
-            lastImportResult = ImportResult(
-                success: true,
-                created: created,
-                updated: updated,
-                errors: 0,
-                duration: duration
-            )
-            
             logger.info("Import complete: \(created) created, \(updated) updated in \(String(format: "%.2f", duration))s")
-            
+
             // Trigger insight generation (Phase H)
             Task {
                 // await InsightGenerator.shared.generateInsights()
                 logger.debug("TODO: Trigger insight generation")
             }
-            
+
         } catch {
             logger.error("Import failed: \(error.localizedDescription)")
-            
-            lastImportResult = ImportResult(
-                success: false,
-                created: 0,
-                updated: 0,
-                errors: 1,
-                duration: Date().timeIntervalSince(startTime)
-            )
+            importStatus = .failed
+            lastError = error.localizedDescription
         }
     }
     
@@ -226,27 +265,18 @@ final class ContactsImportCoordinator {
             shared.kick(reason: "app launch")
         }
     }
-}
-
-// MARK: - Supporting Types
-
-/// Result of an import operation
-struct ImportResult: Sendable {
-    let success: Bool
-    let created: Int
-    let updated: Int
-    let errors: Int
-    let duration: TimeInterval
     
-    var totalProcessed: Int {
-        created + updated
+    // MARK: - Settings Change Hooks
+
+    /// Call when the selected contact group changes (e.g., from Settings/Onboarding)
+    func selectedGroupDidChange() {
+        attemptImportAfterConfigChange(reason: "group selected")
     }
-    
-    var summary: String {
-        if success {
-            return "\(created) created, \(updated) updated in \(String(format: "%.1f", duration))s"
-        } else {
-            return "Failed with \(errors) error(s)"
-        }
+
+    /// Call when contacts permission has just been granted
+    func permissionGranted() {
+        attemptImportAfterConfigChange(reason: "permission granted")
     }
 }
+
+
