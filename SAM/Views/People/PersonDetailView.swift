@@ -80,12 +80,21 @@ struct PersonDetailView: View {
                 }
                 .help("Add a note about this person")
                 
-                Button {
-                    openInContacts()
-                } label: {
-                    Label("Open in Contacts", systemImage: "person.crop.circle")
+                if person.contactIdentifier != nil {
+                    Button {
+                        openInContacts()
+                    } label: {
+                        Label("Open in Contacts", systemImage: "person.crop.circle")
+                    }
+                    .help("Open this person in Apple Contacts")
+                } else {
+                    Button {
+                        createInContacts()
+                    } label: {
+                        Label("Create in Contacts", systemImage: "person.crop.circle.badge.plus")
+                    }
+                    .help("Create this person in Apple Contacts")
                 }
-                .help("Open this person in Apple Contacts")
                 
                 Menu {
                     Button("Add to Context", systemImage: "building.2") {
@@ -783,10 +792,38 @@ struct PersonDetailView: View {
     
     private func openInContacts() {
         guard let identifier = person.contactIdentifier else { return }
-        
+
         // Open Contacts app to this person
         let url = URL(string: "addressbook://\(identifier)")!
         NSWorkspace.shared.open(url)
+    }
+
+    private func createInContacts() {
+        Task {
+            let displayName = person.displayNameCache ?? person.displayName
+            let email = person.emailCache ?? person.email
+
+            guard let contactDTO = await contactsService.createContact(
+                fullName: displayName,
+                email: email,
+                note: nil
+            ) else {
+                errorMessage = "Failed to create contact in Apple Contacts"
+                showingError = true
+                return
+            }
+
+            // Link the person to the new contact
+            do {
+                try PeopleRepository.shared.upsert(contact: contactDTO)
+                // Reload contact details
+                await loadFullContact()
+                logger.info("Created contact for \(displayName, privacy: .public)")
+            } catch {
+                errorMessage = "Contact created but failed to link: \(error.localizedDescription)"
+                showingError = true
+            }
+        }
     }
     
     private func copyToClipboard(_ text: String) {

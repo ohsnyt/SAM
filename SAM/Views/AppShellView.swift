@@ -57,23 +57,26 @@ struct AppShellView: View {
                 NavigationLink(value: "awareness") {
                     Label("Awareness", systemImage: "brain.head.profile")
                 }
-                
+
                 NavigationLink(value: "inbox") {
                     Label("Inbox", systemImage: "tray")
                 }
             }
-            
+
             Section("Relationships") {
                 NavigationLink(value: "people") {
                     Label("People", systemImage: "person.2")
                 }
-                
+
                 NavigationLink(value: "contexts") {
                     Label("Contexts", systemImage: "building.2")
                 }
             }
         }
         .navigationTitle("SAM")
+        .safeAreaInset(edge: .bottom) {
+            ProcessingStatusView()
+        }
     }
     
     // MARK: - Detail Routing

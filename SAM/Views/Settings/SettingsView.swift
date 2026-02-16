@@ -24,6 +24,7 @@ struct SettingsView: View {
         case contacts = "Contacts"
         case calendar = "Calendar"
         case mail = "Mail"
+        case intelligence = "Intelligence"
         case general = "General"
 
         var id: String { rawValue }
@@ -34,6 +35,7 @@ struct SettingsView: View {
             case .contacts: return "person.crop.circle"
             case .calendar: return "calendar"
             case .mail: return "envelope"
+            case .intelligence: return "brain"
             case .general: return "gearshape"
             }
         }
@@ -64,6 +66,12 @@ struct SettingsView: View {
                     Label("Mail", systemImage: "envelope")
                 }
                 .tag(SettingsTab.mail)
+
+            IntelligenceSettingsView()
+                .tabItem {
+                    Label("Intelligence", systemImage: "brain")
+                }
+                .tag(SettingsTab.intelligence)
 
             GeneralSettingsView()
                 .tabItem {
@@ -775,6 +783,142 @@ struct CalendarSettingsView: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - Intelligence Settings
+
+struct IntelligenceSettingsView: View {
+
+    @State private var customNotePrompt: String = UserDefaults.standard.string(forKey: "sam.ai.notePrompt") ?? ""
+    @State private var customEmailPrompt: String = UserDefaults.standard.string(forKey: "sam.ai.emailPrompt") ?? ""
+    @State private var insightGenerator = InsightGenerator.shared
+
+    var body: some View {
+        Form {
+            Section {
+                VStack(alignment: .leading, spacing: 20) {
+                    Label("Intelligence", systemImage: "brain")
+                        .font(.title2)
+                        .bold()
+
+                    Divider()
+
+                    // Note Analysis Prompt
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Note Analysis Prompt")
+                            .font(.headline)
+
+                        Text("Customize the system prompt used when analyzing notes with on-device AI.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        TextEditor(text: $customNotePrompt)
+                            .font(.system(.caption, design: .monospaced))
+                            .frame(height: 120)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
+                            )
+                            .overlay(alignment: .topLeading) {
+                                if customNotePrompt.isEmpty {
+                                    Text("Using default prompt...")
+                                        .font(.system(.caption, design: .monospaced))
+                                        .foregroundStyle(.tertiary)
+                                        .padding(.leading, 4)
+                                        .padding(.top, 8)
+                                        .allowsHitTesting(false)
+                                }
+                            }
+                            .onChange(of: customNotePrompt) { _, newValue in
+                                UserDefaults.standard.set(newValue, forKey: "sam.ai.notePrompt")
+                            }
+
+                        Button("Reset to Default") {
+                            customNotePrompt = ""
+                            UserDefaults.standard.removeObject(forKey: "sam.ai.notePrompt")
+                        }
+                        .disabled(customNotePrompt.isEmpty)
+                    }
+
+                    Divider()
+
+                    // Email Analysis Prompt
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Email Analysis Prompt")
+                            .font(.headline)
+
+                        Text("Customize the system prompt used when analyzing emails with on-device AI.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        TextEditor(text: $customEmailPrompt)
+                            .font(.system(.caption, design: .monospaced))
+                            .frame(height: 120)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
+                            )
+                            .overlay(alignment: .topLeading) {
+                                if customEmailPrompt.isEmpty {
+                                    Text("Using default prompt...")
+                                        .font(.system(.caption, design: .monospaced))
+                                        .foregroundStyle(.tertiary)
+                                        .padding(.leading, 4)
+                                        .padding(.top, 8)
+                                        .allowsHitTesting(false)
+                                }
+                            }
+                            .onChange(of: customEmailPrompt) { _, newValue in
+                                UserDefaults.standard.set(newValue, forKey: "sam.ai.emailPrompt")
+                            }
+
+                        Button("Reset to Default") {
+                            customEmailPrompt = ""
+                            UserDefaults.standard.removeObject(forKey: "sam.ai.emailPrompt")
+                        }
+                        .disabled(customEmailPrompt.isEmpty)
+                    }
+
+                    Divider()
+
+                    // Insight Generation Settings
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Insight Generation")
+                            .font(.headline)
+
+                        Toggle("Auto-generate insights", isOn: Binding(
+                            get: { insightGenerator.autoGenerateEnabled },
+                            set: { insightGenerator.autoGenerateEnabled = $0 }
+                        ))
+
+                        Text("When enabled, SAM automatically generates insights after importing contacts, calendar events, or emails.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        HStack {
+                            Text("Relationship alert threshold:")
+                            Picker("", selection: Binding(
+                                get: { insightGenerator.daysSinceContactThreshold > 0 ? insightGenerator.daysSinceContactThreshold : 60 },
+                                set: { insightGenerator.daysSinceContactThreshold = $0 }
+                            )) {
+                                Text("30 days").tag(30)
+                                Text("60 days").tag(60)
+                                Text("90 days").tag(90)
+                                Text("120 days").tag(120)
+                            }
+                            .frame(width: 120)
+                        }
+
+                        Text("Alert when a contact hasn't been reached within this period.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding()
+            }
+        }
+        .formStyle(.grouped)
     }
 }
 

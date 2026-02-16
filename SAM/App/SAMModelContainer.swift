@@ -34,6 +34,7 @@ enum SAMSchema {
         SamInsight.self,
         SamNote.self,  // Added for Phase 5 notes feature
         SamAnalysisArtifact.self,  // Added for note/email/zoom analysis storage
+        UnknownSender.self,
     ]
 }
 

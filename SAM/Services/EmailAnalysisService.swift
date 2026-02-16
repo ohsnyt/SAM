@@ -43,31 +43,8 @@ actor EmailAnalysisService {
             throw AnalysisError.modelUnavailable
         }
 
-        let instructions = """
-        You are analyzing a professional email received by an independent financial strategist.
-        Extract structured intelligence from the email.
-
-        CRITICAL: Respond with ONLY valid JSON. No markdown, no explanation.
-
-        {
-          "summary": "1-2 sentence summary",
-          "entities": [
-            { "name": "Full Name", "kind": "person|organization|product|financial_instrument", "confidence": 0.0-1.0 }
-          ],
-          "topics": ["retirement planning", ...],
-          "temporal_events": [
-            { "description": "What is happening", "date_string": "March 15, 2026", "confidence": 0.0-1.0 }
-          ],
-          "sentiment": "positive|neutral|negative|urgent"
-        }
-
-        Rules:
-        - Only extract explicitly stated information
-        - For entities, distinguish people from organizations from financial products
-        - For temporal events, extract any mentioned dates, deadlines, or scheduled events
-        - Sentiment reflects the overall tone (urgent if action is required immediately)
-        - If the email is too short or generic, return empty arrays
-        """
+        let custom = UserDefaults.standard.string(forKey: "sam.ai.emailPrompt") ?? ""
+        let instructions = custom.isEmpty ? Self.defaultEmailPrompt : custom
 
         let session = LanguageModelSession(instructions: instructions)
         let prompt = """
@@ -112,47 +89,74 @@ actor EmailAnalysisService {
 
         return EmailAnalysisDTO(
             summary: llm.summary,
-            namedEntities: llm.entities.map { e in
+            namedEntities: (llm.entities ?? []).map { e in
                 EmailEntityDTO(
                     id: UUID(),
                     name: e.name,
                     kind: Self.mapEntityKind(e.kind),
-                    confidence: e.confidence
+                    confidence: e.confidence ?? 0.5
                 )
             },
-            topics: llm.topics,
-            temporalEvents: llm.temporal_events.map { t in
-                TemporalEventDTO(
+            topics: llm.topics ?? [],
+            temporalEvents: (llm.temporal_events ?? []).compactMap { t in
+                guard let dateString = t.date_string else { return nil }
+                return TemporalEventDTO(
                     id: UUID(),
-                    description: t.description,
-                    dateString: t.date_string,
-                    parsedDate: dateFormatter.date(from: t.date_string),
-                    confidence: t.confidence
+                    description: t.description ?? "",
+                    dateString: dateString,
+                    parsedDate: dateFormatter.date(from: dateString),
+                    confidence: t.confidence ?? 0.5
                 )
             },
-            sentiment: EmailAnalysisDTO.Sentiment(rawValue: llm.sentiment) ?? .neutral,
+            sentiment: EmailAnalysisDTO.Sentiment(rawValue: llm.sentiment ?? "neutral") ?? .neutral,
             analysisVersion: Self.currentAnalysisVersion
         )
     }
+
+    static let defaultEmailPrompt = """
+        You are analyzing a professional email received by an independent financial strategist.
+        Extract structured intelligence from the email.
+
+        CRITICAL: Respond with ONLY valid JSON. No markdown, no explanation.
+
+        {
+          "summary": "1-2 sentence summary",
+          "entities": [
+            { "name": "Full Name", "kind": "person|organization|product|financial_instrument", "confidence": 0.0-1.0 }
+          ],
+          "topics": ["retirement planning", ...],
+          "temporal_events": [
+            { "description": "What is happening", "date_string": "March 15, 2026", "confidence": 0.0-1.0 }
+          ],
+          "sentiment": "positive|neutral|negative|urgent"
+        }
+
+        Rules:
+        - Only extract explicitly stated information
+        - For entities, distinguish people from organizations from financial products
+        - For temporal events, extract any mentioned dates, deadlines, or scheduled events
+        - Sentiment reflects the overall tone (urgent if action is required immediately)
+        - If the email is too short or generic, return empty arrays
+        """
 }
 
 // MARK: - Internal LLM Response Types
 nonisolated private struct LLMEmailResponse: Codable {
     let summary: String
-    let entities: [LLMEntity]
-    let topics: [String]
-    let temporal_events: [LLMTemporalEvent]
-    let sentiment: String
+    let entities: [LLMEntity]?
+    let topics: [String]?
+    let temporal_events: [LLMTemporalEvent]?
+    let sentiment: String?
 }
 
 nonisolated private struct LLMEntity: Codable {
     let name: String
     let kind: String
-    let confidence: Double
+    let confidence: Double?
 }
 
 nonisolated private struct LLMTemporalEvent: Codable {
-    let description: String
-    let date_string: String
-    let confidence: Double
+    let description: String?
+    let date_string: String?
+    let confidence: Double?
 }

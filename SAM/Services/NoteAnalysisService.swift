@@ -81,19 +81,24 @@ actor NoteAnalysisService {
     // MARK: - Prompt Construction
     
     private func buildSystemInstructions() -> String {
-        """
+        let custom = UserDefaults.standard.string(forKey: "sam.ai.notePrompt") ?? ""
+        if !custom.isEmpty { return custom }
+        return Self.defaultNotePrompt
+    }
+
+    static let defaultNotePrompt = """
         You are analyzing a note written by an independent financial strategist after a client interaction.
         Your task is to extract structured data from the note.
-        
-        CRITICAL: You MUST respond with ONLY valid JSON. 
+
+        CRITICAL: You MUST respond with ONLY valid JSON.
         - Do NOT wrap the JSON in markdown code blocks (no ``` or ```json)
         - Do NOT include any explanatory text before or after the JSON
         - Return ONLY the raw JSON object starting with { and ending with }
-        
+
         The JSON structure must be:
         {
           "summary": "1–2 sentence summary suitable for display next to a person's name in a CRM",
-          
+
           "people": [
             {
               "name": "Full Name",
@@ -105,9 +110,9 @@ actor NoteAnalysisService {
               "confidence": 0.0–1.0
             }
           ],
-          
+
           "topics": ["life insurance", "retirement planning", ...],
-          
+
           "action_items": [
             {
               "type": "update_contact | send_congratulations | send_reminder | schedule_meeting | create_proposal | update_beneficiary | general_follow_up",
@@ -119,7 +124,7 @@ actor NoteAnalysisService {
             }
           ]
         }
-        
+
         Rules:
         - Only extract information explicitly stated or strongly implied
         - For contact_updates, only include fields that are clearly new information
@@ -128,7 +133,6 @@ actor NoteAnalysisService {
         - If the note is too short or ambiguous, return empty arrays — do not hallucinate
         - The response MUST be raw JSON with no markdown formatting
         """
-    }
     
     private func buildPrompt(content: String) -> String {
         """

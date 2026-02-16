@@ -100,15 +100,19 @@ final class InsightGenerator {
             let calendarInsights = try await generateCalendarInsights()
             generatedInsights.append(contentsOf: calendarInsights)
 
-            // 4. Deduplicate and prioritize
+            // 4. Generate insights from email signals
+            let emailInsights = try await generateInsightsFromEmails()
+            generatedInsights.append(contentsOf: emailInsights)
+
+            // 5. Deduplicate and prioritize
             let deduplicatedInsights = deduplicateInsights(generatedInsights)
 
-            // 5. Update status
+            // 6. Update status
             lastInsightCount = deduplicatedInsights.count
             lastGeneratedAt = .now
             generationStatus = .success
 
-            logger.info("Generated \(deduplicatedInsights.count) insights (notes: \(noteInsights.count), relationships: \(relationshipInsights.count), calendar: \(calendarInsights.count))")
+            logger.info("Generated \(deduplicatedInsights.count) insights (notes: \(noteInsights.count), relationships: \(relationshipInsights.count), calendar: \(calendarInsights.count), email: \(emailInsights.count))")
 
             return deduplicatedInsights
 
@@ -247,6 +251,59 @@ final class InsightGenerator {
         return insights
     }
 
+    /// Generate insights from email evidence signals
+    private func generateInsightsFromEmails() async throws -> [GeneratedInsight] {
+        var insights: [GeneratedInsight] = []
+
+        let cutoffDate = Calendar.current.date(byAdding: .day, value: -14, to: .now)!
+
+        let allEvidence = try evidenceRepository.fetchAll()
+        let mailEvidence = allEvidence.filter {
+            $0.source == .mail && $0.occurredAt >= cutoffDate
+        }
+
+        for evidence in mailEvidence {
+            let personID = evidence.linkedPeople.first?.id
+
+            for signal in evidence.signals {
+                let kind: InsightKind
+                let urgency: InsightPriority
+
+                switch signal.type {
+                case .lifeEvent:
+                    kind = .followUpNeeded
+                    urgency = .medium
+                case .financialEvent:
+                    kind = .opportunity
+                    urgency = .high
+                case .opportunity:
+                    kind = .opportunity
+                    urgency = .medium
+                case .complianceRisk:
+                    kind = .complianceWarning
+                    urgency = .high
+                default:
+                    continue
+                }
+
+                let insight = GeneratedInsight(
+                    kind: kind,
+                    title: signal.message,
+                    body: "From email: \(evidence.title)",
+                    personID: personID,
+                    sourceType: .email,
+                    sourceID: evidence.id,
+                    urgency: urgency,
+                    confidence: signal.confidence,
+                    createdAt: .now
+                )
+                insights.append(insight)
+            }
+        }
+
+        return insights
+    }
+
     // MARK: - Deduplication
 
     /// Remove duplicate insights based on similarity
@@ -349,6 +406,7 @@ enum InsightSourceType: String, Codable {
     case note = "Note"
     case calendar = "Calendar"
     case contacts = "Contacts"
+    case email = "Email"
     case pattern = "Pattern" // Derived from analysis (e.g., no recent contact)
 }
 

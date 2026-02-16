@@ -317,6 +317,30 @@ final class PeopleRepository {
         logger.info("Upserted Me contact: \(person.displayNameCache ?? person.displayName, privacy: .public)")
     }
 
+    /// Collect all known email addresses across all SamPerson records.
+    /// Returns a Set of lowercased, trimmed emails for fast O(1) lookup.
+    func allKnownEmails() throws -> Set<String> {
+        guard let modelContext = modelContext else {
+            throw RepositoryError.notConfigured
+        }
+
+        let descriptor = FetchDescriptor<SamPerson>()
+        let allPeople = try modelContext.fetch(descriptor)
+
+        var emails = Set<String>()
+        for person in allPeople {
+            if let primary = canonicalizeEmail(person.emailCache) {
+                emails.insert(primary)
+            }
+            for alias in person.emailAliases {
+                if let canonical = canonicalizeEmail(alias) {
+                    emails.insert(canonical)
+                }
+            }
+        }
+        return emails
+    }
+
     /// Get count of all people
     func count() throws -> Int {
         guard let modelContext = modelContext else {

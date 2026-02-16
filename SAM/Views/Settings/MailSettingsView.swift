@@ -19,17 +19,29 @@ struct MailSettingsView: View {
     @State private var meEmailAliases: [String] = []
     @State private var hasMeContact = false
 
+    /// Accounts filtered to only those matching the Me contact's email addresses
+    private var relevantAccounts: [MailAccountDTO] {
+        guard !meEmailAliases.isEmpty else { return [] }
+        let meEmails = Set(meEmailAliases.map { $0.lowercased() })
+        return coordinator.availableAccounts.filter { account in
+            account.emailAddresses.contains { meEmails.contains($0.lowercased()) }
+        }
+    }
+
     var body: some View {
         Form {
             Section {
                 if let error = accessError {
                     Label(error, systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
-                } else if coordinator.availableAccounts.isEmpty {
-                    Text("No Mail accounts found. Configure accounts in Mail.app.")
+                } else if !hasMeContact {
+                    Text("Set up your Me card in Contacts to see your Mail accounts.")
+                        .foregroundStyle(.secondary)
+                } else if relevantAccounts.isEmpty {
+                    Text("No Mail accounts match your Me contact's email addresses.")
                         .foregroundStyle(.secondary)
                 } else {
-                    ForEach(coordinator.availableAccounts) { account in
+                    ForEach(relevantAccounts) { account in
                         Toggle(isOn: accountBinding(for: account.id)) {
                             VStack(alignment: .leading) {
                                 Text(account.name)
@@ -45,7 +57,7 @@ struct MailSettingsView: View {
             } header: {
                 Text("Mail.app Accounts")
             } footer: {
-                Text("Select which Mail.app accounts to monitor. SAM reads email metadata and generates summaries — raw message bodies are never stored.")
+                Text("Showing accounts that match your Me contact's email addresses. SAM reads email metadata and generates summaries — raw message bodies are never stored.")
             }
 
             Section("Import Settings") {
@@ -131,9 +143,9 @@ struct MailSettingsView: View {
             }
         }
         .task {
+            loadMeContact()
             accessError = await coordinator.checkMailAccess()
             await coordinator.loadAccounts()
-            loadMeContact()
         }
     }
 

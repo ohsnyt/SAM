@@ -22,12 +22,15 @@ final class MailImportCoordinator {
     private let mailService = MailService.shared
     private let analysisService = EmailAnalysisService.shared
     private let evidenceRepository = EvidenceRepository.shared
+    private let peopleRepository = PeopleRepository.shared
 
     // Observable state
     var importStatus: ImportStatus = .idle
     var lastImportedAt: Date?
     var lastImportCount: Int = 0
     var lastError: String?
+    var unknownSenderCount: Int = 0
+    var knownSenderCount: Int = 0
 
     /// Available Mail.app accounts (loaded from service, not persisted)
     var availableAccounts: [MailAccountDTO] = []
@@ -101,8 +104,12 @@ final class MailImportCoordinator {
     }
 
     func importNow() async {
+        guard importStatus != .importing else {
+            logger.debug("Import already in progress, skipping")
+            return
+        }
         importTask?.cancel()
-        importTask = Task { await performImport() }
+        importTask = Task { await performImport(force: true) }
         await importTask?.value
     }
 
@@ -113,13 +120,14 @@ final class MailImportCoordinator {
 
     // MARK: - Private
 
-    private func performImport() async {
+    private func performImport(force: Bool = false) async {
         guard isConfigured else {
             lastError = "No Mail accounts selected"
             return
         }
 
-        if let last = lastImportTime, Date().timeIntervalSince(last) < importIntervalSeconds {
+        if !force, let last = lastImportTime, Date().timeIntervalSince(last) < importIntervalSeconds {
+            logger.debug("Skipping import — last import was \(Date().timeIntervalSince(last), format: .fixed(precision: 0))s ago (interval: \(self.importIntervalSeconds)s)")
             return
         }
 
@@ -129,12 +137,50 @@ final class MailImportCoordinator {
         do {
             let since = Calendar.current.date(byAdding: .day, value: -lookbackDays, to: Date()) ?? Date()
 
-            // 1. Fetch emails from Mail.app
-            let emails = try await mailService.fetchEmails(
-                accountIDs: selectedAccountIDs, since: since, filterRules: filterRules
+            // 1. Fast metadata sweep (all messages)
+            let (allMetas, fetchWarnings) = try await mailService.fetchMetadata(
+                accountIDs: selectedAccountIDs, since: since
             )
 
-            // 2. Analyze each email with on-device LLM
+            if allMetas.isEmpty, let warning = fetchWarnings {
+                lastError = warning
+            }
+
+            // 2. Build known emails set from PeopleRepository
+            let knownEmails = try peopleRepository.allKnownEmails()
+
+            // 3. Also exclude neverInclude senders
+            let neverInclude = try UnknownSenderRepository.shared.neverIncludeEmails()
+
+            // 4. Partition metas → known vs unknown
+            let (knownMetas, unknownMetas) = partitionBySenderKnown(
+                metas: allMetas,
+                knownEmails: knownEmails,
+                neverIncludeEmails: neverInclude
+            )
+
+            knownSenderCount = knownMetas.count
+            unknownSenderCount = unknownMetas.count
+
+            logger.info("\(knownMetas.count) emails from known senders, \(unknownMetas.count) unknown skipped")
+
+            // 5. Record unknown senders for triage (excluding neverInclude)
+            let unknownToRecord = unknownMetas.filter { !neverInclude.contains($0.senderEmail) }
+            if !unknownToRecord.isEmpty {
+                let senderData = unknownToRecord.map { meta in
+                    (email: meta.senderEmail,
+                     displayName: MailService.extractName(from: meta.sender),
+                     subject: meta.subject,
+                     date: meta.date,
+                     source: EvidenceSource.mail)
+                }
+                try UnknownSenderRepository.shared.bulkRecordUnknownSenders(senderData)
+            }
+
+            // 6. Fetch bodies only for known senders (the expensive part)
+            let emails = await mailService.fetchBodies(for: knownMetas, filterRules: filterRules)
+
+            // 7. Analyze each email with on-device LLM
             var analyzedEmails: [(EmailDTO, EmailAnalysisDTO?)] = []
             for email in emails {
                 do {
@@ -150,16 +196,20 @@ final class MailImportCoordinator {
                 }
             }
 
-            // 3. Upsert into EvidenceRepository
+            // 8. Upsert into EvidenceRepository
             try evidenceRepository.bulkUpsertEmails(analyzedEmails)
 
-            // 4. Trigger insights
+            // 9. Trigger insights
             InsightGenerator.shared.startAutoGeneration()
 
-            // 5. Prune orphaned mail evidence (only if we got results)
+            // 10. Prune orphaned mail evidence — only for known senders
+            // We must NOT prune evidence for emails we intentionally skipped
             if !emails.isEmpty {
                 let validUIDs = Set(emails.map { $0.sourceUID })
-                try evidenceRepository.pruneMailOrphans(validSourceUIDs: validUIDs)
+                try evidenceRepository.pruneMailOrphans(
+                    validSourceUIDs: validUIDs,
+                    scopedToSenderEmails: knownEmails
+                )
             }
 
             lastImportedAt = Date()
@@ -167,13 +217,91 @@ final class MailImportCoordinator {
             lastImportCount = emails.count
             importStatus = .success
 
-            logger.info("Mail import complete: \(emails.count) emails")
+            logger.info("Mail import complete: \(emails.count) emails from known senders")
 
         } catch {
             lastError = error.localizedDescription
             importStatus = .failed
             logger.error("Mail import failed: \(error)")
         }
+    }
+
+    // MARK: - Reprocess
+
+    /// Reprocess emails for a specific sender (after user adds them as a contact).
+    func reprocessForSender(email senderEmail: String) async {
+        guard isConfigured else { return }
+
+        do {
+            let since = Calendar.current.date(byAdding: .day, value: -lookbackDays, to: Date()) ?? Date()
+
+            // 1. Full metadata sweep
+            let (allMetas, _) = try await mailService.fetchMetadata(
+                accountIDs: selectedAccountIDs, since: since
+            )
+
+            // 2. Filter to just this sender's emails
+            let senderMetas = allMetas.filter { $0.senderEmail == senderEmail.lowercased() }
+            guard !senderMetas.isEmpty else {
+                logger.info("No emails found for sender \(senderEmail, privacy: .public) to reprocess")
+                return
+            }
+
+            // 3. Fetch bodies for those metas
+            let emails = await mailService.fetchBodies(for: senderMetas, filterRules: filterRules)
+
+            // 4. Analyze with LLM
+            var analyzedEmails: [(EmailDTO, EmailAnalysisDTO?)] = []
+            for email in emails {
+                do {
+                    let analysis = try await analysisService.analyzeEmail(
+                        subject: email.subject,
+                        body: email.bodyPlainText,
+                        senderName: email.senderName
+                    )
+                    analyzedEmails.append((email, analysis))
+                } catch {
+                    logger.warning("Analysis failed for reprocess email \(email.messageID): \(error)")
+                    analyzedEmails.append((email, nil))
+                }
+            }
+
+            // 5. Upsert (deduplicates by sourceUID)
+            try evidenceRepository.bulkUpsertEmails(analyzedEmails)
+
+            // 6. Trigger insights
+            InsightGenerator.shared.startAutoGeneration()
+
+            logger.info("Reprocessed \(emails.count) emails for sender \(senderEmail, privacy: .public)")
+
+        } catch {
+            logger.error("Reprocess failed for \(senderEmail, privacy: .public): \(error)")
+        }
+    }
+
+    // MARK: - Helpers
+
+    /// Partition message metas into known-sender and unknown-sender groups.
+    private func partitionBySenderKnown(
+        metas: [MessageMeta],
+        knownEmails: Set<String>,
+        neverIncludeEmails: Set<String>
+    ) -> (known: [MessageMeta], unknown: [MessageMeta]) {
+        var known: [MessageMeta] = []
+        var unknown: [MessageMeta] = []
+
+        for meta in metas {
+            if knownEmails.contains(meta.senderEmail) {
+                known.append(meta)
+            } else if neverIncludeEmails.contains(meta.senderEmail) {
+                // Silently skip neverInclude — still "unknown" for counting
+                unknown.append(meta)
+            } else {
+                unknown.append(meta)
+            }
+        }
+
+        return (known, unknown)
     }
 
     enum ImportStatus: Equatable {

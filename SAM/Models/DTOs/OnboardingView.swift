@@ -36,6 +36,7 @@ struct OnboardingView: View {
     @State private var meEmailAddresses: [String] = []
     @State private var hasNoMeContact = false
     @State private var selectedMailAddresses: Set<String> = []
+    @State private var onboardingLookbackDays: Int = 14
 
     enum OnboardingStep {
         case welcome
@@ -501,6 +502,25 @@ struct OnboardingView: View {
             Text("Only emails sent to selected addresses will be imported. You can change this later in Settings.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Initial scan depth")
+                    .font(.headline)
+
+                Picker("Initial scan depth", selection: $onboardingLookbackDays) {
+                    Text("7 days").tag(7)
+                    Text("14 days").tag(14)
+                    Text("30 days").tag(30)
+                    Text("90 days").tag(90)
+                }
+                .pickerStyle(.segmented)
+
+                Text("How far back to scan for emails on first import. You can change this later in Settings.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
@@ -857,6 +877,7 @@ struct OnboardingView: View {
     private func applyMailFilterRules() {
         let rules = selectedMailAddresses.map { MailFilterRule(id: UUID(), value: $0) }
         MailImportCoordinator.shared.setFilterRules(rules)
+        MailImportCoordinator.shared.setLookbackDays(onboardingLookbackDays)
     }
 
     // MARK: - Groups & Calendars

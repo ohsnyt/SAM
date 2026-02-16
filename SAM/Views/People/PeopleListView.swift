@@ -234,6 +234,13 @@ private struct PersonRowView: View {
                     }
                 }
                 
+                // Unlinked badge (no Apple Contact linked)
+                if person.contactIdentifier == nil {
+                    Image(systemName: "person.badge.plus")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+
                 // Consent alerts
                 if person.consentAlertsCount > 0 {
                     Label("\(person.consentAlertsCount)", systemImage: "exclamationmark.triangle.fill")

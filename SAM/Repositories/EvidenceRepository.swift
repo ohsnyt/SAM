@@ -561,7 +561,9 @@ final class EvidenceRepository {
     }
 
     /// Prune mail evidence items whose sourceUID is no longer in the valid set.
-    func pruneMailOrphans(validSourceUIDs: Set<String>) throws {
+    /// When `scopedToSenderEmails` is provided, only prune items whose sender is in
+    /// that set — this prevents deleting evidence for intentionally-skipped unknown senders.
+    func pruneMailOrphans(validSourceUIDs: Set<String>, scopedToSenderEmails: Set<String>? = nil) throws {
         guard let context = context else { throw RepositoryError.notConfigured }
 
         let allItems = try fetchAll()
@@ -569,6 +571,17 @@ final class EvidenceRepository {
 
         for item in allItems {
             guard item.source == .mail else { continue }
+
+            // If scoped, only prune items whose sender is in the known set
+            if let scopedEmails = scopedToSenderEmails {
+                let senderEmail = item.participantHints
+                    .first(where: { $0.isOrganizer })?
+                    .rawEmail?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .lowercased()
+                guard let senderEmail, scopedEmails.contains(senderEmail) else { continue }
+            }
+
             if let sourceUID = item.sourceUID, !validSourceUIDs.contains(sourceUID) {
                 context.delete(item)
                 deleted += 1

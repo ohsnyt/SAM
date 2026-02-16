@@ -28,6 +28,8 @@ final class CalendarImportCoordinator {
 
     private let calendarService = CalendarService.shared
     private let evidenceRepository = EvidenceRepository.shared
+    private let peopleRepository = PeopleRepository.shared
+    private let unknownSenderRepository = UnknownSenderRepository.shared
 
     // MARK: - Observable State
 
@@ -184,13 +186,46 @@ final class CalendarImportCoordinator {
                 throw ImportError.fetchFailed
             }
 
-            // Upsert into EvidenceRepository
-            try evidenceRepository.bulkUpsert(events: events)
+            // Filter events by known participants
+            let knownEmails = try peopleRepository.allKnownEmails()
+            let neverInclude = try unknownSenderRepository.neverIncludeEmails()
+
+            let eventsToProcess = events.filter { event in
+                // Keep events with at least one known participant
+                event.participantEmails.contains { knownEmails.contains($0.lowercased()) }
+            }
+
+            logger.info("\(eventsToProcess.count) events with known participants, \(events.count - eventsToProcess.count) skipped")
+
+            // Collect unknown participants from ALL events for triage
+            var unknownParticipants: [(email: String, displayName: String?, subject: String, date: Date, source: EvidenceSource)] = []
+            for event in events {
+                for attendee in event.attendees {
+                    guard let email = attendee.emailAddress else { continue }
+                    let canonical = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                    if !knownEmails.contains(canonical) && !neverInclude.contains(canonical) {
+                        unknownParticipants.append((
+                            email: canonical,
+                            displayName: attendee.name,
+                            subject: event.title,
+                            date: event.startDate,
+                            source: .calendar
+                        ))
+                    }
+                }
+            }
+            if !unknownParticipants.isEmpty {
+                try unknownSenderRepository.bulkRecordUnknownSenders(unknownParticipants)
+            }
+
+            // Upsert into EvidenceRepository (only known-participant events)
+            try evidenceRepository.bulkUpsert(events: eventsToProcess)
 
             // Trigger insights auto-generation after import
             InsightGenerator.shared.startAutoGeneration()
 
             // Prune orphaned evidence (events deleted from calendar)
+            // Use ALL event sourceUIDs to avoid pruning events we still see
             let validSourceUIDs = Set(events.map { $0.sourceUID })
             try evidenceRepository.pruneOrphans(validSourceUIDs: validSourceUIDs)
 

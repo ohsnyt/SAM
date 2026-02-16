@@ -36,9 +36,12 @@ struct AwarenessView: View {
             
             // Filter Bar
             filterBar
-            
+
             Divider()
-            
+
+            // Unknown Sender Triage
+            UnknownSenderTriageSection()
+
             // Insights List
             if insights.isEmpty {
                 emptyState
