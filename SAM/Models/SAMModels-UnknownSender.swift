@@ -20,6 +20,7 @@ public final class UnknownSender {
     var latestSubject: String?                   // for triage context
     var latestEmailDate: Date?
     var sourceRawValue: String                   // "Mail"|"Calendar"
+    var isLikelyMarketing: Bool                  // detected from List-Unsubscribe / List-ID / Precedence headers
 
     @Transient
     var status: UnknownSenderStatus {
@@ -42,7 +43,8 @@ public final class UnknownSender {
         emailCount: Int = 1,
         latestSubject: String? = nil,
         latestEmailDate: Date? = nil,
-        source: EvidenceSource = .mail
+        source: EvidenceSource = .mail,
+        isLikelyMarketing: Bool = false
     ) {
         self.id = id
         self.email = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -53,6 +55,7 @@ public final class UnknownSender {
         self.latestSubject = latestSubject
         self.latestEmailDate = latestEmailDate
         self.sourceRawValue = source.rawValue
+        self.isLikelyMarketing = isLikelyMarketing
     }
 }
 

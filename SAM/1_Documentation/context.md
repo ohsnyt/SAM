@@ -464,6 +464,7 @@ Text(context.contextType)       // Compile error - property doesn't exist
 - ✅ **Phase J (Part 1)**: Email Integration scaffolding (DTOs, repositories, coordinator, settings view)
 - ✅ **Phase J (Part 2)**: Mail.app AppleScript integration (replaced IMAP stubs with working NSAppleScript bridge)
 - ✅ **Phase J (Part 3a)**: "Me" contact identification + email integration UX tweaks
+- ✅ **Phase J (Part 3b — Marketing Detection)**: Mailing list / marketing sender auto-detection + triage UI split (Feb 17, 2026)
 
 **Known Bugs**:
 - 🐛 **Calendar participant matching**: No participant is ever marked "Not in Contacts" even when their email address is clearly not in the contacts database. The matching logic needs investigation — likely an issue in EvidenceRepository's email resolution during `bulkUpsert()` or in how participant hints are evaluated in the UI.
@@ -507,7 +508,17 @@ Text(context.contextType)       // Compile error - property doesn't exist
 - ✅ **OnboardingView** — Added `mailAddressSelection` step; mail step uses Skip/Enable footer buttons; Enable greyed out when no Me card; auto-advances to address selection after authorization
 - ✅ **Build succeeds** with 0 errors
 
-**Part 3b - HARDENING & BUG FIXES (remaining)**:
+**Part 3b — Marketing Detection - COMPLETE (Feb 17, 2026)**:
+- ✅ **MailService.fetchMetadata()** — Added `headers` property fetch to AppleScript metadata sweep (no body required); added `isMarketingEmail(headers:)` helper detecting `List-Unsubscribe`, `List-ID`, and `Precedence: bulk/list` headers
+- ✅ **MessageMeta** — Added `isLikelyMarketing: Bool` field, populated from headers during Phase 1 sweep
+- ✅ **UnknownSender model** — Added `isLikelyMarketing: Bool` property (defaults to `false` for existing records)
+- ✅ **UnknownSenderRepository.bulkRecordUnknownSenders()** — Accepts and persists `isLikelyMarketing`; once set to `true`, never cleared
+- ✅ **MailImportCoordinator** — Passes `meta.isLikelyMarketing` through when recording unknown senders
+- ✅ **CalendarImportCoordinator** — Updated call site (calendar attendees always `isLikelyMarketing: false`)
+- ✅ **UnknownSenderTriageSection** — Split into "personal/business" and "Mailing Lists & Marketing" groups; marketing senders default to Never instead of Later
+- ✅ **Build succeeds** with 0 errors
+
+**Part 3c - HARDENING & BUG FIXES (remaining)**:
 - ⬜ **Fix participant matching bug** — Investigate why no calendar event participant is ever identified as "Not in Contacts". Check EvidenceRepository `bulkUpsert()` email resolution logic, ParticipantHint evaluation, and how the UI displays match status.
 - ⬜ **Clean up debug statements** — Remove or convert ~200+ `print()` calls to `os.Logger` with appropriate log levels. Keep error/warning logs, remove verbose data-flow tracing.
 - ⬜ **Standardize ContactsImportCoordinator** — Migrate from `isImporting: Bool` / `lastImportResult` to `ImportStatus` enum pattern matching CalendarImportCoordinator.

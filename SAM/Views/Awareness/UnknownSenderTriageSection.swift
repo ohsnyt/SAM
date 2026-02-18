@@ -31,10 +31,14 @@ struct UnknownSenderTriageSection: View {
     @State private var calendarCoordinator = CalendarImportCoordinator.shared
 
     var body: some View {
-        Group {
-            content
+        // VStack is always present so lifecycle modifiers always fire.
+        // Content inside is conditional — avoids Group + @ViewBuilder re-render bug.
+        VStack(spacing: 0) {
+            if !pendingSenders.isEmpty {
+                triageCard
+            }
         }
-        .onAppear {
+        .task {
             loadPendingSenders()
         }
         .onChange(of: mailCoordinator.importStatus) { _, newStatus in
@@ -49,109 +53,132 @@ struct UnknownSenderTriageSection: View {
         }
     }
 
-    @ViewBuilder
-    private var content: some View {
-        if !pendingSenders.isEmpty {
-            VStack(alignment: .leading, spacing: 0) {
-                // Header
-                HStack(spacing: 8) {
-                    Label("Unknown Senders", systemImage: "person.fill.questionmark")
-                        .font(.headline)
+    private var triageCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Header
+            HStack(spacing: 8) {
+                Label("Unknown Senders", systemImage: "person.fill.questionmark")
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
+
+                Text("\(pendingSenders.count)")
+                    .font(.caption2)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(.orange)
+                    .clipShape(Capsule())
+
+                Spacer()
+
+                if hasChanges {
+                    Text("\(changesSummary)")
+                        .font(.caption)
                         .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal)
+            .padding(.top, 12)
+            .padding(.bottom, 8)
 
-                    Text("\(pendingSenders.count)")
-                        .font(.caption2)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(.orange)
-                        .clipShape(Capsule())
+            // Column header
+            HStack(spacing: 0) {
+                Text("Add")
+                    .frame(width: 36, alignment: .center)
+                Text("Later")
+                    .frame(width: 36, alignment: .center)
+                Text("Never")
+                    .frame(width: 36, alignment: .center)
 
-                    Spacer()
+                Text("Sender")
+                    .padding(.leading, 8)
 
-                    if hasChanges {
-                        Text("\(changesSummary)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                Spacer()
+
+                Text("Subject")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.leading, 8)
+            }
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+            .padding(.horizontal)
+            .padding(.bottom, 4)
+
+            Divider()
+                .padding(.horizontal)
+
+            // Scrollable list
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    // Personal / business senders (default: Later)
+                    ForEach(regularSenders, id: \.id) { sender in
+                        TriageRow(sender: sender, choice: binding(for: sender.id))
                     }
-                }
-                .padding(.horizontal)
-                .padding(.top, 12)
-                .padding(.bottom, 8)
 
-                // Column header
-                HStack(spacing: 0) {
-                    Text("Add")
-                        .frame(width: 36, alignment: .center)
-                    Text("Later")
-                        .frame(width: 36, alignment: .center)
-                    Text("Never")
-                        .frame(width: 36, alignment: .center)
+                    // Mailing list / marketing senders (default: Never)
+                    if !marketingSenders.isEmpty {
+                        HStack(spacing: 6) {
+                            Image(systemName: "envelope.badge.fill")
+                                .font(.caption)
+                                .foregroundStyle(.orange)
+                            Text("Mailing Lists & Marketing")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Text("Defaulting to Never")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                        }
+                        .padding(.horizontal)
+                        .padding(.top, regularSenders.isEmpty ? 0 : 8)
+                        .padding(.bottom, 4)
 
-                    Text("Sender")
-                        .padding(.leading, 8)
+                        if !regularSenders.isEmpty {
+                            Divider().padding(.horizontal)
+                        }
 
-                    Spacer()
-
-                    Text("Subject")
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.leading, 8)
-                }
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .padding(.horizontal)
-                .padding(.bottom, 4)
-
-                Divider()
-                    .padding(.horizontal)
-
-                // Scrollable list
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(pendingSenders, id: \.id) { sender in
-                            TriageRow(
-                                sender: sender,
-                                choice: binding(for: sender.id)
-                            )
+                        ForEach(marketingSenders, id: \.id) { sender in
+                            TriageRow(sender: sender, choice: binding(for: sender.id))
                         }
                     }
                 }
-                .frame(maxHeight: 300)
-
-                Divider()
-                    .padding(.horizontal)
-
-                // Footer with Done button
-                HStack {
-                    Spacer()
-
-                    if isSaving {
-                        ProgressView()
-                            .scaleEffect(0.8)
-                        Text("Saving...")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Button("Done") {
-                        saveChoices()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                    .disabled(isSaving)
-                }
-                .padding(.horizontal)
-                .padding(.vertical, 8)
             }
-            .background(Color(nsColor: .controlBackgroundColor))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
-            )
-            .padding()
+            .frame(maxHeight: 300)
+
+            Divider()
+                .padding(.horizontal)
+
+            // Footer with Done button
+            HStack {
+                Spacer()
+
+                if isSaving {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                    Text("Saving...")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Button("Done") {
+                    saveChoices()
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .disabled(isSaving)
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 8)
         }
+        .background(Color(nsColor: .controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
+        )
+        .padding()
     }
 
     // MARK: - Helpers
@@ -176,20 +203,35 @@ struct UnknownSenderTriageSection: View {
         return parts.joined(separator: ", ")
     }
 
+    // MARK: - Sender Groups
+
+    /// Regular (personal/business) senders — default choice: Later.
+    private var regularSenders: [UnknownSender] {
+        pendingSenders.filter { !$0.isLikelyMarketing }
+    }
+
+    /// Likely mailing list or marketing senders — default choice: Never.
+    private var marketingSenders: [UnknownSender] {
+        pendingSenders.filter { $0.isLikelyMarketing }
+    }
+
     // MARK: - Data Loading
 
     func loadPendingSenders() {
         do {
-            pendingSenders = try repository.fetchPending()
-            // Reset choices to default (notNow) for any new senders
+            let fetched = try repository.fetchPending()
+            logger.info("loadPendingSenders: fetched \(fetched.count) pending senders")
+            pendingSenders = fetched
+            // Set default choice for any new senders:
+            // marketing senders default to Never; personal senders default to Later.
             for sender in pendingSenders where choices[sender.id] == nil {
-                choices[sender.id] = .notNow
+                choices[sender.id] = sender.isLikelyMarketing ? .never : .notNow
             }
             // Clean up choices for senders no longer pending
             let validIDs = Set(pendingSenders.map(\.id))
             choices = choices.filter { validIDs.contains($0.key) }
         } catch {
-            logger.error("Failed to fetch pending senders: \(error)")
+            logger.error("loadPendingSenders failed: \(error)")
         }
     }
 
@@ -205,35 +247,31 @@ struct UnknownSenderTriageSection: View {
         // Collect senders by action
         var toAdd: [UnknownSender] = []
         var toNever: [UnknownSender] = []
-        var toDismiss: [UnknownSender] = []
+        var notNowCount = 0
 
         for (id, choice) in currentChoices {
             guard let sender = sendersByID[id] else { continue }
             switch choice {
             case .add: toAdd.append(sender)
             case .never: toNever.append(sender)
-            case .notNow: toDismiss.append(sender)
+            case .notNow: notNowCount += 1  // leave as .pending — no DB change
             }
         }
 
-        // Process never-include and dismissed synchronously (fast)
+        // Process never-include synchronously (fast)
         do {
             for sender in toNever {
                 try repository.markNeverInclude(sender)
-            }
-            for sender in toDismiss {
-                try repository.markDismissed(sender)
             }
         } catch {
             logger.error("Failed to save triage choices: \(error)")
         }
 
         if toAdd.isEmpty {
-            // Nothing to add — done immediately
-            pendingSenders = []
-            choices = [:]
+            // Reload to reflect removals (never-include gone, notNow still visible)
+            loadPendingSenders()
             isSaving = false
-            logger.info("Triage complete: \(toNever.count) blocked, \(toDismiss.count) deferred")
+            logger.info("Triage complete: \(toNever.count) blocked, \(notNowCount) deferred")
             return
         }
 
@@ -261,12 +299,11 @@ struct UnknownSenderTriageSection: View {
                 }
             }
 
-            // Clear UI immediately
-            pendingSenders = []
-            choices = [:]
+            // Reload to reflect removals (added/never gone, notNow still visible)
+            loadPendingSenders()
             isSaving = false
 
-            logger.info("Triage complete: \(addedEmails.count) added, \(toNever.count) blocked, \(toDismiss.count) deferred")
+            logger.info("Triage complete: \(addedEmails.count) added, \(toNever.count) blocked, \(notNowCount) deferred")
 
             // Reprocess added senders' emails in background
             for email in addedEmails {

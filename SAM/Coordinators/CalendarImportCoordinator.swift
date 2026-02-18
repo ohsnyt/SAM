@@ -198,7 +198,7 @@ final class CalendarImportCoordinator {
             logger.info("\(eventsToProcess.count) events with known participants, \(events.count - eventsToProcess.count) skipped")
 
             // Collect unknown participants from ALL events for triage
-            var unknownParticipants: [(email: String, displayName: String?, subject: String, date: Date, source: EvidenceSource)] = []
+            var unknownParticipants: [(email: String, displayName: String?, subject: String, date: Date, source: EvidenceSource, isLikelyMarketing: Bool)] = []
             for event in events {
                 for attendee in event.attendees {
                     guard let email = attendee.emailAddress else { continue }
@@ -209,7 +209,8 @@ final class CalendarImportCoordinator {
                             displayName: attendee.name,
                             subject: event.title,
                             date: event.startDate,
-                            source: .calendar
+                            source: .calendar,
+                            isLikelyMarketing: false  // calendar attendees are never marketing
                         ))
                     }
                 }

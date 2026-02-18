@@ -172,7 +172,8 @@ final class MailImportCoordinator {
                      displayName: MailService.extractName(from: meta.sender),
                      subject: meta.subject,
                      date: meta.date,
-                     source: EvidenceSource.mail)
+                     source: EvidenceSource.mail,
+                     isLikelyMarketing: meta.isLikelyMarketing)
                 }
                 try UnknownSenderRepository.shared.bulkRecordUnknownSenders(senderData)
             }

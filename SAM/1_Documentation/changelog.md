@@ -4,6 +4,48 @@
 
 ---
 
+## February 17, 2026 - Phase J (Part 3b) Complete: Marketing Sender Auto-Detection
+
+**What Changed** — Automatically detect mailing list / marketing emails during the Phase 1 metadata sweep, and present them separately in triage with a "Never" default:
+
+### Marketing Detection (Headers Only — No Body Required)
+
+- **MailService.swift** — Added `headers` property to both AppleScript metadata loops. Used a nested `try/on error` to default to `""` if unavailable, keeping all arrays aligned. Added `isMarketingEmail(headers:)` static helper that checks three RFC-standard indicators:
+  - `List-Unsubscribe:` (RFC 2369) — present on virtually all commercial mailing lists
+  - `List-ID:` (RFC 2919) — mailing list manager identifier
+  - `Precedence: bulk` or `Precedence: list` — bulk / automated sending indicator
+- **MessageMeta** — Added `isLikelyMarketing: Bool` field set from headers during Phase 1 sweep (before any body fetches).
+
+### Data Layer
+
+- **SAMModels-UnknownSender.swift** — Added `isLikelyMarketing: Bool` property (defaults to `false` for existing records on first migration).
+- **UnknownSenderRepository.bulkRecordUnknownSenders()** — Updated signature to accept `isLikelyMarketing: Bool`. Sets on new records; upgrades existing records to `true` if any subsequent email has marketing headers (never clears once set).
+- **MailImportCoordinator.swift** — Updated `senderData` mapping to include `meta.isLikelyMarketing`.
+- **CalendarImportCoordinator.swift** — Updated call site with `isLikelyMarketing: false` (calendar attendees are never marketing senders).
+
+### Triage UI
+
+- **UnknownSenderTriageSection.swift** — Added `regularSenders` and `marketingSenders` computed properties (split from `pendingSenders`). Marketing senders now default to `.never` in `loadPendingSenders()`. Scrollable list shows two groups: personal/business senders first (default: Later), then a "Mailing Lists & Marketing" subsection with an orange badge and "Defaulting to Never" label.
+
+**Architecture Decision — Headers-Only Detection**:
+- Checking RFC 2822 headers (`List-Unsubscribe`, `List-ID`, `Precedence`) is reliable for commercial mailing lists and requires no body fetch — detection adds negligible overhead to the existing Phase 1 metadata sweep.
+- `isLikelyMarketing` is sticky: once set to `true` it is never reset, so reclassification after deletion of marketing emails won't cause the sender to resurface as personal.
+
+**Files Modified**:
+| # | File | Action |
+|---|------|--------|
+| 1 | `Services/MailService.swift` | Added `headers` to AppleScript loops, `isLikelyMarketing` to `MessageMeta`, `isMarketingEmail()` helper |
+| 2 | `Models/SAMModels-UnknownSender.swift` | Added `isLikelyMarketing: Bool` property + init param |
+| 3 | `Repositories/UnknownSenderRepository.swift` | Updated `bulkRecordUnknownSenders` signature, sticky upgrade logic |
+| 4 | `Coordinators/MailImportCoordinator.swift` | Pass `isLikelyMarketing` through senderData mapping |
+| 5 | `Coordinators/CalendarImportCoordinator.swift` | Updated call site (`isLikelyMarketing: false`) |
+| 6 | `Views/Awareness/UnknownSenderTriageSection.swift` | Two-group UI, marketing defaults to Never |
+
+**Build & Test Status**:
+- ✅ Build succeeds (0 errors, 2 pre-existing warnings)
+
+---
+
 ## February 14, 2026 - Phase J (Part 3a) Complete: "Me" Contact + Email Integration UX
 
 **What Changed** — Implemented "Me" contact identification and reworked email onboarding/settings UX:

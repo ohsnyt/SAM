@@ -57,8 +57,9 @@ final class UnknownSenderRepository {
 
     /// Upsert unknown senders from import results.
     /// Increments emailCount for existing records. Re-surfaces dismissed senders on new email.
+    /// Sets isLikelyMarketing to true if any message from the sender has marketing headers — never cleared once set.
     func bulkRecordUnknownSenders(
-        _ senders: [(email: String, displayName: String?, subject: String, date: Date, source: EvidenceSource)]
+        _ senders: [(email: String, displayName: String?, subject: String, date: Date, source: EvidenceSource, isLikelyMarketing: Bool)]
     ) throws {
         guard let modelContext else { throw RepositoryError.notConfigured }
 
@@ -71,7 +72,7 @@ final class UnknownSenderRepository {
         var updated = 0
 
         // Deduplicate input by email (keep latest date)
-        var grouped: [String: (email: String, displayName: String?, subject: String, date: Date, source: EvidenceSource)] = [:]
+        var grouped: [String: (email: String, displayName: String?, subject: String, date: Date, source: EvidenceSource, isLikelyMarketing: Bool)] = [:]
         for sender in senders {
             let key = sender.email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             if let prev = grouped[key] {
@@ -97,6 +98,10 @@ final class UnknownSenderRepository {
                 if record.status == .dismissed {
                     record.status = .pending
                 }
+                // Upgrade to marketing if newly detected (never cleared once set)
+                if sender.isLikelyMarketing {
+                    record.isLikelyMarketing = true
+                }
                 updated += 1
             } else {
                 // Create new
@@ -108,7 +113,8 @@ final class UnknownSenderRepository {
                     emailCount: 1,
                     latestSubject: sender.subject,
                     latestEmailDate: sender.date,
-                    source: sender.source
+                    source: sender.source,
+                    isLikelyMarketing: sender.isLikelyMarketing
                 )
                 modelContext.insert(record)
                 created += 1

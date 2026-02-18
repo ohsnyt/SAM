@@ -24,10 +24,11 @@ struct MessageMeta: Sendable {
     let mailID: Int32
     let messageID: String
     let subject: String
-    let sender: String        // raw "Name <email>"
-    let senderEmail: String   // extracted, lowercased
+    let sender: String            // raw "Name <email>"
+    let senderEmail: String       // extracted, lowercased
     let date: Date
-    let accountName: String   // resolved account name for body fetch
+    let accountName: String       // resolved account name for body fetch
+    let isLikelyMarketing: Bool   // detected from List-Unsubscribe / List-ID / Precedence headers (no body needed)
 }
 
 /// Actor-isolated service for reading email from Mail.app via NSAppleScript.
@@ -200,17 +201,43 @@ actor MailService {
                             set msgSubjects to {}
                             set msgSenders to {}
                             set msgDates to {}
+                            set msgMarketing to {}
                             repeat with i from 1 to msgCount
                                 try
                                     set msg to item i of filteredMsgs
-                                    set end of msgIDs to id of msg
-                                    set end of msgMessageIDs to message id of msg
-                                    set end of msgSubjects to subject of msg
-                                    set end of msgSenders to sender of msg
-                                    set end of msgDates to date received of msg
+                                    set theID to id of msg
+                                    set theMsgID to message id of msg
+                                    set theSubject to subject of msg
+                                    set theSender to sender of msg
+                                    set theDate to date received of msg
+                                    set isMarketing to 0
+                                    try
+                                        content of header "List-Unsubscribe" of msg
+                                        set isMarketing to 1
+                                    end try
+                                    if isMarketing is 0 then
+                                        try
+                                            content of header "List-ID" of msg
+                                            set isMarketing to 1
+                                        end try
+                                    end if
+                                    if isMarketing is 0 then
+                                        try
+                                            set p to content of header "Precedence" of msg
+                                            if p contains "bulk" or p contains "list" then
+                                                set isMarketing to 1
+                                            end if
+                                        end try
+                                    end if
+                                    set end of msgIDs to theID
+                                    set end of msgMessageIDs to theMsgID
+                                    set end of msgSubjects to theSubject
+                                    set end of msgSenders to theSender
+                                    set end of msgDates to theDate
+                                    set end of msgMarketing to isMarketing
                                 end try
                             end repeat
-                            return {matchedName, msgIDs, msgMessageIDs, msgSubjects, msgSenders, msgDates}
+                            return {matchedName, msgIDs, msgMessageIDs, msgSubjects, msgSenders, msgDates, msgMarketing}
                         end if
                     end try
                 end repeat
@@ -257,17 +284,43 @@ actor MailService {
                             set msgSubjects to {}
                             set msgSenders to {}
                             set msgDates to {}
+                            set msgMarketing to {}
                             repeat with i from 1 to msgCount
                                 try
                                     set msg to item i of filteredMsgs
-                                    set end of msgIDs to id of msg
-                                    set end of msgMessageIDs to message id of msg
-                                    set end of msgSubjects to subject of msg
-                                    set end of msgSenders to sender of msg
-                                    set end of msgDates to date received of msg
+                                    set theID to id of msg
+                                    set theMsgID to message id of msg
+                                    set theSubject to subject of msg
+                                    set theSender to sender of msg
+                                    set theDate to date received of msg
+                                    set isMarketing to 0
+                                    try
+                                        content of header "List-Unsubscribe" of msg
+                                        set isMarketing to 1
+                                    end try
+                                    if isMarketing is 0 then
+                                        try
+                                            content of header "List-ID" of msg
+                                            set isMarketing to 1
+                                        end try
+                                    end if
+                                    if isMarketing is 0 then
+                                        try
+                                            set p to content of header "Precedence" of msg
+                                            if p contains "bulk" or p contains "list" then
+                                                set isMarketing to 1
+                                            end if
+                                        end try
+                                    end if
+                                    set end of msgIDs to theID
+                                    set end of msgMessageIDs to theMsgID
+                                    set end of msgSubjects to theSubject
+                                    set end of msgSenders to theSender
+                                    set end of msgDates to theDate
+                                    set end of msgMarketing to isMarketing
                                 end try
                             end repeat
-                            return {matchedName, msgIDs, msgMessageIDs, msgSubjects, msgSenders, msgDates}
+                            return {matchedName, msgIDs, msgMessageIDs, msgSubjects, msgSenders, msgDates, msgMarketing}
                         end if
                     end try
                 end repeat
@@ -315,6 +368,9 @@ actor MailService {
                   let sendersDesc = metaDesc.atIndex(5),
                   let datesDesc = metaDesc.atIndex(6) else { continue }
 
+            // Index 7 is marketing flags (0/1 integers) — optional for forward compatibility
+            let marketingDesc = metaDesc.atIndex(7)
+
             let resolvedAccountName = acctNameDesc.stringValue ?? accountID
             let count = idsDesc.numberOfItems
             if count == 0 { continue }
@@ -328,6 +384,7 @@ actor MailService {
                 let sender = sendersDesc.atIndex(i)?.stringValue ?? ""
                 let dateVal = datesDesc.atIndex(i)?.dateValue ?? Date()
                 let senderEmail = Self.extractEmail(from: sender)
+                let isLikelyMarketing = (marketingDesc?.atIndex(i)?.int32Value ?? 0) != 0
 
                 allMetas.append(MessageMeta(
                     mailID: mailID,
@@ -336,7 +393,8 @@ actor MailService {
                     sender: sender,
                     senderEmail: senderEmail,
                     date: dateVal,
-                    accountName: resolvedAccountName
+                    accountName: resolvedAccountName,
+                    isLikelyMarketing: isLikelyMarketing
                 ))
             }
         }
@@ -490,6 +548,23 @@ actor MailService {
             return name.isEmpty ? nil : name
         }
         return nil
+    }
+
+    /// Detect mailing list and marketing emails from RFC 2822 headers without reading the body.
+    ///
+    /// Checks for the three most reliable indicators:
+    /// - `List-Unsubscribe` (RFC 2369) — present on virtually all commercial mailing lists
+    /// - `List-ID` (RFC 2919) — used by mailing list managers (Mailchimp, Constant Contact, etc.)
+    /// - `Precedence: bulk` or `Precedence: list` — indicates bulk/automated sending
+    ///
+    /// These headers are fetched during the Phase 1 metadata sweep (no body required).
+    static func isMarketingEmail(headers: String) -> Bool {
+        guard !headers.isEmpty else { return false }
+        let lower = headers.lowercased()
+        if lower.contains("list-unsubscribe:") { return true }
+        if lower.contains("list-id:") { return true }
+        if lower.range(of: #"precedence:\s*(bulk|list)"#, options: .regularExpression) != nil { return true }
+        return false
     }
 
     /// Extract a list of strings from an NSAppleEventDescriptor list.
