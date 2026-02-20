@@ -266,6 +266,7 @@ final class EvidenceRepository {
             existing.snippet = event.snippet
             existing.bodyText = event.notes
             existing.occurredAt = event.startDate
+            existing.endedAt = event.endDate
             existing.participantHints = buildParticipantHints(from: event, knownEmails: knownEmails)
             existing.linkedPeople = resolved
         } else {
@@ -276,6 +277,7 @@ final class EvidenceRepository {
                 sourceUID: sourceUID,
                 source: .calendar,
                 occurredAt: event.startDate,
+                endedAt: event.endDate,
                 title: event.title,
                 snippet: event.snippet,
                 bodyText: event.notes
@@ -312,6 +314,7 @@ final class EvidenceRepository {
                 existing.snippet = event.snippet
                 existing.bodyText = event.notes
                 existing.occurredAt = event.startDate
+                existing.endedAt = event.endDate
                 existing.participantHints = buildParticipantHints(from: event, knownEmails: knownEmails)
                 existing.linkedPeople = resolved
 
@@ -324,6 +327,7 @@ final class EvidenceRepository {
                     sourceUID: sourceUID,
                     source: .calendar,
                     occurredAt: event.startDate,
+                    endedAt: event.endDate,
                     title: event.title,
                     snippet: event.snippet,
                     bodyText: event.notes

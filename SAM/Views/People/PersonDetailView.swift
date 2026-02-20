@@ -449,6 +449,13 @@ struct PersonDetailView: View {
     @ViewBuilder
     private var samDataSections: some View {
         VStack(spacing: 0) {
+            // Relationship Health (Phase K)
+            samSection(title: "Relationship Health") {
+                RelationshipHealthView(
+                    health: MeetingPrepCoordinator.shared.computeHealth(for: person)
+                )
+            }
+
             // Alert counts
             if person.consentAlertsCount > 0 || person.reviewAlertsCount > 0 {
                 samSection(title: "Alerts") {
@@ -1079,4 +1086,72 @@ private struct FlowLayout: Layout {
             .modelContainer(container)
     }
     .frame(width: 700, height: 800)
+}
+
+// MARK: - Relationship Health View (shared, used in PersonDetailView + MeetingPrepSection)
+
+struct RelationshipHealthView: View {
+
+    let health: RelationshipHealth
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Last interaction + health dot
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(health.statusColor)
+                    .frame(width: 8, height: 8)
+                Text("Last interaction: \(health.statusLabel)")
+                    .font(.subheadline)
+
+                Spacer()
+
+                // Trend indicator
+                trendIndicator
+            }
+
+            // Frequency chips
+            HStack(spacing: 8) {
+                frequencyChip(label: "30d", count: health.interactionCount30)
+                frequencyChip(label: "60d", count: health.interactionCount90 - health.interactionCount30)
+                frequencyChip(label: "90d", count: health.interactionCount90)
+            }
+        }
+        .padding(.vertical, 6)
+    }
+
+    private var trendIndicator: some View {
+        Group {
+            switch health.trend {
+            case .increasing:
+                Label("Increasing", systemImage: "arrow.up.right")
+                    .foregroundStyle(.green)
+            case .stable:
+                Label("Stable", systemImage: "arrow.right")
+                    .foregroundStyle(.secondary)
+            case .decreasing:
+                Label("Decreasing", systemImage: "arrow.down.right")
+                    .foregroundStyle(.orange)
+            case .noData:
+                Label("No data", systemImage: "minus")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .font(.caption)
+    }
+
+    private func frequencyChip(label: String, count: Int) -> some View {
+        HStack(spacing: 3) {
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text("\(count)")
+                .font(.caption)
+                .fontWeight(.semibold)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Color.secondary.opacity(0.1))
+        .clipShape(RoundedRectangle(cornerRadius: 4))
+    }
 }

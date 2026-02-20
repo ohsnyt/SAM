@@ -4,7 +4,7 @@
 **Language**: Swift 6  
 **Architecture**: Clean layered architecture with strict separation of concerns  
 **Framework**: SwiftUI + SwiftData  
-**Last Updated**: February 12, 2026 (Phases A–I complete)
+**Last Updated**: February 20, 2026 (Phases A–K complete)
 
 **Related Docs**: 
 - See `agent.md` for product philosophy and UX principles
@@ -465,6 +465,7 @@ Text(context.contextType)       // Compile error - property doesn't exist
 - ✅ **Phase J (Part 2)**: Mail.app AppleScript integration (replaced IMAP stubs with working NSAppleScript bridge)
 - ✅ **Phase J (Part 3a)**: "Me" contact identification + email integration UX tweaks
 - ✅ **Phase J (Part 3b — Marketing Detection)**: Mailing list / marketing sender auto-detection + triage UI split (Feb 17, 2026)
+- ✅ **Phase K**: Meeting Prep & Follow-Up (briefings, follow-up coach, relationship health) (Feb 20, 2026)
 
 **Known Bugs**:
 - 🐛 **Calendar participant matching**: No participant is ever marked "Not in Contacts" even when their email address is clearly not in the contacts database. The matching logic needs investigation — likely an issue in EvidenceRepository's email resolution during `bulkUpsert()` or in how participant hints are evaluated in the UI.
@@ -476,9 +477,10 @@ Text(context.contextType)       // Compile error - property doesn't exist
 
 **Next Up**:
 - ⬜ **Phase J (Part 3)**: Polish, Bug Fixes & Hardening (participant matching bug, ~200+ debug statement cleanup)
-- ⬜ **Phase K**: Time Tracking
-- ⬜ **Phase L**: iMessage & FaceTime Evidence (if APIs available)
-- ⬜ **Phase M**: Universal Undo System
+- ✅ **Phase K**: Meeting Prep & Follow-Up (briefings, follow-up coach, relationship health)
+- ⬜ **Phase L**: Time Tracking
+- ⬜ **Phase M**: iMessage & FaceTime Evidence (if APIs available)
+- ⬜ **Phase N**: Universal Undo System
 
 ---
 
@@ -508,14 +510,14 @@ Text(context.contextType)       // Compile error - property doesn't exist
 - ✅ **OnboardingView** — Added `mailAddressSelection` step; mail step uses Skip/Enable footer buttons; Enable greyed out when no Me card; auto-advances to address selection after authorization
 - ✅ **Build succeeds** with 0 errors
 
-**Part 3b — Marketing Detection - COMPLETE (Feb 17, 2026)**:
-- ✅ **MailService.fetchMetadata()** — Added `headers` property fetch to AppleScript metadata sweep (no body required); added `isMarketingEmail(headers:)` helper detecting `List-Unsubscribe`, `List-ID`, and `Precedence: bulk/list` headers
-- ✅ **MessageMeta** — Added `isLikelyMarketing: Bool` field, populated from headers during Phase 1 sweep
+**Part 3b — Marketing Detection + Triage Fixes - COMPLETE (Feb 17, 2026)**:
+- ✅ **MailService.fetchMetadata()** — Fixed AppleScript `headers of msg` bug (returned object list, not string). Replaced with direct per-header lookups (`content of header "List-Unsubscribe" of msg`, etc.) returning 0/1 integer marketing flag. Detects `List-Unsubscribe`, `List-ID`, and `Precedence: bulk/list`
+- ✅ **MessageMeta** — Added `isLikelyMarketing: Bool` field, populated from marketing flag during Phase 1 sweep
 - ✅ **UnknownSender model** — Added `isLikelyMarketing: Bool` property (defaults to `false` for existing records)
 - ✅ **UnknownSenderRepository.bulkRecordUnknownSenders()** — Accepts and persists `isLikelyMarketing`; once set to `true`, never cleared
 - ✅ **MailImportCoordinator** — Passes `meta.isLikelyMarketing` through when recording unknown senders
 - ✅ **CalendarImportCoordinator** — Updated call site (calendar attendees always `isLikelyMarketing: false`)
-- ✅ **UnknownSenderTriageSection** — Split into "personal/business" and "Mailing Lists & Marketing" groups; marketing senders default to Never instead of Later
+- ✅ **UnknownSenderTriageSection** — Split into "personal/business" and "Mailing Lists & Marketing" groups; marketing senders default to Never; "Not Now" senders stay `.pending` (persist across sessions); fixed Group→VStack rendering bug
 - ✅ **Build succeeds** with 0 errors
 
 **Part 3c - HARDENING & BUG FIXES (remaining)**:
@@ -532,42 +534,40 @@ Text(context.contextType)       // Compile error - property doesn't exist
 
 ---
 
-### ⬜ Phase K: Time Tracking (NOT STARTED)
+### ✅ Phase K: Meeting Prep & Follow-Up (COMPLETE — Feb 20, 2026)
+
+**Goal**: Proactive meeting briefings, follow-up coaching, and relationship health indicators
+
+**Completed**:
+- ✅ **SamEvidenceItem.endedAt** — Added `Date?` property for calendar event end time, populated in `EvidenceRepository.bulkUpsert(events:)`
+- ✅ **MeetingPrepCoordinator** — `@MainActor @Observable` singleton computing briefings, follow-ups, and health metrics
+  - `refresh() async` — main entry, called from AwarenessView
+  - `computeHealth(for:)` — reusable health computation for any person
+  - Builds `MeetingBriefing` for events in next 48h with attendee profiles, recent history, action items, topics, signals, shared contexts
+  - Builds `FollowUpPrompt` for events ended in past 48h with no linked note
+- ✅ **MeetingPrepSection** — Expandable briefing cards showing attendee health, recent interactions, open action items, topics, signals, shared contexts; "Add Meeting Notes" button pre-links to attendees
+- ✅ **FollowUpCoachSection** — Prompt cards for past meetings with "Add Notes" / "Dismiss" actions
+- ✅ **AwarenessView wiring** — Both sections embedded between UnknownSenderTriageSection and insights list; refresh on calendar sync
+- ✅ **PersonDetailView** — Relationship Health section with status dot, last interaction, 30d/60d/90d frequency chips, trend indicator
+- ✅ **RelationshipHealthView** — Shared view used in PersonDetailView and briefing cards
+- ✅ **Build succeeds** with 0 errors
+
+**New Files**:
+- `Coordinators/MeetingPrepCoordinator.swift`
+- `Views/Awareness/MeetingPrepSection.swift`
+- `Views/Awareness/FollowUpCoachSection.swift`
+
+**Modified Files**:
+- `Models/SAMModels.swift` — Added `endedAt: Date?` to SamEvidenceItem
+- `Repositories/EvidenceRepository.swift` — Set `endedAt` in upsert/bulkUpsert
+- `Views/Awareness/AwarenessView.swift` — Embedded sections + refresh wiring
+- `Views/People/PersonDetailView.swift` — Added RelationshipHealth section
+
+---
+
+### ⬜ Phase L: Time Tracking (NOT STARTED)
 
 **Goal**: Allow user to document time spent on activities
-
-**Tasks**:
-- ⬜ Create TimeEntry model
-  ```swift
-  @Model
-  final class TimeEntry {
-      var startTime: Date
-      var endTime: Date?
-      var activityType: String  // "ClientMeeting", "Preparation", "VendorCall", etc.
-      var relatedPerson: SamPerson?
-      var relatedContext: SamContext?
-      var notes: String?
-  }
-  ```
-- ⬜ Create TimeTrackingRepository.swift
-- ⬜ Add time tracking UI
-  - Quick "Start Timer" button in menu bar or toolbar
-  - TimeTrackingView.swift for managing entries
-  - Category selection (client work, admin, prospecting, etc.)
-- ⬜ Generate time reports
-  - Time spent by person
-  - Time spent by activity type
-  - Time spent by context (household/business)
-- ⬜ Optional: Calendar integration
-  - Suggest calendar event color coding based on time entries
-  - (Requires permission to write to calendar)
-
-**Expected Outcome**: User can track and reflect on how time is spent
-
-**Architecture Notes**:
-- TimeEntry is SAM-native (no external source)
-- Can link to calendar events via sourceIdentifier
-- Enables "how did I spend my week?" insights
 
 ---
 
@@ -1332,8 +1332,8 @@ When reporting bugs or architectural concerns:
 
 ---
 
-**Document Version**: 4.3 (Phases A–I complete, Phase J Parts 1–3a complete)
+**Document Version**: 4.4 (Phases A–I complete, Phase J Parts 1–3b complete)
 **Previous Versions**: See `changelog.md` for version history
-**Last Major Update**: February 14, 2026 — Phase J (Part 3a) "Me" contact identification + email integration UX tweaks. Next: Part 3b (remaining hardening & bug fixes)
+**Last Major Update**: February 18, 2026 — Phase J (Part 3b) marketing detection + triage fixes. Next: Part 3c (remaining hardening) then Phase K+
 **Clean Rebuild Started**: February 9, 2026
 

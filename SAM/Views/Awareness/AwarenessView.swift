@@ -14,9 +14,11 @@ import SwiftData
 struct AwarenessView: View {
     
     // MARK: - Dependencies
-    
+
     @State private var generator = InsightGenerator.shared
     @State private var peopleRepository = PeopleRepository.shared
+    @State private var meetingPrepCoordinator = MeetingPrepCoordinator.shared
+    @State private var calendarCoordinator = CalendarImportCoordinator.shared
     
     // MARK: - State
     
@@ -42,6 +44,12 @@ struct AwarenessView: View {
             // Unknown Sender Triage
             UnknownSenderTriageSection()
 
+            // Meeting Follow-ups (past meetings, more urgent)
+            FollowUpCoachSection()
+
+            // Meeting Prep (upcoming meetings)
+            MeetingPrepSection()
+
             // Insights List
             if insights.isEmpty {
                 emptyState
@@ -62,6 +70,14 @@ struct AwarenessView: View {
         }
         .task {
             await loadInsights()
+            await meetingPrepCoordinator.refresh()
+        }
+        .onChange(of: calendarCoordinator.importStatus) {
+            if calendarCoordinator.importStatus == .success {
+                Task {
+                    await meetingPrepCoordinator.refresh()
+                }
+            }
         }
     }
     
@@ -279,6 +295,7 @@ struct AwarenessView: View {
     private func refreshInsights() {
         Task {
             await loadInsights()
+            await meetingPrepCoordinator.refresh()
         }
     }
     

@@ -523,6 +523,8 @@ public final class SamEvidenceItem {
 
     // ── Core facts ──────────────────────────────────────────────────
     public var occurredAt: Date
+    /// End time for calendar events. `nil` for non-calendar evidence.
+    public var endedAt:    Date?
     public var title:      String
     public var snippet:    String
     public var bodyText:   String?
@@ -567,6 +569,7 @@ public final class SamEvidenceItem {
         sourceUID: String?        = nil,
         source: EvidenceSource,
         occurredAt: Date,
+        endedAt: Date?            = nil,
         title: String,
         snippet: String,
         bodyText: String?         = nil,
@@ -579,6 +582,7 @@ public final class SamEvidenceItem {
         self.sourceUID        = sourceUID
         self.source           = source
         self.occurredAt       = occurredAt
+        self.endedAt          = endedAt
         self.title            = title
         self.snippet          = snippet
         self.bodyText         = bodyText

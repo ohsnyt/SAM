@@ -4,17 +4,48 @@
 
 ---
 
-## February 17, 2026 - Phase J (Part 3b) Complete: Marketing Sender Auto-Detection
+## February 20, 2026 - Phase K Complete: Meeting Prep & Follow-Up
 
-**What Changed** — Automatically detect mailing list / marketing emails during the Phase 1 metadata sweep, and present them separately in triage with a "Never" default:
+**What Changed** — Proactive meeting briefings, follow-up coaching, and relationship health indicators:
+
+### Data Model
+- **SamEvidenceItem** — Added `endedAt: Date?` property for calendar event end time
+- **EvidenceRepository** — Set `endedAt = event.endDate` in both `upsert(event:)` and `bulkUpsert(events:)`
+
+### MeetingPrepCoordinator (New)
+- `@MainActor @Observable` singleton with `refresh() async` and `computeHealth(for:)`
+- **MeetingBriefing** — Aggregates attendee profiles, recent interaction history, open action items, detected topics/signals, and shared contexts for meetings in the next 48 hours
+- **FollowUpPrompt** — Identifies meetings ended in the past 48 hours with no linked note
+- **RelationshipHealth** — Computed metrics: days since last interaction, 30d/90d counts, trend direction (increasing/stable/decreasing)
+- Supporting types: `AttendeeProfile`, `InteractionRecord`, `ContactTrend`
+
+### Awareness View
+- **MeetingPrepSection** — Expandable briefing cards with attendee avatars, health dots, recent history, action items, topics, signals, shared contexts, and "Add Meeting Notes" button
+- **FollowUpCoachSection** — Prompt cards with bold attendee names, relative time, pending action items, "Add Notes" / "Dismiss" actions
+- **AwarenessView** — Both sections embedded after UnknownSenderTriageSection; refresh triggered on calendar sync completion
+
+### PersonDetailView
+- **RelationshipHealthView** — Shared view showing health dot, last interaction label, 30d/60d/90d frequency chips, and trend arrow
+- Added as first section in `samDataSections`
+
+### Files
+- **New**: `MeetingPrepCoordinator.swift`, `MeetingPrepSection.swift`, `FollowUpCoachSection.swift`
+- **Modified**: `SAMModels.swift`, `EvidenceRepository.swift`, `AwarenessView.swift`, `PersonDetailView.swift`
+
+---
+
+## February 17, 2026 - Phase J (Part 3b) Complete: Marketing Detection + Triage Fixes
+
+**What Changed** — Marketing sender auto-detection, AppleScript header access fix, triage UI persistence fix, and triage section rendering fix:
 
 ### Marketing Detection (Headers Only — No Body Required)
 
-- **MailService.swift** — Added `headers` property to both AppleScript metadata loops. Used a nested `try/on error` to default to `""` if unavailable, keeping all arrays aligned. Added `isMarketingEmail(headers:)` static helper that checks three RFC-standard indicators:
-  - `List-Unsubscribe:` (RFC 2369) — present on virtually all commercial mailing lists
-  - `List-ID:` (RFC 2919) — mailing list manager identifier
+- **MailService.swift** — Replaced broken `headers of msg` AppleScript call (returned a list of header objects, not a string) with direct per-header lookups using `content of header "HeaderName" of msg`. Checks three RFC-standard indicators:
+  - `List-Unsubscribe` (RFC 2369) — present on virtually all commercial mailing lists
+  - `List-ID` (RFC 2919) — mailing list manager identifier
   - `Precedence: bulk` or `Precedence: list` — bulk / automated sending indicator
-- **MessageMeta** — Added `isLikelyMarketing: Bool` field set from headers during Phase 1 sweep (before any body fetches).
+- AppleScript now returns a 0/1 integer per message (`msgMarketing` list) instead of raw header strings. Swift side reads the integer directly — no string parsing needed.
+- **MessageMeta** — Added `isLikelyMarketing: Bool` field, populated from marketing flag during Phase 1 sweep (before any body fetches).
 
 ### Data Layer
 
@@ -25,24 +56,29 @@
 
 ### Triage UI
 
-- **UnknownSenderTriageSection.swift** — Added `regularSenders` and `marketingSenders` computed properties (split from `pendingSenders`). Marketing senders now default to `.never` in `loadPendingSenders()`. Scrollable list shows two groups: personal/business senders first (default: Later), then a "Mailing Lists & Marketing" subsection with an orange badge and "Defaulting to Never" label.
+- **UnknownSenderTriageSection.swift** — Three fixes:
+  1. **Marketing grouping**: Added `regularSenders` and `marketingSenders` computed properties. Marketing senders default to `.never`, personal/business senders default to `.notNow`. Two-section layout with "Mailing Lists & Marketing" subsection.
+  2. **"Not Now" persistence**: Senders marked "Not Now" are now left as `.pending` in the database (previously marked `.dismissed` which removed them). They persist in the triage section across tab switches and app restarts until the user explicitly chooses "Add" or "Never".
+  3. **Rendering fix**: Replaced `Group { content }` wrapper with always-present `VStack` container. The `Group` + `@ViewBuilder` + conditional content pattern failed to re-render when `@State` changed via `.task` after `NavigationSplitView` structural swap.
 
-**Architecture Decision — Headers-Only Detection**:
-- Checking RFC 2822 headers (`List-Unsubscribe`, `List-ID`, `Precedence`) is reliable for commercial mailing lists and requires no body fetch — detection adds negligible overhead to the existing Phase 1 metadata sweep.
-- `isLikelyMarketing` is sticky: once set to `true` it is never reset, so reclassification after deletion of marketing emails won't cause the sender to resurface as personal.
+### Bug Fixes
+
+- **AppleScript `headers of msg` bug**: Mail.app's `headers of msg` returns a list of header objects, not a raw string. The `try/end try` block silently caught the error, `theHeaders` stayed `""`, and `isMarketingEmail("")` always returned `false`. Fixed by checking specific headers individually via `content of header "List-Unsubscribe" of msg` etc.
+- **Triage section disappearing on tab switch**: `NavigationSplitView` structural swap destroyed and recreated `AwarenessView`, but `Group`-wrapped conditional content didn't re-render when `@State` updated via `.task`. Fixed with always-present `VStack` container.
+- **"Not Now" senders vanishing after Done**: Clicking Done dismissed all "Not Now" senders from the database, so they never reappeared. Now only "Add" and "Never" choices are persisted; "Not Now" senders remain `.pending`.
 
 **Files Modified**:
 | # | File | Action |
 |---|------|--------|
-| 1 | `Services/MailService.swift` | Added `headers` to AppleScript loops, `isLikelyMarketing` to `MessageMeta`, `isMarketingEmail()` helper |
+| 1 | `Services/MailService.swift` | Fixed AppleScript header access (per-header lookup instead of `headers of msg`), returns 0/1 marketing flag |
 | 2 | `Models/SAMModels-UnknownSender.swift` | Added `isLikelyMarketing: Bool` property + init param |
 | 3 | `Repositories/UnknownSenderRepository.swift` | Updated `bulkRecordUnknownSenders` signature, sticky upgrade logic |
 | 4 | `Coordinators/MailImportCoordinator.swift` | Pass `isLikelyMarketing` through senderData mapping |
 | 5 | `Coordinators/CalendarImportCoordinator.swift` | Updated call site (`isLikelyMarketing: false`) |
-| 6 | `Views/Awareness/UnknownSenderTriageSection.swift` | Two-group UI, marketing defaults to Never |
+| 6 | `Views/Awareness/UnknownSenderTriageSection.swift` | Two-group UI, "Not Now" persistence, Group→VStack rendering fix |
 
 **Build & Test Status**:
-- ✅ Build succeeds (0 errors, 2 pre-existing warnings)
+- ✅ Build succeeds (0 errors)
 
 ---
 
