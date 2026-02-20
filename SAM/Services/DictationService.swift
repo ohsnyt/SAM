@@ -183,6 +183,7 @@ final class DictationService {
         var bufferCount = 0
         var consecutiveSilentBuffers = 0
         var hasReceivedSpeech = false
+        var didEndAudio = false
         let silenceThreshold = self.silenceAmplitudeThreshold
         let sampleRate = recordingFormat.sampleRate
         let silenceTimeout = self.silenceTimeoutSeconds
@@ -222,6 +223,9 @@ final class DictationService {
             }
 
             inputNode.installTap(onBus: 0, bufferSize: 4096, format: recordingFormat) { buffer, time in
+                // Stop processing once endAudio has been called
+                guard !didEndAudio else { return }
+
                 bufferCount += 1
 
                 // Compute max amplitude for this buffer
@@ -238,11 +242,6 @@ final class DictationService {
                     logger.info("Audio buffer #\(bufferCount): frames=\(frameLength), maxAmplitude=\(maxAmplitude), time=\(time.sampleTime)")
                 }
 
-                // Periodic logging every 50 buffers
-                if bufferCount % 50 == 0 {
-                    logger.debug("Audio buffer count: \(bufferCount), silent streak: \(consecutiveSilentBuffers)")
-                }
-
                 // Silence detection
                 if maxAmplitude < silenceThreshold {
                     consecutiveSilentBuffers += 1
@@ -253,7 +252,8 @@ final class DictationService {
 
                 // Auto-stop after silence timeout (only if we've received some speech first)
                 if hasReceivedSpeech && consecutiveSilentBuffers >= silentBuffersForTimeout {
-                    logger.info("Auto-stopping: \(consecutiveSilentBuffers) silent buffers (\(Double(consecutiveSilentBuffers) * secondsPerBuffer)s of silence)")
+                    logger.info("Auto-stopping after \(String(format: "%.1f", Double(consecutiveSilentBuffers) * secondsPerBuffer))s of silence")
+                    didEndAudio = true
                     request.endAudio()
                     return
                 }
