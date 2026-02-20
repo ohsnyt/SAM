@@ -363,7 +363,7 @@ final class TimeEntry {
 }
 ```
 
-**UndoEntry**: Universal undo system (Phase M)
+**UndoEntry**: Universal undo system (Phase N)
 ```swift
 @Model
 final class UndoEntry {
@@ -468,141 +468,97 @@ Text(context.contextType)       // Compile error - property doesn't exist
 - ✅ **Phase J (Part 3c)**: Hardening — participant matching fix + insight persistence to SwiftData (Feb 20, 2026)
 - ✅ **Phase K**: Meeting Prep & Follow-Up (briefings, follow-up coach, relationship health) (Feb 20, 2026)
 
-**Known Bugs**:
-- (none currently tracked)
-
-**Cleanup Needed**:
-- 🧹 ContactsImportCoordinator still uses older API pattern (`isImporting: Bool`, `lastImportResult`) — should be standardized to match CalendarImportCoordinator's `ImportStatus` enum pattern. (Documentation was outdated — it already uses `ImportStatus` with `private(set)`.)
+**Known Bugs**: (none currently tracked)
 
 **Next Up**:
-- ✅ **Phase K**: Meeting Prep & Follow-Up (briefings, follow-up coach, relationship health)
-- ⬜ **Phase L**: Time Tracking
-- ⬜ **Phase M**: iMessage & FaceTime Evidence (if APIs available)
+- ⬜ **Phase L**: Notes Pro — timestamped entries, dictation, Evernote ENEX import
+- ⬜ **Phase M**: iMessage Evidence
 - ⬜ **Phase N**: Universal Undo System
+- ⬜ **Phase O**: Time Tracking
 
 ---
 
 ### ✅ Phase J: Email Integration & Polish (COMPLETE — Feb 20, 2026)
 
-**Part 1 - COMPLETE (Feb 13, 2026)**:
-- ✅ **EmailAnalysisService.swift** — On-device LLM analysis via Apple Foundation Models
-- ✅ **MailFilterRule.swift** — Sender filtering rules
-- ✅ **EmailDTO.swift, EmailAnalysisDTO.swift** — Sendable DTOs
-- ✅ **EvidenceRepository extensions** — `bulkUpsertEmails()`, `pruneMailOrphans()`
+Mail.app AppleScript bridge, on-device LLM email analysis, known-sender filtering, unknown sender triage, marketing detection, "Me" contact identification, participant matching fix, insight persistence to SwiftData. See `changelog.md` for full implementation details.
 
-**Part 2 - COMPLETE (Feb 14, 2026)** — Mail.app AppleScript Integration:
-- ✅ **MailService.swift** — Rewritten: NSAppleScript bridge to Mail.app (bulk metadata sweep, per-message body fetch)
-- ✅ **MailImportCoordinator.swift** — Rewritten: account-based selection, removed IMAP/Keychain dependency
-- ✅ **MailSettingsView.swift** — Rewritten: Mail.app account picker with toggles, access error display
-- ✅ **EmailAnalysisService.swift** — Bug fixes: EntityKind mapping, Swift 6 Codable isolation
-- ✅ **SAM_crm.entitlements** — Added Apple Events temporary exception for Mail.app
-- ✅ **Info.plist** — Added NSAppleEventsUsageDescription
-- ✅ **KeychainHelper.swift** — Deleted (no longer needed)
-- ✅ **Build succeeds** with 0 errors, 0 warnings, all tests pass
-
-**Part 3a - COMPLETE (Feb 14, 2026)** — "Me" Contact + Email UX Tweaks:
-- ✅ **ContactsService.fetchMeContact()** — Real implementation using `unifiedMeContactWithKeys(toFetch:)`
-- ✅ **SamPerson.isMe** — Bool property with uniqueness enforcement in `PeopleRepository.upsertMe()`
-- ✅ **ContactsImportCoordinator** — Imports Me contact after every group import (even if not in SAM group)
-- ✅ **MailSettingsView** — Replaced free-text inbox filters with Me contact email toggles via `PeopleRepository.fetchMe()`
-- ✅ **OnboardingView** — Added `mailAddressSelection` step; mail step uses Skip/Enable footer buttons; Enable greyed out when no Me card; auto-advances to address selection after authorization
-- ✅ **Build succeeds** with 0 errors
-
-**Part 3b — Marketing Detection + Triage Fixes - COMPLETE (Feb 17, 2026)**:
-- ✅ **MailService.fetchMetadata()** — Fixed AppleScript `headers of msg` bug (returned object list, not string). Replaced with direct per-header lookups (`content of header "List-Unsubscribe" of msg`, etc.) returning 0/1 integer marketing flag. Detects `List-Unsubscribe`, `List-ID`, and `Precedence: bulk/list`
-- ✅ **MessageMeta** — Added `isLikelyMarketing: Bool` field, populated from marketing flag during Phase 1 sweep
-- ✅ **UnknownSender model** — Added `isLikelyMarketing: Bool` property (defaults to `false` for existing records)
-- ✅ **UnknownSenderRepository.bulkRecordUnknownSenders()** — Accepts and persists `isLikelyMarketing`; once set to `true`, never cleared
-- ✅ **MailImportCoordinator** — Passes `meta.isLikelyMarketing` through when recording unknown senders
-- ✅ **CalendarImportCoordinator** — Updated call site (calendar attendees always `isLikelyMarketing: false`)
-- ✅ **UnknownSenderTriageSection** — Split into "personal/business" and "Mailing Lists & Marketing" groups; marketing senders default to Never; "Not Now" senders stay `.pending` (persist across sessions); fixed Group→VStack rendering bug
-- ✅ **Build succeeds** with 0 errors
-
-**Part 3c - HARDENING & BUG FIXES - COMPLETE (Feb 20, 2026)**:
-- ✅ **Fix participant matching bug** — Root cause: `EKParticipant.isCurrentUser` unreliably returns `true`, short-circuiting the `matched` check. Fix: replaced `attendee.isCurrentUser` with `meEmailSet()` helper that checks against the Me contact's known emails in `PeopleRepository`.
-- ✅ **Clean up debug statements** — Already complete (zero `print()` calls remain); all logging uses `os.Logger`.
-- ✅ **Standardize ContactsImportCoordinator** — Already uses `ImportStatus` enum (only difference is `private(set)` on state vars). Documentation was outdated.
-- ✅ **Persist insights to SwiftData** — Extended `SamInsight` model with `title`, `urgencyRawValue`/`sourceTypeRawValue` (with `@Transient` computed accessors), `sourceID`. Added `InsightGenerator.configure(container:)` + `persistInsights()` with 24h dedup and 30-day dismissed cleanup. Migrated `AwarenessView` from `@State [GeneratedInsight]` to `@Query SamInsight`; dismiss/markDone set `dismissedAt`.
-- ✅ **"Me" contact identification** — `isMe: Bool` on SamPerson, `fetchMeContact()` via `unifiedMeContactWithKeys`, `upsertMe()` in PeopleRepository, auto-imported after every group import. MailSettingsView and OnboardingView use Me contact's email aliases for filter selection.
-- ⬜ **"Add to Context" from PersonDetailView** — Currently commented out in toolbar; wire up context selection sheet.
-- ⬜ **Remove debug utilities from production** — ContactsTestView, ContactValidationDebugView are development-only.
-
-**Expected Outcome**: Email integration complete, core hardening done, ready for Phase L+
+**Open polish items** (non-blocking):
+- ⬜ "Add to Context" from PersonDetailView — wire up context selection sheet
+- ⬜ Remove debug utilities from production — ContactsTestView, ContactValidationDebugView
 
 ---
 
 ### ✅ Phase K: Meeting Prep & Follow-Up (COMPLETE — Feb 20, 2026)
 
-**Goal**: Proactive meeting briefings, follow-up coaching, and relationship health indicators
-
-**Completed**:
-- ✅ **SamEvidenceItem.endedAt** — Added `Date?` property for calendar event end time, populated in `EvidenceRepository.bulkUpsert(events:)`
-- ✅ **MeetingPrepCoordinator** — `@MainActor @Observable` singleton computing briefings, follow-ups, and health metrics
-  - `refresh() async` — main entry, called from AwarenessView
-  - `computeHealth(for:)` — reusable health computation for any person
-  - Builds `MeetingBriefing` for events in next 48h with attendee profiles, recent history, action items, topics, signals, shared contexts
-  - Builds `FollowUpPrompt` for events ended in past 48h with no linked note
-- ✅ **MeetingPrepSection** — Expandable briefing cards showing attendee health, recent interactions, open action items, topics, signals, shared contexts; "Add Meeting Notes" button pre-links to attendees
-- ✅ **FollowUpCoachSection** — Prompt cards for past meetings with "Add Notes" / "Dismiss" actions
-- ✅ **AwarenessView wiring** — Both sections embedded between UnknownSenderTriageSection and insights list; refresh on calendar sync
-- ✅ **PersonDetailView** — Relationship Health section with status dot, last interaction, 30d/60d/90d frequency chips, trend indicator
-- ✅ **RelationshipHealthView** — Shared view used in PersonDetailView and briefing cards
-- ✅ **Build succeeds** with 0 errors
-
-**New Files**:
-- `Coordinators/MeetingPrepCoordinator.swift`
-- `Views/Awareness/MeetingPrepSection.swift`
-- `Views/Awareness/FollowUpCoachSection.swift`
-
-**Modified Files**:
-- `Models/SAMModels.swift` — Added `endedAt: Date?` to SamEvidenceItem
-- `Repositories/EvidenceRepository.swift` — Set `endedAt` in upsert/bulkUpsert
-- `Views/Awareness/AwarenessView.swift` — Embedded sections + refresh wiring
-- `Views/People/PersonDetailView.swift` — Added RelationshipHealth section
+MeetingPrepCoordinator generates 48h-lookahead briefings and follow-up prompts. RelationshipHealthView shows interaction frequency and trend. Sections embedded in AwarenessView and PersonDetailView. See `changelog.md` for full implementation details.
 
 ---
 
-### ⬜ Phase L: Time Tracking (NOT STARTED)
+### ⬜ Phase L: Notes Pro (NOT STARTED)
 
-**Goal**: Allow user to document time spent on activities
+**Goal**: Robust, low-friction note-taking system with timestamped entries, dictation, and Evernote import
 
----
+**Motivation**: Primary end user organizes extensive notes around both clients and recurring meetings (e.g., team product meetings). Notes are the core daily workflow tool — reviewed during meeting prep to see history and key information. The current Phase H note system is functional but thin; upgrading it dramatically improves everything downstream (briefings, follow-up coaching, relationship health).
 
-### ⬜ Phase L: iMessage & FaceTime Evidence (NOT STARTED)
+**Part 1 — Timestamped Entry System**:
+- ⬜ Redesign `SamNote` to support a stream of timestamped entries rather than a single text block
+- ⬜ Each entry: timestamp, content (text), entry type (typed / dictated)
+- ⬜ Low-friction capture UI: tap/click to add an entry, type or dictate, auto-timestamped
+- ⬜ Chronological display with time markers (like a meeting log)
+- ⬜ Existing note data migration (single text → single entry)
 
-**Goal**: Observe iMessage and FaceTime interactions as evidence
+**Part 2 — Dictation & Voice Input**:
+- ⬜ Integrate macOS Speech/dictation framework for voice-to-text entries
+- ⬜ Quality transcription with punctuation and formatting
+- ⬜ Visual indicator for dictation mode, easy start/stop
+- ⬜ Entries tagged as dictated vs typed for reference
 
-**Tasks**:
-- ⬜ Research macOS APIs for iMessage/FaceTime access
-  - Investigate if public APIs exist (likely not)
-  - Consider SQLite database access (iMessage database)
-  - Consider alternative: Zoom/Teams integration instead
-- ⬜ Create MessagingService.swift (if APIs available)
-  - Similar pattern to ContactsService
-  - Returns MessageDTO (Sendable wrapper)
-  - Checks authorization before access
-- ⬜ Create MessageImportCoordinator.swift
-  - Fetches messages/calls
-  - Creates Evidence items
-  - Links to existing SamPerson by phone/email
-- ⬜ Add messaging evidence to Inbox
-  - Evidence type: "iMessage", "FaceTime", "ZoomCall"
-  - Display message metadata (not full body)
-  - AI analysis generates insights
-
-**Expected Outcome**: Communication history appears as Evidence
+**Part 3 — Evernote ENEX Import**:
+- ⬜ Parse Evernote `.enex` XML export format
+- ⬜ Map Evernote notebooks → SamContext (or create new contexts)
+- ⬜ Map Evernote tags → link to SamPerson where possible
+- ⬜ Preserve timestamps, formatting (convert ENHTML to plain text or markdown)
+- ⬜ Import UI in Onboarding + Settings (file picker, preview, confirm)
+- ⬜ Idempotent import (skip duplicates by Evernote note ID)
 
 **Architecture Notes**:
-- High risk: No public APIs for iMessage/FaceTime
-- Alternative: Focus on Zoom/Teams/Slack where APIs exist
-- Privacy-first: Store metadata + analysis, not raw messages
-- May require external integrations (webhooks, APIs)
+- Notes link to both `SamPerson` and `SamContext` — matches Evernote's client + meeting organization pattern
+- Timestamped entries feed richer data to `NoteAnalysisService` and `MeetingPrepCoordinator`
+- ENEX format is XML with embedded ENHTML content; parse with Foundation's XMLParser
+- Dictation via `SFSpeechRecognizer` (on-device) or system dictation key
 
-**Decision Point**: Research API availability before committing to this phase
+**Expected Outcome**: Notes become the primary daily tool — fast capture during meetings, rich history for meeting prep, one-time Evernote migration
 
 ---
 
-### ⬜ Phase M: Universal Undo System (NOT STARTED)
+### ⬜ Phase M: iMessage Evidence (NOT STARTED)
+
+**Goal**: Observe iMessage interactions as evidence for relationship awareness
+
+**Tasks**:
+- ⬜ Research macOS iMessage database access (~/Library/Messages/chat.db)
+- ⬜ Create iMessageService.swift (actor, reads SQLite database)
+  - Returns MessageDTO (Sendable wrapper with metadata only)
+  - Checks Full Disk Access authorization
+- ⬜ Create iMessageImportCoordinator.swift
+  - Fetches message metadata (sender, timestamp, conversation)
+  - Creates Evidence items linked to SamPerson by phone/email
+  - Privacy-first: store metadata + analysis, not raw message content
+- ⬜ Add iMessage evidence to Inbox
+  - Evidence source type: `.iMessage`
+  - Display conversation metadata, not full content
+
+**Architecture Notes**:
+- No public API for iMessage; requires reading SQLite database directly
+- Requires Full Disk Access entitlement
+- Privacy-first: store metadata + AI summary, never raw message bodies
+- Link to SamPerson via phone number or email address matching
+
+**Expected Outcome**: iMessage interaction history appears as Evidence, feeds relationship health metrics
+
+---
+
+### ⬜ Phase N: Universal Undo System (NOT STARTED)
 
 **Goal**: 30-day undo history for all destructive operations
 
@@ -625,7 +581,6 @@ Text(context.contextType)       // Compile error - property doesn't exist
   - "Undo" button restores previous state
 - ⬜ Add automatic cleanup
   - Background task removes entries > 30 days old
-  - Optional: Compress old entries for archival
 
 **Expected Outcome**: User can undo any destructive action within 30 days
 
@@ -633,25 +588,12 @@ Text(context.contextType)       // Compile error - property doesn't exist
 - Undo != NSUndoManager (incompatible with SwiftData)
 - Store snapshots as JSON (Codable)
 - Repository pattern: all mutations go through repositories, so easy to intercept
-- Undo coordinator observes repository mutations, captures state
 
-**Implementation Strategy**:
-```swift
-protocol Undoable {
-    func captureState() throws -> Data  // Serialize to JSON
-    func restoreState(_ data: Data) throws
-}
+---
 
-@Model
-final class UndoEntry {
-    var timestamp: Date
-    var operationType: String  // "delete", "update", "create"
-    var modelType: String      // "SamPerson", "SamContext"
-    var modelIdentifier: String
-    var beforeState: Data      // JSON snapshot
-    var afterState: Data?      // Optional for creates
-}
-```
+### ⬜ Phase O: Time Tracking (NOT STARTED)
+
+**Goal**: Allow user to document time spent on activities
 
 ---
 
@@ -1306,7 +1248,7 @@ When reporting bugs or architectural concerns:
 
 ## 14. Future Enhancements
 
-**Post-Phase M** (after all core phases complete):
+**Post-Phase O** (after all core phases complete):
 
 - **Advanced Search**: Full-text search across evidence, notes, mail summaries,Plea and insights
 - **Export/Import**: Backup and restore SAM data (SwiftData export)
