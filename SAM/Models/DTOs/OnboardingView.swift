@@ -11,6 +11,8 @@
 import SwiftUI
 import Contacts
 import EventKit
+import AVFoundation
+import Speech
 
 struct OnboardingView: View {
 
@@ -37,6 +39,9 @@ struct OnboardingView: View {
     @State private var hasNoMeContact = false
     @State private var selectedMailAddresses: Set<String> = []
     @State private var onboardingLookbackDays: Int = 14
+    @State private var micPermissionGranted = false
+    @State private var speechPermissionGranted = false
+    @State private var skippedMicrophone = false
 
     enum OnboardingStep {
         case welcome
@@ -46,6 +51,7 @@ struct OnboardingView: View {
         case calendarSelection
         case mailPermission
         case mailAddressSelection
+        case microphonePermission
         case complete
     }
 
@@ -74,6 +80,8 @@ struct OnboardingView: View {
                         mailPermissionStep
                     case .mailAddressSelection:
                         mailAddressSelectionStep
+                    case .microphonePermission:
+                        microphonePermissionStep
                     case .complete:
                         completeStep
                     }
@@ -524,6 +532,54 @@ struct OnboardingView: View {
         }
     }
 
+    private var microphonePermissionStep: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Image(systemName: "mic.circle.fill")
+                .font(.system(size: 64))
+                .foregroundStyle(.purple)
+                .frame(maxWidth: .infinity)
+
+            Text("Microphone & Speech")
+                .font(.title)
+                .bold()
+
+            Text("SAM can transcribe your voice notes during meetings:")
+                .font(.body)
+                .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 12) {
+                BulletPoint("Dictate notes hands-free")
+                BulletPoint("AI cleans up grammar and filler words")
+                BulletPoint("All processing happens on-device")
+            }
+            .padding(.leading, 8)
+
+            Text("Microphone audio is only used for live transcription and is never stored or sent anywhere.")
+                .font(.callout)
+                .foregroundStyle(.orange)
+                .padding()
+                .background(Color.orange.opacity(0.1))
+                .cornerRadius(8)
+
+            if micPermissionGranted && speechPermissionGranted {
+                HStack {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                    Text("Microphone and speech recognition access granted")
+                        .foregroundStyle(.green)
+                }
+            } else if micPermissionGranted && !speechPermissionGranted {
+                HStack {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    Text("Microphone granted, but speech recognition was denied. You can enable it in System Settings.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
     private var completeStep: some View {
         VStack(alignment: .leading, spacing: 20) {
             Image(systemName: "checkmark.circle.fill")
@@ -578,15 +634,29 @@ struct OnboardingView: View {
                               title: "Email",
                               subtitle: "Skipped - you can enable this in Settings later")
                 }
+
+                if micPermissionGranted && speechPermissionGranted {
+                    StatusRow(icon: "mic.circle.fill",
+                             color: .purple,
+                             title: "Dictation",
+                             subtitle: "Ready for voice notes")
+                } else if skippedMicrophone {
+                    SkippedRow(icon: "mic.circle.fill",
+                              color: .purple,
+                              title: "Dictation",
+                              subtitle: "Skipped - you can enable this later")
+                }
             }
             .padding(.vertical)
         }
     }
 
     private var completionTitle: String {
-        if skippedContacts && skippedCalendar && skippedMail {
+        let skippedAny = skippedContacts || skippedCalendar || skippedMail || skippedMicrophone
+        let skippedAll = skippedContacts && skippedCalendar && skippedMail && skippedMicrophone
+        if skippedAll {
             return "Ready to Start"
-        } else if skippedContacts || skippedCalendar || skippedMail {
+        } else if skippedAny {
             return "Partially Configured"
         } else {
             return "You're All Set!"
@@ -594,9 +664,11 @@ struct OnboardingView: View {
     }
 
     private var completionMessage: String {
-        if skippedContacts && skippedCalendar && skippedMail {
+        let skippedAny = skippedContacts || skippedCalendar || skippedMail || skippedMicrophone
+        let skippedAll = skippedContacts && skippedCalendar && skippedMail && skippedMicrophone
+        if skippedAll {
             return "You can configure permissions anytime in Settings. SAM will be ready when you are."
-        } else if skippedContacts || skippedCalendar || skippedMail {
+        } else if skippedAny {
             return "SAM will import the enabled sources. You can configure additional permissions in Settings later."
         } else {
             return "SAM will now import your contacts, calendar events, and email. This may take a moment."
@@ -620,7 +692,7 @@ struct OnboardingView: View {
                 // Mail step uses Skip / Enable Email pair
                 Button("Skip") {
                     skippedMail = true
-                    currentStep = .complete
+                    currentStep = .microphonePermission
                 }
                 .foregroundStyle(.secondary)
 
@@ -629,6 +701,19 @@ struct OnboardingView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(hasNoMeContact || isCheckingMail || mailAccessGranted)
+            } else if currentStep == .microphonePermission {
+                // Mic step uses Skip / Enable Dictation pair
+                Button("Skip") {
+                    skippedMicrophone = true
+                    currentStep = .complete
+                }
+                .foregroundStyle(.secondary)
+
+                Button("Enable Dictation") {
+                    Task { await requestMicrophonePermission() }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(micPermissionGranted && speechPermissionGranted)
             } else {
                 // Show skip option for other permission steps
                 if shouldShowSkip {
@@ -661,6 +746,8 @@ struct OnboardingView: View {
         }
     }
 
+    // Note: microphonePermission and mailPermission have their own skip buttons in footer
+
     private var nextButtonTitle: String {
         switch currentStep {
         case .welcome:
@@ -677,6 +764,8 @@ struct OnboardingView: View {
             return "Next" // not used; footer overrides
         case .mailAddressSelection:
             return "Next"
+        case .microphonePermission:
+            return "Next" // not used; footer overrides
         case .complete:
             return "Start Using SAM"
         }
@@ -699,6 +788,8 @@ struct OnboardingView: View {
         case .mailPermission:
             return true
         case .mailAddressSelection:
+            return true
+        case .microphonePermission:
             return true
         case .complete:
             return true
@@ -759,11 +850,14 @@ struct OnboardingView: View {
             if mailAccessGranted && !meEmailAddresses.isEmpty {
                 currentStep = .mailAddressSelection
             } else {
-                currentStep = .complete
+                currentStep = .microphonePermission
             }
 
         case .mailAddressSelection:
             applyMailFilterRules()
+            currentStep = .microphonePermission
+
+        case .microphonePermission:
             currentStep = .complete
 
         case .complete:
@@ -790,12 +884,14 @@ struct OnboardingView: View {
             currentStep = .calendarSelection
         case .mailAddressSelection:
             currentStep = .mailPermission
-        case .complete:
+        case .microphonePermission:
             if mailAccessGranted && !meEmailAddresses.isEmpty {
                 currentStep = .mailAddressSelection
             } else {
                 currentStep = .mailPermission
             }
+        case .complete:
+            currentStep = .microphonePermission
         }
     }
 
@@ -843,6 +939,26 @@ struct OnboardingView: View {
             if !meEmailAddresses.isEmpty {
                 currentStep = .mailAddressSelection
             }
+        }
+    }
+
+    // MARK: - Microphone & Speech
+
+    private func requestMicrophonePermission() async {
+        // Request speech recognition
+        let speechGranted = await withCheckedContinuation { continuation in
+            SFSpeechRecognizer.requestAuthorization { status in
+                continuation.resume(returning: status == .authorized)
+            }
+        }
+        speechPermissionGranted = speechGranted
+
+        // Request microphone access
+        let micGranted = await AVCaptureDevice.requestAccess(for: .audio)
+        micPermissionGranted = micGranted
+
+        if micGranted && speechGranted {
+            currentStep = .complete
         }
     }
 

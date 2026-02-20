@@ -33,9 +33,9 @@ struct PersonDetailView: View {
     @State private var isLoadingContact = false
     @State private var showingError = false
     @State private var errorMessage = ""
-    @State private var showingNoteEditor = false
     @State private var showingContextPicker = false
     @State private var personNotes: [SamNote] = []
+    @State private var editingNote: SamNote?
     
     // MARK: - Body
     
@@ -73,13 +73,6 @@ struct PersonDetailView: View {
         .navigationTitle("")  // Remove title since we show it in the header
         .toolbar {
             ToolbarItemGroup {
-                Button {
-                    showingNoteEditor = true
-                } label: {
-                    Label("Add Note", systemImage: "note.text.badge.plus")
-                }
-                .help("Add a note about this person")
-                
                 if person.contactIdentifier != nil {
                     Button {
                         openInContacts()
@@ -117,8 +110,8 @@ struct PersonDetailView: View {
             await loadFullContact()
             loadNotes()
         }
-        .sheet(isPresented: $showingNoteEditor) {
-            NoteEditorView(linkedPerson: person) {
+        .sheet(item: $editingNote) { note in
+            NoteEditorView(note: note) {
                 loadNotes()
             }
         }
@@ -477,7 +470,12 @@ struct PersonDetailView: View {
                 }
             }
             
-            // Notes (Phase H)
+            // Relationship Summary (Phase L-2)
+            if person.relationshipSummary != nil {
+                relationshipSummarySection
+            }
+
+            // Notes (Phase L-2)
             notesSection
             
             // Insights
@@ -673,30 +671,87 @@ struct PersonDetailView: View {
         }
     }
     
-    // Notes section (Phase H)
-    private var notesSection: some View {
-        samSection(title: "Notes") {
-            if personNotes.isEmpty {
-                VStack(spacing: 8) {
-                    Text("No notes yet")
+    // Relationship Summary section (Phase L-2)
+    private var relationshipSummarySection: some View {
+        samSection(title: "Relationship Summary") {
+            VStack(alignment: .leading, spacing: 8) {
+                // Overview
+                if let overview = person.relationshipSummary {
+                    Text(overview)
                         .font(.body)
                         .foregroundStyle(.secondary)
-                    
-                    Button(action: {
-                        showingNoteEditor = true
-                    }) {
-                        Label("Add First Note", systemImage: "plus.circle")
-                    }
-                    .buttonStyle(.bordered)
                 }
-                .padding(.vertical, 8)
+
+                // Key themes as capsule badges
+                if !person.relationshipKeyThemes.isEmpty {
+                    FlowLayout(spacing: 6) {
+                        ForEach(person.relationshipKeyThemes, id: \.self) { theme in
+                            Text(theme)
+                                .font(.caption2)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(.purple.opacity(0.1))
+                                .foregroundStyle(.purple)
+                                .clipShape(Capsule())
+                        }
+                    }
+                }
+
+                // Next steps
+                if !person.relationshipNextSteps.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(person.relationshipNextSteps, id: \.self) { step in
+                            HStack(alignment: .top, spacing: 6) {
+                                Image(systemName: "arrow.right.circle")
+                                    .font(.caption)
+                                    .foregroundStyle(.blue)
+                                    .padding(.top, 1)
+                                Text(step)
+                                    .font(.caption)
+                            }
+                        }
+                    }
+                }
+
+                // Updated timestamp
+                if let updatedAt = person.summaryUpdatedAt {
+                    Text("Updated \(updatedAt, style: .relative)")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        }
+    }
+
+    // Notes section (Phase L-2)
+    private var notesSection: some View {
+        samSection(title: "Notes") {
+            // Inline capture — always visible
+            InlineNoteCaptureView(
+                linkedPerson: person,
+                linkedContext: nil,
+                onSaved: { loadNotes() }
+            )
+            .padding(.vertical, 4)
+
+            // Note list
+            if personNotes.isEmpty {
+                Text("No notes yet")
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 4)
             } else {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(personNotes.prefix(5), id: \.id) { note in
-                        NoteRowView(note: note)
-                            .padding(.vertical, 4)
+                        Button {
+                            editingNote = note
+                        } label: {
+                            NoteRowView(note: note)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.vertical, 4)
                     }
-                    
+
                     if personNotes.count > 5 {
                         Button(action: {
                             // TODO: Show all notes view
@@ -858,24 +913,24 @@ struct PersonDetailView: View {
     }
 }
 
-// MARK: - Note Row View (Phase H)
+// MARK: - Note Row View (Phase L-2)
 
 private struct NoteRowView: View {
     let note: SamNote
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Image(systemName: note.isAnalyzed ? "brain.head.profile" : "note.text")
                     .foregroundStyle(note.isAnalyzed ? .purple : .secondary)
                     .font(.caption)
-                
+
                 Text(note.createdAt, style: .relative)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                
+
                 Spacer()
-                
+
                 if !note.extractedActionItems.isEmpty {
                     let pendingCount = note.extractedActionItems.filter { $0.status == .pending }.count
                     if pendingCount > 0 {
@@ -889,7 +944,7 @@ private struct NoteRowView: View {
                     }
                 }
             }
-            
+
             if let summary = note.summary {
                 Text(summary)
                     .font(.body)
@@ -900,7 +955,7 @@ private struct NoteRowView: View {
                     .lineLimit(2)
                     .foregroundStyle(.secondary)
             }
-            
+
             if !note.extractedTopics.isEmpty {
                 HStack(spacing: 4) {
                     ForEach(note.extractedTopics.prefix(3), id: \.self) { topic in

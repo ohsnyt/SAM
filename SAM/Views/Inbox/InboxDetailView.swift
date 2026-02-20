@@ -29,7 +29,7 @@ struct InboxDetailView: View {
     // MARK: - State
 
     @State private var showingDeleteConfirmation = false
-    @State private var showingNoteEditor = false
+    @State private var editingNote: SamNote?
 
     // MARK: - Body
 
@@ -66,7 +66,7 @@ struct InboxDetailView: View {
             ToolbarItemGroup {
                 // Attach note
                 Button {
-                    showingNoteEditor = true
+                    createAndEditNote()
                 } label: {
                     Label("Attach Note", systemImage: "note.text.badge.plus")
                 }
@@ -96,8 +96,8 @@ struct InboxDetailView: View {
                 }
             }
         }
-        .sheet(isPresented: $showingNoteEditor) {
-            NoteEditorView(linkedEvidence: item) {
+        .sheet(item: $editingNote) { note in
+            NoteEditorView(note: note) {
                 // Note saved
             }
         }
@@ -411,6 +411,18 @@ struct InboxDetailView: View {
     }
 
     // MARK: - Actions
+
+    private func createAndEditNote() {
+        do {
+            let note = try notesRepository.create(
+                content: "",
+                linkedEvidenceIDs: [item.id]
+            )
+            editingNote = note
+        } catch {
+            // Non-critical — user can create note from person/context detail instead
+        }
+    }
 
     private func toggleTriageState() {
         do {

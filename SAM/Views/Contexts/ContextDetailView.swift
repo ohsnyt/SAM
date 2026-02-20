@@ -18,9 +18,9 @@ struct ContextDetailView: View {
     @State private var showingEditSheet = false
     @State private var showingAddParticipantSheet = false
     @State private var showingDeleteConfirmation = false
-    @State private var showingNoteEditor = false
     @State private var repository = NotesRepository.shared
     @State private var contextNotes: [SamNote] = []
+    @State private var editingNote: SamNote?
     
     var body: some View {
         ScrollView {
@@ -62,13 +62,6 @@ struct ContextDetailView: View {
         .toolbar {
             ToolbarItemGroup {
                 Button {
-                    showingNoteEditor = true
-                } label: {
-                    Label("Add Note", systemImage: "note.text.badge.plus")
-                }
-                .help("Add a note about this context")
-                
-                Button {
                     showingAddParticipantSheet = true
                 } label: {
                     Label("Add Person", systemImage: "person.badge.plus")
@@ -99,8 +92,8 @@ struct ContextDetailView: View {
         .sheet(isPresented: $showingAddParticipantSheet) {
             AddParticipantSheet(context: context, isPresented: $showingAddParticipantSheet)
         }
-        .sheet(isPresented: $showingNoteEditor) {
-            NoteEditorView(linkedContext: context) {
+        .sheet(item: $editingNote) { note in
+            NoteEditorView(note: note) {
                 loadNotes()
             }
         }
@@ -232,24 +225,20 @@ struct ContextDetailView: View {
         }
     }
     
-    // MARK: - Notes Section (Phase H)
-    
+    // MARK: - Notes Section (Phase L-2)
+
     private var notesSection: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Label("Notes", systemImage: "note.text")
-                    .font(.headline)
-                
-                Spacer()
-                
-                Button {
-                    showingNoteEditor = true
-                } label: {
-                    Label("Add", systemImage: "plus.circle")
-                        .font(.caption)
-                }
-            }
-            
+            Label("Notes", systemImage: "note.text")
+                .font(.headline)
+
+            // Inline capture — always visible
+            InlineNoteCaptureView(
+                linkedPerson: nil,
+                linkedContext: context,
+                onSaved: { loadNotes() }
+            )
+
             if contextNotes.isEmpty {
                 Text("No notes yet")
                     .font(.caption)
@@ -257,9 +246,14 @@ struct ContextDetailView: View {
             } else {
                 VStack(alignment: .leading, spacing: 12) {
                     ForEach(contextNotes.prefix(5), id: \.id) { note in
-                        NoteRowView(note: note)
+                        Button {
+                            editingNote = note
+                        } label: {
+                            NoteRowView(note: note)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    
+
                     if contextNotes.count > 5 {
                         Button(action: {
                             // TODO: Show all notes view
@@ -317,24 +311,24 @@ struct ContextDetailView: View {
     }
 }
 
-// MARK: - Note Row View (Phase H)
+// MARK: - Note Row View (Phase L-2)
 
 private struct NoteRowView: View {
     let note: SamNote
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Image(systemName: note.isAnalyzed ? "brain.head.profile" : "note.text")
                     .foregroundStyle(note.isAnalyzed ? .purple : .secondary)
                     .font(.caption)
-                
+
                 Text(note.createdAt, style: .relative)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                
+
                 Spacer()
-                
+
                 if !note.extractedActionItems.isEmpty {
                     let pendingCount = note.extractedActionItems.filter { $0.status == .pending }.count
                     if pendingCount > 0 {
@@ -348,7 +342,7 @@ private struct NoteRowView: View {
                     }
                 }
             }
-            
+
             if let summary = note.summary {
                 Text(summary)
                     .font(.body)
@@ -359,7 +353,7 @@ private struct NoteRowView: View {
                     .lineLimit(2)
                     .foregroundStyle(.secondary)
             }
-            
+
             if !note.extractedTopics.isEmpty {
                 HStack(spacing: 4) {
                     ForEach(note.extractedTopics.prefix(3), id: \.self) { topic in

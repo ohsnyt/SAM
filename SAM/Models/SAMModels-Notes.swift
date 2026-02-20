@@ -15,63 +15,85 @@ import Foundation
 // MARK: - Notes
 // ─────────────────────────────────────────────────────────────────────
 
-/// A freeform note created by the user (Phase H)
+/// A freeform note created by the user (Phase H, redesigned Phase L-2)
 ///
 /// **Architecture**: Notes are SAM-native content that users create after
 /// interactions. They link to people, contexts, and evidence. On-device LLM
 /// analysis extracts structured data (people mentioned, topics, action items,
 /// summary) which is stored directly on the note for quick access.
+///
+/// **Phase L-2**: Simplified to one note = one text block + metadata.
+/// The multi-entry model was removed in favor of direct `content` editing.
 @Model
 public final class SamNote {
     @Attribute(.unique) public var id: UUID
-    
-    /// Raw note text entered by user
+
+    /// The note text (single text block)
     public var content: String
-    
+
     /// LLM-generated 1-2 sentence summary suitable for display in lists
     public var summary: String?
-    
+
     public var createdAt: Date
     public var updatedAt: Date
-    
+
+    // ── Source tracking ──────────────────────────────────────────────
+
+    /// How this note was created: "typed" or "dictated"
+    public var sourceTypeRawValue: String = "typed"
+
+    @Transient
+    public var sourceType: SourceType {
+        get { SourceType(rawValue: sourceTypeRawValue) ?? .typed }
+        set { sourceTypeRawValue = newValue.rawValue }
+    }
+
+    public enum SourceType: String, Codable, Sendable {
+        case typed
+        case dictated
+    }
+
+    /// Dedup key for imported notes (e.g., "evernote:<guid>")
+    public var sourceImportUID: String?
+
     // ── Analysis state ──────────────────────────────────────────────
-    
+
     /// Has LLM processed this note's current content?
     public var isAnalyzed: Bool = false
-    
+
     /// Prompt version used for analysis (bump to trigger re-analysis)
     public var analysisVersion: Int = 0
-    
+
     // ── Links (user-specified or LLM-confirmed) ────────────────────
-    
+
     /// People linked to this note (either manually or via LLM extraction)
     @Relationship(deleteRule: .nullify)
     public var linkedPeople: [SamPerson] = []
-    
+
     /// Contexts linked to this note
     @Relationship(deleteRule: .nullify)
     public var linkedContexts: [SamContext] = []
-    
+
     /// Evidence items linked to this note (e.g., note attached to calendar event)
     @Relationship(deleteRule: .nullify)
     public var linkedEvidence: [SamEvidenceItem] = []
-    
+
     // ── LLM extraction results (embedded value arrays) ─────────────
-    
+
     /// People mentioned in note content (extracted by LLM)
     public var extractedMentions: [ExtractedPersonMention] = []
-    
+
     /// Action items identified by LLM
     public var extractedActionItems: [NoteActionItem] = []
-    
+
     /// Topics identified by LLM (strings like "life insurance", "retirement planning")
     public var extractedTopics: [String] = []
-    
+
     // ── Legacy analysis artifact (Phase 5) ─────────────────────────
     /// @deprecated Will migrate to extractedMentions/extractedActionItems above
     @Relationship(deleteRule: .cascade)
     public var analysisArtifact: SamAnalysisArtifact?
-    
+
     public init(
         id: UUID = UUID(),
         content: String,
@@ -79,7 +101,9 @@ public final class SamNote {
         createdAt: Date = .now,
         updatedAt: Date = .now,
         isAnalyzed: Bool = false,
-        analysisVersion: Int = 0
+        analysisVersion: Int = 0,
+        sourceType: SourceType = .typed,
+        sourceImportUID: String? = nil
     ) {
         self.id = id
         self.content = content
@@ -88,6 +112,8 @@ public final class SamNote {
         self.updatedAt = updatedAt
         self.isAnalyzed = isAnalyzed
         self.analysisVersion = analysisVersion
+        self.sourceTypeRawValue = sourceType.rawValue
+        self.sourceImportUID = sourceImportUID
     }
 }
 

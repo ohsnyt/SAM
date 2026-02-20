@@ -59,6 +59,20 @@ public final class SamPerson {
     /// True when this person is the user's own "Me" contact card
     public var isMe: Bool = false
 
+    // ── AI Relationship Summary (Phase L-2) ─────────────────────────
+
+    /// LLM-generated overview of the relationship
+    public var relationshipSummary: String?
+
+    /// Top recurring themes from notes and interactions
+    public var relationshipKeyThemes: [String] = []
+
+    /// Actionable next steps synthesized from awareness items
+    public var relationshipNextSteps: [String] = []
+
+    /// When the relationship summary was last refreshed
+    public var summaryUpdatedAt: Date?
+
     // ── DEPRECATED: Transitional fields (remove in SAM_v7) ─────────
     // These fields exist for backward compatibility during migration.
     // New code should use displayNameCache/emailCache instead.
@@ -104,6 +118,10 @@ public final class SamPerson {
     /// Consent requirements that name this person.
     @Relationship(deleteRule: .nullify)
     public var consentRequirements: [ConsentRequirement] = []
+
+    /// Notes linked to this person (inverse of SamNote.linkedPeople)
+    @Relationship(deleteRule: .nullify, inverse: \SamNote.linkedPeople)
+    public var linkedNotes: [SamNote] = []
 
     // ── Embedded collections (not yet normalised into their own
     //    @Model classes — mirrors the current struct layout) ─────────
@@ -190,6 +208,10 @@ public final class SamContext {
 
     /// Recent-interaction chips shown on context detail.
     public var recentInteractions: [InteractionModel] = []
+
+    /// Notes linked to this context (inverse of SamNote.linkedContexts)
+    @Relationship(deleteRule: .nullify, inverse: \SamNote.linkedContexts)
+    public var linkedNotes: [SamNote] = []
 
     /// Insights surfaced on this context's detail card.
     @Relationship(deleteRule: .cascade, inverse: \SamInsight.samContext)
@@ -558,6 +580,10 @@ public final class SamEvidenceItem {
     /// `linkedPeople`.
     @Relationship(deleteRule: .nullify)
     public var linkedContexts: [SamContext] = []
+
+    /// Notes linked to this evidence item (inverse of SamNote.linkedEvidence)
+    @Relationship(deleteRule: .nullify, inverse: \SamNote.linkedEvidence)
+    public var linkedNotes: [SamNote] = []
 
     /// Insights that reference this evidence item as supporting material.
     /// Phase 3: inverse of SamInsight.basedOnEvidence.

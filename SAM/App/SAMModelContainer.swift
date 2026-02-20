@@ -51,7 +51,7 @@ enum SAMModelContainer {
     nonisolated(unsafe) private static var _shared: ModelContainer = {
         let schema     = Schema(SAMSchema.allModels)
         let config     = ModelConfiguration(
-            "SAM_v6",  // v6: Added structured entity storage (peopleJSON, topicsJSON, actions, usedLLM)
+            "SAM_v8",  // v8: Phase L-2 — simplified note model (removed NoteEntry)
             schema: schema,
             isStoredInMemoryOnly: false   // persistent on disk
         )
@@ -70,7 +70,7 @@ enum SAMModelContainer {
     nonisolated static func makeFreshContainer() -> ModelContainer {
         let schema = Schema(SAMSchema.allModels)
         let config = ModelConfiguration(
-            "SAM_v6",  // v6: Added structured entity storage (peopleJSON, topicsJSON, actions, usedLLM)
+            "SAM_v8",  // v8: Phase L-2 — simplified note model (removed NoteEntry)
             schema: schema,
             isStoredInMemoryOnly: false
         )
@@ -90,7 +90,7 @@ enum SAMModelContainer {
     nonisolated static let shared: ModelContainer = {
         let schema     = Schema(SAMSchema.allModels)
         let config     = ModelConfiguration(
-            "SAM_v6",  // v6: Added structured entity storage (peopleJSON, topicsJSON, actions, usedLLM)
+            "SAM_v8",  // v8: Phase L-2 — simplified note model (removed NoteEntry)
             schema: schema,
             isStoredInMemoryOnly: false   // persistent on disk
         )

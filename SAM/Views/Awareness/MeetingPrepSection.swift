@@ -62,7 +62,7 @@ private struct BriefingCard: View {
 
     let briefing: MeetingBriefing
     @State private var isExpanded = false
-    @State private var showingNoteEditor = false
+    @State private var editingNote: SamNote?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -155,7 +155,7 @@ private struct BriefingCard: View {
 
                     // Action button
                     Button {
-                        showingNoteEditor = true
+                        createAndEditNote()
                     } label: {
                         Label("Add Meeting Notes", systemImage: "note.text.badge.plus")
                     }
@@ -170,12 +170,23 @@ private struct BriefingCard: View {
             RoundedRectangle(cornerRadius: 10)
                 .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
         )
-        .sheet(isPresented: $showingNoteEditor) {
-            NoteEditorView(
-                linkedPerson: briefing.attendees.first.flatMap { attendee in
-                    try? PeopleRepository.shared.fetch(id: attendee.personID)
-                }
-            ) { }
+        .sheet(item: $editingNote) { note in
+            NoteEditorView(note: note) { }
+        }
+    }
+
+    private func createAndEditNote() {
+        let person = briefing.attendees.first.flatMap { attendee in
+            try? PeopleRepository.shared.fetch(id: attendee.personID)
+        }
+        do {
+            let note = try NotesRepository.shared.create(
+                content: "",
+                linkedPeopleIDs: person.map { [$0.id] } ?? []
+            )
+            editingNote = note
+        } catch {
+            // Non-critical
         }
     }
 

@@ -69,7 +69,7 @@ private struct FollowUpCard: View {
 
     let prompt: FollowUpPrompt
     let onDismiss: () -> Void
-    @State private var showingNoteEditor = false
+    @State private var editingNote: SamNote?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -110,7 +110,7 @@ private struct FollowUpCard: View {
             // Actions
             HStack(spacing: 10) {
                 Button {
-                    showingNoteEditor = true
+                    createAndEditNote()
                 } label: {
                     Label("Add Notes", systemImage: "note.text.badge.plus")
                 }
@@ -132,12 +132,23 @@ private struct FollowUpCard: View {
             RoundedRectangle(cornerRadius: 10)
                 .stroke(Color.orange.opacity(0.3), lineWidth: 1)
         )
-        .sheet(isPresented: $showingNoteEditor) {
-            NoteEditorView(
-                linkedPerson: prompt.attendees.first.flatMap { attendee in
-                    try? PeopleRepository.shared.fetch(id: attendee.personID)
-                }
-            ) { }
+        .sheet(item: $editingNote) { note in
+            NoteEditorView(note: note) { }
+        }
+    }
+
+    private func createAndEditNote() {
+        let person = prompt.attendees.first.flatMap { attendee in
+            try? PeopleRepository.shared.fetch(id: attendee.personID)
+        }
+        do {
+            let note = try NotesRepository.shared.create(
+                content: "",
+                linkedPeopleIDs: person.map { [$0.id] } ?? []
+            )
+            editingNote = note
+        } catch {
+            // Non-critical
         }
     }
 

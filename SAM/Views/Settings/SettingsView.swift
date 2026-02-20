@@ -25,6 +25,7 @@ struct SettingsView: View {
         case calendar = "Calendar"
         case mail = "Mail"
         case intelligence = "Intelligence"
+        case evernote = "Evernote"
         case general = "General"
 
         var id: String { rawValue }
@@ -36,6 +37,7 @@ struct SettingsView: View {
             case .calendar: return "calendar"
             case .mail: return "envelope"
             case .intelligence: return "brain"
+            case .evernote: return "square.and.arrow.down"
             case .general: return "gearshape"
             }
         }
@@ -72,6 +74,12 @@ struct SettingsView: View {
                     Label("Intelligence", systemImage: "brain")
                 }
                 .tag(SettingsTab.intelligence)
+
+            EvernoteImportSettingsView()
+                .tabItem {
+                    Label("Evernote", systemImage: "square.and.arrow.down")
+                }
+                .tag(SettingsTab.evernote)
 
             GeneralSettingsView()
                 .tabItem {

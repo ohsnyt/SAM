@@ -4,7 +4,7 @@
 **Language**: Swift 6  
 **Architecture**: Clean layered architecture with strict separation of concerns  
 **Framework**: SwiftUI + SwiftData  
-**Last Updated**: February 20, 2026 (Phases A–K complete)
+**Last Updated**: February 20, 2026 (Phases A–L-2 complete)
 
 **Related Docs**: 
 - See `agent.md` for product philosophy and UX principles
@@ -196,14 +196,17 @@ SAM/SAM/
 │   ├── CalendarService.swift           ✅ Actor — EKEvent operations
 │   ├── NoteAnalysisService.swift       ✅ Actor — On-device LLM (Apple Foundation Models)
 │   ├── MailService.swift               ✅ Actor — Mail.app AppleScript bridge
-│   └── EmailAnalysisService.swift     ✅ Actor — On-device email LLM analysis
+│   ├── EmailAnalysisService.swift     ✅ Actor — On-device email LLM analysis
+│   ├── DictationService.swift         ✅ Actor — SFSpeechRecognizer on-device dictation
+│   └── ENEXParserService.swift        ✅ Actor — Evernote ENEX XML parser
 │
 ├── Coordinators/
 │   ├── ContactsImportCoordinator.swift ✅ Orchestrates contact import
 │   ├── CalendarImportCoordinator.swift ✅ Orchestrates calendar import
 │   ├── NoteAnalysisCoordinator.swift   ✅ Save → analyze → store pipeline
 │   ├── InsightGenerator.swift          ✅ Multi-source insight generation
-│   └── MailImportCoordinator.swift     ✅ Orchestrates email import (standard API pattern)
+│   ├── MailImportCoordinator.swift     ✅ Orchestrates email import (standard API pattern)
+│   └── EvernoteImportCoordinator.swift ✅ ENEX file import (parse → preview → import)
 │
 ├── Repositories/
 │   ├── PeopleRepository.swift          ✅ CRUD for SamPerson
@@ -213,7 +216,7 @@ SAM/SAM/
 │
 ├── Models/
 │   ├── SAMModels.swift                 ✅ Core @Model classes (SamPerson, SamContext, etc.)
-│   ├── SAMModels-Notes.swift           ✅ SamNote, SamAnalysisArtifact models
+│   ├── SAMModels-Notes.swift           ✅ SamNote (simplified L-2), SamAnalysisArtifact
 │   ├── SAMModels-Supporting.swift      ✅ Value types, enums, chips
 │   └── DTOs/
 │       ├── ContactDTO.swift            ✅ Sendable CNContact wrapper
@@ -221,6 +224,7 @@ SAM/SAM/
 │       ├── EmailDTO.swift              ✅ Sendable IMAP message wrapper
 │       ├── EmailAnalysisDTO.swift      ✅ Sendable email LLM analysis results
 │       ├── NoteAnalysisDTO.swift       ✅ Sendable note LLM analysis results
+│       ├── EvernoteNoteDTO.swift       ✅ Sendable ENEX parsed note
 │       └── OnboardingView.swift        ✅ First-run permission onboarding
 │
 ├── Views/
@@ -237,11 +241,13 @@ SAM/SAM/
 │   ├── Awareness/
 │   │   └── AwarenessView.swift         ✅ Insights dashboard with filtering
 │   ├── Notes/
-│   │   ├── NoteEditorView.swift        ✅ Create/edit notes with entity linking
+│   │   ├── NoteEditorView.swift        ✅ Edit-only note editor (Phase L-2)
+│   │   ├── InlineNoteCaptureView.swift ✅ Inline note capture with dictation (Phase L-2)
 │   │   └── NoteActionItemsView.swift   ✅ Review extracted action items
 │   ├── Settings/
-│   │   ├── SettingsView.swift          ✅ Tabbed: Permissions, Contacts, Calendar, Mail, General
-│   │   └── MailSettingsView.swift      ✅ Mail.app accounts, Me-contact email filter toggles
+│   │   ├── SettingsView.swift          ✅ Tabbed: Permissions, Contacts, Calendar, Mail, Intelligence, Evernote, General
+│   │   ├── MailSettingsView.swift      ✅ Mail.app accounts, Me-contact email filter toggles
+│   │   └── EvernoteImportSettingsView.swift ✅ ENEX file picker, preview, import
 │   └── ContactValidationDebugView.swift  🔧 Debug utility
 │
 ├── Utilities/
@@ -467,11 +473,12 @@ Text(context.contextType)       // Compile error - property doesn't exist
 - ✅ **Phase J (Part 3b — Marketing Detection)**: Mailing list / marketing sender auto-detection + triage UI split (Feb 17, 2026)
 - ✅ **Phase J (Part 3c)**: Hardening — participant matching fix + insight persistence to SwiftData (Feb 20, 2026)
 - ✅ **Phase K**: Meeting Prep & Follow-Up (briefings, follow-up coach, relationship health) (Feb 20, 2026)
+- ✅ **Phase L**: Notes Pro — timestamped entries, dictation, Evernote ENEX import (Feb 20, 2026)
+- ✅ **Phase L-2**: Notes Redesign — simplified model, inline capture, AI polish, auto-linking, relationship summaries (Feb 20, 2026)
 
 **Known Bugs**: (none currently tracked)
 
 **Next Up**:
-- ⬜ **Phase L**: Notes Pro — timestamped entries, dictation, Evernote ENEX import
 - ⬜ **Phase M**: iMessage Evidence
 - ⬜ **Phase N**: Universal Undo System
 - ⬜ **Phase O**: Time Tracking
@@ -494,40 +501,15 @@ MeetingPrepCoordinator generates 48h-lookahead briefings and follow-up prompts. 
 
 ---
 
-### ⬜ Phase L: Notes Pro (NOT STARTED)
+### ✅ Phase L: Notes Pro (COMPLETE — Feb 20, 2026)
 
-**Goal**: Robust, low-friction note-taking system with timestamped entries, dictation, and Evernote import
+NoteEntry value type + entry stream UI, DictationService (SFSpeechRecognizer), ENEXParserService + EvernoteImportCoordinator, EvernoteImportSettingsView. SamNote model upgraded with entries array + sourceImportUID. Schema bumped to SAM_v7. See `changelog.md` for full details.
 
-**Motivation**: Primary end user organizes extensive notes around both clients and recurring meetings (e.g., team product meetings). Notes are the core daily workflow tool — reviewed during meeting prep to see history and key information. The current Phase H note system is functional but thin; upgrading it dramatically improves everything downstream (briefings, follow-up coaching, relationship health).
+---
 
-**Part 1 — Timestamped Entry System**:
-- ⬜ Redesign `SamNote` to support a stream of timestamped entries rather than a single text block
-- ⬜ Each entry: timestamp, content (text), entry type (typed / dictated)
-- ⬜ Low-friction capture UI: tap/click to add an entry, type or dictate, auto-timestamped
-- ⬜ Chronological display with time markers (like a meeting log)
-- ⬜ Existing note data migration (single text → single entry)
+### ✅ Phase L-2: Notes Redesign (COMPLETE — Feb 20, 2026)
 
-**Part 2 — Dictation & Voice Input**:
-- ⬜ Integrate macOS Speech/dictation framework for voice-to-text entries
-- ⬜ Quality transcription with punctuation and formatting
-- ⬜ Visual indicator for dictation mode, easy start/stop
-- ⬜ Entries tagged as dictated vs typed for reference
-
-**Part 3 — Evernote ENEX Import**:
-- ⬜ Parse Evernote `.enex` XML export format
-- ⬜ Map Evernote notebooks → SamContext (or create new contexts)
-- ⬜ Map Evernote tags → link to SamPerson where possible
-- ⬜ Preserve timestamps, formatting (convert ENHTML to plain text or markdown)
-- ⬜ Import UI in Onboarding + Settings (file picker, preview, confirm)
-- ⬜ Idempotent import (skip duplicates by Evernote note ID)
-
-**Architecture Notes**:
-- Notes link to both `SamPerson` and `SamContext` — matches Evernote's client + meeting organization pattern
-- Timestamped entries feed richer data to `NoteAnalysisService` and `MeetingPrepCoordinator`
-- ENEX format is XML with embedded ENHTML content; parse with Foundation's XMLParser
-- Dictation via `SFSpeechRecognizer` (on-device) or system dictation key
-
-**Expected Outcome**: Notes become the primary daily tool — fast capture during meetings, rich history for meeting prep, one-time Evernote migration
+Simplified note model (removed NoteEntry, one note = one text block + sourceType). Inline note capture (InlineNoteCaptureView) replaces sheet-based editor for new notes. NoteEditorView simplified to edit-only. AI dictation polish (polishDictation). Smart auto-linking to recent calendar events (findRecentMeeting). AI relationship summary on PersonDetailView (overview, key themes, next steps). Schema bumped to SAM_v8.
 
 ---
 
@@ -1159,7 +1141,7 @@ struct PeopleRepositoryTests {
 
 **Foundation**:
 - `SAMApp.swift`: App entry point, lifecycle, permission checks, repository configuration
-- `SAMModelContainer.swift`: SwiftData container (v6 schema, 12 @Model classes)
+- `SAMModelContainer.swift`: SwiftData container (v8 schema — Phase L-2 simplified notes)
 - `AppShellView.swift`: Three-column navigation shell (sidebar → list → detail)
 
 **Models** (SwiftData @Model):
@@ -1271,8 +1253,8 @@ When reporting bugs or architectural concerns:
 
 ---
 
-**Document Version**: 4.5 (Phases A–K complete, Phase J Part 3c hardening complete)
+**Document Version**: 5.0 (Phases A–L complete)
 **Previous Versions**: See `changelog.md` for version history
-**Last Major Update**: February 20, 2026 — Phase J (Part 3c) hardening: participant matching fix + insight persistence to SwiftData. Phase K complete.
+**Last Major Update**: February 20, 2026 — Phase L-2: Notes Redesign (simplified model, inline capture, AI relationship summaries)
 **Clean Rebuild Started**: February 9, 2026
 

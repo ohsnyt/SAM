@@ -4,6 +4,126 @@
 
 ---
 
+## February 20, 2026 - Phase L-2 Complete: Notes Redesign
+
+**What Changed** — Simplified note model, inline capture, AI dictation polish, smart auto-linking, AI relationship summaries:
+
+### Data Model
+- **NoteEntry removed** — Multi-entry model replaced with single text block per note
+- **SamNote.sourceTypeRawValue** — New field: "typed" or "dictated" (replaces NoteEntry.entryType)
+- **SamNote.SourceType** — `@Transient` computed enum (`.typed` / `.dictated`)
+- **SamNote init** — Removed `entries` param, added `sourceType` param
+- **SamNote** — Removed `entries`, `rebuildContent()`, `migrateContentToEntriesIfNeeded()`
+- **SamPerson** — Added `relationshipSummary: String?`, `relationshipKeyThemes: [String]`, `relationshipNextSteps: [String]`, `summaryUpdatedAt: Date?`
+- **RelationshipSummaryDTO** — New Sendable DTO for AI-generated relationship summaries
+- **SAMModelContainer** — Schema bumped `SAM_v7` → `SAM_v8`
+
+### NotesRepository
+- **Removed**: `addEntry()`, `deleteEntry()`, `migrateContentToEntriesIfNeeded()` calls
+- **create()** — Simplified: no NoteEntry wrapping, accepts `sourceType` param
+- **createFromImport()** — Simplified: no NoteEntry creation
+
+### Views
+- **InlineNoteCaptureView** (new) — Reusable inline text field + mic button + Save, used by PersonDetailView and ContextDetailView
+- **NoteEditorView** — Simplified to edit-only (TextEditor + Cancel/Save), no entry stream or dictation
+- **NoteEntryRowView** — Deleted (no longer needed)
+- **PersonDetailView** — Inline capture replaces "Add Note" toolbar button, relationship summary section above notes, tap-to-edit note rows
+- **ContextDetailView** — Inline capture replaces "Add Note" toolbar button, tap-to-edit note rows
+- **InboxDetailView** — Create-then-edit pattern for note attachment
+- **MeetingPrepSection / FollowUpCoachSection** — Create-then-edit pattern for meeting notes
+
+### Services
+- **NoteAnalysisService.polishDictation(rawText:)** — Cleans grammar/filler from dictated text using on-device LLM
+- **NoteAnalysisService.generateRelationshipSummary()** — Generates overview, themes, and next steps for a person
+
+### Repositories
+- **EvidenceRepository.findRecentMeeting(forPersonID:maxWindow:)** — Finds most recent calendar event involving a person within 2h window
+
+### Coordinators
+- **NoteAnalysisCoordinator.analyzeNote()** — Removed `rebuildContent()` call, added relationship summary refresh
+- **NoteAnalysisCoordinator.refreshRelationshipSummary(for:)** — Gathers notes/topics/actions, calls AI service, stores on SamPerson
+- **EvernoteImportCoordinator** — Simplified: no NoteEntry creation in `confirmImport()`
+
+---
+
+## February 20, 2026 - Phase L Complete: Notes Pro
+
+**What Changed** — Timestamped entry stream, voice dictation, and Evernote ENEX import:
+
+### Data Model
+- **NoteEntry** (new value type) — `id: UUID`, `timestamp: Date`, `content: String`, `entryTypeRawValue: String` (`.typed` / `.dictated`), optional `metadata: [String: String]?`
+- **SamNote** — Added `entries: [NoteEntry]` embedded Codable array, `sourceImportUID: String?` for import dedup
+- **SamNote.rebuildContent()** — Concatenates entries into `content` for LLM analysis backward compatibility
+- **SamNote.migrateContentToEntriesIfNeeded()** — Lazy migration: wraps existing content into single entry
+- **SAMModelContainer** — Schema bumped `SAM_v6` → `SAM_v7`
+
+### NotesRepository
+- **addEntry(to:content:entryType:metadata:)** — Appends entry, rebuilds content, marks unanalyzed
+- **deleteEntry(from:entryID:)** — Removes entry, rebuilds content
+- **createFromImport(sourceImportUID:content:createdAt:updatedAt:linkedPeopleIDs:)** — For ENEX import
+- **fetchBySourceImportUID(_:)** — Dedup check for imported notes
+- **create()** — Now wraps content into a NoteEntry
+- **fetchAll()** — Calls `migrateContentToEntriesIfNeeded()` on each note (lazy migration)
+
+### NoteEditorView (Major Rewrite)
+- **Entry stream UI** — Bear/Craft-style distraction-free editor with timestamped entries
+- **Progressive disclosure toolbar** — Link button (popover), mic button, more menu
+- **Entry display** — Continuous document with subtle `.caption2` timestamps, mic icon for dictated entries, thin dividers
+- **Input area** — Clean TextField pinned at bottom, Enter adds entry, auto-scrolls
+- **Pending entries** — New notes use `@State pendingEntries` until Done (avoids orphans on Cancel)
+- **Dictation integration** — Mic button toggles recording, partial results shown live, final result → `.dictated` entry
+
+### DictationService (New)
+- Actor wrapping `SFSpeechRecognizer` + `AVAudioEngine`
+- `checkAvailability()` → `DictationAvailability`
+- `requestAuthorization()` async → `Bool`
+- `startRecognition()` async throws → `AsyncStream<DictationResult>` (on-device: `requiresOnDeviceRecognition = true`)
+- `stopRecognition()` — Cleans up audio engine and recognition task
+
+### ENEXParserService (New)
+- Actor parsing `.enex` XML with Foundation `XMLParser` + delegate
+- ENHTML → plain text via regex HTML tag stripping + entity decoding
+- Handles `<note>`, `<title>`, `<content>` (CDATA), `<created>`, `<updated>`, `<guid>`, `<tag>`
+- Date format: `yyyyMMdd'T'HHmmss'Z'` (UTC)
+
+### EvernoteImportCoordinator (New)
+- `@MainActor @Observable` singleton with two-phase flow
+- `loadFile(url:)` — Parse ENEX, check dedup, populate preview counts
+- `confirmImport()` — Create SamNotes, case-insensitive tag→person matching, fire background analysis
+- `cancelImport()` — Reset state
+- ImportStatus: `.idle`, `.parsing`, `.previewing`, `.importing`, `.success`, `.failed`
+
+### Consumer Updates
+- **PersonDetailView** — NoteRowView shows entry count + most recent timestamp
+- **ContextDetailView** — Same NoteRowView update
+- **NoteAnalysisCoordinator** — `rebuildContent()` guard before analysis
+- **SettingsView** — Added Evernote tab with `EvernoteImportSettingsView`
+
+### New Files
+| File | Description |
+|------|-------------|
+| `Views/Notes/NoteEntryRowView.swift` | Clean timestamp + content row |
+| `Services/DictationService.swift` | SFSpeechRecognizer actor |
+| `Services/ENEXParserService.swift` | ENEX XML parser actor |
+| `Models/DTOs/EvernoteNoteDTO.swift` | Evernote import DTO |
+| `Coordinators/EvernoteImportCoordinator.swift` | Import coordinator |
+| `Views/Settings/EvernoteImportSettingsView.swift` | Import settings UI |
+
+### Modified Files
+| File | Change |
+|------|--------|
+| `Models/SAMModels-Notes.swift` | NoteEntry struct, entries/sourceImportUID on SamNote |
+| `App/SAMModelContainer.swift` | SAM_v6 → SAM_v7 |
+| `Repositories/NotesRepository.swift` | Entry operations, import methods |
+| `Views/Notes/NoteEditorView.swift` | Major rewrite — entry stream + dictation |
+| `Views/Settings/SettingsView.swift` | Added Evernote tab |
+| `Coordinators/NoteAnalysisCoordinator.swift` | rebuildContent() guard |
+| `Views/People/PersonDetailView.swift` | Entry count in NoteRowView |
+| `Views/Contexts/ContextDetailView.swift` | Entry count in NoteRowView |
+| `Info.plist` | Speech recognition + microphone usage descriptions |
+
+---
+
 ## February 20, 2026 - Phase J Part 3c Complete: Hardening & Bug Fixes
 
 **What Changed** — Participant matching bug fix + insight persistence to SwiftData:

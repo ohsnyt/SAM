@@ -78,6 +78,106 @@ actor NoteAnalysisService {
         return analysis
     }
     
+    // MARK: - Dictation Polish
+
+    /// Clean up dictated text: fix grammar, punctuation, remove filler words.
+    /// Returns the polished text, or throws if the model is unavailable.
+    func polishDictation(rawText: String) async throws -> String {
+        guard case .available = checkAvailability() else {
+            throw AnalysisError.modelUnavailable
+        }
+
+        let instructions = """
+            Clean up this dictated text from a financial strategist's meeting notes. \
+            Fix grammar, punctuation, and remove filler words (um, uh, like, you know). \
+            Preserve the exact meaning and all factual content. \
+            Return ONLY the cleaned text, nothing else.
+            """
+
+        let session = LanguageModelSession(instructions: instructions)
+        let response = try await session.respond(to: rawText)
+        return response.content.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    // MARK: - Relationship Summary
+
+    /// Generate a relationship summary for a person based on their notes and interactions.
+    func generateRelationshipSummary(
+        personName: String,
+        notes: [String],
+        recentTopics: [String],
+        pendingActions: [String],
+        healthInfo: String
+    ) async throws -> RelationshipSummaryDTO {
+        guard case .available = checkAvailability() else {
+            throw AnalysisError.modelUnavailable
+        }
+
+        let instructions = """
+            You are a relationship intelligence assistant for an independent financial strategist. \
+            Generate a concise relationship summary focused on what matters for the next interaction.
+
+            CRITICAL: You MUST respond with ONLY valid JSON.
+            - Do NOT wrap the JSON in markdown code blocks
+            - Return ONLY the raw JSON object starting with { and ending with }
+
+            The JSON structure must be:
+            {
+              "overview": "2-3 sentence overview of the relationship and current status",
+              "key_themes": ["theme1", "theme2", "theme3"],
+              "suggested_next_steps": ["step1", "step2"]
+            }
+
+            Rules:
+            - Overview should focus on current relationship state and what's top of mind
+            - Key themes are recurring topics across interactions (max 5)
+            - Next steps should be specific and actionable (max 3)
+            - If there's little data, keep the summary brief rather than speculating
+            """
+
+        let prompt = """
+            Generate a relationship summary for \(personName).
+
+            Recent notes:
+            \(notes.prefix(10).joined(separator: "\n---\n"))
+
+            Recent topics: \(recentTopics.joined(separator: ", "))
+            Pending actions: \(pendingActions.joined(separator: "; "))
+            Relationship health: \(healthInfo)
+            """
+
+        let session = LanguageModelSession(instructions: instructions)
+        let response = try await session.respond(to: prompt)
+
+        return try parseRelationshipSummary(response.content)
+    }
+
+    private func parseRelationshipSummary(_ jsonString: String) throws -> RelationshipSummaryDTO {
+        var cleaned = jsonString.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Remove markdown code block markers
+        if cleaned.hasPrefix("```") {
+            if let firstNewline = cleaned.firstIndex(of: "\n") {
+                cleaned = String(cleaned[cleaned.index(after: firstNewline)...])
+            }
+            if cleaned.hasSuffix("```") {
+                cleaned = String(cleaned.dropLast(3))
+            }
+        }
+        cleaned = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard let data = cleaned.data(using: .utf8) else {
+            throw AnalysisError.invalidResponse
+        }
+
+        let decoded = try JSONDecoder().decode(LLMRelationshipSummary.self, from: data)
+        return RelationshipSummaryDTO(
+            overview: decoded.overview,
+            keyThemes: decoded.key_themes,
+            suggestedNextSteps: decoded.suggested_next_steps
+        )
+    }
+
     // MARK: - Prompt Construction
     
     private func buildSystemInstructions() -> String {
@@ -234,6 +334,12 @@ private struct LLMContactUpdate: Codable {
     let field: String
     let value: String
     let confidence: Double
+}
+
+private struct LLMRelationshipSummary: Codable {
+    let overview: String
+    let key_themes: [String]
+    let suggested_next_steps: [String]
 }
 
 private struct LLMActionItem: Codable {

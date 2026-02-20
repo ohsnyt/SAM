@@ -520,6 +520,58 @@ final class EvidenceRepository {
         try refreshParticipantResolution()
     }
 
+    // MARK: - Recent Meeting Lookup
+
+    /// Find the most recent calendar event involving a person that ended within the given time window.
+    /// Used by InlineNoteCaptureView to auto-link notes to recent meetings.
+    ///
+    /// Logic: find calendar evidence where `linkedPeople` contains this person,
+    /// the event has ended within `maxWindow` seconds of now, and no newer event
+    /// for this person has started since the candidate ended.
+    func findRecentMeeting(forPersonID personID: UUID, maxWindow: TimeInterval = 7200) -> SamEvidenceItem? {
+        guard let context = context else { return nil }
+
+        do {
+            let descriptor = FetchDescriptor<SamEvidenceItem>(
+                sortBy: [SortDescriptor(\.occurredAt, order: .reverse)]
+            )
+            let allItems = try context.fetch(descriptor)
+            let now = Date.now
+
+            // Filter to calendar events linked to this person that have ended
+            let candidates = allItems.filter { item in
+                guard item.source == .calendar else { return false }
+                guard item.linkedPeople.contains(where: { $0.id == personID }) else { return false }
+
+                let endTime = item.endedAt ?? item.occurredAt.addingTimeInterval(3600)
+                let elapsed = now.timeIntervalSince(endTime)
+                return elapsed >= 0 && elapsed <= maxWindow
+            }
+
+            // Return the most recent candidate that doesn't have a newer event after it
+            for candidate in candidates {
+                let candidateEnd = candidate.endedAt ?? candidate.occurredAt.addingTimeInterval(3600)
+
+                // Check if another event for this person started after this candidate ended
+                let hasNewer = allItems.contains { other in
+                    guard other.id != candidate.id else { return false }
+                    guard other.source == .calendar else { return false }
+                    guard other.linkedPeople.contains(where: { $0.id == personID }) else { return false }
+                    return other.occurredAt > candidateEnd
+                }
+
+                if !hasNewer {
+                    return candidate
+                }
+            }
+
+            return nil
+        } catch {
+            logger.error("findRecentMeeting failed: \(error)")
+            return nil
+        }
+    }
+
     // MARK: - Email Bulk Upsert Operations
 
     /// Bulk upsert email evidence items with optional analysis data.

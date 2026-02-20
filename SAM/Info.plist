@@ -8,5 +8,9 @@
 	<string>SAM needs access to your Contacts to import and sync client information for relationship management. SAM will only use the Contact Group you specify, and will only update contacts with your permission.</string>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>SAM needs to read your Mail to track email interactions with your clients. SAM only stores summaries — never raw email content.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>SAM uses on-device speech recognition to transcribe voice notes during meetings. Audio is processed locally and never sent to external servers.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>SAM needs microphone access to record voice notes during meetings. Audio is processed on-device for transcription only.</string>
 </dict>
 </plist>

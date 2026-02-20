@@ -118,6 +118,11 @@ final class NoteAnalysisCoordinator {
             // Step 5: Create evidence item from note
             try createEvidenceFromNote(note)
 
+            // Step 6: Refresh relationship summaries for linked people
+            for person in note.linkedPeople {
+                await refreshRelationshipSummary(for: person)
+            }
+
             // Update state
             analysisStatus = .success
             lastAnalyzedAt = .now
@@ -164,6 +169,55 @@ final class NoteAnalysisCoordinator {
             analysisStatus = .failed
             lastError = error.localizedDescription
             logger.error("Batch analysis failed: \(error)")
+        }
+    }
+
+    // MARK: - Relationship Summary
+
+    /// Refresh the AI-generated relationship summary for a person.
+    /// Called after note analysis completes for notes linked to this person.
+    func refreshRelationshipSummary(for person: SamPerson) async {
+        let displayName = person.displayNameCache ?? person.displayName
+        do {
+            // Gather notes
+            let notes = try notesRepository.fetchNotes(forPerson: person)
+            let noteContents = notes.prefix(10).map { $0.content }
+
+            // Gather recent topics from analyzed notes
+            let recentTopics = Array(Set(notes.flatMap { $0.extractedTopics })).prefix(10)
+
+            // Gather pending action items
+            let pendingActions = notes.flatMap { $0.extractedActionItems }
+                .filter { $0.status == .pending }
+                .prefix(5)
+                .map { $0.description }
+
+            // Get relationship health info
+            let health = MeetingPrepCoordinator.shared.computeHealth(for: person)
+            let healthInfo = "\(health.statusLabel), trend: \(health.trend)"
+
+            guard !noteContents.isEmpty else {
+                logger.debug("No notes for \(displayName, privacy: .public), skipping summary")
+                return
+            }
+
+            let summary = try await analysisService.generateRelationshipSummary(
+                personName: displayName,
+                notes: noteContents,
+                recentTopics: Array(recentTopics),
+                pendingActions: Array(pendingActions),
+                healthInfo: healthInfo
+            )
+
+            // Store on person
+            person.relationshipSummary = summary.overview
+            person.relationshipKeyThemes = summary.keyThemes
+            person.relationshipNextSteps = summary.suggestedNextSteps
+            person.summaryUpdatedAt = .now
+
+            logger.info("Updated relationship summary for \(displayName, privacy: .public)")
+        } catch {
+            logger.debug("Relationship summary skipped for \(displayName, privacy: .public): \(error.localizedDescription)")
         }
     }
 

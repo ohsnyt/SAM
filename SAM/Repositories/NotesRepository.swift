@@ -35,7 +35,7 @@ final class NotesRepository {
 
     // MARK: - CRUD Operations
 
-    /// Fetch all notes, sorted by most recently updated first
+    /// Fetch all notes, sorted by most recently updated first.
     func fetchAll() throws -> [SamNote] {
         guard let modelContext = modelContext else {
             throw RepositoryError.notConfigured
@@ -65,6 +65,7 @@ final class NotesRepository {
     @discardableResult
     func create(
         content: String,
+        sourceType: SamNote.SourceType = .typed,
         linkedPeopleIDs: [UUID] = [],
         linkedContextIDs: [UUID] = [],
         linkedEvidenceIDs: [UUID] = []
@@ -84,9 +85,7 @@ final class NotesRepository {
 
         let note = SamNote(
             content: content,
-            summary: nil,
-            isAnalyzed: false,
-            analysisVersion: 0
+            sourceType: sourceType
         )
 
         // Establish relationships
@@ -253,5 +252,48 @@ final class NotesRepository {
         return all.filter { note in
             note.extractedActionItems.contains(where: { $0.status == .pending })
         }
+    }
+
+    // MARK: - Import Operations (Phase L)
+
+    /// Create a note from an external import (e.g., Evernote ENEX)
+    @discardableResult
+    func createFromImport(
+        sourceImportUID: String,
+        content: String,
+        createdAt: Date,
+        updatedAt: Date,
+        linkedPeopleIDs: [UUID] = []
+    ) throws -> SamNote {
+        guard let modelContext = modelContext else {
+            throw RepositoryError.notConfigured
+        }
+
+        let note = SamNote(
+            content: content,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+            sourceImportUID: sourceImportUID
+        )
+
+        if !linkedPeopleIDs.isEmpty {
+            let allPeople = try modelContext.fetch(FetchDescriptor<SamPerson>())
+            note.linkedPeople = allPeople.filter { linkedPeopleIDs.contains($0.id) }
+        }
+
+        modelContext.insert(note)
+        try modelContext.save()
+
+        return note
+    }
+
+    /// Find a note by its source import UID (for dedup)
+    func fetchBySourceImportUID(_ uid: String) throws -> SamNote? {
+        guard let modelContext = modelContext else {
+            throw RepositoryError.notConfigured
+        }
+
+        let all = try modelContext.fetch(FetchDescriptor<SamNote>())
+        return all.first { $0.sourceImportUID == uid }
     }
 }
