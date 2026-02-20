@@ -4,6 +4,24 @@
 
 ---
 
+## February 20, 2026 - Phase J Part 3c Complete: Hardening & Bug Fixes
+
+**What Changed** — Participant matching bug fix + insight persistence to SwiftData:
+
+### Bug Fix: Participant Matching
+- **Root cause**: `EKParticipant.isCurrentUser` unreliably returns `true` for organizer/all attendees in some calendar configurations, short-circuiting the `matched` check and making everyone appear verified
+- **Fix**: Added `meEmailSet()` helper in `EvidenceRepository` that fetches Me contact's known emails from `PeopleRepository`; replaced `attendee.isCurrentUser` with `meEmails.contains(canonical)` in `buildParticipantHints()`
+
+### Insight Persistence
+- **SamInsight model** — Added `title: String`, `urgencyRawValue: String` + `@Transient urgency: InsightPriority`, `sourceTypeRawValue: String` + `@Transient sourceType: InsightSourceType`, `sourceID: UUID?`
+- **InsightGenerator** — Added `configure(container:)` with `ModelContext`; `persistInsights()` creates `SamInsight` records with 24h dedup (same kind + personID + sourceID); prunes dismissed insights older than 30 days
+- **AwarenessView** — Migrated from `@State [GeneratedInsight]` to `@Query SamInsight` (filtered by `dismissedAt == nil`); `markDone`/`dismiss` set `dismissedAt` on the SwiftData model
+- **InsightCard** — Updated to accept `SamInsight` (uses `.title`, `.message`, `.urgency`, `.sourceType`, `.samPerson`)
+- **SAMApp** — Wired `InsightGenerator.shared.configure(container:)` in `configureDataLayer()`
+- **InsightPriority / InsightSourceType** — Made `public` for use in SamInsight's public init
+
+---
+
 ## February 20, 2026 - Phase K Complete: Meeting Prep & Follow-Up
 
 **What Changed** — Proactive meeting briefings, follow-up coaching, and relationship health indicators:

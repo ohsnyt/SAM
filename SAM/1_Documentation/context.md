@@ -465,18 +465,16 @@ Text(context.contextType)       // Compile error - property doesn't exist
 - ✅ **Phase J (Part 2)**: Mail.app AppleScript integration (replaced IMAP stubs with working NSAppleScript bridge)
 - ✅ **Phase J (Part 3a)**: "Me" contact identification + email integration UX tweaks
 - ✅ **Phase J (Part 3b — Marketing Detection)**: Mailing list / marketing sender auto-detection + triage UI split (Feb 17, 2026)
+- ✅ **Phase J (Part 3c)**: Hardening — participant matching fix + insight persistence to SwiftData (Feb 20, 2026)
 - ✅ **Phase K**: Meeting Prep & Follow-Up (briefings, follow-up coach, relationship health) (Feb 20, 2026)
 
 **Known Bugs**:
-- 🐛 **Calendar participant matching**: No participant is ever marked "Not in Contacts" even when their email address is clearly not in the contacts database. The matching logic needs investigation — likely an issue in EvidenceRepository's email resolution during `bulkUpsert()` or in how participant hints are evaluated in the UI.
-- 🐛 **Email matching scope**: Recently adjusted to match against all known email addresses in a contact record (emailCache + emailAliases) rather than just the first one, but the participant identification bug above persists.
+- (none currently tracked)
 
 **Cleanup Needed**:
-- 🧹 ~200+ debug print statements across the codebase. Many were essential during development but can be removed or converted to os.Logger now that data flows are validated. Heaviest in: SAMApp (~40), ContactsService (~40), EvidenceRepository (~40), PeopleRepository (~30), ContactsImportCoordinator (~30), CalendarImportCoordinator (~25).
-- 🧹 ContactsImportCoordinator still uses older API pattern (`isImporting: Bool`, `lastImportResult`) — should be standardized to match CalendarImportCoordinator's `ImportStatus` enum pattern.
+- 🧹 ContactsImportCoordinator still uses older API pattern (`isImporting: Bool`, `lastImportResult`) — should be standardized to match CalendarImportCoordinator's `ImportStatus` enum pattern. (Documentation was outdated — it already uses `ImportStatus` with `private(set)`.)
 
 **Next Up**:
-- ⬜ **Phase J (Part 3)**: Polish, Bug Fixes & Hardening (participant matching bug, ~200+ debug statement cleanup)
 - ✅ **Phase K**: Meeting Prep & Follow-Up (briefings, follow-up coach, relationship health)
 - ⬜ **Phase L**: Time Tracking
 - ⬜ **Phase M**: iMessage & FaceTime Evidence (if APIs available)
@@ -484,7 +482,7 @@ Text(context.contextType)       // Compile error - property doesn't exist
 
 ---
 
-### 🟡 Phase J: Email Integration & Polish (IN PROGRESS)
+### ✅ Phase J: Email Integration & Polish (COMPLETE — Feb 20, 2026)
 
 **Part 1 - COMPLETE (Feb 13, 2026)**:
 - ✅ **EmailAnalysisService.swift** — On-device LLM analysis via Apple Foundation Models
@@ -520,17 +518,16 @@ Text(context.contextType)       // Compile error - property doesn't exist
 - ✅ **UnknownSenderTriageSection** — Split into "personal/business" and "Mailing Lists & Marketing" groups; marketing senders default to Never; "Not Now" senders stay `.pending` (persist across sessions); fixed Group→VStack rendering bug
 - ✅ **Build succeeds** with 0 errors
 
-**Part 3c - HARDENING & BUG FIXES (remaining)**:
-- ⬜ **Fix participant matching bug** — Investigate why no calendar event participant is ever identified as "Not in Contacts". Check EvidenceRepository `bulkUpsert()` email resolution logic, ParticipantHint evaluation, and how the UI displays match status.
-- ⬜ **Clean up debug statements** — Remove or convert ~200+ `print()` calls to `os.Logger` with appropriate log levels. Keep error/warning logs, remove verbose data-flow tracing.
-- ⬜ **Standardize ContactsImportCoordinator** — Migrate from `isImporting: Bool` / `lastImportResult` to `ImportStatus` enum pattern matching CalendarImportCoordinator.
-- ⬜ **Persist insights to SwiftData** — InsightGenerator currently produces ephemeral `GeneratedInsight` structs. Store them in the `SamInsight` model for history and cross-session access.
+**Part 3c - HARDENING & BUG FIXES - COMPLETE (Feb 20, 2026)**:
+- ✅ **Fix participant matching bug** — Root cause: `EKParticipant.isCurrentUser` unreliably returns `true`, short-circuiting the `matched` check. Fix: replaced `attendee.isCurrentUser` with `meEmailSet()` helper that checks against the Me contact's known emails in `PeopleRepository`.
+- ✅ **Clean up debug statements** — Already complete (zero `print()` calls remain); all logging uses `os.Logger`.
+- ✅ **Standardize ContactsImportCoordinator** — Already uses `ImportStatus` enum (only difference is `private(set)` on state vars). Documentation was outdated.
+- ✅ **Persist insights to SwiftData** — Extended `SamInsight` model with `title`, `urgencyRawValue`/`sourceTypeRawValue` (with `@Transient` computed accessors), `sourceID`. Added `InsightGenerator.configure(container:)` + `persistInsights()` with 24h dedup and 30-day dismissed cleanup. Migrated `AwarenessView` from `@State [GeneratedInsight]` to `@Query SamInsight`; dismiss/markDone set `dismissedAt`.
 - ✅ **"Me" contact identification** — `isMe: Bool` on SamPerson, `fetchMeContact()` via `unifiedMeContactWithKeys`, `upsertMe()` in PeopleRepository, auto-imported after every group import. MailSettingsView and OnboardingView use Me contact's email aliases for filter selection.
 - ⬜ **"Add to Context" from PersonDetailView** — Currently commented out in toolbar; wire up context selection sheet.
-- ⬜ **Consistent logging framework** — CalendarService uses `print()` while ContactsService uses `Logger`; standardize.
 - ⬜ **Remove debug utilities from production** — ContactsTestView, ContactValidationDebugView are development-only.
 
-**Expected Outcome**: Email integration complete, codebase cleaned up, ready for Phase K (Time Tracking)
+**Expected Outcome**: Email integration complete, core hardening done, ready for Phase L+
 
 ---
 
@@ -1332,8 +1329,8 @@ When reporting bugs or architectural concerns:
 
 ---
 
-**Document Version**: 4.4 (Phases A–I complete, Phase J Parts 1–3b complete)
+**Document Version**: 4.5 (Phases A–K complete, Phase J Part 3c hardening complete)
 **Previous Versions**: See `changelog.md` for version history
-**Last Major Update**: February 18, 2026 — Phase J (Part 3b) marketing detection + triage fixes. Next: Part 3c (remaining hardening) then Phase K+
+**Last Major Update**: February 20, 2026 — Phase J (Part 3c) hardening: participant matching fix + insight persistence to SwiftData. Phase K complete.
 **Clean Rebuild Started**: February 9, 2026
 

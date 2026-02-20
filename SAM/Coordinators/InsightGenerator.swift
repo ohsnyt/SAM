@@ -25,6 +25,14 @@ final class InsightGenerator {
 
     private init() {}
 
+    // MARK: - Container
+
+    private var context: ModelContext?
+
+    func configure(container: ModelContainer) {
+        self.context = ModelContext(container)
+    }
+
     // MARK: - Dependencies
 
     private var evidenceRepository = EvidenceRepository.shared
@@ -107,7 +115,10 @@ final class InsightGenerator {
             // 5. Deduplicate and prioritize
             let deduplicatedInsights = deduplicateInsights(generatedInsights)
 
-            // 6. Update status
+            // 6. Persist to SwiftData
+            persistInsights(deduplicatedInsights)
+
+            // 7. Update status
             lastInsightCount = deduplicatedInsights.count
             lastGeneratedAt = .now
             generationStatus = .success
@@ -304,6 +315,70 @@ final class InsightGenerator {
         return insights
     }
 
+    // MARK: - Persistence
+
+    /// Persist generated insights to SwiftData, deduplicating against recent entries.
+    private func persistInsights(_ insights: [GeneratedInsight]) {
+        guard let context = context else {
+            logger.debug("InsightGenerator not configured with container — skipping persistence")
+            return
+        }
+
+        do {
+            let descriptor = FetchDescriptor<SamInsight>()
+            let existing = try context.fetch(descriptor)
+            let oneDayAgo = Date.now.addingTimeInterval(-86400)
+
+            var created = 0
+
+            for insight in insights {
+                // Dedup: skip if same kind + personID + sourceID exists within 24h
+                let isDuplicate = existing.contains { sam in
+                    sam.kind == insight.kind &&
+                    sam.samPerson?.id == insight.personID &&
+                    sam.sourceID == insight.sourceID &&
+                    sam.createdAt > oneDayAgo &&
+                    sam.dismissedAt == nil
+                }
+                guard !isDuplicate else { continue }
+
+                // Resolve person if personID is provided
+                var person: SamPerson?
+                if let personID = insight.personID {
+                    person = try? peopleRepository.fetch(id: personID)
+                }
+
+                let samInsight = SamInsight(
+                    kind: insight.kind,
+                    title: insight.title,
+                    message: insight.body,
+                    confidence: insight.confidence,
+                    urgency: insight.urgency,
+                    sourceType: insight.sourceType,
+                    sourceID: insight.sourceID
+                )
+                samInsight.samPerson = person
+                context.insert(samInsight)
+                created += 1
+            }
+
+            // Prune dismissed insights older than 30 days
+            let thirtyDaysAgo = Calendar.current.date(byAdding: .day, value: -30, to: .now)!
+            for sam in existing {
+                if let dismissed = sam.dismissedAt, dismissed < thirtyDaysAgo {
+                    context.delete(sam)
+                }
+            }
+
+            try context.save()
+            if created > 0 {
+                logger.info("Persisted \(created) new insights to SwiftData")
+            }
+        } catch {
+            logger.error("Failed to persist insights: \(error)")
+        }
+    }
+
     // MARK: - Deduplication
 
     /// Remove duplicate insights based on similarity
@@ -402,7 +477,7 @@ struct GeneratedInsight: Identifiable, Equatable {
 }
 
 /// Source type for insights
-enum InsightSourceType: String, Codable {
+public enum InsightSourceType: String, Codable {
     case note = "Note"
     case calendar = "Calendar"
     case contacts = "Contacts"
@@ -411,12 +486,12 @@ enum InsightSourceType: String, Codable {
 }
 
 /// Priority level for insights
-enum InsightPriority: Int, Codable, Comparable {
+public enum InsightPriority: Int, Codable, Comparable {
     case low = 1
     case medium = 2
     case high = 3
 
-    static func < (lhs: InsightPriority, rhs: InsightPriority) -> Bool {
+    public static func < (lhs: InsightPriority, rhs: InsightPriority) -> Bool {
         lhs.rawValue < rhs.rawValue
     }
 

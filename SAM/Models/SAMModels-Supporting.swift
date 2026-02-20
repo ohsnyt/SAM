@@ -113,12 +113,41 @@ public struct ParticipantHint: Codable, Sendable {
     public var isOrganizer: Bool
     public var isVerified: Bool      // True if matched to CNContact
     public var rawEmail: String?
-    
+
     public init(displayName: String, isOrganizer: Bool = false, isVerified: Bool = false, rawEmail: String? = nil) {
         self.displayName = displayName
         self.isOrganizer = isOrganizer
         self.isVerified = isVerified
         self.rawEmail = rawEmail
+    }
+
+    /// Live status computed from the current People list.
+    /// - `isKnown`: email matches any SamPerson (green checkmark in UI)
+    /// - `hasAppleContact`: matched SamPerson has a contactIdentifier (no "Not in Contacts" capsule)
+    public struct Status {
+        public let isKnown: Bool
+        public let hasAppleContact: Bool
+    }
+
+    /// Compute participant status against a given set of people.
+    public func status(against people: [SamPerson]) -> Status {
+        guard let raw = rawEmail?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+              !raw.isEmpty else {
+            return Status(isKnown: false, hasAppleContact: false)
+        }
+
+        let matched = people.first { person in
+            if let primary = person.emailCache?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+               primary == raw { return true }
+            return person.emailAliases.contains {
+                $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == raw
+            }
+        }
+
+        if let matched {
+            return Status(isKnown: true, hasAppleContact: matched.contactIdentifier != nil)
+        }
+        return Status(isKnown: false, hasAppleContact: false)
     }
 }
 

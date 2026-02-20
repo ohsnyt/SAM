@@ -500,4 +500,172 @@ struct EvidenceRepositoryTests {
         // Unknown person is NOT verified (no matching contact)
         #expect(unknownHint?.isVerified == false)
     }
+
+    // MARK: - ParticipantHint.Status (Live Badge Logic)
+
+    @Test("Status: unknown participant has isKnown=false, hasAppleContact=false")
+    func statusUnknownParticipant() throws {
+        let container = try makeTestContainer()
+        configureAllRepositories(with: container)
+
+        // No people at all
+        let hint = ParticipantHint(displayName: "Stranger", rawEmail: "stranger@nowhere.com")
+        let people = try PeopleRepository.shared.fetchAll()
+        let status = hint.status(against: people)
+
+        #expect(status.isKnown == false)
+        #expect(status.hasAppleContact == false)
+    }
+
+    @Test("Status: SAM person with contactIdentifier → isKnown=true, hasAppleContact=true")
+    func statusKnownPersonWithContact() throws {
+        let container = try makeTestContainer()
+        configureAllRepositories(with: container)
+
+        // Create person via ContactDTO (has contactIdentifier)
+        let contact = makeContactDTO(
+            identifier: "c1",
+            givenName: "Alice",
+            familyName: "Johnson",
+            emailAddresses: ["alice@test.com"]
+        )
+        try PeopleRepository.shared.upsert(contact: contact)
+
+        let hint = ParticipantHint(displayName: "Alice", rawEmail: "alice@test.com")
+        let people = try PeopleRepository.shared.fetchAll()
+        let status = hint.status(against: people)
+
+        #expect(status.isKnown == true)
+        #expect(status.hasAppleContact == true)
+    }
+
+    @Test("Status: SAM person WITHOUT contactIdentifier → isKnown=true, hasAppleContact=false")
+    func statusKnownPersonWithoutContact() throws {
+        let container = try makeTestContainer()
+        configureAllRepositories(with: container)
+
+        // Create a SamPerson directly without contactIdentifier
+        let ctx = ModelContext(container)
+        let person = SamPerson(
+            id: UUID(),
+            displayName: "Vendor Bob",
+            roleBadges: [],
+            contactIdentifier: nil,
+            email: "vendor@test.com"
+        )
+        person.emailCache = "vendor@test.com"
+        person.emailAliases = ["vendor@test.com"]
+        ctx.insert(person)
+        try ctx.save()
+
+        let hint = ParticipantHint(displayName: "Vendor Bob", rawEmail: "vendor@test.com")
+        let people = try PeopleRepository.shared.fetchAll()
+        let status = hint.status(against: people)
+
+        #expect(status.isKnown == true)
+        #expect(status.hasAppleContact == false)
+    }
+
+    @Test("Status: adding person after event changes isKnown from false to true")
+    func statusUpdatesAfterAddingPerson() throws {
+        let container = try makeTestContainer()
+        configureAllRepositories(with: container)
+
+        let hint = ParticipantHint(displayName: "Vendor", rawEmail: "vendor@test.com")
+
+        // Before: no matching person
+        let peopleBefore = try PeopleRepository.shared.fetchAll()
+        let statusBefore = hint.status(against: peopleBefore)
+        #expect(statusBefore.isKnown == false)
+        #expect(statusBefore.hasAppleContact == false)
+
+        // Add person with contactIdentifier
+        let contact = makeContactDTO(
+            identifier: "c1",
+            givenName: "Vendor",
+            familyName: "Co",
+            emailAddresses: ["vendor@test.com"]
+        )
+        try PeopleRepository.shared.upsert(contact: contact)
+
+        // After: person exists with Apple contact
+        let peopleAfter = try PeopleRepository.shared.fetchAll()
+        let statusAfter = hint.status(against: peopleAfter)
+        #expect(statusAfter.isKnown == true)
+        #expect(statusAfter.hasAppleContact == true)
+    }
+
+    @Test("Status: adding person without contactIdentifier → isKnown=true, hasAppleContact=false")
+    func statusUpdatesAfterAddingPersonWithoutContact() throws {
+        let container = try makeTestContainer()
+        configureAllRepositories(with: container)
+
+        let hint = ParticipantHint(displayName: "Vendor", rawEmail: "vendor@test.com")
+
+        // Before
+        let peopleBefore = try PeopleRepository.shared.fetchAll()
+        let statusBefore = hint.status(against: peopleBefore)
+        #expect(statusBefore.isKnown == false)
+
+        // Add SamPerson directly (no Apple contact)
+        let ctx = ModelContext(container)
+        let person = SamPerson(
+            id: UUID(),
+            displayName: "Vendor",
+            roleBadges: [],
+            contactIdentifier: nil,
+            email: "vendor@test.com"
+        )
+        person.emailCache = "vendor@test.com"
+        person.emailAliases = ["vendor@test.com"]
+        ctx.insert(person)
+        try ctx.save()
+
+        // After: person exists but no Apple contact
+        let peopleAfter = try PeopleRepository.shared.fetchAll()
+        let statusAfter = hint.status(against: peopleAfter)
+        #expect(statusAfter.isKnown == true)
+        #expect(statusAfter.hasAppleContact == false)
+    }
+
+    @Test("Status: email matching is case-insensitive")
+    func statusCaseInsensitive() throws {
+        let container = try makeTestContainer()
+        configureAllRepositories(with: container)
+
+        let contact = makeContactDTO(
+            identifier: "c1",
+            givenName: "Alice",
+            familyName: "J",
+            emailAddresses: ["Alice@Test.COM"]
+        )
+        try PeopleRepository.shared.upsert(contact: contact)
+
+        let hint = ParticipantHint(displayName: "alice", rawEmail: "alice@test.com")
+        let people = try PeopleRepository.shared.fetchAll()
+        let status = hint.status(against: people)
+
+        #expect(status.isKnown == true)
+    }
+
+    @Test("Status: matches via emailAliases when primary doesn't match")
+    func statusMatchesViaAlias() throws {
+        let container = try makeTestContainer()
+        configureAllRepositories(with: container)
+
+        let contact = makeContactDTO(
+            identifier: "c1",
+            givenName: "Alice",
+            familyName: "J",
+            emailAddresses: ["primary@test.com", "alias@test.com"]
+        )
+        try PeopleRepository.shared.upsert(contact: contact)
+
+        let hint = ParticipantHint(displayName: "alice", rawEmail: "alias@test.com")
+        let people = try PeopleRepository.shared.fetchAll()
+        let status = hint.status(against: people)
+
+        #expect(status.isKnown == true)
+        #expect(status.hasAppleContact == true)
+    }
 }

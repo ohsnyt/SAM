@@ -155,21 +155,39 @@ final class EvidenceRepository {
 
     // MARK: - Mapping Helpers
 
+    /// Canonical email set for the Me contact — used instead of EKParticipant.isCurrentUser
+    /// which can be unreliable (returns true for organizer or all attendees in some calendar configs).
+    private func meEmailSet() -> Set<String> {
+        guard let me = try? PeopleRepository.shared.fetchMe() else { return [] }
+        var emails = Set<String>()
+        if let primary = canonicalizeEmail(me.emailCache) {
+            emails.insert(primary)
+        }
+        for alias in me.emailAliases {
+            if let canonical = canonicalizeEmail(alias) {
+                emails.insert(canonical)
+            }
+        }
+        return emails
+    }
+
     /// Build participant hints from an EventDTO's attendees and organizer.
     /// `knownEmails` is the set of canonical emails that match a SamPerson in the database.
     private func buildParticipantHints(from event: EventDTO, knownEmails: Set<String>) -> [ParticipantHint] {
         var hints: [ParticipantHint] = []
+        let meEmails = meEmailSet()
 
         // Map attendees
         for attendee in event.attendees {
             let displayName = attendee.name ?? attendee.emailAddress ?? "Unknown"
             let canonical = canonicalizeEmail(attendee.emailAddress)
+            let isMe = canonical.map { meEmails.contains($0) } ?? false
             let matched = canonical.map { knownEmails.contains($0) } ?? false
-            logger.debug("Participant '\(displayName)': email=\(canonical ?? "nil"), isCurrentUser=\(attendee.isCurrentUser), matched=\(matched)")
+            logger.debug("Participant '\(displayName)': email=\(canonical ?? "nil"), isMe=\(isMe), matched=\(matched)")
             let hint = ParticipantHint(
                 displayName: displayName,
                 isOrganizer: false,
-                isVerified: attendee.isCurrentUser || matched,
+                isVerified: isMe || matched,
                 rawEmail: attendee.emailAddress
             )
             hints.append(hint)
@@ -184,11 +202,12 @@ final class EvidenceRepository {
                 hints[idx].isOrganizer = true
             } else {
                 let canonical = canonicalizeEmail(organizer.emailAddress)
+                let isMe = canonical.map { meEmails.contains($0) } ?? false
                 let matched = canonical.map { knownEmails.contains($0) } ?? false
                 let organizerHint = ParticipantHint(
                     displayName: organizerName,
                     isOrganizer: true,
-                    isVerified: organizer.isCurrentUser || matched,
+                    isVerified: isMe || matched,
                     rawEmail: organizer.emailAddress
                 )
                 hints.append(organizerHint)
@@ -426,32 +445,65 @@ final class EvidenceRepository {
         }
     }
 
-    // MARK: - Re-Resolution after Contacts Import
+    // MARK: - Re-Resolution after Contacts Change
 
-    /// Re-run resolution of linkedPeople for evidence items that appear to be "Not in Contacts" yet.
-    /// Criteria: has participantHints with at least one rawEmail, but linkedPeople is empty.
-    func reresolveParticipantsForUnlinkedEvidence() throws {
+    /// Re-resolve linkedPeople AND refresh participantHints.isVerified for all
+    /// calendar and mail evidence. Call after any change to the People list
+    /// (contacts import, unknown sender triage, manual contact creation).
+    ///
+    /// Uses PeopleRepository as the authoritative source for known emails,
+    /// avoiding cross-ModelContext staleness (EvidenceRepository and
+    /// PeopleRepository each have their own ModelContext).
+    func refreshParticipantResolution() throws {
         guard let context = context else { throw RepositoryError.notConfigured }
+
+        // Read the authoritative email set from PeopleRepository's context
+        let allKnownEmails = try PeopleRepository.shared.allKnownEmails()
+        let allPeople = try PeopleRepository.shared.fetchAll()
+        let meEmails = meEmailSet()
 
         let all = try fetchAll()
         var updated = 0
 
         for item in all {
-            // Only consider calendar evidence for now
-            guard item.source == .calendar else { continue }
+            guard item.source == .calendar || item.source == .mail else { continue }
 
-            // If already linked to people, skip
-            if !item.linkedPeople.isEmpty { continue }
-
-            // Collect emails from participant hints
+            // Collect all emails from participant hints
             let emails = item.participantHints.compactMap { hint in
                 hint.rawEmail?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             }
-
             guard !emails.isEmpty else { continue }
 
-            let resolved = resolvePeople(byEmails: emails)
-            if !resolved.isEmpty {
+            // Resolve people using PeopleRepository's authoritative data
+            let emailSet = Set(emails)
+            let resolved = allPeople.filter { person in
+                let primary = canonicalizeEmail(person.emailCache)
+                if let primary, emailSet.contains(primary) { return true }
+                let aliases = person.emailAliases.map { $0.lowercased() }
+                return !Set(aliases).isDisjoint(with: emailSet)
+            }
+
+            // Refresh isVerified on each participant hint
+            var hintsChanged = false
+            var newHints = item.participantHints
+            for i in newHints.indices {
+                let canonical = canonicalizeEmail(newHints[i].rawEmail)
+                let isMe = canonical.map { meEmails.contains($0) } ?? false
+                let matched = canonical.map { allKnownEmails.contains($0) } ?? false
+                let newVerified = isMe || matched
+                if newHints[i].isVerified != newVerified {
+                    newHints[i].isVerified = newVerified
+                    hintsChanged = true
+                }
+            }
+
+            // Update linkedPeople if the resolved set changed
+            let oldIDs = Set(item.linkedPeople.map(\.id))
+            let newIDs = Set(resolved.map(\.id))
+            let peopleChanged = oldIDs != newIDs
+
+            if hintsChanged || peopleChanged {
+                item.participantHints = newHints
                 item.linkedPeople = resolved
                 updated += 1
             }
@@ -459,8 +511,13 @@ final class EvidenceRepository {
 
         if updated > 0 {
             try context.save()
-            logger.info("Re-resolved participants for \(updated) evidence items after contacts import")
+            logger.info("Refreshed participant resolution for \(updated) evidence items")
         }
+    }
+
+    /// Legacy alias — calls `refreshParticipantResolution()`.
+    func reresolveParticipantsForUnlinkedEvidence() throws {
+        try refreshParticipantResolution()
     }
 
     // MARK: - Email Bulk Upsert Operations

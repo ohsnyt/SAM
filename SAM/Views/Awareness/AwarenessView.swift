@@ -12,30 +12,36 @@ import SwiftUI
 import SwiftData
 
 struct AwarenessView: View {
-    
+
     // MARK: - Dependencies
 
     @State private var generator = InsightGenerator.shared
     @State private var peopleRepository = PeopleRepository.shared
     @State private var meetingPrepCoordinator = MeetingPrepCoordinator.shared
     @State private var calendarCoordinator = CalendarImportCoordinator.shared
-    
+    @Environment(\.modelContext) private var modelContext
+
+    // MARK: - Persisted Insights
+
+    @Query(filter: #Predicate<SamInsight> { $0.dismissedAt == nil },
+           sort: \SamInsight.createdAt, order: .reverse)
+    private var persistedInsights: [SamInsight]
+
     // MARK: - State
-    
+
     @State private var selectedFilter: InsightFilter = .all
     @State private var searchText = ""
-    @State private var insights: [GeneratedInsight] = []
     @State private var isGenerating = false
-    
+
     // MARK: - Body
-    
+
     var body: some View {
         VStack(spacing: 0) {
             // Header
             headerSection
-            
+
             Divider()
-            
+
             // Filter Bar
             filterBar
 
@@ -51,7 +57,7 @@ struct AwarenessView: View {
             MeetingPrepSection()
 
             // Insights List
-            if insights.isEmpty {
+            if filteredInsights.isEmpty {
                 emptyState
             } else {
                 insightsList
@@ -80,9 +86,9 @@ struct AwarenessView: View {
             }
         }
     }
-    
+
     // MARK: - Header Section
-    
+
     private var headerSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
@@ -90,7 +96,7 @@ struct AwarenessView: View {
                     Text("Awareness Dashboard")
                         .font(.title2)
                         .fontWeight(.semibold)
-                    
+
                     if let lastGenerated = generator.lastGeneratedAt {
                         Text("Last updated \(lastGenerated, style: .relative) ago")
                             .font(.caption)
@@ -101,13 +107,13 @@ struct AwarenessView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                
+
                 Spacer()
-                
+
                 // Status Badge
                 statusBadge
             }
-            
+
             // Quick Stats
             HStack(spacing: 20) {
                 StatCard(
@@ -116,14 +122,14 @@ struct AwarenessView: View {
                     value: "\(highPriorityCount)",
                     color: .red
                 )
-                
+
                 StatCard(
                     icon: "clock.fill",
                     label: "Follow-ups",
                     value: "\(followUpCount)",
                     color: .orange
                 )
-                
+
                 StatCard(
                     icon: "sparkles",
                     label: "Opportunities",
@@ -136,7 +142,7 @@ struct AwarenessView: View {
         .padding()
         .background(Color(nsColor: .controlBackgroundColor))
     }
-    
+
     private var statusBadge: some View {
         Group {
             switch generator.generationStatus {
@@ -160,9 +166,9 @@ struct AwarenessView: View {
         .background(Color.secondary.opacity(0.1))
         .clipShape(Capsule())
     }
-    
+
     // MARK: - Filter Bar
-    
+
     private var filterBar: some View {
         HStack {
             Picker("Filter", selection: $selectedFilter) {
@@ -172,18 +178,18 @@ struct AwarenessView: View {
             }
             .pickerStyle(.segmented)
             .frame(maxWidth: 600)
-            
+
             Spacer()
-            
+
             Text("\(filteredInsights.count) insight\(filteredInsights.count == 1 ? "" : "s")")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
         .padding()
     }
-    
+
     // MARK: - Insights List
-    
+
     private var insightsList: some View {
         ScrollView {
             LazyVStack(spacing: 12) {
@@ -197,7 +203,7 @@ struct AwarenessView: View {
                             dismissInsight(insight)
                         },
                         onViewPerson: {
-                            viewPerson(insight.personID)
+                            viewPerson(insight.samPerson?.id)
                         }
                     )
                 }
@@ -205,25 +211,25 @@ struct AwarenessView: View {
             .padding()
         }
     }
-    
+
     // MARK: - Empty State
-    
+
     private var emptyState: some View {
         VStack(spacing: 20) {
             Image(systemName: "sparkles")
                 .font(.system(size: 60))
                 .foregroundStyle(.secondary)
-            
+
             Text("No Insights Yet")
                 .font(.title2)
                 .fontWeight(.semibold)
-            
+
             Text("Insights will appear here after you create notes, import calendar events, and add contacts.")
                 .font(.body)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 400)
-            
+
             Button(action: {
                 refreshInsights()
             }) {
@@ -235,12 +241,12 @@ struct AwarenessView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
     }
-    
+
     // MARK: - Computed Properties
-    
-    private var filteredInsights: [GeneratedInsight] {
-        var filtered = insights
-        
+
+    private var filteredInsights: [SamInsight] {
+        var filtered = persistedInsights
+
         // Apply filter
         switch selectedFilter {
         case .all:
@@ -256,59 +262,58 @@ struct AwarenessView: View {
                 $0.kind == .relationshipAtRisk || $0.kind == .complianceWarning
             }
         }
-        
+
         // Apply search
         if !searchText.isEmpty {
             let query = searchText.lowercased()
             filtered = filtered.filter {
                 $0.title.lowercased().contains(query) ||
-                $0.body.lowercased().contains(query)
+                $0.message.lowercased().contains(query)
             }
         }
-        
+
         return filtered
     }
-    
+
     private var highPriorityCount: Int {
-        insights.filter { $0.urgency == .high }.count
+        persistedInsights.filter { $0.urgency == .high }.count
     }
-    
+
     private var followUpCount: Int {
-        insights.filter { $0.kind == .followUpNeeded }.count
+        persistedInsights.filter { $0.kind == .followUpNeeded }.count
     }
-    
+
     private var opportunityCount: Int {
-        insights.filter { $0.kind == .opportunity }.count
+        persistedInsights.filter { $0.kind == .opportunity }.count
     }
-    
+
     // MARK: - Actions
-    
+
     private func loadInsights() async {
         isGenerating = true
-        
-        // Generate real insights from actual data
-        insights = await generator.generateInsights()
-        
+        // Generate insights — persistence happens inside the generator;
+        // @Query auto-updates the list from SwiftData.
+        _ = await generator.generateInsights()
         isGenerating = false
     }
-    
+
     private func refreshInsights() {
         Task {
             await loadInsights()
             await meetingPrepCoordinator.refresh()
         }
     }
-    
-    private func markInsightAsDone(_ insight: GeneratedInsight) {
-        // Remove from list (in full implementation, update SamInsight model)
-        insights.removeAll(where: { $0.id == insight.id })
+
+    private func markInsightAsDone(_ insight: SamInsight) {
+        insight.dismissedAt = .now
+        try? modelContext.save()
     }
-    
-    private func dismissInsight(_ insight: GeneratedInsight) {
-        // Remove from list (in full implementation, mark as dismissed)
-        insights.removeAll(where: { $0.id == insight.id })
+
+    private func dismissInsight(_ insight: SamInsight) {
+        insight.dismissedAt = .now
+        try? modelContext.save()
     }
-    
+
     private func viewPerson(_ personID: UUID?) {
         guard personID != nil else { return }
         // TODO: Navigate to person detail view
@@ -318,13 +323,13 @@ struct AwarenessView: View {
 // MARK: - Insight Card
 
 private struct InsightCard: View {
-    let insight: GeneratedInsight
+    let insight: SamInsight
     let onMarkDone: () -> Void
     let onDismiss: () -> Void
     let onViewPerson: () -> Void
-    
+
     @State private var isExpanded = false
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             // Header
@@ -336,13 +341,13 @@ private struct InsightCard: View {
                     .frame(width: 40, height: 40)
                     .background(insight.kind.color.opacity(0.1))
                     .clipShape(Circle())
-                
+
                 // Content
                 VStack(alignment: .leading, spacing: 4) {
                     Text(insight.title)
                         .font(.headline)
                         .foregroundStyle(.primary)
-                    
+
                     HStack(spacing: 8) {
                         // Urgency Badge
                         Text(insight.urgency.displayText)
@@ -353,7 +358,7 @@ private struct InsightCard: View {
                             .padding(.vertical, 3)
                             .background(urgencyColor(insight.urgency))
                             .clipShape(Capsule())
-                        
+
                         // Source Badge
                         Text(insight.sourceType.rawValue)
                             .font(.caption2)
@@ -362,16 +367,16 @@ private struct InsightCard: View {
                             .padding(.vertical, 3)
                             .background(Color.secondary.opacity(0.1))
                             .clipShape(Capsule())
-                        
+
                         Spacer()
-                        
+
                         // Timestamp
                         Text(insight.createdAt, style: .relative)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
-                
+
                 // Expand Button
                 Button(action: {
                     withAnimation {
@@ -383,32 +388,32 @@ private struct InsightCard: View {
                 }
                 .buttonStyle(.plain)
             }
-            
+
             // Expanded Content
             if isExpanded {
                 VStack(alignment: .leading, spacing: 12) {
                     Divider()
-                    
-                    Text(insight.body)
+
+                    Text(insight.message)
                         .font(.body)
                         .foregroundStyle(.secondary)
-                    
+
                     // Actions
                     HStack(spacing: 12) {
                         Button(action: onMarkDone) {
                             Label("Mark Done", systemImage: "checkmark.circle")
                         }
                         .buttonStyle(.borderedProminent)
-                        
-                        if insight.personID != nil {
+
+                        if insight.samPerson != nil {
                             Button(action: onViewPerson) {
                                 Label("View Person", systemImage: "person.fill")
                             }
                             .buttonStyle(.bordered)
                         }
-                        
+
                         Spacer()
-                        
+
                         Button(action: onDismiss) {
                             Label("Dismiss", systemImage: "xmark.circle")
                         }
@@ -426,7 +431,7 @@ private struct InsightCard: View {
                 .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
         )
     }
-    
+
     private func urgencyColor(_ urgency: InsightPriority) -> Color {
         switch urgency {
         case .low: return .gray
@@ -443,14 +448,14 @@ private struct StatCard: View {
     let label: String
     let value: String
     let color: Color
-    
+
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: icon)
                 .font(.title3)
                 .foregroundStyle(color)
                 .frame(width: 32, height: 32)
-            
+
             VStack(alignment: .leading, spacing: 2) {
                 Text(value)
                     .font(.title2)
@@ -475,7 +480,7 @@ enum InsightFilter: String, CaseIterable {
     case followUps = "Follow-ups"
     case opportunities = "Opportunities"
     case risks = "Risks"
-    
+
     var displayText: String {
         self.rawValue
     }
@@ -500,7 +505,7 @@ extension InsightKind {
             return "info.circle.fill"
         }
     }
-    
+
     var color: Color {
         switch self {
         case .relationshipAtRisk:

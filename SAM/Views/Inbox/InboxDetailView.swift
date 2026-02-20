@@ -23,6 +23,9 @@ struct InboxDetailView: View {
     @State private var repository = EvidenceRepository.shared
     @State private var notesRepository = NotesRepository.shared
 
+    /// @Query triggers SwiftUI re-render when SamPerson records change in the store.
+    @Query private var allPeople: [SamPerson]
+
     // MARK: - State
 
     @State private var showingDeleteConfirmation = false
@@ -171,9 +174,10 @@ struct InboxDetailView: View {
         section(title: "Participants") {
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(Array(item.participantHints.enumerated()), id: \.offset) { _, participant in
+                    let status = participantStatus(for: participant)
                     HStack(spacing: 8) {
-                        // Verified icon
-                        if participant.isVerified {
+                        // Green checkmark if person is in SAM (known), grey otherwise
+                        if status.isKnown {
                             Image(systemName: "checkmark.seal.fill")
                                 .foregroundStyle(.green)
                                 .font(.caption)
@@ -199,7 +203,7 @@ struct InboxDetailView: View {
                                         .clipShape(Capsule())
                                 }
 
-                                if !participant.isVerified {
+                                if !status.hasAppleContact {
                                     Text("Not in Contacts")
                                         .font(.caption2)
                                         .padding(.horizontal, 6)
@@ -223,6 +227,11 @@ struct InboxDetailView: View {
                 }
             }
         }
+    }
+
+    /// Compute participant status live from the @Query people list.
+    private func participantStatus(for participant: ParticipantHint) -> ParticipantHint.Status {
+        participant.status(against: allPeople)
     }
 
     // MARK: - Signals Section

@@ -105,6 +105,7 @@ struct SAMApp: App {
         ContextsRepository.shared.configure(container: SAMModelContainer.shared)
         NotesRepository.shared.configure(container: SAMModelContainer.shared)
         UnknownSenderRepository.shared.configure(container: SAMModelContainer.shared)
+        InsightGenerator.shared.configure(container: SAMModelContainer.shared)
     }
     
     /// Check permissions and decide whether to show onboarding or proceed with imports

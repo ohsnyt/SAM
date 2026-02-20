@@ -611,8 +611,26 @@ public final class SamInsight {
 
     // Core properties
     public var kind: InsightKind
-    public var message: String
+    public var title: String
+    public var message: String          // Body text
     public var confidence: Double
+
+    // Source tracking (for deduplication)
+    public var urgencyRawValue: String
+    public var sourceTypeRawValue: String
+    public var sourceID: UUID?
+
+    @Transient
+    public var urgency: InsightPriority {
+        get { InsightPriority(rawValue: Int(urgencyRawValue) ?? 2) ?? .medium }
+        set { urgencyRawValue = String(newValue.rawValue) }
+    }
+
+    @Transient
+    public var sourceType: InsightSourceType {
+        get { InsightSourceType(rawValue: sourceTypeRawValue) ?? .pattern }
+        set { sourceTypeRawValue = newValue.rawValue }
+    }
 
     // Supporting evidence (Phase 3: proper relationship)
     @Relationship(deleteRule: .nullify, inverse: \SamEvidenceItem.supportingInsights)
@@ -634,8 +652,12 @@ public final class SamInsight {
         samContext: SamContext? = nil,
         product: Product? = nil,
         kind: InsightKind,
+        title: String = "",
         message: String,
         confidence: Double,
+        urgency: InsightPriority = .medium,
+        sourceType: InsightSourceType = .pattern,
+        sourceID: UUID? = nil,
         basedOnEvidence: [SamEvidenceItem] = []
     ) {
         self.id = id
@@ -643,8 +665,12 @@ public final class SamInsight {
         self.samContext = samContext
         self.product = product
         self.kind = kind
+        self.title = title
         self.message = message
         self.confidence = confidence
+        self.urgencyRawValue = String(urgency.rawValue)
+        self.sourceTypeRawValue = sourceType.rawValue
+        self.sourceID = sourceID
         self.basedOnEvidence = basedOnEvidence
         self.createdAt = .now
     }

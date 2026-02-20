@@ -299,6 +299,15 @@ struct UnknownSenderTriageSection: View {
                 }
             }
 
+            // Refresh participant hints on existing evidence now that new contacts exist
+            if !addedEmails.isEmpty {
+                do {
+                    try EvidenceRepository.shared.refreshParticipantResolution()
+                } catch {
+                    logger.error("Failed to refresh participant resolution after triage: \(error)")
+                }
+            }
+
             // Reload to reflect removals (added/never gone, notNow still visible)
             loadPendingSenders()
             isSaving = false

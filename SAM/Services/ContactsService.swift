@@ -450,8 +450,8 @@ actor ContactsService {
 
             logger.info("Created contact: \(fullName, privacy: .public)")
 
-            // Fetch minimal keys for DTO
-            let keys = ContactDTO.KeySet.minimal.keys
+            // Fetch detail keys so the DTO includes email addresses for matching
+            let keys = ContactDTO.KeySet.detail.keys
             let created = try store.unifiedContact(withIdentifier: mutable.identifier, keysToFetch: keys)
             logger.debug("created contact: \(self.debugDescription(for: created), privacy: .public)")
             return ContactDTO(from: created)
