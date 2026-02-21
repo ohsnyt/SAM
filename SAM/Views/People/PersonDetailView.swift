@@ -35,6 +35,8 @@ struct PersonDetailView: View {
     @State private var errorMessage = ""
     @State private var showingContextPicker = false
     @State private var personNotes: [SamNote] = []
+    @State private var isEditingBadges = false
+    @State private var customBadgeText = ""
     
     // MARK: - Body
     
@@ -171,20 +173,7 @@ struct PersonDetailView: View {
                 }
                 
                 // Role badges
-                if !person.roleBadges.isEmpty {
-                    HStack(spacing: 6) {
-                        ForEach(person.roleBadges, id: \.self) { badge in
-                            Text(badge)
-                                .font(.caption)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(.blue.opacity(0.15))
-                                .foregroundStyle(.blue)
-                                .clipShape(RoundedRectangle(cornerRadius: 4))
-                        }
-                    }
-                    .padding(.top, 2)
-                }
+                roleBadgesView
             }
             
             Spacer()
@@ -209,6 +198,141 @@ struct PersonDetailView: View {
         .padding(.bottom, 16)
     }
     
+    // MARK: - Role Badges
+
+    private static let predefinedBadges = [
+        "Client", "Applicant", "Lead", "Vendor",
+        "Agent", "External Agent"
+    ]
+
+    private var roleBadgesView: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                // Me badge (non-editable, set via Apple Contacts)
+                if person.isMe {
+                    Text("Me")
+                        .font(.caption)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(.secondary.opacity(0.2))
+                        .foregroundStyle(.secondary)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                }
+
+                // Display current badges
+                ForEach(person.roleBadges, id: \.self) { badge in
+                    let style = RoleBadgeStyle.forBadge(badge)
+                    if isEditingBadges {
+                        // Removable badge
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.15)) {
+                                person.roleBadges.removeAll { $0 == badge }
+                            }
+                            notifyBadgeChange()
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text(badge)
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 8, weight: .bold))
+                            }
+                            .font(.caption)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(style.color.opacity(0.15))
+                            .foregroundStyle(style.color)
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        Text(badge)
+                            .font(.caption)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(style.color.opacity(0.15))
+                            .foregroundStyle(style.color)
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                    }
+                }
+
+                // Edit toggle button
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        isEditingBadges.toggle()
+                        if !isEditingBadges {
+                            customBadgeText = ""
+                        }
+                    }
+                } label: {
+                    Image(systemName: isEditingBadges ? "checkmark.circle.fill" : "pencil")
+                        .font(.caption)
+                        .foregroundStyle(isEditingBadges ? .green : .secondary)
+                }
+                .buttonStyle(.plain)
+                .help(isEditingBadges ? "Done editing badges" : "Edit role badges")
+            }
+
+            // Edit mode: predefined options + custom entry
+            if isEditingBadges {
+                // Predefined badges (only show ones not already assigned)
+                let available = Self.predefinedBadges.filter { !person.roleBadges.contains($0) }
+                if !available.isEmpty {
+                    FlowLayout(spacing: 6) {
+                        ForEach(available, id: \.self) { badge in
+                            let style = RoleBadgeStyle.forBadge(badge)
+                            Button {
+                                withAnimation(.easeInOut(duration: 0.15)) {
+                                    person.roleBadges.append(badge)
+                                }
+                                notifyBadgeChange()
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "plus")
+                                        .font(.system(size: 8, weight: .bold))
+                                    Text(badge)
+                                }
+                                .font(.caption)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(style.color.opacity(0.08))
+                                .foregroundStyle(style.color.opacity(0.6))
+                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+
+                // Custom badge entry
+                HStack(spacing: 6) {
+                    TextField("Custom badge...", text: $customBadgeText)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.caption)
+                        .frame(maxWidth: 200)
+                        .onSubmit { addCustomBadge() }
+
+                    Button("Add") { addCustomBadge() }
+                        .font(.caption)
+                        .disabled(customBadgeText.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+        }
+        .padding(.top, 2)
+    }
+
+    private func addCustomBadge() {
+        let trimmed = customBadgeText.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, !person.roleBadges.contains(trimmed) else { return }
+        withAnimation(.easeInOut(duration: 0.15)) {
+            person.roleBadges.append(trimmed)
+        }
+        customBadgeText = ""
+        notifyBadgeChange()
+    }
+
+    private func notifyBadgeChange() {
+        NotificationCenter.default.post(name: .samPersonDidChange, object: nil)
+    }
+
     // MARK: - Contact Info Section
     
     @ViewBuilder

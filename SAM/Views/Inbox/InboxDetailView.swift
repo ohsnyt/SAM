@@ -170,10 +170,20 @@ struct InboxDetailView: View {
 
     // MARK: - Participants Section
 
+    /// Participants excluding the Me contact
+    private var visibleParticipants: [ParticipantHint] {
+        let meEmails = Set(allPeople.first(where: \.isMe)?.emailAliases.map { $0.lowercased() } ?? [])
+        guard !meEmails.isEmpty else { return item.participantHints }
+        return item.participantHints.filter { hint in
+            guard let email = hint.rawEmail?.lowercased() else { return true }
+            return !meEmails.contains(email)
+        }
+    }
+
     private var participantsSection: some View {
         section(title: "Participants") {
             VStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(item.participantHints.enumerated()), id: \.offset) { _, participant in
+                ForEach(Array(visibleParticipants.enumerated()), id: \.offset) { _, participant in
                     let status = participantStatus(for: participant)
                     HStack(spacing: 8) {
                         // Green checkmark if person is in SAM (known), grey otherwise

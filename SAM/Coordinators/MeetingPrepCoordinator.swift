@@ -205,7 +205,8 @@ final class MeetingPrepCoordinator {
         let notesWithActions = try notesRepository.fetchNotesWithPendingActions()
 
         return upcomingEvents.map { event in
-            let attendees = event.linkedPeople.map { person in
+            let otherPeople = event.linkedPeople.filter { !$0.isMe }
+            let attendees = otherPeople.map { person in
                 buildAttendeeProfile(person: person, allEvidence: allEvidence)
             }
 
@@ -302,7 +303,7 @@ final class MeetingPrepCoordinator {
                 title: event.title,
                 endedAt: eventEnd,
                 hoursSinceEnd: hoursSinceEnd,
-                attendees: event.linkedPeople.map { ($0.id, $0.displayNameCache ?? $0.displayName) },
+                attendees: event.linkedPeople.filter { !$0.isMe }.map { ($0.id, $0.displayNameCache ?? $0.displayName) },
                 hasLinkedNote: false,
                 pendingActionItems: pendingActions
             )

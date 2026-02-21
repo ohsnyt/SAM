@@ -705,3 +705,11 @@ public final class SamInsight {
 // MARK: - InsightDisplayable Conformance
 extension SamInsight: InsightDisplayable {}
 
+// MARK: - Notifications
+
+extension Notification.Name {
+    /// Posted when a SamPerson's data changes (e.g. role badges edited).
+    /// Listeners should refresh their people data.
+    static let samPersonDidChange = Notification.Name("samPersonDidChange")
+}
+

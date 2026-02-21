@@ -4,6 +4,24 @@
 
 ---
 
+## February 20, 2026 - Role Badges & Me Contact Visibility
+
+### Role Badge System
+- **Predefined roles updated** — `Client`, `Applicant`, `Lead`, `Vendor`, `Agent`, `External Agent` (replaces old set: Prospect, Referral Partner, Center of Influence, Staff)
+- **RoleBadgeStyle** (new shared view) — Centralized color/icon mapping for role badges; every role gets a unique color and SF Symbol icon
+- **RoleBadgeIconView** (new shared view) — Compact color-coded icon for People list rows with 600ms hover tooltip (popover); replaces full-text capsules that cluttered the sidebar
+- **PersonDetailView badge editor** — Predefined + custom badge chips; each role shown in its assigned color; add/remove with animations
+- **Notification-based refresh** — `Notification.Name.samPersonDidChange` posted on badge changes; PeopleListView listens and re-fetches immediately (fixes delay caused by separate ModelContext instances)
+- **Role definitions documented** — Client (purchased product), Applicant (in purchase process), Lead (potential client), Vendor (underwriter/service company), Agent (user's WFG team member), External Agent (peer at WFG)
+
+### Me Contact Visibility
+- **People list** — Me contact shows subtle gray "Me" capsule next to name; distinct but not loud
+- **PersonDetailView** — Non-interactive gray "Me" badge shown separately from editable role badges; cannot be added or removed through badge editor (set only via Apple Contacts Me card)
+- **InboxDetailView** — Participants list filters out anyone whose email matches Me contact's email aliases
+- **MeetingPrepCoordinator** — Briefing attendees and follow-up prompt attendees filter out `isMe` people at the data source; all downstream views (MeetingPrepSection, FollowUpCoachSection) automatically exclude Me
+
+---
+
 ## February 20, 2026 - Bug Fixes: Dictation, Notes Journal, Contacts Capsule
 
 ### Dictation Fixes

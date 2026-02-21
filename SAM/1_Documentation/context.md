@@ -246,7 +246,8 @@ SAM/SAM/
 │   │   ├── NotesJournalView.swift      ✅ Scrollable inline journal with in-place editing
 │   │   └── NoteActionItemsView.swift   ✅ Review extracted action items
 │   ├── Shared/
-│   │   └── NotInContactsCapsule.swift  ✅ Reusable "Not in Contacts" badge + add-to-contacts action
+│   │   ├── NotInContactsCapsule.swift  ✅ Reusable "Not in Contacts" badge + add-to-contacts action
+│   │   └── RoleBadgeStyle.swift        ✅ Shared role→color/icon mapping + RoleBadgeIconView (compact list icon with popover tooltip)
 │   ├── Settings/
 │   │   ├── SettingsView.swift          ✅ Tabbed: Permissions, Contacts, Calendar, Mail, Intelligence, Evernote, General
 │   │   ├── MailSettingsView.swift      ✅ Mail.app accounts, Me-contact email filter toggles
@@ -297,7 +298,7 @@ final class SamPerson {
     
     // SAM-owned data
     var isMe: Bool                      // True if this is the user's own contact (Phase J)
-    var roleBadges: [String]            // "Client", "Referral Partner", etc.
+    var roleBadges: [String]            // Predefined: Client, Applicant, Lead, Vendor, Agent, External Agent (+ custom)
     var consentAlertsCount: Int
     var reviewAlertsCount: Int
     
@@ -514,7 +515,7 @@ NoteEntry value type + entry stream UI, DictationService (SFSpeechRecognizer), E
 
 Simplified note model (removed NoteEntry, one note = one text block + sourceType). Inline note capture (InlineNoteCaptureView) replaces sheet-based editor for new notes. NoteEditorView simplified to edit-only. AI dictation polish (polishDictation). Smart auto-linking to recent calendar events (findRecentMeeting). AI relationship summary on PersonDetailView (overview, key themes, next steps). Schema bumped to SAM_v8.
 
-**Post-release fixes (Feb 20):** Dictation fixed (missing audio-input entitlement, microphone permission flow, silence auto-stop, text accumulation across recognizer resets). NotesJournalView replaces tap-to-edit sheet with scrollable inline journal. NotInContactsCapsule shared view replaces static badges in PeopleListView and InboxDetailView. Stale contactIdentifier detection during sync. SAM-created contacts auto-added to SAM group.
+**Post-release fixes (Feb 20):** Dictation fixed (missing audio-input entitlement, microphone permission flow, silence auto-stop, text accumulation across recognizer resets). NotesJournalView replaces tap-to-edit sheet with scrollable inline journal. NotInContactsCapsule shared view replaces static badges in PeopleListView and InboxDetailView. Stale contactIdentifier detection during sync. SAM-created contacts auto-added to SAM group. Role badge system: predefined roles (Client, Applicant, Lead, Vendor, Agent, External Agent), color-coded compact icons in People list (RoleBadgeStyle/RoleBadgeIconView), editable capsules in PersonDetailView, notification-based list refresh. Me contact: distinct "Me" label in People list, non-editable badge in detail view, hidden from event/email participant displays.
 
 ---
 
@@ -1260,6 +1261,6 @@ When reporting bugs or architectural concerns:
 
 **Document Version**: 5.0 (Phases A–L complete)
 **Previous Versions**: See `changelog.md` for version history
-**Last Major Update**: February 20, 2026 — Phase L-2: Notes Redesign (simplified model, inline capture, AI relationship summaries)
+**Last Major Update**: February 20, 2026 — Role badges, Me contact visibility, Notes Redesign
 **Clean Rebuild Started**: February 9, 2026
 

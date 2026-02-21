@@ -70,6 +70,11 @@ struct PeopleListView: View {
                 await searchPeople()
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .samPersonDidChange)) { _ in
+            Task {
+                await searchText.isEmpty ? loadPeople() : searchPeople()
+            }
+        }
     }
     
     // MARK: - People List
@@ -207,31 +212,36 @@ private struct PersonRowView: View {
             
             // Name and email
             VStack(alignment: .leading, spacing: 2) {
-                Text(person.displayNameCache ?? person.displayName)
-                    .font(.body)
-                
+                HStack(spacing: 5) {
+                    Text(person.displayNameCache ?? person.displayName)
+                        .font(.body)
+
+                    if person.isMe {
+                        Text("Me")
+                            .font(.caption2)
+                            .fontWeight(.medium)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(.secondary)
+                            .clipShape(Capsule())
+                    }
+                }
+
                 if let email = person.emailCache ?? person.email {
                     Text(email)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
-            
+
             Spacer()
-            
+
             // Badges and alerts
             HStack(spacing: 8) {
-                // Role badges
-                if !person.roleBadges.isEmpty {
-                    ForEach(person.roleBadges, id: \.self) { badge in
-                        Text(badge)
-                            .font(.caption2)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(.blue.opacity(0.2))
-                            .foregroundStyle(.blue)
-                            .clipShape(Capsule())
-                    }
+                // Role badge icons (compact, color-coded)
+                ForEach(person.roleBadges, id: \.self) { badge in
+                    RoleBadgeIconView(badge: badge)
                 }
                 
                 // Not in Contacts badge (clickable — adds to Apple Contacts)
