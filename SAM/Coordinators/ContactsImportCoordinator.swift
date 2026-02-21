@@ -212,17 +212,27 @@ final class ContactsImportCoordinator {
             // Upsert into PeopleRepository
             let (created, updated) = try peopleRepo.bulkUpsert(contacts: contacts)
 
+            // Import the Me contact (even if not in the SAM group)
+            if let meContact = await contactsService.fetchMeContact(keys: .detail) {
+                try peopleRepo.upsertMe(contact: meContact)
+            }
+
+            // Detect and clear stale contactIdentifiers (deleted Apple Contacts)
+            let allPeopleWithContacts = try peopleRepo.fetchAll().compactMap { $0.contactIdentifier }
+            if !allPeopleWithContacts.isEmpty {
+                let validIDs = await contactsService.validateIdentifiers(allPeopleWithContacts)
+                let cleared = try peopleRepo.clearStaleContactIdentifiers(validIdentifiers: validIDs)
+                if cleared > 0 {
+                    logger.info("Cleared \(cleared) stale contact identifier(s)")
+                }
+            }
+
             // Update last run timestamp
             lastRunAt = Date().timeIntervalSince1970
 
             importStatus = .success
             lastImportedAt = Date()
             lastImportCount = created + updated
-
-            // Import the Me contact (even if not in the SAM group)
-            if let meContact = await contactsService.fetchMeContact(keys: .detail) {
-                try peopleRepo.upsertMe(contact: meContact)
-            }
 
             // After importing contacts, re-run participant resolution on existing evidence
             do {

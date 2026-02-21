@@ -4,6 +4,42 @@
 
 ---
 
+## February 20, 2026 - Bug Fixes: Dictation, Notes Journal, Contacts Capsule
+
+### Dictation Fixes
+- **Missing entitlement** — Added `com.apple.security.device.audio-input` to `SAM_crm.entitlements`; sandboxed app was receiving silent audio buffers without it
+- **Microphone permission flow** — `DictationService.startRecognition()` now `async`; checks `AVCaptureDevice.authorizationStatus(for: .audio)` and requests permission if `.notDetermined`, throws if denied
+- **`DictationService.requestAuthorization()`** — Now requests both speech recognition AND microphone permissions
+- **Silence auto-stop** — Detects consecutive silent audio buffers and calls `endAudio()` after configurable timeout (default 2s, stored in `UserDefaults` key `sam.dictation.silenceTimeout`)
+- **Buffer leak after auto-stop** — `didEndAudio` flag prevents continued buffer processing after `endAudio()` is called
+- **Text accumulation across pauses** — On-device recognizer resets transcription context after silence; `InlineNoteCaptureView` now tracks `accumulatedSegments` and detects resets (text length drops sharply), preserving all spoken text
+- **Buffer size** — Increased from 1024 to 4096 for more reliable speech detection
+- **Mono format conversion** — Auto-converts stereo input to mono for SFSpeechRecognizer compatibility
+- **Onboarding** — Added `microphonePermission` step to `OnboardingView` (after mail, before complete) requesting both speech recognition and microphone access
+
+### Notes Journal View
+- **NotesJournalView** (new) — Scrollable inline journal replacing tap-to-open-sheet pattern; all notes visible in one scrollable container with dividers, metadata headers, and inline editing
+- **PersonDetailView** — Replaced `NoteRowView` + `editingNote` sheet with `NotesJournalView`; removed `NoteEditorView` sheet binding
+- **ContextDetailView** — Same replacement: `NotesJournalView` replaces old note rows + sheet
+
+### "Not in Contacts" Capsule
+- **NotInContactsCapsule** (new shared view) — Orange capsule badge that acts as a button; tapping shows confirmation popover to create the person in Apple Contacts
+- **Two init modes**: `init(person:)` for SamPerson with nil contactIdentifier, `init(name:email:)` for unmatched event participants
+- **`ParticipantHint.Status`** — Added `matchedPerson: SamPerson?` so InboxDetailView can pass the matched person to the capsule
+- **InboxDetailView** — Replaced static "Not in Contacts" text with `NotInContactsCapsule`
+- **PeopleListView** — Replaced static orange `person.badge.plus` icon with `NotInContactsCapsule`
+
+### Stale Contact Identifier Detection
+- **`ContactsService.validateIdentifiers(_:)`** — Batch-checks which contact identifiers still exist in Apple Contacts
+- **`PeopleRepository.clearStaleContactIdentifiers(validIdentifiers:)`** — Clears `contactIdentifier` on SamPerson records whose Apple Contact was deleted
+- **`ContactsImportCoordinator.performImport()`** — Now runs stale identifier check after every contacts sync
+
+### SAM Group Auto-Assignment
+- **`ContactsService.addContactToSAMGroup(identifier:)`** — Automatically adds SAM-created contacts to the configured SAM group in Apple Contacts
+- **`ContactsService.createContact()`** — Now calls `addContactToSAMGroup()` after creation, ensuring contacts created via triage, NotInContactsCapsule, or PersonDetailView all land in the SAM group
+
+---
+
 ## February 20, 2026 - Phase L-2 Complete: Notes Redesign
 
 **What Changed** — Simplified note model, inline capture, AI dictation polish, smart auto-linking, AI relationship summaries:

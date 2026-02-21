@@ -243,7 +243,10 @@ SAM/SAM/
 │   ├── Notes/
 │   │   ├── NoteEditorView.swift        ✅ Edit-only note editor (Phase L-2)
 │   │   ├── InlineNoteCaptureView.swift ✅ Inline note capture with dictation (Phase L-2)
+│   │   ├── NotesJournalView.swift      ✅ Scrollable inline journal with in-place editing
 │   │   └── NoteActionItemsView.swift   ✅ Review extracted action items
+│   ├── Shared/
+│   │   └── NotInContactsCapsule.swift  ✅ Reusable "Not in Contacts" badge + add-to-contacts action
 │   ├── Settings/
 │   │   ├── SettingsView.swift          ✅ Tabbed: Permissions, Contacts, Calendar, Mail, Intelligence, Evernote, General
 │   │   ├── MailSettingsView.swift      ✅ Mail.app accounts, Me-contact email filter toggles
@@ -510,6 +513,8 @@ NoteEntry value type + entry stream UI, DictationService (SFSpeechRecognizer), E
 ### ✅ Phase L-2: Notes Redesign (COMPLETE — Feb 20, 2026)
 
 Simplified note model (removed NoteEntry, one note = one text block + sourceType). Inline note capture (InlineNoteCaptureView) replaces sheet-based editor for new notes. NoteEditorView simplified to edit-only. AI dictation polish (polishDictation). Smart auto-linking to recent calendar events (findRecentMeeting). AI relationship summary on PersonDetailView (overview, key themes, next steps). Schema bumped to SAM_v8.
+
+**Post-release fixes (Feb 20):** Dictation fixed (missing audio-input entitlement, microphone permission flow, silence auto-stop, text accumulation across recognizer resets). NotesJournalView replaces tap-to-edit sheet with scrollable inline journal. NotInContactsCapsule shared view replaces static badges in PeopleListView and InboxDetailView. Stale contactIdentifier detection during sync. SAM-created contacts auto-added to SAM group.
 
 ---
 

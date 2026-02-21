@@ -35,7 +35,6 @@ struct PersonDetailView: View {
     @State private var errorMessage = ""
     @State private var showingContextPicker = false
     @State private var personNotes: [SamNote] = []
-    @State private var editingNote: SamNote?
     
     // MARK: - Body
     
@@ -109,11 +108,6 @@ struct PersonDetailView: View {
         .task(id: person.id) {
             await loadFullContact()
             loadNotes()
-        }
-        .sheet(item: $editingNote) { note in
-            NoteEditorView(note: note) {
-                loadNotes()
-            }
         }
         .sheet(isPresented: $showingContextPicker) {
             ContextPickerSheet(person: person)
@@ -734,36 +728,11 @@ struct PersonDetailView: View {
             )
             .padding(.vertical, 4)
 
-            // Note list
-            if personNotes.isEmpty {
-                Text("No notes yet")
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-                    .padding(.vertical, 4)
-            } else {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(personNotes.prefix(5), id: \.id) { note in
-                        Button {
-                            editingNote = note
-                        } label: {
-                            NoteRowView(note: note)
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.vertical, 4)
-                    }
-
-                    if personNotes.count > 5 {
-                        Button(action: {
-                            // TODO: Show all notes view
-                        }) {
-                            Text("Show all \(personNotes.count) notes")
-                                .font(.caption)
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.vertical, 4)
-                    }
-                }
-            }
+            // Scrollable notes journal
+            NotesJournalView(
+                notes: personNotes,
+                onUpdated: { loadNotes() }
+            )
         }
     }
     
@@ -910,71 +879,6 @@ struct PersonDetailView: View {
             formatter.setLocalizedDateFormatFromTemplate("MMMM d, yyyy")
         }
         return formatter.string(from: date)
-    }
-}
-
-// MARK: - Note Row View (Phase L-2)
-
-private struct NoteRowView: View {
-    let note: SamNote
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Image(systemName: note.isAnalyzed ? "brain.head.profile" : "note.text")
-                    .foregroundStyle(note.isAnalyzed ? .purple : .secondary)
-                    .font(.caption)
-
-                Text(note.createdAt, style: .relative)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Spacer()
-
-                if !note.extractedActionItems.isEmpty {
-                    let pendingCount = note.extractedActionItems.filter { $0.status == .pending }.count
-                    if pendingCount > 0 {
-                        Text("\(pendingCount)")
-                            .font(.caption2)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(.orange.opacity(0.2))
-                            .foregroundStyle(.orange)
-                            .clipShape(Capsule())
-                    }
-                }
-            }
-
-            if let summary = note.summary {
-                Text(summary)
-                    .font(.body)
-                    .lineLimit(2)
-            } else {
-                Text(note.content)
-                    .font(.body)
-                    .lineLimit(2)
-                    .foregroundStyle(.secondary)
-            }
-
-            if !note.extractedTopics.isEmpty {
-                HStack(spacing: 4) {
-                    ForEach(note.extractedTopics.prefix(3), id: \.self) { topic in
-                        Text(topic)
-                            .font(.caption2)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(.blue.opacity(0.1))
-                            .foregroundStyle(.blue)
-                            .clipShape(Capsule())
-                    }
-                    if note.extractedTopics.count > 3 {
-                        Text("+\(note.extractedTopics.count - 3)")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-        }
     }
 }
 

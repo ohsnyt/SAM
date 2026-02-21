@@ -361,6 +361,29 @@ actor ContactsService {
         }
     }
     
+    /// Validate a batch of contact identifiers, returning the set that still exist in Apple Contacts.
+    /// More efficient than calling isValidContact() one at a time.
+    func validateIdentifiers(_ identifiers: [String]) async -> Set<String> {
+        guard authorizationStatus() == .authorized else {
+            logger.warning("Attempted to validate contacts without authorization")
+            return []
+        }
+
+        var validSet = Set<String>()
+        let keys: [CNKeyDescriptor] = [CNContactIdentifierKey as CNKeyDescriptor]
+
+        for identifier in identifiers {
+            do {
+                _ = try store.unifiedContact(withIdentifier: identifier, keysToFetch: keys)
+                validSet.insert(identifier)
+            } catch {
+                // Contact no longer exists
+            }
+        }
+
+        return validSet
+    }
+
     /// Check if a contact is in a specific group
     func isContactInGroup(identifier: String, groupName: String) async -> Bool {
         guard authorizationStatus() == .authorized else {
@@ -450,6 +473,9 @@ actor ContactsService {
 
             logger.info("Created contact: \(fullName, privacy: .public)")
 
+            // Auto-add to SAM group if configured
+            addContactToSAMGroup(identifier: mutable.identifier)
+
             // Fetch detail keys so the DTO includes email addresses for matching
             let keys = ContactDTO.KeySet.detail.keys
             let created = try store.unifiedContact(withIdentifier: mutable.identifier, keysToFetch: keys)
@@ -458,6 +484,40 @@ actor ContactsService {
         } catch {
             logger.error("Failed to create contact: \(error.localizedDescription, privacy: .public)")
             return nil
+        }
+    }
+
+    /// Add a contact to the configured SAM group in Apple Contacts.
+    /// Called automatically when SAM creates a contact so it appears in future imports.
+    private func addContactToSAMGroup(identifier: String) {
+        let groupID = UserDefaults.standard.string(forKey: "selectedContactGroupIdentifier") ?? ""
+        guard !groupID.isEmpty else {
+            logger.debug("No SAM group configured, skipping group assignment")
+            return
+        }
+
+        do {
+            // Fetch the group
+            let groups = try store.groups(matching: nil)
+            guard let samGroup = groups.first(where: { $0.identifier == groupID }) else {
+                logger.warning("SAM group not found for identifier: \(groupID, privacy: .public)")
+                return
+            }
+
+            // Fetch the contact
+            let contact = try store.unifiedContact(
+                withIdentifier: identifier,
+                keysToFetch: [CNContactIdentifierKey as CNKeyDescriptor]
+            )
+
+            // Add to group
+            let saveRequest = CNSaveRequest()
+            saveRequest.addMember(contact, to: samGroup)
+            try store.execute(saveRequest)
+
+            logger.info("Added contact \(identifier, privacy: .public) to SAM group")
+        } catch {
+            logger.warning("Failed to add contact to SAM group: \(error.localizedDescription)")
         }
     }
 }

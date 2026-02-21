@@ -234,12 +234,8 @@ private struct PersonRowView: View {
                     }
                 }
                 
-                // Unlinked badge (no Apple Contact linked)
-                if person.contactIdentifier == nil {
-                    Image(systemName: "person.badge.plus")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                }
+                // Not in Contacts badge (clickable — adds to Apple Contacts)
+                NotInContactsCapsule(person: person)
 
                 // Consent alerts
                 if person.consentAlertsCount > 0 {

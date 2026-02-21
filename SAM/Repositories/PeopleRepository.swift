@@ -317,6 +317,38 @@ final class PeopleRepository {
         logger.info("Upserted Me contact: \(person.displayNameCache ?? person.displayName, privacy: .public)")
     }
 
+    /// Clear stale contactIdentifiers for people whose Apple Contact no longer exists.
+    /// Called during contacts sync to detect deleted contacts.
+    /// Returns the number of identifiers cleared.
+    @discardableResult
+    func clearStaleContactIdentifiers(validIdentifiers: Set<String>) throws -> Int {
+        guard let modelContext = modelContext else {
+            throw RepositoryError.notConfigured
+        }
+
+        let descriptor = FetchDescriptor<SamPerson>(
+            predicate: #Predicate { $0.contactIdentifier != nil }
+        )
+        let peopleWithContacts = try modelContext.fetch(descriptor)
+
+        var clearedCount = 0
+        for person in peopleWithContacts {
+            guard let identifier = person.contactIdentifier else { continue }
+            if !validIdentifiers.contains(identifier) {
+                person.contactIdentifier = nil
+                person.isArchived = false  // Not archived, just unlinked
+                clearedCount += 1
+                logger.info("Cleared stale contactIdentifier for \(person.displayNameCache ?? person.displayName, privacy: .public)")
+            }
+        }
+
+        if clearedCount > 0 {
+            try modelContext.save()
+        }
+
+        return clearedCount
+    }
+
     /// Collect all known email addresses across all SamPerson records.
     /// Returns a Set of lowercased, trimmed emails for fast O(1) lookup.
     func allKnownEmails() throws -> Set<String> {

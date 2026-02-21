@@ -203,14 +203,13 @@ struct InboxDetailView: View {
                                         .clipShape(Capsule())
                                 }
 
-                                if !status.hasAppleContact {
-                                    Text("Not in Contacts")
-                                        .font(.caption2)
-                                        .padding(.horizontal, 6)
-                                        .padding(.vertical, 2)
-                                        .background(.orange.opacity(0.2))
-                                        .foregroundStyle(.orange)
-                                        .clipShape(Capsule())
+                                if let matched = status.matchedPerson {
+                                    NotInContactsCapsule(person: matched)
+                                } else if !status.isKnown {
+                                    NotInContactsCapsule(
+                                        name: participant.displayName,
+                                        email: participant.rawEmail
+                                    )
                                 }
                             }
 

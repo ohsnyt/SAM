@@ -127,13 +127,14 @@ public struct ParticipantHint: Codable, Sendable {
     public struct Status {
         public let isKnown: Bool
         public let hasAppleContact: Bool
+        public let matchedPerson: SamPerson?
     }
 
     /// Compute participant status against a given set of people.
     public func status(against people: [SamPerson]) -> Status {
         guard let raw = rawEmail?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
               !raw.isEmpty else {
-            return Status(isKnown: false, hasAppleContact: false)
+            return Status(isKnown: false, hasAppleContact: false, matchedPerson: nil)
         }
 
         let matched = people.first { person in
@@ -145,9 +146,9 @@ public struct ParticipantHint: Codable, Sendable {
         }
 
         if let matched {
-            return Status(isKnown: true, hasAppleContact: matched.contactIdentifier != nil)
+            return Status(isKnown: true, hasAppleContact: matched.contactIdentifier != nil, matchedPerson: matched)
         }
-        return Status(isKnown: false, hasAppleContact: false)
+        return Status(isKnown: false, hasAppleContact: false, matchedPerson: nil)
     }
 }
 

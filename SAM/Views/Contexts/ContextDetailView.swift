@@ -20,7 +20,6 @@ struct ContextDetailView: View {
     @State private var showingDeleteConfirmation = false
     @State private var repository = NotesRepository.shared
     @State private var contextNotes: [SamNote] = []
-    @State private var editingNote: SamNote?
     
     var body: some View {
         ScrollView {
@@ -91,11 +90,6 @@ struct ContextDetailView: View {
         }
         .sheet(isPresented: $showingAddParticipantSheet) {
             AddParticipantSheet(context: context, isPresented: $showingAddParticipantSheet)
-        }
-        .sheet(item: $editingNote) { note in
-            NoteEditorView(note: note) {
-                loadNotes()
-            }
         }
         .confirmationDialog(
             "Delete \(context.name)?",
@@ -239,32 +233,11 @@ struct ContextDetailView: View {
                 onSaved: { loadNotes() }
             )
 
-            if contextNotes.isEmpty {
-                Text("No notes yet")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else {
-                VStack(alignment: .leading, spacing: 12) {
-                    ForEach(contextNotes.prefix(5), id: \.id) { note in
-                        Button {
-                            editingNote = note
-                        } label: {
-                            NoteRowView(note: note)
-                        }
-                        .buttonStyle(.plain)
-                    }
-
-                    if contextNotes.count > 5 {
-                        Button(action: {
-                            // TODO: Show all notes view
-                        }) {
-                            Text("Show all \(contextNotes.count) notes")
-                                .font(.caption)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
+            // Scrollable notes journal
+            NotesJournalView(
+                notes: contextNotes,
+                onUpdated: { loadNotes() }
+            )
         }
     }
     
@@ -308,75 +281,6 @@ struct ContextDetailView: View {
                 // Notes loading failure is non-critical
             }
         }
-    }
-}
-
-// MARK: - Note Row View (Phase L-2)
-
-private struct NoteRowView: View {
-    let note: SamNote
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Image(systemName: note.isAnalyzed ? "brain.head.profile" : "note.text")
-                    .foregroundStyle(note.isAnalyzed ? .purple : .secondary)
-                    .font(.caption)
-
-                Text(note.createdAt, style: .relative)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Spacer()
-
-                if !note.extractedActionItems.isEmpty {
-                    let pendingCount = note.extractedActionItems.filter { $0.status == .pending }.count
-                    if pendingCount > 0 {
-                        Text("\(pendingCount)")
-                            .font(.caption2)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(.orange.opacity(0.2))
-                            .foregroundStyle(.orange)
-                            .clipShape(Capsule())
-                    }
-                }
-            }
-
-            if let summary = note.summary {
-                Text(summary)
-                    .font(.body)
-                    .lineLimit(2)
-            } else {
-                Text(note.content)
-                    .font(.body)
-                    .lineLimit(2)
-                    .foregroundStyle(.secondary)
-            }
-
-            if !note.extractedTopics.isEmpty {
-                HStack(spacing: 4) {
-                    ForEach(note.extractedTopics.prefix(3), id: \.self) { topic in
-                        Text(topic)
-                            .font(.caption2)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(.blue.opacity(0.1))
-                            .foregroundStyle(.blue)
-                            .clipShape(Capsule())
-                    }
-                    if note.extractedTopics.count > 3 {
-                        Text("+\(note.extractedTopics.count - 3)")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-        }
-        .padding(.vertical, 4)
-        .padding(.horizontal, 8)
-        .background(Color(nsColor: .controlBackgroundColor))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 }
 
