@@ -421,6 +421,52 @@ public struct NoteActionItem: Codable, Sendable, Identifiable {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// MARK: - Discovered Relationships (Phase: Role-Aware AI)
+// ─────────────────────────────────────────────────────────────────────
+
+/// A relationship between two people discovered by LLM analysis of a note.
+/// Stored on SamNote for later review.
+public struct DiscoveredRelationship: Codable, Sendable, Identifiable {
+    public var id: UUID
+    public var personName: String
+    public var relationshipType: RelationshipType
+    public var relatedTo: String
+    public var confidence: Double
+    public var status: ReviewStatus
+
+    public init(
+        id: UUID = UUID(),
+        personName: String,
+        relationshipType: RelationshipType,
+        relatedTo: String,
+        confidence: Double,
+        status: ReviewStatus = .pending
+    ) {
+        self.id = id
+        self.personName = personName
+        self.relationshipType = relationshipType
+        self.relatedTo = relatedTo
+        self.confidence = confidence
+        self.status = status
+    }
+
+    public enum RelationshipType: String, Codable, Sendable {
+        case spouseOf = "spouse_of"
+        case parentOf = "parent_of"
+        case childOf = "child_of"
+        case referralBy = "referral_by"
+        case referredTo = "referred_to"
+        case businessPartner = "business_partner"
+    }
+
+    public enum ReviewStatus: String, Codable, Sendable {
+        case pending
+        case accepted
+        case dismissed
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // MARK: - Protocols
 // ─────────────────────────────────────────────────────────────────────
 

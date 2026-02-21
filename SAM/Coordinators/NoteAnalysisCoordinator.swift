@@ -67,10 +67,13 @@ final class NoteAnalysisCoordinator {
         lastError = nil
 
         do {
-            // Step 1: Call LLM service
-            let analysis = try await analysisService.analyzeNote(content: note.content)
+            // Step 1: Build role context from linked people
+            let roleContext = buildRoleContext(for: note)
 
-            // Step 2: Convert DTO to model types
+            // Step 2: Call LLM service with role context
+            let analysis = try await analysisService.analyzeNote(content: note.content, roleContext: roleContext)
+
+            // Step 3: Convert DTO to model types
             let mentions = analysis.people.map { dto in
                 ExtractedPersonMention(
                     name: dto.name,
@@ -101,24 +104,34 @@ final class NoteAnalysisCoordinator {
                 )
             }
 
-            // Step 3: Auto-match extracted people to existing SamPerson records
+            let discoveredRelationships = analysis.discoveredRelationships.map { dto in
+                DiscoveredRelationship(
+                    personName: dto.personName,
+                    relationshipType: DiscoveredRelationship.RelationshipType(rawValue: dto.relationshipType) ?? .businessPartner,
+                    relatedTo: dto.relatedTo,
+                    confidence: dto.confidence
+                )
+            }
+
+            // Step 4: Auto-match extracted people to existing SamPerson records
             let matchedMentions = try autoMatchPeople(mentions)
             let matchedActions = try autoMatchActions(actionItems)
 
-            // Step 4: Store analysis results
+            // Step 5: Store analysis results
             try notesRepository.storeAnalysis(
                 note: note,
                 summary: analysis.summary,
                 extractedMentions: matchedMentions,
                 extractedActionItems: matchedActions,
                 extractedTopics: analysis.topics,
+                discoveredRelationships: discoveredRelationships,
                 analysisVersion: analysis.analysisVersion
             )
 
-            // Step 5: Create evidence item from note
+            // Step 7: Create evidence item from note
             try createEvidenceFromNote(note)
 
-            // Step 6: Refresh relationship summaries for linked people
+            // Step 8: Refresh relationship summaries for linked people
             for person in note.linkedPeople {
                 await refreshRelationshipSummary(for: person)
             }
@@ -203,6 +216,7 @@ final class NoteAnalysisCoordinator {
 
             let summary = try await analysisService.generateRelationshipSummary(
                 personName: displayName,
+                role: person.roleBadges.first,
                 notes: noteContents,
                 recentTopics: Array(recentTopics),
                 pendingActions: Array(pendingActions),
@@ -219,6 +233,30 @@ final class NoteAnalysisCoordinator {
         } catch {
             logger.debug("Relationship summary skipped for \(displayName, privacy: .public): \(error.localizedDescription)")
         }
+    }
+
+    // MARK: - Role Context
+
+    /// Build role context from linked people on a note for LLM prompt injection.
+    private func buildRoleContext(for note: SamNote) -> NoteAnalysisService.RoleContext? {
+        let people = note.linkedPeople.filter { !$0.isMe }
+        guard let primary = people.first else { return nil }
+
+        let primaryName = primary.displayNameCache ?? primary.displayName
+        let primaryRole = primary.roleBadges.first ?? "Contact"
+
+        let others = people.dropFirst().map { person in
+            (
+                name: person.displayNameCache ?? person.displayName,
+                role: person.roleBadges.first ?? "Contact"
+            )
+        }
+
+        return NoteAnalysisService.RoleContext(
+            primaryPersonName: primaryName,
+            primaryRole: primaryRole,
+            otherLinkedPeople: others
+        )
     }
 
     // MARK: - Auto-Matching

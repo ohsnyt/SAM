@@ -4,7 +4,7 @@
 **Language**: Swift 6  
 **Architecture**: Clean layered architecture with strict separation of concerns  
 **Framework**: SwiftUI + SwiftData  
-**Last Updated**: February 20, 2026 (Phases A–L-2 complete)
+**Last Updated**: February 20, 2026 (Phases A–L-2 + Role-Aware AI complete)
 
 **Related Docs**: 
 - See `agent.md` for product philosophy and UX principles
@@ -1153,12 +1153,12 @@ struct PeopleRepositoryTests {
 **Models** (SwiftData @Model):
 - `SAMModels.swift`: Core models — SamPerson, SamContext, SamEvidenceItem, SamInsight, ContextParticipation, etc.
 - `SAMModels-Notes.swift`: SamNote, SamAnalysisArtifact
-- `SAMModels-Supporting.swift`: Value types — ParticipantHint, EvidenceSignal, ExtractedPersonMention, NoteActionItem, enums
+- `SAMModels-Supporting.swift`: Value types — ParticipantHint, EvidenceSignal, ExtractedPersonMention, NoteActionItem, DiscoveredRelationship, enums
 
 **Services** (Actor-isolated, returns DTOs):
 - `ContactsService.swift`: All CNContact operations
 - `CalendarService.swift`: All EKEvent operations
-- `NoteAnalysisService.swift`: On-device LLM analysis via Apple Foundation Models
+- `NoteAnalysisService.swift`: On-device LLM analysis via Apple Foundation Models (role-aware prompts, discovered relationships)
 
 **Repositories** (@MainActor, SwiftData CRUD):
 - `PeopleRepository.swift`: SamPerson operations (upsert, bulk, email cache)
@@ -1170,12 +1170,12 @@ struct PeopleRepositoryTests {
 - `ContactsImportCoordinator.swift`: Contact import with debouncing/throttling
 - `CalendarImportCoordinator.swift`: Calendar import (standard API pattern)
 - `NoteAnalysisCoordinator.swift`: Save → analyze → store pipeline
-- `InsightGenerator.swift`: Multi-source insight generation (notes, relationships, calendar)
+- `InsightGenerator.swift`: Multi-source insight generation (notes, relationships, calendar, discovered relationships) with role-weighted thresholds
 
 **DTOs** (Sendable):
 - `ContactDTO.swift`: CNContact wrapper with nested types (PhoneNumberDTO, etc.)
 - `EventDTO.swift`: EKEvent wrapper with AttendeeDTO
-- `NoteAnalysisDTO.swift`: LLM analysis results (PersonMentionDTO, ActionItemDTO)
+- `NoteAnalysisDTO.swift`: LLM analysis results (PersonMentionDTO, ActionItemDTO, DiscoveredRelationshipDTO)
 
 ---
 
@@ -1259,8 +1259,8 @@ When reporting bugs or architectural concerns:
 
 ---
 
-**Document Version**: 5.0 (Phases A–L complete)
+**Document Version**: 5.1 (Phases A–L + Role-Aware AI complete)
 **Previous Versions**: See `changelog.md` for version history
-**Last Major Update**: February 20, 2026 — Role badges, Me contact visibility, Notes Redesign
+**Last Major Update**: February 20, 2026 — Role-Aware AI Analysis Pipeline
 **Clean Rebuild Started**: February 9, 2026
 

@@ -31,15 +31,17 @@ struct RelationshipHealth: Sendable {
     let interactionCount30: Int
     let interactionCount90: Int
     let trend: ContactTrend
+    let role: String?
 
-    /// Color based on days since last interaction.
+    /// Color based on days since last interaction, adjusted by role.
     var statusColor: Color {
         guard let days = daysSinceLastInteraction else { return .gray }
+        let thresholds = Self.colorThresholds(for: role)
         switch days {
-        case 0...14: return .green
-        case 15...30: return .yellow
-        case 31...60: return .orange
-        default: return .red
+        case 0...thresholds.green:  return .green
+        case 0...thresholds.yellow: return .yellow
+        case 0...thresholds.orange: return .orange
+        default:                    return .red
         }
     }
 
@@ -48,6 +50,26 @@ struct RelationshipHealth: Sendable {
         if days == 0 { return "Today" }
         if days == 1 { return "Yesterday" }
         return "\(days) days ago"
+    }
+
+    /// Per-role color breakpoints (upper bound of each range, inclusive).
+    private struct ColorThresholds {
+        let green: Int
+        let yellow: Int
+        let orange: Int
+    }
+
+    private static func colorThresholds(for role: String?) -> ColorThresholds {
+        switch role?.lowercased() {
+        case "client", "applicant":
+            return ColorThresholds(green: 7, yellow: 21, orange: 45)
+        case "agent":
+            return ColorThresholds(green: 7, yellow: 14, orange: 30)
+        case "vendor":
+            return ColorThresholds(green: 30, yellow: 60, orange: 90)
+        default:
+            return ColorThresholds(green: 14, yellow: 30, orange: 60)
+        }
     }
 }
 
@@ -146,7 +168,7 @@ final class MeetingPrepCoordinator {
         do {
             allEvidence = try evidenceRepository.fetchAll()
         } catch {
-            return RelationshipHealth(daysSinceLastInteraction: nil, interactionCount30: 0, interactionCount90: 0, trend: .noData)
+            return RelationshipHealth(daysSinceLastInteraction: nil, interactionCount30: 0, interactionCount90: 0, trend: .noData, role: person.roleBadges.first)
         }
 
         let personID = person.id
@@ -179,7 +201,8 @@ final class MeetingPrepCoordinator {
             daysSinceLastInteraction: daysSince,
             interactionCount30: count30,
             interactionCount90: count90,
-            trend: trend
+            trend: trend,
+            role: person.roleBadges.first
         )
     }
 

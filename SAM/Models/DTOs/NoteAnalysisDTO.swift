@@ -25,18 +25,22 @@ public struct NoteAnalysisDTO: Sendable {
     
     /// Actionable items extracted
     public let actionItems: [ActionItemDTO]
-    
+
+    /// Relationships discovered between people mentioned in the note
+    public let discoveredRelationships: [DiscoveredRelationshipDTO]
+
     /// Timestamp of analysis
     public let analyzedAt: Date
-    
+
     /// Analysis version (prompt version)
     public let analysisVersion: Int
-    
+
     public init(
         summary: String?,
         people: [PersonMentionDTO],
         topics: [String],
         actionItems: [ActionItemDTO],
+        discoveredRelationships: [DiscoveredRelationshipDTO] = [],
         analyzedAt: Date = .now,
         analysisVersion: Int
     ) {
@@ -44,6 +48,7 @@ public struct NoteAnalysisDTO: Sendable {
         self.people = people
         self.topics = topics
         self.actionItems = actionItems
+        self.discoveredRelationships = discoveredRelationships
         self.analyzedAt = analyzedAt
         self.analysisVersion = analysisVersion
     }
@@ -84,6 +89,29 @@ public struct ContactUpdateDTO: Sendable {
     public init(field: String, value: String, confidence: Double) {
         self.field = field
         self.value = value
+        self.confidence = confidence
+    }
+}
+
+/// Sendable representation of a discovered relationship between people
+public struct DiscoveredRelationshipDTO: Sendable, Identifiable {
+    public let id: UUID
+    public let personName: String
+    public let relationshipType: String  // "spouse_of", "parent_of", etc.
+    public let relatedTo: String
+    public let confidence: Double
+
+    public init(
+        id: UUID = UUID(),
+        personName: String,
+        relationshipType: String,
+        relatedTo: String,
+        confidence: Double
+    ) {
+        self.id = id
+        self.personName = personName
+        self.relationshipType = relationshipType
+        self.relatedTo = relatedTo
         self.confidence = confidence
     }
 }

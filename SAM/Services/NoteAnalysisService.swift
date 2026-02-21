@@ -26,7 +26,7 @@ actor NoteAnalysisService {
     // MARK: - Configuration
     
     /// Current prompt version for analysis (bump to trigger re-analysis of all notes)
-    static let currentAnalysisVersion = 1
+    static let currentAnalysisVersion = 2
     
     private let model = SystemLanguageModel.default
     
@@ -48,11 +48,20 @@ actor NoteAnalysisService {
         }
     }
     
+    // MARK: - Role Context
+
+    /// Context about the primary person and their role, injected into the LLM prompt.
+    struct RoleContext: Sendable {
+        let primaryPersonName: String
+        let primaryRole: String          // "Client", "Agent", etc.
+        let otherLinkedPeople: [(name: String, role: String)]
+    }
+
     // MARK: - Analysis
-    
+
     /// Analyze a note and extract structured data
     /// Returns NoteAnalysisDTO with people, topics, action items, and summary
-    func analyzeNote(content: String) async throws -> NoteAnalysisDTO {
+    func analyzeNote(content: String, roleContext: RoleContext? = nil) async throws -> NoteAnalysisDTO {
         // Check availability first
         guard case .available = checkAvailability() else {
             throw AnalysisError.modelUnavailable
@@ -64,8 +73,8 @@ actor NoteAnalysisService {
         // Create session with instructions
         let session = LanguageModelSession(instructions: instructions)
         
-        // Build prompt with note content
-        let prompt = buildPrompt(content: content)
+        // Build prompt with note content and optional role context
+        let prompt = buildPrompt(content: content, roleContext: roleContext)
         
         // Generate response (structured JSON)
         let response = try await session.respond(to: prompt)
@@ -104,6 +113,7 @@ actor NoteAnalysisService {
     /// Generate a relationship summary for a person based on their notes and interactions.
     func generateRelationshipSummary(
         personName: String,
+        role: String? = nil,
         notes: [String],
         recentTopics: [String],
         pendingActions: [String],
@@ -113,9 +123,13 @@ actor NoteAnalysisService {
             throw AnalysisError.modelUnavailable
         }
 
+        let roleTailoring = role != nil
+            ? " Tailor the summary to the person's role (e.g. coverage gaps for Clients, training progress for Agents, service quality for Vendors)."
+            : ""
+
         let instructions = """
             You are a relationship intelligence assistant for an independent financial strategist. \
-            Generate a concise relationship summary focused on what matters for the next interaction.
+            Generate a concise relationship summary focused on what matters for the next interaction.\(roleTailoring)
 
             CRITICAL: You MUST respond with ONLY valid JSON.
             - Do NOT wrap the JSON in markdown code blocks
@@ -135,8 +149,9 @@ actor NoteAnalysisService {
             - If there's little data, keep the summary brief rather than speculating
             """
 
+        let roleLabel = role.map { " Role: \($0)." } ?? ""
         let prompt = """
-            Generate a relationship summary for \(personName).
+            Generate a relationship summary for \(personName).\(roleLabel)
 
             Recent notes:
             \(notes.prefix(10).joined(separator: "\n---\n"))
@@ -202,7 +217,7 @@ actor NoteAnalysisService {
           "people": [
             {
               "name": "Full Name",
-              "role": "client | spouse | child | parent | sibling | referral_source | colleague | prospect | other",
+              "role": "client | applicant | lead | vendor | agent | external_agent | spouse | child | parent | sibling | referral_source | prospect | other",
               "relationship_to": "spouse of John Smith (or null)",
               "contact_updates": [
                 { "field": "birthday | anniversary | spouse | child | parent | sibling | company | jobTitle | phone | email | address | nickname", "value": "...", "confidence": 0.0–1.0 }
@@ -222,6 +237,15 @@ actor NoteAnalysisService {
               "person_name": "Who it relates to (or null)",
               "urgency": "immediate | soon | standard | low"
             }
+          ],
+
+          "discovered_relationships": [
+            {
+              "person_name": "Jane Smith",
+              "relationship_type": "spouse_of | parent_of | child_of | referral_by | referred_to | business_partner",
+              "related_to": "John Smith",
+              "confidence": 0.0–1.0
+            }
           ]
         }
 
@@ -229,15 +253,25 @@ actor NoteAnalysisService {
         - Only extract information explicitly stated or strongly implied
         - For contact_updates, only include fields that are clearly new information
         - For send_congratulations/send_reminder, draft a warm, professional message
+        - For discovered_relationships, flag spousal, familial, referral, or business connections mentioned in the note
         - Confidence reflects how certain you are (0.5 = implied, 0.9 = explicit)
         - If the note is too short or ambiguous, return empty arrays — do not hallucinate
         - The response MUST be raw JSON with no markdown formatting
         """
     
-    private func buildPrompt(content: String) -> String {
-        """
-        Analyze this note and extract structured data:
-        
+    private func buildPrompt(content: String, roleContext: RoleContext? = nil) -> String {
+        var contextLine = ""
+        if let rc = roleContext {
+            contextLine = "Context: This note is about \(rc.primaryPersonName), who is a \(rc.primaryRole)."
+            if !rc.otherLinkedPeople.isEmpty {
+                let others = rc.otherLinkedPeople.map { "\($0.name) (\($0.role))" }.joined(separator: ", ")
+                contextLine += " Also involved: \(others)."
+            }
+            contextLine += "\n\n"
+        }
+        return """
+        \(contextLine)Analyze this note and extract structured data:
+
         \(content)
         """
     }
@@ -304,6 +338,14 @@ actor NoteAnalysisService {
                         personName: action.person_name
                     )
                 },
+                discoveredRelationships: (llmResponse.discovered_relationships ?? []).map { rel in
+                    DiscoveredRelationshipDTO(
+                        personName: rel.person_name,
+                        relationshipType: rel.relationship_type,
+                        relatedTo: rel.related_to,
+                        confidence: rel.confidence
+                    )
+                },
                 analysisVersion: Self.currentAnalysisVersion
             )
         } catch {
@@ -320,6 +362,14 @@ private struct LLMResponse: Codable {
     let people: [LLMPerson]
     let topics: [String]
     let action_items: [LLMActionItem]
+    let discovered_relationships: [LLMDiscoveredRelationship]?
+}
+
+private struct LLMDiscoveredRelationship: Codable {
+    let person_name: String
+    let relationship_type: String
+    let related_to: String
+    let confidence: Double
 }
 
 private struct LLMPerson: Codable {

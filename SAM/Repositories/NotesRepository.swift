@@ -148,6 +148,7 @@ final class NotesRepository {
         extractedMentions: [ExtractedPersonMention],
         extractedActionItems: [NoteActionItem],
         extractedTopics: [String],
+        discoveredRelationships: [DiscoveredRelationship] = [],
         analysisVersion: Int
     ) throws {
         guard let modelContext = modelContext else {
@@ -158,6 +159,7 @@ final class NotesRepository {
         note.extractedMentions = extractedMentions
         note.extractedActionItems = extractedActionItems
         note.extractedTopics = extractedTopics
+        note.discoveredRelationships = discoveredRelationships
         note.isAnalyzed = true
         note.analysisVersion = analysisVersion
         note.updatedAt = .now

@@ -89,6 +89,9 @@ public final class SamNote {
     /// Topics identified by LLM (strings like "life insurance", "retirement planning")
     public var extractedTopics: [String] = []
 
+    /// Relationships between people discovered by LLM (e.g., spousal, referral)
+    public var discoveredRelationships: [DiscoveredRelationship] = []
+
     // ── Legacy analysis artifact (Phase 5) ─────────────────────────
     /// @deprecated Will migrate to extractedMentions/extractedActionItems above
     @Relationship(deleteRule: .cascade)

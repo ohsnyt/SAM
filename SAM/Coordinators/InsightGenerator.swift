@@ -104,26 +104,30 @@ final class InsightGenerator {
             let relationshipInsights = try await generateRelationshipInsights()
             generatedInsights.append(contentsOf: relationshipInsights)
 
-            // 3. Generate insights from upcoming events
+            // 3. Generate insights from discovered relationships
+            let discoveredInsights = try await generateDiscoveredRelationshipInsights()
+            generatedInsights.append(contentsOf: discoveredInsights)
+
+            // 4. Generate insights from upcoming events
             let calendarInsights = try await generateCalendarInsights()
             generatedInsights.append(contentsOf: calendarInsights)
 
-            // 4. Generate insights from email signals
+            // 5. Generate insights from email signals
             let emailInsights = try await generateInsightsFromEmails()
             generatedInsights.append(contentsOf: emailInsights)
 
-            // 5. Deduplicate and prioritize
+            // 6. Deduplicate and prioritize
             let deduplicatedInsights = deduplicateInsights(generatedInsights)
 
-            // 6. Persist to SwiftData
+            // 7. Persist to SwiftData
             persistInsights(deduplicatedInsights)
 
-            // 7. Update status
+            // 8. Update status
             lastInsightCount = deduplicatedInsights.count
             lastGeneratedAt = .now
             generationStatus = .success
 
-            logger.info("Generated \(deduplicatedInsights.count) insights (notes: \(noteInsights.count), relationships: \(relationshipInsights.count), calendar: \(calendarInsights.count), email: \(emailInsights.count))")
+            logger.info("Generated \(deduplicatedInsights.count) insights (notes: \(noteInsights.count), relationships: \(relationshipInsights.count), discovered: \(discoveredInsights.count), calendar: \(calendarInsights.count), email: \(emailInsights.count))")
 
             return deduplicatedInsights
 
@@ -141,6 +145,26 @@ final class InsightGenerator {
 
         Task {
             await generateInsights()
+        }
+    }
+
+    // MARK: - Role Thresholds
+
+    /// Per-role configuration for no-contact insight generation.
+    private struct RoleThresholds {
+        let noContactDays: Int
+        let urgencyBoost: Bool  // medium → high
+
+        static func forRole(_ role: String?) -> RoleThresholds {
+            switch role?.lowercased() {
+            case "client":         return RoleThresholds(noContactDays: 45, urgencyBoost: true)
+            case "applicant":      return RoleThresholds(noContactDays: 14, urgencyBoost: true)
+            case "lead":           return RoleThresholds(noContactDays: 30, urgencyBoost: false)
+            case "agent":          return RoleThresholds(noContactDays: 21, urgencyBoost: true)
+            case "external agent": return RoleThresholds(noContactDays: 60, urgencyBoost: false)
+            case "vendor":         return RoleThresholds(noContactDays: 90, urgencyBoost: false)
+            default:               return RoleThresholds(noContactDays: 60, urgencyBoost: false)
+            }
         }
     }
 
@@ -173,23 +197,30 @@ final class InsightGenerator {
         return insights
     }
 
-    /// Generate insights from relationship patterns (no recent contact)
+    /// Generate insights from relationship patterns (no recent contact).
+    /// Uses per-role thresholds (e.g. 14 days for Applicants, 90 for Vendors).
     private func generateRelationshipInsights() async throws -> [GeneratedInsight] {
         var insights: [GeneratedInsight] = []
 
-        // Get threshold from settings (default 60 days)
-        let threshold = daysSinceContactThreshold > 0 ? daysSinceContactThreshold : 60
-        let cutoffDate = Calendar.current.date(byAdding: .day, value: -threshold, to: .now)!
-
-        // Fetch all people
+        // Fetch all people and evidence
         let allPeople = try peopleRepository.fetchAll()
-
-        // Fetch all evidence to check for recent contact
         let allEvidence = try evidenceRepository.fetchAll()
 
         for person in allPeople {
-            // Skip archived people
-            guard !person.isArchived else { continue }
+            guard !person.isArchived, !person.isMe else { continue }
+
+            let role = person.roleBadges.first
+            let thresholds = RoleThresholds.forRole(role)
+
+            // User override for global threshold (only applies when > 0 and no role-specific override)
+            let effectiveDays: Int
+            if role == nil, daysSinceContactThreshold > 0 {
+                effectiveDays = daysSinceContactThreshold
+            } else {
+                effectiveDays = thresholds.noContactDays
+            }
+
+            let cutoffDate = Calendar.current.date(byAdding: .day, value: -effectiveDays, to: .now)!
 
             // Find most recent evidence for this person
             let personEvidence = allEvidence.filter { evidence in
@@ -201,15 +232,47 @@ final class InsightGenerator {
             if let lastContact = mostRecent?.occurredAt, lastContact < cutoffDate {
                 let daysSince = Calendar.current.dateComponents([.day], from: lastContact, to: .now).day ?? 0
 
+                let roleLabel = role ?? "Contact"
+                var urgency: InsightPriority = daysSince > (effectiveDays * 2) ? .high : .medium
+                if thresholds.urgencyBoost && urgency == .medium {
+                    urgency = .high
+                }
+
                 let insight = GeneratedInsight(
                     kind: .relationshipAtRisk,
                     title: "No recent contact with \(person.displayNameCache ?? person.displayName)",
-                    body: "Last interaction was \(daysSince) days ago. Consider reaching out to maintain the relationship.",
+                    body: "Last interaction was \(daysSince) days ago (\(roleLabel) threshold: \(effectiveDays) days). Consider reaching out to maintain the relationship.",
                     personID: person.id,
                     sourceType: .pattern,
                     sourceID: nil,
-                    urgency: daysSince > 90 ? .high : .medium,
+                    urgency: urgency,
                     confidence: 0.8,
+                    createdAt: .now
+                )
+                insights.append(insight)
+            }
+        }
+
+        return insights
+    }
+
+    /// Generate insights from discovered relationships in notes (high confidence, pending review).
+    private func generateDiscoveredRelationshipInsights() async throws -> [GeneratedInsight] {
+        var insights: [GeneratedInsight] = []
+
+        let allNotes = try notesRepository.fetchAll()
+
+        for note in allNotes {
+            for rel in note.discoveredRelationships where rel.status == .pending && rel.confidence >= 0.7 {
+                let insight = GeneratedInsight(
+                    kind: .informational,
+                    title: "Possible relationship: \(rel.personName) may be \(rel.relationshipType.rawValue.replacingOccurrences(of: "_", with: " ")) \(rel.relatedTo)",
+                    body: "Discovered in a note. Review and confirm if this relationship should be tracked.",
+                    personID: nil,
+                    sourceType: .note,
+                    sourceID: note.id,
+                    urgency: .low,
+                    confidence: rel.confidence,
                     createdAt: .now
                 )
                 insights.append(insight)

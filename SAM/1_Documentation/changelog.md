@@ -4,6 +4,50 @@
 
 ---
 
+## February 20, 2026 - Role-Aware AI Analysis Pipeline
+
+### Overview
+Injected role context into every AI touchpoint so notes, insights, relationship summaries, and health indicators are all role-aware. Previously the AI treated all contacts identically.
+
+### Part 1: Role-Aware Note Analysis Prompts
+- **`NoteAnalysisService.RoleContext`** — Sendable struct carrying primary person name/role and other linked people
+- **`analyzeNote(content:roleContext:)`** — Optional role context prepended to LLM prompt (e.g., "Context: This note is about Jane, who is a Client.")
+- **`generateRelationshipSummary(personName:role:...)`** — Role injected into prompt; system instructions tailored per role (coverage gaps for Clients, training for Agents, service quality for Vendors)
+- **Role enum updated** — Added `applicant | lead | vendor | agent | external_agent` to JSON schema
+- **Analysis version bumped to 2** — Triggers re-analysis of existing notes with role context and discovered relationships
+
+### Part 2: Role Context Wiring
+- **`NoteAnalysisCoordinator.buildRoleContext(for:)`** — Extracts primary person (first non-Me linked person) and their role badge; passes to service
+- **`refreshRelationshipSummary(for:)`** — Passes `person.roleBadges.first` as role parameter
+
+### Part 3: Discovered Relationships
+- **`DiscoveredRelationship`** (value type in SAMModels-Supporting.swift) — `personName`, `relationshipType` (spouse_of, parent_of, child_of, referral_by, referred_to, business_partner), `relatedTo`, `confidence`, `status` (pending/accepted/dismissed)
+- **`DiscoveredRelationshipDTO`** (in NoteAnalysisDTO.swift) — Sendable DTO crossing actor boundary
+- **`SamNote.discoveredRelationships: [DiscoveredRelationship]`** — New field (defaults to `[]`, no migration needed)
+- **`NotesRepository.storeAnalysis()`** — Updated signature with `discoveredRelationships` parameter
+- **LLM JSON schema** — New `discovered_relationships` array in prompt; parsed via `LLMDiscoveredRelationship` private struct
+- **UI deferred** — Stored on model but not yet surfaced in views
+
+### Part 4: Role-Weighted Insight Generation
+- **`InsightGenerator.RoleThresholds`** — Per-role no-contact thresholds: Client=45d, Applicant=14d, Lead=30d, Agent=21d, External Agent=60d, Vendor=90d, Default=60d
+- **Urgency boost** — Client, Applicant, Agent insights get medium→high urgency boost
+- **`isMe` skip** — Relationship insights now skip the Me contact
+- **`generateDiscoveredRelationshipInsights()`** — Scans notes for pending discovered relationships with confidence ≥ 0.7, generates `.informational` insights
+- **Insight body includes role label** — e.g., "Last interaction was 50 days ago (Client threshold: 45 days)"
+
+### Part 5: Role-Aware Relationship Health Colors
+- **`RelationshipHealth.role: String?`** — New field passed through from `computeHealth(for:)`
+- **`statusColor` thresholds per role** — Client/Applicant: green≤7d, yellow≤21d, orange≤45d; Agent: green≤7d, yellow≤14d, orange≤30d; Vendor: green≤30d, yellow≤60d, orange≤90d; Default: green≤14d, yellow≤30d, orange≤60d
+- **Backward compatible** — All existing consumers of `statusColor` automatically get role-aware colors
+
+### Deferred
+- UI for discovered relationships (AwarenessView section with Accept/Dismiss)
+- Role suggestion insights (LLM suggesting role badge changes)
+- Email analysis role-awareness
+- Per-role threshold settings (UserDefaults overrides)
+
+---
+
 ## February 20, 2026 - Role Badges & Me Contact Visibility
 
 ### Role Badge System
