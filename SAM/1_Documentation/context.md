@@ -252,12 +252,12 @@ SAM/SAM/
 │   │   ├── SettingsView.swift          ✅ Tabbed: Permissions, Contacts, Calendar, Mail, Intelligence, Evernote, General
 │   │   ├── MailSettingsView.swift      ✅ Mail.app accounts, Me-contact email filter toggles
 │   │   └── EvernoteImportSettingsView.swift ✅ ENEX file picker, preview, import
-│   └── ContactValidationDebugView.swift  🔧 Debug utility
+│   └── (debug views removed)
 │
 ├── Utilities/
 │   ├── DevLogStore.swift               ✅ Actor-isolated dev logging
 │   ├── MailFilterRule.swift            ✅ Email recipient filtering rules
-│   └── ContactsTestView.swift          🔧 Debug utility
+│   └── (debug views removed)
 │
 └── 1_Documentation/
     ├── context.md                      This file
@@ -494,8 +494,8 @@ Text(context.contextType)       // Compile error - property doesn't exist
 Mail.app AppleScript bridge, on-device LLM email analysis, known-sender filtering, unknown sender triage, marketing detection, "Me" contact identification, participant matching fix, insight persistence to SwiftData. See `changelog.md` for full implementation details.
 
 **Open polish items** (non-blocking):
-- ⬜ "Add to Context" from PersonDetailView — wire up context selection sheet
-- ⬜ Remove debug utilities from production — ContactsTestView, ContactValidationDebugView
+- ✅ "Add to Context" from PersonDetailView — already implemented (ContextPickerSheet + toolbar menu)
+- ✅ Remove debug utilities from production — ContactsTestView, ContactValidationDebugView deleted
 
 ---
 
