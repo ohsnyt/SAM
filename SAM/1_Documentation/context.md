@@ -4,7 +4,7 @@
 **Language**: Swift 6  
 **Architecture**: Clean layered architecture with strict separation of concerns  
 **Framework**: SwiftUI + SwiftData  
-**Last Updated**: February 20, 2026 (Phases A–L-2 + Role-Aware AI complete)
+**Last Updated**: February 21, 2026 (Phases A–M complete)
 
 **Related Docs**: 
 - See `agent.md` for product philosophy and UX principles
@@ -328,7 +328,7 @@ final class SamContext {
 @Model
 final class SamEvidenceItem {
     var title: String
-    var sourceRawValue: String          // EvidenceSource enum (.calendar, .mail, .contacts, .note, .manual)
+    var sourceRawValue: String          // EvidenceSource enum (.calendar, .mail, .contacts, .note, .manual, .iMessage, .phoneCall, .faceTime)
     var sourceUID: String?              // EKEvent.eventIdentifier, CNContact.identifier, etc.
     var snippet: String?                // Brief content preview
     var observedAt: Date
@@ -482,8 +482,9 @@ Text(context.contextType)       // Compile error - property doesn't exist
 
 **Known Bugs**: (none currently tracked)
 
+- ✅ **Phase M**: Communications Evidence — iMessage, phone calls, FaceTime (Feb 21, 2026)
+
 **Next Up**:
-- ⬜ **Phase M**: iMessage Evidence
 - ⬜ **Phase N**: Universal Undo System
 - ⬜ **Phase O**: Time Tracking
 
@@ -519,30 +520,27 @@ Simplified note model (removed NoteEntry, one note = one text block + sourceType
 
 ---
 
-### ⬜ Phase M: iMessage Evidence (NOT STARTED)
+### ✅ Phase M: Communications Evidence (COMPLETE — Feb 21, 2026)
 
-**Goal**: Observe iMessage interactions as evidence for relationship awareness
+**Goal**: Import iMessage, phone calls, and FaceTime as relationship evidence.
 
-**Tasks**:
-- ⬜ Research macOS iMessage database access (~/Library/Messages/chat.db)
-- ⬜ Create iMessageService.swift (actor, reads SQLite database)
-  - Returns MessageDTO (Sendable wrapper with metadata only)
-  - Checks Full Disk Access authorization
-- ⬜ Create iMessageImportCoordinator.swift
-  - Fetches message metadata (sender, timestamp, conversation)
-  - Creates Evidence items linked to SamPerson by phone/email
-  - Privacy-first: store metadata + analysis, not raw message content
-- ⬜ Add iMessage evidence to Inbox
-  - Evidence source type: `.iMessage`
-  - Display conversation metadata, not full content
+**Architecture**: Security-scoped bookmarks via NSOpenPanel for sandbox-safe file access. SQLite3 read-only access to `~/Library/Messages/chat.db` (iMessage) and `~/Library/Application Support/CallHistoryDB/CallHistory.storedata` (calls/FaceTime). On-device LLM analyzes message threads; raw text is discarded — only AI summaries are stored.
 
-**Architecture Notes**:
-- No public API for iMessage; requires reading SQLite database directly
-- Requires Full Disk Access entitlement
-- Privacy-first: store metadata + AI summary, never raw message bodies
-- Link to SamPerson via phone number or email address matching
+**Key Components**:
+- `SamPerson.phoneAliases: [String]` — canonicalized phone numbers (last 10 digits), populated during contacts import. Schema: SAM_v9.
+- `BookmarkManager` — @MainActor @Observable singleton, persists security-scoped bookmarks in UserDefaults, resolves on demand.
+- `iMessageService` (actor) — SQLite3 reader for chat.db. Returns `MessageDTO`. Handles nanosecond epoch conversion, attributedBody text extraction.
+- `CallHistoryService` (actor) — SQLite3 reader for CallHistory.storedata. Returns `CallRecordDTO` with phone/FaceTimeVideo/FaceTimeAudio call types.
+- `MessageAnalysisService` (actor) — on-device LLM analysis of chronological message threads. Returns `MessageAnalysisDTO` (summary, topics, temporal events, sentiment, action items).
+- `EvidenceSource` extended: `.iMessage`, `.phoneCall`, `.faceTime`
+- `EvidenceRepository` extended: `resolvePeople(byPhones:)`, `bulkUpsertMessages()`, `bulkUpsertCallRecords()`
+- `CommunicationsImportCoordinator` — @MainActor @Observable singleton, orchestrates bookmark resolution → fetch → filter → analyze → upsert pipeline.
+- `CommunicationsSettingsView` — database access grants, enable toggles, lookback period, AI analysis toggle, import status.
+- Settings tab: "Communications" with `message.fill` icon between Mail and Intelligence.
 
-**Expected Outcome**: iMessage interaction history appears as Evidence, feeds relationship health metrics
+**Privacy Model**: iMessage text is passed through on-device LLM for analysis, then discarded. Only AI summary stored in `snippet`. `bodyText` stays nil on all message evidence items. Call records store metadata only (duration, direction).
+
+**Deferred**: Unknown sender discovery for messages/calls, group chat multi-person linking, real-time monitoring, iMessage attachment processing.
 
 ---
 
@@ -1147,7 +1145,7 @@ struct PeopleRepositoryTests {
 
 **Foundation**:
 - `SAMApp.swift`: App entry point, lifecycle, permission checks, repository configuration
-- `SAMModelContainer.swift`: SwiftData container (v8 schema — Phase L-2 simplified notes)
+- `SAMModelContainer.swift`: SwiftData container (v9 schema — Phase M phoneAliases)
 - `AppShellView.swift`: Three-column navigation shell (sidebar → list → detail)
 
 **Models** (SwiftData @Model):
@@ -1259,8 +1257,8 @@ When reporting bugs or architectural concerns:
 
 ---
 
-**Document Version**: 5.1 (Phases A–L + Role-Aware AI complete)
+**Document Version**: 5.2 (Phases A–M complete)
 **Previous Versions**: See `changelog.md` for version history
-**Last Major Update**: February 20, 2026 — Role-Aware AI Analysis Pipeline
+**Last Major Update**: February 21, 2026 — Phase M: Communications Evidence
 **Clean Rebuild Started**: February 9, 2026
 

@@ -369,6 +369,9 @@ private struct BriefingCard: View {
         case .contacts: return "person"
         case .note: return "note.text"
         case .manual: return "hand.raised"
+        case .iMessage: return "message"
+        case .phoneCall: return "phone"
+        case .faceTime: return "video"
         }
     }
 

@@ -46,6 +46,9 @@ public final class SamPerson {
     
     /// All known canonical email addresses for matching
     public var emailAliases: [String] = []
+
+    /// All known canonical phone numbers for matching (last 10 digits, digits only)
+    public var phoneAliases: [String] = []
     
     /// Thumbnail image cached from CNContact.thumbnailImageData
     public var photoThumbnailCache: Data?
@@ -118,6 +121,10 @@ public final class SamPerson {
     /// Consent requirements that name this person.
     @Relationship(deleteRule: .nullify)
     public var consentRequirements: [ConsentRequirement] = []
+
+    /// Evidence items linked to this person (inverse of SamEvidenceItem.linkedPeople)
+    @Relationship(deleteRule: .nullify, inverse: \SamEvidenceItem.linkedPeople)
+    public var linkedEvidence: [SamEvidenceItem] = []
 
     /// Notes linked to this person (inverse of SamNote.linkedPeople)
     @Relationship(deleteRule: .nullify, inverse: \SamNote.linkedPeople)
@@ -208,6 +215,10 @@ public final class SamContext {
 
     /// Recent-interaction chips shown on context detail.
     public var recentInteractions: [InteractionModel] = []
+
+    /// Evidence items linked to this context (inverse of SamEvidenceItem.linkedContexts)
+    @Relationship(deleteRule: .nullify, inverse: \SamEvidenceItem.linkedContexts)
+    public var linkedEvidence: [SamEvidenceItem] = []
 
     /// Notes linked to this context (inverse of SamNote.linkedContexts)
     @Relationship(deleteRule: .nullify, inverse: \SamNote.linkedContexts)

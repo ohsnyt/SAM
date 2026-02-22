@@ -24,6 +24,13 @@ final class PeopleRepository {
         return email.lowercased()
     }
 
+    private func canonicalizePhone(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        let digits = raw.filter(\.isNumber)
+        guard digits.count >= 7 else { return nil }
+        return String(digits.suffix(10))
+    }
+
     // MARK: - Singleton
 
     static let shared = PeopleRepository()
@@ -95,6 +102,7 @@ final class PeopleRepository {
 
         let canonicalEmails = contact.emailAddresses.compactMap { canonicalizeEmail($0) }
         let primaryEmail = canonicalEmails.first
+        let canonicalPhones = contact.phoneNumbers.compactMap { canonicalizePhone($0.number) }
 
         // Swift 6: Can't capture contact.identifier in predicate, so fetch all and filter
         let descriptor = FetchDescriptor<SamPerson>(
@@ -109,6 +117,7 @@ final class PeopleRepository {
             existing.displayNameCache = contact.displayName
             existing.emailCache = primaryEmail
             existing.emailAliases = canonicalEmails
+            existing.phoneAliases = canonicalPhones
             existing.photoThumbnailCache = contact.thumbnailImageData
             existing.lastSyncedAt = Date()
             existing.isArchived = false  // Un-archive if it was archived
@@ -130,6 +139,7 @@ final class PeopleRepository {
             person.displayNameCache = contact.displayName
             person.emailCache = primaryEmail
             person.emailAliases = canonicalEmails
+            person.phoneAliases = canonicalPhones
             person.photoThumbnailCache = contact.thumbnailImageData
             person.lastSyncedAt = Date()
             person.isArchived = false
@@ -166,12 +176,14 @@ final class PeopleRepository {
         for contact in contacts {
             let canonicalEmails = contact.emailAddresses.compactMap { canonicalizeEmail($0) }
             let primaryEmail = canonicalEmails.first
+            let canonicalPhones = contact.phoneNumbers.compactMap { canonicalizePhone($0.number) }
 
             if let existing = existingByIdentifier[contact.identifier] {
                 // Update existing
                 existing.displayNameCache = contact.displayName
                 existing.emailCache = primaryEmail
                 existing.emailAliases = canonicalEmails
+                existing.phoneAliases = canonicalPhones
                 existing.photoThumbnailCache = contact.thumbnailImageData
                 existing.lastSyncedAt = Date()
                 existing.isArchived = false
@@ -194,6 +206,7 @@ final class PeopleRepository {
                 person.displayNameCache = contact.displayName
                 person.emailCache = primaryEmail
                 person.emailAliases = canonicalEmails
+                person.phoneAliases = canonicalPhones
                 person.photoThumbnailCache = contact.thumbnailImageData
                 person.lastSyncedAt = Date()
                 person.isArchived = false
@@ -265,6 +278,7 @@ final class PeopleRepository {
 
         let canonicalEmails = contact.emailAddresses.compactMap { canonicalizeEmail($0) }
         let primaryEmail = canonicalEmails.first
+        let canonicalPhones = contact.phoneNumbers.compactMap { canonicalizePhone($0.number) }
 
         // Clear any existing Me flags first
         let meDescriptor = FetchDescriptor<SamPerson>(
@@ -285,6 +299,7 @@ final class PeopleRepository {
             existing.displayNameCache = contact.displayName
             existing.emailCache = primaryEmail
             existing.emailAliases = canonicalEmails
+            existing.phoneAliases = canonicalPhones
             existing.photoThumbnailCache = contact.thumbnailImageData
             existing.lastSyncedAt = Date()
             existing.isArchived = false
@@ -305,6 +320,7 @@ final class PeopleRepository {
             newPerson.displayNameCache = contact.displayName
             newPerson.emailCache = primaryEmail
             newPerson.emailAliases = canonicalEmails
+            newPerson.phoneAliases = canonicalPhones
             newPerson.photoThumbnailCache = contact.thumbnailImageData
             newPerson.lastSyncedAt = Date()
             newPerson.isArchived = false
@@ -371,6 +387,27 @@ final class PeopleRepository {
             }
         }
         return emails
+    }
+
+    /// Collect all known phone numbers across all SamPerson records.
+    /// Returns a Set of canonicalized phone numbers (last 10 digits) for fast O(1) lookup.
+    func allKnownPhones() throws -> Set<String> {
+        guard let modelContext = modelContext else {
+            throw RepositoryError.notConfigured
+        }
+
+        let descriptor = FetchDescriptor<SamPerson>()
+        let allPeople = try modelContext.fetch(descriptor)
+
+        var phones = Set<String>()
+        for person in allPeople {
+            for alias in person.phoneAliases {
+                if let canonical = canonicalizePhone(alias) {
+                    phones.insert(canonical)
+                }
+            }
+        }
+        return phones
     }
 
     /// Get count of all people

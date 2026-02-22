@@ -209,8 +209,11 @@ final class NoteAnalysisCoordinator {
             let health = MeetingPrepCoordinator.shared.computeHealth(for: person)
             let healthInfo = "\(health.statusLabel), trend: \(health.trend)"
 
-            guard !noteContents.isEmpty else {
-                logger.debug("No notes for \(displayName, privacy: .public), skipping summary")
+            // Gather communications evidence (iMessage, calls, FaceTime)
+            let commsSummaries = gatherCommunicationsSummaries(for: person)
+
+            guard !noteContents.isEmpty || !commsSummaries.isEmpty else {
+                logger.debug("No notes or communications for \(displayName, privacy: .public), skipping summary")
                 return
             }
 
@@ -220,7 +223,8 @@ final class NoteAnalysisCoordinator {
                 notes: noteContents,
                 recentTopics: Array(recentTopics),
                 pendingActions: Array(pendingActions),
-                healthInfo: healthInfo
+                healthInfo: healthInfo,
+                communicationsSummaries: commsSummaries
             )
 
             // Store on person
@@ -232,6 +236,33 @@ final class NoteAnalysisCoordinator {
             logger.info("Updated relationship summary for \(displayName, privacy: .public)")
         } catch {
             logger.debug("Relationship summary skipped for \(displayName, privacy: .public): \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - Communications Evidence
+
+    /// Gather recent communications evidence snippets for a person to include in relationship summary.
+    private func gatherCommunicationsSummaries(for person: SamPerson) -> [String] {
+        let commsSources: Set<EvidenceSource> = [.iMessage, .phoneCall, .faceTime]
+        let personID = person.id
+
+        guard let allEvidence = try? evidenceRepository.fetchAll() else { return [] }
+
+        let commsEvidence = allEvidence.filter { item in
+            commsSources.contains(item.source)
+            && item.linkedPeople.contains(where: { $0.id == personID })
+        }
+
+        // Take up to 15 most recent, format as summaries
+        return commsEvidence.prefix(15).compactMap { item in
+            let dateStr = item.occurredAt.formatted(date: .abbreviated, time: .shortened)
+            let source = item.source == .iMessage ? "iMessage" : item.source == .phoneCall ? "Phone call" : "FaceTime"
+            if !item.snippet.isEmpty {
+                return "[\(dateStr)] \(source): \(item.snippet)"
+            } else if !item.title.isEmpty {
+                return "[\(dateStr)] \(source): \(item.title)"
+            }
+            return nil
         }
     }
 

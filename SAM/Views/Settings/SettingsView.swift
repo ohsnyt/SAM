@@ -24,6 +24,7 @@ struct SettingsView: View {
         case contacts = "Contacts"
         case calendar = "Calendar"
         case mail = "Mail"
+        case communications = "Communications"
         case intelligence = "Intelligence"
         case evernote = "Evernote"
         case general = "General"
@@ -36,6 +37,7 @@ struct SettingsView: View {
             case .contacts: return "person.crop.circle"
             case .calendar: return "calendar"
             case .mail: return "envelope"
+            case .communications: return "message.fill"
             case .intelligence: return "brain"
             case .evernote: return "square.and.arrow.down"
             case .general: return "gearshape"
@@ -68,6 +70,12 @@ struct SettingsView: View {
                     Label("Mail", systemImage: "envelope")
                 }
                 .tag(SettingsTab.mail)
+
+            CommunicationsSettingsView()
+                .tabItem {
+                    Label("Communications", systemImage: "message.fill")
+                }
+                .tag(SettingsTab.communications)
 
             IntelligenceSettingsView()
                 .tabItem {

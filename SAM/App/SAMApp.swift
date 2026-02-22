@@ -208,7 +208,14 @@ struct SAMApp: App {
             await MailImportCoordinator.shared.importNow()
         }
 
-        if !contactsEnabled && !calendarEnabled && !mailEnabled {
+        // Communications (iMessage + Calls) — import if either sub-source is enabled
+        let commsMessagesEnabled = UserDefaults.standard.bool(forKey: "commsMessagesEnabled")
+        let commsCallsEnabled = UserDefaults.standard.bool(forKey: "commsCallsEnabled")
+        if commsMessagesEnabled || commsCallsEnabled {
+            await CommunicationsImportCoordinator.shared.importNow()
+        }
+
+        if !contactsEnabled && !calendarEnabled && !mailEnabled && !commsMessagesEnabled && !commsCallsEnabled {
             logger.info("No sources enabled — app running in limited mode")
         }
     }

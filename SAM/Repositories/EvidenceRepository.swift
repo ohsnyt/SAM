@@ -262,6 +262,56 @@ final class EvidenceRepository {
         }
     }
 
+    // MARK: - Phone-Based Resolution
+
+    /// Canonicalize a phone number: strip non-digits, take last 10.
+    private func canonicalizePhone(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        let digits = raw.filter(\.isNumber)
+        guard digits.count >= 7 else { return nil }
+        return String(digits.suffix(10))
+    }
+
+    /// Resolve SamPerson records by phone numbers using phoneAliases.
+    private func resolvePeople(byPhones phones: [String]) -> [SamPerson] {
+        guard let context = context else { return [] }
+        do {
+            let descriptor = FetchDescriptor<SamPerson>()
+            let allPeople = try context.fetch(descriptor)
+            let phoneSet = Set(phones.compactMap { canonicalizePhone($0) })
+            guard !phoneSet.isEmpty else { return [] }
+            logger.debug("Resolving people by phones: \(Array(phoneSet))")
+            let matches = allPeople.filter { person in
+                let aliases = Set(person.phoneAliases.compactMap { self.canonicalizePhone($0) })
+                return !aliases.isDisjoint(with: phoneSet)
+            }
+            logger.debug("Matched \(matches.count) people by phone")
+            return matches
+        } catch {
+            logger.error("Failed to resolve people by phones: \(error)")
+            return []
+        }
+    }
+
+    /// Reliably set linkedPeople on an evidence item.
+    /// Direct assignment (`item.linkedPeople = newValue`) doesn't always trigger
+    /// SwiftData's change tracking on existing objects. Explicit removeAll + append does.
+    private func setLinkedPeople(_ people: [SamPerson], on evidence: SamEvidenceItem) {
+        evidence.linkedPeople.removeAll()
+        for person in people {
+            evidence.linkedPeople.append(person)
+        }
+    }
+
+    /// Resolve people by a handle that could be an email or phone number.
+    private func resolvePeopleByHandle(_ handle: String) -> [SamPerson] {
+        if handle.contains("@") {
+            return resolvePeople(byEmails: [handle])
+        } else {
+            return resolvePeople(byPhones: [handle])
+        }
+    }
+
     // MARK: - Upsert Operations
 
     /// Upsert evidence item from calendar event.
@@ -287,7 +337,7 @@ final class EvidenceRepository {
             existing.occurredAt = event.startDate
             existing.endedAt = event.endDate
             existing.participantHints = buildParticipantHints(from: event, knownEmails: knownEmails)
-            existing.linkedPeople = resolved
+            setLinkedPeople(resolved, on: existing)
         } else {
             // Create new evidence
             let evidence = SamEvidenceItem(
@@ -302,7 +352,7 @@ final class EvidenceRepository {
                 bodyText: event.notes
             )
             evidence.participantHints = buildParticipantHints(from: event, knownEmails: knownEmails)
-            evidence.linkedPeople = resolved
+            setLinkedPeople(resolved, on: evidence)
 
             context.insert(evidence)
         }
@@ -335,7 +385,7 @@ final class EvidenceRepository {
                 existing.occurredAt = event.startDate
                 existing.endedAt = event.endDate
                 existing.participantHints = buildParticipantHints(from: event, knownEmails: knownEmails)
-                existing.linkedPeople = resolved
+                setLinkedPeople(resolved, on: existing)
 
                 updated += 1
             } else {
@@ -352,7 +402,7 @@ final class EvidenceRepository {
                     bodyText: event.notes
                 )
                 evidence.participantHints = buildParticipantHints(from: event, knownEmails: knownEmails)
-                evidence.linkedPeople = resolved
+                setLinkedPeople(resolved, on: evidence)
 
                 context.insert(evidence)
                 created += 1
@@ -466,7 +516,9 @@ final class EvidenceRepository {
         var updated = 0
 
         for item in all {
-            guard item.source == .calendar || item.source == .mail else { continue }
+            guard item.source == .calendar || item.source == .mail
+                    || item.source == .iMessage || item.source == .phoneCall
+                    || item.source == .faceTime else { continue }
 
             // Collect all emails from participant hints
             let emails = item.participantHints.compactMap { hint in
@@ -504,7 +556,7 @@ final class EvidenceRepository {
 
             if hintsChanged || peopleChanged {
                 item.participantHints = newHints
-                item.linkedPeople = resolved
+                setLinkedPeople(resolved, on: item)
                 updated += 1
             }
         }
@@ -619,7 +671,7 @@ final class EvidenceRepository {
                 existing.bodyText = nil  // Never store raw email body
                 existing.occurredAt = email.date
                 existing.participantHints = hints
-                existing.linkedPeople = resolved
+                setLinkedPeople(resolved, on: existing)
                 existing.signals = signals
                 updated += 1
             } else {
@@ -634,7 +686,7 @@ final class EvidenceRepository {
                     participantHints: hints,
                     signals: signals
                 )
-                evidence.linkedPeople = resolved
+                setLinkedPeople(resolved, on: evidence)
                 context.insert(evidence)
                 created += 1
             }
@@ -671,6 +723,156 @@ final class EvidenceRepository {
         }
 
         return hints
+    }
+
+    // MARK: - iMessage Bulk Upsert
+
+    /// Bulk upsert iMessage evidence items with optional analysis data.
+    /// Privacy: bodyText is NEVER stored — only the AI summary goes into snippet.
+    func bulkUpsertMessages(_ messages: [(MessageDTO, MessageAnalysisDTO?)]) throws {
+        guard let context = context else { throw RepositoryError.notConfigured }
+
+        var created = 0, updated = 0
+
+        for (message, analysis) in messages {
+            let sourceUID = "imessage:\(message.guid)"
+
+            // Resolve people by handle
+            let resolved = resolvePeopleByHandle(message.handleID)
+
+            // Build snippet: use analysis summary if available, otherwise truncated text
+            let snippet: String
+            if let summary = analysis?.summary {
+                snippet = summary
+            } else if let text = message.text {
+                snippet = String(text.prefix(200))
+            } else {
+                snippet = message.hasAttachment ? "[Attachment]" : "[No text]"
+            }
+
+            // Build signals from analysis
+            var signals: [EvidenceSignal] = []
+            if let analysis = analysis {
+                for event in analysis.temporalEvents {
+                    signals.append(EvidenceSignal(
+                        type: .lifeEvent,
+                        message: "\(event.description): \(event.dateString)",
+                        confidence: event.confidence
+                    ))
+                }
+            }
+
+            if let existing = try fetch(sourceUID: sourceUID) {
+                existing.snippet = snippet
+                existing.bodyText = nil
+                existing.occurredAt = message.date
+                setLinkedPeople(resolved, on: existing)
+                existing.signals = signals
+                updated += 1
+            } else {
+                let title: String
+                if let name = resolved.first?.displayNameCache ?? resolved.first?.displayName {
+                    title = message.isFromMe ? "Message to \(name)" : "Message from \(name)"
+                } else {
+                    title = message.isFromMe ? "Message sent" : "Message received"
+                }
+
+                let evidence = SamEvidenceItem(
+                    id: UUID(),
+                    state: .needsReview,
+                    sourceUID: sourceUID,
+                    source: .iMessage,
+                    occurredAt: message.date,
+                    title: title,
+                    snippet: snippet,
+                    signals: signals
+                )
+                setLinkedPeople(resolved, on: evidence)
+                context.insert(evidence)
+                created += 1
+            }
+        }
+
+        try context.save()
+        logger.info("iMessage bulk upsert: \(created) created, \(updated) updated")
+    }
+
+    // MARK: - Call Record Bulk Upsert
+
+    /// Bulk upsert call/FaceTime evidence items (metadata only, no LLM analysis).
+    func bulkUpsertCallRecords(_ calls: [CallRecordDTO]) throws {
+        guard let context = context else { throw RepositoryError.notConfigured }
+
+        var created = 0, updated = 0
+
+        for call in calls {
+            let dateTimestamp = Int64(call.date.timeIntervalSinceReferenceDate)
+            let sourceUID = "call:\(call.id):\(dateTimestamp)"
+
+            let resolved = resolvePeople(byPhones: [call.address])
+            let personName = resolved.first?.displayNameCache ?? resolved.first?.displayName
+
+            let source: EvidenceSource = call.callType.isFaceTime ? .faceTime : .phoneCall
+
+            // Build title
+            let title: String
+            if !call.wasAnswered {
+                if call.isOutgoing {
+                    title = personName.map { "Unanswered call to \($0)" } ?? "Unanswered outgoing call"
+                } else {
+                    title = personName.map { "Missed call from \($0)" } ?? "Missed call"
+                }
+            } else {
+                let typeLabel = call.callType.isFaceTime ? "FaceTime" : "Phone call"
+                if call.isOutgoing {
+                    title = personName.map { "\(typeLabel) to \($0)" } ?? "\(typeLabel) (outgoing)"
+                } else {
+                    title = personName.map { "\(typeLabel) from \($0)" } ?? "\(typeLabel) (incoming)"
+                }
+            }
+
+            // Build snippet
+            let snippet: String
+            if !call.wasAnswered {
+                snippet = call.isOutgoing ? "Not answered" : "Missed"
+            } else {
+                let minutes = Int(call.duration) / 60
+                let seconds = Int(call.duration) % 60
+                if minutes > 0 {
+                    snippet = "\(minutes)m \(seconds)s"
+                } else {
+                    snippet = "\(seconds)s"
+                }
+            }
+
+            let endedAt = call.wasAnswered ? call.date.addingTimeInterval(call.duration) : nil
+
+            if let existing = try fetch(sourceUID: sourceUID) {
+                existing.title = title
+                existing.snippet = snippet
+                existing.occurredAt = call.date
+                existing.endedAt = endedAt
+                setLinkedPeople(resolved, on: existing)
+                updated += 1
+            } else {
+                let evidence = SamEvidenceItem(
+                    id: UUID(),
+                    state: .needsReview,
+                    sourceUID: sourceUID,
+                    source: source,
+                    occurredAt: call.date,
+                    endedAt: endedAt,
+                    title: title,
+                    snippet: snippet
+                )
+                setLinkedPeople(resolved, on: evidence)
+                context.insert(evidence)
+                created += 1
+            }
+        }
+
+        try context.save()
+        logger.info("Call record bulk upsert: \(created) created, \(updated) updated")
     }
 
     /// Prune mail evidence items whose sourceUID is no longer in the valid set.

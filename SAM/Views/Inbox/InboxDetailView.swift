@@ -402,6 +402,9 @@ struct InboxDetailView: View {
         case .contacts: return "person.crop.circle"
         case .note: return "note.text"
         case .manual: return "square.and.pencil"
+        case .iMessage: return "message"
+        case .phoneCall: return "phone"
+        case .faceTime: return "video"
         }
     }
 
@@ -412,6 +415,9 @@ struct InboxDetailView: View {
         case .contacts: return .green
         case .note: return .orange
         case .manual: return .purple
+        case .iMessage: return .teal
+        case .phoneCall: return .green
+        case .faceTime: return .mint
         }
     }
 

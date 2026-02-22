@@ -117,7 +117,8 @@ actor NoteAnalysisService {
         notes: [String],
         recentTopics: [String],
         pendingActions: [String],
-        healthInfo: String
+        healthInfo: String,
+        communicationsSummaries: [String] = []
     ) async throws -> RelationshipSummaryDTO {
         guard case .available = checkAvailability() else {
             throw AnalysisError.modelUnavailable
@@ -150,11 +151,17 @@ actor NoteAnalysisService {
             """
 
         let roleLabel = role.map { " Role: \($0)." } ?? ""
+        let commsSection = communicationsSummaries.isEmpty ? "" : """
+
+            Recent communications (messages, calls, FaceTime):
+            \(communicationsSummaries.prefix(10).joined(separator: "\n---\n"))
+            """
         let prompt = """
             Generate a relationship summary for \(personName).\(roleLabel)
 
             Recent notes:
             \(notes.prefix(10).joined(separator: "\n---\n"))
+            \(commsSection)
 
             Recent topics: \(recentTopics.joined(separator: ", "))
             Pending actions: \(pendingActions.joined(separator: "; "))

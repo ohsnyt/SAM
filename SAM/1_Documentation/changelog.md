@@ -4,6 +4,76 @@
 
 ---
 
+## February 21, 2026 - Phase M: Communications Evidence
+
+### Overview
+Added iMessage, phone call, and FaceTime history as evidence sources for the relationship intelligence pipeline. Uses security-scoped bookmarks for sandbox-safe SQLite3 access to system databases. On-device LLM analyzes message threads; raw text is never stored.
+
+### Schema
+- **`SamPerson.phoneAliases: [String]`** — Canonicalized phone numbers (last 10 digits, digits only), populated during contacts import
+- **Schema bumped to SAM_v9** — New `phoneAliases` field on SamPerson
+- **`PeopleRepository.canonicalizePhone(_:)`** — Strip non-digits, take last 10, minimum 7 digits
+- **`PeopleRepository.allKnownPhones()`** — O(1) lookup set mirroring `allKnownEmails()`
+- Phone numbers populated in `upsert()`, `bulkUpsert()`, and `upsertMe()` from `ContactDTO.phoneNumbers`
+
+### Database Access
+- **`BookmarkManager`** — @MainActor @Observable singleton managing security-scoped bookmarks for chat.db and CallHistory.storedata
+- NSOpenPanel pre-navigated to expected directories; bookmarks persisted in UserDefaults
+- Stale bookmark auto-refresh; revoke methods for settings UI
+
+### Services
+- **`iMessageService`** (actor) — SQLite3 reader for `~/Library/Messages/chat.db`
+  - `fetchMessages(since:dbURL:knownIdentifiers:)` — Joins message/handle/chat tables, nanosecond epoch conversion, attributedBody text extraction via NSUnarchiver (typedstream format) with manual binary fallback
+  - Handle canonicalization: phone → last 10 digits, email → lowercased
+- **`CallHistoryService`** (actor) — SQLite3 reader for `CallHistory.storedata`
+  - `fetchCalls(since:dbURL:knownPhones:)` — ZCALLRECORD table, ZADDRESS cast from BLOB, call type mapping (1=phone, 8=FaceTime video, 16=FaceTime audio)
+- **`MessageAnalysisService`** (actor) — On-device LLM (FoundationModels) for conversation thread analysis
+  - Chronological `[MM/dd HH:mm] Me/Them: text` format
+  - Returns `MessageAnalysisDTO` (summary, topics, temporal events, sentiment, action items)
+
+### DTOs
+- **`MessageDTO`** — id, guid, text, date, isFromMe, handleID, chatGUID, serviceName, hasAttachment
+- **`CallRecordDTO`** — id, address, date, duration, callType (phone/faceTimeVideo/faceTimeAudio/unknown), isOutgoing, wasAnswered
+- **`MessageAnalysisDTO`** — summary, topics, temporalEvents, sentiment (positive/neutral/negative/urgent), actionItems
+
+### Evidence Repository
+- **`EvidenceSource`** extended: `.iMessage`, `.phoneCall`, `.faceTime`
+- **`resolvePeople(byPhones:)`** — Matches phone numbers against `SamPerson.phoneAliases`
+- **`bulkUpsertMessages(_:)`** — sourceUID `imessage:<guid>`, bodyText always nil, snippet from AI summary
+- **`bulkUpsertCallRecords(_:)`** — sourceUID `call:<id>:<timestamp>`, title includes direction/status, snippet shows duration or "Missed"
+- **`refreshParticipantResolution()`** — Now includes iMessage/phoneCall/faceTime sources
+
+### Coordinator
+- **`CommunicationsImportCoordinator`** — @MainActor @Observable singleton
+  - Settings: messagesEnabled, callsEnabled, lookbackDays (default 90), analyzeMessages (default true)
+  - Pipeline: resolve bookmarks → build known identifiers → fetch → filter → group by (handle, day) → analyze threads → bulk upsert
+  - Analysis only for threads with ≥2 messages with text; applied to last message in thread
+
+### UI
+- **`CommunicationsSettingsView`** — Database access grants, enable toggles, lookback picker, AI analysis toggle, import status
+- **`SettingsView`** — New "Communications" tab with `message.fill` icon between Mail and Intelligence
+- Inbox views updated: iMessage (teal/message icon), phoneCall (green/phone icon), faceTime (mint/video icon)
+
+### App Wiring
+- **`SAMApp.triggerImportsForEnabledSources()`** — Added communications import trigger when either commsMessagesEnabled or commsCallsEnabled
+
+### Bug Fixes (Feb 21, 2026)
+- **attributedBody text extraction** — Replaced NSKeyedUnarchiver with NSUnarchiver for typedstream format (fixes ~70% of messages showing "[No text]"); manual binary parser fallback for edge cases
+- **Directory-level bookmarks** — BookmarkManager now selects directories (not files) to cover WAL/SHM companion files required by SQLite WAL mode
+- **Toggle persistence** — Coordinator settings use stored properties with explicit setter methods (not @ObservationIgnored computed properties) for proper SwiftUI observation
+- **Relationship summary integration** — `NoteAnalysisCoordinator.refreshRelationshipSummary()` now includes communications evidence (iMessage/call/FaceTime snippets) in the LLM prompt via `communicationsSummaries` parameter
+- **Post-import summary refresh** — `CommunicationsImportCoordinator` triggers `refreshAffectedSummaries()` after successful import, refreshing relationship summaries for people with new communications evidence
+- **`@Relationship` inverse fix (critical)** — Added `linkedEvidence: [SamEvidenceItem]` inverse on `SamPerson` and `SamContext`. Without explicit inverses, SwiftData treated the many-to-many as one-to-one, silently dropping links when the same person appeared in multiple evidence items. Schema bumped to SAM_v10.
+- **`setLinkedPeople` helper** — All `@Relationship` array assignments in EvidenceRepository use explicit `removeAll()` + `append()` for reliable SwiftData change tracking
+
+### Deferred
+- Unknown sender discovery for messages/calls
+- Group chat multi-person linking
+- Real-time monitoring (currently poll-based)
+- iMessage attachment processing
+
+---
+
 ## February 20, 2026 - Role-Aware AI Analysis Pipeline
 
 ### Overview

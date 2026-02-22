@@ -37,6 +37,9 @@ public enum EvidenceSource: String, Codable, Sendable {
     case contacts = "Contacts"
     case note = "Note"
     case manual = "Manual"
+    case iMessage = "iMessage"
+    case phoneCall = "PhoneCall"
+    case faceTime = "FaceTime"
 }
 
 public enum EvidenceTriageState: String, Codable, Sendable {
