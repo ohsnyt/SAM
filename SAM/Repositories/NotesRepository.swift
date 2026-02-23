@@ -248,6 +248,21 @@ final class NotesRepository {
         return all.filter { !$0.isAnalyzed }
     }
 
+    /// Mark all notes as unanalyzed to force re-analysis with current AI backend.
+    /// Returns the number of notes marked.
+    @discardableResult
+    func markAllUnanalyzed() throws -> Int {
+        guard let modelContext else { throw RepositoryError.notConfigured }
+        let all = try fetchAll()
+        var count = 0
+        for note in all where note.isAnalyzed {
+            note.isAnalyzed = false
+            count += 1
+        }
+        if count > 0 { try modelContext.save() }
+        return count
+    }
+
     /// Fetch notes with pending action items
     func fetchNotesWithPendingActions() throws -> [SamNote] {
         let all = try fetchAll()

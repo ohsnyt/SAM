@@ -470,6 +470,81 @@ public struct DiscoveredRelationship: Codable, Sendable, Identifiable {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// MARK: - Outcome Types (Phase N)
+// ─────────────────────────────────────────────────────────────────────
+
+public enum OutcomeKind: String, Codable, Sendable, CaseIterable {
+    case preparation    // Prepare for upcoming meeting/event
+    case followUp       // Follow up after interaction
+    case proposal       // Build/send a proposal or recommendation
+    case outreach       // Reach out to someone going cold
+    case growth         // Business growth activity (prospecting, networking)
+    case training       // Learning/development activity
+    case compliance     // Regulatory or compliance action
+}
+
+public enum OutcomeStatus: String, Codable, Sendable {
+    case pending        // Active, should be shown
+    case inProgress     // User acknowledged, working on it
+    case completed      // Done
+    case dismissed      // User explicitly dismissed
+    case expired        // Past deadline, auto-expired
+}
+
+/// Action type that maps an outcome to a concrete user action.
+public enum OutcomeAction: String, Sendable {
+    case captureNote      // Open quick note window
+    case openPerson       // Navigate to person detail
+    case openEvidence     // Navigate to evidence item
+}
+
+extension OutcomeKind {
+    var defaultAction: OutcomeAction {
+        switch self {
+        case .followUp, .preparation: return .captureNote
+        case .proposal, .outreach, .growth, .training, .compliance: return .openPerson
+        }
+    }
+
+    var actionLabel: String {
+        switch self {
+        case .followUp, .preparation: return "Write Note"
+        case .proposal, .outreach, .growth, .training, .compliance: return "View"
+        }
+    }
+
+    var actionIcon: String {
+        switch self {
+        case .followUp, .preparation: return "square.and.pencil"
+        case .proposal, .outreach, .growth, .training, .compliance: return "arrow.right.circle"
+        }
+    }
+}
+
+/// Lightweight payload for opening the quick note auxiliary window.
+public struct QuickNotePayload: Codable, Hashable, Sendable {
+    public let outcomeID: UUID
+    public let personID: UUID?
+    public let personName: String?
+    public let contextTitle: String
+    public let evidenceID: UUID?
+
+    public init(
+        outcomeID: UUID,
+        personID: UUID?,
+        personName: String?,
+        contextTitle: String,
+        evidenceID: UUID? = nil
+    ) {
+        self.outcomeID = outcomeID
+        self.personID = personID
+        self.personName = personName
+        self.contextTitle = contextTitle
+        self.evidenceID = evidenceID
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // MARK: - Protocols
 // ─────────────────────────────────────────────────────────────────────
 

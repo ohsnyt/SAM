@@ -4,6 +4,51 @@
 
 ---
 
+## February 22, 2026 - Phase N: Outcome-Focused Coaching Engine
+
+### Overview
+Transforms SAM from a relationship *tracker* into a relationship *coach*. Introduces an abstracted AI service layer (FoundationModels + MLX), an outcome generation engine that synthesizes all evidence sources into prioritized coaching suggestions, and an adaptive feedback system that learns the user's preferred coaching style.
+
+### Schema
+- **Schema bumped to SAM_v11** — Added `SamOutcome` and `CoachingProfile` models
+
+### New Models
+- **`SamOutcome`** — Coaching suggestion with title, rationale, outcomeKind (preparation/followUp/proposal/outreach/growth/training/compliance), priorityScore (0–1), deadline, status (pending/inProgress/completed/dismissed/expired), user rating, feedback tracking
+- **`CoachingProfile`** — Singleton tracking encouragement style, preferred/dismissed outcome kinds, response time, rating averages
+- **`OutcomeKind`** / **`OutcomeStatus`** — Supporting enums in SAMModels-Supporting.swift
+
+### New Services
+- **`AIService`** (actor) — Unified AI interface: `generate(prompt:systemInstruction:maxTokens:)`, `checkAvailability()`. Default FoundationModels backend with transparent MLX fallback.
+- **`MLXModelManager`** (actor) — Model catalogue, download/delete stubs, `isSelectedModelReady()`. Curated list: Mistral 7B (4-bit), Llama 3.2 3B (4-bit). Full MLX inference deferred to future update.
+
+### New Coordinators
+- **`OutcomeEngine`** (@MainActor) — Generates outcomes from 5 evidence scanners: upcoming meetings (48h), past meetings without notes (48h), pending action items, relationship health (role-weighted thresholds), growth opportunities. Priority scoring: time urgency (0.30) + relationship health (0.20) + role importance (0.20) + evidence recency (0.15) + user engagement (0.15). AI enrichment adds suggested next steps to top 5 outcomes.
+- **`CoachingAdvisor`** (@MainActor) — Analyzes completed/dismissed outcome patterns, generates style-specific encouragement (direct/supportive/achievement/analytical), adaptive rating frequency, priority weight adjustment.
+
+### New Repository
+- **`OutcomeRepository`** (@MainActor) — Standard singleton pattern. `fetchActive()`, `fetchCompleted()`, `fetchCompletedToday()`, `markCompleted()`, `markDismissed()`, `recordRating()`, `pruneExpired()`, `purgeOld()`, `hasSimilarOutcome()` (deduplication).
+
+### New Views
+- **`OutcomeQueueView`** — Top section of AwarenessView. Shows prioritized outcome cards with Done/Skip actions. "SAM Coach" header with outcome count. Completed-today collapsible section. Rating sheet (1–5 stars) shown occasionally after completion.
+- **`OutcomeCardView`** — Reusable card: color-coded kind badge, priority dot (red/yellow/green), title, rationale, suggested next step, deadline countdown, Done/Skip buttons.
+- **`CoachingSettingsView`** — New Settings tab (brain.head.profile icon). Sections: AI Backend (FoundationModels vs MLX), MLX Model management, Coaching Style (auto-learn or manual override), Outcome Generation (auto-generate toggle), Feedback stats + profile reset.
+
+### App Wiring
+- `OutcomeRepository.shared.configure()` and `CoachingAdvisor.shared.configure()` added to `configureDataLayer()`
+- Outcome pruning + generation triggered in `triggerImportsForEnabledSources()` (gated by `outcomeAutoGenerate` UserDefaults key)
+- `OutcomeQueueView` integrated as first section in `AwarenessView`
+- `CoachingSettingsView` tab added to `SettingsView` after Intelligence
+
+### Deferred
+- MLX model download and inference (SPM dependency not yet added)
+- Custom outcome templates
+- Outcome analytics dashboard
+- Progress reports to upline
+- Team coaching patterns
+- Universal Undo System (moved to Phase O)
+
+---
+
 ## February 21, 2026 - Phase M: Communications Evidence
 
 ### Overview

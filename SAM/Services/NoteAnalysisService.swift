@@ -10,7 +10,6 @@
 //
 
 import Foundation
-import FoundationModels
 import os.log
 
 /// Actor-isolated service for analyzing notes with on-device LLM
@@ -27,24 +26,19 @@ actor NoteAnalysisService {
     
     /// Current prompt version for analysis (bump to trigger re-analysis of all notes)
     static let currentAnalysisVersion = 2
-    
-    private let model = SystemLanguageModel.default
-    
+
     // MARK: - Model Availability
-    
-    /// Check if the on-device LLM is available
-    func checkAvailability() -> ModelAvailability {
-        switch model.availability {
+
+    /// Check if the AI backend is available
+    func checkAvailability() async -> ModelAvailability {
+        let availability = await AIService.shared.checkAvailability()
+        switch availability {
         case .available:
             return .available
-        case .unavailable(.deviceNotEligible):
-            return .unavailable(reason: "Device not eligible for Apple Intelligence")
-        case .unavailable(.appleIntelligenceNotEnabled):
-            return .unavailable(reason: "Apple Intelligence not enabled. Enable in Settings → Apple Intelligence & Siri")
-        case .unavailable(.modelNotReady):
-            return .unavailable(reason: "Model is downloading or not ready")
-        case .unavailable(let other):
-            return .unavailable(reason: "Model unavailable: \(other)")
+        case .downloading:
+            return .unavailable(reason: "Model is downloading")
+        case .unavailable(let reason):
+            return .unavailable(reason: reason)
         }
     }
     
@@ -63,27 +57,21 @@ actor NoteAnalysisService {
     /// Returns NoteAnalysisDTO with people, topics, action items, and summary
     func analyzeNote(content: String, roleContext: RoleContext? = nil) async throws -> NoteAnalysisDTO {
         // Check availability first
-        guard case .available = checkAvailability() else {
+        guard case .available = await checkAvailability() else {
             throw AnalysisError.modelUnavailable
         }
-        
-        // Build system instructions
-        let instructions = buildSystemInstructions()
-        
-        // Create session with instructions
-        let session = LanguageModelSession(instructions: instructions)
-        
-        // Build prompt with note content and optional role context
-        let prompt = buildPrompt(content: content, roleContext: roleContext)
-        
-        // Generate response (structured JSON)
-        let response = try await session.respond(to: prompt)
-        
-        // Parse JSON response
-        let analysis = try parseResponse(response.content)
-        
-        logger.info("Analyzed note: \(analysis.people.count) people, \(analysis.actionItems.count) actions")
 
+        // Build system instructions and prompt
+        let instructions = buildSystemInstructions()
+        let prompt = buildPrompt(content: content, roleContext: roleContext)
+
+        // Generate response via AIService
+        let responseText = try await AIService.shared.generate(prompt: prompt, systemInstruction: instructions)
+
+        // Parse JSON response
+        let analysis = try parseResponse(responseText)
+
+        logger.info("Analyzed note: \(analysis.people.count) people, \(analysis.actionItems.count) actions")
         return analysis
     }
     
@@ -92,7 +80,7 @@ actor NoteAnalysisService {
     /// Clean up dictated text: fix grammar, punctuation, remove filler words.
     /// Returns the polished text, or throws if the model is unavailable.
     func polishDictation(rawText: String) async throws -> String {
-        guard case .available = checkAvailability() else {
+        guard case .available = await checkAvailability() else {
             throw AnalysisError.modelUnavailable
         }
 
@@ -103,9 +91,7 @@ actor NoteAnalysisService {
             Return ONLY the cleaned text, nothing else.
             """
 
-        let session = LanguageModelSession(instructions: instructions)
-        let response = try await session.respond(to: rawText)
-        return response.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        return try await AIService.shared.generateNarrative(prompt: rawText, systemInstruction: instructions)
     }
 
     // MARK: - Relationship Summary
@@ -120,7 +106,7 @@ actor NoteAnalysisService {
         healthInfo: String,
         communicationsSummaries: [String] = []
     ) async throws -> RelationshipSummaryDTO {
-        guard case .available = checkAvailability() else {
+        guard case .available = await checkAvailability() else {
             throw AnalysisError.modelUnavailable
         }
 
@@ -168,36 +154,37 @@ actor NoteAnalysisService {
             Relationship health: \(healthInfo)
             """
 
-        let session = LanguageModelSession(instructions: instructions)
-        let response = try await session.respond(to: prompt)
-
-        return try parseRelationshipSummary(response.content)
+        let responseText = try await AIService.shared.generateNarrative(prompt: prompt, systemInstruction: instructions)
+        return try parseRelationshipSummary(responseText)
     }
 
     private func parseRelationshipSummary(_ jsonString: String) throws -> RelationshipSummaryDTO {
-        var cleaned = jsonString.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        // Remove markdown code block markers
-        if cleaned.hasPrefix("```") {
-            if let firstNewline = cleaned.firstIndex(of: "\n") {
-                cleaned = String(cleaned[cleaned.index(after: firstNewline)...])
-            }
-            if cleaned.hasSuffix("```") {
-                cleaned = String(cleaned.dropLast(3))
-            }
-        }
-        cleaned = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleaned = extractJSON(from: jsonString)
 
         guard let data = cleaned.data(using: .utf8) else {
             throw AnalysisError.invalidResponse
         }
 
-        let decoded = try JSONDecoder().decode(LLMRelationshipSummary.self, from: data)
-        return RelationshipSummaryDTO(
-            overview: decoded.overview,
-            keyThemes: decoded.key_themes,
-            suggestedNextSteps: decoded.suggested_next_steps
-        )
+        do {
+            let decoded = try JSONDecoder().decode(LLMRelationshipSummary.self, from: data)
+            return RelationshipSummaryDTO(
+                overview: decoded.overview ?? "",
+                keyThemes: decoded.key_themes ?? [],
+                suggestedNextSteps: decoded.suggested_next_steps ?? []
+            )
+        } catch {
+            // MLX models may return plain text instead of JSON — use it as the overview
+            let plainText = jsonString.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !plainText.isEmpty {
+                logger.info("Relationship summary returned as plain text, using as overview")
+                return RelationshipSummaryDTO(
+                    overview: plainText,
+                    keyThemes: [],
+                    suggestedNextSteps: []
+                )
+            }
+            throw error
+        }
     }
 
     // MARK: - Prompt Construction
@@ -286,24 +273,8 @@ actor NoteAnalysisService {
     // MARK: - Response Parsing
     
     private func parseResponse(_ jsonString: String) throws -> NoteAnalysisDTO {
-        // Clean up any potential markdown code blocks and extra text
-        var cleaned = jsonString.trimmingCharacters(in: .whitespacesAndNewlines)
-        
-        // Remove markdown code block markers (```json ... ``` or ``` ... ```)
-        if cleaned.hasPrefix("```") {
-            // Find the first newline after ```
-            if let firstNewline = cleaned.firstIndex(of: "\n") {
-                cleaned = String(cleaned[cleaned.index(after: firstNewline)...])
-            }
-            // Remove trailing ```
-            if cleaned.hasSuffix("```") {
-                cleaned = String(cleaned.dropLast(3))
-            }
-        }
-        
-        // Remove any remaining leading/trailing whitespace
-        cleaned = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
-        
+        let cleaned = extractJSON(from: jsonString)
+
         logger.debug("Cleaned JSON length: \(cleaned.count) characters")
 
         guard let data = cleaned.data(using: .utf8) else {
@@ -316,32 +287,33 @@ actor NoteAnalysisService {
         do {
             let llmResponse = try decoder.decode(LLMResponse.self, from: data)
             
-            // Convert LLM response to DTO
+            // Convert LLM response to DTO (all fields tolerant of MLX model omissions)
             return NoteAnalysisDTO(
                 summary: llmResponse.summary,
-                people: llmResponse.people.map { person in
+                people: (llmResponse.people ?? []).map { person in
                     PersonMentionDTO(
                         name: person.name,
                         role: person.role,
                         relationshipTo: person.relationship_to,
-                        contactUpdates: person.contact_updates.map { update in
+                        contactUpdates: (person.contact_updates ?? []).map { update in
                             ContactUpdateDTO(
                                 field: update.field,
                                 value: update.value,
-                                confidence: update.confidence
+                                confidence: update.confidence ?? 0.5
                             )
                         },
-                        confidence: person.confidence
+                        confidence: person.confidence ?? 0.5
                     )
                 },
-                topics: llmResponse.topics,
-                actionItems: llmResponse.action_items.map { action in
-                    ActionItemDTO(
-                        type: action.type,
-                        description: action.description,
+                topics: llmResponse.topics ?? [],
+                actionItems: (llmResponse.action_items ?? []).compactMap { action in
+                    guard let type = action.type, let desc = action.description else { return nil }
+                    return ActionItemDTO(
+                        type: type,
+                        description: desc,
                         suggestedText: action.suggested_text,
                         suggestedChannel: action.suggested_channel,
-                        urgency: action.urgency,
+                        urgency: action.urgency ?? "standard",
                         personName: action.person_name
                     )
                 },
@@ -350,12 +322,25 @@ actor NoteAnalysisService {
                         personName: rel.person_name,
                         relationshipType: rel.relationship_type,
                         relatedTo: rel.related_to,
-                        confidence: rel.confidence
+                        confidence: rel.confidence ?? 0.5
                     )
                 },
                 analysisVersion: Self.currentAnalysisVersion
             )
         } catch {
+            // MLX models may return plain text — use it as the summary so analysis still succeeds
+            let plainText = jsonString.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !plainText.isEmpty {
+                logger.info("Note analysis returned plain text instead of JSON, using as summary")
+                return NoteAnalysisDTO(
+                    summary: String(plainText.prefix(500)),
+                    people: [],
+                    topics: [],
+                    actionItems: [],
+                    discoveredRelationships: [],
+                    analysisVersion: Self.currentAnalysisVersion
+                )
+            }
             logger.error("JSON parsing failed. First 500 chars: \(String(cleaned.prefix(500)))")
             throw error
         }
@@ -366,9 +351,9 @@ actor NoteAnalysisService {
 
 private struct LLMResponse: Codable {
     let summary: String?
-    let people: [LLMPerson]
-    let topics: [String]
-    let action_items: [LLMActionItem]
+    let people: [LLMPerson]?
+    let topics: [String]?
+    let action_items: [LLMActionItem]?
     let discovered_relationships: [LLMDiscoveredRelationship]?
 }
 
@@ -376,36 +361,36 @@ private struct LLMDiscoveredRelationship: Codable {
     let person_name: String
     let relationship_type: String
     let related_to: String
-    let confidence: Double
+    let confidence: Double?
 }
 
 private struct LLMPerson: Codable {
     let name: String
     let role: String?
     let relationship_to: String?
-    let contact_updates: [LLMContactUpdate]
-    let confidence: Double
+    let contact_updates: [LLMContactUpdate]?
+    let confidence: Double?
 }
 
 private struct LLMContactUpdate: Codable {
     let field: String
     let value: String
-    let confidence: Double
+    let confidence: Double?
 }
 
 private struct LLMRelationshipSummary: Codable {
-    let overview: String
-    let key_themes: [String]
-    let suggested_next_steps: [String]
+    let overview: String?
+    let key_themes: [String]?
+    let suggested_next_steps: [String]?
 }
 
 private struct LLMActionItem: Codable {
-    let type: String
-    let description: String
+    let type: String?
+    let description: String?
     let suggested_text: String?
     let suggested_channel: String?
     let person_name: String?
-    let urgency: String
+    let urgency: String?
 }
 
 // MARK: - Public Types

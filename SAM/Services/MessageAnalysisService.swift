@@ -10,7 +10,6 @@
 //
 
 import Foundation
-import FoundationModels
 import os.log
 
 actor MessageAnalysisService {
@@ -18,7 +17,6 @@ actor MessageAnalysisService {
     static let shared = MessageAnalysisService()
 
     private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "MessageAnalysisService")
-    private let model = SystemLanguageModel.default
 
     static let currentAnalysisVersion = 1
 
@@ -26,18 +24,15 @@ actor MessageAnalysisService {
 
     // MARK: - Availability
 
-    func checkAvailability() -> ModelAvailability {
-        switch model.availability {
+    func checkAvailability() async -> ModelAvailability {
+        let availability = await AIService.shared.checkAvailability()
+        switch availability {
         case .available:
             return .available
-        case .unavailable(.deviceNotEligible):
-            return .unavailable(reason: "Device not eligible for Apple Intelligence")
-        case .unavailable(.appleIntelligenceNotEnabled):
-            return .unavailable(reason: "Apple Intelligence not enabled")
-        case .unavailable(.modelNotReady):
-            return .unavailable(reason: "Model is downloading or not ready")
-        case .unavailable(let other):
-            return .unavailable(reason: "Model unavailable: \(other)")
+        case .downloading:
+            return .unavailable(reason: "Model is downloading")
+        case .unavailable(let reason):
+            return .unavailable(reason: reason)
         }
     }
 
@@ -51,7 +46,7 @@ actor MessageAnalysisService {
         contactName: String?,
         contactRole: String?
     ) async throws -> MessageAnalysisDTO {
-        guard case .available = checkAvailability() else {
+        guard case .available = await checkAvailability() else {
             throw AnalysisError.modelUnavailable
         }
 
@@ -60,11 +55,10 @@ actor MessageAnalysisService {
         }
 
         let instructions = buildSystemInstructions()
-        let session = LanguageModelSession(instructions: instructions)
         let prompt = buildPrompt(messages: messages, contactName: contactName, contactRole: contactRole)
 
-        let response = try await session.respond(to: prompt)
-        let analysis = try parseResponse(response.content)
+        let responseText = try await AIService.shared.generate(prompt: prompt, systemInstruction: instructions)
+        let analysis = try parseResponse(responseText)
 
         logger.info("Analyzed conversation with \(messages.count) messages: \(analysis.topics.count) topics")
         return analysis
@@ -140,51 +134,57 @@ actor MessageAnalysisService {
     // MARK: - Response Parsing
 
     private func parseResponse(_ jsonString: String) throws -> MessageAnalysisDTO {
-        var cleaned = jsonString.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        // Remove markdown code block markers
-        if cleaned.hasPrefix("```") {
-            if let firstNewline = cleaned.firstIndex(of: "\n") {
-                cleaned = String(cleaned[cleaned.index(after: firstNewline)...])
-            }
-            if cleaned.hasSuffix("```") {
-                cleaned = String(cleaned.dropLast(3))
-            }
-        }
-        cleaned = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleaned = extractJSON(from: jsonString)
 
         guard let data = cleaned.data(using: .utf8) else {
             throw AnalysisError.invalidResponse
         }
 
-        let decoded = try JSONDecoder().decode(LLMMessageResponse.self, from: data)
+        do {
+            let decoded = try JSONDecoder().decode(LLMMessageResponse.self, from: data)
 
-        let temporalEvents = (decoded.temporal_events ?? []).map { event in
-            TemporalEventDTO(
-                id: UUID(),
-                description: event.description,
-                dateString: event.date_string,
-                parsedDate: nil,
-                confidence: event.confidence
+            let temporalEvents = (decoded.temporal_events ?? []).map { event in
+                TemporalEventDTO(
+                    id: UUID(),
+                    description: event.description,
+                    dateString: event.date_string,
+                    parsedDate: nil,
+                    confidence: event.confidence
+                )
+            }
+
+            let sentiment: MessageAnalysisDTO.Sentiment
+            switch decoded.sentiment?.lowercased() {
+            case "positive": sentiment = .positive
+            case "negative": sentiment = .negative
+            case "urgent": sentiment = .urgent
+            default: sentiment = .neutral
+            }
+
+            return MessageAnalysisDTO(
+                summary: decoded.summary ?? "No summary available",
+                topics: decoded.topics ?? [],
+                temporalEvents: temporalEvents,
+                sentiment: sentiment,
+                actionItems: decoded.action_items ?? [],
+                analysisVersion: Self.currentAnalysisVersion
             )
+        } catch {
+            // MLX models may return plain text — use as summary
+            let plainText = jsonString.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !plainText.isEmpty {
+                logger.info("Message analysis returned plain text, using as summary")
+                return MessageAnalysisDTO(
+                    summary: String(plainText.prefix(500)),
+                    topics: [],
+                    temporalEvents: [],
+                    sentiment: .neutral,
+                    actionItems: [],
+                    analysisVersion: Self.currentAnalysisVersion
+                )
+            }
+            throw error
         }
-
-        let sentiment: MessageAnalysisDTO.Sentiment
-        switch decoded.sentiment?.lowercased() {
-        case "positive": sentiment = .positive
-        case "negative": sentiment = .negative
-        case "urgent": sentiment = .urgent
-        default: sentiment = .neutral
-        }
-
-        return MessageAnalysisDTO(
-            summary: decoded.summary ?? "No summary available",
-            topics: decoded.topics ?? [],
-            temporalEvents: temporalEvents,
-            sentiment: sentiment,
-            actionItems: decoded.action_items ?? [],
-            analysisVersion: Self.currentAnalysisVersion
-        )
     }
 }
 

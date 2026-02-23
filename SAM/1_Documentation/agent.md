@@ -64,7 +64,7 @@ SAM must deeply integrate with Apple’s core system apps while respecting data 
 ⸻
 
 AI Behavior & Boundaries
-SAM includes an AI assistant that is assistive, not autonomous. As much as possible, the AI assistant will be based off of Apple internal AI tools such as the built-in LLM.
+SAM includes an AI assistant that is assistive, not autonomous. The AI layer supports Apple FoundationModels (on-device, always available) with an optional MLX local model upgrade path for more powerful reasoning — all fully private, on-device.
 
 The AI may:
     •    Analyze interaction history per contact
@@ -73,15 +73,26 @@ The AI may:
     •    Identify known and new contacts in communications
     •    Summarize meetings and interactions
     •    Highlight neglected or time-sensitive relationships
+    •    Generate outcome-focused coaching suggestions (what to do and why)
+    •    Adapt coaching style and priorities based on user feedback
+    •    Learn which types of suggestions the user finds most valuable
 
 The AI must:
     •    Never send messages or modify data without explicit user approval
     •    Always present recommendations as suggestions
     •    Be transparent about why a recommendation is made
+    •    Focus on outcomes (why and what result) rather than tasks (what action)
+    •    Respect privacy — analyze then discard raw text; store only summaries
 
-SAM’s AI should feel like a thoughtful assistant — not an automation engine.
+Coaching Principles:
+    •    Outcome-focused, not task-focused — prioritize *why* and *what result*, not *what action*
+    •    Adaptive encouragement — learn which coaching style resonates with the user
+    •    Pipeline awareness — when contact-specific actions thin, suggest growth activities
+    •    Privacy-first — all AI processing stays on-device
 
-AI prompts should be accessible in a special Settings Tab (or multiple tabs) so that the User can tweak or improve prompts over time.
+SAM's AI should feel like a thoughtful coach — not an automation engine.
+
+AI prompts and coaching preferences should be accessible in Settings so that the User can tweak or improve prompts over time.
 
 ⸻
 
@@ -111,7 +122,7 @@ Data Integrity & Safety
 Overall Goal
 The finished product should feel like:
 
-“A native Mac assistant that quietly helps me steward relationships well. SAM must reduce as much friction as possible in my work as I build and maintain great relationships with my clients to serve their financial needs and reduce their concerns about their financial future.”
+"A native Mac coaching assistant that quietly helps me steward relationships well. SAM must reduce as much friction as possible in my work as I build and maintain great relationships with my clients to serve their financial needs and reduce their concerns about their financial future. SAM doesn't just track what happened — it tells me what to do next and why it matters."
 
 ⸻
 

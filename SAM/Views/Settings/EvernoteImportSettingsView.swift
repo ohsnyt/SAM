@@ -124,6 +124,18 @@ struct EvernoteImportSettingsView: View {
                             .fontWeight(.semibold)
                     }
 
+                    if coordinator.splitCount > 0 {
+                        HStack {
+                            Text("  ↳ Expanded by dates:")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Text("+\(coordinator.splitCount)")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                        }
+                    }
+
                     HStack {
                         Text("New (will import):")
                             .font(.caption)

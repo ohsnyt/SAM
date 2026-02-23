@@ -142,10 +142,15 @@ private class ENEXParserDelegate: NSObject, XMLParserDelegate {
         currentElement = ""
     }
 
-    // Simple HTML tag stripping + entity decoding
+    // HTML tag stripping with newline preservation for block elements
     static func stripHTML(_ html: String) -> String {
         var text = html
-        // Remove HTML tags
+        // Convert block-level closing tags and <br> to newlines
+        text = text.replacingOccurrences(of: "<br\\s*/?>", with: "\n", options: .regularExpression)
+        text = text.replacingOccurrences(of: "</div>", with: "\n", options: .caseInsensitive)
+        text = text.replacingOccurrences(of: "</p>", with: "\n", options: .caseInsensitive)
+        text = text.replacingOccurrences(of: "</li>", with: "\n", options: .caseInsensitive)
+        // Strip remaining HTML tags
         text = text.replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
         // Decode common HTML entities
         text = text.replacingOccurrences(of: "&amp;", with: "&")
@@ -155,8 +160,13 @@ private class ENEXParserDelegate: NSObject, XMLParserDelegate {
         text = text.replacingOccurrences(of: "&apos;", with: "'")
         text = text.replacingOccurrences(of: "&nbsp;", with: " ")
         text = text.replacingOccurrences(of: "&#xa0;", with: " ")
-        // Collapse whitespace
-        text = text.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+        // Collapse horizontal whitespace only (preserve newlines)
+        text = text.replacingOccurrences(of: "[^\\S\\n]+", with: " ", options: .regularExpression)
+        // Collapse 3+ consecutive newlines into 2
+        text = text.replacingOccurrences(of: "\\n{3,}", with: "\n\n", options: .regularExpression)
+        // Trim each line and remove leading/trailing blank lines
+        let lines = text.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
+        text = lines.joined(separator: "\n")
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

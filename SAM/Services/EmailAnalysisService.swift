@@ -9,7 +9,6 @@
 //
 
 import Foundation
-import FoundationModels
 import os.log
 
 /// Actor-isolated service for analyzing email content with on-device LLM.
@@ -21,32 +20,28 @@ actor EmailAnalysisService {
     private init() {}
 
     static let currentAnalysisVersion = 1
-    private let model = SystemLanguageModel.default
 
-    func checkAvailability() -> ModelAvailability {
-        switch model.availability {
-        case .available: return .available
-        case .unavailable(.deviceNotEligible):
-            return .unavailable(reason: "Device not eligible for Apple Intelligence")
-        case .unavailable(.appleIntelligenceNotEnabled):
-            return .unavailable(reason: "Apple Intelligence not enabled")
-        case .unavailable(.modelNotReady):
-            return .unavailable(reason: "Model is downloading or not ready")
-        case .unavailable(let other):
-            return .unavailable(reason: "Model unavailable: \(other)")
+    func checkAvailability() async -> ModelAvailability {
+        let availability = await AIService.shared.checkAvailability()
+        switch availability {
+        case .available:
+            return .available
+        case .downloading:
+            return .unavailable(reason: "Model is downloading")
+        case .unavailable(let reason):
+            return .unavailable(reason: reason)
         }
     }
 
     /// Analyze an email body and extract structured intelligence.
     func analyzeEmail(subject: String, body: String, senderName: String?) async throws -> EmailAnalysisDTO {
-        guard case .available = checkAvailability() else {
+        guard case .available = await checkAvailability() else {
             throw AnalysisError.modelUnavailable
         }
 
         let custom = UserDefaults.standard.string(forKey: "sam.ai.emailPrompt") ?? ""
         let instructions = custom.isEmpty ? Self.defaultEmailPrompt : custom
 
-        let session = LanguageModelSession(instructions: instructions)
         let prompt = """
         Subject: \(subject)
         \(senderName.map { "From: \($0)" } ?? "")
@@ -54,8 +49,8 @@ actor EmailAnalysisService {
         \(body)
         """
 
-        let response = try await session.respond(to: prompt)
-        return try parseResponse(response.content)
+        let responseText = try await AIService.shared.generate(prompt: prompt, systemInstruction: instructions)
+        return try parseResponse(responseText)
     }
 
     private static func mapEntityKind(_ raw: String) -> EmailEntityDTO.EntityKind {
@@ -69,48 +64,58 @@ actor EmailAnalysisService {
     }
 
     private func parseResponse(_ jsonString: String) throws -> EmailAnalysisDTO {
-        var cleaned = jsonString.trimmingCharacters(in: .whitespacesAndNewlines)
-        if cleaned.hasPrefix("```") {
-            if let firstNewline = cleaned.firstIndex(of: "\n") {
-                cleaned = String(cleaned[cleaned.index(after: firstNewline)...])
-            }
-            if cleaned.hasSuffix("```") { cleaned = String(cleaned.dropLast(3)) }
-        }
-        cleaned = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleaned = extractJSON(from: jsonString)
 
         guard let data = cleaned.data(using: .utf8) else {
             throw AnalysisError.invalidResponse
         }
 
-        let llm = try JSONDecoder().decode(LLMEmailResponse.self, from: data)
+        do {
+            let llm = try JSONDecoder().decode(LLMEmailResponse.self, from: data)
 
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateStyle = .long
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateStyle = .long
 
-        return EmailAnalysisDTO(
-            summary: llm.summary,
-            namedEntities: (llm.entities ?? []).map { e in
-                EmailEntityDTO(
-                    id: UUID(),
-                    name: e.name,
-                    kind: Self.mapEntityKind(e.kind),
-                    confidence: e.confidence ?? 0.5
+            return EmailAnalysisDTO(
+                summary: llm.summary,
+                namedEntities: (llm.entities ?? []).map { e in
+                    EmailEntityDTO(
+                        id: UUID(),
+                        name: e.name,
+                        kind: Self.mapEntityKind(e.kind),
+                        confidence: e.confidence ?? 0.5
+                    )
+                },
+                topics: llm.topics ?? [],
+                temporalEvents: (llm.temporal_events ?? []).compactMap { t in
+                    guard let dateString = t.date_string else { return nil }
+                    return TemporalEventDTO(
+                        id: UUID(),
+                        description: t.description ?? "",
+                        dateString: dateString,
+                        parsedDate: dateFormatter.date(from: dateString),
+                        confidence: t.confidence ?? 0.5
+                    )
+                },
+                sentiment: EmailAnalysisDTO.Sentiment(rawValue: llm.sentiment ?? "neutral") ?? .neutral,
+                analysisVersion: Self.currentAnalysisVersion
+            )
+        } catch {
+            // MLX models may return plain text — use as summary
+            let plainText = jsonString.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !plainText.isEmpty {
+                logger.info("Email analysis returned plain text, using as summary")
+                return EmailAnalysisDTO(
+                    summary: String(plainText.prefix(500)),
+                    namedEntities: [],
+                    topics: [],
+                    temporalEvents: [],
+                    sentiment: .neutral,
+                    analysisVersion: Self.currentAnalysisVersion
                 )
-            },
-            topics: llm.topics ?? [],
-            temporalEvents: (llm.temporal_events ?? []).compactMap { t in
-                guard let dateString = t.date_string else { return nil }
-                return TemporalEventDTO(
-                    id: UUID(),
-                    description: t.description ?? "",
-                    dateString: dateString,
-                    parsedDate: dateFormatter.date(from: dateString),
-                    confidence: t.confidence ?? 0.5
-                )
-            },
-            sentiment: EmailAnalysisDTO.Sentiment(rawValue: llm.sentiment ?? "neutral") ?? .neutral,
-            analysisVersion: Self.currentAnalysisVersion
-        )
+            }
+            throw error
+        }
     }
 
     static let defaultEmailPrompt = """

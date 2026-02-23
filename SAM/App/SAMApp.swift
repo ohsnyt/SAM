@@ -86,7 +86,17 @@ struct SAMApp: App {
                 .keyboardShortcut("r", modifiers: [.command, .shift])
             }
         }
-        
+
+        // Quick Note auxiliary window — opened from outcome cards
+        WindowGroup("Quick Note", id: "quick-note", for: QuickNotePayload.self) { $payload in
+            if let payload {
+                QuickNoteWindowView(payload: payload)
+                    .modelContainer(SAMModelContainer.shared)
+            }
+        }
+        .defaultSize(width: 500, height: 300)
+        .windowResizability(.contentSize)
+
         #if os(macOS)
         Settings {
             SettingsView()
@@ -106,6 +116,8 @@ struct SAMApp: App {
         NotesRepository.shared.configure(container: SAMModelContainer.shared)
         UnknownSenderRepository.shared.configure(container: SAMModelContainer.shared)
         InsightGenerator.shared.configure(container: SAMModelContainer.shared)
+        OutcomeRepository.shared.configure(container: SAMModelContainer.shared)
+        CoachingAdvisor.shared.configure(container: SAMModelContainer.shared)
     }
     
     /// Check permissions and decide whether to show onboarding or proceed with imports
@@ -217,6 +229,15 @@ struct SAMApp: App {
 
         if !contactsEnabled && !calendarEnabled && !mailEnabled && !commsMessagesEnabled && !commsCallsEnabled {
             logger.info("No sources enabled — app running in limited mode")
+        }
+
+        // Prune expired outcomes and generate new ones
+        try? OutcomeRepository.shared.pruneExpired()
+        try? OutcomeRepository.shared.purgeOld()
+
+        let autoGenerateOutcomes = UserDefaults.standard.bool(forKey: "outcomeAutoGenerate")
+        if autoGenerateOutcomes {
+            await OutcomeEngine.shared.generateOutcomes()
         }
     }
 }

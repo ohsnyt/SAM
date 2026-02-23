@@ -26,6 +26,7 @@ struct SettingsView: View {
         case mail = "Mail"
         case communications = "Communications"
         case intelligence = "Intelligence"
+        case coaching = "Coaching"
         case evernote = "Evernote"
         case general = "General"
 
@@ -39,6 +40,7 @@ struct SettingsView: View {
             case .mail: return "envelope"
             case .communications: return "message.fill"
             case .intelligence: return "brain"
+            case .coaching: return "brain.head.profile"
             case .evernote: return "square.and.arrow.down"
             case .general: return "gearshape"
             }
@@ -82,6 +84,12 @@ struct SettingsView: View {
                     Label("Intelligence", systemImage: "brain")
                 }
                 .tag(SettingsTab.intelligence)
+
+            CoachingSettingsView()
+                .tabItem {
+                    Label("Coaching", systemImage: "brain.head.profile")
+                }
+                .tag(SettingsTab.coaching)
 
             EvernoteImportSettingsView()
                 .tabItem {
@@ -946,6 +954,10 @@ struct GeneralSettingsView: View {
     @State private var showOnboardingResetConfirmation = false
     @AppStorage("autoResetOnVersionChange") private var autoResetOnVersionChange = false
     @AppStorage("autoDetectPermissionLoss") private var autoDetectPermissionLoss = true
+    @State private var silenceTimeout: Double = {
+        let stored = UserDefaults.standard.double(forKey: "sam.dictation.silenceTimeout")
+        return stored > 0 ? stored : 2.0
+    }()
     
     private var appVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
@@ -970,31 +982,21 @@ struct GeneralSettingsView: View {
                         HStack {
                             Text("Version:")
                                 .foregroundStyle(.secondary)
-                            Text("\(appVersion) (Phase H Complete)")
+                            Text(appVersion)
                         }
-                        
+
                         HStack {
                             Text("Build:")
                                 .foregroundStyle(.secondary)
                             Text(buildNumber)
                         }
                     }
-                    
+
                     Divider()
-                    
-                    // Feature status
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Feature Status")
-                            .font(.headline)
-                        
-                        FeatureStatusRow(name: "People", status: .complete)
-                        FeatureStatusRow(name: "Calendar Import", status: .complete)
-                        FeatureStatusRow(name: "Evidence Inbox", status: .complete)
-                        FeatureStatusRow(name: "Contexts", status: .complete)
-                        FeatureStatusRow(name: "Notes & AI Analysis", status: .complete)
-                        FeatureStatusRow(name: "Insights", status: .planned)
-                    }
-                    
+
+                    // Dictation
+                    dictationSection
+
                     Divider()
                     
                     // Auto-reset section
@@ -1084,12 +1086,6 @@ struct GeneralSettingsView: View {
                         }
                     }
                     
-                    Divider()
-                    
-                    // Additional settings placeholder
-                    Text("Additional settings will be available in Phase I.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
                 .padding()
             }
@@ -1114,58 +1110,41 @@ struct GeneralSettingsView: View {
         // Note: Clearing SwiftData requires restart
         logger.notice("All settings cleared. SwiftData requires app restart to fully reset.")
     }
-}
 
-struct FeatureStatusRow: View {
-    let name: String
-    let status: Status
-    
-    enum Status {
-        case complete
-        case inProgress
-        case planned
-        
-        var color: Color {
-            switch self {
-            case .complete: return .green
-            case .inProgress: return .orange
-            case .planned: return .secondary
-            }
-        }
-        
-        var icon: String {
-            switch self {
-            case .complete: return "checkmark.circle.fill"
-            case .inProgress: return "clock.fill"
-            case .planned: return "circle"
-            }
-        }
-        
-        var text: String {
-            switch self {
-            case .complete: return "Complete"
-            case .inProgress: return "In Progress"
-            case .planned: return "Planned"
-            }
-        }
-    }
-    
-    var body: some View {
-        HStack {
-            Image(systemName: status.icon)
-                .foregroundStyle(status.color)
-                .frame(width: 20)
-            
-            Text(name)
-                .font(.body)
-            
-            Spacer()
-            
-            Text(status.text)
+    // MARK: - Dictation Section
+
+    private var dictationSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Dictation")
+                .font(.headline)
+
+            Text("How long SAM waits after you stop speaking before ending dictation.")
                 .font(.caption)
-                .foregroundStyle(status.color)
+                .foregroundStyle(.secondary)
+
+            HStack {
+                Text("Silence timeout")
+                Spacer()
+                Text(String(format: "%.1fs", silenceTimeout))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+
+            Slider(value: $silenceTimeout, in: 0.5...5.0, step: 0.5)
+                .onChange(of: silenceTimeout) { _, newValue in
+                    UserDefaults.standard.set(newValue, forKey: "sam.dictation.silenceTimeout")
+                }
+
+            HStack {
+                Text("0.5s")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                Spacer()
+                Text("5.0s")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
         }
-        .padding(.vertical, 2)
     }
 }
 

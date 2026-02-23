@@ -16,7 +16,7 @@
 
 ### Purpose
 
-SAM is a **native macOS relationship management application** for independent financial strategists. It observes interactions from Apple's Calendar and Contacts, transforms them into Evidence, and generates AI-backed Insights to help advisors stay aware of client life events and opportunities.
+SAM is a **native macOS relationship coaching application** for independent financial strategists. It observes interactions from Apple's Calendar, Contacts, Mail, iMessage, Phone, and FaceTime, transforms them into Evidence, generates AI-backed Insights, and provides outcome-focused coaching to help advisors build and maintain strong client relationships.
 
 **Core Philosophy**:
 - Apple Contacts and Calendar are the **systems of record** for identity and events
@@ -189,7 +189,7 @@ final class XYZImportCoordinator {
 SAM/SAM/
 ├── App/
 │   ├── SAMApp.swift                    ✅ App entry point, lifecycle, permissions
-│   └── SAMModelContainer.swift         ✅ SwiftData container (v6 schema)
+│   └── SAMModelContainer.swift         ✅ SwiftData container (v11 schema)
 │
 ├── Services/
 │   ├── ContactsService.swift           ✅ Actor — CNContact operations
@@ -198,7 +198,9 @@ SAM/SAM/
 │   ├── MailService.swift               ✅ Actor — Mail.app AppleScript bridge
 │   ├── EmailAnalysisService.swift     ✅ Actor — On-device email LLM analysis
 │   ├── DictationService.swift         ✅ Actor — SFSpeechRecognizer on-device dictation
-│   └── ENEXParserService.swift        ✅ Actor — Evernote ENEX XML parser
+│   ├── ENEXParserService.swift        ✅ Actor — Evernote ENEX XML parser
+│   ├── AIService.swift               ✅ Actor — Unified AI (FoundationModels + MLX)
+│   └── MLXModelManager.swift         ✅ Actor — MLX model download/lifecycle
 │
 ├── Coordinators/
 │   ├── ContactsImportCoordinator.swift ✅ Orchestrates contact import
@@ -206,13 +208,16 @@ SAM/SAM/
 │   ├── NoteAnalysisCoordinator.swift   ✅ Save → analyze → store pipeline
 │   ├── InsightGenerator.swift          ✅ Multi-source insight generation
 │   ├── MailImportCoordinator.swift     ✅ Orchestrates email import (standard API pattern)
-│   └── EvernoteImportCoordinator.swift ✅ ENEX file import (parse → preview → import)
+│   ├── EvernoteImportCoordinator.swift ✅ ENEX file import (parse → preview → import)
+│   ├── OutcomeEngine.swift            ✅ Outcome generation + scoring + AI enrichment
+│   └── CoachingAdvisor.swift          ✅ Feedback analysis + adaptive encouragement
 │
 ├── Repositories/
 │   ├── PeopleRepository.swift          ✅ CRUD for SamPerson
 │   ├── EvidenceRepository.swift        ✅ CRUD for SamEvidenceItem
 │   ├── ContextsRepository.swift        ✅ CRUD for SamContext
-│   └── NotesRepository.swift           ✅ CRUD for SamNote + analysis storage
+│   ├── NotesRepository.swift           ✅ CRUD for SamNote + analysis storage
+│   └── OutcomeRepository.swift        ✅ CRUD for SamOutcome + deduplication
 │
 ├── Models/
 │   ├── SAMModels.swift                 ✅ Core @Model classes (SamPerson, SamContext, etc.)
@@ -239,7 +244,8 @@ SAM/SAM/
 │   │   ├── ContextListView.swift       ✅ Context list with filter/search
 │   │   └── ContextDetailView.swift     ✅ Context detail + participant mgmt
 │   ├── Awareness/
-│   │   └── AwarenessView.swift         ✅ Insights dashboard with filtering
+│   │   ├── AwarenessView.swift         ✅ Insights dashboard with filtering
+│   │   └── OutcomeQueueView.swift     ✅ Coaching outcome queue (Phase N)
 │   ├── Notes/
 │   │   ├── NoteEditorView.swift        ✅ Edit-only note editor (Phase L-2)
 │   │   ├── InlineNoteCaptureView.swift ✅ Inline note capture with dictation (Phase L-2)
@@ -247,11 +253,13 @@ SAM/SAM/
 │   │   └── NoteActionItemsView.swift   ✅ Review extracted action items
 │   ├── Shared/
 │   │   ├── NotInContactsCapsule.swift  ✅ Reusable "Not in Contacts" badge + add-to-contacts action
-│   │   └── RoleBadgeStyle.swift        ✅ Shared role→color/icon mapping + RoleBadgeIconView (compact list icon with popover tooltip)
+│   │   ├── RoleBadgeStyle.swift        ✅ Shared role→color/icon mapping + RoleBadgeIconView (compact list icon with popover tooltip)
+│   │   └── OutcomeCardView.swift      ✅ Reusable outcome card (Phase N)
 │   ├── Settings/
-│   │   ├── SettingsView.swift          ✅ Tabbed: Permissions, Contacts, Calendar, Mail, Intelligence, Evernote, General
+│   │   ├── SettingsView.swift          ✅ Tabbed: Permissions, Contacts, Calendar, Mail, Communications, Intelligence, Coaching, Evernote, General
 │   │   ├── MailSettingsView.swift      ✅ Mail.app accounts, Me-contact email filter toggles
-│   │   └── EvernoteImportSettingsView.swift ✅ ENEX file picker, preview, import
+│   │   ├── EvernoteImportSettingsView.swift ✅ ENEX file picker, preview, import
+│   │   └── CoachingSettingsView.swift ✅ AI backend, MLX, coaching style, feedback (Phase N)
 │   └── (debug views removed)
 │
 ├── Utilities/
@@ -484,9 +492,11 @@ Text(context.contextType)       // Compile error - property doesn't exist
 
 - ✅ **Phase M**: Communications Evidence — iMessage, phone calls, FaceTime (Feb 21, 2026)
 
+- ✅ **Phase N**: Outcome-Focused Coaching Engine — AI service layer, outcome model, coaching engine, adaptive feedback (Feb 22, 2026)
+
 **Next Up**:
-- ⬜ **Phase N**: Universal Undo System
-- ⬜ **Phase O**: Time Tracking
+- ⬜ **Phase O**: Universal Undo System
+- ⬜ **Phase P**: Time Tracking
 
 ---
 
@@ -544,40 +554,45 @@ Simplified note model (removed NoteEntry, one note = one text block + sourceType
 
 ---
 
-### ⬜ Phase N: Universal Undo System (NOT STARTED)
+### ✅ Phase N: Outcome-Focused Coaching Engine (COMPLETE — Feb 22, 2026)
 
-**Goal**: 30-day undo history for all destructive operations
+**Goal**: Transform SAM from a relationship *tracker* into a relationship *coach*.
 
-**Tasks**:
-- ⬜ Design undo architecture
-  - Create UndoEntry model (captures before/after state)
-  - Create UndoManager coordinator (not NSUndoManager)
-  - Store snapshots of changed objects
-- ⬜ Implement UndoRepository.swift
-  - Store undo entries with 30-day expiration
-  - Capture operation type, timestamp, affected models
-  - Store serialized "before" state (JSON)
-- ⬜ Add undo hooks to all repositories
-  - PeopleRepository: Capture before delete/update
-  - EvidenceRepository: Capture before triage changes
-  - ContextsRepository: Capture before context changes
-- ⬜ Create UndoHistoryView.swift
-  - List recent operations
-  - Preview before/after states
-  - "Undo" button restores previous state
-- ⬜ Add automatic cleanup
-  - Background task removes entries > 30 days old
+**Architecture**:
+- `AIService` (actor) — Unified AI interface abstracting FoundationModels + MLX backends. Default FoundationModels; MLX stubbed for future.
+- `MLXModelManager` (actor) — Model download/lifecycle management (stubbed until SPM dependency added).
+- `SamOutcome` (@Model) — Coaching suggestions with priority scoring, deadlines, feedback tracking.
+- `CoachingProfile` (@Model) — Singleton tracking user encouragement style, acted-on patterns, dismiss patterns.
+- `OutcomeRepository` (@MainActor) — CRUD + deduplication + pruning for outcomes.
+- `OutcomeEngine` (@MainActor) — Deterministic scoring + AI enrichment pipeline scanning all evidence sources.
+- `CoachingAdvisor` (@MainActor) — Feedback analysis, adaptive encouragement, priority weight adjustment.
+- `OutcomeQueueView` — Top of AwarenessView, shows prioritized outcomes with Done/Skip.
+- `OutcomeCardView` — Reusable card with kind badge, priority dot, rationale, suggested next step.
+- `CoachingSettingsView` — Settings tab for AI backend, MLX model, coaching style, feedback.
 
-**Expected Outcome**: User can undo any destructive action within 30 days
+**Schema**: SAM_v11 (added `SamOutcome`, `CoachingProfile`)
 
-**Architecture Notes**:
-- Undo != NSUndoManager (incompatible with SwiftData)
-- Store snapshots as JSON (Codable)
-- Repository pattern: all mutations go through repositories, so easy to intercept
+**Outcome Generation Pipeline**:
+1. Scan upcoming meetings (48h) → preparation outcomes
+2. Scan past meetings without notes (48h) → follow-up outcomes
+3. Scan pending action items from notes → proposal/follow-up outcomes
+4. Scan relationship health (role-weighted thresholds) → outreach outcomes
+5. Scan for growth opportunities (when queue thin) → growth outcomes
+6. AI enrichment (top 5 outcomes) → enhanced rationale + concrete next steps
+
+**Priority Scoring** (0.0–1.0): Time urgency (0.30) + Relationship health (0.20) + Role importance (0.20) + Evidence recency (0.15) + User engagement (0.15)
+
+**Deferred**: MLX model download/inference, custom outcome templates, outcome analytics dashboard, progress reports, team coaching patterns.
 
 ---
 
-### ⬜ Phase O: Time Tracking (NOT STARTED)
+### ⬜ Phase O: Universal Undo System (NOT STARTED)
+
+**Goal**: 30-day undo history for all destructive operations
+
+---
+
+### ⬜ Phase P: Time Tracking (NOT STARTED)
 
 **Goal**: Allow user to document time spent on activities
 

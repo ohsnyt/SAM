@@ -34,6 +34,7 @@ final class EvernoteImportCoordinator {
     var newCount: Int = 0
     var duplicateCount: Int = 0
     var importedCount: Int = 0
+    var splitCount: Int = 0
     var lastError: String?
 
     // MARK: - Status
@@ -68,9 +69,17 @@ final class EvernoteImportCoordinator {
         newCount = 0
         duplicateCount = 0
         importedCount = 0
+        splitCount = 0
 
         do {
-            let notes = try ENEXParserService.parse(fileURL: url)
+            let raw = try ENEXParserService.parse(fileURL: url)
+            var expandedCount = 0
+            let notes = raw.flatMap { note -> [EvernoteNoteDTO] in
+                let parts = splitByDateEntries(note: note)
+                if parts.count > 1 { expandedCount += parts.count - 1 }
+                return parts
+            }
+            splitCount = expandedCount
             parsedNotes = notes
 
             // Check for duplicates
@@ -160,7 +169,125 @@ final class EvernoteImportCoordinator {
         newCount = 0
         duplicateCount = 0
         importedCount = 0
+        splitCount = 0
         importStatus = .idle
         lastError = nil
+    }
+
+    // MARK: - Date Entry Splitting
+
+    /// Date formats for parsing date-prefixed lines in Evernote notes
+    private static let entryDateFormatters: [DateFormatter] = {
+        let formats = [
+            "M/d/yyyy", "M/d/yy",
+            "M-d-yyyy", "M-d-yy",
+            "MMMM d, yyyy", "MMM d, yyyy",
+            "yyyy-MM-dd"
+        ]
+        return formats.map { fmt in
+            let f = DateFormatter()
+            f.dateFormat = fmt
+            f.locale = Locale(identifier: "en_US_POSIX")
+            return f
+        }
+    }()
+
+    /// Numeric date pattern: 1/15/2026, 01-15-26, etc.
+    private static let numericDateRegex = try! NSRegularExpression(
+        pattern: #"^\s*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})"#
+    )
+
+    /// Named month pattern: January 15, 2026 or Jan 15, 2026
+    private static let namedDateRegex = try! NSRegularExpression(
+        pattern: #"^\s*((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\.?\s+\d{1,2},?\s+\d{2,4})"#,
+        options: .caseInsensitive
+    )
+
+    /// Attempt to parse a date string using known entry formats
+    private func parseEntryDate(_ string: String) -> Date? {
+        let trimmed = string.trimmingCharacters(in: .whitespaces)
+        for formatter in Self.entryDateFormatters {
+            if let date = formatter.date(from: trimmed) {
+                return date
+            }
+        }
+        return nil
+    }
+
+    /// Extract a date prefix from a line, returning (dateString, Date) if found
+    private func extractDatePrefix(from line: String) -> (String, Date)? {
+        let nsLine = line as NSString
+        let range = NSRange(location: 0, length: nsLine.length)
+
+        for regex in [Self.numericDateRegex, Self.namedDateRegex] {
+            if let match = regex.firstMatch(in: line, range: range),
+               match.numberOfRanges > 1 {
+                let dateStr = nsLine.substring(with: match.range(at: 1))
+                if let date = parseEntryDate(dateStr) {
+                    return (dateStr, date)
+                }
+            }
+        }
+        return nil
+    }
+
+    /// Split a note with date-prefixed entries into individual sub-notes
+    private func splitByDateEntries(note: EvernoteNoteDTO) -> [EvernoteNoteDTO] {
+        let lines = note.plainTextContent.components(separatedBy: "\n")
+
+        // Find lines that start with a date
+        var dateLineIndices: [(index: Int, date: Date)] = []
+        for (i, line) in lines.enumerated() {
+            if let (_, date) = extractDatePrefix(from: line) {
+                dateLineIndices.append((i, date))
+            }
+        }
+
+        // Need at least 2 date entries to justify splitting
+        guard dateLineIndices.count >= 2 else { return [note] }
+
+        var subNotes: [EvernoteNoteDTO] = []
+
+        // Preamble: text before the first date line
+        if dateLineIndices[0].index > 0 {
+            let preambleLines = Array(lines[0..<dateLineIndices[0].index])
+            let preambleText = preambleLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+            if preambleText.count > 20 {
+                subNotes.append(EvernoteNoteDTO(
+                    guid: "\(note.guid)#0",
+                    title: note.title,
+                    plainTextContent: preambleText,
+                    createdAt: note.createdAt,
+                    updatedAt: note.createdAt,
+                    tags: note.tags
+                ))
+            }
+        }
+
+        // Each date-to-next-date segment
+        for (segIdx, entry) in dateLineIndices.enumerated() {
+            let startLine = entry.index
+            let endLine = segIdx + 1 < dateLineIndices.count
+                ? dateLineIndices[segIdx + 1].index
+                : lines.count
+
+            let chunkLines = Array(lines[startLine..<endLine])
+            let chunkText = chunkLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+
+            guard !chunkText.isEmpty else { continue }
+
+            let subIndex = subNotes.count
+            subNotes.append(EvernoteNoteDTO(
+                guid: "\(note.guid)#\(subIndex)",
+                title: note.title,
+                plainTextContent: chunkText,
+                createdAt: entry.date,
+                updatedAt: entry.date,
+                tags: note.tags
+            ))
+        }
+
+        logger.info("Split note '\(note.title)' into \(subNotes.count) date entries")
+        return subNotes
     }
 }

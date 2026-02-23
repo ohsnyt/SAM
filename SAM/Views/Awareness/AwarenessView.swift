@@ -47,6 +47,9 @@ struct AwarenessView: View {
 
             Divider()
 
+            // Outcome Queue (Coaching Engine)
+            OutcomeQueueView()
+
             // Unknown Sender Triage
             UnknownSenderTriageSection()
 
