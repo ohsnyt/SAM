@@ -405,10 +405,13 @@ final class InsightGenerator {
                 }
                 guard !isDuplicate else { continue }
 
-                // Resolve person if personID is provided
+                // Resolve person from THIS context (not PeopleRepository's context)
                 var person: SamPerson?
                 if let personID = insight.personID {
-                    person = try? peopleRepository.fetch(id: personID)
+                    let personDescriptor = FetchDescriptor<SamPerson>(
+                        predicate: #Predicate { $0.id == personID }
+                    )
+                    person = try? context.fetch(personDescriptor).first
                 }
 
                 let samInsight = SamInsight(

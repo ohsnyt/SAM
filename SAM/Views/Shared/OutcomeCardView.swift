@@ -9,6 +9,7 @@
 //
 
 import SwiftUI
+import AppKit
 
 struct OutcomeCardView: View {
 
@@ -16,6 +17,8 @@ struct OutcomeCardView: View {
     let onAct: (() -> Void)?
     let onDone: () -> Void
     let onSkip: () -> Void
+
+    @State private var copiedStep = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -52,6 +55,23 @@ struct OutcomeCardView: View {
                         .foregroundStyle(.blue)
                         .italic()
                         .lineLimit(2)
+
+                    Spacer()
+
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(step, forType: .string)
+                        copiedStep = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                            copiedStep = false
+                        }
+                    } label: {
+                        Image(systemName: copiedStep ? "checkmark" : "doc.on.doc")
+                            .font(.caption2)
+                            .foregroundStyle(copiedStep ? .green : .secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Copy suggested step")
                 }
                 .padding(.top, 2)
             }

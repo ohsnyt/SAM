@@ -4,7 +4,7 @@
 **Language**: Swift 6  
 **Architecture**: Clean layered architecture with strict separation of concerns  
 **Framework**: SwiftUI + SwiftData  
-**Last Updated**: February 21, 2026 (Phases A–M complete)
+**Last Updated**: February 24, 2026 (Phases A–N complete, Awareness UX Overhaul in progress)
 
 **Related Docs**: 
 - See `agent.md` for product philosophy and UX principles
@@ -497,6 +497,8 @@ Text(context.contextType)       // Compile error - property doesn't exist
 - ✅ **Phase N**: Outcome-Focused Coaching Engine — AI service layer, outcome model, coaching engine, adaptive feedback (Feb 22, 2026)
 
 **Next Up**:
+- 🔧 **Awareness UX Overhaul** (Feb 24, 2026) — Fix broken interactions, add actionable affordances, new coaching capabilities
+
 - ⬜ **Phase O**: Universal Undo System
 - ⬜ **Phase P**: Time Tracking
 
@@ -585,6 +587,44 @@ Simplified note model (removed NoteEntry, one note = one text block + sourceType
 **Priority Scoring** (0.0–1.0): Time urgency (0.30) + Relationship health (0.20) + Role importance (0.20) + Evidence recency (0.15) + User engagement (0.15)
 
 **Deferred**: MLX model download/inference, custom outcome templates, outcome analytics dashboard, progress reports, team coaching patterns.
+
+---
+
+### 🔧 Awareness UX Overhaul (Feb 24, 2026)
+
+**Goal**: Transform Awareness from information-display into an action-oriented coaching dashboard.
+
+Based on a comprehensive audit of current UX plus competitive research across Salesforce Einstein, HubSpot AI, Gong, Clari, People.ai, Reclaim.ai, Clay, Dex, Cloze, Superhuman, Zocks, Practifi, and others.
+
+#### Tier 1 — Fix What's Broken (ALL COMPLETE Feb 24)
+
+1. ✅ **Wire "View Person" navigation in Insights** — `samNavigateToPerson` notification wired through AppShellView, AwarenessView, OutcomeQueueView. Navigates to PersonDetailView from any card.
+2. ✅ **Add copy/action affordances to suggested text** — `CopyButton` shared component with brief checkmark feedback. Added to OutcomeCardView (suggested next steps), FollowUpCoachSection (action items), MeetingPrepSection (action items + signals).
+3. ✅ **Add action buttons to Outreach/Growth outcomes** — "View Contact" button works via `.openPerson` action in `actClosure`. Copy button on suggested next steps.
+4. ✅ **Auto-link all meeting attendees** — Both BriefingCard and FollowUpCard `createAndEditNote()` now link ALL attendees, not just the first.
+
+#### Tier 2 — Reduce Friction
+
+5. ⬜ **Time-of-day-aware coaching** — Restructure Awareness into temporal sections: Morning (today's briefings + priorities), Post-meeting (follow-up prompts within minutes), End-of-day (review). Research shows proactive time-aware systems achieve 94% retention vs 51% for on-demand.
+6. ✅ **Pipeline stage visualization** — `PipelineStageSection.swift`. Lead → Applicant → Client counts with "stuck" indicators (30d/14d thresholds). Click-to-navigate on stuck people.
+7. ⬜ **Post-meeting follow-up draft generation** — When meeting note is saved, LLM generates suggested follow-up message with key points and action items. "Copy to clipboard" button.
+8. ✅ **Engagement velocity / personalized cadence** — `EngagementVelocitySection.swift`. Computes median gap between evidence items per person. Surfaces overdue people with "2× longer than usual" indicators.
+
+#### Tier 3 — New Capabilities
+
+9. ✅ **Streak tracking and positive reinforcement** — `StreakTrackingSection.swift`. Meeting notes streak, weekly client touch streak, same-day follow-up streak. Flame indicator at 5+.
+10. ✅ **Meeting quality scoring** — `MeetingQualitySection.swift`. Scores past 14 days: note (+40), timely (+20), action items (+20), attendees (+20). Surfaces low-scoring meetings, congratulatory message when all ≥60.
+11. ✅ **Calendar pattern intelligence** — `CalendarPatternsSection.swift`. Back-to-back warnings, client meeting ratio, meeting-free days, busiest day, upcoming load comparison.
+12. ⬜ **Referral chain tracking** — `ReferralTrackingSection.swift` UI created (stub data). Needs `referredBy: SamPerson?` schema field (SAM_v13) to wire up real data.
+13. ⬜ **Life event detection** — Extend note analysis to detect life events (new baby, job change, retirement). Surface timely outreach: "John mentioned his daughter's graduation in May — consider sending a card."
+14. ⬜ **App Intents / Siri integration** — "Prep me for my next meeting", "Who should I reach out to today?" Aligns with Apple platform direction.
+
+#### Autonomous Actions (user approval required)
+
+- Auto-generate meeting note templates when calendar event ends (pre-filled with attendees, title, sections)
+- Draft follow-up messages from meeting notes (copy-to-clipboard, not auto-send)
+- Pre-populate outcome checklists on role change (Lead → Applicant triggers onboarding tasks)
+- Weekly relationship digest: "5 priorities for this week" based on pipeline, health, calendar
 
 ---
 

@@ -4,6 +4,54 @@
 
 ---
 
+## February 24, 2026 - Awareness UX Overhaul & Bug Fixes
+
+### Overview
+Major expansion of the Awareness dashboard with 6 new analytics sections, copy affordances throughout, cross-view navigation, and critical bug fixes for SwiftData cross-context errors and LLM JSON parsing.
+
+### Tier 1 Fixes
+- **"View Person" navigation** — Added `samNavigateToPerson` notification. InsightCard, OutcomeCardView (`.openPerson` action), and all Awareness sections can now navigate to PersonDetailView. AppShellView listens on both NavigationSplitView branches.
+- **Copy buttons** — New shared `CopyButton` component with brief checkmark feedback. Added to OutcomeCardView (suggested next steps), FollowUpCoachSection (pending action items), MeetingPrepSection (open action items + signals).
+- **Auto-link all meeting attendees** — `BriefingCard.createAndEditNote()` and `FollowUpCard.createAndEditNote()` now link ALL attendees to the new note instead of just the first.
+
+### New Dashboard Sections (Tier 2/3)
+- **`PipelineStageSection`** — Lead → Applicant → Client counts with "stuck" indicators (30d for Leads, 14d for Applicants). Click-to-navigate on stuck people.
+- **`EngagementVelocitySection`** — Computes median evidence gap per person, surfaces overdue relationships (e.g., "2× longer than usual"). Top 8, sorted by overdue ratio.
+- **`StreakTrackingSection`** — Meeting notes streak, weekly client touch streak, same-day follow-up streak. Flame indicator at 5+, positive reinforcement messaging.
+- **`MeetingQualitySection`** — Scores meetings from last 14 days: note created (+40), timely (+20), action items (+20), attendees linked (+20). Surfaces low scorers with missing-item tags.
+- **`CalendarPatternsSection`** — Back-to-back meeting warnings, client meeting ratio, meeting-free days, busiest day analysis, upcoming load comparison.
+- **`ReferralTrackingSection`** — Top referrers + referral opportunities UI (stub data pending `referredBy` schema field).
+
+### Bug Fixes
+- **SwiftData cross-context insertion error** — InsightGenerator and OutcomeRepository were fetching `SamPerson` from PeopleRepository's ModelContext then inserting into their own context, causing "Illegal attempt to insert a model in to a different model context." Fixed InsightGenerator.persistInsights() to fetch person from its own context. Fixed OutcomeRepository.upsert() with `resolveInContext()` helpers that re-fetch linked objects from the repository's own ModelContext.
+- **LLM echoing JSON template** — NoteAnalysisService prompt used ambiguous template-style placeholders (e.g., `"field": "birthday | anniversary | ..."`) that the LLM echoed back literally. Also contained en-dash characters (`–`) in `0.0–1.0` that broke JSON parsing. Rewrote prompt with concrete example values and separate field reference. Added Unicode sanitization to `extractJSON()` (en-dash, em-dash, curly quotes, ellipsis → ASCII equivalents).
+- **ProgressView auto-layout warnings** — `ProcessingStatusView`'s `ProgressView().controlSize(.small)` caused AppKit constraint warnings (`min <= max` floating-point precision). Fixed with explicit `.frame(width: 16, height: 16)`.
+
+### Files Modified
+| File | Change |
+|------|--------|
+| `Models/SAMModels.swift` | Added `samNavigateToPerson` notification |
+| `Views/AppShellView.swift` | `.onReceive` handlers for person navigation on both NavigationSplitView branches |
+| `Views/Awareness/AwarenessView.swift` | Implemented `viewPerson()`, added 6 new section views |
+| `Views/Awareness/OutcomeQueueView.swift` | Wired `.openPerson` action in `actClosure` |
+| `Views/Shared/OutcomeCardView.swift` | Copy button on suggested next step |
+| `Views/Shared/CopyButton.swift` | **New** — Reusable copy-to-clipboard button |
+| `Views/Awareness/FollowUpCoachSection.swift` | Copy buttons on action items, all-attendee note linking |
+| `Views/Awareness/MeetingPrepSection.swift` | Copy buttons on action items + signals, all-attendee note linking |
+| `Views/Awareness/PipelineStageSection.swift` | **New** — Pipeline stage visualization |
+| `Views/Awareness/EngagementVelocitySection.swift` | **New** — Personalized cadence tracking |
+| `Views/Awareness/StreakTrackingSection.swift` | **New** — Behavior streak tracking |
+| `Views/Awareness/MeetingQualitySection.swift` | **New** — Meeting follow-through scoring |
+| `Views/Awareness/CalendarPatternsSection.swift` | **New** — Calendar pattern intelligence |
+| `Views/Awareness/ReferralTrackingSection.swift` | **New** — Referral tracking (stub) |
+| `Coordinators/InsightGenerator.swift` | Fixed cross-context person fetch in `persistInsights()` |
+| `Repositories/OutcomeRepository.swift` | Added `resolveInContext()` helpers for cross-context safety |
+| `Services/NoteAnalysisService.swift` | Rewrote note analysis prompt with concrete example |
+| `Services/AIService.swift` | Added Unicode sanitization to `extractJSON()` |
+| `Views/Components/ProcessingStatusView.swift` | Explicit frame on ProgressView |
+
+---
+
 ## February 23, 2026 - Notes Editing UX Improvements
 
 ### Overview

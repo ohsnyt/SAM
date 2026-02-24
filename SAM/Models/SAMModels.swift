@@ -883,5 +883,9 @@ extension Notification.Name {
     /// Posted when a SamPerson's data changes (e.g. role badges edited).
     /// Listeners should refresh their people data.
     static let samPersonDidChange = Notification.Name("samPersonDidChange")
+
+    /// Posted to navigate to a person's detail view from any screen.
+    /// userInfo: ["personID": UUID]
+    static let samNavigateToPerson = Notification.Name("samNavigateToPerson")
 }
 

@@ -9,6 +9,7 @@
 //
 
 import SwiftUI
+import AppKit
 
 struct FollowUpCoachSection: View {
 
@@ -98,6 +99,8 @@ private struct FollowUpCard: View {
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                         .lineLimit(1)
+                                    Spacer()
+                                    CopyButton(text: item.description)
                                 }
                             }
                         }
@@ -138,13 +141,13 @@ private struct FollowUpCard: View {
     }
 
     private func createAndEditNote() {
-        let person = prompt.attendees.first.flatMap { attendee in
-            try? PeopleRepository.shared.fetch(id: attendee.personID)
+        let personIDs = prompt.attendees.compactMap { attendee in
+            (try? PeopleRepository.shared.fetch(id: attendee.personID)) != nil ? attendee.personID : nil
         }
         do {
             let note = try NotesRepository.shared.create(
                 content: "",
-                linkedPeopleIDs: person.map { [$0.id] } ?? []
+                linkedPeopleIDs: personIDs
             )
             editingNote = note
         } catch {

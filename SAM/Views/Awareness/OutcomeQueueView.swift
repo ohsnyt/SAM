@@ -250,8 +250,16 @@ struct OutcomeQueueView: View {
                 )
                 openWindow(id: "quick-note", value: payload)
             }
-        case .openPerson, .openEvidence:
-            // Navigation actions not wired yet — return nil
+        case .openPerson:
+            guard let personID = outcome.linkedPerson?.id else { return nil }
+            return {
+                NotificationCenter.default.post(
+                    name: .samNavigateToPerson,
+                    object: nil,
+                    userInfo: ["personID": personID]
+                )
+            }
+        case .openEvidence:
             return nil
         }
     }

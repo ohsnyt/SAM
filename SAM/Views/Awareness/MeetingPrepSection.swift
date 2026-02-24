@@ -9,6 +9,7 @@
 //
 
 import SwiftUI
+import AppKit
 
 struct MeetingPrepSection: View {
 
@@ -173,13 +174,13 @@ private struct BriefingCard: View {
     }
 
     private func createAndEditNote() {
-        let person = briefing.attendees.first.flatMap { attendee in
-            try? PeopleRepository.shared.fetch(id: attendee.personID)
+        let personIDs = briefing.attendees.compactMap { attendee in
+            (try? PeopleRepository.shared.fetch(id: attendee.personID)) != nil ? attendee.personID : nil
         }
         do {
             let note = try NotesRepository.shared.create(
                 content: "",
-                linkedPeopleIDs: person.map { [$0.id] } ?? []
+                linkedPeopleIDs: personIDs
             )
             editingNote = note
         } catch {
@@ -288,6 +289,8 @@ private struct BriefingCard: View {
                     Text(item.description)
                         .font(.caption)
                         .lineLimit(2)
+                    Spacer()
+                    CopyButton(text: item.description)
                 }
             }
         }
@@ -328,6 +331,8 @@ private struct BriefingCard: View {
                         .foregroundStyle(.orange)
                     Text(signal.message)
                         .font(.caption)
+                    Spacer()
+                    CopyButton(text: signal.message)
                 }
             }
         }

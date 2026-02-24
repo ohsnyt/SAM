@@ -203,53 +203,69 @@ actor NoteAnalysisService {
         - Do NOT wrap the JSON in markdown code blocks (no ``` or ```json)
         - Do NOT include any explanatory text before or after the JSON
         - Return ONLY the raw JSON object starting with { and ending with }
+        - Use ONLY ASCII characters in your JSON (straight quotes, hyphens, no curly quotes or dashes)
+        - NEVER echo back the schema or example values. Fill in real data from the note.
 
-        The JSON structure must be:
+        Here is a CONCRETE EXAMPLE of correct output for a note about meeting with a married couple to discuss life insurance:
+
         {
-          "summary": "1–2 sentence summary suitable for display next to a person's name in a CRM",
-
+          "summary": "Met with John and Jane Smith to review life insurance options. Jane wants to increase coverage.",
           "people": [
             {
-              "name": "Full Name",
-              "role": "client | applicant | lead | vendor | agent | external_agent | spouse | child | parent | sibling | referral_source | prospect | other",
-              "relationship_to": "spouse of John Smith (or null)",
+              "name": "John Smith",
+              "role": "client",
+              "relationship_to": null,
               "contact_updates": [
-                { "field": "birthday | anniversary | spouse | child | parent | sibling | company | jobTitle | phone | email | address | nickname", "value": "...", "confidence": 0.0–1.0 }
+                { "field": "company", "value": "Acme Corp", "confidence": 0.9 }
               ],
-              "confidence": 0.0–1.0
+              "confidence": 0.95
+            },
+            {
+              "name": "Jane Smith",
+              "role": "spouse",
+              "relationship_to": "spouse of John Smith",
+              "contact_updates": [],
+              "confidence": 0.95
             }
           ],
-
-          "topics": ["life insurance", "retirement planning", ...],
-
+          "topics": ["life insurance", "coverage review"],
           "action_items": [
             {
-              "type": "update_contact | send_congratulations | send_reminder | schedule_meeting | create_proposal | update_beneficiary | general_follow_up",
-              "description": "What needs to happen",
-              "suggested_text": "Draft message text if type is send_* (or null)",
-              "suggested_channel": "sms | email | phone (or null)",
-              "person_name": "Who it relates to (or null)",
-              "urgency": "immediate | soon | standard | low"
+              "type": "create_proposal",
+              "description": "Prepare updated life insurance quote for Jane",
+              "suggested_text": null,
+              "suggested_channel": null,
+              "person_name": "Jane Smith",
+              "urgency": "soon"
             }
           ],
-
           "discovered_relationships": [
             {
               "person_name": "Jane Smith",
-              "relationship_type": "spouse_of | parent_of | child_of | referral_by | referred_to | business_partner",
+              "relationship_type": "spouse_of",
               "related_to": "John Smith",
-              "confidence": 0.0–1.0
+              "confidence": 0.95
             }
           ]
         }
 
+        JSON FIELD REFERENCE (do NOT copy these as values):
+        - people[].role: one of "client", "applicant", "lead", "vendor", "agent", "external_agent", "spouse", "child", "parent", "sibling", "referral_source", "prospect", "other"
+        - people[].contact_updates[].field: one of "birthday", "anniversary", "spouse", "child", "parent", "sibling", "company", "jobTitle", "phone", "email", "address", "nickname"
+        - people[].confidence: a number between 0.0 and 1.0
+        - action_items[].type: one of "update_contact", "send_congratulations", "send_reminder", "schedule_meeting", "create_proposal", "update_beneficiary", "general_follow_up"
+        - action_items[].urgency: one of "immediate", "soon", "standard", "low"
+        - action_items[].suggested_channel: one of "sms", "email", "phone", or null
+        - discovered_relationships[].relationship_type: one of "spouse_of", "parent_of", "child_of", "referral_by", "referred_to", "business_partner"
+
         Rules:
-        - Only extract information explicitly stated or strongly implied
+        - Only extract information explicitly stated or strongly implied in the note
         - For contact_updates, only include fields that are clearly new information
-        - For send_congratulations/send_reminder, draft a warm, professional message
+        - For send_congratulations/send_reminder, draft a warm, professional message in suggested_text
         - For discovered_relationships, flag spousal, familial, referral, or business connections mentioned in the note
         - Confidence reflects how certain you are (0.5 = implied, 0.9 = explicit)
-        - If the note is too short or ambiguous, return empty arrays — do not hallucinate
+        - If the note is too short or ambiguous, return empty arrays - do not hallucinate
+        - Use null (not "null") for absent optional fields
         - The response MUST be raw JSON with no markdown formatting
         """
     

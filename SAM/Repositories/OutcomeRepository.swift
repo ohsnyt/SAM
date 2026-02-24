@@ -91,6 +91,11 @@ final class OutcomeRepository {
     func upsert(outcome: SamOutcome) throws -> SamOutcome {
         guard let context else { throw RepositoryError.notConfigured }
 
+        // Re-resolve relationships from THIS context to avoid cross-context insertion errors.
+        // The incoming outcome may have linkedPerson/linkedContext fetched from a different context.
+        let localPerson: SamPerson? = try resolveInContext(outcome.linkedPerson)
+        let localContext: SamContext? = try resolveInContext(outcome.linkedContext)
+
         if let existing = try fetch(id: outcome.id) {
             // Update existing
             existing.title = outcome.title
@@ -101,15 +106,33 @@ final class OutcomeRepository {
             existing.sourceInsightSummary = outcome.sourceInsightSummary
             existing.suggestedNextStep = outcome.suggestedNextStep
             existing.encouragementNote = outcome.encouragementNote
-            existing.linkedPerson = outcome.linkedPerson
-            existing.linkedContext = outcome.linkedContext
+            existing.linkedPerson = localPerson
+            existing.linkedContext = localContext
             try context.save()
             return existing
         } else {
+            outcome.linkedPerson = localPerson
+            outcome.linkedContext = localContext
             context.insert(outcome)
             try context.save()
             return outcome
         }
+    }
+
+    /// Re-fetch a SamPerson from this repository's context to avoid cross-context errors.
+    private func resolveInContext(_ person: SamPerson?) throws -> SamPerson? {
+        guard let person, let context else { return nil }
+        let personID = person.id
+        let descriptor = FetchDescriptor<SamPerson>(predicate: #Predicate { $0.id == personID })
+        return try context.fetch(descriptor).first
+    }
+
+    /// Re-fetch a SamContext from this repository's context to avoid cross-context errors.
+    private func resolveInContext(_ samContext: SamContext?) throws -> SamContext? {
+        guard let samContext, let context else { return nil }
+        let contextID = samContext.id
+        let descriptor = FetchDescriptor<SamContext>(predicate: #Predicate { $0.id == contextID })
+        return try context.fetch(descriptor).first
     }
 
     // MARK: - Status Updates

@@ -37,6 +37,12 @@ struct AppShellView: View {
                 threeColumnDetail
             }
             .navigationTitle("SAM")
+            .onReceive(NotificationCenter.default.publisher(for: .samNavigateToPerson)) { notification in
+                if let personID = notification.userInfo?["personID"] as? UUID {
+                    sidebarSelection = "people"
+                    selectedPersonID = personID
+                }
+            }
         } else {
             // Two-column layout for other sections
             NavigationSplitView {
@@ -46,6 +52,12 @@ struct AppShellView: View {
                 detailView
             }
             .navigationTitle("SAM")
+            .onReceive(NotificationCenter.default.publisher(for: .samNavigateToPerson)) { notification in
+                if let personID = notification.userInfo?["personID"] as? UUID {
+                    sidebarSelection = "people"
+                    selectedPersonID = personID
+                }
+            }
         }
     }
     

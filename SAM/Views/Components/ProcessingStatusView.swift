@@ -20,6 +20,7 @@ struct ProcessingStatusView: View {
             HStack(spacing: 6) {
                 ProgressView()
                     .controlSize(.small)
+                    .frame(width: 16, height: 16)
                 Text(activity)
                     .font(.caption)
                     .foregroundStyle(.secondary)

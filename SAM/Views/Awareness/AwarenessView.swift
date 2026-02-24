@@ -59,6 +59,14 @@ struct AwarenessView: View {
                 // Meeting Prep (upcoming meetings)
                 MeetingPrepSection()
 
+                // Pipeline & Metrics
+                PipelineStageSection()
+                EngagementVelocitySection()
+                MeetingQualitySection()
+                StreakTrackingSection()
+                CalendarPatternsSection()
+                ReferralTrackingSection()
+
                 // Insights List
                 if filteredInsights.isEmpty {
                     emptyState
@@ -317,8 +325,12 @@ struct AwarenessView: View {
     }
 
     private func viewPerson(_ personID: UUID?) {
-        guard personID != nil else { return }
-        // TODO: Navigate to person detail view
+        guard let personID else { return }
+        NotificationCenter.default.post(
+            name: .samNavigateToPerson,
+            object: nil,
+            userInfo: ["personID": personID]
+        )
     }
 }
 

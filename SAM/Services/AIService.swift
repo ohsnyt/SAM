@@ -276,6 +276,16 @@ actor AIService {
 func extractJSON(from rawResponse: String) -> String {
     var text = rawResponse.trimmingCharacters(in: .whitespacesAndNewlines)
 
+    // Sanitize common Unicode characters that break JSON parsing
+    text = text
+        .replacingOccurrences(of: "\u{2013}", with: "-")  // en-dash
+        .replacingOccurrences(of: "\u{2014}", with: "-")  // em-dash
+        .replacingOccurrences(of: "\u{2018}", with: "'")  // left single curly quote
+        .replacingOccurrences(of: "\u{2019}", with: "'")  // right single curly quote
+        .replacingOccurrences(of: "\u{201C}", with: "\"") // left double curly quote
+        .replacingOccurrences(of: "\u{201D}", with: "\"") // right double curly quote
+        .replacingOccurrences(of: "\u{2026}", with: "...") // ellipsis
+
     // Strip markdown code blocks
     if text.hasPrefix("```") {
         if let firstNewline = text.firstIndex(of: "\n") {
