@@ -153,6 +153,52 @@ final class EvidenceRepository {
         return evidence
     }
 
+    /// Create evidence by people/context IDs — re-fetches objects in this repository's
+    /// own model context to avoid cross-context relationship errors.
+    @discardableResult
+    func createByIDs(
+        sourceUID: String,
+        source: EvidenceSource,
+        occurredAt: Date,
+        title: String,
+        snippet: String,
+        bodyText: String? = nil,
+        linkedPeopleIDs: [UUID] = [],
+        linkedContextIDs: [UUID] = []
+    ) throws -> SamEvidenceItem {
+        guard let context = context else {
+            throw RepositoryError.notConfigured
+        }
+
+        // Re-fetch people and contexts in THIS context to avoid cross-context errors
+        let people: [SamPerson]
+        if !linkedPeopleIDs.isEmpty {
+            let allPeople = try context.fetch(FetchDescriptor<SamPerson>())
+            people = allPeople.filter { linkedPeopleIDs.contains($0.id) }
+        } else {
+            people = []
+        }
+
+        let contexts: [SamContext]
+        if !linkedContextIDs.isEmpty {
+            let allContexts = try context.fetch(FetchDescriptor<SamContext>())
+            contexts = allContexts.filter { linkedContextIDs.contains($0.id) }
+        } else {
+            contexts = []
+        }
+
+        return try create(
+            sourceUID: sourceUID,
+            source: source,
+            occurredAt: occurredAt,
+            title: title,
+            snippet: snippet,
+            bodyText: bodyText,
+            linkedPeople: people,
+            linkedContexts: contexts
+        )
+    }
+
     // MARK: - Mapping Helpers
 
     /// Canonical email set for the Me contact — used instead of EKParticipant.isCurrentUser

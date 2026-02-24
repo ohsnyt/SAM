@@ -87,6 +87,18 @@ final class MailImportCoordinator {
         }
     }
 
+    // MARK: - Cancellation
+
+    /// Cancel all background tasks. Called by AppDelegate on app termination.
+    func cancelAll() {
+        importTask?.cancel()
+        importTask = nil
+        if importStatus == .importing {
+            importStatus = .idle
+        }
+        logger.info("All tasks cancelled")
+    }
+
     // MARK: - Public API
 
     var isConfigured: Bool {
@@ -101,6 +113,13 @@ final class MailImportCoordinator {
     func startAutoImport() {
         guard mailEnabled, isConfigured else { return }
         Task { await importNow() }
+    }
+
+    /// Fire-and-forget import — does not block the caller.
+    func startImport() {
+        guard importStatus != .importing, isConfigured else { return }
+        importTask?.cancel()
+        importTask = Task { await performImport(force: true) }
     }
 
     func importNow() async {
@@ -184,6 +203,10 @@ final class MailImportCoordinator {
             // 7. Analyze each email with on-device LLM
             var analyzedEmails: [(EmailDTO, EmailAnalysisDTO?)] = []
             for email in emails {
+                guard !Task.isCancelled else {
+                    logger.info("Mail import cancelled during analysis")
+                    break
+                }
                 do {
                     let analysis = try await analysisService.analyzeEmail(
                         subject: email.subject,

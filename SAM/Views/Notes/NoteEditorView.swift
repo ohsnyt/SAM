@@ -7,9 +7,11 @@
 
 import SwiftUI
 import SwiftData
+import AppKit
+import UniformTypeIdentifiers
 
 /// Edit-only sheet for modifying an existing note's content.
-/// New note creation is handled by InlineNoteCaptureView.
+/// Uses RichNoteEditor for inline image support.
 struct NoteEditorView: View {
 
     // MARK: - Environment
@@ -32,6 +34,7 @@ struct NoteEditorView: View {
     @State private var isSaving = false
     @State private var errorMessage: String?
     @State private var showingDiscardConfirmation = false
+    @State private var editorHandle = RichNoteEditorHandle()
 
     // MARK: - Initialization
 
@@ -69,11 +72,33 @@ struct NoteEditorView: View {
 
             Divider()
 
-            // Text editor
-            TextEditor(text: $content)
-                .font(.body)
-                .scrollContentBackground(.hidden)
-                .padding()
+            // Rich text editor with inline images
+            RichNoteEditor(
+                plainText: $content,
+                existingImages: note.images
+                    .sorted(by: { $0.displayOrder < $1.displayOrder })
+                    .compactMap { img in
+                        guard let data = img.imageData else { return nil }
+                        return (data, img.mimeType, img.textInsertionPoint ?? Int.max)
+                    },
+                handle: editorHandle
+            )
+            .padding(4)
+
+            // Attach button
+            HStack {
+                Button {
+                    attachImage()
+                } label: {
+                    Label("Attach Image", systemImage: "paperclip")
+                        .font(.caption)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+
+                Spacer()
+            }
+            .padding(.horizontal)
 
             // Error
             if let error = errorMessage {
@@ -121,8 +146,31 @@ struct NoteEditorView: View {
 
     // MARK: - Actions
 
+    private func attachImage() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.png, .jpeg, .gif, .tiff]
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+
+        guard panel.runModal() == .OK else { return }
+
+        for url in panel.urls {
+            guard let data = try? Data(contentsOf: url) else { continue }
+            let ext = url.pathExtension.lowercased()
+            let mime: String
+            switch ext {
+            case "jpg", "jpeg": mime = "image/jpeg"
+            case "gif": mime = "image/gif"
+            case "tiff", "tif": mime = "image/tiff"
+            default: mime = "image/png"
+            }
+            editorHandle.insertImage(data: data, mimeType: mime)
+        }
+    }
+
     private func saveNote() {
-        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        let (rawText, extractedImages) = editorHandle.extractContent()
+        let trimmed = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
         isSaving = true
@@ -130,6 +178,21 @@ struct NoteEditorView: View {
 
         do {
             try repository.update(note: note, content: trimmed)
+
+            // Replace existing images with current set
+            // First remove old images
+            let context = note.modelContext
+            for oldImage in note.images {
+                context?.delete(oldImage)
+            }
+            note.images.removeAll()
+            try context?.save()
+
+            // Save new images from editor
+            if !extractedImages.isEmpty {
+                try repository.addImages(to: note, images: extractedImages)
+            }
+
             onSave()
             dismiss()
 

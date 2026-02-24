@@ -12,7 +12,7 @@
 import Foundation
 
 /// Sendable wrapper for LLM-generated analysis of a note
-public struct NoteAnalysisDTO: Sendable {
+nonisolated public struct NoteAnalysisDTO: Sendable {
     
     /// 1-2 sentence summary suitable for display
     public let summary: String?
@@ -55,7 +55,7 @@ public struct NoteAnalysisDTO: Sendable {
 }
 
 /// Sendable representation of an extracted person mention
-public struct PersonMentionDTO: Sendable, Identifiable {
+nonisolated public struct PersonMentionDTO: Sendable, Identifiable {
     public let id: UUID
     public let name: String
     public let role: String?
@@ -81,7 +81,7 @@ public struct PersonMentionDTO: Sendable, Identifiable {
 }
 
 /// Sendable representation of a contact field update suggestion
-public struct ContactUpdateDTO: Sendable {
+nonisolated public struct ContactUpdateDTO: Sendable {
     public let field: String  // "birthday", "spouse", "company", etc.
     public let value: String
     public let confidence: Double
@@ -94,7 +94,7 @@ public struct ContactUpdateDTO: Sendable {
 }
 
 /// Sendable representation of a discovered relationship between people
-public struct DiscoveredRelationshipDTO: Sendable, Identifiable {
+nonisolated public struct DiscoveredRelationshipDTO: Sendable, Identifiable {
     public let id: UUID
     public let personName: String
     public let relationshipType: String  // "spouse_of", "parent_of", etc.
@@ -117,7 +117,7 @@ public struct DiscoveredRelationshipDTO: Sendable, Identifiable {
 }
 
 /// Sendable representation of an action item
-public struct ActionItemDTO: Sendable, Identifiable {
+nonisolated public struct ActionItemDTO: Sendable, Identifiable {
     public let id: UUID
     public let type: String  // "update_contact", "send_congratulations", etc.
     public let description: String

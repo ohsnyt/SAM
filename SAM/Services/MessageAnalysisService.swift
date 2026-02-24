@@ -190,7 +190,7 @@ actor MessageAnalysisService {
 
 // MARK: - LLM Response Types (internal)
 
-private struct LLMMessageResponse: Codable {
+nonisolated private struct LLMMessageResponse: Codable, Sendable {
     let summary: String?
     let topics: [String]?
     let temporal_events: [LLMTemporalEvent]?
@@ -198,7 +198,7 @@ private struct LLMMessageResponse: Codable {
     let action_items: [String]?
 }
 
-private struct LLMTemporalEvent: Codable {
+nonisolated private struct LLMTemporalEvent: Codable, Sendable {
     let description: String
     let date_string: String
     let confidence: Double

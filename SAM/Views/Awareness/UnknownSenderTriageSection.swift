@@ -27,8 +27,8 @@ struct UnknownSenderTriageSection: View {
     private let repository = UnknownSenderRepository.shared
     private let contactsService = ContactsService.shared
     private let peopleRepository = PeopleRepository.shared
-    @State private var mailCoordinator = MailImportCoordinator.shared
-    @State private var calendarCoordinator = CalendarImportCoordinator.shared
+    private var mailCoordinator: MailImportCoordinator { MailImportCoordinator.shared }
+    private var calendarCoordinator: CalendarImportCoordinator { CalendarImportCoordinator.shared }
 
     var body: some View {
         // VStack is always present so lifecycle modifiers always fire.
@@ -108,44 +108,41 @@ struct UnknownSenderTriageSection: View {
             Divider()
                 .padding(.horizontal)
 
-            // Scrollable list
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    // Personal / business senders (default: Later)
-                    ForEach(regularSenders, id: \.id) { sender in
-                        TriageRow(sender: sender, choice: binding(for: sender.id))
+            // Sender list
+            VStack(spacing: 0) {
+                // Personal / business senders (default: Later)
+                ForEach(regularSenders, id: \.id) { sender in
+                    TriageRow(sender: sender, choice: binding(for: sender.id))
+                }
+
+                // Mailing list / marketing senders (default: Never)
+                if !marketingSenders.isEmpty {
+                    HStack(spacing: 6) {
+                        Image(systemName: "envelope.badge.fill")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                        Text("Mailing Lists & Marketing")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text("Defaulting to Never")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                    .padding(.horizontal)
+                    .padding(.top, regularSenders.isEmpty ? 0 : 8)
+                    .padding(.bottom, 4)
+
+                    if !regularSenders.isEmpty {
+                        Divider().padding(.horizontal)
                     }
 
-                    // Mailing list / marketing senders (default: Never)
-                    if !marketingSenders.isEmpty {
-                        HStack(spacing: 6) {
-                            Image(systemName: "envelope.badge.fill")
-                                .font(.caption)
-                                .foregroundStyle(.orange)
-                            Text("Mailing Lists & Marketing")
-                                .font(.caption)
-                                .fontWeight(.medium)
-                                .foregroundStyle(.secondary)
-                            Spacer()
-                            Text("Defaulting to Never")
-                                .font(.caption2)
-                                .foregroundStyle(.tertiary)
-                        }
-                        .padding(.horizontal)
-                        .padding(.top, regularSenders.isEmpty ? 0 : 8)
-                        .padding(.bottom, 4)
-
-                        if !regularSenders.isEmpty {
-                            Divider().padding(.horizontal)
-                        }
-
-                        ForEach(marketingSenders, id: \.id) { sender in
-                            TriageRow(sender: sender, choice: binding(for: sender.id))
-                        }
+                    ForEach(marketingSenders, id: \.id) { sender in
+                        TriageRow(sender: sender, choice: binding(for: sender.id))
                     }
                 }
             }
-            .frame(maxHeight: 300)
 
             Divider()
                 .padding(.horizontal)

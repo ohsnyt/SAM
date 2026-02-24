@@ -14,24 +14,50 @@ import os.log
 
 private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "SAMApp")
 
+// MARK: - App Delegate (Termination Handling)
+
+final class SAMAppDelegate: NSObject, NSApplicationDelegate {
+
+    private let log = Logger(subsystem: "com.matthewsessions.SAM", category: "AppDelegate")
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        log.info("App termination requested — cancelling background tasks")
+
+        // Cancel all coordinator import tasks
+        Task { @MainActor in
+            ContactsImportCoordinator.shared.cancelAll()
+            CalendarImportCoordinator.shared.cancelAll()
+            MailImportCoordinator.shared.cancelAll()
+            CommunicationsImportCoordinator.shared.cancelAll()
+
+            // Reply on the next run-loop tick so cancellation propagates
+            NSApplication.shared.reply(toApplicationShouldTerminate: true)
+        }
+
+        return .terminateLater
+    }
+}
+
 @main
 struct SAMApp: App {
-    
+
+    @NSApplicationDelegateAdaptor(SAMAppDelegate.self) var appDelegate
+
     // Check onboarding status immediately
     @State private var showOnboarding: Bool
     @State private var hasCheckedPermissions = false
-    
+
     // MARK: - Lifecycle
-    
+
     init() {
         // Initialize showOnboarding FIRST before any other operations
         let hasCompletedOnboarding = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
         _showOnboarding = State(initialValue: !hasCompletedOnboarding)
-        
+
         #if DEBUG
         // DEVELOPMENT ONLY: Uncomment the next line to force reset onboarding on every launch
         // UserDefaults.standard.set(false, forKey: "hasCompletedOnboarding")
-        
+
         // Alternative: Use launch argument "-resetOnboarding YES" in your scheme
         if UserDefaults.standard.bool(forKey: "resetOnboarding") {
             logger.notice("Launch argument detected — resetting onboarding")
@@ -40,7 +66,7 @@ struct SAMApp: App {
             UserDefaults.standard.set(false, forKey: "calendarAutoImportEnabled")
         }
         #endif
-        
+
         // Configure repositories with shared container
         // Must happen before any data access
         configureDataLayer()
@@ -202,42 +228,46 @@ struct SAMApp: App {
         }
     }
     
-    /// Shared function to trigger imports based on which sources are enabled
+    /// Shared function to trigger imports based on which sources are enabled.
+    /// Contacts must run first (other sources depend on known people),
+    /// then remaining imports fire concurrently and are non-blocking — the
+    /// app can terminate at any time without waiting for them to finish.
     private func triggerImportsForEnabledSources() async {
         let contactsEnabled = UserDefaults.standard.bool(forKey: "sam.contacts.enabled")
         let calendarEnabled = UserDefaults.standard.bool(forKey: "calendarAutoImportEnabled")
         let mailEnabled = UserDefaults.standard.bool(forKey: "mailImportEnabled")
+        let commsMessagesEnabled = UserDefaults.standard.bool(forKey: "commsMessagesEnabled")
+        let commsCallsEnabled = UserDefaults.standard.bool(forKey: "commsCallsEnabled")
 
+        // Contacts first — other sources resolve people by known emails/phones
         if contactsEnabled {
             await ContactsImportCoordinator.shared.importNow()
         }
 
-        if calendarEnabled {
-            await CalendarImportCoordinator.shared.importNow()
-        }
-
-        if mailEnabled {
-            await MailImportCoordinator.shared.importNow()
-        }
-
-        // Communications (iMessage + Calls) — import if either sub-source is enabled
-        let commsMessagesEnabled = UserDefaults.standard.bool(forKey: "commsMessagesEnabled")
-        let commsCallsEnabled = UserDefaults.standard.bool(forKey: "commsCallsEnabled")
-        if commsMessagesEnabled || commsCallsEnabled {
-            await CommunicationsImportCoordinator.shared.importNow()
-        }
-
         if !contactsEnabled && !calendarEnabled && !mailEnabled && !commsMessagesEnabled && !commsCallsEnabled {
             logger.info("No sources enabled — app running in limited mode")
+            return
         }
 
-        // Prune expired outcomes and generate new ones
+        // Remaining imports fire concurrently, non-blocking.
+        // Each coordinator stores its own Task so AppDelegate can cancel on quit.
+        if calendarEnabled {
+            CalendarImportCoordinator.shared.startImport()
+        }
+        if mailEnabled {
+            MailImportCoordinator.shared.startImport()
+        }
+        if commsMessagesEnabled || commsCallsEnabled {
+            CommunicationsImportCoordinator.shared.startImport()
+        }
+
+        // Prune expired outcomes (fast, synchronous)
         try? OutcomeRepository.shared.pruneExpired()
         try? OutcomeRepository.shared.purgeOld()
 
         let autoGenerateOutcomes = UserDefaults.standard.bool(forKey: "outcomeAutoGenerate")
         if autoGenerateOutcomes {
-            await OutcomeEngine.shared.generateOutcomes()
+            OutcomeEngine.shared.startGeneration()
         }
     }
 }

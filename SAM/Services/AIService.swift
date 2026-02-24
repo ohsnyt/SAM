@@ -210,7 +210,7 @@ actor AIService {
         }
 
         logger.info("Loading MLX model: \(selectedID)")
-        MLX.GPU.set(cacheLimit: 20 * 1024 * 1024)
+        MLX.Memory.cacheLimit = 20 * 1024 * 1024
 
         let configuration = await MLXModelManager.shared.modelConfiguration(for: selectedID)
         let container = try await LLMModelFactory.shared.loadContainer(

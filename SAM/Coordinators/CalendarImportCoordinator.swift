@@ -88,6 +88,18 @@ final class CalendarImportCoordinator {
         setupNotificationObserver()
     }
 
+    // MARK: - Cancellation
+
+    /// Cancel all background tasks. Called by AppDelegate on app termination.
+    func cancelAll() {
+        importTask?.cancel()
+        importTask = nil
+        if importStatus == .importing {
+            importStatus = .idle
+        }
+        logger.info("All tasks cancelled")
+    }
+
     // MARK: - Public API
 
     /// Start auto-import if enabled and authorized.
@@ -106,7 +118,15 @@ final class CalendarImportCoordinator {
         }
     }
 
-    /// Manually trigger import (user-initiated).
+    /// Fire-and-forget import — does not block the caller.
+    /// The import Task is stored so it can be cancelled on app termination.
+    func startImport() {
+        guard importStatus != .importing else { return }
+        importTask?.cancel()
+        importTask = Task { await performImport() }
+    }
+
+    /// Manually trigger import (user-initiated). Awaits completion.
     func importNow() async {
         // Cancel any pending import
         importTask?.cancel()
@@ -246,11 +266,10 @@ final class CalendarImportCoordinator {
     }
 
     private func setupNotificationObserver() {
-        // Observe calendar changes (nonisolated, no await needed)
+        // Observe calendar changes (nonisolated callback — avoid capturing @MainActor logger)
+        let log = Logger(subsystem: "com.matthewsessions.SAM", category: "CalendarImportCoordinator")
         calendarService.observeCalendarChanges { [weak self] in
-            guard let self = self else { return }
-
-            logger.debug("Calendar changed, triggering import")
+            log.debug("Calendar changed, triggering import")
 
             Task { [weak self] in
                 guard let self else { return }

@@ -10,6 +10,9 @@
 
 import SwiftData
 import Foundation
+import os.log
+
+private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "NotesRepository")
 
 @MainActor
 @Observable
@@ -35,14 +38,14 @@ final class NotesRepository {
 
     // MARK: - CRUD Operations
 
-    /// Fetch all notes, sorted by most recently updated first.
+    /// Fetch all notes, sorted by creation date (newest first).
     func fetchAll() throws -> [SamNote] {
         guard let modelContext = modelContext else {
             throw RepositoryError.notConfigured
         }
 
         let descriptor = FetchDescriptor<SamNote>(
-            sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
         )
         return try modelContext.fetch(descriptor)
     }
@@ -271,6 +274,63 @@ final class NotesRepository {
         }
     }
 
+    // MARK: - Image Operations
+
+    /// Add images to an existing note.
+    /// Each tuple is (imageData, mimeType, textInsertionPoint).
+    func addImages(to note: SamNote, images: [(Data, String, Int)]) throws {
+        guard let modelContext else { throw RepositoryError.notConfigured }
+
+        let startOrder = note.images.count
+        for (index, (data, mimeType, insertionPoint)) in images.enumerated() {
+            let image = NoteImage(
+                imageData: data,
+                mimeType: mimeType,
+                displayOrder: startOrder + index,
+                textInsertionPoint: insertionPoint
+            )
+            modelContext.insert(image)
+            note.images.append(image)
+            logger.debug("addImages[\(index)]: \(data.count) bytes, \(mimeType), pos=\(insertionPoint), order=\(startOrder + index)")
+        }
+
+        try modelContext.save()
+
+        // Verify persistence: re-read image data after save
+        for (index, img) in note.images.suffix(images.count).enumerated() {
+            let hasData = img.imageData != nil
+            let dataSize = img.imageData?.count ?? 0
+            logger.debug("addImages verify[\(index)]: hasData=\(hasData), size=\(dataSize), insertionPoint=\(img.textInsertionPoint ?? -1)")
+        }
+    }
+
+    // MARK: - JSON Summary Cleanup
+
+    /// Remove JSON-contaminated summaries from existing notes.
+    /// Returns the number of summaries cleaned.
+    @discardableResult
+    func sanitizeJSONSummaries() throws -> Int {
+        guard let modelContext else { throw RepositoryError.notConfigured }
+
+        let all = try fetchAll()
+        let jsonIndicators = ["{", "\"summary\":", "\"people\":", "\"action_items\":", "```json", "\"topics\":"]
+        var count = 0
+
+        for note in all {
+            guard let summary = note.summary else { continue }
+            if jsonIndicators.contains(where: { summary.contains($0) }) {
+                note.summary = nil
+                count += 1
+            }
+        }
+
+        if count > 0 {
+            try modelContext.save()
+            logger.info("Sanitized \(count) JSON-contaminated summaries")
+        }
+        return count
+    }
+
     // MARK: - Import Operations (Phase L)
 
     /// Create a note from an external import (e.g., Evernote ENEX)
@@ -293,14 +353,72 @@ final class NotesRepository {
             sourceImportUID: sourceImportUID
         )
 
+        // Insert FIRST so SwiftData tracks relationship changes correctly
+        modelContext.insert(note)
+
         if !linkedPeopleIDs.isEmpty {
             let allPeople = try modelContext.fetch(FetchDescriptor<SamPerson>())
-            note.linkedPeople = allPeople.filter { linkedPeopleIDs.contains($0.id) }
+            let matched = allPeople.filter { linkedPeopleIDs.contains($0.id) }
+            note.linkedPeople.removeAll()
+            note.linkedPeople.append(contentsOf: matched)
+            logger.info("Import note linked to \(matched.count) people")
         }
 
-        modelContext.insert(note)
         try modelContext.save()
 
+        return note
+    }
+
+    /// Create a note AND its images atomically in a single save.
+    /// Avoids multi-save issues where concurrent operations can corrupt relationships.
+    @discardableResult
+    func createFromImportWithImages(
+        sourceImportUID: String,
+        content: String,
+        createdAt: Date,
+        updatedAt: Date,
+        linkedPeopleIDs: [UUID] = [],
+        images: [(Data, String, Int)] = []
+    ) throws -> SamNote {
+        guard let modelContext = modelContext else {
+            throw RepositoryError.notConfigured
+        }
+
+        let note = SamNote(
+            content: content,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+            sourceImportUID: sourceImportUID
+        )
+
+        modelContext.insert(note)
+
+        if !linkedPeopleIDs.isEmpty {
+            let allPeople = try modelContext.fetch(FetchDescriptor<SamPerson>())
+            let matched = allPeople.filter { linkedPeopleIDs.contains($0.id) }
+            note.linkedPeople.removeAll()
+            note.linkedPeople.append(contentsOf: matched)
+            logger.info("Import note linked to \(matched.count) people")
+        }
+
+        // Create images in the SAME save as the note
+        for (index, (data, mimeType, insertionPoint)) in images.enumerated() {
+            let image = NoteImage(
+                imageData: data,
+                mimeType: mimeType,
+                displayOrder: index,
+                textInsertionPoint: insertionPoint
+            )
+            modelContext.insert(image)
+            image.note = note  // Explicit inverse
+            note.images.append(image)
+            logger.debug("createFromImportWithImages[\(index)]: \(data.count) bytes, \(mimeType), pos=\(insertionPoint)")
+        }
+
+        // Single atomic save — note + all images + relationships
+        try modelContext.save()
+
+        logger.info("Created import note with \(images.count) image(s) in single save")
         return note
     }
 

@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import AppKit
 import UniformTypeIdentifiers
 import os.log
 
@@ -15,6 +16,14 @@ struct EvernoteImportSettingsView: View {
 
     @State private var coordinator = EvernoteImportCoordinator.shared
     @State private var showingFilePicker = false
+    @State private var isRelinking = false
+    @State private var relinkResult: Int?
+    @State private var isCleaning = false
+    @State private var cleanResult: Int?
+
+    private var isDisabled: Bool {
+        coordinator.importStatus == .importing || coordinator.importStatus == .parsing
+    }
 
     var body: some View {
         Form {
@@ -24,18 +33,25 @@ struct EvernoteImportSettingsView: View {
                         .font(.title2)
                         .bold()
 
-                    Text("Import notes from an Evernote .enex export file. Tags will be matched to existing people by name.")
+                    Text("Import notes from Evernote .enex export files. Tags will be matched to existing people by name.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
                     Divider()
 
-                    // File picker
+                    // File/folder picker
                     VStack(alignment: .leading, spacing: 12) {
-                        Button("Select .enex File") {
-                            showingFilePicker = true
+                        HStack(spacing: 12) {
+                            Button("Select .enex File") {
+                                showingFilePicker = true
+                            }
+                            .disabled(isDisabled)
+
+                            Button("Select Folder") {
+                                selectFolder()
+                            }
+                            .disabled(isDisabled)
                         }
-                        .disabled(coordinator.importStatus == .importing || coordinator.importStatus == .parsing)
 
                         // Status display
                         switch coordinator.importStatus {
@@ -48,9 +64,15 @@ struct EvernoteImportSettingsView: View {
                             HStack(spacing: 8) {
                                 ProgressView()
                                     .scaleEffect(0.7)
-                                Text("Reading file...")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                if coordinator.fileCount > 1 {
+                                    Text("Reading file \(coordinator.processedFileCount + 1) of \(coordinator.fileCount)...")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                } else {
+                                    Text("Reading file...")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
                             }
 
                         case .previewing:
@@ -74,7 +96,7 @@ struct EvernoteImportSettingsView: View {
                                     .foregroundStyle(.green)
                             }
 
-                            Button("Import Another File") {
+                            Button("Import More") {
                                 coordinator.cancelImport()
                             }
                             .buttonStyle(.bordered)
@@ -97,6 +119,83 @@ struct EvernoteImportSettingsView: View {
                 }
                 .padding()
             }
+
+            // Re-link section
+            Section {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Maintenance")
+                        .font(.headline)
+
+                    Text("Re-analyze previously imported Evernote notes that aren't linked to any people. This uses AI analysis to detect person references in note content.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    HStack(spacing: 12) {
+                        Button {
+                            Task {
+                                isRelinking = true
+                                relinkResult = nil
+                                let count = await coordinator.relinkImportedNotes()
+                                relinkResult = count
+                                isRelinking = false
+                            }
+                        } label: {
+                            if isRelinking {
+                                HStack(spacing: 6) {
+                                    ProgressView()
+                                        .scaleEffect(0.7)
+                                    Text("Re-linking...")
+                                }
+                            } else {
+                                Text("Re-link Imported Notes")
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(isRelinking)
+
+                        if let count = relinkResult {
+                            Text(count > 0
+                                ? "\(count) notes queued for analysis"
+                                : "No unlinked notes found")
+                                .font(.caption)
+                                .foregroundStyle(count > 0 ? .green : .secondary)
+                        }
+                    }
+
+                    Divider()
+
+                    Text("Remove malformed JSON text that may have leaked into note summaries from AI analysis failures.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    HStack(spacing: 12) {
+                        Button {
+                            isCleaning = true
+                            cleanResult = nil
+                            do {
+                                let count = try NotesRepository.shared.sanitizeJSONSummaries()
+                                cleanResult = count
+                            } catch {
+                                logger.error("JSON cleanup failed: \(error)")
+                            }
+                            isCleaning = false
+                        } label: {
+                            Text("Clean Up JSON Summaries")
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(isCleaning)
+
+                        if let count = cleanResult {
+                            Text(count > 0
+                                ? "\(count) summaries cleaned"
+                                : "No contaminated summaries found")
+                                .font(.caption)
+                                .foregroundStyle(count > 0 ? .green : .secondary)
+                        }
+                    }
+                }
+                .padding()
+            }
         }
         .formStyle(.grouped)
         .fileImporter(
@@ -114,8 +213,20 @@ struct EvernoteImportSettingsView: View {
         VStack(alignment: .leading, spacing: 12) {
             GroupBox {
                 VStack(alignment: .leading, spacing: 8) {
+                    if coordinator.fileCount > 1 {
+                        HStack {
+                            Text("Files parsed:")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Text("\(coordinator.fileCount)")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                        }
+                    }
+
                     HStack {
-                        Text("Total notes in file:")
+                        Text("Total notes:")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         Spacer()
@@ -181,6 +292,20 @@ struct EvernoteImportSettingsView: View {
     }
 
     // MARK: - Actions
+
+    private func selectFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.message = "Select a folder containing .enex files"
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        Task {
+            await coordinator.loadDirectory(url: url)
+        }
+    }
 
     private func handleFileSelection(_ result: Result<[URL], Error>) {
         switch result {

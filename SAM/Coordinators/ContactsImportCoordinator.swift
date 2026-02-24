@@ -80,17 +80,18 @@ final class ContactsImportCoordinator {
     }
     
     // MARK: - Debouncing
-    
+
     private var debounceTask: Task<Void, Never>?
+    private var observerTask: Task<Void, Never>?
     private let minimumIntervalNormal: TimeInterval = 300      // 5 minutes for periodic triggers
     private let minimumIntervalChanged: TimeInterval = 10      // 10 seconds for change notifications
-    
+
     // MARK: - Initialization
-    
+
     private init() {
         logger.info("ContactsImportCoordinator initialized")
         setupObservers()
-        
+
         // Attempt an immediate import if conditions are already satisfied at init
         Task { [weak self] in
             await self?.importIfConditionsMet(reason: "coordinator init")
@@ -257,14 +258,29 @@ final class ContactsImportCoordinator {
         }
     }
     
+    // MARK: - Cancellation
+
+    /// Cancel all background tasks. Called by AppDelegate on app termination.
+    func cancelAll() {
+        debounceTask?.cancel()
+        debounceTask = nil
+        observerTask?.cancel()
+        observerTask = nil
+        if importStatus == .importing {
+            importStatus = .idle
+        }
+        logger.info("All tasks cancelled")
+    }
+
     // MARK: - Observers
-    
+
     private func setupObservers() {
-        // Observe contacts store changes
-        Task {
+        // Observe contacts store changes — store the task so it can be cancelled
+        observerTask = Task { [weak self] in
             for await _ in NotificationCenter.default.notifications(named: .CNContactStoreDidChange) {
-                logger.debug("Contacts store changed notification received")
-                kick(reason: "contacts changed")
+                guard !Task.isCancelled else { break }
+                self?.logger.debug("Contacts store changed notification received")
+                self?.kick(reason: "contacts changed")
             }
         }
     }

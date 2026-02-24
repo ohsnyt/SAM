@@ -35,6 +35,8 @@ final class EvernoteImportCoordinator {
     var duplicateCount: Int = 0
     var importedCount: Int = 0
     var splitCount: Int = 0
+    var fileCount: Int = 0
+    var processedFileCount: Int = 0
     var lastError: String?
 
     // MARK: - Status
@@ -70,6 +72,8 @@ final class EvernoteImportCoordinator {
         duplicateCount = 0
         importedCount = 0
         splitCount = 0
+        fileCount = 1
+        processedFileCount = 0
 
         do {
             let raw = try ENEXParserService.parse(fileURL: url)
@@ -107,6 +111,82 @@ final class EvernoteImportCoordinator {
         }
     }
 
+    /// Parse all .enex files in a directory and prepare for preview
+    func loadDirectory(url: URL) async {
+        importStatus = .parsing
+        lastError = nil
+        parsedNotes = []
+        newCount = 0
+        duplicateCount = 0
+        importedCount = 0
+        splitCount = 0
+        fileCount = 0
+        processedFileCount = 0
+
+        do {
+            // Find all .enex files in the directory (non-recursive)
+            let contents = try FileManager.default.contentsOfDirectory(
+                at: url,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+            )
+            let enexFiles = contents.filter { $0.pathExtension.lowercased() == "enex" }
+                .sorted { $0.lastPathComponent < $1.lastPathComponent }
+
+            guard !enexFiles.isEmpty else {
+                importStatus = .failed
+                lastError = "No .enex files found in the selected folder"
+                return
+            }
+
+            fileCount = enexFiles.count
+            logger.info("Found \(enexFiles.count) .enex files in directory")
+
+            var allNotes: [EvernoteNoteDTO] = []
+            var totalExpanded = 0
+
+            for fileURL in enexFiles {
+                let raw = try ENEXParserService.parse(fileURL: fileURL)
+                var expandedCount = 0
+                let notes = raw.flatMap { note -> [EvernoteNoteDTO] in
+                    let parts = splitByDateEntries(note: note)
+                    if parts.count > 1 { expandedCount += parts.count - 1 }
+                    return parts
+                }
+                totalExpanded += expandedCount
+                allNotes.append(contentsOf: notes)
+                processedFileCount += 1
+                logger.info("Parsed \(fileURL.lastPathComponent): \(raw.count) notes (\(notes.count) after split)")
+            }
+
+            splitCount = totalExpanded
+            parsedNotes = allNotes
+
+            // Check for duplicates
+            var newNotes = 0
+            var dupes = 0
+            for note in allNotes {
+                let uid = "evernote:\(note.guid)"
+                if let _ = try notesRepository.fetchBySourceImportUID(uid) {
+                    dupes += 1
+                } else {
+                    newNotes += 1
+                }
+            }
+
+            newCount = newNotes
+            duplicateCount = dupes
+            importStatus = .previewing
+
+            logger.info("Directory preview: \(newNotes) new, \(dupes) duplicates out of \(allNotes.count) total from \(enexFiles.count) files")
+
+        } catch {
+            importStatus = .failed
+            lastError = error.localizedDescription
+            logger.error("Directory ENEX parse failed: \(error)")
+        }
+    }
+
     /// Import previewed notes into SAM
     func confirmImport() async {
         importStatus = .importing
@@ -115,6 +195,7 @@ final class EvernoteImportCoordinator {
 
         do {
             let allPeople = try peopleRepository.fetchAll()
+            var createdNotes: [SamNote] = []
 
             for dto in parsedNotes {
                 let uid = "evernote:\(dto.guid)"
@@ -132,34 +213,128 @@ final class EvernoteImportCoordinator {
                     }?.id
                 }
 
-                // Build content: title + body
-                let content = dto.title.isEmpty
-                    ? dto.plainTextContent
-                    : "\(dto.title)\n\n\(dto.plainTextContent)"
+                if matchedPeopleIDs.isEmpty {
+                    logger.info("Note '\(dto.title)': no tags matched to people (tags: \(dto.tags.joined(separator: ", ")))")
+                } else {
+                    let matchedNames = matchedPeopleIDs.compactMap { id in
+                        allPeople.first { $0.id == id }.map { $0.displayNameCache ?? $0.displayName }
+                    }
+                    logger.info("Note '\(dto.title)': linked to \(matchedNames.joined(separator: ", "))")
+                }
 
-                let note = try notesRepository.createFromImport(
+                // Build content: title + body
+                let titlePrefix = dto.title.isEmpty ? "" : "\(dto.title)\n\n"
+                let titleOffset = titlePrefix.count
+                let content = titlePrefix + dto.plainTextContent
+
+                // Build image data with inline positions from ENML parsing
+                var imageData: [(Data, String, Int)] = []
+                if !dto.resources.isEmpty {
+                    imageData = dto.resources.map { resource -> (Data, String, Int) in
+                        let hash = resource.md5Hash
+                        if let enmlOffset = dto.imagePositions[hash] {
+                            let position = enmlOffset + titleOffset
+                            logger.debug("Image hash \(hash) → position \(position) (enml offset \(enmlOffset) + title \(titleOffset))")
+                            return (resource.data, resource.mimeType, position)
+                        } else {
+                            logger.debug("Image hash \(hash) — no ENML position, placing at end")
+                            return (resource.data, resource.mimeType, Int.max)
+                        }
+                    }
+                }
+
+                // Create note AND images atomically in a single save
+                let note = try notesRepository.createFromImportWithImages(
                     sourceImportUID: uid,
                     content: content,
                     createdAt: dto.createdAt,
                     updatedAt: dto.updatedAt,
-                    linkedPeopleIDs: matchedPeopleIDs
+                    linkedPeopleIDs: matchedPeopleIDs,
+                    images: imageData
                 )
 
-                importedCount += 1
-
-                // Fire background analysis
-                Task {
-                    await analysisCoordinator.analyzeNote(note)
+                if !imageData.isEmpty {
+                    let positioned = imageData.filter { $0.2 != Int.max }.count
+                    logger.info("Saved \(dto.resources.count) image(s) for '\(dto.title)': \(positioned) inline, \(dto.resources.count - positioned) at end")
                 }
+
+                createdNotes.append(note)
+                importedCount += 1
             }
 
             importStatus = .success
             logger.info("ENEX import complete: \(self.importedCount) notes imported")
 
+            // Fire background analysis AFTER all notes are imported
+            // (avoids concurrent context modifications during import)
+            for note in createdNotes {
+                Task {
+                    await analysisCoordinator.analyzeNote(note)
+                }
+            }
+
         } catch {
             importStatus = .failed
             lastError = error.localizedDescription
             logger.error("ENEX import failed: \(error)")
+        }
+    }
+
+    // MARK: - Re-link
+
+    /// Re-link previously imported Evernote notes that have no linked people.
+    /// First tries direct name matching against note content, then queues AI analysis
+    /// which will also auto-link based on extracted mentions.
+    /// Returns the number of notes processed.
+    func relinkImportedNotes() async -> Int {
+        do {
+            let allNotes = try notesRepository.fetchAll()
+            let unlinked = allNotes.filter { note in
+                note.sourceImportUID?.hasPrefix("evernote:") == true && note.linkedPeople.isEmpty
+            }
+
+            guard !unlinked.isEmpty else {
+                logger.info("Re-link: no unlinked Evernote notes found")
+                return 0
+            }
+
+            let allPeople = try peopleRepository.fetchAll()
+            logger.info("Re-link: found \(unlinked.count) unlinked Evernote notes, matching against \(allPeople.count) people")
+
+            var linkedCount = 0
+
+            for note in unlinked {
+                // Direct name matching: check if any person's name appears in note content
+                let contentLower = note.content.lowercased()
+                let matchedIDs = allPeople.compactMap { person -> UUID? in
+                    let name = (person.displayNameCache ?? person.displayName).lowercased()
+                    guard name.count >= 3 else { return nil }
+                    return contentLower.contains(name) ? person.id : nil
+                }
+
+                if !matchedIDs.isEmpty {
+                    try notesRepository.updateLinks(note: note, peopleIDs: matchedIDs)
+                    linkedCount += 1
+                    let names = matchedIDs.compactMap { id in
+                        allPeople.first { $0.id == id }.map { $0.displayNameCache ?? $0.displayName }
+                    }
+                    logger.info("Re-link: linked '\(note.content.prefix(40))...' to \(names.joined(separator: ", "))")
+                }
+
+                // Mark for re-analysis so AI can also process
+                note.isAnalyzed = false
+
+                // Queue AI analysis (will also auto-link from mentions)
+                Task {
+                    await analysisCoordinator.analyzeNote(note)
+                }
+            }
+
+            logger.info("Re-link: directly linked \(linkedCount)/\(unlinked.count) notes, all queued for AI analysis")
+            return unlinked.count
+        } catch {
+            logger.error("Re-link failed: \(error)")
+            return 0
         }
     }
 
@@ -170,6 +345,8 @@ final class EvernoteImportCoordinator {
         duplicateCount = 0
         importedCount = 0
         splitCount = 0
+        fileCount = 0
+        processedFileCount = 0
         importStatus = .idle
         lastError = nil
     }
@@ -231,7 +408,8 @@ final class EvernoteImportCoordinator {
         return nil
     }
 
-    /// Split a note with date-prefixed entries into individual sub-notes
+    /// Split a note with date-prefixed entries into individual sub-notes.
+    /// Images are distributed to the sub-note whose text range contains their position.
     private func splitByDateEntries(note: EvernoteNoteDTO) -> [EvernoteNoteDTO] {
         let lines = note.plainTextContent.components(separatedBy: "\n")
 
@@ -246,44 +424,102 @@ final class EvernoteImportCoordinator {
         // Need at least 2 date entries to justify splitting
         guard dateLineIndices.count >= 2 else { return [note] }
 
-        var subNotes: [EvernoteNoteDTO] = []
+        // Build line → character offset map (for image position distribution)
+        var lineCharOffsets: [Int] = []
+        var offset = 0
+        for line in lines {
+            lineCharOffsets.append(offset)
+            offset += line.count + 1 // +1 for \n
+        }
 
-        // Preamble: text before the first date line
+        // Define segments as (startLine, endLine, date, charStart, charEnd)
+        struct Segment {
+            let startLine: Int
+            let endLine: Int
+            let date: Date
+            let charStart: Int
+            let charEnd: Int
+        }
+
+        var segments: [Segment] = []
+
+        // Preamble (before first date line)
         if dateLineIndices[0].index > 0 {
             let preambleLines = Array(lines[0..<dateLineIndices[0].index])
             let preambleText = preambleLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
             if preambleText.count > 20 {
-                subNotes.append(EvernoteNoteDTO(
-                    guid: "\(note.guid)#0",
-                    title: note.title,
-                    plainTextContent: preambleText,
-                    createdAt: note.createdAt,
-                    updatedAt: note.createdAt,
-                    tags: note.tags
+                segments.append(Segment(
+                    startLine: 0,
+                    endLine: dateLineIndices[0].index,
+                    date: note.createdAt,
+                    charStart: 0,
+                    charEnd: lineCharOffsets[dateLineIndices[0].index]
                 ))
             }
         }
 
-        // Each date-to-next-date segment
+        // Date-delimited segments
         for (segIdx, entry) in dateLineIndices.enumerated() {
-            let startLine = entry.index
             let endLine = segIdx + 1 < dateLineIndices.count
                 ? dateLineIndices[segIdx + 1].index
                 : lines.count
 
-            let chunkLines = Array(lines[startLine..<endLine])
+            let chunkLines = Array(lines[entry.index..<endLine])
             let chunkText = chunkLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-
             guard !chunkText.isEmpty else { continue }
 
-            let subIndex = subNotes.count
+            let charStart = lineCharOffsets[entry.index]
+            let charEnd = endLine < lineCharOffsets.count ? lineCharOffsets[endLine] : offset
+
+            segments.append(Segment(
+                startLine: entry.index,
+                endLine: endLine,
+                date: entry.date,
+                charStart: charStart,
+                charEnd: charEnd
+            ))
+        }
+
+        // Distribute resources and image positions to segments
+        var subNotes: [EvernoteNoteDTO] = []
+        var unassignedResources = note.resources
+
+        for (segIdx, segment) in segments.enumerated() {
+            let chunkLines = Array(lines[segment.startLine..<segment.endLine])
+            let chunkText = chunkLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+
+            // Find resources whose image position falls within this segment's char range
+            var segmentResources: [EvernoteResourceDTO] = []
+            var segmentPositions: [String: Int] = [:]
+            var remainingResources: [EvernoteResourceDTO] = []
+
+            for resource in unassignedResources {
+                let hash = resource.md5Hash
+                if let pos = note.imagePositions[hash], pos >= segment.charStart && pos < segment.charEnd {
+                    segmentResources.append(resource)
+                    // Adjust position relative to this segment's start
+                    segmentPositions[hash] = pos - segment.charStart
+                } else {
+                    remainingResources.append(resource)
+                }
+            }
+            unassignedResources = remainingResources
+
+            // Last segment gets any unassigned resources (no matching position)
+            if segIdx == segments.count - 1 && !unassignedResources.isEmpty {
+                segmentResources.append(contentsOf: unassignedResources)
+                unassignedResources = []
+            }
+
             subNotes.append(EvernoteNoteDTO(
-                guid: "\(note.guid)#\(subIndex)",
+                guid: "\(note.guid)#\(segIdx)",
                 title: note.title,
                 plainTextContent: chunkText,
-                createdAt: entry.date,
-                updatedAt: entry.date,
-                tags: note.tags
+                createdAt: segment.date,
+                updatedAt: segment.date,
+                tags: note.tags,
+                resources: segmentResources,
+                imagePositions: segmentPositions
             ))
         }
 

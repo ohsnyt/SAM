@@ -6,14 +6,16 @@
 //
 
 import SwiftUI
+import AppKit
+import UniformTypeIdentifiers
 import os.log
 
 private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "InlineNoteCaptureView")
 
 /// Reusable inline note capture widget — always visible above note lists.
 ///
-/// Shows a compact TextEditor with mic button and Save action.
-/// After save: clears text, fires background analysis, calls `onSaved`.
+/// Shows a RichNoteEditor (inline images) with mic button and Save action.
+/// After save: clears editor, fires background analysis, calls `onSaved`.
 struct InlineNoteCaptureView: View {
 
     // MARK: - Parameters
@@ -31,6 +33,7 @@ struct InlineNoteCaptureView: View {
 
     // MARK: - State
 
+    @State private var isEditing = false
     @State private var text = ""
     @State private var isDictating = false
     @State private var isPolishing = false
@@ -39,6 +42,7 @@ struct InlineNoteCaptureView: View {
     @State private var autoLinkedTitle: String?
     @State private var errorMessage: String?
     @State private var usedDictation = false
+    @State private var editorHandle = RichNoteEditorHandle()
 
     // Accumulate text across recognizer resets (on-device recognizer resets after pauses)
     @State private var accumulatedSegments: [String] = []
@@ -48,25 +52,82 @@ struct InlineNoteCaptureView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .bottom, spacing: 8) {
-                // Text editor
-                TextEditor(text: $text)
+            if isEditing {
+                expandedEditor
+            } else {
+                collapsedBar
+            }
+
+            // Status indicators (below both states)
+            statusIndicators
+        }
+    }
+
+    // MARK: - Collapsed Bar
+
+    private var collapsedBar: some View {
+        Button {
+            withAnimation(.easeOut(duration: 0.2)) {
+                isEditing = true
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "square.and.pencil")
                     .font(.body)
-                    .scrollContentBackground(.hidden)
-                    .frame(minHeight: 36, maxHeight: 80)
-                    .padding(6)
-                    .background(Color(nsColor: .controlBackgroundColor))
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                    .overlay(alignment: .topLeading) {
-                        if text.isEmpty && !isDictating {
-                            Text("Type a note...")
-                                .font(.body)
-                                .foregroundStyle(.tertiary)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 10)
-                                .allowsHitTesting(false)
-                        }
+                    .foregroundStyle(.secondary)
+                Text("Add a note…")
+                    .font(.body)
+                    .foregroundStyle(.tertiary)
+                Spacer()
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(Color(nsColor: .controlBackgroundColor))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Expanded Editor
+
+    private var expandedEditor: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            // Editor area
+            RichNoteEditor(plainText: $text, existingImages: [], handle: editorHandle)
+                .frame(minHeight: 150, maxHeight: 300)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(Color.accentColor.opacity(0.4), lineWidth: 1)
+                )
+                .overlay(alignment: .topLeading) {
+                    if text.isEmpty && !isDictating {
+                        Text("Type a note…")
+                            .font(.body)
+                            .foregroundStyle(.tertiary)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 10)
+                            .allowsHitTesting(false)
                     }
+                }
+
+            // Toolbar
+            HStack(spacing: 8) {
+                // Attach image button
+                Button {
+                    attachImage()
+                } label: {
+                    Image(systemName: "paperclip")
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.plain)
+                .help("Attach image from file")
 
                 // Mic button
                 Button {
@@ -94,6 +155,15 @@ struct InlineNoteCaptureView: View {
                     }
                 }
 
+                Spacer()
+
+                // Cancel button
+                Button("Cancel") {
+                    cancelEditing()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
                 // Save button
                 Button("Save") {
                     saveNote()
@@ -102,52 +172,97 @@ struct InlineNoteCaptureView: View {
                 .controlSize(.small)
                 .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
+        }
+    }
 
-            // Status indicators
-            if isPolishing {
-                HStack(spacing: 4) {
-                    ProgressView()
-                        .controlSize(.mini)
-                    Text("Polishing dictation...")
-                        .font(.caption2)
+    // MARK: - Status Indicators
+
+    @ViewBuilder
+    private var statusIndicators: some View {
+        if isPolishing {
+            HStack(spacing: 4) {
+                ProgressView()
+                    .controlSize(.mini)
+                Text("Polishing dictation...")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+
+        if let raw = rawDictationText, raw != text {
+            Button {
+                text = raw
+                rawDictationText = nil
+            } label: {
+                Label("Undo polish", systemImage: "arrow.uturn.backward")
+                    .font(.caption2)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+        }
+
+        if showSavedConfirmation {
+            HStack(spacing: 4) {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                    .font(.caption)
+                Text("Saved")
+                    .font(.caption)
+                    .foregroundStyle(.green)
+                if let title = autoLinkedTitle {
+                    Text("• Linked to: \(title)")
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
+            .transition(.opacity.combined(with: .move(edge: .top)))
+        }
 
-            if let raw = rawDictationText, raw != text {
-                Button {
-                    text = raw
-                    rawDictationText = nil
-                } label: {
-                    Label("Undo polish", systemImage: "arrow.uturn.backward")
-                        .font(.caption2)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-            }
+        if let error = errorMessage {
+            Text(error)
+                .font(.caption)
+                .foregroundStyle(.red)
+        }
+    }
 
-            if showSavedConfirmation {
-                HStack(spacing: 4) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
-                        .font(.caption)
-                    Text("Saved")
-                        .font(.caption)
-                        .foregroundStyle(.green)
-                    if let title = autoLinkedTitle {
-                        Text("• Linked to: \(title)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .transition(.opacity.combined(with: .move(edge: .top)))
-            }
+    // MARK: - Cancel
 
-            if let error = errorMessage {
-                Text(error)
-                    .font(.caption)
-                    .foregroundStyle(.red)
+    private func cancelEditing() {
+        if isDictating {
+            dictationService.stopRecognition()
+            isDictating = false
+        }
+        text = ""
+        editorHandle.clear()
+        rawDictationText = nil
+        usedDictation = false
+        errorMessage = nil
+        withAnimation(.easeIn(duration: 0.2)) {
+            isEditing = false
+        }
+    }
+
+    // MARK: - Image Attach
+
+    private func attachImage() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.png, .jpeg, .gif, .tiff]
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+
+        guard panel.runModal() == .OK else { return }
+
+        for url in panel.urls {
+            guard let data = try? Data(contentsOf: url) else { continue }
+            let ext = url.pathExtension.lowercased()
+            let mime: String
+            switch ext {
+            case "jpg", "jpeg": mime = "image/jpeg"
+            case "gif": mime = "image/gif"
+            case "tiff", "tif": mime = "image/tiff"
+            default: mime = "image/png"
             }
+            editorHandle.insertImage(data: data, mimeType: mime)
         }
     }
 
@@ -280,7 +395,8 @@ struct InlineNoteCaptureView: View {
     // MARK: - Save
 
     private func saveNote() {
-        let content = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let (rawText, extractedImages) = editorHandle.extractContent()
+        let content = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !content.isEmpty else { return }
 
         let sourceType: SamNote.SourceType = usedDictation ? .dictated : .typed
@@ -293,16 +409,25 @@ struct InlineNoteCaptureView: View {
                 linkedContextIDs: linkedContext.map { [$0.id] } ?? []
             )
 
+            // Save extracted inline images
+            if !extractedImages.isEmpty {
+                try repository.addImages(to: note, images: extractedImages)
+            }
+
             // Auto-link to recent meeting
             if let person = linkedPerson {
                 autoLinkToRecentMeeting(note: note, personID: person.id)
             }
 
-            // Reset state
+            // Reset state and collapse
             text = ""
+            editorHandle.clear()
             rawDictationText = nil
             usedDictation = false
             errorMessage = nil
+            withAnimation(.easeIn(duration: 0.2)) {
+                isEditing = false
+            }
 
             // Show confirmation
             withAnimation {

@@ -92,6 +92,12 @@ public final class SamNote {
     /// Relationships between people discovered by LLM (e.g., spousal, referral)
     public var discoveredRelationships: [DiscoveredRelationship] = []
 
+    // ── Images ───────────────────────────────────────────────────────
+
+    /// Images attached to this note (Evernote imports, pasted screenshots)
+    @Relationship(deleteRule: .cascade, inverse: \NoteImage.note)
+    public var images: [NoteImage] = []
+
     // ── Legacy analysis artifact (Phase 5) ─────────────────────────
     /// @deprecated Will migrate to extractedMentions/extractedActionItems above
     @Relationship(deleteRule: .cascade)

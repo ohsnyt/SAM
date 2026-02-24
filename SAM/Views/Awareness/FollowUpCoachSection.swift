@@ -12,7 +12,7 @@ import SwiftUI
 
 struct FollowUpCoachSection: View {
 
-    @State private var coordinator = MeetingPrepCoordinator.shared
+    private var coordinator: MeetingPrepCoordinator { MeetingPrepCoordinator.shared }
     @State private var dismissedIDs: Set<UUID> = []
 
     private var visiblePrompts: [FollowUpPrompt] {
@@ -46,7 +46,7 @@ struct FollowUpCoachSection: View {
                 LazyVStack(spacing: 8) {
                     ForEach(visiblePrompts) { prompt in
                         FollowUpCard(prompt: prompt) {
-                            withAnimation {
+                            _ = withAnimation {
                                 dismissedIDs.insert(prompt.id)
                             }
                             // Mark the event evidence as done

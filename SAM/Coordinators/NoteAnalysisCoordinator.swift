@@ -117,6 +117,18 @@ final class NoteAnalysisCoordinator {
             let matchedMentions = try autoMatchPeople(mentions)
             let matchedActions = try autoMatchActions(actionItems)
 
+            // Step 4b: Auto-link unlinked notes to matched people
+            if note.linkedPeople.isEmpty {
+                let matchedPersonIDs = Set(matchedMentions.compactMap(\.matchedPersonID))
+                if !matchedPersonIDs.isEmpty {
+                    try notesRepository.updateLinks(
+                        note: note,
+                        peopleIDs: Array(matchedPersonIDs)
+                    )
+                    logger.info("Auto-linked note to \(matchedPersonIDs.count) people from extracted mentions")
+                }
+            }
+
             // Step 5: Store analysis results
             try notesRepository.storeAnalysis(
                 note: note,
@@ -332,27 +344,20 @@ final class NoteAnalysisCoordinator {
 
     /// Create evidence item from analyzed note
     private func createEvidenceFromNote(_ note: SamNote) throws {
-        // Extract IDs instead of passing model objects (different context)
+        // Pass IDs so the evidence repository can re-fetch in its own context,
+        // avoiding "Illegal attempt to insert a model in to a different model context"
         let linkedPeopleIDs = note.linkedPeople.map { $0.id }
         let linkedContextIDs = note.linkedContexts.map { $0.id }
 
-        // Re-fetch people and contexts in the evidence repository's context
-        let peopleInEvidenceContext = try peopleRepository.fetchAll().filter { person in
-            linkedPeopleIDs.contains(person.id)
-        }
-        let contextsInEvidenceContext = try contextsRepository.fetchAll().filter { context in
-            linkedContextIDs.contains(context.id)
-        }
-
-        _ = try evidenceRepository.create(
+        _ = try evidenceRepository.createByIDs(
             sourceUID: "note:\(note.id.uuidString)",
             source: .note,
             occurredAt: note.createdAt,
             title: note.summary ?? String(note.content.prefix(50)),
             snippet: note.summary ?? String(note.content.prefix(200)),
             bodyText: note.content,
-            linkedPeople: peopleInEvidenceContext,
-            linkedContexts: contextsInEvidenceContext
+            linkedPeopleIDs: linkedPeopleIDs,
+            linkedContextIDs: linkedContextIDs
         )
     }
 

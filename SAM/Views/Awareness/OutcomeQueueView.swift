@@ -16,8 +16,8 @@ struct OutcomeQueueView: View {
 
     // MARK: - Dependencies
 
-    @State private var engine = OutcomeEngine.shared
-    @State private var outcomeRepo = OutcomeRepository.shared
+    private var engine: OutcomeEngine { OutcomeEngine.shared }
+    private var outcomeRepo: OutcomeRepository { OutcomeRepository.shared }
     @Environment(\.modelContext) private var modelContext
     @Environment(\.openWindow) private var openWindow
 
@@ -66,21 +66,18 @@ struct OutcomeQueueView: View {
                         .padding()
                 } else {
                     // Active outcome cards
-                    ScrollView {
-                        LazyVStack(spacing: 12) {
-                            ForEach(activeOutcomes) { outcome in
-                                OutcomeCardView(
-                                    outcome: outcome,
-                                    onAct: actClosure(for: outcome),
-                                    onDone: { markDone(outcome) },
-                                    onSkip: { markSkipped(outcome) }
-                                )
-                            }
+                    VStack(spacing: 12) {
+                        ForEach(activeOutcomes) { outcome in
+                            OutcomeCardView(
+                                outcome: outcome,
+                                onAct: actClosure(for: outcome),
+                                onDone: { markDone(outcome) },
+                                onSkip: { markSkipped(outcome) }
+                            )
                         }
-                        .padding(.horizontal)
-                        .padding(.vertical, 12)
                     }
-                    .frame(maxHeight: 400)  // Don't let it take over the whole view
+                    .padding(.horizontal)
+                    .padding(.vertical, 12)
                 }
 
                 // Completed today section

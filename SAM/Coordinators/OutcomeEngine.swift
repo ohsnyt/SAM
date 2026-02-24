@@ -58,6 +58,12 @@ final class OutcomeEngine {
 
     // MARK: - Main Generation
 
+    /// Fire-and-forget generation — does not block the caller.
+    func startGeneration() {
+        guard generationStatus != .generating else { return }
+        Task { await generateOutcomes() }
+    }
+
     /// Synthesize outcomes from all evidence sources.
     func generateOutcomes() async {
         guard generationStatus != .generating else { return }

@@ -82,7 +82,26 @@ final class CommunicationsImportCoordinator {
         case idle, importing, success, failed
     }
 
+    // MARK: - Cancellation
+
+    /// Cancel all background tasks. Called by AppDelegate on app termination.
+    func cancelAll() {
+        importTask?.cancel()
+        importTask = nil
+        if importStatus == .importing {
+            importStatus = .idle
+        }
+        logger.info("All tasks cancelled")
+    }
+
     // MARK: - Public API
+
+    /// Fire-and-forget import — does not block the caller.
+    func startImport() {
+        guard importStatus != .importing else { return }
+        importTask?.cancel()
+        importTask = Task { await performImport() }
+    }
 
     func importNow() async {
         guard importStatus != .importing else {
@@ -174,6 +193,10 @@ final class CommunicationsImportCoordinator {
         var analyzedMessages: [(MessageDTO, MessageAnalysisDTO?)] = []
 
         for (_, threadMessages) in grouped {
+            guard !Task.isCancelled else {
+                logger.info("Message import cancelled during analysis")
+                break
+            }
             if analyzeMessages {
                 // Get contact info for role context
                 let handle = threadMessages.first?.handleID ?? ""
@@ -279,6 +302,10 @@ final class CommunicationsImportCoordinator {
         logger.info("Refreshing relationship summaries for \(toRefresh.count) people with communications")
 
         for person in toRefresh.prefix(10) {
+            guard !Task.isCancelled else {
+                logger.info("Summary refresh cancelled")
+                break
+            }
             await NoteAnalysisCoordinator.shared.refreshRelationshipSummary(for: person)
         }
     }

@@ -12,7 +12,7 @@ import SwiftUI
 
 struct MeetingPrepSection: View {
 
-    @State private var coordinator = MeetingPrepCoordinator.shared
+    private var coordinator: MeetingPrepCoordinator { MeetingPrepCoordinator.shared }
 
     var body: some View {
         if !coordinator.briefings.isEmpty {
@@ -41,15 +41,12 @@ struct MeetingPrepSection: View {
 
                 Divider()
 
-                ScrollView {
-                    LazyVStack(spacing: 10) {
-                        ForEach(coordinator.briefings) { briefing in
-                            BriefingCard(briefing: briefing)
-                        }
+                VStack(spacing: 10) {
+                    ForEach(coordinator.briefings) { briefing in
+                        BriefingCard(briefing: briefing)
                     }
-                    .padding()
                 }
-                .frame(maxHeight: 500)
+                .padding()
             }
             .background(Color(nsColor: .controlBackgroundColor))
         }

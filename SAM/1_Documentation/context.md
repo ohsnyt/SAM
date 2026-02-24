@@ -249,7 +249,9 @@ SAM/SAM/
 │   ├── Notes/
 │   │   ├── NoteEditorView.swift        ✅ Edit-only note editor (Phase L-2)
 │   │   ├── InlineNoteCaptureView.swift ✅ Inline note capture with dictation (Phase L-2)
-│   │   ├── NotesJournalView.swift      ✅ Scrollable inline journal with in-place editing
+│   │   ├── NotesJournalView.swift      ✅ Scrollable inline journal with in-place editing, dictation, image attach
+│   │   ├── RichNoteEditor.swift        ✅ NSViewRepresentable wrapping NSTextView for inline text + image editing
+│   │   ├── CorrectionSheetView.swift   ✅ AI correction review sheet
 │   │   └── NoteActionItemsView.swift   ✅ Review extracted action items
 │   ├── Shared/
 │   │   ├── NotInContactsCapsule.swift  ✅ Reusable "Not in Contacts" badge + add-to-contacts action
@@ -1272,8 +1274,8 @@ When reporting bugs or architectural concerns:
 
 ---
 
-**Document Version**: 5.2 (Phases A–M complete)
+**Document Version**: 5.3 (Phases A–N complete)
 **Previous Versions**: See `changelog.md` for version history
-**Last Major Update**: February 21, 2026 — Phase M: Communications Evidence
+**Last Major Update**: February 23, 2026 — Notes editing UX improvements
 **Clean Rebuild Started**: February 9, 2026
 

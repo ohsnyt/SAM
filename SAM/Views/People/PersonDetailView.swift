@@ -37,6 +37,7 @@ struct PersonDetailView: View {
     @State private var personNotes: [SamNote] = []
     @State private var isEditingBadges = false
     @State private var customBadgeText = ""
+    @State private var showingCorrectionSheet = false
     
     // MARK: - Body
     
@@ -113,6 +114,14 @@ struct PersonDetailView: View {
         }
         .sheet(isPresented: $showingContextPicker) {
             ContextPickerSheet(person: person)
+        }
+        .sheet(isPresented: $showingCorrectionSheet, onDismiss: {
+            loadNotes()
+        }) {
+            CorrectionSheetView(
+                person: person,
+                currentSummary: person.relationshipSummary ?? ""
+            )
         }
         .alert("Error", isPresented: $showingError) {
             Button("OK") { }
@@ -837,6 +846,16 @@ struct PersonDetailView: View {
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }
+
+                // Correction button
+                Button {
+                    showingCorrectionSheet = true
+                } label: {
+                    Label("Correct this", systemImage: "pencil.and.list.clipboard")
+                        .font(.caption)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
             }
         }
     }

@@ -15,10 +15,9 @@ struct AwarenessView: View {
 
     // MARK: - Dependencies
 
-    @State private var generator = InsightGenerator.shared
-    @State private var peopleRepository = PeopleRepository.shared
-    @State private var meetingPrepCoordinator = MeetingPrepCoordinator.shared
-    @State private var calendarCoordinator = CalendarImportCoordinator.shared
+    private var generator: InsightGenerator { InsightGenerator.shared }
+    private var meetingPrepCoordinator: MeetingPrepCoordinator { MeetingPrepCoordinator.shared }
+    private var calendarCoordinator: CalendarImportCoordinator { CalendarImportCoordinator.shared }
     @Environment(\.modelContext) private var modelContext
 
     // MARK: - Persisted Insights
@@ -36,34 +35,36 @@ struct AwarenessView: View {
     // MARK: - Body
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Header
-            headerSection
+        ScrollView {
+            LazyVStack(spacing: 0) {
+                // Header
+                headerSection
 
-            Divider()
+                Divider()
 
-            // Filter Bar
-            filterBar
+                // Filter Bar
+                filterBar
 
-            Divider()
+                Divider()
 
-            // Outcome Queue (Coaching Engine)
-            OutcomeQueueView()
+                // Outcome Queue (Coaching Engine)
+                OutcomeQueueView()
 
-            // Unknown Sender Triage
-            UnknownSenderTriageSection()
+                // Unknown Sender Triage
+                UnknownSenderTriageSection()
 
-            // Meeting Follow-ups (past meetings, more urgent)
-            FollowUpCoachSection()
+                // Meeting Follow-ups (past meetings, more urgent)
+                FollowUpCoachSection()
 
-            // Meeting Prep (upcoming meetings)
-            MeetingPrepSection()
+                // Meeting Prep (upcoming meetings)
+                MeetingPrepSection()
 
-            // Insights List
-            if filteredInsights.isEmpty {
-                emptyState
-            } else {
-                insightsList
+                // Insights List
+                if filteredInsights.isEmpty {
+                    emptyState
+                } else {
+                    insightsSection
+                }
             }
         }
         .navigationTitle("Awareness")
@@ -193,26 +194,24 @@ struct AwarenessView: View {
 
     // MARK: - Insights List
 
-    private var insightsList: some View {
-        ScrollView {
-            LazyVStack(spacing: 12) {
-                ForEach(filteredInsights) { insight in
-                    InsightCard(
-                        insight: insight,
-                        onMarkDone: {
-                            markInsightAsDone(insight)
-                        },
-                        onDismiss: {
-                            dismissInsight(insight)
-                        },
-                        onViewPerson: {
-                            viewPerson(insight.samPerson?.id)
-                        }
-                    )
-                }
+    private var insightsSection: some View {
+        LazyVStack(spacing: 12) {
+            ForEach(filteredInsights) { insight in
+                InsightCard(
+                    insight: insight,
+                    onMarkDone: {
+                        markInsightAsDone(insight)
+                    },
+                    onDismiss: {
+                        dismissInsight(insight)
+                    },
+                    onViewPerson: {
+                        viewPerson(insight.samPerson?.id)
+                    }
+                )
             }
-            .padding()
         }
+        .padding()
     }
 
     // MARK: - Empty State
