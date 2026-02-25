@@ -21,21 +21,14 @@ final class SAMAppDelegate: NSObject, NSApplicationDelegate {
 
     private let log = Logger(subsystem: "com.matthewsessions.SAM", category: "AppDelegate")
 
+    @MainActor
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         log.info("App termination requested — cancelling background tasks")
-
-        // Cancel all coordinator import tasks
-        Task { @MainActor in
-            ContactsImportCoordinator.shared.cancelAll()
-            CalendarImportCoordinator.shared.cancelAll()
-            MailImportCoordinator.shared.cancelAll()
-            CommunicationsImportCoordinator.shared.cancelAll()
-
-            // Reply on the next run-loop tick so cancellation propagates
-            NSApplication.shared.reply(toApplicationShouldTerminate: true)
-        }
-
-        return .terminateLater
+        ContactsImportCoordinator.shared.cancelAll()
+        CalendarImportCoordinator.shared.cancelAll()
+        MailImportCoordinator.shared.cancelAll()
+        CommunicationsImportCoordinator.shared.cancelAll()
+        return .terminateNow
     }
 }
 

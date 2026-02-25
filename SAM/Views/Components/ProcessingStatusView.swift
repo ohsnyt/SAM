@@ -14,32 +14,59 @@ struct ProcessingStatusView: View {
     @State private var contactsCoordinator = ContactsImportCoordinator.shared
     @State private var mailCoordinator = MailImportCoordinator.shared
     @State private var insightGenerator = InsightGenerator.shared
+    @State private var calendarCoordinator = CalendarImportCoordinator.shared
+    @State private var commsCoordinator = CommunicationsImportCoordinator.shared
+    @State private var noteAnalysis = NoteAnalysisCoordinator.shared
+    @State private var outcomeEngine = OutcomeEngine.shared
+    @State private var briefingCoordinator = DailyBriefingCoordinator.shared
+    @State private var evernoteCoordinator = EvernoteImportCoordinator.shared
 
     var body: some View {
-        if let activity = currentActivity {
+        let activities = activeLabels
+        if !activities.isEmpty {
             HStack(spacing: 6) {
                 ProgressView()
                     .controlSize(.small)
                     .frame(width: 16, height: 16)
-                Text(activity)
+                Text(activities.joined(separator: ", "))
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .lineLimit(2)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
         }
     }
 
-    private var currentActivity: String? {
+    private var activeLabels: [String] {
+        var labels: [String] = []
         if contactsCoordinator.importStatus == .importing {
-            return "Importing contacts..."
+            labels.append("Importing contacts\u{2026}")
+        }
+        if calendarCoordinator.importStatus == .importing {
+            labels.append("Importing calendar\u{2026}")
         }
         if mailCoordinator.importStatus == .importing {
-            return "Importing emails..."
+            labels.append("Importing emails\u{2026}")
+        }
+        if commsCoordinator.importStatus == .importing {
+            labels.append("Importing messages\u{2026}")
+        }
+        if evernoteCoordinator.importStatus == .importing {
+            labels.append("Importing notes\u{2026}")
+        }
+        if noteAnalysis.analysisStatus == .analyzing {
+            labels.append("Analyzing notes\u{2026}")
         }
         if insightGenerator.generationStatus == .generating {
-            return "Generating insights..."
+            labels.append("Generating insights\u{2026}")
         }
-        return nil
+        if outcomeEngine.generationStatus == .generating {
+            labels.append("Generating coaching\u{2026}")
+        }
+        if briefingCoordinator.generationStatus == .generating {
+            labels.append("Preparing briefing\u{2026}")
+        }
+        return labels
     }
 }
