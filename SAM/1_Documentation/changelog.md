@@ -4,6 +4,23 @@
 
 ---
 
+## February 24, 2026 - App Intents / Siri Integration (#14)
+
+### Overview
+Verified and confirmed all 8 App Intents files compile cleanly with the current codebase (post Multi-Step Sequences, Intelligent Actions, etc.). No code changes needed — all API references (`PeopleRepository.search`, `OutcomeRepository.fetchActive`, `MeetingPrepCoordinator.briefings`, `DailyBriefingCoordinator`, `Notification.Name.samNavigateToPerson`) remain valid. This completes the Awareness UX Overhaul (#14).
+
+### Files (all in `Intents/`)
+- `PersonEntity.swift` — `AppEntity` + `PersonEntityQuery` (string search, suggested entities, ID lookup)
+- `RoleFilter.swift` — `AppEnum` with 7 role cases
+- `DailyBriefingIntent.swift` — Opens daily briefing sheet
+- `FindPersonIntent.swift` — Navigates to person detail view
+- `PrepForMeetingIntent.swift` — Rich meeting prep dialog result
+- `WhoToReachOutIntent.swift` — Overdue contacts filtered by role
+- `NextActionIntent.swift` — Top priority outcome
+- `SAMShortcutsProvider.swift` — 5 `AppShortcut` registrations, auto-discovered by framework
+
+---
+
 ## February 24, 2026 - Multi-Step Sequences (Schema SAM_v16)
 
 ### Overview

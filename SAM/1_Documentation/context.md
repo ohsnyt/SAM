@@ -496,12 +496,11 @@ Text(context.contextType)       // Compile error - property doesn't exist
 - ✅ **Phase M**: Communications Evidence — iMessage, phone calls, FaceTime (Feb 21, 2026)
 
 - ✅ **Phase N**: Outcome-Focused Coaching Engine — AI service layer, outcome model, coaching engine, adaptive feedback (Feb 22, 2026)
-- ✅ **Awareness UX Overhaul** (Feb 24, 2026) — Dashboard sections, follow-up drafts, referrals, life events, time-of-day coaching, daily briefings
+- ✅ **Awareness UX Overhaul** (Feb 24, 2026) — Dashboard sections, follow-up drafts, referrals, life events, time-of-day coaching, daily briefings, App Intents/Siri (#14)
 - ✅ **Phase O**: Intelligent Actions — ActionLane routing, ComposeService, channel preferences, AI drafts, post-call notes (Feb 24, 2026)
 - ✅ **Multi-Step Sequences** — Linked outcome sequences with trigger conditions, auto-dismiss on response (Feb 24, 2026; schema SAM_v16)
 
 **Next Up**:
-- ⬜ **App Intents / Siri** (#14 from Awareness UX Overhaul)
 - ⬜ **Phase P**: Universal Undo System
 - ⬜ **Phase Q**: Time Tracking
 
@@ -620,7 +619,7 @@ Based on a comprehensive audit of current UX plus competitive research across Sa
 11. ✅ **Calendar pattern intelligence** — `CalendarPatternsSection.swift`. Back-to-back warnings, client meeting ratio, meeting-free days, busiest day, upcoming load comparison.
 12. ✅ **Referral chain tracking** — `SamPerson.referredBy` / `referrals` self-referential relationship. Schema bumped to SAM_v13. `ReferralTrackingSection` wired with real queries. Referral assignment UI in PersonDetailView (picker sheet for Client/Applicant/Lead roles).
 13. ✅ **Life event detection** — `LifeEvent` Codable struct on `SamNote.lifeEvents`. LLM prompt extended with 11 event types. `LifeEventsSection` in Awareness dashboard with outreach suggestions. `InsightGenerator.generateLifeEventInsights()` scans notes for pending events. Analysis version bumped to 3.
-14. ⬜ **App Intents / Siri integration** — "Prep me for my next meeting", "Who should I reach out to today?" Aligns with Apple platform direction. **Next up.**
+14. ✅ **App Intents / Siri integration** — 5 Siri shortcuts: Daily Briefing, Find Person, Prep for Meeting, Who to Reach Out To, Next Action. `PersonEntity` + `PersonEntityQuery` with string search and suggested entities. `RoleFilter` AppEnum. `SAMShortcutsProvider` auto-discovered by framework. All intents use `MainActor.run {}` for repository access. (Feb 24, 2026)
 
 #### Autonomous Actions (user approval required)
 

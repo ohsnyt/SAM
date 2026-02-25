@@ -6,6 +6,7 @@
 //  Clean rebuild - Phase A: Foundation
 //
 
+import AppIntents
 import SwiftUI
 import SwiftData
 import Contacts
@@ -97,6 +98,9 @@ struct SAMApp: App {
                     guard !hasCheckedPermissions else { return }
                     await checkPermissionsAndSetup()
                     hasCheckedPermissions = true
+
+                    // Tell the system about our App Shortcuts so Siri/Spotlight can surface them
+                    SAMShortcutsProvider.updateAppShortcutParameters()
                 }
         }
         .commands {
@@ -220,6 +224,8 @@ struct SAMApp: App {
         if calendarEnabled {
             let calendarAuth = await CalendarService.shared.authorizationStatus()
             if calendarAuth != .fullAccess {
+
+
                 logger.warning("Calendar was enabled but permission is now \(calendarAuth.rawValue)")
                 permissionsLost = true
             }

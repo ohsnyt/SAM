@@ -2,6 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>INAlternativeAppNames</key>
+	<array>
+		<string>S.A.M.</string>
+		<string>Sam</string>
+		<string>SAM CRM</string>
+	</array>
 	<key>NSCalendarsFullAccessUsageDescription</key>
 	<string>SAM needs access to your Calendar to track meetings and interactions with your clients, and to help you with time management. SAM will only use the calendar you specify.</string>
 	<key>NSContactsUsageDescription</key>
