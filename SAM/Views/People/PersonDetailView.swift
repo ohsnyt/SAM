@@ -194,10 +194,15 @@ struct PersonDetailView: View {
                 
                 // Role badges
                 roleBadgesView
+
+                // Channel preference
+                if !person.isMe {
+                    channelPreferenceView
+                }
             }
-            
+
             Spacer()
-            
+
             // Right side: Photo at 75% opacity
             if let photoData = person.photoThumbnailCache,
                let nsImage = NSImage(data: photoData) {
@@ -363,6 +368,43 @@ struct PersonDetailView: View {
 
     private func notifyBadgeChange() {
         NotificationCenter.default.post(name: .samPersonDidChange, object: nil)
+    }
+
+    // MARK: - Channel Preference
+
+    private var channelPreferenceView: some View {
+        HStack(spacing: 8) {
+            Text("Communication:")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Picker("Channel", selection: channelPreferenceBinding) {
+                Text("Automatic").tag("")
+                ForEach(CommunicationChannel.allCases, id: \.self) { ch in
+                    Text(ch.displayName).tag(ch.rawValue)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .controlSize(.small)
+
+            if let inferred = person.inferredChannelRawValue,
+               let ch = CommunicationChannel(rawValue: inferred),
+               person.preferredChannelRawValue == nil {
+                Text("(inferred: \(ch.displayName))")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+    }
+
+    private var channelPreferenceBinding: Binding<String> {
+        Binding(
+            get: { person.preferredChannelRawValue ?? "" },
+            set: { newValue in
+                person.preferredChannelRawValue = newValue.isEmpty ? nil : newValue
+            }
+        )
     }
 
     // MARK: - Contact Info Section

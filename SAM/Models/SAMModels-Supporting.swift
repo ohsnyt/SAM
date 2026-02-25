@@ -529,6 +529,158 @@ public struct LifeEvent: Codable, Sendable, Identifiable {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// MARK: - Action Lanes & Communication (Phase O)
+// ─────────────────────────────────────────────────────────────────────
+
+/// Which UI flow an outcome should route to when acted on.
+public enum ActionLane: String, Codable, Sendable {
+    case communicate    // Open compose window (iMessage, email, phone)
+    case deepWork       // Block calendar time + open context
+    case record         // Open QuickNoteWindowView (existing)
+    case call           // Initiate call, offer post-call note
+    case schedule       // Create calendar event with attendees
+}
+
+extension ActionLane {
+    public var actionLabel: String {
+        switch self {
+        case .communicate: return "Send Message"
+        case .deepWork:    return "Schedule Work"
+        case .record:      return "Write Note"
+        case .call:        return "Call"
+        case .schedule:    return "Schedule"
+        }
+    }
+
+    public var actionIcon: String {
+        switch self {
+        case .communicate: return "paperplane"
+        case .deepWork:    return "calendar.badge.clock"
+        case .record:      return "square.and.pencil"
+        case .call:        return "phone.arrow.up.right"
+        case .schedule:    return "calendar.badge.plus"
+        }
+    }
+
+    public var displayName: String {
+        switch self {
+        case .communicate: return "Communicate"
+        case .deepWork:    return "Deep Work"
+        case .record:      return "Record"
+        case .call:        return "Call"
+        case .schedule:    return "Schedule"
+        }
+    }
+}
+
+/// Communication channel for sending messages.
+public enum CommunicationChannel: String, Codable, Sendable, CaseIterable {
+    case iMessage, email, phone, faceTime
+
+    public var displayName: String {
+        switch self {
+        case .iMessage: return "iMessage"
+        case .email:    return "Email"
+        case .phone:    return "Phone"
+        case .faceTime: return "FaceTime"
+        }
+    }
+
+    public var icon: String {
+        switch self {
+        case .iMessage: return "message"
+        case .email:    return "envelope"
+        case .phone:    return "phone"
+        case .faceTime: return "video"
+        }
+    }
+}
+
+/// Payload for opening the compose auxiliary window.
+public struct ComposePayload: Codable, Hashable, Sendable {
+    public let outcomeID: UUID
+    public let personID: UUID?
+    public let personName: String?
+    public let recipientAddress: String
+    public let channel: CommunicationChannel
+    public let subject: String?
+    public let draftBody: String
+    public let contextTitle: String
+
+    public init(
+        outcomeID: UUID,
+        personID: UUID?,
+        personName: String?,
+        recipientAddress: String,
+        channel: CommunicationChannel,
+        subject: String? = nil,
+        draftBody: String,
+        contextTitle: String
+    ) {
+        self.outcomeID = outcomeID
+        self.personID = personID
+        self.personName = personName
+        self.recipientAddress = recipientAddress
+        self.channel = channel
+        self.subject = subject
+        self.draftBody = draftBody
+        self.contextTitle = contextTitle
+    }
+}
+
+/// Payload for the deep work scheduling sheet.
+public struct DeepWorkPayload: Codable, Hashable, Sendable {
+    public let outcomeID: UUID
+    public let personID: UUID?
+    public let personName: String?
+    public let title: String
+    public let rationale: String
+    public let suggestedDurationMinutes: Int
+
+    public init(
+        outcomeID: UUID,
+        personID: UUID?,
+        personName: String?,
+        title: String,
+        rationale: String,
+        suggestedDurationMinutes: Int = 60
+    ) {
+        self.outcomeID = outcomeID
+        self.personID = personID
+        self.personName = personName
+        self.title = title
+        self.rationale = rationale
+        self.suggestedDurationMinutes = suggestedDurationMinutes
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// MARK: - Sequence Trigger Conditions (Multi-Step Sequences)
+// ─────────────────────────────────────────────────────────────────────
+
+/// Condition that must be met before a sequence step activates.
+public enum SequenceTriggerCondition: String, Codable, Sendable {
+    case always       // Activate unconditionally after delay
+    case noResponse   // Activate only if no communication from person
+}
+
+extension SequenceTriggerCondition {
+    public var displayName: String {
+        switch self {
+        case .always:     return "Always"
+        case .noResponse: return "If no response"
+        }
+    }
+
+    public var displayIcon: String {
+        switch self {
+        case .always:     return "arrow.right.circle"
+        case .noResponse: return "clock.badge.questionmark"
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // MARK: - Outcome Types (Phase N)
 // ─────────────────────────────────────────────────────────────────────
 
@@ -587,19 +739,22 @@ public struct QuickNotePayload: Codable, Hashable, Sendable {
     public let personName: String?
     public let contextTitle: String
     public let evidenceID: UUID?
+    public let prefillText: String?
 
     public init(
         outcomeID: UUID,
         personID: UUID?,
         personName: String?,
         contextTitle: String,
-        evidenceID: UUID? = nil
+        evidenceID: UUID? = nil,
+        prefillText: String? = nil
     ) {
         self.outcomeID = outcomeID
         self.personID = personID
         self.personName = personName
         self.contextTitle = contextTitle
         self.evidenceID = evidenceID
+        self.prefillText = prefillText
     }
 }
 

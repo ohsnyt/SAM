@@ -31,11 +31,15 @@ struct OutcomeQueueView: View {
     @State private var showRatingFor: SamOutcome?
     @State private var ratingValue: Int = 3
     @State private var showCompleted = false
+    @State private var showDeepWorkSheet = false
+    @State private var deepWorkOutcome: SamOutcome?
 
     // MARK: - Computed
 
     private var activeOutcomes: [SamOutcome] {
-        allOutcomes.filter { $0.status == .pending || $0.status == .inProgress }
+        allOutcomes.filter {
+            ($0.status == .pending || $0.status == .inProgress) && !$0.isAwaitingTrigger
+        }
     }
 
     private var completedToday: [SamOutcome] {
@@ -72,7 +76,9 @@ struct OutcomeQueueView: View {
                                 outcome: outcome,
                                 onAct: actClosure(for: outcome),
                                 onDone: { markDone(outcome) },
-                                onSkip: { markSkipped(outcome) }
+                                onSkip: { markSkipped(outcome) },
+                                sequenceStepCount: sequenceStepCount(for: outcome),
+                                nextAwaitingStep: nextAwaitingStep(for: outcome)
                             )
                         }
                     }
@@ -89,6 +95,26 @@ struct OutcomeQueueView: View {
             }
             .sheet(item: $showRatingFor) { outcome in
                 ratingSheet(for: outcome)
+            }
+            .sheet(isPresented: $showDeepWorkSheet) {
+                if let outcome = deepWorkOutcome {
+                    DeepWorkScheduleSheet(
+                        payload: DeepWorkPayload(
+                            outcomeID: outcome.id,
+                            personID: outcome.linkedPerson?.id,
+                            personName: outcome.linkedPerson?.displayNameCache ?? outcome.linkedPerson?.displayName,
+                            title: outcome.title,
+                            rationale: outcome.rationale
+                        ),
+                        onScheduled: {
+                            try? outcomeRepo.markInProgress(id: outcome.id)
+                            showDeepWorkSheet = false
+                        },
+                        onCancel: {
+                            showDeepWorkSheet = false
+                        }
+                    )
+                }
             }
         }
     }
@@ -238,19 +264,62 @@ struct OutcomeQueueView: View {
     // MARK: - Actions
 
     private func actClosure(for outcome: SamOutcome) -> (() -> Void)? {
-        let action = outcome.outcomeKind.defaultAction
-        switch action {
-        case .captureNote:
+        switch outcome.actionLane {
+        case .record:
             return {
                 let payload = QuickNotePayload(
                     outcomeID: outcome.id,
                     personID: outcome.linkedPerson?.id,
                     personName: outcome.linkedPerson?.displayNameCache,
-                    contextTitle: outcome.suggestedNextStep ?? outcome.title
+                    contextTitle: outcome.title,
+                    prefillText: outcome.suggestedNextStep
                 )
                 openWindow(id: "quick-note", value: payload)
             }
-        case .openPerson:
+
+        case .communicate:
+            return {
+                let person = outcome.linkedPerson
+                let address = person?.emailCache ?? person?.phoneAliases.first ?? ""
+                let channel = outcome.suggestedChannel ?? person?.effectiveChannel ?? .iMessage
+                let payload = ComposePayload(
+                    outcomeID: outcome.id,
+                    personID: person?.id,
+                    personName: person?.displayNameCache ?? person?.displayName,
+                    recipientAddress: address,
+                    channel: channel,
+                    draftBody: outcome.draftMessageText ?? outcome.suggestedNextStep ?? "",
+                    contextTitle: outcome.title
+                )
+                openWindow(id: "compose-message", value: payload)
+            }
+
+        case .call:
+            return {
+                let person = outcome.linkedPerson
+                let phone = person?.phoneAliases.first ?? ""
+                if !phone.isEmpty {
+                    ComposeService.shared.initiateCall(recipient: phone)
+                }
+                // After call, offer note capture via quick note
+                let payload = QuickNotePayload(
+                    outcomeID: outcome.id,
+                    personID: person?.id,
+                    personName: person?.displayNameCache ?? person?.displayName,
+                    contextTitle: "Post-call: \(outcome.title)",
+                    prefillText: "How did it go?"
+                )
+                openWindow(id: "quick-note", value: payload)
+            }
+
+        case .deepWork:
+            return {
+                deepWorkOutcome = outcome
+                showDeepWorkSheet = true
+            }
+
+        case .schedule:
+            // Schedule lane: navigate to person for now; calendar event creation in Part 4
             guard let personID = outcome.linkedPerson?.id else { return nil }
             return {
                 NotificationCenter.default.post(
@@ -259,8 +328,6 @@ struct OutcomeQueueView: View {
                     userInfo: ["personID": personID]
                 )
             }
-        case .openEvidence:
-            return nil
         }
     }
 
@@ -276,5 +343,20 @@ struct OutcomeQueueView: View {
 
     private func markSkipped(_ outcome: SamOutcome) {
         try? outcomeRepo.markDismissed(id: outcome.id)
+    }
+
+    // MARK: - Sequence Helpers
+
+    private func sequenceStepCount(for outcome: SamOutcome) -> Int {
+        guard let seqID = outcome.sequenceID else { return 0 }
+        return allOutcomes.filter { $0.sequenceID == seqID }.count
+    }
+
+    private func nextAwaitingStep(for outcome: SamOutcome) -> SamOutcome? {
+        guard let seqID = outcome.sequenceID else { return nil }
+        return allOutcomes
+            .filter { $0.sequenceID == seqID && $0.sequenceIndex > outcome.sequenceIndex && $0.isAwaitingTrigger && $0.status == .pending }
+            .sorted(by: { $0.sequenceIndex < $1.sequenceIndex })
+            .first
     }
 }

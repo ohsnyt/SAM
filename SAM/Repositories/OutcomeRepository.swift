@@ -38,6 +38,7 @@ final class OutcomeRepository {
     // MARK: - Fetch Operations
 
     /// Fetch active outcomes (pending + inProgress), sorted by priority descending.
+    /// Excludes outcomes awaiting a sequence trigger (hidden until activated).
     func fetchActive() throws -> [SamOutcome] {
         guard let context else { throw RepositoryError.notConfigured }
 
@@ -45,7 +46,9 @@ final class OutcomeRepository {
             sortBy: [SortDescriptor(\.priorityScore, order: .reverse)]
         )
         let all = try context.fetch(descriptor)
-        return all.filter { $0.status == .pending || $0.status == .inProgress }
+        return all.filter {
+            ($0.status == .pending || $0.status == .inProgress) && !$0.isAwaitingTrigger
+        }
     }
 
     /// Fetch completed outcomes, most recent first.
@@ -82,6 +85,72 @@ final class OutcomeRepository {
         let descriptor = FetchDescriptor<SamOutcome>()
         let all = try context.fetch(descriptor)
         return all.first { $0.id == id }
+    }
+
+    // MARK: - Sequence Queries
+
+    /// Fetch outcomes that are awaiting a sequence trigger and still pending.
+    func fetchAwaitingTrigger() throws -> [SamOutcome] {
+        guard let context else { throw RepositoryError.notConfigured }
+
+        let descriptor = FetchDescriptor<SamOutcome>()
+        let all = try context.fetch(descriptor)
+        return all.filter { $0.isAwaitingTrigger && $0.status == .pending }
+    }
+
+    /// Fetch the previous step in a sequence (sequenceIndex - 1).
+    func fetchPreviousStep(for outcome: SamOutcome) throws -> SamOutcome? {
+        guard let seqID = outcome.sequenceID, outcome.sequenceIndex > 0, let context else { return nil }
+
+        let targetIndex = outcome.sequenceIndex - 1
+        let descriptor = FetchDescriptor<SamOutcome>()
+        let all = try context.fetch(descriptor)
+        return all.first { $0.sequenceID == seqID && $0.sequenceIndex == targetIndex }
+    }
+
+    /// Dismiss all steps in a sequence at or after the given index.
+    func dismissRemainingSteps(sequenceID: UUID, fromIndex: Int) throws {
+        guard let context else { throw RepositoryError.notConfigured }
+
+        let descriptor = FetchDescriptor<SamOutcome>()
+        let all = try context.fetch(descriptor)
+        var dismissed = 0
+
+        for outcome in all {
+            guard outcome.sequenceID == sequenceID,
+                  outcome.sequenceIndex >= fromIndex,
+                  outcome.status == .pending || outcome.status == .inProgress else { continue }
+
+            outcome.statusRawValue = OutcomeStatus.dismissed.rawValue
+            outcome.dismissedAt = .now
+            dismissed += 1
+        }
+
+        if dismissed > 0 {
+            try context.save()
+            logger.info("Dismissed \(dismissed) remaining sequence steps for sequence \(sequenceID)")
+        }
+    }
+
+    /// Count total steps in a sequence.
+    func sequenceStepCount(sequenceID: UUID) throws -> Int {
+        guard let context else { throw RepositoryError.notConfigured }
+
+        let descriptor = FetchDescriptor<SamOutcome>()
+        let all = try context.fetch(descriptor)
+        return all.filter { $0.sequenceID == sequenceID }.count
+    }
+
+    /// Fetch the next visible step hint for a sequence (the first awaiting-trigger step).
+    func fetchNextAwaitingStep(sequenceID: UUID, afterIndex: Int) throws -> SamOutcome? {
+        guard let context else { throw RepositoryError.notConfigured }
+
+        let descriptor = FetchDescriptor<SamOutcome>()
+        let all = try context.fetch(descriptor)
+        return all
+            .filter { $0.sequenceID == sequenceID && $0.sequenceIndex > afterIndex && $0.isAwaitingTrigger && $0.status == .pending }
+            .sorted(by: { $0.sequenceIndex < $1.sequenceIndex })
+            .first
     }
 
     // MARK: - Upsert
@@ -150,6 +219,7 @@ final class OutcomeRepository {
     }
 
     /// Mark an outcome as dismissed (user clicked Skip).
+    /// If the outcome is part of a sequence, also dismisses all subsequent steps.
     func markDismissed(id: UUID) throws {
         guard let context else { throw RepositoryError.notConfigured }
         guard let outcome = try fetch(id: id) else { return }
@@ -158,6 +228,11 @@ final class OutcomeRepository {
         outcome.dismissedAt = .now
         try context.save()
         logger.info("Outcome dismissed: \(outcome.title)")
+
+        // Auto-dismiss subsequent sequence steps
+        if let seqID = outcome.sequenceID {
+            try dismissRemainingSteps(sequenceID: seqID, fromIndex: outcome.sequenceIndex + 1)
+        }
     }
 
     /// Mark an outcome as in-progress.

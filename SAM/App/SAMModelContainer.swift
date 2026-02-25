@@ -55,7 +55,7 @@ enum SAMModelContainer {
     nonisolated(unsafe) private static var _shared: ModelContainer = {
         let schema     = Schema(SAMSchema.allModels)
         let config     = ModelConfiguration(
-            "SAM_v14", // v10: added linkedEvidence inverse on SamPerson + SamContext
+            "SAM_v16", // v16: multi-step sequence fields on SamOutcome
             schema: schema,
             isStoredInMemoryOnly: false   // persistent on disk
         )
@@ -74,7 +74,7 @@ enum SAMModelContainer {
     nonisolated static func makeFreshContainer() -> ModelContainer {
         let schema = Schema(SAMSchema.allModels)
         let config = ModelConfiguration(
-            "SAM_v14", // v10: added linkedEvidence inverse on SamPerson + SamContext
+            "SAM_v16", // v16: multi-step sequence fields on SamOutcome
             schema: schema,
             isStoredInMemoryOnly: false
         )
@@ -94,7 +94,7 @@ enum SAMModelContainer {
     nonisolated static let shared: ModelContainer = {
         let schema     = Schema(SAMSchema.allModels)
         let config     = ModelConfiguration(
-            "SAM_v14", // v10: added linkedEvidence inverse on SamPerson + SamContext
+            "SAM_v16", // v16: multi-step sequence fields on SamOutcome
             schema: schema,
             isStoredInMemoryOnly: false   // persistent on disk
         )

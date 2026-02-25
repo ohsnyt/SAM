@@ -61,6 +61,13 @@ struct InboxDetailView: View {
                 metadataSection
             }
         }
+        .task(id: item.id) {
+            // Auto-mark as reviewed after 2 seconds of viewing
+            guard item.state == .needsReview else { return }
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            try? repository.markAsReviewed(item: item)
+        }
         .navigationTitle("")
         .toolbar {
             ToolbarItemGroup {
@@ -79,10 +86,10 @@ struct InboxDetailView: View {
                     if item.state == .needsReview {
                         Label("Mark as Reviewed", systemImage: "checkmark.circle")
                     } else {
-                        Label("Mark as Needs Review", systemImage: "arrow.uturn.backward.circle")
+                        Label("Mark as New", systemImage: "arrow.uturn.backward.circle")
                     }
                 }
-                .help(item.state == .needsReview ? "Mark as Reviewed" : "Mark as Needs Review")
+                .help(item.state == .needsReview ? "Mark as Reviewed" : "Mark as New")
 
                 // Menu: delete
                 Menu {
@@ -135,7 +142,7 @@ struct InboxDetailView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 4))
 
                 // State badge
-                Text(item.state == .needsReview ? "Needs Review" : "Reviewed")
+                Text(item.state == .needsReview ? "New" : "Reviewed")
                     .font(.caption)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
@@ -344,7 +351,7 @@ struct InboxDetailView: View {
         section(title: "Metadata") {
             VStack(alignment: .leading, spacing: 8) {
                 metadataRow(label: "Source", value: item.source.rawValue)
-                metadataRow(label: "State", value: item.state == .needsReview ? "Needs Review" : "Done")
+                metadataRow(label: "State", value: item.state == .needsReview ? "New" : "Reviewed")
 
                 if let sourceUID = item.sourceUID {
                     metadataRow(label: "Source UID", value: sourceUID)

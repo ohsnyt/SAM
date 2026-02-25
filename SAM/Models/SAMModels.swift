@@ -76,6 +76,23 @@ public final class SamPerson {
     /// When the relationship summary was last refreshed
     public var summaryUpdatedAt: Date?
 
+    // ── Communication Preferences (Phase O) ──────────────────────────
+
+    /// Channel inferred from evidence history (most frequent recent channel).
+    public var inferredChannelRawValue: String?
+
+    /// Explicit user override for preferred communication channel.
+    public var preferredChannelRawValue: String?
+
+    /// Returns explicit preference if set, else inferred preference.
+    @Transient
+    public var effectiveChannel: CommunicationChannel? {
+        if let explicit = preferredChannelRawValue {
+            return CommunicationChannel(rawValue: explicit)
+        }
+        return inferredChannelRawValue.flatMap { CommunicationChannel(rawValue: $0) }
+    }
+
     // ── DEPRECATED: Transitional fields (remove in SAM_v7) ─────────
     // These fields exist for backward compatibility during migration.
     // New code should use displayNameCache/emailCache instead.
@@ -788,6 +805,34 @@ public final class SamOutcome {
     /// Whether the user clicked through / completed this outcome.
     public var wasActedOn: Bool
 
+    // ── Phase O: Intelligent Actions ─────────────────────────────────
+
+    /// Which UI flow this outcome routes to (communicate, deepWork, record, call, schedule).
+    public var actionLaneRawValue: String = ActionLane.record.rawValue
+
+    /// AI-generated draft message text for communicate/call lanes.
+    public var draftMessageText: String?
+
+    /// Suggested communication channel for this outcome.
+    public var suggestedChannelRawValue: String?
+
+    // ── Multi-Step Sequences ─────────────────────────────────────────
+
+    /// Groups steps in a sequence; nil = standalone outcome.
+    public var sequenceID: UUID?
+
+    /// 0-based position within a sequence.
+    public var sequenceIndex: Int = 0
+
+    /// When true, this step is hidden from the active queue until triggered.
+    public var isAwaitingTrigger: Bool = false
+
+    /// Days to wait after the previous step completes before evaluating this step.
+    public var triggerAfterDays: Int = 0
+
+    /// Raw value for the trigger condition; use `triggerCondition` transient property.
+    public var triggerConditionRawValue: String?
+
     // ── Transient computed properties ───────────────────────────────
 
     @Transient
@@ -800,6 +845,24 @@ public final class SamOutcome {
     public var status: OutcomeStatus {
         get { OutcomeStatus(rawValue: statusRawValue) ?? .pending }
         set { statusRawValue = newValue.rawValue }
+    }
+
+    @Transient
+    public var actionLane: ActionLane {
+        get { ActionLane(rawValue: actionLaneRawValue) ?? .record }
+        set { actionLaneRawValue = newValue.rawValue }
+    }
+
+    @Transient
+    public var suggestedChannel: CommunicationChannel? {
+        get { suggestedChannelRawValue.flatMap { CommunicationChannel(rawValue: $0) } }
+        set { suggestedChannelRawValue = newValue?.rawValue }
+    }
+
+    @Transient
+    public var triggerCondition: SequenceTriggerCondition? {
+        get { triggerConditionRawValue.flatMap { SequenceTriggerCondition(rawValue: $0) } }
+        set { triggerConditionRawValue = newValue?.rawValue }
     }
 
     public init(
@@ -898,5 +961,9 @@ extension Notification.Name {
     /// Posted to navigate to a person's detail view from any screen.
     /// userInfo: ["personID": UUID]
     static let samNavigateToPerson = Notification.Name("samNavigateToPerson")
+
+    /// Posted to open a QuickNote window from anywhere in the app.
+    /// userInfo: ["payload": QuickNotePayload]
+    static let samOpenQuickNote = Notification.Name("samOpenQuickNote")
 }
 

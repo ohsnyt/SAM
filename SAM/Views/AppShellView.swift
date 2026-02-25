@@ -21,6 +21,7 @@ struct AppShellView: View {
     @State private var selectedEvidenceID: UUID?
     @State private var selectedContextID: UUID?
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @Environment(\.openWindow) private var openWindow
     
     // MARK: - Body
     
@@ -43,6 +44,11 @@ struct AppShellView: View {
                     selectedPersonID = personID
                 }
             }
+            .onReceive(NotificationCenter.default.publisher(for: .samOpenQuickNote)) { notification in
+                if let payload = notification.userInfo?["payload"] as? QuickNotePayload {
+                    openWindow(id: "quick-note", value: payload)
+                }
+            }
         } else {
             // Two-column layout for other sections
             NavigationSplitView {
@@ -56,6 +62,11 @@ struct AppShellView: View {
                 if let personID = notification.userInfo?["personID"] as? UUID {
                     sidebarSelection = "people"
                     selectedPersonID = personID
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .samOpenQuickNote)) { notification in
+                if let payload = notification.userInfo?["payload"] as? QuickNotePayload {
+                    openWindow(id: "quick-note", value: payload)
                 }
             }
         }

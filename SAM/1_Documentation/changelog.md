@@ -4,6 +4,60 @@
 
 ---
 
+## February 24, 2026 - Multi-Step Sequences (Schema SAM_v16)
+
+### Overview
+Added linked outcome sequences where completing one step can trigger the next after a delay + condition check. For example: "text Harvey about the partnership now" → (3 days, no response) → "email Harvey as follow-up." All done by extending `SamOutcome` with sequence fields, no new models.
+
+### Data Model
+- **`SequenceTriggerCondition`** enum in `SAMModels-Supporting.swift`: `.always` (activate unconditionally after delay), `.noResponse` (activate only if no communication from person). Display extensions: `displayName`, `displayIcon`.
+- **5 new fields on `SamOutcome`**: `sequenceID: UUID?`, `sequenceIndex: Int`, `isAwaitingTrigger: Bool`, `triggerAfterDays: Int`, `triggerConditionRawValue: String?`. Plus `@Transient triggerCondition` computed property.
+- Schema bumped from SAM_v15 → **SAM_v16** (lightweight migration, all fields have defaults).
+
+### Repository Changes
+- **`OutcomeRepository.fetchActive()`** — Now excludes outcomes where `isAwaitingTrigger == true`.
+- **`OutcomeRepository.fetchAwaitingTrigger()`** — Returns outcomes with `isAwaitingTrigger == true` and status `.pending`.
+- **`OutcomeRepository.fetchPreviousStep(for:)`** — Fetches step at `sequenceIndex - 1` in same sequence.
+- **`OutcomeRepository.dismissRemainingSteps(sequenceID:fromIndex:)`** — Dismisses all steps at or after given index.
+- **`OutcomeRepository.sequenceStepCount(sequenceID:)`** — Counts total steps in a sequence.
+- **`OutcomeRepository.fetchNextAwaitingStep(sequenceID:afterIndex:)`** — Gets next hidden step for UI hint.
+- **`OutcomeRepository.markDismissed()`** — Now auto-dismisses subsequent sequence steps on skip.
+- **`EvidenceRepository.hasRecentCommunication(fromPersonID:since:)`** — Checks for iMessage/mail/phone/FaceTime evidence linked to person after given date. Used by trigger condition evaluation.
+
+### Outcome Generation
+- **`OutcomeEngine.maybeCreateSequenceSteps(for:)`** — Heuristics for creating follow-up steps:
+  - "follow up" / "outreach" / "check in" / "reach out" → email follow-up in 3 days if no response
+  - "send proposal" / "send recommendation" → follow-up text in 5 days if no response
+  - `.outreach` kind + `.iMessage` channel → email escalation in 3 days if no response
+- Each follow-up: same `linkedPerson`/`linkedContext`/kind, different channel (text↔email), `isAwaitingTrigger=true`.
+- Wired into `generateOutcomes()` after action lane classification.
+
+### Timer Logic
+- **`DailyBriefingCoordinator.checkSequenceTriggers()`** — Added to the existing 5-minute timer:
+  1. Fetch all awaiting-trigger outcomes
+  2. Check if previous step is completed and enough time has passed
+  3. Evaluate condition: `.always` → activate; `.noResponse` → check evidence → activate or auto-dismiss
+  4. On activation: set `isAwaitingTrigger = false` → outcome appears in queue
+
+### UI Changes
+- **`OutcomeCardView`** — Sequence indicator between kind badge and title: "Step 1 of 2 · Then: email in 3d if no response". Activated follow-up steps show "(no response received)".
+- **`OutcomeQueueView`** — Filters active outcomes to exclude `isAwaitingTrigger`. Passes `sequenceStepCount` and `nextAwaitingStep` to card view. Skip action auto-dismisses remaining sequence steps.
+
+### Files Modified
+| File | Change |
+|------|--------|
+| `Models/SAMModels-Supporting.swift` | New `SequenceTriggerCondition` enum with display extensions |
+| `Models/SAMModels.swift` | 5 sequence fields + `@Transient triggerCondition` on `SamOutcome` |
+| `App/SAMModelContainer.swift` | Schema bumped SAM_v15 → SAM_v16 |
+| `Repositories/OutcomeRepository.swift` | `fetchActive()` filter, 5 new sequence methods, updated `markDismissed()` |
+| `Repositories/EvidenceRepository.swift` | New `hasRecentCommunication(fromPersonID:since:)` |
+| `Coordinators/OutcomeEngine.swift` | New `maybeCreateSequenceSteps()`, wired into generation loop |
+| `Coordinators/DailyBriefingCoordinator.swift` | New `checkSequenceTriggers()` in 5-minute timer |
+| `Views/Shared/OutcomeCardView.swift` | Sequence indicator + next-step hint |
+| `Views/Awareness/OutcomeQueueView.swift` | Filter awaiting outcomes, sequence helpers, skip dismisses remaining |
+
+---
+
 ## February 24, 2026 - Awareness UX Overhaul & Bug Fixes
 
 ### Overview

@@ -206,6 +206,49 @@ final class MeetingPrepCoordinator {
         )
     }
 
+    // MARK: - Channel Preference Inference (Phase O)
+
+    /// Infer the preferred communication channel for a person based on evidence history.
+    /// Weights recent 90-day evidence 2x compared to older evidence.
+    func inferChannelPreference(for person: SamPerson) {
+        let allEvidence: [SamEvidenceItem]
+        do {
+            allEvidence = try evidenceRepository.fetchAll()
+        } catch {
+            return
+        }
+
+        let personID = person.id
+        let linked = allEvidence.filter { item in
+            item.linkedPeople.contains(where: { $0.id == personID })
+        }
+
+        guard !linked.isEmpty else { return }
+
+        let ninetyDaysAgo = Calendar.current.date(byAdding: .day, value: -90, to: Date())!
+
+        var channelScores: [CommunicationChannel: Double] = [:]
+        for item in linked {
+            let weight: Double = item.occurredAt >= ninetyDaysAgo ? 2.0 : 1.0
+            switch item.source {
+            case .iMessage:
+                channelScores[.iMessage, default: 0] += weight
+            case .mail:
+                channelScores[.email, default: 0] += weight
+            case .phoneCall:
+                channelScores[.phone, default: 0] += weight
+            case .faceTime:
+                channelScores[.faceTime, default: 0] += weight
+            case .calendar, .contacts, .note, .manual:
+                break
+            }
+        }
+
+        if let best = channelScores.max(by: { $0.value < $1.value }) {
+            person.inferredChannelRawValue = best.key.rawValue
+        }
+    }
+
     // MARK: - Private: Briefings
 
     private func buildBriefings() throws -> [MeetingBriefing] {

@@ -33,6 +33,9 @@ struct CoachingSettingsContent: View {
     @State private var reanalyzeStatus: String?
     @State private var isReanalyzing = false
 
+    // Direct Send
+    @State private var directSendEnabled: Bool = UserDefaults.standard.bool(forKey: "directSendEnabled")
+
     // Autonomous Actions
     @State private var autoMeetingNoteTemplates: Bool = {
         UserDefaults.standard.object(forKey: "autoMeetingNoteTemplates") == nil
@@ -422,6 +425,16 @@ struct CoachingSettingsContent: View {
                 }
 
             Text("On Monday mornings, your briefing includes a \"This Week's Priorities\" section.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.bottom, 4)
+
+            Toggle("Send messages directly from SAM", isOn: $directSendEnabled)
+                .onChange(of: directSendEnabled) { _, newValue in
+                    UserDefaults.standard.set(newValue, forKey: "directSendEnabled")
+                }
+
+            Text("When enabled, SAM sends iMessages and emails via AppleScript without leaving the app. Requires one-time Automation permission grant.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

@@ -229,6 +229,68 @@ actor CalendarService {
         }
     }
     
+    // MARK: - Create Event (Phase O)
+
+    /// Create a new calendar event. Returns the event identifier if successful.
+    /// If no specific calendar is given, uses or creates the "SAM Tasks" calendar.
+    func createEvent(
+        title: String,
+        startDate: Date,
+        endDate: Date,
+        notes: String?,
+        calendarTitle: String = "SAM Tasks"
+    ) async -> String? {
+        guard authorizationStatus() == .fullAccess else {
+            logger.warning("Not authorized to create events")
+            return nil
+        }
+
+        // Find or create the target calendar
+        guard let calendarID = await findOrCreateCalendar(titled: calendarTitle) else {
+            logger.error("Could not find or create calendar '\(calendarTitle, privacy: .public)'")
+            return nil
+        }
+
+        guard let ekCalendar = eventStore.calendar(withIdentifier: calendarID) else {
+            logger.error("Calendar \(calendarID, privacy: .public) not found after creation")
+            return nil
+        }
+
+        let event = EKEvent(eventStore: eventStore)
+        event.title = title
+        event.startDate = startDate
+        event.endDate = endDate
+        event.notes = notes
+        event.calendar = ekCalendar
+        event.availability = .free  // SAM task blocks don't block booking tools
+
+        do {
+            try eventStore.save(event, span: .thisEvent)
+            logger.notice("Created event '\(title, privacy: .public)' on '\(calendarTitle, privacy: .public)'")
+            return event.eventIdentifier
+        } catch {
+            logger.error("Failed to create event: \(error)")
+            return nil
+        }
+    }
+
+    /// Find an existing calendar by title, or create one if it doesn't exist.
+    /// Returns the calendar identifier.
+    func findOrCreateCalendar(titled title: String) async -> String? {
+        // Check for existing
+        if let existing = findCalendar(byTitle: title) {
+            return existing.id
+        }
+
+        // Create new
+        let success = await createCalendar(titled: title)
+        if success, let created = findCalendar(byTitle: title) {
+            return created.id
+        }
+
+        return nil
+    }
+
     // MARK: - Change Notifications
     
     /// Set up notification observer for calendar changes.

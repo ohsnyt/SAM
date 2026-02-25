@@ -26,7 +26,7 @@ struct QuickNoteWindowView: View {
 
     // MARK: - State
 
-    @State private var text = ""
+    @State private var text: String
     @State private var isDictating = false
     @State private var isPolishing = false
     @State private var isSaving = false
@@ -40,6 +40,13 @@ struct QuickNoteWindowView: View {
 
     @Environment(\.dismiss) private var dismiss
 
+    // MARK: - Init
+
+    init(payload: QuickNotePayload) {
+        self.payload = payload
+        _text = State(initialValue: payload.prefillText ?? "")
+    }
+
     // MARK: - Body
 
     var body: some View {
@@ -48,7 +55,6 @@ struct QuickNoteWindowView: View {
             Text(payload.contextTitle)
                 .font(.headline)
                 .foregroundStyle(.secondary)
-                .lineLimit(2)
 
             // Text editor
             TextEditor(text: $text)

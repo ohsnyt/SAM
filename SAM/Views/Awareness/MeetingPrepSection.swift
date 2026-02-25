@@ -60,7 +60,13 @@ private struct BriefingCard: View {
 
     let briefing: MeetingBriefing
     @State private var isExpanded = false
-    @State private var editingNote: SamNote?
+    @State private var showingCapture = false
+
+    private var attendeeIDs: [UUID] {
+        briefing.attendees.compactMap { attendee in
+            (try? PeopleRepository.shared.fetch(id: attendee.personID)) != nil ? attendee.personID : nil
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -151,13 +157,23 @@ private struct BriefingCard: View {
                         sharedContextsSection
                     }
 
-                    // Action button
-                    Button {
-                        createAndEditNote()
-                    } label: {
-                        Label("Add Meeting Notes", systemImage: "note.text.badge.plus")
+                    // Note capture
+                    if showingCapture {
+                        InlineNoteCaptureView(
+                            linkedPerson: nil,
+                            linkedContext: nil,
+                            onSaved: { showingCapture = false },
+                            linkedPeopleIDs: attendeeIDs,
+                            initiallyExpanded: true
+                        )
+                    } else {
+                        Button {
+                            withAnimation { showingCapture = true }
+                        } label: {
+                            Label("Add Meeting Notes", systemImage: "note.text.badge.plus")
+                        }
+                        .buttonStyle(.borderedProminent)
                     }
-                    .buttonStyle(.borderedProminent)
                 }
                 .padding(12)
             }
@@ -168,24 +184,6 @@ private struct BriefingCard: View {
             RoundedRectangle(cornerRadius: 10)
                 .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
         )
-        .sheet(item: $editingNote) { note in
-            NoteEditorView(note: note) { }
-        }
-    }
-
-    private func createAndEditNote() {
-        let personIDs = briefing.attendees.compactMap { attendee in
-            (try? PeopleRepository.shared.fetch(id: attendee.personID)) != nil ? attendee.personID : nil
-        }
-        do {
-            let note = try NotesRepository.shared.create(
-                content: "",
-                linkedPeopleIDs: personIDs
-            )
-            editingNote = note
-        } catch {
-            // Non-critical
-        }
     }
 
     // MARK: - Expanded Sections

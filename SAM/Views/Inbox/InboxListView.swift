@@ -135,7 +135,7 @@ struct InboxListView: View {
             return "No Results"
         }
         switch filter {
-        case .needsReview: return "No Items to Review"
+        case .needsReview: return "No New Items"
         case .reviewed: return "No Reviewed Items"
         case .all: return "No Evidence"
         }
@@ -248,7 +248,7 @@ private enum EvidenceFilter: String, CaseIterable {
 
     var label: String {
         switch self {
-        case .needsReview: return "Needs Review"
+        case .needsReview: return "New"
         case .reviewed: return "Reviewed"
         case .all: return "All"
         }
@@ -322,14 +322,17 @@ private struct EvidenceRowView: View {
         }
     }
 
+    @ViewBuilder
     private var stateBadge: some View {
-        Text(item.state == .needsReview ? "Review" : "Done")
-            .font(.caption2)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(item.state == .needsReview ? Color.orange.opacity(0.2) : Color.green.opacity(0.2))
-            .foregroundStyle(item.state == .needsReview ? .orange : .green)
-            .clipShape(Capsule())
+        if item.state == .needsReview {
+            Text("New")
+                .font(.caption2)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(Color.orange.opacity(0.2))
+                .foregroundStyle(.orange)
+                .clipShape(Capsule())
+        }
     }
 }
 

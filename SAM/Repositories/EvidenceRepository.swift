@@ -670,6 +670,34 @@ final class EvidenceRepository {
         }
     }
 
+    // MARK: - Communication Recency Check
+
+    /// Check whether a person has communicated since a given date.
+    /// Used by sequence trigger evaluation to detect responses.
+    func hasRecentCommunication(fromPersonID personID: UUID, since date: Date) -> Bool {
+        guard let context = context else { return false }
+
+        do {
+            let descriptor = FetchDescriptor<SamEvidenceItem>(
+                sortBy: [SortDescriptor(\.occurredAt, order: .reverse)]
+            )
+            let allItems = try context.fetch(descriptor)
+
+            return allItems.contains { item in
+                let isCommunication = item.source == .iMessage
+                    || item.source == .mail
+                    || item.source == .phoneCall
+                    || item.source == .faceTime
+                guard isCommunication else { return false }
+                guard item.occurredAt > date else { return false }
+                return item.linkedPeople.contains { $0.id == personID }
+            }
+        } catch {
+            logger.error("hasRecentCommunication check failed: \(error)")
+            return false
+        }
+    }
+
     // MARK: - Email Bulk Upsert Operations
 
     /// Bulk upsert email evidence items with optional analysis data.

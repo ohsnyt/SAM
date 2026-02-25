@@ -9,6 +9,9 @@ import SwiftUI
 import SwiftData
 import AppKit
 import UniformTypeIdentifiers
+import os.log
+
+private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "NoteEditorView")
 
 /// Edit-only sheet for modifying an existing note's content.
 /// Uses RichNoteEditor for inline image support.
@@ -27,6 +30,7 @@ struct NoteEditorView: View {
 
     @State private var repository = NotesRepository.shared
     @State private var coordinator = NoteAnalysisCoordinator.shared
+    @State private var dictationService = DictationService.shared
 
     // MARK: - State
 
@@ -35,6 +39,14 @@ struct NoteEditorView: View {
     @State private var errorMessage: String?
     @State private var showingDiscardConfirmation = false
     @State private var editorHandle = RichNoteEditorHandle()
+
+    // Dictation state
+    @State private var isDictating = false
+    @State private var isPolishing = false
+    @State private var rawDictationText: String?
+    @State private var usedDictation = false
+    @State private var accumulatedSegments: [String] = []
+    @State private var lastSegmentPeakLength = 0
 
     // MARK: - Initialization
 
@@ -85,8 +97,8 @@ struct NoteEditorView: View {
             )
             .padding(4)
 
-            // Attach button
-            HStack {
+            // Toolbar: attach + mic
+            HStack(spacing: 8) {
                 Button {
                     attachImage()
                 } label: {
@@ -96,9 +108,58 @@ struct NoteEditorView: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
 
+                Button {
+                    if isDictating {
+                        stopDictation()
+                    } else {
+                        startDictation()
+                    }
+                } label: {
+                    Image(systemName: isDictating ? "mic.fill" : "mic")
+                        .font(.caption)
+                        .foregroundStyle(isDictating ? .red : .secondary)
+                }
+                .buttonStyle(.plain)
+                .help(isDictating ? "Stop dictation" : "Start dictation")
+                .overlay {
+                    if isDictating {
+                        Circle()
+                            .stroke(.red.opacity(0.5), lineWidth: 2)
+                            .frame(width: 20, height: 20)
+                            .scaleEffect(isDictating ? 1.3 : 1.0)
+                            .opacity(isDictating ? 0 : 1)
+                            .animation(.easeInOut(duration: 1).repeatForever(autoreverses: false), value: isDictating)
+                    }
+                }
+
                 Spacer()
             }
             .padding(.horizontal)
+
+            // Polish status
+            if isPolishing {
+                HStack(spacing: 4) {
+                    ProgressView()
+                        .controlSize(.mini)
+                    Text("Polishing dictation...")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal)
+            }
+
+            if let raw = rawDictationText, raw != content {
+                Button {
+                    content = raw
+                    rawDictationText = nil
+                } label: {
+                    Label("Undo polish", systemImage: "arrow.uturn.backward")
+                        .font(.caption2)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal)
+            }
 
             // Error
             if let error = errorMessage {
@@ -167,6 +228,125 @@ struct NoteEditorView: View {
             editorHandle.insertImage(data: data, mimeType: mime)
         }
     }
+
+    // MARK: - Dictation
+
+    private func startDictation() {
+        let availability = dictationService.checkAvailability()
+
+        switch availability {
+        case .available:
+            break
+        case .notAuthorized:
+            Task {
+                let granted = await dictationService.requestAuthorization()
+                guard granted else {
+                    errorMessage = "Speech recognition permission not granted"
+                    return
+                }
+                beginDictationStream()
+            }
+            return
+        case .notAvailable:
+            errorMessage = "Speech recognition is not available"
+            return
+        case .restricted:
+            errorMessage = "Speech recognition is restricted"
+            return
+        }
+
+        beginDictationStream()
+    }
+
+    private func beginDictationStream() {
+        isDictating = true
+        usedDictation = true
+        errorMessage = nil
+        accumulatedSegments = []
+        lastSegmentPeakLength = 0
+
+        // Preserve any existing text as the first segment
+        let existingText = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !existingText.isEmpty {
+            accumulatedSegments.append(existingText)
+        }
+
+        Task {
+            do {
+                let stream = try await dictationService.startRecognition()
+                for await result in stream {
+                    let currentText = result.text
+
+                    if currentText.count < lastSegmentPeakLength / 2 && lastSegmentPeakLength > 5 {
+                        let previousSegment = extractCurrentSegment()
+                        if !previousSegment.isEmpty {
+                            accumulatedSegments.append(previousSegment)
+                        }
+                        lastSegmentPeakLength = 0
+                    }
+
+                    lastSegmentPeakLength = max(lastSegmentPeakLength, currentText.count)
+
+                    let prefix = accumulatedSegments.joined(separator: " ")
+                    content = prefix.isEmpty ? currentText : "\(prefix) \(currentText)"
+
+                    if result.isFinal {
+                        isDictating = false
+                    }
+                }
+                if isDictating {
+                    isDictating = false
+                    dictationService.stopRecognition()
+                }
+                if usedDictation && !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    await polishDictatedText()
+                }
+            } catch {
+                errorMessage = error.localizedDescription
+                isDictating = false
+            }
+        }
+    }
+
+    private func extractCurrentSegment() -> String {
+        let prefix = accumulatedSegments.joined(separator: " ")
+        if prefix.isEmpty {
+            return content.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        let full = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        if full.hasPrefix(prefix) {
+            return String(full.dropFirst(prefix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return full
+    }
+
+    private func stopDictation() {
+        dictationService.stopRecognition()
+        isDictating = false
+
+        if !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            Task {
+                await polishDictatedText()
+            }
+        }
+    }
+
+    private func polishDictatedText() async {
+        let rawText = content
+        rawDictationText = rawText
+        isPolishing = true
+
+        do {
+            let polished = try await NoteAnalysisService.shared.polishDictation(rawText: rawText)
+            content = polished
+        } catch {
+            logger.debug("Dictation polish unavailable: \(error.localizedDescription)")
+        }
+
+        isPolishing = false
+    }
+
+    // MARK: - Save
 
     private func saveNote() {
         let (rawText, extractedImages) = editorHandle.extractContent()

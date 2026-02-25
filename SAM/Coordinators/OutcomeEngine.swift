@@ -98,6 +98,31 @@ final class OutcomeEngine {
                 newOutcomes.append(contentsOf: try scanGrowthOpportunities(people: allPeople))
             }
 
+            // Classify action lanes and suggest channels
+            for outcome in newOutcomes {
+                classifyActionLane(for: outcome)
+                if outcome.actionLane == .communicate || outcome.actionLane == .call {
+                    outcome.suggestedChannel = suggestChannel(for: outcome)
+                }
+            }
+
+            // Generate multi-step sequence follow-ups for communicate/call outcomes
+            var sequenceSteps: [SamOutcome] = []
+            for outcome in newOutcomes {
+                let steps = maybeCreateSequenceSteps(for: outcome)
+                if !steps.isEmpty {
+                    let seqID = UUID()
+                    outcome.sequenceID = seqID
+                    outcome.sequenceIndex = 0
+                    for (i, step) in steps.enumerated() {
+                        step.sequenceID = seqID
+                        step.sequenceIndex = i + 1
+                    }
+                    sequenceSteps.append(contentsOf: steps)
+                }
+            }
+            newOutcomes.append(contentsOf: sequenceSteps)
+
             // Score all new outcomes
             let weights = OutcomeWeights()
             for outcome in newOutcomes {
@@ -411,8 +436,12 @@ final class OutcomeEngine {
             ])
         }
 
-        // Persist with deduplication
+        // Classify lanes and persist with deduplication
         for outcome in outcomes {
+            classifyActionLane(for: outcome)
+            if outcome.actionLane == .communicate || outcome.actionLane == .call {
+                outcome.suggestedChannel = suggestChannel(for: outcome)
+            }
             do {
                 let isDuplicate = try outcomeRepo.hasSimilarOutcome(
                     kind: outcome.outcomeKind,
@@ -429,6 +458,144 @@ final class OutcomeEngine {
         if !outcomes.isEmpty {
             logger.info("Generated role transition outcomes for \(name): added=\(addedRoles), removed=\(removedRoles)")
         }
+    }
+
+    // MARK: - Multi-Step Sequence Generation
+
+    /// Evaluate whether an outcome should have follow-up steps.
+    /// Returns 0 or more follow-up SamOutcome instances (with isAwaitingTrigger = true).
+    private func maybeCreateSequenceSteps(for outcome: SamOutcome) -> [SamOutcome] {
+        // Only create sequences for communicate/call outcomes with a linked person
+        guard outcome.actionLane == .communicate || outcome.actionLane == .call,
+              let person = outcome.linkedPerson else { return [] }
+
+        let title = outcome.title.lowercased()
+        let personName = person.displayNameCache ?? person.displayName
+
+        // Determine if a follow-up sequence is warranted and configure it
+        let followUpDays: Int
+        let followUpTitle: String
+        let followUpChannel: CommunicationChannel
+        let followUpRationale: String
+
+        if title.contains("send proposal") || title.contains("send recommendation") {
+            followUpDays = 5
+            followUpChannel = outcome.suggestedChannel == .email ? .iMessage : .email
+            followUpTitle = "Follow up with \(personName) on proposal (no response)"
+            followUpRationale = "It's been \(followUpDays) days since the proposal was sent. A gentle follow-up keeps momentum."
+        } else if title.contains("follow up") || title.contains("outreach")
+                    || title.contains("check in") || title.contains("reach out")
+                    || title.contains("reconnect") {
+            followUpDays = 3
+            followUpChannel = outcome.suggestedChannel == .iMessage ? .email : .iMessage
+            followUpTitle = "Follow up with \(personName) via \(followUpChannel.displayName) (no response)"
+            followUpRationale = "No response after \(followUpDays) days. Switching channel may help."
+        } else if outcome.outcomeKind == .outreach && outcome.suggestedChannel == .iMessage {
+            followUpDays = 3
+            followUpChannel = .email
+            followUpTitle = "Email follow-up with \(personName) (no response to text)"
+            followUpRationale = "Text didn't get a response after \(followUpDays) days. Try email."
+        } else {
+            return []
+        }
+
+        let followUp = SamOutcome(
+            title: followUpTitle,
+            rationale: followUpRationale,
+            outcomeKind: outcome.outcomeKind,
+            sourceInsightSummary: "Sequence follow-up for: \(outcome.title)",
+            suggestedNextStep: outcome.suggestedNextStep,
+            linkedPerson: person,
+            linkedContext: outcome.linkedContext
+        )
+        followUp.isAwaitingTrigger = true
+        followUp.triggerAfterDays = followUpDays
+        followUp.triggerCondition = .noResponse
+        followUp.actionLane = .communicate
+        followUp.suggestedChannel = followUpChannel
+
+        return [followUp]
+    }
+
+    // MARK: - Action Lane Classification (Phase O)
+
+    /// Classify an outcome into the correct action lane.
+    /// Called after creation and before persisting.
+    func classifyActionLane(for outcome: SamOutcome) {
+        let title = outcome.title.lowercased()
+
+        // 1. Source-based: if from a NoteActionItem, use action type heuristics
+        let summary = outcome.sourceInsightSummary.lowercased()
+        if summary.contains("pending action from note") {
+            if title.contains("congratulat") || title.contains("send reminder") || title.contains("send welcome") {
+                outcome.actionLane = .communicate
+                return
+            }
+            if title.contains("schedule") || title.contains("book") {
+                outcome.actionLane = .schedule
+                return
+            }
+            if title.contains("proposal") || title.contains("create") || title.contains("draft") || title.contains("prepare") {
+                outcome.actionLane = .deepWork
+                return
+            }
+        }
+
+        // 2. Keyword heuristics on title
+        let communicateKeywords = ["send", "text", "email", "congratulat", "thank", "welcome", "message", "reach out", "reconnect"]
+        if communicateKeywords.contains(where: { title.contains($0) }) {
+            outcome.actionLane = .communicate
+            return
+        }
+
+        let callKeywords = ["call", "check in with", "phone"]
+        if callKeywords.contains(where: { title.contains($0) }) {
+            outcome.actionLane = .call
+            return
+        }
+
+        let scheduleKeywords = ["schedule", "book meeting", "set up meeting", "calendar invite"]
+        if scheduleKeywords.contains(where: { title.contains($0) }) {
+            outcome.actionLane = .schedule
+            return
+        }
+
+        let deepWorkKeywords = ["draft", "proposal", "analysis", "prepare", "build", "create", "review leads", "development plan"]
+        if deepWorkKeywords.contains(where: { title.contains($0) }) {
+            outcome.actionLane = .deepWork
+            return
+        }
+
+        // 3. Fallback by OutcomeKind
+        switch outcome.outcomeKind {
+        case .outreach, .growth:
+            outcome.actionLane = .communicate
+        case .proposal, .training:
+            outcome.actionLane = .deepWork
+        case .followUp, .preparation, .compliance:
+            outcome.actionLane = .record
+        }
+    }
+
+    /// Suggest the best communication channel for an outcome targeting a person.
+    func suggestChannel(for outcome: SamOutcome) -> CommunicationChannel {
+        let title = outcome.title.lowercased()
+
+        // Person's explicit or inferred preference
+        let personPref = outcome.linkedPerson?.effectiveChannel
+
+        // Complex outcomes → email
+        if title.contains("proposal") || title.contains("analysis") || title.contains("document") {
+            return .email
+        }
+
+        // Acknowledgment/congratulatory → person pref or iMessage
+        if title.contains("congratulat") || title.contains("thank") || title.contains("welcome") {
+            return personPref ?? .iMessage
+        }
+
+        // Default → person preference or iMessage
+        return personPref ?? .iMessage
     }
 
     // MARK: - Priority Computation
@@ -504,7 +671,7 @@ final class OutcomeEngine {
 
     // MARK: - AI Enrichment
 
-    /// Best-effort: enhance rationale and suggestedNextStep with AI for top outcomes.
+    /// Best-effort: enhance rationale, suggestedNextStep, and draft messages with AI for top outcomes.
     private func enrichWithAI() async {
         do {
             let active = try outcomeRepo.fetchActive()
@@ -518,36 +685,108 @@ final class OutcomeEngine {
                 return
             }
 
-            for outcome in topOutcomes where outcome.suggestedNextStep == nil {
-                let prompt = """
-                    You are a coaching assistant for a financial strategist.
-                    Given this outcome, suggest a concrete next step (1 sentence).
+            for outcome in topOutcomes {
+                // Generate suggested next step if missing
+                if outcome.suggestedNextStep == nil {
+                    let prompt = """
+                        You are a coaching assistant for a financial strategist.
+                        Given this outcome, suggest a concrete next step (1 sentence).
 
-                    Outcome: \(outcome.title)
-                    Context: \(outcome.rationale)
-                    Person role: \(outcome.linkedPerson?.roleBadges.first ?? "unknown")
-                    """
+                        Outcome: \(outcome.title)
+                        Context: \(outcome.rationale)
+                        Person role: \(outcome.linkedPerson?.roleBadges.first ?? "unknown")
+                        """
 
-                let systemInstruction = """
-                    Respond with ONLY the next step — one short, actionable sentence.
-                    Do not include any preamble, formatting, or explanation.
-                    """
+                    let systemInstruction = """
+                        Respond with ONLY the next step — one short, actionable sentence.
+                        Do not include any preamble, formatting, or explanation.
+                        """
 
-                do {
-                    let nextStep = try await AIService.shared.generateNarrative(
-                        prompt: prompt,
-                        systemInstruction: systemInstruction
-                    )
-                    if !nextStep.isEmpty {
-                        outcome.suggestedNextStep = nextStep
+                    do {
+                        let nextStep = try await AIService.shared.generateNarrative(
+                            prompt: prompt,
+                            systemInstruction: systemInstruction
+                        )
+                        if !nextStep.isEmpty {
+                            outcome.suggestedNextStep = nextStep
+                        }
+                    } catch {
+                        logger.warning("AI enrichment failed for '\(outcome.title)': \(error.localizedDescription)")
                     }
-                } catch {
-                    logger.warning("AI enrichment failed for '\(outcome.title)': \(error.localizedDescription)")
-                    // Continue with other outcomes — non-fatal
+                }
+
+                // Generate draft message for communicate/call lanes
+                if outcome.draftMessageText == nil,
+                   (outcome.actionLane == .communicate || outcome.actionLane == .call) {
+                    await generateDraftMessage(for: outcome)
                 }
             }
         } catch {
             logger.warning("AI enrichment skipped: \(error.localizedDescription)")
+        }
+    }
+
+    /// Generate a draft message for a communicate or call outcome.
+    private func generateDraftMessage(for outcome: SamOutcome) async {
+        let person = outcome.linkedPerson
+        let personName = person?.displayNameCache ?? person?.displayName ?? "the contact"
+        let role = person?.roleBadges.first ?? "contact"
+        let summary = person?.relationshipSummary ?? ""
+
+        let channel = outcome.suggestedChannel ?? .iMessage
+        let channelNote: String
+        switch channel {
+        case .iMessage: channelNote = "a brief, friendly text message"
+        case .email:    channelNote = "a professional email (2-3 short paragraphs)"
+        case .phone:    channelNote = "talking points for a phone call (3-4 bullet points)"
+        case .faceTime: channelNote = "talking points for a video call (3-4 bullet points)"
+        }
+
+        let prompt = """
+            Draft \(channelNote) from a financial strategist to \(personName).
+
+            Purpose: \(outcome.title)
+            Context: \(outcome.rationale)
+            Person's role: \(role)
+            \(summary.isEmpty ? "" : "Relationship context: \(summary)")
+
+            The sender's name is not needed — the message will be sent from their account.
+            Keep the tone warm but professional.
+            """
+
+        let systemInstruction: String
+        switch channel {
+        case .iMessage:
+            systemInstruction = """
+                Write ONLY the message text — no greeting line with "Hi [Name]," unless it fits naturally.
+                Keep it under 3 sentences. Casual but professional. No emojis. No signature.
+                """
+        case .email:
+            systemInstruction = """
+                Write the email body only — no subject line.
+                Start with a greeting. Keep it concise (2-3 short paragraphs). Professional tone.
+                End with a simple closing like "Best" or "Looking forward to hearing from you."
+                No signature block.
+                """
+        case .phone, .faceTime:
+            systemInstruction = """
+                Write 3-4 brief talking points as a simple list, one per line.
+                Each point should be a conversation starter or key topic to cover.
+                No bullet markers, just plain text lines.
+                """
+        }
+
+        do {
+            let draft = try await AIService.shared.generateNarrative(
+                prompt: prompt,
+                systemInstruction: systemInstruction
+            )
+            if !draft.isEmpty {
+                outcome.draftMessageText = draft
+                logger.debug("Generated draft message for '\(outcome.title)'")
+            }
+        } catch {
+            logger.warning("Draft generation failed for '\(outcome.title)': \(error.localizedDescription)")
         }
     }
 }

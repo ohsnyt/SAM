@@ -61,6 +61,9 @@ final class DailyBriefingCoordinator {
     private var postponeTimer: Timer?
     private var activityCheckTimer: Timer?
 
+    /// Evidence IDs of calls we've already prompted a post-call note for (session-scoped).
+    private var promptedCallIDs: Set<UUID> = []
+
     // Dependencies
     private let evidenceRepo = EvidenceRepository.shared
     private let peopleRepo = PeopleRepository.shared
@@ -78,11 +81,13 @@ final class DailyBriefingCoordinator {
         // Load today's briefings if they exist
         loadTodaysBriefings()
 
-        // Start day-rollover timer (every 5 minutes) — also checks for recently ended meetings
+        // Start day-rollover timer (every 5 minutes) — also checks for recently ended meetings/calls and sequence triggers
         dayRolloverTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.checkDayRollover()
                 self?.checkRecentlyEndedMeetings()
+                self?.checkRecentlyEndedCalls()
+                self?.checkSequenceTriggers()
             }
         }
 
@@ -644,6 +649,143 @@ final class DailyBriefingCoordinator {
             logger.info("Created meeting note template for '\(event.title)' with \(attendees.count) attendees")
         } catch {
             logger.error("Failed to create meeting note template: \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - Multi-Step Sequence Trigger Evaluation
+
+    /// Evaluate pending sequence triggers and activate or dismiss steps.
+    /// Called from the 5-minute timer alongside meeting/call checks.
+    private func checkSequenceTriggers() {
+        do {
+            let awaiting = try outcomeRepo.fetchAwaitingTrigger()
+            guard !awaiting.isEmpty else { return }
+
+            let now = Date()
+
+            for step in awaiting {
+                guard let previousStep = try outcomeRepo.fetchPreviousStep(for: step) else { continue }
+
+                // Previous step must be completed
+                guard previousStep.status == .completed, let completedAt = previousStep.completedAt else { continue }
+
+                // Check if enough time has passed
+                let triggerDate = completedAt.addingTimeInterval(Double(step.triggerAfterDays) * 86400)
+                guard triggerDate <= now else { continue }
+
+                // Evaluate trigger condition
+                let condition = step.triggerCondition ?? .always
+
+                switch condition {
+                case .always:
+                    // Activate unconditionally
+                    step.isAwaitingTrigger = false
+                    try context?.save()
+                    logger.info("Sequence step activated (always): \(step.title)")
+
+                case .noResponse:
+                    // Check if the person has communicated since the previous step completed
+                    guard let personID = step.linkedPerson?.id ?? previousStep.linkedPerson?.id else {
+                        step.isAwaitingTrigger = false
+                        try context?.save()
+                        continue
+                    }
+
+                    let hasResponse = evidenceRepo.hasRecentCommunication(
+                        fromPersonID: personID,
+                        since: completedAt
+                    )
+
+                    if hasResponse {
+                        // Person responded — dismiss this step and all remaining
+                        if let seqID = step.sequenceID {
+                            try outcomeRepo.dismissRemainingSteps(sequenceID: seqID, fromIndex: step.sequenceIndex)
+                        }
+                        logger.info("Sequence step auto-dismissed (response received): \(step.title)")
+                    } else {
+                        // No response — activate the step
+                        step.isAwaitingTrigger = false
+                        try context?.save()
+                        logger.info("Sequence step activated (no response): \(step.title)")
+                    }
+                }
+            }
+        } catch {
+            logger.error("checkSequenceTriggers failed: \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - Post-Call Note Prompt (Phase O)
+
+    /// Check for phone calls or FaceTime calls that ended recently and prompt
+    /// the user to capture a post-call note. Follows the same pattern as
+    /// checkRecentlyEndedMeetings() — runs every 5 minutes from the timer.
+    private func checkRecentlyEndedCalls() {
+        let commsCallsEnabled = UserDefaults.standard.bool(forKey: "commsCallsEnabled")
+        guard commsCallsEnabled else { return }
+
+        let now = Date()
+        // 10-minute window (wider than meetings since call import may lag behind)
+        let tenMinAgo = Calendar.current.date(byAdding: .minute, value: -10, to: now)!
+
+        guard let allEvidence = try? evidenceRepo.fetchAll() else { return }
+
+        // Find phone/FaceTime calls from known contacts that ended recently
+        let recentCalls = allEvidence.filter { item in
+            guard item.source == .phoneCall || item.source == .faceTime else { return false }
+            // Call evidence uses occurredAt for the call time; duration is in the snippet
+            let callTime = item.occurredAt
+            return callTime >= tenMinAgo && callTime <= now
+                && !item.linkedPeople.isEmpty
+                && !promptedCallIDs.contains(item.id)
+        }
+
+        guard !recentCalls.isEmpty else { return }
+
+        for call in recentCalls {
+            let calledPeople = call.linkedPeople.filter { !$0.isMe }
+            guard let primary = calledPeople.first else { continue }
+
+            // Check if a note was already created for this person since the call
+            let hasExistingNote: Bool
+            if let allNotes = try? notesRepo.fetchAll() {
+                hasExistingNote = allNotes.contains { note in
+                    note.createdAt >= call.occurredAt
+                    && note.linkedPeople.contains(where: { $0.id == primary.id })
+                }
+            } else {
+                hasExistingNote = false
+            }
+
+            guard !hasExistingNote else {
+                promptedCallIDs.insert(call.id)
+                continue
+            }
+
+            // Mark as prompted before opening window
+            promptedCallIDs.insert(call.id)
+
+            // Open a quick note window for post-call capture
+            let personName = primary.displayNameCache ?? primary.displayName
+            let callType = call.source == .faceTime ? "FaceTime" : "call"
+            let payload = QuickNotePayload(
+                outcomeID: UUID(), // No associated outcome — standalone prompt
+                personID: primary.id,
+                personName: personName,
+                contextTitle: "Post-\(callType) note: \(personName)",
+                prefillText: ""
+            )
+
+            NotificationCenter.default.post(
+                name: .samOpenQuickNote,
+                object: nil,
+                userInfo: ["payload": payload]
+            )
+
+            logger.info("Prompted post-call note for \(personName, privacy: .public) (\(callType))")
+
+            // Only prompt for one call at a time to avoid window spam
+            break
         }
     }
 

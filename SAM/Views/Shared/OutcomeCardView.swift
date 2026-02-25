@@ -18,6 +18,11 @@ struct OutcomeCardView: View {
     let onDone: () -> Void
     let onSkip: () -> Void
 
+    /// Total steps in the sequence (injected by parent or computed).
+    var sequenceStepCount: Int = 0
+    /// The next awaiting step in the sequence (for hint text).
+    var nextAwaitingStep: SamOutcome?
+
     @State private var copiedStep = false
 
     var body: some View {
@@ -30,6 +35,11 @@ struct OutcomeCardView: View {
                 if let deadline = outcome.deadlineDate {
                     deadlineLabel(deadline)
                 }
+            }
+
+            // Sequence indicator
+            if outcome.sequenceID != nil, sequenceStepCount > 1 {
+                sequenceIndicator
             }
 
             // Title
@@ -90,7 +100,7 @@ struct OutcomeCardView: View {
 
                 if let onAct {
                     Button(action: onAct) {
-                        Label(outcome.outcomeKind.actionLabel, systemImage: outcome.outcomeKind.actionIcon)
+                        Label(outcome.actionLane.actionLabel, systemImage: outcome.actionLane.actionIcon)
                             .font(.caption)
                     }
                     .buttonStyle(.borderedProminent)
@@ -128,6 +138,46 @@ struct OutcomeCardView: View {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(kindColor.opacity(0.3), lineWidth: 1)
         )
+    }
+
+    // MARK: - Sequence Indicator
+
+    private var sequenceIndicator: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "arrow.triangle.branch")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
+            Text("Step \(outcome.sequenceIndex + 1) of \(sequenceStepCount)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
+            if let next = nextAwaitingStep, outcome.sequenceIndex < next.sequenceIndex {
+                Text("·")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+
+                let channelName = next.suggestedChannel?.displayName ?? "follow-up"
+                let conditionText = next.triggerCondition?.displayName.lowercased() ?? ""
+                let daysText = next.triggerAfterDays > 0 ? "in \(next.triggerAfterDays)d" : ""
+
+                Text("Then: \(channelName) \(daysText) \(conditionText)")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+            } else if outcome.sequenceIndex > 0 {
+                // This is an activated follow-up step
+                let conditionLabel = outcome.triggerCondition == .noResponse ? "(no response received)" : ""
+                if !conditionLabel.isEmpty {
+                    Text("·")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                    Text("Follow-up \(conditionLabel)")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        }
     }
 
     // MARK: - Subviews

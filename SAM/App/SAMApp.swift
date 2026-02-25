@@ -123,6 +123,16 @@ struct SAMApp: App {
         .defaultSize(width: 500, height: 300)
         .windowResizability(.contentSize)
 
+        // Compose Message window — opened from communicate-lane outcomes
+        WindowGroup("Compose", id: "compose-message", for: ComposePayload.self) { $payload in
+            if let payload {
+                ComposeWindowView(payload: payload)
+                    .modelContainer(SAMModelContainer.shared)
+            }
+        }
+        .defaultSize(width: 540, height: 400)
+        .windowResizability(.contentSize)
+
         #if os(macOS)
         Settings {
             SettingsView()

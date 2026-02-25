@@ -4,7 +4,7 @@
 **Language**: Swift 6  
 **Architecture**: Clean layered architecture with strict separation of concerns  
 **Framework**: SwiftUI + SwiftData  
-**Last Updated**: February 24, 2026 (Phases A–N complete, Awareness UX Overhaul Batch 2 complete)
+**Last Updated**: February 24, 2026 (Phases A–O complete, Multi-Step Sequences complete, schema SAM_v16)
 
 **Related Docs**: 
 - See `agent.md` for product philosophy and UX principles
@@ -189,7 +189,7 @@ final class XYZImportCoordinator {
 SAM/SAM/
 ├── App/
 │   ├── SAMApp.swift                    ✅ App entry point, lifecycle, permissions
-│   └── SAMModelContainer.swift         ✅ SwiftData container (v11 schema)
+│   └── SAMModelContainer.swift         ✅ SwiftData container (v16 schema)
 │
 ├── Services/
 │   ├── ContactsService.swift           ✅ Actor — CNContact operations
@@ -209,20 +209,21 @@ SAM/SAM/
 │   ├── InsightGenerator.swift          ✅ Multi-source insight generation
 │   ├── MailImportCoordinator.swift     ✅ Orchestrates email import (standard API pattern)
 │   ├── EvernoteImportCoordinator.swift ✅ ENEX file import (parse → preview → import)
-│   ├── OutcomeEngine.swift            ✅ Outcome generation + scoring + AI enrichment
-│   └── CoachingAdvisor.swift          ✅ Feedback analysis + adaptive encouragement
+│   ├── OutcomeEngine.swift            ✅ Outcome generation + scoring + AI enrichment + sequence steps
+│   ├── CoachingAdvisor.swift          ✅ Feedback analysis + adaptive encouragement
+│   └── DailyBriefingCoordinator.swift ✅ Morning/evening briefings + sequence trigger evaluation
 │
 ├── Repositories/
 │   ├── PeopleRepository.swift          ✅ CRUD for SamPerson
 │   ├── EvidenceRepository.swift        ✅ CRUD for SamEvidenceItem
 │   ├── ContextsRepository.swift        ✅ CRUD for SamContext
 │   ├── NotesRepository.swift           ✅ CRUD for SamNote + analysis storage
-│   └── OutcomeRepository.swift        ✅ CRUD for SamOutcome + deduplication
+│   └── OutcomeRepository.swift        ✅ CRUD for SamOutcome + deduplication + sequence queries
 │
 ├── Models/
 │   ├── SAMModels.swift                 ✅ Core @Model classes (SamPerson, SamContext, etc.)
 │   ├── SAMModels-Notes.swift           ✅ SamNote (simplified L-2), SamAnalysisArtifact
-│   ├── SAMModels-Supporting.swift      ✅ Value types, enums, chips
+│   ├── SAMModels-Supporting.swift      ✅ Value types, enums, chips, SequenceTriggerCondition
 │   └── DTOs/
 │       ├── ContactDTO.swift            ✅ Sendable CNContact wrapper
 │       ├── EventDTO.swift              ✅ Sendable EKEvent wrapper
@@ -495,12 +496,14 @@ Text(context.contextType)       // Compile error - property doesn't exist
 - ✅ **Phase M**: Communications Evidence — iMessage, phone calls, FaceTime (Feb 21, 2026)
 
 - ✅ **Phase N**: Outcome-Focused Coaching Engine — AI service layer, outcome model, coaching engine, adaptive feedback (Feb 22, 2026)
+- ✅ **Awareness UX Overhaul** (Feb 24, 2026) — Dashboard sections, follow-up drafts, referrals, life events, time-of-day coaching, daily briefings
+- ✅ **Phase O**: Intelligent Actions — ActionLane routing, ComposeService, channel preferences, AI drafts, post-call notes (Feb 24, 2026)
+- ✅ **Multi-Step Sequences** — Linked outcome sequences with trigger conditions, auto-dismiss on response (Feb 24, 2026; schema SAM_v16)
 
 **Next Up**:
-- 🔧 **Awareness UX Overhaul** (Feb 24, 2026) — Fix broken interactions, add actionable affordances, new coaching capabilities
-
-- ⬜ **Phase O**: Universal Undo System
-- ⬜ **Phase P**: Time Tracking
+- ⬜ **App Intents / Siri** (#14 from Awareness UX Overhaul)
+- ⬜ **Phase P**: Universal Undo System
+- ⬜ **Phase Q**: Time Tracking
 
 ---
 
@@ -605,7 +608,7 @@ Based on a comprehensive audit of current UX plus competitive research across Sa
 
 #### Tier 2 — Reduce Friction
 
-5. ⬜ **Time-of-day-aware coaching** — Restructure Awareness into temporal sections: Morning (today's briefings + priorities), Post-meeting (follow-up prompts within minutes), End-of-day (review). Research shows proactive time-aware systems achieve 94% retention vs 51% for on-demand.
+5. ✅ **Time-of-day-aware coaching** — AwarenessView 3-group collapsible layout (Action Queue, Today's Focus, Review & Analytics) with morning/afternoon/evening reordering. Auto meeting note templates, role-change outcome checklists, weekly priorities digest.
 6. ✅ **Pipeline stage visualization** — `PipelineStageSection.swift`. Lead → Applicant → Client counts with "stuck" indicators (30d/14d thresholds). Click-to-navigate on stuck people.
 7. ✅ **Post-meeting follow-up draft generation** — `SamNote.followUpDraft` field. `NoteAnalysisService.generateFollowUpDraft()` triggered after note analysis when linked to a recent calendar event. Draft displayed in NotesJournalView with Copy/Dismiss buttons.
 8. ✅ **Engagement velocity / personalized cadence** — `EngagementVelocitySection.swift`. Computes median gap between evidence items per person. Surfaces overdue people with "2× longer than usual" indicators.
@@ -617,7 +620,7 @@ Based on a comprehensive audit of current UX plus competitive research across Sa
 11. ✅ **Calendar pattern intelligence** — `CalendarPatternsSection.swift`. Back-to-back warnings, client meeting ratio, meeting-free days, busiest day, upcoming load comparison.
 12. ✅ **Referral chain tracking** — `SamPerson.referredBy` / `referrals` self-referential relationship. Schema bumped to SAM_v13. `ReferralTrackingSection` wired with real queries. Referral assignment UI in PersonDetailView (picker sheet for Client/Applicant/Lead roles).
 13. ✅ **Life event detection** — `LifeEvent` Codable struct on `SamNote.lifeEvents`. LLM prompt extended with 11 event types. `LifeEventsSection` in Awareness dashboard with outreach suggestions. `InsightGenerator.generateLifeEventInsights()` scans notes for pending events. Analysis version bumped to 3.
-14. ⬜ **App Intents / Siri integration** — "Prep me for my next meeting", "Who should I reach out to today?" Aligns with Apple platform direction.
+14. ⬜ **App Intents / Siri integration** — "Prep me for my next meeting", "Who should I reach out to today?" Aligns with Apple platform direction. **Next up.**
 
 #### Autonomous Actions (user approval required)
 
@@ -628,13 +631,70 @@ Based on a comprehensive audit of current UX plus competitive research across Sa
 
 ---
 
-### ⬜ Phase O: Universal Undo System (NOT STARTED)
+### ✅ Phase O: Intelligent Actions (COMPLETE — Feb 24, 2026)
+
+**Goal**: Route coaching outcomes to concrete user actions (send message, schedule work, make call, etc.)
+
+**Architecture**:
+- `ActionLane` enum: `.communicate`, `.deepWork`, `.record`, `.call`, `.schedule` — classifies how to act on an outcome.
+- `CommunicationChannel` enum: `.iMessage`, `.email`, `.phone`, `.faceTime` — channel for communicate/call lanes.
+- `ComposeService` (@MainActor) — Sends iMessage/email via URL schemes + AppleScript, initiates phone/FaceTime calls.
+- `ComposeWindowView` — Auxiliary window for reviewing and sending AI-drafted messages.
+- `DeepWorkScheduleSheet` — Sheet for blocking calendar time for deep work outcomes.
+- `SamPerson.inferredChannelRawValue` / `preferredChannelRawValue` — Channel preferences (inferred from evidence history + explicit user override).
+- `SamOutcome.actionLaneRawValue`, `draftMessageText`, `suggestedChannelRawValue` — Phase O fields on outcome model.
+- `OutcomeEngine.classifyActionLane()` — Keyword + kind heuristics for lane assignment.
+- `OutcomeEngine.suggestChannel()` — Person preference → title heuristics → default.
+- `OutcomeEngine.generateDraftMessage()` — AI-generated draft text for communicate/call outcomes.
+- `DailyBriefingCoordinator.checkRecentlyEndedCalls()` — Post-call note prompt (5-min polling).
+- `CalendarService.createEvent()` — Calendar event creation for deep work blocks.
+
+**Schema**: SAM_v15 (added Phase O fields on SamOutcome + SamPerson channel preferences)
+
+---
+
+### ✅ Multi-Step Sequences (COMPLETE — Feb 24, 2026)
+
+**Goal**: Chain related outcomes so completing one can trigger the next after a delay + condition check.
+
+**Design**: Extends `SamOutcome` with sequence fields rather than a new model. Steps share a `sequenceID`. Future steps hidden (`isAwaitingTrigger = true`) until triggered.
+
+**Data Model** (5 new fields on `SamOutcome`):
+- `sequenceID: UUID?` — Groups steps; nil = standalone
+- `sequenceIndex: Int` — 0-based position in sequence
+- `isAwaitingTrigger: Bool` — Hidden from queue when true
+- `triggerAfterDays: Int` — Days to wait after previous step completes
+- `triggerConditionRawValue: String?` — `SequenceTriggerCondition` raw value
+
+**`SequenceTriggerCondition`** enum: `.always` (unconditional), `.noResponse` (only if no communication from person)
+
+**Flow**:
+1. `OutcomeEngine.maybeCreateSequenceSteps()` — Heuristics create follow-up steps for outreach/proposal/follow-up outcomes
+2. Step 0 visible immediately; step 1+ hidden with `isAwaitingTrigger = true`
+3. User acts on step 0 → `markCompleted` records `completedAt`
+4. `DailyBriefingCoordinator.checkSequenceTriggers()` runs every 5 min
+5. When `previousStep.completedAt + triggerAfterDays` passes → evaluate condition
+6. `.noResponse`: check `EvidenceRepository.hasRecentCommunication()` → activate or auto-dismiss
+7. Skipping a step auto-dismisses all subsequent steps
+
+**Heuristics for sequence creation**:
+- "follow up" / "outreach" / "check in" / "reach out" → email follow-up in 3 days if no response
+- "send proposal" / "send recommendation" → follow-up text in 5 days if no response
+- `.outreach` kind + `.iMessage` channel → email escalation in 3 days if no response
+
+**UI**: `OutcomeCardView` shows "Step X of Y · Then: email in 3d if no response" indicator. Activated follow-up steps show "(no response received)" label.
+
+**Schema**: SAM_v16
+
+---
+
+### ⬜ Phase P: Universal Undo System (NOT STARTED)
 
 **Goal**: 30-day undo history for all destructive operations
 
 ---
 
-### ⬜ Phase P: Time Tracking (NOT STARTED)
+### ⬜ Phase Q: Time Tracking (NOT STARTED)
 
 **Goal**: Allow user to document time spent on activities
 
@@ -1202,13 +1262,13 @@ struct PeopleRepositoryTests {
 
 **Foundation**:
 - `SAMApp.swift`: App entry point, lifecycle, permission checks, repository configuration
-- `SAMModelContainer.swift`: SwiftData container (v9 schema — Phase M phoneAliases)
+- `SAMModelContainer.swift`: SwiftData container (v16 schema — Multi-Step Sequences)
 - `AppShellView.swift`: Three-column navigation shell (sidebar → list → detail)
 
 **Models** (SwiftData @Model):
 - `SAMModels.swift`: Core models — SamPerson, SamContext, SamEvidenceItem, SamInsight, ContextParticipation, etc.
 - `SAMModels-Notes.swift`: SamNote, SamAnalysisArtifact
-- `SAMModels-Supporting.swift`: Value types — ParticipantHint, EvidenceSignal, ExtractedPersonMention, NoteActionItem, DiscoveredRelationship, enums
+- `SAMModels-Supporting.swift`: Value types — ParticipantHint, EvidenceSignal, ExtractedPersonMention, NoteActionItem, DiscoveredRelationship, SequenceTriggerCondition, ActionLane, CommunicationChannel, enums
 
 **Services** (Actor-isolated, returns DTOs):
 - `ContactsService.swift`: All CNContact operations
@@ -1314,8 +1374,8 @@ When reporting bugs or architectural concerns:
 
 ---
 
-**Document Version**: 5.3 (Phases A–N complete)
+**Document Version**: 5.4 (Phases A–O complete, Multi-Step Sequences, schema SAM_v16)
 **Previous Versions**: See `changelog.md` for version history
-**Last Major Update**: February 23, 2026 — Notes editing UX improvements
+**Last Major Update**: February 24, 2026 — Phase O Intelligent Actions + Multi-Step Sequences
 **Clean Rebuild Started**: February 9, 2026
 

@@ -81,6 +81,20 @@ private struct ActionItemRow: View {
     let isExpanded: Bool
     let onToggleExpand: () -> Void
     let onUpdateStatus: (NoteActionItem.ActionStatus) -> Void
+
+    private func sendViaChannel(_ channel: NoteActionItem.MessageChannel, item: NoteActionItem) {
+        let body = item.suggestedText ?? item.description
+        let recipient = item.linkedPersonName ?? ""
+
+        switch channel {
+        case .sms:
+            ComposeService.shared.composeIMessage(recipient: recipient, body: body)
+        case .email:
+            ComposeService.shared.composeEmail(recipient: recipient, subject: nil, body: body)
+        case .phone:
+            ComposeService.shared.initiateCall(recipient: recipient)
+        }
+    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -198,7 +212,7 @@ private struct ActionItemRow: View {
                         if item.type == .sendCongratulations || item.type == .sendReminder {
                             if let channel = item.suggestedChannel {
                                 Button(action: {
-                                    // TODO: Open compose sheet for message
+                                    sendViaChannel(channel, item: item)
                                 }) {
                                     Label("Send \(channel.displayName)", systemImage: channel.icon)
                                 }
