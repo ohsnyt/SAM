@@ -13,47 +13,35 @@ import os.log
 
 private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "CommunicationsSettingsView")
 
-struct CommunicationsSettingsView: View {
+// MARK: - Content (embeddable in DisclosureGroup)
+
+struct CommunicationsSettingsContent: View {
 
     @State private var coordinator = CommunicationsImportCoordinator.shared
     @State private var bookmarkManager = BookmarkManager.shared
 
     var body: some View {
-        Form {
-            Section {
-                VStack(alignment: .leading, spacing: 20) {
-                    Label("Communications", systemImage: "message.fill")
-                        .font(.title2)
-                        .bold()
+        VStack(alignment: .leading, spacing: 20) {
+            Text("Import iMessage conversations, phone calls, and FaceTime history as relationship evidence.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
 
-                    Text("Import iMessage conversations, phone calls, and FaceTime history as relationship evidence.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+            Divider()
 
-                    Divider()
+            databaseAccessSection
 
-                    // ── Database Access ──────────────────────────
-                    databaseAccessSection
+            Divider()
 
-                    Divider()
+            iMessageSection
 
-                    // ── iMessage Settings ────────────────────────
-                    iMessageSection
+            Divider()
 
-                    Divider()
+            callsSection
 
-                    // ── Calls & FaceTime ─────────────────────────
-                    callsSection
+            Divider()
 
-                    Divider()
-
-                    // ── Import ───────────────────────────────────
-                    importSection
-                }
-                .padding()
-            }
+            importSection
         }
-        .formStyle(.grouped)
     }
 
     // MARK: - Database Access Section
@@ -266,5 +254,25 @@ struct CommunicationsSettingsView: View {
             .disabled(coordinator.importStatus == .importing
                       || (!coordinator.messagesEnabled && !coordinator.callsEnabled))
         }
+    }
+}
+
+// MARK: - Standalone wrapper
+
+struct CommunicationsSettingsView: View {
+    var body: some View {
+        Form {
+            Section {
+                VStack(alignment: .leading, spacing: 20) {
+                    Label("Communications", systemImage: "message.fill")
+                        .font(.title2)
+                        .bold()
+
+                    CommunicationsSettingsContent()
+                }
+                .padding()
+            }
+        }
+        .formStyle(.grouped)
     }
 }

@@ -4,7 +4,7 @@
 **Language**: Swift 6  
 **Architecture**: Clean layered architecture with strict separation of concerns  
 **Framework**: SwiftUI + SwiftData  
-**Last Updated**: February 24, 2026 (Phases A–N complete, Awareness UX Overhaul in progress)
+**Last Updated**: February 24, 2026 (Phases A–N complete, Awareness UX Overhaul Batch 2 complete)
 
 **Related Docs**: 
 - See `agent.md` for product philosophy and UX principles
@@ -607,7 +607,7 @@ Based on a comprehensive audit of current UX plus competitive research across Sa
 
 5. ⬜ **Time-of-day-aware coaching** — Restructure Awareness into temporal sections: Morning (today's briefings + priorities), Post-meeting (follow-up prompts within minutes), End-of-day (review). Research shows proactive time-aware systems achieve 94% retention vs 51% for on-demand.
 6. ✅ **Pipeline stage visualization** — `PipelineStageSection.swift`. Lead → Applicant → Client counts with "stuck" indicators (30d/14d thresholds). Click-to-navigate on stuck people.
-7. ⬜ **Post-meeting follow-up draft generation** — When meeting note is saved, LLM generates suggested follow-up message with key points and action items. "Copy to clipboard" button.
+7. ✅ **Post-meeting follow-up draft generation** — `SamNote.followUpDraft` field. `NoteAnalysisService.generateFollowUpDraft()` triggered after note analysis when linked to a recent calendar event. Draft displayed in NotesJournalView with Copy/Dismiss buttons.
 8. ✅ **Engagement velocity / personalized cadence** — `EngagementVelocitySection.swift`. Computes median gap between evidence items per person. Surfaces overdue people with "2× longer than usual" indicators.
 
 #### Tier 3 — New Capabilities
@@ -615,8 +615,8 @@ Based on a comprehensive audit of current UX plus competitive research across Sa
 9. ✅ **Streak tracking and positive reinforcement** — `StreakTrackingSection.swift`. Meeting notes streak, weekly client touch streak, same-day follow-up streak. Flame indicator at 5+.
 10. ✅ **Meeting quality scoring** — `MeetingQualitySection.swift`. Scores past 14 days: note (+40), timely (+20), action items (+20), attendees (+20). Surfaces low-scoring meetings, congratulatory message when all ≥60.
 11. ✅ **Calendar pattern intelligence** — `CalendarPatternsSection.swift`. Back-to-back warnings, client meeting ratio, meeting-free days, busiest day, upcoming load comparison.
-12. ⬜ **Referral chain tracking** — `ReferralTrackingSection.swift` UI created (stub data). Needs `referredBy: SamPerson?` schema field (SAM_v13) to wire up real data.
-13. ⬜ **Life event detection** — Extend note analysis to detect life events (new baby, job change, retirement). Surface timely outreach: "John mentioned his daughter's graduation in May — consider sending a card."
+12. ✅ **Referral chain tracking** — `SamPerson.referredBy` / `referrals` self-referential relationship. Schema bumped to SAM_v13. `ReferralTrackingSection` wired with real queries. Referral assignment UI in PersonDetailView (picker sheet for Client/Applicant/Lead roles).
+13. ✅ **Life event detection** — `LifeEvent` Codable struct on `SamNote.lifeEvents`. LLM prompt extended with 11 event types. `LifeEventsSection` in Awareness dashboard with outreach suggestions. `InsightGenerator.generateLifeEventInsights()` scans notes for pending events. Analysis version bumped to 3.
 14. ⬜ **App Intents / Siri integration** — "Prep me for my next meeting", "Who should I reach out to today?" Aligns with Apple platform direction.
 
 #### Autonomous Actions (user approval required)

@@ -20,58 +20,34 @@ struct ReferralTrackingSection: View {
     @State private var showTopReferrers = true
     @State private var showOpportunities = true
 
-    // MARK: - Stub Data Computation
+    // MARK: - Data Computation
 
-    // TODO: Wire to SamPerson.referredBy once schema is updated
-    // TODO: Wire to SamPerson.referrals once schema is updated
     /// Returns people sorted by how many others they have referred (descending), top 5.
     private var topReferrers: [ReferrerEntry] {
-        // TODO: Wire to SamPerson.referrals once schema is updated
-        // Real implementation will be:
-        //   people
-        //     .compactMap { person -> ReferrerEntry? in
-        //         let count = person.referrals.count
-        //         guard count > 0 else { return nil }
-        //         return ReferrerEntry(
-        //             personID: person.id,
-        //             displayName: person.displayNameCache ?? person.displayName,
-        //             roleBadges: person.roleBadges,
-        //             referralCount: count
-        //         )
-        //     }
-        //     .sorted { $0.referralCount > $1.referralCount }
-        //     .prefix(5)
-        //     .map { $0 }
-        return []
+        people
+            .compactMap { person -> ReferrerEntry? in
+                let count = person.referrals.count
+                guard count > 0 else { return nil }
+                return ReferrerEntry(
+                    personID: person.id,
+                    displayName: person.displayNameCache ?? person.displayName,
+                    roleBadges: person.roleBadges,
+                    referralCount: count
+                )
+            }
+            .sorted { $0.referralCount > $1.referralCount }
+            .prefix(5)
+            .map { $0 }
     }
 
     /// Clients with 6+ months of relationship history who haven't referred anyone.
     private var referralOpportunities: [OpportunityEntry] {
-        // TODO: Wire to SamPerson.referrals once schema is updated
-        // Real implementation will be:
-        //   let sixMonthsAgo = Calendar.current.date(byAdding: .month, value: -6, to: .now) ?? .now
-        //   return people
-        //     .filter { person in
-        //         person.roleBadges.contains("Client")
-        //         && person.referrals.isEmpty
-        //         && earliestEvidenceDate(for: person).map { $0 <= sixMonthsAgo } == true
-        //     }
-        //     .compactMap { person in
-        //         guard let earliest = earliestEvidenceDate(for: person) else { return nil }
-        //         let months = Calendar.current.dateComponents([.month], from: earliest, to: .now).month ?? 0
-        //         return OpportunityEntry(
-        //             personID: person.id,
-        //             displayName: person.displayNameCache ?? person.displayName,
-        //             roleBadges: person.roleBadges,
-        //             relationshipMonths: months
-        //         )
-        //     }
-        //     .sorted { $0.relationshipMonths > $1.relationshipMonths }
         let sixMonthsAgo = Calendar.current.date(byAdding: .month, value: -6, to: .now) ?? .now
 
         return people
             .filter { person in
                 person.roleBadges.contains("Client")
+                && person.referrals.isEmpty
                 && earliestEvidenceDate(for: person).map { $0 <= sixMonthsAgo } == true
             }
             .compactMap { person in
@@ -88,15 +64,11 @@ struct ReferralTrackingSection: View {
     }
 
     private var totalReferralCount: Int {
-        // TODO: Wire to SamPerson.referredBy once schema is updated
-        // Real implementation: people.filter { $0.referredBy != nil }.count
-        0
+        people.filter { $0.referredBy != nil }.count
     }
 
     private var hasAnyReferralData: Bool {
-        // TODO: Wire to SamPerson.referredBy once schema is updated
-        // Real implementation: people.contains { $0.referredBy != nil }
-        false
+        people.contains { $0.referredBy != nil }
     }
 
     // MARK: - Body

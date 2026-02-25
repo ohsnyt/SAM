@@ -70,7 +70,13 @@ private struct FollowUpCard: View {
 
     let prompt: FollowUpPrompt
     let onDismiss: () -> Void
-    @State private var editingNote: SamNote?
+    @State private var showingCapture = false
+
+    private var attendeeIDs: [UUID] {
+        prompt.attendees.compactMap { attendee in
+            (try? PeopleRepository.shared.fetch(id: attendee.personID)) != nil ? attendee.personID : nil
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -110,22 +116,33 @@ private struct FollowUpCard: View {
                 Spacer()
             }
 
-            // Actions
-            HStack(spacing: 10) {
-                Button {
-                    createAndEditNote()
-                } label: {
-                    Label("Add Notes", systemImage: "note.text.badge.plus")
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
+            if showingCapture {
+                // Inline note capture with dictation
+                InlineNoteCaptureView(
+                    linkedPerson: nil,
+                    linkedContext: nil,
+                    onSaved: { onDismiss() },
+                    linkedPeopleIDs: attendeeIDs,
+                    initiallyExpanded: true
+                )
+            } else {
+                // Actions
+                HStack(spacing: 10) {
+                    Button {
+                        withAnimation { showingCapture = true }
+                    } label: {
+                        Label("Add Notes", systemImage: "note.text.badge.plus")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
 
-                Button(action: onDismiss) {
-                    Label("Dismiss", systemImage: "xmark")
+                    Button(action: onDismiss) {
+                        Label("Dismiss", systemImage: "xmark")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .foregroundStyle(.secondary)
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .foregroundStyle(.secondary)
             }
         }
         .padding(12)
@@ -135,24 +152,6 @@ private struct FollowUpCard: View {
             RoundedRectangle(cornerRadius: 10)
                 .stroke(Color.orange.opacity(0.3), lineWidth: 1)
         )
-        .sheet(item: $editingNote) { note in
-            NoteEditorView(note: note) { }
-        }
-    }
-
-    private func createAndEditNote() {
-        let personIDs = prompt.attendees.compactMap { attendee in
-            (try? PeopleRepository.shared.fetch(id: attendee.personID)) != nil ? attendee.personID : nil
-        }
-        do {
-            let note = try NotesRepository.shared.create(
-                content: "",
-                linkedPeopleIDs: personIDs
-            )
-            editingNote = note
-        } catch {
-            // Non-critical
-        }
     }
 
     private var meetingDescription: AttributedString {

@@ -12,7 +12,9 @@ import os.log
 
 private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "EvernoteImportSettingsView")
 
-struct EvernoteImportSettingsView: View {
+// MARK: - Content (embeddable in DisclosureGroup)
+
+struct EvernoteImportSettingsContent: View {
 
     @State private var coordinator = EvernoteImportCoordinator.shared
     @State private var showingFilePicker = false
@@ -26,178 +28,167 @@ struct EvernoteImportSettingsView: View {
     }
 
     var body: some View {
-        Form {
-            Section {
-                VStack(alignment: .leading, spacing: 20) {
-                    Label("Evernote Import", systemImage: "square.and.arrow.down")
-                        .font(.title2)
-                        .bold()
+        VStack(alignment: .leading, spacing: 20) {
+            Text("Import notes from Evernote .enex export files. Tags will be matched to existing people by name.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
 
-                    Text("Import notes from Evernote .enex export files. Tags will be matched to existing people by name.")
+            Divider()
+
+            // File/folder picker
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 12) {
+                    Button("Select .enex File") {
+                        showingFilePicker = true
+                    }
+                    .disabled(isDisabled)
+
+                    Button("Select Folder") {
+                        selectFolder()
+                    }
+                    .disabled(isDisabled)
+                }
+
+                // Status display
+                switch coordinator.importStatus {
+                case .idle:
+                    Text("No file selected")
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
-                    Divider()
-
-                    // File/folder picker
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack(spacing: 12) {
-                            Button("Select .enex File") {
-                                showingFilePicker = true
-                            }
-                            .disabled(isDisabled)
-
-                            Button("Select Folder") {
-                                selectFolder()
-                            }
-                            .disabled(isDisabled)
-                        }
-
-                        // Status display
-                        switch coordinator.importStatus {
-                        case .idle:
-                            Text("No file selected")
+                case .parsing:
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .scaleEffect(0.7)
+                        if coordinator.fileCount > 1 {
+                            Text("Reading file \(coordinator.processedFileCount + 1) of \(coordinator.fileCount)...")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
-
-                        case .parsing:
-                            HStack(spacing: 8) {
-                                ProgressView()
-                                    .scaleEffect(0.7)
-                                if coordinator.fileCount > 1 {
-                                    Text("Reading file \(coordinator.processedFileCount + 1) of \(coordinator.fileCount)...")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                } else {
-                                    Text("Reading file...")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-
-                        case .previewing:
-                            previewSection
-
-                        case .importing:
-                            HStack(spacing: 8) {
-                                ProgressView()
-                                    .scaleEffect(0.7)
-                                Text("Importing \(coordinator.importedCount) notes...")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-
-                        case .success:
-                            HStack(spacing: 6) {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundStyle(.green)
-                                Text("Successfully imported \(coordinator.importedCount) notes")
-                                    .font(.caption)
-                                    .foregroundStyle(.green)
-                            }
-
-                            Button("Import More") {
-                                coordinator.cancelImport()
-                            }
-                            .buttonStyle(.bordered)
-
-                        case .failed:
-                            HStack(spacing: 6) {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .foregroundStyle(.red)
-                                Text(coordinator.lastError ?? "Import failed")
-                                    .font(.caption)
-                                    .foregroundStyle(.red)
-                            }
-
-                            Button("Try Again") {
-                                coordinator.cancelImport()
-                            }
-                            .buttonStyle(.bordered)
+                        } else {
+                            Text("Reading file...")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
                     }
+
+                case .previewing:
+                    previewSection
+
+                case .importing:
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .scaleEffect(0.7)
+                        Text("Importing \(coordinator.importedCount) notes...")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                case .success:
+                    HStack(spacing: 6) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                        Text("Successfully imported \(coordinator.importedCount) notes")
+                            .font(.caption)
+                            .foregroundStyle(.green)
+                    }
+
+                    Button("Import More") {
+                        coordinator.cancelImport()
+                    }
+                    .buttonStyle(.bordered)
+
+                case .failed:
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.red)
+                        Text(coordinator.lastError ?? "Import failed")
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+
+                    Button("Try Again") {
+                        coordinator.cancelImport()
+                    }
+                    .buttonStyle(.bordered)
                 }
-                .padding()
             }
 
-            // Re-link section
-            Section {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Maintenance")
-                        .font(.headline)
+            Divider()
 
-                    Text("Re-analyze previously imported Evernote notes that aren't linked to any people. This uses AI analysis to detect person references in note content.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+            // Maintenance
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Maintenance")
+                    .font(.headline)
 
-                    HStack(spacing: 12) {
-                        Button {
-                            Task {
-                                isRelinking = true
-                                relinkResult = nil
-                                let count = await coordinator.relinkImportedNotes()
-                                relinkResult = count
-                                isRelinking = false
-                            }
-                        } label: {
-                            if isRelinking {
-                                HStack(spacing: 6) {
-                                    ProgressView()
-                                        .scaleEffect(0.7)
-                                    Text("Re-linking...")
-                                }
-                            } else {
-                                Text("Re-link Imported Notes")
-                            }
+                Text("Re-analyze previously imported Evernote notes that aren't linked to any people. This uses AI analysis to detect person references in note content.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                HStack(spacing: 12) {
+                    Button {
+                        Task {
+                            isRelinking = true
+                            relinkResult = nil
+                            let count = await coordinator.relinkImportedNotes()
+                            relinkResult = count
+                            isRelinking = false
                         }
-                        .buttonStyle(.bordered)
-                        .disabled(isRelinking)
-
-                        if let count = relinkResult {
-                            Text(count > 0
-                                ? "\(count) notes queued for analysis"
-                                : "No unlinked notes found")
-                                .font(.caption)
-                                .foregroundStyle(count > 0 ? .green : .secondary)
+                    } label: {
+                        if isRelinking {
+                            HStack(spacing: 6) {
+                                ProgressView()
+                                    .scaleEffect(0.7)
+                                Text("Re-linking...")
+                            }
+                        } else {
+                            Text("Re-link Imported Notes")
                         }
                     }
+                    .buttonStyle(.bordered)
+                    .disabled(isRelinking)
 
-                    Divider()
-
-                    Text("Remove malformed JSON text that may have leaked into note summaries from AI analysis failures.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    HStack(spacing: 12) {
-                        Button {
-                            isCleaning = true
-                            cleanResult = nil
-                            do {
-                                let count = try NotesRepository.shared.sanitizeJSONSummaries()
-                                cleanResult = count
-                            } catch {
-                                logger.error("JSON cleanup failed: \(error)")
-                            }
-                            isCleaning = false
-                        } label: {
-                            Text("Clean Up JSON Summaries")
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(isCleaning)
-
-                        if let count = cleanResult {
-                            Text(count > 0
-                                ? "\(count) summaries cleaned"
-                                : "No contaminated summaries found")
-                                .font(.caption)
-                                .foregroundStyle(count > 0 ? .green : .secondary)
-                        }
+                    if let count = relinkResult {
+                        Text(count > 0
+                            ? "\(count) notes queued for analysis"
+                            : "No unlinked notes found")
+                            .font(.caption)
+                            .foregroundStyle(count > 0 ? .green : .secondary)
                     }
                 }
-                .padding()
+
+                Divider()
+
+                Text("Remove malformed JSON text that may have leaked into note summaries from AI analysis failures.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                HStack(spacing: 12) {
+                    Button {
+                        isCleaning = true
+                        cleanResult = nil
+                        do {
+                            let count = try NotesRepository.shared.sanitizeJSONSummaries()
+                            cleanResult = count
+                        } catch {
+                            logger.error("JSON cleanup failed: \(error)")
+                        }
+                        isCleaning = false
+                    } label: {
+                        Text("Clean Up JSON Summaries")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isCleaning)
+
+                    if let count = cleanResult {
+                        Text(count > 0
+                            ? "\(count) summaries cleaned"
+                            : "No contaminated summaries found")
+                            .font(.caption)
+                            .foregroundStyle(count > 0 ? .green : .secondary)
+                    }
+                }
             }
         }
-        .formStyle(.grouped)
         .fileImporter(
             isPresented: $showingFilePicker,
             allowedContentTypes: [.xml],
@@ -312,7 +303,6 @@ struct EvernoteImportSettingsView: View {
         case .success(let urls):
             guard let url = urls.first else { return }
 
-            // Need security-scoped access for sandboxed apps
             guard url.startAccessingSecurityScopedResource() else {
                 coordinator.importStatus = .failed
                 coordinator.lastError = "Could not access the selected file"
@@ -329,6 +319,26 @@ struct EvernoteImportSettingsView: View {
             coordinator.importStatus = .failed
             coordinator.lastError = error.localizedDescription
         }
+    }
+}
+
+// MARK: - Standalone wrapper
+
+struct EvernoteImportSettingsView: View {
+    var body: some View {
+        Form {
+            Section {
+                VStack(alignment: .leading, spacing: 20) {
+                    Label("Evernote Import", systemImage: "square.and.arrow.down")
+                        .font(.title2)
+                        .bold()
+
+                    EvernoteImportSettingsContent()
+                }
+                .padding()
+            }
+        }
+        .formStyle(.grouped)
     }
 }
 

@@ -245,13 +245,19 @@ struct UnknownSenderTriageSection: View {
         var toAdd: [UnknownSender] = []
         var toNever: [UnknownSender] = []
         var notNowCount = 0
+        var processedIDs: Set<UUID> = []
 
         for (id, choice) in currentChoices {
             guard let sender = sendersByID[id] else { continue }
             switch choice {
-            case .add: toAdd.append(sender)
-            case .never: toNever.append(sender)
-            case .notNow: notNowCount += 1  // leave as .pending — no DB change
+            case .add:
+                toAdd.append(sender)
+                processedIDs.insert(id)
+            case .never:
+                toNever.append(sender)
+                processedIDs.insert(id)
+            case .notNow:
+                notNowCount += 1  // leave as .pending — no DB change
             }
         }
 
@@ -261,18 +267,30 @@ struct UnknownSenderTriageSection: View {
                 try repository.markNeverInclude(sender)
             }
         } catch {
-            logger.error("Failed to save triage choices: \(error)")
+            logger.error("Failed to mark never-include: \(error)")
         }
 
+        // Mark add senders immediately (optimistic) so they leave the list
+        // even if background contact creation fails
+        for sender in toAdd {
+            do {
+                try repository.markAdded(sender)
+            } catch {
+                logger.error("Failed to mark added for \(sender.email, privacy: .public): \(error)")
+            }
+        }
+
+        // Remove processed senders from UI immediately
+        pendingSenders.removeAll { processedIDs.contains($0.id) }
+        choices = choices.filter { !processedIDs.contains($0.key) }
+
         if toAdd.isEmpty {
-            // Reload to reflect removals (never-include gone, notNow still visible)
-            loadPendingSenders()
             isSaving = false
             logger.info("Triage complete: \(toNever.count) blocked, \(notNowCount) deferred")
             return
         }
 
-        // Add contacts + reprocess in background
+        // Create contacts + reprocess in background
         Task {
             var addedEmails: [String] = []
 
@@ -289,10 +307,9 @@ struct UnknownSenderTriageSection: View {
 
                 do {
                     try peopleRepository.upsert(contact: contactDTO)
-                    try repository.markAdded(sender)
                     addedEmails.append(sender.email)
                 } catch {
-                    logger.error("Failed to upsert/mark added for \(sender.email, privacy: .public): \(error)")
+                    logger.error("Failed to upsert contact for \(sender.email, privacy: .public): \(error)")
                 }
             }
 
@@ -305,11 +322,9 @@ struct UnknownSenderTriageSection: View {
                 }
             }
 
-            // Reload to reflect removals (added/never gone, notNow still visible)
-            loadPendingSenders()
             isSaving = false
 
-            logger.info("Triage complete: \(addedEmails.count) added, \(toNever.count) blocked, \(notNowCount) deferred")
+            logger.info("Triage complete: \(addedEmails.count) contacts created, \(toNever.count) blocked, \(notNowCount) deferred")
 
             // Reprocess added senders' emails in background
             for email in addedEmails {

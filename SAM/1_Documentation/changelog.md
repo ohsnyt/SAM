@@ -22,6 +22,30 @@ Major expansion of the Awareness dashboard with 6 new analytics sections, copy a
 - **`CalendarPatternsSection`** — Back-to-back meeting warnings, client meeting ratio, meeting-free days, busiest day analysis, upcoming load comparison.
 - **`ReferralTrackingSection`** — Top referrers + referral opportunities UI (stub data pending `referredBy` schema field).
 
+### Batch 2 — Follow-up Drafts, Referral Schema, Life Events
+
+- **Post-meeting follow-up draft generation (#7)** — New `SamNote.followUpDraft: String?` field. `NoteAnalysisService.generateFollowUpDraft()` generates a plain-text follow-up message from meeting notes. Triggered in `NoteAnalysisCoordinator` when note is linked to a calendar event within 24 hours. Draft displayed in `NotesJournalView` with Copy and Dismiss buttons.
+- **Referral chain tracking (#12)** — Added `SamPerson.referredBy: SamPerson?` and `referrals: [SamPerson]` self-referential relationships (`@Relationship(deleteRule: .nullify)`). Schema bumped to SAM_v13. `ReferralTrackingSection` now uses real `@Query` data (top referrers, referral opportunities for established Clients). Referral assignment UI added to `PersonDetailView` with picker sheet filtering Client/Applicant/Lead roles.
+- **Life event detection (#13)** — New `LifeEvent` Codable struct (personName, eventType, eventDescription, approximateDate, outreachSuggestion, status). `SamNote.lifeEvents: [LifeEvent]` field. LLM prompt extended with 11 event types (new_baby, marriage, retirement, job_change, etc.). `LifeEventsSection` in Awareness dashboard with event-type icons, outreach suggestion copy buttons, Done/Skip actions, person navigation. `InsightGenerator.generateLifeEventInsights()` scans notes for pending life events. Note analysis version bumped to 3 (triggers re-analysis of existing notes).
+
+### Batch 2 Files Modified
+| File | Change |
+|------|--------|
+| `Models/SAMModels.swift` | Added `referredBy` / `referrals` self-referential relationship on SamPerson |
+| `Models/SAMModels-Notes.swift` | Added `followUpDraft: String?`, `lifeEvents: [LifeEvent]` on SamNote |
+| `Models/SAMModels-Supporting.swift` | New `LifeEvent` Codable struct |
+| `Models/DTOs/NoteAnalysisDTO.swift` | Added `LifeEventDTO`, `lifeEvents` on NoteAnalysisDTO |
+| `App/SAMModelContainer.swift` | Schema bumped to SAM_v13 |
+| `Services/NoteAnalysisService.swift` | Life events in LLM prompt, `generateFollowUpDraft()`, analysis version 3 |
+| `Coordinators/NoteAnalysisCoordinator.swift` | Triggers follow-up draft after meeting detection, stores life events |
+| `Coordinators/InsightGenerator.swift` | New `generateLifeEventInsights()` step |
+| `Repositories/NotesRepository.swift` | Extended `storeAnalysis()` with life events, `updateLifeEvent()` method |
+| `Views/Awareness/ReferralTrackingSection.swift` | Wired to real `@Query` data |
+| `Views/Awareness/LifeEventsSection.swift` | **New** — Life event outreach cards |
+| `Views/Awareness/AwarenessView.swift` | Added `LifeEventsSection` |
+| `Views/Notes/NotesJournalView.swift` | Follow-up draft card with Copy/Dismiss |
+| `Views/People/PersonDetailView.swift` | Referral assignment UI (picker sheet) |
+
 ### Bug Fixes
 - **SwiftData cross-context insertion error** — InsightGenerator and OutcomeRepository were fetching `SamPerson` from PeopleRepository's ModelContext then inserting into their own context, causing "Illegal attempt to insert a model in to a different model context." Fixed InsightGenerator.persistInsights() to fetch person from its own context. Fixed OutcomeRepository.upsert() with `resolveInContext()` helpers that re-fetch linked objects from the repository's own ModelContext.
 - **LLM echoing JSON template** — NoteAnalysisService prompt used ambiguous template-style placeholders (e.g., `"field": "birthday | anniversary | ..."`) that the LLM echoed back literally. Also contained en-dash characters (`–`) in `0.0–1.0` that broke JSON parsing. Rewrote prompt with concrete example values and separate field reference. Added Unicode sanitization to `extractJSON()` (en-dash, em-dash, curly quotes, ellipsis → ASCII equivalents).

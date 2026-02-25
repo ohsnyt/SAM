@@ -92,6 +92,16 @@ public final class SamNote {
     /// Relationships between people discovered by LLM (e.g., spousal, referral)
     public var discoveredRelationships: [DiscoveredRelationship] = []
 
+    /// Life events detected by LLM (e.g., new baby, job change, retirement)
+    public var lifeEvents: [LifeEvent] = []
+
+    // ── Follow-up draft ─────────────────────────────────────────────
+
+    /// LLM-generated follow-up message draft for meeting-related notes.
+    /// Set after analysis if the note is linked to a person with a recent calendar event.
+    /// Nil when dismissed by the user or not applicable.
+    public var followUpDraft: String?
+
     // ── Images ───────────────────────────────────────────────────────
 
     /// Images attached to this note (Evernote imports, pasted screenshots)

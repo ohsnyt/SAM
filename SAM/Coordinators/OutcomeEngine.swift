@@ -311,6 +311,126 @@ final class OutcomeEngine {
         return outcomes
     }
 
+    // MARK: - Role Transition Outcomes
+
+    /// Generate outcomes when a person's role badges change.
+    /// Called from PersonDetailView after badge edits.
+    func generateRoleTransitionOutcomes(for person: SamPerson, addedRoles: Set<String>, removedRoles: Set<String>) {
+        let enabled = UserDefaults.standard.object(forKey: "autoRoleTransitionOutcomes") == nil
+            ? true
+            : UserDefaults.standard.bool(forKey: "autoRoleTransitionOutcomes")
+        guard enabled else { return }
+
+        let name = person.displayNameCache ?? person.displayName
+        var outcomes: [SamOutcome] = []
+
+        if addedRoles.contains("Applicant") {
+            outcomes.append(contentsOf: [
+                SamOutcome(
+                    title: "Schedule needs analysis with \(name)",
+                    rationale: "\(name) is now an Applicant. Start the assessment process.",
+                    outcomeKind: .preparation,
+                    sourceInsightSummary: "Role change: +Applicant for \(name)",
+                    suggestedNextStep: "Book a 30-minute discovery call",
+                    linkedPerson: person
+                ),
+                SamOutcome(
+                    title: "Collect underwriting requirements for \(name)",
+                    rationale: "Gather necessary documentation to move the application forward.",
+                    outcomeKind: .preparation,
+                    sourceInsightSummary: "Role change: +Applicant for \(name)",
+                    suggestedNextStep: "Send the requirements checklist",
+                    linkedPerson: person
+                ),
+                SamOutcome(
+                    title: "Send initial proposals to \(name)",
+                    rationale: "Prepare and present product options based on the needs analysis.",
+                    outcomeKind: .proposal,
+                    sourceInsightSummary: "Role change: +Applicant for \(name)",
+                    suggestedNextStep: "Draft proposals after needs analysis is complete",
+                    linkedPerson: person
+                ),
+            ])
+        }
+
+        if addedRoles.contains("Client") {
+            outcomes.append(contentsOf: [
+                SamOutcome(
+                    title: "Send welcome package to \(name)",
+                    rationale: "\(name) is now a Client. Start the onboarding experience.",
+                    outcomeKind: .followUp,
+                    sourceInsightSummary: "Role change: +Client for \(name)",
+                    suggestedNextStep: "Prepare and send the welcome materials",
+                    linkedPerson: person
+                ),
+                SamOutcome(
+                    title: "Schedule onboarding meeting with \(name)",
+                    rationale: "Walk through policy details, answer questions, set expectations.",
+                    outcomeKind: .preparation,
+                    sourceInsightSummary: "Role change: +Client for \(name)",
+                    suggestedNextStep: "Send a calendar invite for this week",
+                    linkedPerson: person
+                ),
+                SamOutcome(
+                    title: "Set up policy review cadence for \(name)",
+                    rationale: "Establish regular check-ins to maintain the relationship.",
+                    outcomeKind: .outreach,
+                    sourceInsightSummary: "Role change: +Client for \(name)",
+                    suggestedNextStep: "Add a recurring 6-month review reminder",
+                    linkedPerson: person
+                ),
+            ])
+        }
+
+        if addedRoles.contains("Agent") {
+            outcomes.append(contentsOf: [
+                SamOutcome(
+                    title: "Schedule initial training for \(name)",
+                    rationale: "\(name) joined as an Agent. Begin onboarding and training.",
+                    outcomeKind: .training,
+                    sourceInsightSummary: "Role change: +Agent for \(name)",
+                    suggestedNextStep: "Set up first training session this week",
+                    linkedPerson: person
+                ),
+                SamOutcome(
+                    title: "Set up commission tracking for \(name)",
+                    rationale: "Ensure \(name)'s production is tracked from day one.",
+                    outcomeKind: .compliance,
+                    sourceInsightSummary: "Role change: +Agent for \(name)",
+                    suggestedNextStep: "Add to the team tracking system",
+                    linkedPerson: person
+                ),
+                SamOutcome(
+                    title: "Create development plan for \(name)",
+                    rationale: "Outline goals, milestones, and support for the first 90 days.",
+                    outcomeKind: .growth,
+                    sourceInsightSummary: "Role change: +Agent for \(name)",
+                    suggestedNextStep: "Draft a 30-60-90 day plan",
+                    linkedPerson: person
+                ),
+            ])
+        }
+
+        // Persist with deduplication
+        for outcome in outcomes {
+            do {
+                let isDuplicate = try outcomeRepo.hasSimilarOutcome(
+                    kind: outcome.outcomeKind,
+                    personID: person.id
+                )
+                if !isDuplicate {
+                    try outcomeRepo.upsert(outcome: outcome)
+                }
+            } catch {
+                logger.error("Failed to create role transition outcome: \(error.localizedDescription)")
+            }
+        }
+
+        if !outcomes.isEmpty {
+            logger.info("Generated role transition outcomes for \(name): added=\(addedRoles), removed=\(removedRoles)")
+        }
+    }
+
     // MARK: - Priority Computation
 
     private func computePriority(outcome: SamOutcome, weights: OutcomeWeights) -> Double {

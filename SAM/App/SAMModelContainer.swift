@@ -38,6 +38,7 @@ enum SAMSchema {
         SamOutcome.self,           // Phase N: Outcome-focused coaching
         CoachingProfile.self,      // Phase N: Adaptive coaching profile
         NoteImage.self,            // Note image attachments
+        SamDailyBriefing.self,     // Daily briefing system
     ]
 }
 
@@ -54,7 +55,7 @@ enum SAMModelContainer {
     nonisolated(unsafe) private static var _shared: ModelContainer = {
         let schema     = Schema(SAMSchema.allModels)
         let config     = ModelConfiguration(
-            "SAM_v12", // v10: added linkedEvidence inverse on SamPerson + SamContext
+            "SAM_v14", // v10: added linkedEvidence inverse on SamPerson + SamContext
             schema: schema,
             isStoredInMemoryOnly: false   // persistent on disk
         )
@@ -73,7 +74,7 @@ enum SAMModelContainer {
     nonisolated static func makeFreshContainer() -> ModelContainer {
         let schema = Schema(SAMSchema.allModels)
         let config = ModelConfiguration(
-            "SAM_v12", // v10: added linkedEvidence inverse on SamPerson + SamContext
+            "SAM_v14", // v10: added linkedEvidence inverse on SamPerson + SamContext
             schema: schema,
             isStoredInMemoryOnly: false
         )
@@ -93,7 +94,7 @@ enum SAMModelContainer {
     nonisolated static let shared: ModelContainer = {
         let schema     = Schema(SAMSchema.allModels)
         let config     = ModelConfiguration(
-            "SAM_v12", // v10: added linkedEvidence inverse on SamPerson + SamContext
+            "SAM_v14", // v10: added linkedEvidence inverse on SamPerson + SamContext
             schema: schema,
             isStoredInMemoryOnly: false   // persistent on disk
         )

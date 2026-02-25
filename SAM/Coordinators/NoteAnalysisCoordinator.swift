@@ -113,6 +113,17 @@ final class NoteAnalysisCoordinator {
                 )
             }
 
+            let lifeEvents = analysis.lifeEvents.map { dto in
+                LifeEvent(
+                    personName: dto.personName,
+                    eventType: dto.eventType,
+                    eventDescription: dto.eventDescription,
+                    approximateDate: dto.approximateDate,
+                    outreachSuggestion: dto.outreachSuggestion,
+                    status: .pending
+                )
+            }
+
             // Step 4: Auto-match extracted people to existing SamPerson records
             let matchedMentions = try autoMatchPeople(mentions)
             let matchedActions = try autoMatchActions(actionItems)
@@ -137,6 +148,7 @@ final class NoteAnalysisCoordinator {
                 extractedActionItems: matchedActions,
                 extractedTopics: analysis.topics,
                 discoveredRelationships: discoveredRelationships,
+                lifeEvents: lifeEvents,
                 analysisVersion: analysis.analysisVersion
             )
 
@@ -147,6 +159,9 @@ final class NoteAnalysisCoordinator {
             for person in note.linkedPeople {
                 await refreshRelationshipSummary(for: person)
             }
+
+            // Step 9: Generate follow-up draft if this is a meeting-related note
+            await generateFollowUpDraftIfMeeting(note)
 
             // Update state
             analysisStatus = .success
@@ -339,6 +354,38 @@ final class NoteAnalysisCoordinator {
             }
 
             return matched
+        }
+    }
+
+    // MARK: - Follow-Up Draft
+
+    /// Generate a follow-up message draft if the note is linked to a person
+    /// who has a recent calendar event (meeting). Best-effort — failures are logged and ignored.
+    private func generateFollowUpDraftIfMeeting(_ note: SamNote) async {
+        // Must have at least one linked person (excluding Me)
+        let linkedNonMe = note.linkedPeople.filter { !$0.isMe }
+        guard let primaryPerson = linkedNonMe.first else { return }
+
+        // Check if this person has a recent calendar event (within 24 hours)
+        let recentMeeting = evidenceRepository.findRecentMeeting(
+            forPersonID: primaryPerson.id,
+            maxWindow: 86400  // 24 hours
+        )
+        guard recentMeeting != nil else { return }
+
+        let personName = primaryPerson.displayNameCache ?? primaryPerson.displayName
+        let role = primaryPerson.roleBadges.first
+
+        do {
+            let draft = try await analysisService.generateFollowUpDraft(
+                noteContent: note.content,
+                personName: personName,
+                role: role
+            )
+            note.followUpDraft = draft
+            logger.info("Generated follow-up draft for note linked to \(personName, privacy: .public)")
+        } catch {
+            logger.debug("Follow-up draft skipped for \(personName, privacy: .public): \(error.localizedDescription)")
         }
     }
 

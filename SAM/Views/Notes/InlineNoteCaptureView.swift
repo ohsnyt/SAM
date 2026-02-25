@@ -23,6 +23,11 @@ struct InlineNoteCaptureView: View {
     let linkedPerson: SamPerson?
     let linkedContext: SamContext?
     let onSaved: () -> Void
+    /// Additional people IDs to link (for multi-attendee contexts like meeting follow-ups).
+    /// When non-empty, overrides linkedPerson for note linking.
+    var linkedPeopleIDs: [UUID] = []
+    /// When true, the editor starts expanded (skips collapsed bar).
+    var initiallyExpanded: Bool = false
 
     // MARK: - Dependencies
 
@@ -60,6 +65,9 @@ struct InlineNoteCaptureView: View {
 
             // Status indicators (below both states)
             statusIndicators
+        }
+        .onAppear {
+            if initiallyExpanded { isEditing = true }
         }
     }
 
@@ -402,10 +410,14 @@ struct InlineNoteCaptureView: View {
         let sourceType: SamNote.SourceType = usedDictation ? .dictated : .typed
 
         do {
+            let peopleIDs = linkedPeopleIDs.isEmpty
+                ? (linkedPerson.map { [$0.id] } ?? [])
+                : linkedPeopleIDs
+
             let note = try repository.create(
                 content: content,
                 sourceType: sourceType,
-                linkedPeopleIDs: linkedPerson.map { [$0.id] } ?? [],
+                linkedPeopleIDs: peopleIDs,
                 linkedContextIDs: linkedContext.map { [$0.id] } ?? []
             )
 
@@ -415,8 +427,9 @@ struct InlineNoteCaptureView: View {
             }
 
             // Auto-link to recent meeting
-            if let person = linkedPerson {
-                autoLinkToRecentMeeting(note: note, personID: person.id)
+            let autoLinkPersonID = linkedPerson?.id ?? linkedPeopleIDs.first
+            if let personID = autoLinkPersonID {
+                autoLinkToRecentMeeting(note: note, personID: personID)
             }
 
             // Reset state and collapse

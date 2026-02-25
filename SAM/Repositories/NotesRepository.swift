@@ -152,6 +152,7 @@ final class NotesRepository {
         extractedActionItems: [NoteActionItem],
         extractedTopics: [String],
         discoveredRelationships: [DiscoveredRelationship] = [],
+        lifeEvents: [LifeEvent] = [],
         analysisVersion: Int
     ) throws {
         guard let modelContext = modelContext else {
@@ -163,6 +164,7 @@ final class NotesRepository {
         note.extractedActionItems = extractedActionItems
         note.extractedTopics = extractedTopics
         note.discoveredRelationships = discoveredRelationships
+        note.lifeEvents = lifeEvents
         note.isAnalyzed = true
         note.analysisVersion = analysisVersion
         note.updatedAt = .now
@@ -187,6 +189,27 @@ final class NotesRepository {
         var updatedItem = note.extractedActionItems[index]
         updatedItem.status = status
         note.extractedActionItems[index] = updatedItem
+
+        try modelContext.save()
+    }
+
+    /// Update life event status
+    func updateLifeEvent(
+        note: SamNote,
+        lifeEventID: UUID,
+        status: LifeEvent.EventStatus
+    ) throws {
+        guard let modelContext = modelContext else {
+            throw RepositoryError.notConfigured
+        }
+
+        guard let index = note.lifeEvents.firstIndex(where: { $0.id == lifeEventID }) else {
+            throw NSError(domain: "NotesRepository", code: 404, userInfo: [NSLocalizedDescriptionKey: "Life event not found"])
+        }
+
+        var updatedEvent = note.lifeEvents[index]
+        updatedEvent.status = status
+        note.lifeEvents[index] = updatedEvent
 
         try modelContext.save()
     }

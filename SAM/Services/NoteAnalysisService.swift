@@ -25,7 +25,7 @@ actor NoteAnalysisService {
     // MARK: - Configuration
     
     /// Current prompt version for analysis (bump to trigger re-analysis of all notes)
-    static let currentAnalysisVersion = 2
+    static let currentAnalysisVersion = 3
 
     // MARK: - Model Availability
 
@@ -91,7 +91,7 @@ actor NoteAnalysisService {
             Output the corrected text exactly as dictated, with no additions, no removals of factual content, and no rephrasing.
             """
 
-        return try await AIService.shared.generateNarrative(prompt: rawText, systemInstruction: instructions)
+        return try await AIService.shared.generateWithFoundationModels(prompt: rawText, systemInstruction: instructions)
     }
 
     // MARK: - Relationship Summary
@@ -187,6 +187,41 @@ actor NoteAnalysisService {
         }
     }
 
+    // MARK: - Follow-Up Draft
+
+    /// Generate a brief follow-up message based on meeting notes.
+    /// Returns plain text suitable for email or text message.
+    func generateFollowUpDraft(noteContent: String, personName: String, role: String?) async throws -> String {
+        guard case .available = await checkAvailability() else {
+            throw AnalysisError.modelUnavailable
+        }
+
+        let roleLine = role.map { " Their role is \($0)." } ?? ""
+
+        let instructions = """
+            You are a writing assistant for an independent financial strategist. \
+            Generate a brief, professional follow-up message based on meeting notes. \
+            Include key discussion points and any action items mentioned. \
+            Keep the tone warm but professional, appropriate for a financial advisor. \
+            Return plain text only (no JSON, no markdown formatting). \
+            Keep the message under 200 words. \
+            Address the person by their first name.
+            """
+
+        let firstName = personName.components(separatedBy: " ").first ?? personName
+
+        let prompt = """
+            Write a follow-up message to \(firstName) (\(personName)).\(roleLine)
+
+            Meeting notes:
+            \(noteContent)
+            """
+
+        let draft = try await AIService.shared.generateNarrative(prompt: prompt, systemInstruction: instructions)
+        logger.info("Generated follow-up draft for \(personName, privacy: .public)")
+        return draft
+    }
+
     // MARK: - Prompt Construction
     
     private func buildSystemInstructions() -> String {
@@ -246,6 +281,15 @@ actor NoteAnalysisService {
               "related_to": "John Smith",
               "confidence": 0.95
             }
+          ],
+          "life_events": [
+            {
+              "person_name": "Jane Smith",
+              "event_type": "new_baby",
+              "description": "Jane mentioned she is expecting a baby in June",
+              "approximate_date": "2026-06",
+              "outreach_suggestion": "Send a congratulations card when the baby arrives"
+            }
           ]
         }
 
@@ -257,12 +301,14 @@ actor NoteAnalysisService {
         - action_items[].urgency: one of "immediate", "soon", "standard", "low"
         - action_items[].suggested_channel: one of "sms", "email", "phone", or null
         - discovered_relationships[].relationship_type: one of "spouse_of", "parent_of", "child_of", "referral_by", "referred_to", "business_partner"
+        - life_events[].event_type: one of "new_baby", "marriage", "graduation", "job_change", "retirement", "moving", "health_issue", "promotion", "anniversary", "loss", "other"
 
         Rules:
         - Only extract information explicitly stated or strongly implied in the note
         - For contact_updates, only include fields that are clearly new information
         - For send_congratulations/send_reminder, draft a warm, professional message in suggested_text
         - For discovered_relationships, flag spousal, familial, referral, or business connections mentioned in the note
+        - For life_events, extract any mentioned life milestones, transitions, or personal events. Include an outreach suggestion.
         - Confidence reflects how certain you are (0.5 = implied, 0.9 = explicit)
         - If the note is too short or ambiguous, return empty arrays - do not hallucinate
         - Use null (not "null") for absent optional fields
@@ -341,6 +387,15 @@ actor NoteAnalysisService {
                         confidence: rel.confidence ?? 0.5
                     )
                 },
+                lifeEvents: (llmResponse.life_events ?? []).map { event in
+                    LifeEventDTO(
+                        personName: event.person_name,
+                        eventType: event.event_type,
+                        eventDescription: event.description,
+                        approximateDate: event.approximate_date,
+                        outreachSuggestion: event.outreach_suggestion
+                    )
+                },
                 analysisVersion: Self.currentAnalysisVersion
             )
         } catch {
@@ -376,6 +431,15 @@ nonisolated private struct LLMResponse: Codable, Sendable {
     let topics: [String]?
     let action_items: [LLMActionItem]?
     let discovered_relationships: [LLMDiscoveredRelationship]?
+    let life_events: [LLMLifeEvent]?
+}
+
+nonisolated private struct LLMLifeEvent: Codable, Sendable {
+    let person_name: String
+    let event_type: String
+    let description: String
+    let approximate_date: String?
+    let outreach_suggestion: String?
 }
 
 nonisolated private struct LLMDiscoveredRelationship: Codable, Sendable {

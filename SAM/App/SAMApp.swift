@@ -144,6 +144,7 @@ struct SAMApp: App {
         InsightGenerator.shared.configure(container: SAMModelContainer.shared)
         OutcomeRepository.shared.configure(container: SAMModelContainer.shared)
         CoachingAdvisor.shared.configure(container: SAMModelContainer.shared)
+        DailyBriefingCoordinator.shared.configure(container: SAMModelContainer.shared)
     }
     
     /// Check permissions and decide whether to show onboarding or proceed with imports
@@ -269,6 +270,9 @@ struct SAMApp: App {
         if autoGenerateOutcomes {
             OutcomeEngine.shared.startGeneration()
         }
+
+        // Daily briefing — check first open after imports complete
+        await DailyBriefingCoordinator.shared.checkFirstOpenOfDay()
     }
 }
 

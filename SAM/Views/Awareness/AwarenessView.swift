@@ -10,6 +10,7 @@
 
 import SwiftUI
 import SwiftData
+import Combine
 
 struct AwarenessView: View {
 
@@ -31,6 +32,12 @@ struct AwarenessView: View {
     @State private var selectedFilter: InsightFilter = .all
     @State private var searchText = ""
     @State private var isGenerating = false
+    @State private var reorderTick: Int = 0
+
+    // MARK: - Briefing State
+
+    private var briefingCoordinator: DailyBriefingCoordinator { DailyBriefingCoordinator.shared }
+    @State private var showBriefingPopover = false
 
     // MARK: - Body
 
@@ -47,25 +54,15 @@ struct AwarenessView: View {
 
                 Divider()
 
-                // Outcome Queue (Coaching Engine)
-                OutcomeQueueView()
+                // Evening recap banner (if prompted)
+                if briefingCoordinator.showEveningPrompt {
+                    EveningPromptBanner()
+                }
 
-                // Unknown Sender Triage
-                UnknownSenderTriageSection()
-
-                // Meeting Follow-ups (past meetings, more urgent)
-                FollowUpCoachSection()
-
-                // Meeting Prep (upcoming meetings)
-                MeetingPrepSection()
-
-                // Pipeline & Metrics
-                PipelineStageSection()
-                EngagementVelocitySection()
-                MeetingQualitySection()
-                StreakTrackingSection()
-                CalendarPatternsSection()
-                ReferralTrackingSection()
+                // Dynamic section groups — reorder based on time of day
+                ForEach(computedGroupOrder, id: \.self) { group in
+                    sectionGroupView(for: group)
+                }
 
                 // Insights List
                 if filteredInsights.isEmpty {
@@ -78,17 +75,46 @@ struct AwarenessView: View {
         .navigationTitle("Awareness")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button(action: {
-                    refreshInsights()
-                }) {
-                    Label("Refresh", systemImage: "arrow.clockwise")
+                HStack(spacing: 8) {
+                    // Briefing popover button
+                    Button(action: {
+                        showBriefingPopover.toggle()
+                    }) {
+                        Label("Briefing", systemImage: "text.book.closed")
+                    }
+                    .disabled(briefingCoordinator.morningBriefing == nil)
+                    .popover(isPresented: $showBriefingPopover) {
+                        DailyBriefingPopover()
+                            .frame(width: 400, height: 500)
+                    }
+
+                    Button(action: {
+                        refreshInsights()
+                    }) {
+                        Label("Refresh", systemImage: "arrow.clockwise")
+                    }
+                    .disabled(isGenerating)
                 }
-                .disabled(isGenerating)
             }
+        }
+        .sheet(isPresented: Binding(
+            get: { briefingCoordinator.showMorningBriefing },
+            set: { briefingCoordinator.showMorningBriefing = $0 }
+        )) {
+            DailyBriefingOverlay()
+        }
+        .sheet(isPresented: Binding(
+            get: { briefingCoordinator.showEveningBriefing },
+            set: { briefingCoordinator.showEveningBriefing = $0 }
+        )) {
+            EveningRecapOverlay()
         }
         .task {
             await loadInsights()
             await meetingPrepCoordinator.refresh()
+        }
+        .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
+            reorderTick += 1
         }
         .onChange(of: calendarCoordinator.importStatus) {
             if calendarCoordinator.importStatus == .success {
@@ -122,6 +148,9 @@ struct AwarenessView: View {
 
                 Spacer()
 
+                // Time period indicator
+                timePeriodBadge
+
                 // Status Badge
                 statusBadge
             }
@@ -153,6 +182,17 @@ struct AwarenessView: View {
         }
         .padding()
         .background(Color(nsColor: .controlBackgroundColor))
+    }
+
+    private var timePeriodBadge: some View {
+        let period = currentTimePeriod
+        return Label(period.label, systemImage: period.icon)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(Color.secondary.opacity(0.08))
+            .clipShape(Capsule())
     }
 
     private var statusBadge: some View {
@@ -250,6 +290,210 @@ struct AwarenessView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
+    }
+
+    // MARK: - Section Grouping & Time-of-Day Ordering
+
+    /// Sections in the awareness dashboard, dynamically reordered.
+    enum AwarenessSection: String, CaseIterable {
+        case outcomes
+        case unknownSenders
+        case followUpCoach
+        case lifeEvents
+        case meetingPrep
+        case pipeline
+        case engagementVelocity
+        case meetingQuality
+        case streaks
+        case calendarPatterns
+        case referralTracking
+    }
+
+    /// Collapsible section groups with time-based ordering.
+    enum AwarenessSectionGroup: String, CaseIterable, Hashable {
+        case actionQueue
+        case todaysFocus
+        case reviewAnalytics
+
+        var title: String {
+            switch self {
+            case .actionQueue:     return "Action Queue"
+            case .todaysFocus:     return "Today's Focus"
+            case .reviewAnalytics: return "Review & Analytics"
+            }
+        }
+
+        var icon: String {
+            switch self {
+            case .actionQueue:     return "bolt.fill"
+            case .todaysFocus:     return "calendar.badge.clock"
+            case .reviewAnalytics: return "chart.bar.fill"
+            }
+        }
+
+        var sections: [AwarenessSection] {
+            switch self {
+            case .actionQueue:     return [.outcomes, .followUpCoach, .unknownSenders]
+            case .todaysFocus:     return [.meetingPrep, .pipeline, .lifeEvents, .engagementVelocity]
+            case .reviewAnalytics: return [.streaks, .meetingQuality, .calendarPatterns, .referralTracking]
+            }
+        }
+    }
+
+    /// Current time period for contextual ordering.
+    enum TimePeriod {
+        case morning, afternoon, evening
+
+        var label: String {
+            switch self {
+            case .morning:   return "Morning Focus"
+            case .afternoon: return "Afternoon"
+            case .evening:   return "Evening Review"
+            }
+        }
+
+        var icon: String {
+            switch self {
+            case .morning:   return "sunrise"
+            case .afternoon: return "sun.max"
+            case .evening:   return "sunset"
+            }
+        }
+
+        static func current(hour: Int) -> TimePeriod {
+            switch hour {
+            case ..<12:   return .morning
+            case 12..<17: return .afternoon
+            default:      return .evening
+            }
+        }
+    }
+
+    @State private var collapsedGroups: Set<AwarenessSectionGroup> = []
+
+    /// Current time period, refreshed via reorderTick.
+    private var currentTimePeriod: TimePeriod {
+        _ = reorderTick
+        let hour = Calendar.current.component(.hour, from: Date())
+        return TimePeriod.current(hour: hour)
+    }
+
+    /// Groups ordered by time of day.
+    private var computedGroupOrder: [AwarenessSectionGroup] {
+        _ = reorderTick
+        switch currentTimePeriod {
+        case .morning:   return [.todaysFocus, .actionQueue, .reviewAnalytics]
+        case .afternoon: return [.actionQueue, .todaysFocus, .reviewAnalytics]
+        case .evening:   return [.reviewAnalytics, .actionQueue, .todaysFocus]
+        }
+    }
+
+    /// Sections within a group, with float-to-top rules applied.
+    private func sectionsForGroup(_ group: AwarenessSectionGroup) -> [AwarenessSection] {
+        _ = reorderTick
+        var sections = group.sections
+        let now = Date()
+
+        if group == .todaysFocus {
+            // Float MeetingPrep to top if a meeting starts within 30 min
+            let thirtyMinFromNow = Calendar.current.date(byAdding: .minute, value: 30, to: now)!
+            let hasSoonMeeting = meetingPrepCoordinator.briefings.contains { briefing in
+                briefing.startsAt > now && briefing.startsAt <= thirtyMinFromNow
+            }
+            if hasSoonMeeting {
+                sections.removeAll { $0 == .meetingPrep }
+                sections.insert(.meetingPrep, at: 0)
+            }
+        }
+
+        if group == .actionQueue {
+            // Float FollowUpCoach to top if a meeting ended within 1 hour
+            let oneHourAgo = Calendar.current.date(byAdding: .hour, value: -1, to: now)!
+            let hasRecentMeeting = meetingPrepCoordinator.followUpPrompts.contains { prompt in
+                prompt.endedAt >= oneHourAgo && prompt.endedAt <= now
+            }
+            if hasRecentMeeting {
+                sections.removeAll { $0 == .followUpCoach }
+                sections.insert(.followUpCoach, at: 0)
+            }
+        }
+
+        return sections
+    }
+
+    @ViewBuilder
+    private func sectionGroupView(for group: AwarenessSectionGroup) -> some View {
+        let isCollapsed = collapsedGroups.contains(group)
+        let sections = sectionsForGroup(group)
+
+        VStack(spacing: 0) {
+            // Group header
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    if isCollapsed {
+                        collapsedGroups.remove(group)
+                    } else {
+                        collapsedGroups.insert(group)
+                    }
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: group.icon)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 20)
+
+                    Text(group.title)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.primary)
+
+                    Text("\(sections.count)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.secondary.opacity(0.1))
+                        .clipShape(Capsule())
+
+                    Spacer()
+
+                    Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 10)
+                .background(Color(nsColor: .controlBackgroundColor))
+            }
+            .buttonStyle(.plain)
+
+            Divider()
+
+            // Sections (when expanded)
+            if !isCollapsed {
+                ForEach(sections, id: \.self) { section in
+                    sectionView(for: section)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func sectionView(for section: AwarenessSection) -> some View {
+        switch section {
+        case .outcomes:           OutcomeQueueView()
+        case .unknownSenders:     UnknownSenderTriageSection()
+        case .followUpCoach:      FollowUpCoachSection()
+        case .lifeEvents:         LifeEventsSection()
+        case .meetingPrep:        MeetingPrepSection()
+        case .pipeline:           PipelineStageSection()
+        case .engagementVelocity: EngagementVelocitySection()
+        case .meetingQuality:     MeetingQualitySection()
+        case .streaks:            StreakTrackingSection()
+        case .calendarPatterns:   CalendarPatternsSection()
+        case .referralTracking:   ReferralTrackingSection()
+        }
     }
 
     // MARK: - Computed Properties

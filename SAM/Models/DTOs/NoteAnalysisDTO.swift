@@ -29,6 +29,9 @@ nonisolated public struct NoteAnalysisDTO: Sendable {
     /// Relationships discovered between people mentioned in the note
     public let discoveredRelationships: [DiscoveredRelationshipDTO]
 
+    /// Life events mentioned in the note
+    public let lifeEvents: [LifeEventDTO]
+
     /// Timestamp of analysis
     public let analyzedAt: Date
 
@@ -41,6 +44,7 @@ nonisolated public struct NoteAnalysisDTO: Sendable {
         topics: [String],
         actionItems: [ActionItemDTO],
         discoveredRelationships: [DiscoveredRelationshipDTO] = [],
+        lifeEvents: [LifeEventDTO] = [],
         analyzedAt: Date = .now,
         analysisVersion: Int
     ) {
@@ -49,6 +53,7 @@ nonisolated public struct NoteAnalysisDTO: Sendable {
         self.topics = topics
         self.actionItems = actionItems
         self.discoveredRelationships = discoveredRelationships
+        self.lifeEvents = lifeEvents
         self.analyzedAt = analyzedAt
         self.analysisVersion = analysisVersion
     }
@@ -125,7 +130,7 @@ nonisolated public struct ActionItemDTO: Sendable, Identifiable {
     public let suggestedChannel: String?  // "sms", "email", "phone"
     public let urgency: String  // "immediate", "soon", "standard", "low"
     public let personName: String?
-    
+
     public init(
         id: UUID = UUID(),
         type: String,
@@ -142,5 +147,31 @@ nonisolated public struct ActionItemDTO: Sendable, Identifiable {
         self.suggestedChannel = suggestedChannel
         self.urgency = urgency
         self.personName = personName
+    }
+}
+
+/// Sendable representation of a life event detected in a note
+nonisolated public struct LifeEventDTO: Sendable, Identifiable {
+    public let id: UUID
+    public let personName: String
+    public let eventType: String        // "new_baby", "marriage", "graduation", etc.
+    public let eventDescription: String
+    public let approximateDate: String? // e.g. "2026-06", "next month"
+    public let outreachSuggestion: String?
+
+    public init(
+        id: UUID = UUID(),
+        personName: String,
+        eventType: String,
+        eventDescription: String,
+        approximateDate: String? = nil,
+        outreachSuggestion: String? = nil
+    ) {
+        self.id = id
+        self.personName = personName
+        self.eventType = eventType
+        self.eventDescription = eventDescription
+        self.approximateDate = approximateDate
+        self.outreachSuggestion = outreachSuggestion
     }
 }

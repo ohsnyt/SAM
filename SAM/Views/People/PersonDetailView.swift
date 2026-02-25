@@ -37,7 +37,12 @@ struct PersonDetailView: View {
     @State private var personNotes: [SamNote] = []
     @State private var isEditingBadges = false
     @State private var customBadgeText = ""
+    @State private var badgesBeforeEdit: Set<String> = []
     @State private var showingCorrectionSheet = false
+    @State private var showingReferrerPicker = false
+
+    @Query(filter: #Predicate<SamPerson> { !$0.isArchived })
+    private var allPeople: [SamPerson]
     
     // MARK: - Body
     
@@ -114,6 +119,12 @@ struct PersonDetailView: View {
         }
         .sheet(isPresented: $showingContextPicker) {
             ContextPickerSheet(person: person)
+        }
+        .sheet(isPresented: $showingReferrerPicker) {
+            ReferrerPickerSheet(
+                person: person,
+                candidates: allPeople.filter { $0.id != person.id && !$0.isMe }
+            )
         }
         .sheet(isPresented: $showingCorrectionSheet, onDismiss: {
             loadNotes()
@@ -266,10 +277,22 @@ struct PersonDetailView: View {
                 // Edit toggle button
                 Button {
                     withAnimation(.easeInOut(duration: 0.15)) {
-                        isEditingBadges.toggle()
                         if !isEditingBadges {
+                            // Entering edit mode — snapshot current badges
+                            badgesBeforeEdit = Set(person.roleBadges)
+                        } else {
+                            // Exiting edit mode — check for role transitions
                             customBadgeText = ""
+                            let currentBadges = Set(person.roleBadges)
+                            let added = currentBadges.subtracting(badgesBeforeEdit)
+                            let removed = badgesBeforeEdit.subtracting(currentBadges)
+                            if !added.isEmpty || !removed.isEmpty {
+                                OutcomeEngine.shared.generateRoleTransitionOutcomes(
+                                    for: person, addedRoles: added, removedRoles: removed
+                                )
+                            }
                         }
+                        isEditingBadges.toggle()
                     }
                 } label: {
                     Image(systemName: isEditingBadges ? "checkmark.circle.fill" : "pencil")
@@ -576,6 +599,11 @@ struct PersonDetailView: View {
                 )
             }
 
+            // Referred by (Client / Applicant / Lead only)
+            if hasReferralRole {
+                referredBySection
+            }
+
             // Alert counts
             if person.consentAlertsCount > 0 || person.reviewAlertsCount > 0 {
                 samSection(title: "Alerts") {
@@ -879,6 +907,83 @@ struct PersonDetailView: View {
         }
     }
     
+    // MARK: - Referred By
+
+    private static let referralRoles: Set<String> = ["Client", "Applicant", "Lead"]
+
+    private var hasReferralRole: Bool {
+        !person.roleBadges.filter { Self.referralRoles.contains($0) }.isEmpty
+    }
+
+    private var referredBySection: some View {
+        samSection(title: "Referred by") {
+            HStack(spacing: 8) {
+                if let referrer = person.referredBy {
+                    Image(systemName: "arrow.triangle.branch")
+                        .font(.caption)
+                        .foregroundStyle(.green)
+
+                    Button {
+                        NotificationCenter.default.post(
+                            name: .samNavigateToPerson,
+                            object: nil,
+                            userInfo: ["personID": referrer.id]
+                        )
+                    } label: {
+                        Text(referrer.displayNameCache ?? referrer.displayName)
+                            .font(.body)
+                            .foregroundStyle(.primary)
+                    }
+                    .buttonStyle(.plain)
+
+                    Spacer()
+
+                    // Clear referral
+                    Button {
+                        person.referredBy = nil
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Remove referrer")
+
+                    // Change referral
+                    Button {
+                        showingReferrerPicker = true
+                    } label: {
+                        Image(systemName: "pencil")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Change referrer")
+                } else {
+                    Image(systemName: "arrow.triangle.branch")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Text("No referrer set")
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+
+                    Spacer()
+
+                    Button {
+                        showingReferrerPicker = true
+                    } label: {
+                        Label("Set", systemImage: "plus")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color.accentColor)
+                }
+            }
+            .padding(.vertical, 4)
+        }
+    }
+
     private var syncInfoContent: some View {
         VStack(alignment: .leading, spacing: 8) {
             if let syncedAt = person.lastSyncedAt {
@@ -1086,6 +1191,77 @@ private struct ContextPickerSheet: View {
         } catch {
             logger.error("Failed to add person to context: \(error)")
         }
+    }
+}
+
+// MARK: - Referrer Picker Sheet
+
+private struct ReferrerPickerSheet: View {
+    let person: SamPerson
+    let candidates: [SamPerson]
+    @Environment(\.dismiss) private var dismiss
+    @State private var searchText = ""
+
+    private var filteredCandidates: [SamPerson] {
+        let sorted = candidates.sorted {
+            ($0.displayNameCache ?? $0.displayName)
+            < ($1.displayNameCache ?? $1.displayName)
+        }
+        if searchText.isEmpty { return sorted }
+        return sorted.filter {
+            ($0.displayNameCache ?? $0.displayName)
+                .localizedCaseInsensitiveContains(searchText)
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if filteredCandidates.isEmpty {
+                    Text("No contacts found")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(filteredCandidates, id: \.id) { candidate in
+                        Button {
+                            person.referredBy = candidate
+                            dismiss()
+                        } label: {
+                            HStack {
+                                Text(candidate.displayNameCache ?? candidate.displayName)
+                                    .foregroundStyle(.primary)
+
+                                Spacer()
+
+                                ForEach(candidate.roleBadges.prefix(2), id: \.self) { badge in
+                                    let style = RoleBadgeStyle.forBadge(badge)
+                                    Text(badge)
+                                        .font(.caption2)
+                                        .padding(.horizontal, 5)
+                                        .padding(.vertical, 1)
+                                        .background(style.color.opacity(0.15))
+                                        .foregroundStyle(style.color)
+                                        .clipShape(RoundedRectangle(cornerRadius: 3))
+                                }
+
+                                if person.referredBy?.id == candidate.id {
+                                    Image(systemName: "checkmark")
+                                        .foregroundStyle(.green)
+                                }
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .searchable(text: $searchText, prompt: "Search contacts")
+            .navigationTitle("Select Referrer")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+        }
+        .frame(minWidth: 350, minHeight: 300)
     }
 }
 

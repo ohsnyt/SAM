@@ -116,18 +116,22 @@ final class InsightGenerator {
             let emailInsights = try await generateInsightsFromEmails()
             generatedInsights.append(contentsOf: emailInsights)
 
-            // 6. Deduplicate and prioritize
+            // 6. Generate insights from life events in notes
+            let lifeEventInsights = try await generateLifeEventInsights()
+            generatedInsights.append(contentsOf: lifeEventInsights)
+
+            // 7. Deduplicate and prioritize
             let deduplicatedInsights = deduplicateInsights(generatedInsights)
 
-            // 7. Persist to SwiftData
+            // 8. Persist to SwiftData
             persistInsights(deduplicatedInsights)
 
-            // 8. Update status
+            // 9. Update status
             lastInsightCount = deduplicatedInsights.count
             lastGeneratedAt = .now
             generationStatus = .success
 
-            logger.info("Generated \(deduplicatedInsights.count) insights (notes: \(noteInsights.count), relationships: \(relationshipInsights.count), discovered: \(discoveredInsights.count), calendar: \(calendarInsights.count), email: \(emailInsights.count))")
+            logger.info("Generated \(deduplicatedInsights.count) insights (notes: \(noteInsights.count), relationships: \(relationshipInsights.count), discovered: \(discoveredInsights.count), calendar: \(calendarInsights.count), email: \(emailInsights.count), lifeEvents: \(lifeEventInsights.count))")
 
             return deduplicatedInsights
 
@@ -369,6 +373,41 @@ final class InsightGenerator {
                     sourceID: evidence.id,
                     urgency: urgency,
                     confidence: signal.confidence,
+                    createdAt: .now
+                )
+                insights.append(insight)
+            }
+        }
+
+        return insights
+    }
+
+    /// Generate insights from life events detected in notes (pending events only).
+    private func generateLifeEventInsights() async throws -> [GeneratedInsight] {
+        var insights: [GeneratedInsight] = []
+
+        let allNotes = try notesRepository.fetchAll()
+
+        for note in allNotes {
+            for event in note.lifeEvents where event.status == .pending {
+                let title = "Life event: \(event.personName) — \(event.eventDescription)"
+                var body = "Event type: \(event.eventTypeLabel)"
+                if let approxDate = event.approximateDate, !approxDate.isEmpty {
+                    body += "\nApproximate date: \(approxDate)"
+                }
+                if let suggestion = event.outreachSuggestion, !suggestion.isEmpty {
+                    body += "\nSuggested outreach: \(suggestion)"
+                }
+
+                let insight = GeneratedInsight(
+                    kind: .opportunity,
+                    title: title,
+                    body: body,
+                    personID: note.linkedPeople.first?.id,
+                    sourceType: .note,
+                    sourceID: note.id,
+                    urgency: .medium,
+                    confidence: 0.85,
                     createdAt: .now
                 )
                 insights.append(insight)

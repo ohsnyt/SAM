@@ -470,6 +470,65 @@ public struct DiscoveredRelationship: Codable, Sendable, Identifiable {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// MARK: - Life Events (detected in notes)
+// ─────────────────────────────────────────────────────────────────────
+
+/// A life event mentioned in a note, detected by LLM analysis.
+/// Stored on SamNote for surfacing outreach suggestions.
+public struct LifeEvent: Codable, Sendable, Identifiable {
+    public var id: UUID
+    public var personName: String
+    public var eventType: String          // "new_baby", "marriage", "graduation", etc.
+    public var eventDescription: String   // Human-readable description
+    public var approximateDate: String?   // e.g. "2026-06", "next month"
+    public var outreachSuggestion: String?
+    public var status: EventStatus
+
+    public init(
+        id: UUID = UUID(),
+        personName: String,
+        eventType: String,
+        eventDescription: String,
+        approximateDate: String? = nil,
+        outreachSuggestion: String? = nil,
+        status: EventStatus = .pending
+    ) {
+        self.id = id
+        self.personName = personName
+        self.eventType = eventType
+        self.eventDescription = eventDescription
+        self.approximateDate = approximateDate
+        self.outreachSuggestion = outreachSuggestion
+        self.status = status
+    }
+
+    public enum EventStatus: String, Codable, Sendable {
+        case pending
+        case actedOn
+    }
+
+    /// Known life event type labels for display
+    public static let knownTypes: [String: String] = [
+        "new_baby": "New Baby",
+        "marriage": "Marriage",
+        "graduation": "Graduation",
+        "job_change": "Job Change",
+        "retirement": "Retirement",
+        "moving": "Moving",
+        "health_issue": "Health Issue",
+        "promotion": "Promotion",
+        "anniversary": "Anniversary",
+        "loss": "Loss",
+        "other": "Other"
+    ]
+
+    /// Display-friendly event type label
+    public var eventTypeLabel: String {
+        Self.knownTypes[eventType] ?? eventType.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // MARK: - Outcome Types (Phase N)
 // ─────────────────────────────────────────────────────────────────────
 

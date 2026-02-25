@@ -171,7 +171,9 @@ actor AIService {
         }
     }
 
-    private func generateWithFoundationModels(prompt: String, systemInstruction: String?) async throws -> String {
+    /// Generate using Apple Intelligence (FoundationModels) regardless of active backend setting.
+    /// Used for lightweight tasks like dictation polish where speed is more important than reasoning depth.
+    func generateWithFoundationModels(prompt: String, systemInstruction: String?) async throws -> String {
         guard case .available = foundationModelsAvailability() else {
             throw AIError.modelUnavailable("FoundationModels not available")
         }

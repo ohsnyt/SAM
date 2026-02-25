@@ -355,6 +355,9 @@ struct NotesJournalView: View {
                         }
                     }
                 }
+
+                // Follow-up draft card
+                followUpDraftCard(note)
             }
         }
         .padding(.horizontal, 10)
@@ -365,6 +368,45 @@ struct NotesJournalView: View {
                 let withData = note.images.filter { $0.imageData != nil }.count
                 logger.info("Note '\(note.content.prefix(40))': \(imageCount) image(s), \(withData) with data, \(imageCount - withData) nil data")
             }
+        }
+    }
+
+    // MARK: - Follow-Up Draft Card
+
+    @ViewBuilder
+    private func followUpDraftCard(_ note: SamNote) -> some View {
+        if let draft = note.followUpDraft, !draft.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 4) {
+                    Image(systemName: "text.bubble")
+                        .font(.caption)
+                        .foregroundStyle(.teal)
+                    Text("Suggested Follow-up")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundStyle(.teal)
+                    Spacer()
+                    CopyButton(text: draft)
+                    Button {
+                        note.followUpDraft = nil
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Dismiss suggestion")
+                }
+
+                Text(draft)
+                    .font(.callout)
+                    .foregroundStyle(.primary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(10)
+            .background(.teal.opacity(0.08))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
         }
     }
 

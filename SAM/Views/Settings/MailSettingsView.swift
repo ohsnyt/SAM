@@ -12,14 +12,15 @@ import os.log
 
 private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "MailSettingsView")
 
-struct MailSettingsView: View {
+// MARK: - Content (embeddable in DisclosureGroup)
+
+struct MailSettingsContent: View {
     @State private var coordinator = MailImportCoordinator.shared
 
     @State private var accessError: String?
     @State private var meEmailAliases: [String] = []
     @State private var hasMeContact = false
 
-    /// Accounts filtered to only those matching the Me contact's email addresses
     private var relevantAccounts: [MailAccountDTO] {
         guard !meEmailAliases.isEmpty else { return [] }
         let meEmails = Set(meEmailAliases.map { $0.lowercased() })
@@ -29,8 +30,12 @@ struct MailSettingsView: View {
     }
 
     var body: some View {
-        Form {
-            Section {
+        VStack(alignment: .leading, spacing: 20) {
+            // ── Mail.app Accounts ──
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Mail.app Accounts")
+                    .font(.headline)
+
                 if let error = accessError {
                     Label(error, systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
@@ -54,13 +59,19 @@ struct MailSettingsView: View {
                         }
                     }
                 }
-            } header: {
-                Text("Mail.app Accounts")
-            } footer: {
+
                 Text("Showing accounts that match your Me contact's email addresses. SAM reads email metadata and generates summaries — raw message bodies are never stored.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
-            Section("Import Settings") {
+            Divider()
+
+            // ── Import Settings ──
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Import Settings")
+                    .font(.headline)
+
                 Toggle("Enable Email Import", isOn: Binding(
                     get: { coordinator.mailEnabled },
                     set: { coordinator.setMailEnabled($0) }
@@ -87,7 +98,13 @@ struct MailSettingsView: View {
                 }
             }
 
-            Section {
+            Divider()
+
+            // ── Inbox Filters ──
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Inbox Filters")
+                    .font(.headline)
+
                 if hasMeContact {
                     if meEmailAliases.isEmpty {
                         Text("Your Me card has no email addresses. Add emails to your Me card in Contacts.")
@@ -109,14 +126,19 @@ struct MailSettingsView: View {
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
-            } header: {
-                Text("Inbox Filters")
-            } footer: {
+
                 Text("Only emails sent to these addresses will be imported. If none are selected, all emails are imported.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             if coordinator.isConfigured {
-                Section("Status") {
+                Divider()
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Status")
+                        .font(.headline)
+
                     HStack {
                         Text("Last Import")
                         Spacer()
@@ -197,5 +219,19 @@ struct MailSettingsView: View {
                 coordinator.setFilterRules(rules)
             }
         )
+    }
+}
+
+// MARK: - Standalone wrapper
+
+struct MailSettingsView: View {
+    var body: some View {
+        Form {
+            Section {
+                MailSettingsContent()
+                    .padding()
+            }
+        }
+        .formStyle(.grouped)
     }
 }

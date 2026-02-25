@@ -14,7 +14,9 @@ import os.log
 
 private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "CoachingSettingsView")
 
-struct CoachingSettingsView: View {
+// MARK: - Content (embeddable in DisclosureGroup)
+
+struct CoachingSettingsContent: View {
 
     // MARK: - State
 
@@ -31,51 +33,61 @@ struct CoachingSettingsView: View {
     @State private var reanalyzeStatus: String?
     @State private var isReanalyzing = false
 
+    // Autonomous Actions
+    @State private var autoMeetingNoteTemplates: Bool = {
+        UserDefaults.standard.object(forKey: "autoMeetingNoteTemplates") == nil
+            ? true
+            : UserDefaults.standard.bool(forKey: "autoMeetingNoteTemplates")
+    }()
+    @State private var autoRoleTransitionOutcomes: Bool = {
+        UserDefaults.standard.object(forKey: "autoRoleTransitionOutcomes") == nil
+            ? true
+            : UserDefaults.standard.bool(forKey: "autoRoleTransitionOutcomes")
+    }()
+    @State private var weeklyDigestEnabled: Bool = {
+        UserDefaults.standard.object(forKey: "weeklyDigestEnabled") == nil
+            ? true
+            : UserDefaults.standard.bool(forKey: "weeklyDigestEnabled")
+    }()
+
     // MARK: - Body
 
     var body: some View {
-        Form {
-            Section {
-                VStack(alignment: .leading, spacing: 20) {
-                    Label("Coaching", systemImage: "brain.head.profile")
-                        .font(.title2)
-                        .bold()
+        VStack(alignment: .leading, spacing: 20) {
+            // ── AI Backend ─────────────────────────────
+            aiBackendSection
 
-                    Divider()
+            Divider()
 
-                    // ── AI Backend ─────────────────────────────
-                    aiBackendSection
-
-                    Divider()
-
-                    // ── MLX Model ──────────────────────────────
-                    if selectedBackend == "mlx" || selectedBackend == "hybrid" {
-                        mlxModelSection
-                        Divider()
-                    }
-
-                    // ── Coaching Style ─────────────────────────
-                    coachingStyleSection
-
-                    Divider()
-
-                    // ── Outcome Generation ─────────────────────
-                    outcomeGenerationSection
-
-                    Divider()
-
-                    // ── Re-analyze ───────────────────────────────
-                    reanalyzeSection
-
-                    Divider()
-
-                    // ── Feedback ───────────────────────────────
-                    feedbackSection
-                }
-                .padding()
+            // ── MLX Model ──────────────────────────────
+            if selectedBackend == "mlx" || selectedBackend == "hybrid" {
+                mlxModelSection
+                Divider()
             }
+
+            // ── Coaching Style ─────────────────────────
+            coachingStyleSection
+
+            Divider()
+
+            // ── Outcome Generation ─────────────────────
+            outcomeGenerationSection
+
+            Divider()
+
+            // ── Autonomous Actions ────────────────────────
+            autonomousActionsSection
+
+            Divider()
+
+            // ── Re-analyze ───────────────────────────────
+            reanalyzeSection
+
+            Divider()
+
+            // ── Feedback ───────────────────────────────
+            feedbackSection
         }
-        .formStyle(.grouped)
         .task {
             mlxModels = await MLXModelManager.shared.availableModels
         }
@@ -229,7 +241,6 @@ struct CoachingSettingsView: View {
             .onChange(of: coachingStyle) { _, newValue in
                 UserDefaults.standard.set(newValue, forKey: "coachingStyle")
                 if newValue != "auto" {
-                    // Override the profile style
                     Task {
                         if let profile = try? advisor.fetchOrCreateProfile() {
                             profile.encouragementStyle = newValue
@@ -374,6 +385,48 @@ struct CoachingSettingsView: View {
         }
     }
 
+    // MARK: - Autonomous Actions Section
+
+    private var autonomousActionsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Autonomous Actions")
+                .font(.headline)
+
+            Text("Let SAM proactively create content for your review.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Toggle("Auto-create meeting note templates", isOn: $autoMeetingNoteTemplates)
+                .onChange(of: autoMeetingNoteTemplates) { _, newValue in
+                    UserDefaults.standard.set(newValue, forKey: "autoMeetingNoteTemplates")
+                }
+
+            Text("When a calendar event ends, SAM creates a pre-filled note template for you to complete.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.bottom, 4)
+
+            Toggle("Auto-suggest actions on role change", isOn: $autoRoleTransitionOutcomes)
+                .onChange(of: autoRoleTransitionOutcomes) { _, newValue in
+                    UserDefaults.standard.set(newValue, forKey: "autoRoleTransitionOutcomes")
+                }
+
+            Text("When you add a role like Applicant or Client, SAM generates relevant action items.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.bottom, 4)
+
+            Toggle("Weekly priorities digest", isOn: $weeklyDigestEnabled)
+                .onChange(of: weeklyDigestEnabled) { _, newValue in
+                    UserDefaults.standard.set(newValue, forKey: "weeklyDigestEnabled")
+                }
+
+            Text("On Monday mornings, your briefing includes a \"This Week's Priorities\" section.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
     // MARK: - Actions
 
     private func startDownload(modelID: String) {
@@ -383,7 +436,6 @@ struct CoachingSettingsView: View {
 
         Task {
             do {
-                // Poll progress in background
                 let progressTask = Task {
                     while !Task.isCancelled {
                         let progress = await MLXModelManager.shared.downloadProgress ?? 0
@@ -395,7 +447,6 @@ struct CoachingSettingsView: View {
                 try await MLXModelManager.shared.downloadModel(id: modelID)
                 progressTask.cancel()
 
-                // Refresh models and auto-select
                 mlxModels = await MLXModelManager.shared.availableModels
                 selectedModelID = modelID
                 UserDefaults.standard.set(modelID, forKey: "mlxSelectedModelID")
@@ -424,7 +475,6 @@ struct CoachingSettingsView: View {
         Task {
             do {
                 try await MLXModelManager.shared.deleteModel(id: id)
-                // Unload from AIService if it was loaded
                 await AIService.shared.unloadMLXModel()
                 mlxModels = await MLXModelManager.shared.availableModels
                 if selectedModelID == id {
@@ -477,5 +527,27 @@ struct CoachingSettingsView: View {
             }
             logger.info("Coaching profile reset")
         }
+    }
+}
+
+// MARK: - Standalone wrapper
+
+struct CoachingSettingsView: View {
+    var body: some View {
+        Form {
+            Section {
+                VStack(alignment: .leading, spacing: 20) {
+                    Label("Coaching", systemImage: "brain.head.profile")
+                        .font(.title2)
+                        .bold()
+
+                    Divider()
+
+                    CoachingSettingsContent()
+                }
+                .padding()
+            }
+        }
+        .formStyle(.grouped)
     }
 }

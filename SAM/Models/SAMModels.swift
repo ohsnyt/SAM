@@ -130,6 +130,17 @@ public final class SamPerson {
     @Relationship(deleteRule: .nullify, inverse: \SamNote.linkedPeople)
     public var linkedNotes: [SamNote] = []
 
+    // ── Referral tracking ────────────────────────────────────────────
+
+    /// The person who referred this contact (e.g. an existing client
+    /// who introduced a new lead). Nil when not referred or unknown.
+    @Relationship(deleteRule: .nullify)
+    public var referredBy: SamPerson?
+
+    /// People this person has referred. Inverse of `referredBy`.
+    @Relationship(deleteRule: .nullify, inverse: \SamPerson.referredBy)
+    public var referrals: [SamPerson] = []
+
     // ── Embedded collections (not yet normalised into their own
     //    @Model classes — mirrors the current struct layout) ─────────
 
