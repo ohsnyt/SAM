@@ -173,6 +173,14 @@ public final class SamPerson {
     @Relationship(deleteRule: .cascade, inverse: \SamInsight.samPerson)
     public var insights: [SamInsight] = []
 
+    /// Pipeline stage transition audit log (Phase R).
+    @Relationship(deleteRule: .cascade, inverse: \StageTransition.person)
+    public var stageTransitions: [StageTransition] = []
+
+    /// Recruiting pipeline state (Phase R). Repository enforces 1:1.
+    @Relationship(deleteRule: .cascade, inverse: \RecruitingStage.person)
+    public var recruitingStages: [RecruitingStage] = []
+
     // ── Context chips (denormalised snapshot for list / search) ────
     /// Lightweight context membership chips.  Kept in sync with
     /// `participations` but stored flat so the People list can render

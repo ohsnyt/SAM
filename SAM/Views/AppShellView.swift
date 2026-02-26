@@ -101,6 +101,12 @@ struct AppShellView: View {
                     Label("Contexts", systemImage: "building.2")
                 }
             }
+
+            Section("Business") {
+                NavigationLink(value: "business") {
+                    Label("Pipeline", systemImage: "chart.bar.horizontal.page")
+                }
+            }
         }
         .navigationTitle("SAM")
         .safeAreaInset(edge: .bottom) {
@@ -115,6 +121,9 @@ struct AppShellView: View {
         switch sidebarSelection {
         case "awareness":
             AwarenessView()
+
+        case "business":
+            BusinessDashboardView()
 
         default:
             ContentUnavailableView(

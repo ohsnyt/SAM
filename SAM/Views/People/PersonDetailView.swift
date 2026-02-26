@@ -40,6 +40,7 @@ struct PersonDetailView: View {
     @State private var badgesBeforeEdit: Set<String> = []
     @State private var showingCorrectionSheet = false
     @State private var showingReferrerPicker = false
+    @State private var recruitingStage: RecruitingStage?
 
     @Query(filter: #Predicate<SamPerson> { !$0.isArchived })
     private var allPeople: [SamPerson]
@@ -116,6 +117,7 @@ struct PersonDetailView: View {
         .task(id: person.id) {
             await loadFullContact()
             loadNotes()
+            recruitingStage = try? PipelineRepository.shared.fetchRecruitingStage(forPerson: person.id)
         }
         .onReceive(NotificationCenter.default.publisher(for: .samUndoDidRestore)) { _ in
             loadNotes()
@@ -298,6 +300,7 @@ struct PersonDetailView: View {
                                 OutcomeEngine.shared.generateRoleTransitionOutcomes(
                                     for: person, addedRoles: added, removedRoles: removed
                                 )
+                                recordPipelineTransitions(added: added, removed: removed)
                             }
                         }
                         isEditingBadges.toggle()
@@ -373,7 +376,141 @@ struct PersonDetailView: View {
         NotificationCenter.default.post(name: .samPersonDidChange, object: nil)
     }
 
+    /// Record client pipeline transitions when role badges change.
+    private func recordPipelineTransitions(added: Set<String>, removed: Set<String>) {
+        let clientStages: Set<String> = ["Lead", "Applicant", "Client"]
+
+        // For each added client-pipeline badge, record a transition
+        for badge in added where clientStages.contains(badge) {
+            // Find the removed client badge as the "from" stage, or "" if none
+            let fromStage = removed.first(where: { clientStages.contains($0) }) ?? ""
+            try? PipelineRepository.shared.recordTransition(
+                personID: person.id,
+                fromStage: fromStage,
+                toStage: badge,
+                pipelineType: .client
+            )
+        }
+
+        // For each removed client badge with no replacement, record exit
+        let addedClient = added.intersection(clientStages)
+        for badge in removed where clientStages.contains(badge) && addedClient.isEmpty {
+            try? PipelineRepository.shared.recordTransition(
+                personID: person.id,
+                fromStage: badge,
+                toStage: "",
+                pipelineType: .client
+            )
+        }
+    }
+
     // MARK: - Channel Preference
+
+    // MARK: - Recruiting Stage Section
+
+    private var recruitingStageSection: some View {
+        samSection(title: "Recruiting Pipeline") {
+            VStack(alignment: .leading, spacing: 10) {
+                // Stage progress dots
+                HStack(spacing: 0) {
+                    ForEach(RecruitingStageKind.allCases, id: \.rawValue) { kind in
+                        let isCurrent = recruitingStage?.stage == kind
+                        let isReached = (recruitingStage?.stage.order ?? -1) >= kind.order
+
+                        VStack(spacing: 4) {
+                            Circle()
+                                .fill(isReached ? kind.color : Color.gray.opacity(0.3))
+                                .frame(width: isCurrent ? 14 : 10, height: isCurrent ? 14 : 10)
+                                .overlay {
+                                    if isCurrent {
+                                        Circle()
+                                            .strokeBorder(.white, lineWidth: 2)
+                                    }
+                                }
+
+                            Text(kind.rawValue)
+                                .font(.system(size: 8))
+                                .foregroundStyle(isReached ? .primary : .secondary)
+                                .lineLimit(1)
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                }
+
+                // Current stage info + actions
+                HStack(spacing: 12) {
+                    if let stage = recruitingStage {
+                        // Current stage badge
+                        HStack(spacing: 4) {
+                            Image(systemName: stage.stage.icon)
+                                .font(.caption)
+                            Text(stage.stage.rawValue)
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                        }
+                        .foregroundStyle(stage.stage.color)
+
+                        Spacer()
+
+                        // Mentoring contact info
+                        if let lastContact = stage.mentoringLastContact {
+                            let days = Int(Date.now.timeIntervalSince(lastContact) / (24 * 60 * 60))
+                            Text("\(days)d since contact")
+                                .font(.caption)
+                                .foregroundStyle(days > 14 ? .orange : .secondary)
+                        }
+
+                        // Log contact button
+                        Button {
+                            try? PipelineRepository.shared.updateMentoringContact(personID: person.id)
+                            recruitingStage = try? PipelineRepository.shared.fetchRecruitingStage(forPerson: person.id)
+                        } label: {
+                            Label("Log Contact", systemImage: "hand.wave")
+                                .font(.caption)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+
+                        // Advance button
+                        if let nextStage = stage.stage.next {
+                            Button {
+                                try? PipelineRepository.shared.advanceRecruitingStage(
+                                    personID: person.id,
+                                    to: nextStage
+                                )
+                                recruitingStage = try? PipelineRepository.shared.fetchRecruitingStage(forPerson: person.id)
+                            } label: {
+                                Label("Advance", systemImage: "arrow.right.circle")
+                                    .font(.caption)
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                    } else {
+                        // No recruiting stage yet — offer to start tracking
+                        Button {
+                            try? PipelineRepository.shared.upsertRecruitingStage(
+                                personID: person.id,
+                                stage: .prospect
+                            )
+                            try? PipelineRepository.shared.recordTransition(
+                                personID: person.id,
+                                fromStage: "",
+                                toStage: RecruitingStageKind.prospect.rawValue,
+                                pipelineType: .recruiting
+                            )
+                            recruitingStage = try? PipelineRepository.shared.fetchRecruitingStage(forPerson: person.id)
+                        } label: {
+                            Label("Start Tracking", systemImage: "play.circle")
+                                .font(.caption)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                }
+            }
+        }
+    }
 
     private var channelPreferenceView: some View {
         HStack(spacing: 8) {
@@ -642,6 +779,11 @@ struct PersonDetailView: View {
                 RelationshipHealthView(
                     health: MeetingPrepCoordinator.shared.computeHealth(for: person)
                 )
+            }
+
+            // Recruiting Pipeline (Phase R — shown for Agent badge)
+            if person.roleBadges.contains("Agent") {
+                recruitingStageSection
             }
 
             // Referred by (Client / Applicant / Lead only)

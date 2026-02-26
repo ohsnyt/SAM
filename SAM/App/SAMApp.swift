@@ -154,6 +154,7 @@ struct SAMApp: App {
         DailyBriefingCoordinator.shared.configure(container: SAMModelContainer.shared)
         UndoRepository.shared.configure(container: SAMModelContainer.shared)
         TimeTrackingRepository.shared.configure(container: SAMModelContainer.shared)
+        PipelineRepository.shared.configure(container: SAMModelContainer.shared)
     }
     
     /// Check permissions and decide whether to show onboarding or proceed with imports
@@ -281,6 +282,18 @@ struct SAMApp: App {
         let autoGenerateOutcomes = UserDefaults.standard.bool(forKey: "outcomeAutoGenerate")
         if autoGenerateOutcomes {
             OutcomeEngine.shared.startGeneration()
+        }
+
+        // Pipeline backfill — one-time creation of initial transitions from existing role badges
+        if !UserDefaults.standard.bool(forKey: "pipelineBackfillComplete") {
+            do {
+                let allPeople = try PeopleRepository.shared.fetchAll()
+                let count = try PipelineRepository.shared.backfillInitialTransitions(allPeople: allPeople)
+                UserDefaults.standard.set(true, forKey: "pipelineBackfillComplete")
+                logger.info("Pipeline backfill complete: \(count) transitions created")
+            } catch {
+                logger.error("Pipeline backfill failed: \(error)")
+            }
         }
 
         // Daily briefing — check first open after imports complete
