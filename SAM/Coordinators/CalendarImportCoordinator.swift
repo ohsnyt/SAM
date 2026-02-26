@@ -250,6 +250,9 @@ final class CalendarImportCoordinator {
             let validSourceUIDs = Set(events.map { $0.sourceUID })
             try evidenceRepository.pruneOrphans(validSourceUIDs: validSourceUIDs)
 
+            // Auto-categorize calendar events into time entries
+            try? TimeCategorizationEngine.shared.categorizeNewCalendarEvents()
+
             // Update state
             lastImportedAt = Date()
             lastImportTime = Date()

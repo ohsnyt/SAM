@@ -306,6 +306,7 @@ struct AwarenessView: View {
         case meetingQuality
         case streaks
         case calendarPatterns
+        case timeAllocation
         case referralTracking
     }
 
@@ -335,7 +336,7 @@ struct AwarenessView: View {
             switch self {
             case .actionQueue:     return [.outcomes, .followUpCoach, .unknownSenders]
             case .todaysFocus:     return [.meetingPrep, .pipeline, .lifeEvents, .engagementVelocity]
-            case .reviewAnalytics: return [.streaks, .meetingQuality, .calendarPatterns, .referralTracking]
+            case .reviewAnalytics: return [.streaks, .meetingQuality, .calendarPatterns, .timeAllocation, .referralTracking]
             }
         }
     }
@@ -492,6 +493,7 @@ struct AwarenessView: View {
         case .meetingQuality:     MeetingQualitySection()
         case .streaks:            StreakTrackingSection()
         case .calendarPatterns:   CalendarPatternsSection()
+        case .timeAllocation:     TimeAllocationSection()
         case .referralTracking:   ReferralTrackingSection()
         }
     }
@@ -559,13 +561,35 @@ struct AwarenessView: View {
     }
 
     private func markInsightAsDone(_ insight: SamInsight) {
+        let snapshot = InsightSnapshot(id: insight.id, title: insight.title)
         insight.dismissedAt = .now
         try? modelContext.save()
+
+        if let entry = try? UndoRepository.shared.capture(
+            operation: .statusChanged,
+            entityType: .insight,
+            entityID: insight.id,
+            entityDisplayName: insight.title,
+            snapshot: snapshot
+        ) {
+            UndoCoordinator.shared.showToast(for: entry)
+        }
     }
 
     private func dismissInsight(_ insight: SamInsight) {
+        let snapshot = InsightSnapshot(id: insight.id, title: insight.title)
         insight.dismissedAt = .now
         try? modelContext.save()
+
+        if let entry = try? UndoRepository.shared.capture(
+            operation: .statusChanged,
+            entityType: .insight,
+            entityID: insight.id,
+            entityDisplayName: insight.title,
+            snapshot: snapshot
+        ) {
+            UndoCoordinator.shared.showToast(for: entry)
+        }
     }
 
     private func viewPerson(_ personID: UUID?) {

@@ -39,6 +39,8 @@ enum SAMSchema {
         CoachingProfile.self,      // Phase N: Adaptive coaching profile
         NoteImage.self,            // Note image attachments
         SamDailyBriefing.self,     // Daily briefing system
+        SamUndoEntry.self,         // Phase P: Universal undo history
+        TimeEntry.self,            // Phase Q: Time tracking & categorization
     ]
 }
 
@@ -55,7 +57,7 @@ enum SAMModelContainer {
     nonisolated(unsafe) private static var _shared: ModelContainer = {
         let schema     = Schema(SAMSchema.allModels)
         let config     = ModelConfiguration(
-            "SAM_v16", // v16: multi-step sequence fields on SamOutcome
+            "SAM_v18", // v18: time tracking & categorization
             schema: schema,
             isStoredInMemoryOnly: false   // persistent on disk
         )
@@ -74,7 +76,7 @@ enum SAMModelContainer {
     nonisolated static func makeFreshContainer() -> ModelContainer {
         let schema = Schema(SAMSchema.allModels)
         let config = ModelConfiguration(
-            "SAM_v16", // v16: multi-step sequence fields on SamOutcome
+            "SAM_v18", // v18: time tracking & categorization
             schema: schema,
             isStoredInMemoryOnly: false
         )
@@ -94,7 +96,7 @@ enum SAMModelContainer {
     nonisolated static let shared: ModelContainer = {
         let schema     = Schema(SAMSchema.allModels)
         let config     = ModelConfiguration(
-            "SAM_v16", // v16: multi-step sequence fields on SamOutcome
+            "SAM_v18", // v18: time tracking & categorization
             schema: schema,
             isStoredInMemoryOnly: false   // persistent on disk
         )

@@ -43,6 +43,8 @@ final class CommunicationsImportCoordinator {
     private(set) var callsEnabled: Bool = false
     private(set) var lookbackDays: Int = 90
     private(set) var analyzeMessages: Bool = true
+    private(set) var lastMessageWatermark: Date?
+    private(set) var lastCallWatermark: Date?
 
     private var importTask: Task<Void, Never>?
 
@@ -53,6 +55,12 @@ final class CommunicationsImportCoordinator {
         lookbackDays = days > 0 ? days : 90
         if UserDefaults.standard.object(forKey: "commsAnalyzeMessages") != nil {
             analyzeMessages = UserDefaults.standard.bool(forKey: "commsAnalyzeMessages")
+        }
+        if let ts = UserDefaults.standard.object(forKey: "commsLastMessageWatermark") as? Double {
+            lastMessageWatermark = Date(timeIntervalSinceReferenceDate: ts)
+        }
+        if let ts = UserDefaults.standard.object(forKey: "commsLastCallWatermark") as? Double {
+            lastCallWatermark = Date(timeIntervalSinceReferenceDate: ts)
         }
     }
 
@@ -67,8 +75,18 @@ final class CommunicationsImportCoordinator {
     }
 
     func setLookbackDays(_ value: Int) {
+        let changed = value != lookbackDays
         lookbackDays = value
         UserDefaults.standard.set(value, forKey: "commsLookbackDays")
+        if changed { resetWatermarks() }
+    }
+
+    func resetWatermarks() {
+        lastMessageWatermark = nil
+        lastCallWatermark = nil
+        UserDefaults.standard.removeObject(forKey: "commsLastMessageWatermark")
+        UserDefaults.standard.removeObject(forKey: "commsLastCallWatermark")
+        logger.info("Watermarks reset — next import will scan full lookback window")
     }
 
     func setAnalyzeMessages(_ value: Bool) {
@@ -119,7 +137,9 @@ final class CommunicationsImportCoordinator {
         importStatus = .importing
         lastError = nil
 
-        let since = Calendar.current.date(byAdding: .day, value: -lookbackDays, to: Date()) ?? Date()
+        let lookbackDate = Calendar.current.date(byAdding: .day, value: -lookbackDays, to: Date()) ?? Date()
+        let messageSince = lastMessageWatermark ?? lookbackDate
+        let callSince = lastCallWatermark ?? lookbackDate
         var totalMessages = 0
         var totalCalls = 0
 
@@ -131,12 +151,12 @@ final class CommunicationsImportCoordinator {
 
             // --- iMessage ---
             if messagesEnabled, bookmarkManager.hasMessagesAccess {
-                totalMessages = try await importMessages(since: since, knownIdentifiers: knownIdentifiers)
+                totalMessages = try await importMessages(since: messageSince, knownIdentifiers: knownIdentifiers)
             }
 
             // --- Call History ---
             if callsEnabled, bookmarkManager.hasCallHistoryAccess {
-                totalCalls = try await importCallHistory(since: since, knownPhones: knownPhones)
+                totalCalls = try await importCallHistory(since: callSince, knownPhones: knownPhones)
             }
 
             // Trigger insight generation
@@ -246,6 +266,12 @@ final class CommunicationsImportCoordinator {
         // Bulk upsert
         try evidenceRepository.bulkUpsertMessages(analyzedMessages)
 
+        // Update watermark to newest message date
+        if let newest = messages.max(by: { $0.date < $1.date })?.date {
+            lastMessageWatermark = newest
+            UserDefaults.standard.set(newest.timeIntervalSinceReferenceDate, forKey: "commsLastMessageWatermark")
+        }
+
         return messages.count
     }
 
@@ -274,6 +300,12 @@ final class CommunicationsImportCoordinator {
         }
 
         try evidenceRepository.bulkUpsertCallRecords(calls)
+
+        // Update watermark to newest call date
+        if let newest = calls.max(by: { $0.date < $1.date })?.date {
+            lastCallWatermark = newest
+            UserDefaults.standard.set(newest.timeIntervalSinceReferenceDate, forKey: "commsLastCallWatermark")
+        }
 
         return calls.count
     }

@@ -41,7 +41,6 @@
 		63B5DF232F3AE0BB001F32AB /* Exceptions for "SAM" folder in "SAM" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				1_Documentation/agent.md,
 				Info.plist,
 			);
 			target = 6395F48F2F3ADF650018081A /* SAM */;

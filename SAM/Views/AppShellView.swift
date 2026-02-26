@@ -49,6 +49,9 @@ struct AppShellView: View {
                     openWindow(id: "quick-note", value: payload)
                 }
             }
+            .overlay(alignment: .bottom) {
+                UndoToastView()
+            }
         } else {
             // Two-column layout for other sections
             NavigationSplitView {
@@ -69,9 +72,12 @@ struct AppShellView: View {
                     openWindow(id: "quick-note", value: payload)
                 }
             }
+            .overlay(alignment: .bottom) {
+                UndoToastView()
+            }
         }
     }
-    
+
     // MARK: - Sidebar
     
     private var sidebar: some View {

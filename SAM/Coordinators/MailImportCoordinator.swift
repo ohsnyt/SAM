@@ -42,6 +42,8 @@ final class MailImportCoordinator {
     private(set) var lookbackDays: Int = 30
     private(set) var filterRules: [MailFilterRule] = []
 
+    private(set) var lastMailWatermark: Date?
+
     private var lastImportTime: Date?
     private var importTask: Task<Void, Never>?
 
@@ -55,6 +57,9 @@ final class MailImportCoordinator {
         if let data = UserDefaults.standard.data(forKey: "mailFilterRules"),
            let rules = try? JSONDecoder().decode([MailFilterRule].self, from: data) {
             filterRules = rules
+        }
+        if let ts = UserDefaults.standard.object(forKey: "mailLastWatermark") as? Double {
+            lastMailWatermark = Date(timeIntervalSinceReferenceDate: ts)
         }
     }
 
@@ -76,8 +81,16 @@ final class MailImportCoordinator {
     }
 
     func setLookbackDays(_ value: Int) {
+        let changed = value != lookbackDays
         lookbackDays = value
         UserDefaults.standard.set(value, forKey: "mailLookbackDays")
+        if changed { resetMailWatermark() }
+    }
+
+    func resetMailWatermark() {
+        lastMailWatermark = nil
+        UserDefaults.standard.removeObject(forKey: "mailLastWatermark")
+        logger.info("Mail watermark reset — next import will scan full lookback window")
     }
 
     func setFilterRules(_ value: [MailFilterRule]) {
@@ -154,7 +167,8 @@ final class MailImportCoordinator {
         lastError = nil
 
         do {
-            let since = Calendar.current.date(byAdding: .day, value: -lookbackDays, to: Date()) ?? Date()
+            let lookbackDate = Calendar.current.date(byAdding: .day, value: -lookbackDays, to: Date()) ?? Date()
+            let since = lastMailWatermark ?? lookbackDate
 
             // 1. Fast metadata sweep (all messages)
             let (allMetas, fetchWarnings) = try await mailService.fetchMetadata(
@@ -222,6 +236,13 @@ final class MailImportCoordinator {
 
             // 8. Upsert into EvidenceRepository
             try evidenceRepository.bulkUpsertEmails(analyzedEmails)
+
+            // Update watermark to newest email date (from all metas, not just bodies)
+            let allDates = knownMetas.map(\.date) + unknownMetas.map(\.date)
+            if let newest = allDates.max() {
+                lastMailWatermark = newest
+                UserDefaults.standard.set(newest.timeIntervalSinceReferenceDate, forKey: "mailLastWatermark")
+            }
 
             // 9. Trigger insights
             InsightGenerator.shared.startAutoGeneration()

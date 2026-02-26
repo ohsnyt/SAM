@@ -102,6 +102,74 @@ final class NotesRepository {
         return note
     }
 
+    /// Create a note from an undo restore, preserving the original ID and all analysis fields.
+    /// Images are NOT restored (too large for snapshots).
+    @discardableResult
+    func createForRestore(
+        id: UUID,
+        content: String,
+        summary: String?,
+        createdAt: Date,
+        updatedAt: Date,
+        sourceTypeRawValue: String,
+        sourceImportUID: String?,
+        isAnalyzed: Bool,
+        analysisVersion: Int,
+        extractedMentions: [ExtractedPersonMention],
+        extractedActionItems: [NoteActionItem],
+        extractedTopics: [String],
+        discoveredRelationships: [DiscoveredRelationship],
+        lifeEvents: [LifeEvent],
+        followUpDraft: String?,
+        linkedPeopleIDs: [UUID],
+        linkedContextIDs: [UUID],
+        linkedEvidenceIDs: [UUID]
+    ) throws -> SamNote {
+        guard let modelContext = modelContext else {
+            throw RepositoryError.notConfigured
+        }
+
+        let sourceType = SamNote.SourceType(rawValue: sourceTypeRawValue) ?? .typed
+        let note = SamNote(
+            id: id,
+            content: content,
+            summary: summary,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+            isAnalyzed: isAnalyzed,
+            analysisVersion: analysisVersion,
+            sourceType: sourceType,
+            sourceImportUID: sourceImportUID
+        )
+
+        note.extractedMentions = extractedMentions
+        note.extractedActionItems = extractedActionItems
+        note.extractedTopics = extractedTopics
+        note.discoveredRelationships = discoveredRelationships
+        note.lifeEvents = lifeEvents
+        note.followUpDraft = followUpDraft
+
+        modelContext.insert(note)
+
+        // Re-link relationships
+        if !linkedPeopleIDs.isEmpty {
+            let allPeople = try modelContext.fetch(FetchDescriptor<SamPerson>())
+            note.linkedPeople = allPeople.filter { linkedPeopleIDs.contains($0.id) }
+        }
+        if !linkedContextIDs.isEmpty {
+            let allContexts = try modelContext.fetch(FetchDescriptor<SamContext>())
+            note.linkedContexts = allContexts.filter { linkedContextIDs.contains($0.id) }
+        }
+        if !linkedEvidenceIDs.isEmpty {
+            let allEvidence = try modelContext.fetch(FetchDescriptor<SamEvidenceItem>())
+            note.linkedEvidence = allEvidence.filter { linkedEvidenceIDs.contains($0.id) }
+        }
+
+        try modelContext.save()
+        logger.info("Restored note (undo) with ID \(id)")
+        return note
+    }
+
     /// Update an existing note's content (marks as unanalyzed)
     func update(note: SamNote, content: String) throws {
         guard let modelContext = modelContext else {
@@ -214,14 +282,49 @@ final class NotesRepository {
         try modelContext.save()
     }
 
-    /// Delete a note
+    /// Delete a note (captures undo snapshot before deletion)
     func delete(note: SamNote) throws {
         guard let modelContext = modelContext else {
             throw RepositoryError.notConfigured
         }
 
+        // Capture snapshot before deletion
+        let snapshot = NoteSnapshot(
+            id: note.id,
+            content: note.content,
+            summary: note.summary,
+            createdAt: note.createdAt,
+            updatedAt: note.updatedAt,
+            sourceTypeRawValue: note.sourceTypeRawValue,
+            sourceImportUID: note.sourceImportUID,
+            isAnalyzed: note.isAnalyzed,
+            analysisVersion: note.analysisVersion,
+            extractedMentions: note.extractedMentions,
+            extractedActionItems: note.extractedActionItems,
+            extractedTopics: note.extractedTopics,
+            discoveredRelationships: note.discoveredRelationships,
+            lifeEvents: note.lifeEvents,
+            followUpDraft: note.followUpDraft,
+            linkedPeopleIDs: note.linkedPeople.map(\.id),
+            linkedContextIDs: note.linkedContexts.map(\.id),
+            linkedEvidenceIDs: note.linkedEvidence.map(\.id)
+        )
+
+        let displayName = note.summary ?? String(note.content.prefix(40))
+
         modelContext.delete(note)
         try modelContext.save()
+
+        // Show undo toast
+        if let entry = try? UndoRepository.shared.capture(
+            operation: .deleted,
+            entityType: .note,
+            entityID: snapshot.id,
+            entityDisplayName: displayName,
+            snapshot: snapshot
+        ) {
+            UndoCoordinator.shared.showToast(for: entry)
+        }
     }
 
     // MARK: - Query Operations

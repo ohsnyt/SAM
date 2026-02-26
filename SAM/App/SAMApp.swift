@@ -152,6 +152,8 @@ struct SAMApp: App {
         OutcomeRepository.shared.configure(container: SAMModelContainer.shared)
         CoachingAdvisor.shared.configure(container: SAMModelContainer.shared)
         DailyBriefingCoordinator.shared.configure(container: SAMModelContainer.shared)
+        UndoRepository.shared.configure(container: SAMModelContainer.shared)
+        TimeTrackingRepository.shared.configure(container: SAMModelContainer.shared)
     }
     
     /// Check permissions and decide whether to show onboarding or proceed with imports
@@ -271,9 +273,10 @@ struct SAMApp: App {
             CommunicationsImportCoordinator.shared.startImport()
         }
 
-        // Prune expired outcomes (fast, synchronous)
+        // Prune expired outcomes and undo entries (fast, synchronous)
         try? OutcomeRepository.shared.pruneExpired()
         try? OutcomeRepository.shared.purgeOld()
+        try? UndoRepository.shared.pruneExpired()
 
         let autoGenerateOutcomes = UserDefaults.standard.bool(forKey: "outcomeAutoGenerate")
         if autoGenerateOutcomes {

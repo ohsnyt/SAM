@@ -4,6 +4,24 @@
 
 ---
 
+## February 25, 2026 - Import Watermark Optimization
+
+### Overview
+All three import coordinators (iMessage, Calls, Email) previously re-scanned their full lookback window on every app launch. While idempotent upserts prevented duplicates, this wasted time re-reading thousands of records and re-running LLM analysis on already-processed threads. Now each source persists a watermark (newest record timestamp) after successful import; subsequent imports only fetch records newer than that watermark. The lookback window is only used for the very first import. Watermarks auto-reset when the user changes lookback days in Settings. Calendar import is excluded — events can be created for any date, so a watermark wouldn't catch backdated entries.
+
+### Changes
+- **`CommunicationsImportCoordinator.swift`** — Added `lastMessageWatermark` / `lastCallWatermark` (persisted to UserDefaults). `performImport()` uses per-source watermarks when available, falls back to full lookback. Watermarks updated after each successful bulk upsert. `resetWatermarks()` clears both. `setLookbackDays()` resets watermarks on value change.
+- **`MailImportCoordinator.swift`** — Added `lastMailWatermark` (persisted to UserDefaults). `performImport()` uses watermark as `since` date when available. Watermark set from all metadata dates (known + unknown senders) since the AppleScript metadata sweep is the expensive call. `resetMailWatermark()` clears it. `setLookbackDays()` resets watermark on value change.
+
+### What did NOT change
+- No schema or model changes
+- No SQL query changes (services already accept `since:` parameter)
+- No UI changes
+- Calendar import unaffected
+- Idempotent upsert safety preserved (sourceUID dedup still works as fallback)
+
+---
+
 ## February 24, 2026 - App Intents / Siri Integration (#14)
 
 ### Overview

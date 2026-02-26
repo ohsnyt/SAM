@@ -109,14 +109,52 @@ final class ContextsRepository {
         try modelContext.save()
     }
     
-    /// Delete a context
+    /// Delete a context (captures undo snapshot including participations)
     func delete(context samContext: SamContext) throws {
         guard let modelContext = modelContext else {
             throw RepositoryError.notConfigured
         }
 
+        // Capture snapshot before deletion
+        let participationSnapshots = samContext.participations.map { p in
+            ParticipationSnapshot(
+                id: p.id,
+                personID: p.person?.id ?? UUID(),
+                contextID: samContext.id,
+                roleBadges: p.roleBadges,
+                isPrimary: p.isPrimary,
+                note: p.note,
+                startDate: p.startDate,
+                endDate: p.endDate,
+                personDisplayName: p.person?.displayNameCache ?? "Unknown",
+                contextName: samContext.name
+            )
+        }
+
+        let snapshot = ContextSnapshot(
+            id: samContext.id,
+            name: samContext.name,
+            kindRawValue: samContext.kind.rawValue,
+            consentAlertCount: samContext.consentAlertCount,
+            reviewAlertCount: samContext.reviewAlertCount,
+            followUpAlertCount: samContext.followUpAlertCount,
+            participations: participationSnapshots
+        )
+
+        let displayName = samContext.name
+
         modelContext.delete(samContext)
         try modelContext.save()
+
+        if let entry = try? UndoRepository.shared.capture(
+            operation: .deleted,
+            entityType: .context,
+            entityID: snapshot.id,
+            entityDisplayName: displayName,
+            snapshot: snapshot
+        ) {
+            UndoCoordinator.shared.showToast(for: entry)
+        }
     }
     
     /// Search contexts by name
@@ -196,7 +234,7 @@ final class ContextsRepository {
         try modelContext.save()
     }
     
-    /// Remove a person from a context
+    /// Remove a person from a context (captures undo snapshot before deletion)
     func removeParticipant(person: SamPerson, from samContext: SamContext) throws {
         guard let modelContext = modelContext else {
             throw RepositoryError.notConfigured
@@ -204,8 +242,34 @@ final class ContextsRepository {
 
         // Find and remove the participation
         if let participation = samContext.participations.first(where: { $0.person?.id == person.id }) {
+            // Capture snapshot before deletion
+            let snapshot = ParticipationSnapshot(
+                id: participation.id,
+                personID: person.id,
+                contextID: samContext.id,
+                roleBadges: participation.roleBadges,
+                isPrimary: participation.isPrimary,
+                note: participation.note,
+                startDate: participation.startDate,
+                endDate: participation.endDate,
+                personDisplayName: person.displayNameCache ?? "Unknown",
+                contextName: samContext.name
+            )
+
+            let displayName = "\(person.displayNameCache ?? "Unknown") from \(samContext.name)"
+
             modelContext.delete(participation)
             try modelContext.save()
+
+            if let entry = try? UndoRepository.shared.capture(
+                operation: .deleted,
+                entityType: .participation,
+                entityID: participation.id,
+                entityDisplayName: displayName,
+                snapshot: snapshot
+            ) {
+                UndoCoordinator.shared.showToast(for: entry)
+            }
         }
     }
     

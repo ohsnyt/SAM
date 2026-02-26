@@ -379,11 +379,12 @@ actor NoteAnalysisService {
                         personName: action.person_name
                     )
                 },
-                discoveredRelationships: (llmResponse.discovered_relationships ?? []).map { rel in
-                    DiscoveredRelationshipDTO(
+                discoveredRelationships: (llmResponse.discovered_relationships ?? []).compactMap { rel in
+                    guard let relatedTo = rel.related_to else { return nil }
+                    return DiscoveredRelationshipDTO(
                         personName: rel.person_name,
                         relationshipType: rel.relationship_type,
-                        relatedTo: rel.related_to,
+                        relatedTo: relatedTo,
                         confidence: rel.confidence ?? 0.5
                     )
                 },
@@ -445,7 +446,7 @@ nonisolated private struct LLMLifeEvent: Codable, Sendable {
 nonisolated private struct LLMDiscoveredRelationship: Codable, Sendable {
     let person_name: String
     let relationship_type: String
-    let related_to: String
+    let related_to: String?
     let confidence: Double?
 }
 

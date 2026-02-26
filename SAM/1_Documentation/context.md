@@ -1,14 +1,13 @@
-:context.md
 # SAM — Project Context
-**Platform**: macOS  
+**Platform**: macOS 26+ (Tahoe)  
 **Language**: Swift 6  
 **Architecture**: Clean layered architecture with strict separation of concerns  
 **Framework**: SwiftUI + SwiftData  
-**Last Updated**: February 24, 2026 (Phases A–O complete, Multi-Step Sequences complete, schema SAM_v16)
+**Last Updated**: February 25, 2026 (Phases A–O complete, schema SAM_v16, planning Phase R+)
 
 **Related Docs**: 
-- See `agent.md` for product philosophy and UX principles
-- See `changelog.md` for historical completion notes
+- See `agent.md` for product philosophy, AI architecture, and UX principles
+- See `changelog.md` for historical completion notes (Phases A–O)
 
 ---
 
@@ -16,170 +15,111 @@
 
 ### Purpose
 
-SAM is a **native macOS relationship coaching application** for independent financial strategists. It observes interactions from Apple's Calendar, Contacts, Mail, iMessage, Phone, and FaceTime, transforms them into Evidence, generates AI-backed Insights, and provides outcome-focused coaching to help advisors build and maintain strong client relationships.
+SAM is a **native macOS business coaching and relationship management application** for independent financial strategists at World Financial Group. It observes interactions from Apple's Calendar, Contacts, Mail, iMessage, Phone, and FaceTime, transforms them into Evidence, generates AI-backed insights at both the individual relationship and business-wide level, and provides outcome-focused coaching to help the user grow their practice.
 
 **Core Philosophy**:
 - Apple Contacts and Calendar are the **systems of record** for identity and events
-- SAM is an **overlay CRM** that enhances but never replaces Apple's data
+- SAM is an **overlay CRM + business coach** that enhances but never replaces Apple's data
 - AI assists but **never acts autonomously** — all actions require user review
+- **Two-layer AI**: foreground relationship intelligence + background business strategy
 - **Clean architecture** with explicit boundaries between layers
 
 ### Target Platform
 
-- **macOS only** (not iOS, not cross-platform)
-- Requires macOS 14+ (for Swift 6 and modern SwiftData features)
-- Native SwiftUI interface following macOS design patterns
-- Supports keyboard shortcuts and menu bar commands
+- **macOS 26+** (Tahoe) — Glass design language, latest SwiftUI and FoundationModels
+- Native SwiftUI interface following macOS Human Interface Guidelines
+- Full keyboard shortcuts, menu bar commands, contextual menus
+- Swift 6 strict concurrency throughout
 
 ---
 
-## 2. Architecture Principles
+## 2. Architecture
 
-### Clean Layered Architecture
+### 2.1 Clean Layered Architecture
 
-┌─────────────────────────────────────────────────────┐
-│                    Views (SwiftUI)                  │
-│          PeopleListView, PersonDetailView, etc.     │
-└──────────────────────┬──────────────────────────────┘
-                       │ Uses DTOs
+```
+┌─────────────────────────────────────────────────────────┐
+│                     Views (SwiftUI)                     │
+│   PeopleListView, AwarenessView, BusinessDashboard...  │
+└──────────────────────┬──────────────────────────────────┘
+                       │ Uses DTOs + ViewModels
                        ▼
-┌─────────────────────────────────────────────────────┐
-│                   Coordinators                      │
-│     ContactsImportCoordinator, InsightGenerator     │
-│            (Business Logic Orchestration)           │
-└───────────┬─────────────────────┬───────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│                    Coordinators                         │
+│  ContactsImport, OutcomeEngine, StrategicCoordinator   │
+│             (Business Logic Orchestration)              │
+└───────────┬─────────────────────┬───────────────────────┘
             │                     │
             │ Reads from          │ Writes to
             ▼                     ▼
-┌──────────────────────┐  ┌──────────────────────────┐
-│      Services        │  │     Repositories         │
-│  ContactsService     │  │   PeopleRepository       │
-│  (External APIs)     │  │   (SwiftData CRUD)       │
-└──────────────────────┘  └──────────────────────────┘
+┌──────────────────────┐  ┌──────────────────────────────┐
+│      Services        │  │       Repositories           │
+│  ContactsService     │  │   PeopleRepository           │
+│  AIService           │  │   BusinessMetricsRepository  │
+│  (External APIs)     │  │   (SwiftData CRUD)           │
+└──────────────────────┘  └──────────────────────────────┘
             │                     │
             │ Returns DTOs        │ Stores Models
             ▼                     ▼
-┌──────────────────────┐  ┌──────────────────────────┐
-│   External APIs      │  │      SwiftData           │
-│ CNContactStore       │  │   SamPerson, SamContext  │
-│ EKEventStore         │  │   SamEvidenceItem, etc.  │
-└──────────────────────┘  └──────────────────────────┘
-
-### Layer Responsibilities
-
-**Views (SwiftUI)**:
-- Render UI and handle user interaction
-- Use DTOs (never raw CNContact/EKEvent)
-- Observe coordinators and repositories
-- `@MainActor` implicit
-
-**Coordinators**:
-- Orchestrate business logic (e.g., import flows, insight generation)
-- Coordinate between services and repositories
-- Manage debouncing, throttling, and state machines
-- `@MainActor` when needed for SwiftUI observation
-- **Follow standard API pattern** (see §2.4 Coordinator API Standards below)
-
-**Services**:
-- Own external API access (CNContactStore, EKEventStore)
-- Return only Sendable DTOs (never CNContact/EKEvent directly)
-- Check authorization before all data access
-- Actor-isolated for thread safety
-
-**Repositories**:
-- CRUD operations for SwiftData models
-- No external API access (only SwiftData)
-- Receive DTOs from coordinators
-- `@MainActor` isolated (SwiftData requirement)
-
-**DTOs (Data Transfer Objects)**:
-- Sendable structs that wrap external data
-- Can cross actor boundaries safely
-- Used for communication between layers
-
-### Coordinator API Standards
-
-**The Pattern**: All coordinators handling similar operations (import, sync, background tasks) should expose **consistent, predictable APIs** to reduce cognitive load and enable code reuse.
-
-**Standard Import Coordinator API** (Phases C & E):
-
-```swift
-@MainActor
-@Observable
-final class XYZImportCoordinator {
-    
-    // MARK: - Observable State (for UI binding)
-    
-    /// Current import status (enum for type safety)
-    var importStatus: ImportStatus = .idle
-    
-    /// Timestamp of last successful import
-    var lastImportedAt: Date?
-    
-    /// Count of items imported in last operation
-    var lastImportCount: Int = 0
-    
-    /// Error message if import failed
-    var lastError: String?
-    
-    // MARK: - Settings (UserDefaults-backed, @ObservationIgnored)
-    
-    @ObservationIgnored
-    var autoImportEnabled: Bool {
-        get { UserDefaults.standard.bool(forKey: "xyz.autoImportEnabled") }
-        set { UserDefaults.standard.set(newValue, forKey: "xyz.autoImportEnabled") }
-    }
-    
-    // MARK: - Public API
-    
-    /// Manual import (user-initiated, async)
-    func importNow() async { ... }
-    
-    /// Auto import (system-initiated)
-    func startAutoImport() { 
-        Task { await importNow() }
-    }
-    
-    /// Request authorization (Settings-only)
-    func requestAuthorization() async -> Bool { ... }
-    
-    // MARK: - Status Enum
-    
-    enum ImportStatus: Equatable {
-        case idle
-        case importing
-        case success
-        case failed
-        
-        var displayText: String {
-            switch self {
-            case .idle: return "Ready"
-            case .importing: return "Importing..."
-            case .success: return "Synced"
-            case .failed: return "Failed"
-            }
-        }
-    }
-}
+┌──────────────────────┐  ┌──────────────────────────────┐
+│   External APIs      │  │        SwiftData             │
+│ CNContactStore       │  │   SamPerson, SamOutcome      │
+│ EKEventStore         │  │   BusinessGoal, Production   │
+│ FoundationModels     │  │   StageTransition, etc.      │
+└──────────────────────┘  └──────────────────────────────┘
 ```
 
-**Benefits of Standardization**:
-- ✅ **Predictable** - All coordinators have same API surface
-- ✅ **Copy-paste safe** - Settings views can be templated
-- ✅ **Type-safe** - Enum-based status reduces errors vs Bools
-- ✅ **Observable** - All UI-visible state is marked for observation
-- ✅ **Testable** - Can write shared test utilities
+### 2.2 AI Architecture: Two Layers + RLM Orchestration
 
-**Current Status (February 12, 2026)**:
-- ✅ **CalendarImportCoordinator** - Follows standard pattern (Phase E)
-- ✅ **NoteAnalysisCoordinator** - Follows standard pattern (Phase H)
-- ✅ **InsightGenerator** - Follows standard pattern with `GenerationStatus` (Phase I)
-- ⚠️ **ContactsImportCoordinator** - Uses older pattern (Phase C, predates standard)
-  - Uses `isImporting: Bool` instead of `importStatus: ImportStatus`
-  - Uses `lastImportResult: ImportResult?` instead of `lastImportedAt: Date?`
-  - **To be refactored** in Phase J for consistency
+```
+┌──────────────────────────────────────────────────────────┐
+│                    USER INTERFACE                         │
+│  Awareness Dashboard │ Business Dashboard │ Person Detail │
+└─────────┬────────────────────┬───────────────────────────┘
+          │                    │
+    ┌─────▼──────────┐  ┌─────▼──────────────────────┐
+    │  LAYER 1       │  │  LAYER 2                   │
+    │  Relationship  │  │  Business Intelligence     │
+    │  Intelligence  │  │  (Background)              │
+    │  (Foreground)  │  │                            │
+    │                │  │  ┌──────────────────────┐  │
+    │  • Note AI     │  │  │Strategic Coordinator │  │
+    │  • Meeting     │  │  │     (Swift)          │  │
+    │    pre-briefs  │  │  └──┬───┬───┬───┬──────┘  │
+    │  • Follow-up   │  │     │   │   │   │         │
+    │    drafts      │  │  ┌──▼┐┌─▼─┐┌▼──┐┌▼─────┐  │
+    │  • Health      │  │  │Pip││Tim││Pat││Cont. │  │
+    │    scoring     │  │  │   ││   ││   ││Advsr │  │
+    │  • Outcome     │  │  │LLM││LLM││LLM││LLM   │  │
+    │    generation  │  │  └───┘└───┘└───┘└──────┘  │
+    │  • Drafts      │  │       ▼ (merge in Swift)  │
+    │                │  │  Strategic Digest / Alerts │
+    └────────────────┘  └───────────────────────────┘
+    Priority: HIGH       Priority: LOW/BACKGROUND
+```
 
-**Migration Note**: When refactoring ContactsImportCoordinator, add new properties alongside old ones temporarily, then migrate all call sites before removing deprecated properties.
+**RLM Principles (see agent.md for full description):**
+- Each specialist analyst receives <2000 tokens of curated, pre-aggregated data
+- All numerical computation (conversion rates, time gaps, revenue) happens in Swift
+- The Strategic Coordinator is Swift code, not an LLM — it structures reasoning, dispatches specialists, and synthesizes results deterministically
+- Specialist results are cached with TTL (pipeline=4h, patterns=24h, projections=12h)
+- Background tasks use `TaskPriority.background` and yield to foreground work
+
+### 2.3 Layer Responsibilities
+
+**Views (SwiftUI)**: Render UI, handle interaction. Use DTOs/ViewModels, never raw CNContact/EKEvent. `@MainActor` implicit.
+
+**Coordinators**: Orchestrate business logic. Coordinate between services and repositories. Follow standard API pattern (§2.4). `@MainActor` when needed for SwiftUI observation.
+
+**Services**: Own external API access. Return only `Sendable` DTOs. Check authorization before all data access. Actor-isolated.
+
+**Repositories**: CRUD for SwiftData models. No external API access. `@MainActor` isolated.
+
+**DTOs**: `Sendable` structs wrapping external data. Cross actor boundaries safely.
+
+### 2.4 Coordinator API Standards
+
+(Unchanged from current — see existing `context.md` §2.4 for the standard `ImportStatus` enum pattern. All new coordinators must follow this pattern.)
 
 ---
 
@@ -189,1032 +129,571 @@ final class XYZImportCoordinator {
 SAM/SAM/
 ├── App/
 │   ├── SAMApp.swift                    ✅ App entry point, lifecycle, permissions
-│   └── SAMModelContainer.swift         ✅ SwiftData container (v16 schema)
+│   └── SAMModelContainer.swift         ✅ SwiftData container (v16 → v17+)
 │
 ├── Services/
 │   ├── ContactsService.swift           ✅ Actor — CNContact operations
 │   ├── CalendarService.swift           ✅ Actor — EKEvent operations
-│   ├── NoteAnalysisService.swift       ✅ Actor — On-device LLM (Apple Foundation Models)
+│   ├── NoteAnalysisService.swift       ✅ Actor — On-device note LLM
 │   ├── MailService.swift               ✅ Actor — Mail.app AppleScript bridge
-│   ├── EmailAnalysisService.swift     ✅ Actor — On-device email LLM analysis
-│   ├── DictationService.swift         ✅ Actor — SFSpeechRecognizer on-device dictation
-│   ├── ENEXParserService.swift        ✅ Actor — Evernote ENEX XML parser
-│   ├── AIService.swift               ✅ Actor — Unified AI (FoundationModels + MLX)
-│   └── MLXModelManager.swift         ✅ Actor — MLX model download/lifecycle
+│   ├── EmailAnalysisService.swift      ✅ Actor — Email LLM analysis
+│   ├── DictationService.swift          ✅ Actor — SFSpeechRecognizer
+│   ├── ENEXParserService.swift         ✅ Actor — Evernote ENEX parser
+│   ├── AIService.swift                 ✅ Actor — Unified AI (FoundationModels + MLX)
+│   ├── MLXModelManager.swift           ✅ Actor — MLX model lifecycle
+│   ├── iMessageService.swift           ✅ Actor — SQLite3 chat.db reader
+│   ├── CallHistoryService.swift        ✅ Actor — SQLite3 call records
+│   ├── MessageAnalysisService.swift    ✅ Actor — Message thread LLM
+│   ├── ComposeService.swift            ✅ @MainActor — Send via URL/AppleScript
+│   ├── PipelineAnalystService.swift    ⬜ Actor — Specialist LLM for pipeline analysis
+│   ├── PatternDetectorService.swift    ⬜ Actor — Specialist LLM for cross-relationship patterns
+│   ├── TimeAnalystService.swift        ⬜ Actor — Specialist LLM for time allocation
+│   └── ContentAdvisorService.swift     ⬜ Actor — Specialist LLM for content suggestions
 │
 ├── Coordinators/
-│   ├── ContactsImportCoordinator.swift ✅ Orchestrates contact import
-│   ├── CalendarImportCoordinator.swift ✅ Orchestrates calendar import
-│   ├── NoteAnalysisCoordinator.swift   ✅ Save → analyze → store pipeline
-│   ├── InsightGenerator.swift          ✅ Multi-source insight generation
-│   ├── MailImportCoordinator.swift     ✅ Orchestrates email import (standard API pattern)
-│   ├── EvernoteImportCoordinator.swift ✅ ENEX file import (parse → preview → import)
-│   ├── OutcomeEngine.swift            ✅ Outcome generation + scoring + AI enrichment + sequence steps
-│   ├── CoachingAdvisor.swift          ✅ Feedback analysis + adaptive encouragement
-│   └── DailyBriefingCoordinator.swift ✅ Morning/evening briefings + sequence trigger evaluation
+│   ├── ContactsImportCoordinator.swift ✅ Contact import
+│   ├── CalendarImportCoordinator.swift ✅ Calendar import
+│   ├── NoteAnalysisCoordinator.swift   ✅ Note save → analyze → store
+│   ├── InsightGenerator.swift          ✅ Multi-source insights
+│   ├── MailImportCoordinator.swift     ✅ Email import
+│   ├── EvernoteImportCoordinator.swift ✅ ENEX import
+│   ├── CommunicationsImportCoordinator.swift ✅ iMessage/calls import
+│   ├── OutcomeEngine.swift             ✅ Outcome generation + scoring
+│   ├── CoachingAdvisor.swift           ✅ Adaptive feedback
+│   ├── DailyBriefingCoordinator.swift  ✅ Briefings + sequence triggers
+│   ├── StrategicCoordinator.swift      ⬜ RLM orchestrator — dispatches specialists, synthesizes
+│   ├── PipelineTracker.swift           ⬜ Funnel metrics, stage transitions, stall detection
+│   ├── ProductionTracker.swift         ⬜ Policies, products, revenue trends
+│   └── GoalDecomposer.swift            ⬜ Goal → weekly/daily targets → progress tracking
 │
 ├── Repositories/
 │   ├── PeopleRepository.swift          ✅ CRUD for SamPerson
 │   ├── EvidenceRepository.swift        ✅ CRUD for SamEvidenceItem
 │   ├── ContextsRepository.swift        ✅ CRUD for SamContext
-│   ├── NotesRepository.swift           ✅ CRUD for SamNote + analysis storage
-│   └── OutcomeRepository.swift        ✅ CRUD for SamOutcome + deduplication + sequence queries
+│   ├── NotesRepository.swift           ✅ CRUD for SamNote
+│   ├── OutcomeRepository.swift         ✅ CRUD for SamOutcome
+│   ├── BusinessMetricsRepository.swift ⬜ CRUD for production, goals, stage transitions
+│   └── TimeTrackingRepository.swift    ⬜ CRUD for TimeEntry with categories
 │
 ├── Models/
-│   ├── SAMModels.swift                 ✅ Core @Model classes (SamPerson, SamContext, etc.)
-│   ├── SAMModels-Notes.swift           ✅ SamNote (simplified L-2), SamAnalysisArtifact
-│   ├── SAMModels-Supporting.swift      ✅ Value types, enums, chips, SequenceTriggerCondition
+│   ├── SAMModels.swift                 ✅ Core models (SamPerson, SamContext, etc.)
+│   ├── SAMModels-Notes.swift           ✅ SamNote, SamAnalysisArtifact
+│   ├── SAMModels-Supporting.swift      ✅ Value types, enums
+│   ├── SAMModels-Business.swift        ⬜ StageTransition, ProductionRecord, BusinessGoal, etc.
 │   └── DTOs/
-│       ├── ContactDTO.swift            ✅ Sendable CNContact wrapper
-│       ├── EventDTO.swift              ✅ Sendable EKEvent wrapper
-│       ├── EmailDTO.swift              ✅ Sendable IMAP message wrapper
-│       ├── EmailAnalysisDTO.swift      ✅ Sendable email LLM analysis results
-│       ├── NoteAnalysisDTO.swift       ✅ Sendable note LLM analysis results
-│       ├── EvernoteNoteDTO.swift       ✅ Sendable ENEX parsed note
-│       └── OnboardingView.swift        ✅ First-run permission onboarding
+│       ├── ContactDTO.swift            ✅
+│       ├── EventDTO.swift              ✅
+│       ├── EmailDTO.swift              ✅
+│       ├── EmailAnalysisDTO.swift      ✅
+│       ├── NoteAnalysisDTO.swift       ✅
+│       ├── EvernoteNoteDTO.swift       ✅
+│       ├── PipelineAnalysisDTO.swift   ⬜ Specialist analyst output
+│       ├── PatternAnalysisDTO.swift    ⬜ Specialist analyst output
+│       ├── TimeAnalysisDTO.swift       ⬜ Specialist analyst output
+│       └── StrategicDigestDTO.swift    ⬜ Synthesized business intelligence output
 │
 ├── Views/
 │   ├── AppShellView.swift              ✅ Three-column navigation shell
-│   ├── People/
-│   │   ├── PeopleListView.swift        ✅ People list with search & import
-│   │   └── PersonDetailView.swift      ✅ Full contact detail + notes/evidence
-│   ├── Inbox/
-│   │   ├── InboxListView.swift         ✅ Evidence triage list
-│   │   └── InboxDetailView.swift       ✅ Evidence detail + triage actions
-│   ├── Contexts/
-│   │   ├── ContextListView.swift       ✅ Context list with filter/search
-│   │   └── ContextDetailView.swift     ✅ Context detail + participant mgmt
-│   ├── Awareness/
-│   │   ├── AwarenessView.swift         ✅ Insights dashboard with filtering
-│   │   └── OutcomeQueueView.swift     ✅ Coaching outcome queue (Phase N)
-│   ├── Notes/
-│   │   ├── NoteEditorView.swift        ✅ Edit-only note editor (Phase L-2)
-│   │   ├── InlineNoteCaptureView.swift ✅ Inline note capture with dictation (Phase L-2)
-│   │   ├── NotesJournalView.swift      ✅ Scrollable inline journal with in-place editing, dictation, image attach
-│   │   ├── RichNoteEditor.swift        ✅ NSViewRepresentable wrapping NSTextView for inline text + image editing
-│   │   ├── CorrectionSheetView.swift   ✅ AI correction review sheet
-│   │   └── NoteActionItemsView.swift   ✅ Review extracted action items
-│   ├── Shared/
-│   │   ├── NotInContactsCapsule.swift  ✅ Reusable "Not in Contacts" badge + add-to-contacts action
-│   │   ├── RoleBadgeStyle.swift        ✅ Shared role→color/icon mapping + RoleBadgeIconView (compact list icon with popover tooltip)
-│   │   └── OutcomeCardView.swift      ✅ Reusable outcome card (Phase N)
-│   ├── Settings/
-│   │   ├── SettingsView.swift          ✅ Tabbed: Permissions, Contacts, Calendar, Mail, Communications, Intelligence, Coaching, Evernote, General
-│   │   ├── MailSettingsView.swift      ✅ Mail.app accounts, Me-contact email filter toggles
-│   │   ├── EvernoteImportSettingsView.swift ✅ ENEX file picker, preview, import
-│   │   └── CoachingSettingsView.swift ✅ AI backend, MLX, coaching style, feedback (Phase N)
-│   └── (debug views removed)
+│   ├── People/                         ✅ People list + detail
+│   ├── Inbox/                          ✅ Evidence triage
+│   ├── Contexts/                       ✅ Context management
+│   ├── Awareness/                      ✅ Coaching dashboard
+│   ├── Notes/                          ✅ Note editing + journal
+│   ├── Business/                       ⬜ Business Intelligence dashboard
+│   │   ├── BusinessDashboardView.swift ⬜ Top-level BI view
+│   │   ├── PipelineFunnelView.swift    ⬜ Visual client + recruiting funnels
+│   │   ├── ProductionTrendView.swift   ⬜ 30/60/90/180-day production charts
+│   │   ├── TimeAllocationView.swift    ⬜ Time categorization analysis
+│   │   ├── GoalProgressView.swift      ⬜ Goals vs. actuals with pace indicators
+│   │   ├── PatternInsightsView.swift   ⬜ Cross-relationship pattern cards
+│   │   └── WeeklyDigestView.swift      ⬜ Strategic digest (also in briefing)
+│   ├── Shared/                         ✅ Reusable components
+│   └── Settings/                       ✅ Tabbed settings
 │
-├── Utilities/
-│   ├── DevLogStore.swift               ✅ Actor-isolated dev logging
-│   ├── MailFilterRule.swift            ✅ Email recipient filtering rules
-│   └── (debug views removed)
+├── Utilities/                          ✅ Logging, filters
 │
 └── 1_Documentation/
     ├── context.md                      This file
     ├── changelog.md                    Completed work history
-    └── agent.md                        Product philosophy & UX principles
+    └── agent.md                        Product philosophy & AI architecture
 ```
-
-**Legend**:
-- ✅ Complete and following clean architecture
-- 🔧 Debug/development utility
-- ⬜ Not yet implemented
 
 ---
 
 ## 4. Data Models
 
-### Identity Strategy (Contacts-First)
+### 4.1 Existing Models (Phases A–O, schema v16)
 
-**Apple Contacts = System of Record**:
-- All identity data (names, family relationships, contact info, dates) lives in Apple Contacts
-- SAM stores only `contactIdentifier` as anchor + cached display fields
-- Family relationships read from `CNContact.contactRelations` (not duplicated)
-- Contact info (phone, email, address) lazy-loaded in detail views
+(All existing models unchanged — see `changelog.md` for full schema. Summary below.)
 
-**SamPerson Model**:
+- **SamPerson** — Contact anchor + CRM enrichment (roles, referrals, channel preferences, phone aliases)
+- **SamContext** — Households, businesses, groups
+- **SamEvidenceItem** — Observations from Calendar/Mail/iMessage/Phone/FaceTime/Notes
+- **SamNote** — User notes with LLM analysis (action items, topics, life events, follow-up drafts)
+- **SamInsight** — AI-generated per-person insights
+- **SamOutcome** — Coaching suggestions with priority scoring, action lanes, sequences
+- **CoachingProfile** — Singleton tracking encouragement style and user patterns
+- **TimeEntry** — Time tracking (defined but not fully implemented)
+- **UndoEntry** — Universal undo (defined but not fully implemented)
+
+### 4.2 New Business Models (Phase R+)
+
+**StageTransition** — Immutable log of pipeline stage changes
 ```swift
 @Model
-final class SamPerson {
-    // Anchor
-    var contactIdentifier: String?      // CNContact.identifier (stable ID)
-    
-    // Cached display fields (refreshed on sync)
-    var displayNameCache: String?       // For list performance
-    var emailCache: String?
-    var photoThumbnailCache: Data?
-    var lastSyncedAt: Date?
-    var isArchived: Bool                // Contact deleted externally
-    
-    // SAM-owned data
-    var isMe: Bool                      // True if this is the user's own contact (Phase J)
-    var roleBadges: [String]            // Predefined: Client, Applicant, Lead, Vendor, Agent, External Agent (+ custom)
-    var consentAlertsCount: Int
-    var reviewAlertsCount: Int
-    
-    // Relationships (SAM-owned)
-    var participations: [ContextParticipation]
-    var coverages: [Coverage]
-    var insights: [SamInsight]
-    var notes: [SamNote]                // User-created notes (Phase H)
+final class StageTransition {
+    var person: SamPerson?
+    var fromStage: String           // Role badge value or recruiting stage
+    var toStage: String
+    var transitionDate: Date
+    var pipelineTypeRawValue: String // "client" or "recruiting"
+    var notes: String?              // Optional context
 }
 ```
 
-### Other Models
-
-**SamContext**: Households, businesses, or groups of people
+**ProductionRecord** — Policies, products, applications
 ```swift
 @Model
-final class SamContext {
-    var displayName: String
-    var contextType: String             // "Household", "Business"
-    var participations: [ContextParticipation]
-    var coverages: [Coverage]
-}
-```
-
-**SamEvidenceItem**: Observations from Calendar/Contacts/Notes/Messages
-```swift
-@Model
-final class SamEvidenceItem {
-    var title: String
-    var sourceRawValue: String          // EvidenceSource enum (.calendar, .mail, .contacts, .note, .manual, .iMessage, .phoneCall, .faceTime)
-    var sourceUID: String?              // EKEvent.eventIdentifier, CNContact.identifier, etc.
-    var snippet: String?                // Brief content preview
-    var observedAt: Date
-    var triageStateRawValue: String     // EvidenceTriageState enum (.needsReview, .done)
-    var linkedPeople: [SamPerson]
-    var linkedContexts: [SamContext]
-    var participantHints: [ParticipantHint]  // Calendar attendee info for matching
-    var signals: [EvidenceSignal]       // Deterministic signals extracted from evidence
-}
-```
-
-**SamNote**: User-created notes with on-device LLM analysis (Phase H)
-```swift
-@Model
-final class SamNote {
-    var content: String                 // Raw note text (user-entered)
-    var summary: String?                // LLM-generated summary
-    var createdAt: Date
-    var updatedAt: Date
-    var isAnalyzed: Bool                // Whether LLM analysis has run
-    var analysisVersion: Int            // Bump to trigger re-analysis
-    var linkedPeople: [SamPerson]       // Many-to-many (queried, not inverse)
-    var linkedContexts: [SamContext]
-    var linkedEvidence: [SamEvidenceItem]
-    var extractedMentions: [ExtractedPersonMention]  // LLM-extracted people
-    var extractedActionItems: [NoteActionItem]       // LLM-extracted actions
-    var extractedTopics: [String]       // LLM-extracted topics
-}
-```
-
-**TimeEntry**: Time tracking (Phase K)
-```swift
-@Model
-final class TimeEntry {
-    var startTime: Date
-    var endTime: Date?
-    var activityType: String            // "ClientMeeting", "Preparation", "VendorCall", etc.
-    var relatedPerson: SamPerson?
-    var relatedContext: SamContext?
+final class ProductionRecord {
+    var person: SamPerson?          // Client this production is for
+    var productType: String         // "IUL", "Term Life", "Retirement", etc.
+    var statusRawValue: String      // "submitted", "approved", "issued", "declined"
+    var submittedDate: Date
+    var resolvedDate: Date?
+    var premiumAmount: Double?      // Optional — user-entered
     var notes: String?
-    var calendarEventIdentifier: String? // Link to calendar event if applicable
 }
 ```
 
-**UndoEntry**: Universal undo system (Phase N)
+**BusinessGoal** — User-defined targets
 ```swift
 @Model
-final class UndoEntry {
-    var timestamp: Date
-    var operationType: String           // "delete", "update", "create"
-    var modelType: String               // "SamPerson", "SamContext", etc.
-    var modelIdentifier: String
-    var beforeState: Data               // JSON snapshot before change
-    var afterState: Data?               // JSON snapshot after change (nil for creates)
-    var expiresAt: Date                 // Auto-delete after 30 days
+final class BusinessGoal {
+    var title: String               // "Write 10 policies this quarter"
+    var goalTypeRawValue: String    // "production", "recruiting", "prospecting", "time"
+    var targetValue: Double         // Numeric target
+    var currentValue: Double        // Current progress (updated by trackers)
+    var unitLabel: String           // "policies", "agents", "contacts", "hours"
+    var startDate: Date
+    var endDate: Date
+    var isActive: Bool
+    var weeklyMilestones: [Double]  // Decomposed weekly targets (computed by GoalDecomposer)
 }
 ```
 
-**SamInsight**: AI-generated insights
+**RecruitingStage** — WFG-specific recruiting lifecycle
 ```swift
 @Model
-final class SamInsight {
-    var title: String
-    var body: String
-    var insightType: String
-    var samPerson: SamPerson?
-    var createdAt: Date
+final class RecruitingStage {
+    var person: SamPerson?          // The recruit
+    var stageRawValue: String       // "prospect", "presented", "signedUp", "studying", "licensed", "firstSale", "producing"
+    var enteredDate: Date
+    var mentoringLastContact: Date? // When user last checked in with this recruit
+    var notes: String?
 }
 ```
 
-### Property Naming Conventions
-
-To maintain consistency across the codebase and prevent compile errors, follow these naming conventions:
-
-**Core Principles**:
-- Use simple property names for stable identifiers (e.g., `name`, not `displayName`)
-- Use typed enums instead of string properties where appropriate
-- Cache properties must end with `Cache` suffix to indicate synced data
-- Deprecated properties should be marked with comments
-
-**Examples**:
-
+**StrategicDigest** — Cached business intelligence output
 ```swift
-// ✅ CORRECT - Simple identifier
 @Model
-final class SamContext {
-    var name: String              // Simple, stable identifier
-    var kind: ContextKind         // Typed enum (not String)
-}
-
-// ✅ CORRECT - Cache vs source distinction
-@Model
-final class SamPerson {
-    var displayName: String       // DEPRECATED - transitional field
-    var displayNameCache: String? // Refreshed from CNContact
-    var emailCache: String?       // Refreshed from CNContact
-}
-
-// ❌ INCORRECT - Mixed naming
-@Model
-final class SamContext {
-    var displayName: String       // Wrong - should be 'name'
-    var contextType: String       // Wrong - should be typed enum 'kind'
+final class StrategicDigest {
+    var generatedAt: Date
+    var digestTypeRawValue: String  // "morning", "evening", "weekly", "onDemand"
+    var pipelineSummary: String     // From PipelineAnalyst
+    var timeSummary: String         // From TimeAnalyst
+    var patternInsights: String     // From PatternDetector
+    var contentSuggestions: String  // From ContentAdvisor
+    var strategicActions: String    // Synthesized top recommendations
+    var rawJSON: String?            // Full structured output for dashboard rendering
 }
 ```
 
-**Benefits**:
-- **Type safety**: Enums prevent string typos (e.g., `kind.rawValue` vs hardcoded strings)
-- **Clear semantics**: Cache properties indicate synced external data
-- **Consistency**: All models follow same patterns
-- **Compile-time checks**: Views must use correct property names
-
-**In Views**:
+**TimeCategorization** extension on existing TimeEntry:
 ```swift
-// ✅ CORRECT
-Text(context.name)              // Simple property
-Text(context.kind.rawValue)     // Enum raw value for display
-Text(person.displayNameCache ?? person.displayName) // Cache fallback
-
-// ❌ INCORRECT
-Text(context.displayName)       // Compile error - property doesn't exist
-Text(context.contextType)       // Compile error - property doesn't exist
+// Extend TimeEntry with WFG-relevant categories
+enum TimeCategory: String, CaseIterable, Sendable {
+    case prospecting       = "Prospecting"
+    case clientMeeting     = "Client Meeting"
+    case policyReview      = "Policy Review"
+    case recruiting        = "Recruiting"
+    case trainingMentoring = "Training/Mentoring"
+    case admin             = "Admin"
+    case deepWork          = "Deep Work"
+    case personalDev       = "Personal Development"
+    case travel            = "Travel"
+    case other             = "Other"
+}
 ```
 
 ---
 
 ## 5. Phase Status & Roadmap
 
-**Note**: Completed phases documented in `changelog.md`. This section focuses on current and future work.
+### Completed Phases (see `changelog.md`)
 
-### Current Status
+- ✅ **Phase A**: Foundation
+- ✅ **Phase B**: Services Layer
+- ✅ **Phase C**: Data Layer
+- ✅ **Phase D**: People UI
+- ✅ **Phase E**: Calendar & Evidence
+- ✅ **Phase F**: Inbox UI
+- ✅ **Phase G**: Contexts
+- ✅ **Phase H**: Notes & Note Intelligence
+- ✅ **Phase I**: Insights & Awareness
+- ✅ **Phase J**: Email Integration (Parts 1–3c)
+- ✅ **Phase K**: Meeting Prep & Follow-Up
+- ✅ **Phase L/L-2**: Notes Pro + Redesign
+- ✅ **Phase M**: Communications Evidence
+- ✅ **Phase N**: Outcome-Focused Coaching Engine
+- ✅ **Awareness UX Overhaul**: Dashboard sections, time-of-day coaching, App Intents/Siri
+- ✅ **Phase O**: Intelligent Actions + Multi-Step Sequences (schema SAM_v16)
 
-**Completed Phases** (see `changelog.md` for details):
-- ✅ **Phase A**: Foundation (app structure, models, container)
-- ✅ **Phase B**: Services Layer (ContactsService, ContactDTO, PermissionsManager)
-- ✅ **Phase C**: Data Layer (PeopleRepository, ContactsImportCoordinator)
-- ✅ **Phase D**: People UI (PeopleListView, PersonDetailView)
-- ✅ **Phase E**: Calendar & Evidence (CalendarService, EventDTO, CalendarImportCoordinator, EvidenceRepository)
-- ✅ **Phase F**: Inbox UI (InboxListView, InboxDetailView, evidence triage)
-- ✅ **Phase G**: Contexts (ContextsRepository, ContextListView, ContextDetailView)
-- ✅ **Phase H**: Notes & Note Intelligence (NotesRepository, NoteAnalysisService, NoteEditorView, on-device LLM)
-- ✅ **Phase I**: Insights & Awareness (InsightGenerator, AwarenessView, multi-source generation)
-- ✅ **Phase J (Part 1)**: Email Integration scaffolding (DTOs, repositories, coordinator, settings view)
-- ✅ **Phase J (Part 2)**: Mail.app AppleScript integration (replaced IMAP stubs with working NSAppleScript bridge)
-- ✅ **Phase J (Part 3a)**: "Me" contact identification + email integration UX tweaks
-- ✅ **Phase J (Part 3b — Marketing Detection)**: Mailing list / marketing sender auto-detection + triage UI split (Feb 17, 2026)
-- ✅ **Phase J (Part 3c)**: Hardening — participant matching fix + insight persistence to SwiftData (Feb 20, 2026)
-- ✅ **Phase K**: Meeting Prep & Follow-Up (briefings, follow-up coach, relationship health) (Feb 20, 2026)
-- ✅ **Phase L**: Notes Pro — timestamped entries, dictation, Evernote ENEX import (Feb 20, 2026)
-- ✅ **Phase L-2**: Notes Redesign — simplified model, inline capture, AI polish, auto-linking, relationship summaries (Feb 20, 2026)
-
-**Known Bugs**: (none currently tracked)
-
-- ✅ **Phase M**: Communications Evidence — iMessage, phone calls, FaceTime (Feb 21, 2026)
-
-- ✅ **Phase N**: Outcome-Focused Coaching Engine — AI service layer, outcome model, coaching engine, adaptive feedback (Feb 22, 2026)
-- ✅ **Awareness UX Overhaul** (Feb 24, 2026) — Dashboard sections, follow-up drafts, referrals, life events, time-of-day coaching, daily briefings, App Intents/Siri (#14)
-- ✅ **Phase O**: Intelligent Actions — ActionLane routing, ComposeService, channel preferences, AI drafts, post-call notes (Feb 24, 2026)
-- ✅ **Multi-Step Sequences** — Linked outcome sequences with trigger conditions, auto-dismiss on response (Feb 24, 2026; schema SAM_v16)
-
-**Next Up**:
-- ⬜ **Phase P**: Universal Undo System
-- ⬜ **Phase Q**: Time Tracking
+### Active / Next Phases
 
 ---
 
-### ✅ Phase J: Email Integration & Polish (COMPLETE — Feb 20, 2026)
+### ⬜ Phase P: Universal Undo System
 
-Mail.app AppleScript bridge, on-device LLM email analysis, known-sender filtering, unknown sender triage, marketing detection, "Me" contact identification, participant matching fix, insight persistence to SwiftData. See `changelog.md` for full implementation details.
+**Goal**: 30-day undo history for all destructive operations.
 
-**Open polish items** (non-blocking):
-- ✅ "Add to Context" from PersonDetailView — already implemented (ContextPickerSheet + toolbar menu)
-- ✅ Remove debug utilities from production — ContactsTestView, ContactValidationDebugView deleted
+**Scope**: UndoEntry model already defined. Implement capture and replay.
 
----
-
-### ✅ Phase K: Meeting Prep & Follow-Up (COMPLETE — Feb 20, 2026)
-
-MeetingPrepCoordinator generates 48h-lookahead briefings and follow-up prompts. RelationshipHealthView shows interaction frequency and trend. Sections embedded in AwarenessView and PersonDetailView. See `changelog.md` for full implementation details.
+**Priority**: Medium. Implement before business intelligence to establish data safety net.
 
 ---
 
-### ✅ Phase L: Notes Pro (COMPLETE — Feb 20, 2026)
+### ⬜ Phase Q: Time Tracking & Categorization
 
-NoteEntry value type + entry stream UI, DictationService (SFSpeechRecognizer), ENEXParserService + EvernoteImportCoordinator, EvernoteImportSettingsView. SamNote model upgraded with entries array + sourceImportUID. Schema bumped to SAM_v7. See `changelog.md` for full details.
+**Goal**: Allow user to document and categorize how time is spent. Auto-categorize calendar events by attendee roles and title keywords.
 
----
+**Key deliverables**:
+- TimeEntry CRUD with `TimeCategory` enum
+- Calendar event auto-categorization heuristics (client meeting if attendee has Client role, etc.)
+- Manual override UI (quick-tap category on calendar events in Awareness view)
+- Time allocation summary in Awareness (today: X% client-facing, Y% admin, Z% prospecting)
+- `TimeTrackingRepository` following standard patterns
 
-### ✅ Phase L-2: Notes Redesign (COMPLETE — Feb 20, 2026)
-
-Simplified note model (removed NoteEntry, one note = one text block + sourceType). Inline note capture (InlineNoteCaptureView) replaces sheet-based editor for new notes. NoteEditorView simplified to edit-only. AI dictation polish (polishDictation). Smart auto-linking to recent calendar events (findRecentMeeting). AI relationship summary on PersonDetailView (overview, key themes, next steps). Schema bumped to SAM_v8.
-
-**Post-release fixes (Feb 20):** Dictation fixed (missing audio-input entitlement, microphone permission flow, silence auto-stop, text accumulation across recognizer resets). NotesJournalView replaces tap-to-edit sheet with scrollable inline journal. NotInContactsCapsule shared view replaces static badges in PeopleListView and InboxDetailView. Stale contactIdentifier detection during sync. SAM-created contacts auto-added to SAM group. Role badge system: predefined roles (Client, Applicant, Lead, Vendor, Agent, External Agent), color-coded compact icons in People list (RoleBadgeStyle/RoleBadgeIconView), editable capsules in PersonDetailView, notification-based list refresh. Me contact: distinct "Me" label in People list, non-editable badge in detail view, hidden from event/email participant displays.
-
----
-
-### ✅ Phase M: Communications Evidence (COMPLETE — Feb 21, 2026)
-
-**Goal**: Import iMessage, phone calls, and FaceTime as relationship evidence.
-
-**Architecture**: Security-scoped bookmarks via NSOpenPanel for sandbox-safe file access. SQLite3 read-only access to `~/Library/Messages/chat.db` (iMessage) and `~/Library/Application Support/CallHistoryDB/CallHistory.storedata` (calls/FaceTime). On-device LLM analyzes message threads; raw text is discarded — only AI summaries are stored.
-
-**Key Components**:
-- `SamPerson.phoneAliases: [String]` — canonicalized phone numbers (last 10 digits), populated during contacts import. Schema: SAM_v9.
-- `BookmarkManager` — @MainActor @Observable singleton, persists security-scoped bookmarks in UserDefaults, resolves on demand.
-- `iMessageService` (actor) — SQLite3 reader for chat.db. Returns `MessageDTO`. Handles nanosecond epoch conversion, attributedBody text extraction.
-- `CallHistoryService` (actor) — SQLite3 reader for CallHistory.storedata. Returns `CallRecordDTO` with phone/FaceTimeVideo/FaceTimeAudio call types.
-- `MessageAnalysisService` (actor) — on-device LLM analysis of chronological message threads. Returns `MessageAnalysisDTO` (summary, topics, temporal events, sentiment, action items).
-- `EvidenceSource` extended: `.iMessage`, `.phoneCall`, `.faceTime`
-- `EvidenceRepository` extended: `resolvePeople(byPhones:)`, `bulkUpsertMessages()`, `bulkUpsertCallRecords()`
-- `CommunicationsImportCoordinator` — @MainActor @Observable singleton, orchestrates bookmark resolution → fetch → filter → analyze → upsert pipeline.
-- `CommunicationsSettingsView` — database access grants, enable toggles, lookback period, AI analysis toggle, import status.
-- Settings tab: "Communications" with `message.fill` icon between Mail and Intelligence.
-
-**Privacy Model**: iMessage text is passed through on-device LLM for analysis, then discarded. Only AI summary stored in `snippet`. `bodyText` stays nil on all message evidence items. Call records store metadata only (duration, direction).
-
-**Deferred**: Unknown sender discovery for messages/calls, group chat multi-person linking, real-time monitoring, iMessage attachment processing.
+**Priority**: High — feeds directly into Business Intelligence time analysis.
 
 ---
 
-### ✅ Phase N: Outcome-Focused Coaching Engine (COMPLETE — Feb 22, 2026)
+### ⬜ Phase R: Pipeline Intelligence
 
-**Goal**: Transform SAM from a relationship *tracker* into a relationship *coach*.
+**Goal**: Visual pipeline dashboards with velocity metrics, stall detection, and stage transition tracking.
 
-**Architecture**:
-- `AIService` (actor) — Unified AI interface abstracting FoundationModels + MLX backends. Default FoundationModels; MLX stubbed for future.
-- `MLXModelManager` (actor) — Model download/lifecycle management (stubbed until SPM dependency added).
-- `SamOutcome` (@Model) — Coaching suggestions with priority scoring, deadlines, feedback tracking.
-- `CoachingProfile` (@Model) — Singleton tracking user encouragement style, acted-on patterns, dismiss patterns.
-- `OutcomeRepository` (@MainActor) — CRUD + deduplication + pruning for outcomes.
-- `OutcomeEngine` (@MainActor) — Deterministic scoring + AI enrichment pipeline scanning all evidence sources.
-- `CoachingAdvisor` (@MainActor) — Feedback analysis, adaptive encouragement, priority weight adjustment.
-- `OutcomeQueueView` — Top of AwarenessView, shows prioritized outcomes with Done/Skip.
-- `OutcomeCardView` — Reusable card with kind badge, priority dot, rationale, suggested next step.
-- `CoachingSettingsView` — Settings tab for AI backend, MLX model, coaching style, feedback.
+**Impact**: VERY HIGH — addresses the #1 gap identified in research. WFG agents need to see their dual funnels at a glance.
 
-**Schema**: SAM_v11 (added `SamOutcome`, `CoachingProfile`)
+**Key deliverables**:
 
-**Outcome Generation Pipeline**:
-1. Scan upcoming meetings (48h) → preparation outcomes
-2. Scan past meetings without notes (48h) → follow-up outcomes
-3. Scan pending action items from notes → proposal/follow-up outcomes
-4. Scan relationship health (role-weighted thresholds) → outreach outcomes
-5. Scan for growth opportunities (when queue thin) → growth outcomes
-6. AI enrichment (top 5 outcomes) → enhanced rationale + concrete next steps
+**R.1 — Stage Transition Tracking**
+- `StageTransition` model + `BusinessMetricsRepository`
+- Record transitions when user changes `roleBadges` on a SamPerson
+- Backfill: on first run, create synthetic transitions from current role badges with `createdAt` dates
+- Schema migration: SAM_v17
 
-**Priority Scoring** (0.0–1.0): Time urgency (0.30) + Relationship health (0.20) + Role importance (0.20) + Evidence recency (0.15) + User engagement (0.15)
+**R.2 — Client Pipeline Dashboard**
+- `PipelineFunnelView` — Visual funnel: Lead → Applicant → Client
+- Count badges at each stage
+- Conversion rates (Lead→Applicant, Applicant→Client) over configurable window
+- Average time-in-stage with stall indicators (>30d for Leads, >14d for Applicants)
+- Click-through to filtered People list for any stage
+- "Stuck" callouts with specific people names and days-in-stage
 
-**Deferred**: MLX model download/inference, custom outcome templates, outcome analytics dashboard, progress reports, team coaching patterns.
+**R.3 — Recruiting Pipeline Dashboard**
+- `RecruitingStage` model + repository support
+- Visual funnel: Prospect → Presented → Signed Up → Studying → Licensed → First Sale → Producing
+- Mentoring cadence indicators (days since last check-in per recruit)
+- Licensing completion rate and average time-to-license
+- Click-through to person detail
 
----
+**R.4 — Pipeline Intelligence Coordinator**
+- `PipelineTracker` coordinator — computes velocity, stall detection, conversion rates
+- All computation in Swift (not LLM) — deterministic metrics
+- Exposes observable state for dashboard views
+- Refreshes on evidence import and manual role changes
 
-### 🔧 Awareness UX Overhaul (Feb 24, 2026)
-
-**Goal**: Transform Awareness from information-display into an action-oriented coaching dashboard.
-
-Based on a comprehensive audit of current UX plus competitive research across Salesforce Einstein, HubSpot AI, Gong, Clari, People.ai, Reclaim.ai, Clay, Dex, Cloze, Superhuman, Zocks, Practifi, and others.
-
-#### Tier 1 — Fix What's Broken (ALL COMPLETE Feb 24)
-
-1. ✅ **Wire "View Person" navigation in Insights** — `samNavigateToPerson` notification wired through AppShellView, AwarenessView, OutcomeQueueView. Navigates to PersonDetailView from any card.
-2. ✅ **Add copy/action affordances to suggested text** — `CopyButton` shared component with brief checkmark feedback. Added to OutcomeCardView (suggested next steps), FollowUpCoachSection (action items), MeetingPrepSection (action items + signals).
-3. ✅ **Add action buttons to Outreach/Growth outcomes** — "View Contact" button works via `.openPerson` action in `actClosure`. Copy button on suggested next steps.
-4. ✅ **Auto-link all meeting attendees** — Both BriefingCard and FollowUpCard `createAndEditNote()` now link ALL attendees, not just the first.
-
-#### Tier 2 — Reduce Friction
-
-5. ✅ **Time-of-day-aware coaching** — AwarenessView 3-group collapsible layout (Action Queue, Today's Focus, Review & Analytics) with morning/afternoon/evening reordering. Auto meeting note templates, role-change outcome checklists, weekly priorities digest.
-6. ✅ **Pipeline stage visualization** — `PipelineStageSection.swift`. Lead → Applicant → Client counts with "stuck" indicators (30d/14d thresholds). Click-to-navigate on stuck people.
-7. ✅ **Post-meeting follow-up draft generation** — `SamNote.followUpDraft` field. `NoteAnalysisService.generateFollowUpDraft()` triggered after note analysis when linked to a recent calendar event. Draft displayed in NotesJournalView with Copy/Dismiss buttons.
-8. ✅ **Engagement velocity / personalized cadence** — `EngagementVelocitySection.swift`. Computes median gap between evidence items per person. Surfaces overdue people with "2× longer than usual" indicators.
-
-#### Tier 3 — New Capabilities
-
-9. ✅ **Streak tracking and positive reinforcement** — `StreakTrackingSection.swift`. Meeting notes streak, weekly client touch streak, same-day follow-up streak. Flame indicator at 5+.
-10. ✅ **Meeting quality scoring** — `MeetingQualitySection.swift`. Scores past 14 days: note (+40), timely (+20), action items (+20), attendees (+20). Surfaces low-scoring meetings, congratulatory message when all ≥60.
-11. ✅ **Calendar pattern intelligence** — `CalendarPatternsSection.swift`. Back-to-back warnings, client meeting ratio, meeting-free days, busiest day, upcoming load comparison.
-12. ✅ **Referral chain tracking** — `SamPerson.referredBy` / `referrals` self-referential relationship. Schema bumped to SAM_v13. `ReferralTrackingSection` wired with real queries. Referral assignment UI in PersonDetailView (picker sheet for Client/Applicant/Lead roles).
-13. ✅ **Life event detection** — `LifeEvent` Codable struct on `SamNote.lifeEvents`. LLM prompt extended with 11 event types. `LifeEventsSection` in Awareness dashboard with outreach suggestions. `InsightGenerator.generateLifeEventInsights()` scans notes for pending events. Analysis version bumped to 3.
-14. ✅ **App Intents / Siri integration** — 5 Siri shortcuts: Daily Briefing, Find Person, Prep for Meeting, Who to Reach Out To, Next Action. `PersonEntity` + `PersonEntityQuery` with string search and suggested entities. `RoleFilter` AppEnum. `SAMShortcutsProvider` auto-discovered by framework. All intents use `MainActor.run {}` for repository access. (Feb 24, 2026)
-
-#### Autonomous Actions (user approval required)
-
-- Auto-generate meeting note templates when calendar event ends (pre-filled with attendees, title, sections)
-- Draft follow-up messages from meeting notes (copy-to-clipboard, not auto-send)
-- Pre-populate outcome checklists on role change (Lead → Applicant triggers onboarding tasks)
-- Weekly relationship digest: "5 priorities for this week" based on pipeline, health, calendar
+**UI location**: New "Business" sidebar section → Pipeline tab
 
 ---
 
-### ✅ Phase O: Intelligent Actions (COMPLETE — Feb 24, 2026)
+### ⬜ Phase S: Production Tracking
 
-**Goal**: Route coaching outcomes to concrete user actions (send message, schedule work, make call, etc.)
+**Goal**: Track policies written, applications submitted, products sold. Trend analysis.
 
-**Architecture**:
-- `ActionLane` enum: `.communicate`, `.deepWork`, `.record`, `.call`, `.schedule` — classifies how to act on an outcome.
-- `CommunicationChannel` enum: `.iMessage`, `.email`, `.phone`, `.faceTime` — channel for communicate/call lanes.
-- `ComposeService` (@MainActor) — Sends iMessage/email via URL schemes + AppleScript, initiates phone/FaceTime calls.
-- `ComposeWindowView` — Auxiliary window for reviewing and sending AI-drafted messages.
-- `DeepWorkScheduleSheet` — Sheet for blocking calendar time for deep work outcomes.
-- `SamPerson.inferredChannelRawValue` / `preferredChannelRawValue` — Channel preferences (inferred from evidence history + explicit user override).
-- `SamOutcome.actionLaneRawValue`, `draftMessageText`, `suggestedChannelRawValue` — Phase O fields on outcome model.
-- `OutcomeEngine.classifyActionLane()` — Keyword + kind heuristics for lane assignment.
-- `OutcomeEngine.suggestChannel()` — Person preference → title heuristics → default.
-- `OutcomeEngine.generateDraftMessage()` — AI-generated draft text for communicate/call outcomes.
-- `DailyBriefingCoordinator.checkRecentlyEndedCalls()` — Post-call note prompt (5-min polling).
-- `CalendarService.createEvent()` — Calendar event creation for deep work blocks.
+**Impact**: HIGH — enables revenue projection and cross-sell intelligence.
 
-**Schema**: SAM_v15 (added Phase O fields on SamOutcome + SamPerson channel preferences)
+**Key deliverables**:
 
----
+**S.1 — Production Data Entry**
+- `ProductionRecord` model + `BusinessMetricsRepository` extension
+- Simple entry form on PersonDetailView: product type, status, date, optional premium
+- Product type picker: IUL, Term Life, Whole Life, Annuity, Retirement Plan, Education Plan, Other
+- Status flow: Submitted → Approved/Declined → Issued
 
-### ✅ Multi-Step Sequences (COMPLETE — Feb 24, 2026)
+**S.2 — Production Dashboard**
+- `ProductionTrendView` — 30/60/90/180-day trend charts (SwiftUI Charts)
+- Policies submitted vs. approved vs. issued
+- Product mix breakdown
+- Top clients by production volume
+- Pending applications with aging indicators
 
-**Goal**: Chain related outcomes so completing one can trigger the next after a delay + condition check.
+**S.3 — Cross-Sell Intelligence (AI-assisted)**
+- Based on client's existing products and life situation (from notes, life events)
+- Flag clients likely to have coverage gaps
+- Generate natural conversation starters (not sales pitches)
+- Priority-rank by estimated receptivity
+- Surfaces as coaching outcomes in the Action Queue
 
-**Design**: Extends `SamOutcome` with sequence fields rather than a new model. Steps share a `sequenceID`. Future steps hidden (`isAwaitingTrigger = true`) until triggered.
-
-**Data Model** (5 new fields on `SamOutcome`):
-- `sequenceID: UUID?` — Groups steps; nil = standalone
-- `sequenceIndex: Int` — 0-based position in sequence
-- `isAwaitingTrigger: Bool` — Hidden from queue when true
-- `triggerAfterDays: Int` — Days to wait after previous step completes
-- `triggerConditionRawValue: String?` — `SequenceTriggerCondition` raw value
-
-**`SequenceTriggerCondition`** enum: `.always` (unconditional), `.noResponse` (only if no communication from person)
-
-**Flow**:
-1. `OutcomeEngine.maybeCreateSequenceSteps()` — Heuristics create follow-up steps for outreach/proposal/follow-up outcomes
-2. Step 0 visible immediately; step 1+ hidden with `isAwaitingTrigger = true`
-3. User acts on step 0 → `markCompleted` records `completedAt`
-4. `DailyBriefingCoordinator.checkSequenceTriggers()` runs every 5 min
-5. When `previousStep.completedAt + triggerAfterDays` passes → evaluate condition
-6. `.noResponse`: check `EvidenceRepository.hasRecentCommunication()` → activate or auto-dismiss
-7. Skipping a step auto-dismisses all subsequent steps
-
-**Heuristics for sequence creation**:
-- "follow up" / "outreach" / "check in" / "reach out" → email follow-up in 3 days if no response
-- "send proposal" / "send recommendation" → follow-up text in 5 days if no response
-- `.outreach` kind + `.iMessage` channel → email escalation in 3 days if no response
-
-**UI**: `OutcomeCardView` shows "Step X of Y · Then: email in 3d if no response" indicator. Activated follow-up steps show "(no response received)" label.
-
-**Schema**: SAM_v16
+**UI location**: Business → Production tab; cross-sell outcomes in Awareness
 
 ---
 
-### ⬜ Phase P: Universal Undo System (NOT STARTED)
+### ⬜ Phase T: Meeting Lifecycle Automation Enhancement
 
-**Goal**: 30-day undo history for all destructive operations
+**Goal**: Close the gap between "meeting happened" and "CRM is fully updated with next actions."
+
+**Impact**: VERY HIGH — the single most time-saving feature from research. Tools like Zocks/Jump charge $100+/month for this.
+
+**Key deliverables**:
+
+**T.1 — Enhanced Pre-Meeting Brief**
+- Richer attendee profiles: last 3 interactions, pending action items, life events since last contact, current pipeline stage, product holdings
+- Talking points generated by LLM based on relationship context and role
+- Brief automatically appears 15 minutes before calendar event start
+
+**T.2 — Post-Meeting Capture Flow**
+- When a calendar event ends, trigger structured capture:
+  1. Pre-filled note template with attendee names, meeting title, date
+  2. Quick-capture sections: Key Discussion Points, Action Items, Follow-Up Needed, Life Events Mentioned
+  3. Dictation prominently available on each section
+  4. On save → immediate AI analysis → action items extracted → follow-up outcomes auto-generated
+
+**T.3 — Auto Follow-Up Pipeline**
+- After post-meeting note is saved and analyzed:
+  - Generate personalized follow-up draft (email or iMessage based on channel preference)
+  - Create follow-up outcome with appropriate deadline
+  - If action items reference other people, create linked outcomes
+  - Multi-step sequence: initial follow-up → check-in if no response
+
+**T.4 — Meeting Quality Feedback Loop**
+- Track: Did the user write notes? How quickly? Were action items extracted? Was follow-up sent?
+- Feed into coaching effectiveness scoring
+- Surface in weekly digest: "You documented 8 of 12 meetings this week — up from 5 last week"
 
 ---
 
-### ⬜ Phase Q: Time Tracking (NOT STARTED)
+### ⬜ Phase U: Relationship Decay Prediction
 
-**Goal**: Allow user to document time spent on activities
+**Goal**: Upgrade from static threshold-based health scoring to velocity-based predictive decay.
+
+**Impact**: HIGH — catches cooling relationships before they go cold.
+
+**Key deliverables**:
+
+**U.1 — Velocity-Based Health Model**
+- Compute communication velocity per person: median gap between evidence items over trailing 90 days
+- Track velocity trend: accelerating, steady, or decelerating
+- Weight by interaction quality: 45-min meeting > email reply > 2-word text
+- Factor in reciprocity: is the contact initiating, or always one-directional?
+
+**U.2 — Predictive Alerts**
+- "Communication with [Client] has declined 40% over 60 days. Suggested: reference their [life event] and schedule a review."
+- Proactive alerts surface 1–2 weeks BEFORE the relationship crosses the static threshold
+- Integrated into Awareness dashboard and daily briefing
+
+**U.3 — Engagement Heatmap**
+- Visual per-person engagement over time (mini sparkline on People list or Person detail)
+- Color-coded: green (healthy), yellow (cooling), red (at risk)
+
+---
+
+### ⬜ Phase V: Business Intelligence — Strategic Coordinator
+
+**Goal**: Implement the RLM-inspired background reasoning system that synthesizes business-level insights.
+
+**Impact**: VERY HIGH — this is the "business plan from divergent data" capability.
+
+**Key deliverables**:
+
+**V.1 — Strategic Coordinator (Swift Orchestrator)**
+- `StrategicCoordinator` — `@MainActor @Observable`
+- Runs on configurable schedule (default: 6 AM for morning briefing, 6 PM for evening recap, Monday 5 AM for weekly digest)
+- Decomposes analysis into specialist tasks
+- Dispatches specialists as `TaskGroup` with `.background` priority
+- Synthesizes results deterministically in Swift
+- Stores `StrategicDigest` for dashboard and briefing consumption
+- Yields to foreground work; pauses under thermal pressure
+
+**V.2 — Specialist Analysts (AI Services)**
+- `PipelineAnalystService` — Receives stage counts, conversion rates, stall list (all pre-computed in Swift by PipelineTracker). LLM produces narrative assessment + recommendations.
+- `TimeAnalystService` — Receives categorized time data (pre-aggregated). LLM identifies imbalances and recommends adjustments.
+- `PatternDetectorService` — Receives aggregated behavioral metrics (not raw data). LLM identifies correlations: best referral sources, optimal meeting times, effective communication patterns.
+- `ContentAdvisorService` — Receives recent meeting topics, client questions, seasonal context. LLM suggests 3–5 educational content ideas with draft outlines.
+
+**V.3 — Specialist Prompt Design**
+- Each specialist prompt is <2000 tokens of context
+- Structured output format (JSON) that Swift can parse deterministically
+- Prompts exposed in Settings for user tuning
+- Version-tracked so re-analysis can be triggered when prompts change
+
+**V.4 — Synthesis & Conflict Resolution**
+- Swift aggregation layer merges specialist outputs
+- Resolves scheduling conflicts (e.g., more follow-ups recommended than calendar slots available)
+- Priority-ranks all recommendations using the existing scoring formula (time urgency + relationship health + role importance + evidence recency + user engagement)
+- Formats final output for daily briefing integration and Business Dashboard
+
+**V.5 — Feedback Loop**
+- Every strategic recommendation tracks: acted on, dismissed, or ignored
+- Coaching effectiveness score computed weekly
+- User can rate the weekly digest (thumbs up/down per recommendation)
+- Feedback signals adjust specialist prompt emphasis and coordinator prioritization weights over time
+
+---
+
+### ⬜ Phase W: Content Assist & Social Media Coaching
+
+**Goal**: Help the user create educational content for Facebook/LinkedIn — a proven growth driver.
+
+**Impact**: HIGH — research shows consistent educational content is the #1 digital growth lever for independent agents.
+
+**Key deliverables**:
+
+**W.1 — Content Suggestion Engine**
+- Analyze recent meeting topics, client questions, and seasonal relevance
+- Generate 3–5 post topic suggestions per week as coaching outcomes
+- Each suggestion includes: topic, key points to cover, suggested tone, compliance notes
+- Surfaced in Action Queue with `.deepWork` action lane
+
+**W.2 — Draft Generation**
+- User selects a topic → AI generates a draft post in the user's voice
+- Platform-aware: LinkedIn posts are more professional; Facebook posts are more conversational
+- Never includes specific product claims, return promises, or comparative statements
+- Copy-to-clipboard for pasting into the platform
+
+**W.3 — Posting Cadence Tracking**
+- User can log "I posted today" (manual, since SAM doesn't access social platforms)
+- Track posting frequency and surface coaching when engagement lapses
+- "You haven't posted on LinkedIn in 12 days. Here are 3 topic ideas."
+- Integrated into weekly digest
+
+---
+
+### ⬜ Phase X: Goal Setting & Decomposition
+
+**Goal**: Let the user set business goals; SAM decomposes them into actionable weekly/daily targets and tracks progress.
+
+**Impact**: HIGH — connects daily activities to strategic objectives.
+
+**Key deliverables**:
+
+**X.1 — Goal Entry & Management**
+- `BusinessGoal` model + UI
+- Goal types: Production ("Write 10 policies this quarter"), Recruiting ("Recruit 3 agents this month"), Prospecting ("Contact 5 new leads per week"), Time ("Spend 60% of time on client-facing activities")
+- Start/end dates, numeric targets
+
+**X.2 — Goal Decomposition**
+- `GoalDecomposer` coordinator
+- Breaks quarterly goals into monthly → weekly → daily targets
+- Adjusts pace based on progress (behind pace → higher daily targets; ahead → maintenance mode)
+- Computation in Swift, narration by LLM
+
+**X.3 — Goal Progress Dashboard**
+- `GoalProgressView` — progress bars, pace indicators, projected completion
+- "On track" / "Behind pace" / "Ahead" status per goal
+- Integrated into morning briefing: "To stay on pace for your Q2 production goal, aim to submit 2 applications this week."
+
+---
+
+### ⬜ Phase Y: Scenario Projections
+
+**Goal**: "If you maintain current pace, here's where you'll be in 3/6/12 months."
+
+**Impact**: MEDIUM — valuable for motivation and planning, but dependent on Phases R–X data.
+
+**Key deliverables**:
+- Simple linear projections based on trailing 90-day velocity
+- Pipeline throughput projection (new clients per month at current conversion rate)
+- Recruiting projection (producing agents per quarter at current licensing rate)
+- Revenue estimate range (based on production trends and average policy size)
+- All projections clearly labeled as estimates with confidence ranges
+- Displayed in Business Dashboard and weekly digest
+
+---
+
+### ⬜ Phase Z: Compliance Awareness
+
+**Goal**: Help the user avoid compliance issues in communications.
+
+**Impact**: MEDIUM — important for regulated financial services but not a primary productivity driver.
+
+**Key deliverables**:
+- Flag keywords in draft messages that may need compliance review (return promises, guarantees, comparative claims)
+- Visual warning badge on flagged drafts
+- Does NOT block sending — advisory only
+- Audit trail of AI-generated drafts (what was generated, was it modified before sending)
+- Configurable keyword/phrase list in Settings
+
+---
+
+### Future Phases (Unscheduled)
+
+- **Advanced Search**: Full-text search across evidence, notes, mail summaries, and insights
+- **Export/Import**: Backup and restore SAM data
+- **iOS Companion**: Read-only iOS app
+- **Relationship Graph**: Visual network of people, contexts, and connections
+- **Custom Activity Types**: User-defined time tracking categories
+- **API Integration**: Connect to financial planning software
+- **Team Collaboration**: Shared contexts and evidence (multi-user support)
 
 ---
 
 ## 6. Critical Patterns & Gotchas
 
-### 6.1 Permissions (NEVER TRIGGER SURPRISE DIALOGS)
+(All existing patterns from Phases A–O remain in effect. See `changelog.md` for full documentation of each. Summary of key rules below.)
 
-**The Rule**: Always check authorization BEFORE accessing data
+### 6.1 Permissions — Never trigger surprise dialogs. Always check auth before access.
 
-```swift
-// ✅ SAFE - Check before access
-guard await contactsService.authorizationStatus() == .authorized else {
-    return nil
-}
-let contact = await contactsService.fetchContact(identifier: id, keys: .minimal)
+### 6.2 Concurrency — Services are `actor`, Repositories are `@MainActor`, Views implicit `@MainActor`. All boundary-crossing data must be `Sendable` DTOs.
 
-// ❌ UNSAFE - Will trigger dialog if not authorized
-let store = CNContactStore()
-let contact = try store.unifiedContact(withIdentifier: id, keysToFetch: [])
-```
-
-**Best Practices**:
-1. Use shared store instances (ContactsService, PermissionsManager)
-2. Check authorization status before every data access
-3. Keep permission requests in Settings (user-initiated)
-4. Never create new CNContactStore/EKEventStore instances in views
-5. Background coordinators check status, never request
-
-**Affected Components**:
-- ContactsService: Checks auth in every method
-- ContactsImportCoordinator: Checks auth before import
-- PermissionsManager: Centralized permission requests
-- Views: Never directly access CNContact/EKEvent
-
----
-
-### 6.2 Concurrency (Swift 6 Strict Mode)
-
-**Actor Isolation Rules**:
-
-```swift
-// Services: Use `actor`
-actor ContactsService {
-    func fetchContact(...) async -> ContactDTO? { ... }
-}
-
-// Coordinators: Use `@MainActor` only if needed for SwiftUI
-@MainActor
-@Observable
-final class ContactsImportCoordinator {
-    func importNow() async { ... }
-}
-
-// Repositories: Must be `@MainActor` (SwiftData requirement)
-@MainActor
-@Observable
-final class PeopleRepository {
-    func upsert(contact: ContactDTO) throws { ... }
-}
-
-// Views: Implicitly `@MainActor`
-struct PersonDetailView: View {
-    var body: some View { ... }
-}
-```
-
-**Sendable Requirements**:
-- All data crossing actor boundaries must be `Sendable`
-- DTOs are Sendable structs (ContactDTO, EventDTO)
-- Never pass CNContact/EKEvent across boundaries
-- SwiftData models are NOT Sendable (MainActor-isolated only)
-
----
-
-### 6.3 @Observable + Property Wrappers (Known Issue)
-
-**Problem**: `@Observable` macro conflicts with property wrappers like `@AppStorage`
-
-```swift
-// ❌ BROKEN - Synthesized backing storage collision
-@MainActor
-@Observable
-final class Coordinator {
-    @AppStorage("key") var setting: Bool = true  // Error: duplicate _setting
-}
-```
-
-**Solution**: Use computed properties with manual UserDefaults access + `@ObservationIgnored`
-
-```swift
-// ✅ WORKS - Manual UserDefaults access with @ObservationIgnored
-@MainActor
-@Observable
-final class Coordinator {
-    @ObservationIgnored
-    var setting: Bool {
-        get { UserDefaults.standard.bool(forKey: "key") }
-        set { UserDefaults.standard.set(newValue, forKey: "key") }
-    }
-}
-```
-
-**Affected Files**:
-- ContactsImportCoordinator.swift (uses @ObservationIgnored for UserDefaults properties)
-- Any future coordinators with persisted settings
-
----
+### 6.3 @Observable + Property Wrappers — Use `@ObservationIgnored` with manual UserDefaults for settings in coordinators.
 
 ### 6.4 SwiftData Best Practices
-
-**Enum Storage** (Common Gotcha):
-Never store enums directly - SwiftData schema validation fails
-
-```swift
-// ❌ BROKEN - Schema validation error
-@Model
-final class Evidence {
-    var state: EvidenceState  // Error: "rawValue is not a member"
-}
-
-// ✅ WORKS - Store raw value + computed property
-@Model
-final class Evidence {
-    var stateRawValue: String
-    
-    @Transient var state: EvidenceState {
-        get { EvidenceState(rawValue: stateRawValue) ?? .needsReview }
-        set { stateRawValue = newValue.rawValue }
-    }
-}
-```
-
-**Model Initialization**:
-Always use the full initializer with all required parameters
-
-```swift
-// ❌ BROKEN - Missing required parameters
-let person = SamPerson(
-    contactIdentifier: "123",
-    displayName: "John Doe"
-)
-
-// ✅ WORKS - All required parameters provided
-let person = SamPerson(
-    id: UUID(),
-    displayName: "John Doe",
-    roleBadges: [],
-    contactIdentifier: "123",
-    email: "john@example.com"
-)
-```
-
-**Search/Filtering with Predicates**:
-Swift 6 predicates can't capture outer scope variables. Use fetch-all + in-memory filter for simple searches.
-
-```swift
-// ❌ BROKEN - Can't capture lowercaseQuery
-let descriptor = FetchDescriptor<SamPerson>(
-    predicate: #Predicate { person in
-        person.displayName.contains(lowercaseQuery)  // Error: can't capture
-    }
-)
-
-// ✅ WORKS - Fetch all, filter in memory
-let allPeople = try context.fetch(FetchDescriptor<SamPerson>())
-let filtered = allPeople.filter { person in
-    person.displayName.lowercased().contains(query.lowercased())
-}
-```
-
-**Container Configuration**:
-- Use singleton pattern: `SAMModelContainer.shared`
-- Configure repositories at app launch: `PeopleRepository.shared.configure(container:)`
-- Never create multiple ModelContainers
-- Use `nonisolated` for container access from actors
-
-**Accessing Relationship Properties**:
-SwiftData relationships must be unwrapped before accessing nested properties
-
-```swift
-// ❌ BROKEN - Trying to access properties on optional relationship
-Text(coverage.product.name)  // Error: Value of optional type 'Product?' must be unwrapped
-
-// ❌ BROKEN - Trying to pass array to Text() initializer
-Text(participation.roleBadges)  // Error: Cannot convert '[String]' to 'String'
-
-// ✅ WORKS - Unwrap relationship and access nested property
-if let product = coverage.product {
-    Text(product.name)
-}
-
-// ✅ WORKS - Join array elements into string
-Text(participation.roleBadges.joined(separator: ", "))
-```
-
-**Why this happens**:
-- SwiftData relationships use optional types (`Product?`, `SamContext?`)
-- Arrays in models are `[String]`, not `String`
-- Swift's type safety requires explicit unwrapping and conversion
-
-**Common patterns**:
-```swift
-// Relationship with fallback
-Text(coverage.product?.name ?? "Unknown Product")
-
-// Nested relationship access
-if let product = coverage.product {
-    Text(product.name)
-    if let context = product.context {
-        Text(context.name)
-    }
-}
-
-// Array display with conditional
-if !participation.roleBadges.isEmpty {
-    Text(participation.roleBadges.joined(separator: ", "))
-}
-```
-
----
-
-### 6.5 Store Singleton Pattern
-
-**Critical**: On macOS, per-instance authorization cache means a second store will see stale `.notDetermined` forever
-
-```swift
-// ✅ CORRECT - Use shared instances
-await ContactsService.shared.fetchContact(...)
-let store = PermissionsManager.shared.contactStore
-
-// ❌ WRONG - Creates duplicate store
-let store = CNContactStore()  // Will have stale auth state!
-```
-
-**Affected Classes**:
-- ContactsService owns the CNContactStore
-- PermissionsManager provides shared access for special cases
-- Never create stores in views, coordinators, or utilities
-
----
-
-### 6.6 SwiftUI Patterns
-
-#### Preview Return Statements
-
-When preview closures contain multiple statements before returning the view, Swift requires an explicit `return` keyword:
-
-```swift
-// ❌ BROKEN - Type '()' cannot conform to 'View'
-#Preview("My View") {
-    let container = SAMModelContainer.shared
-    PeopleRepository.shared.configure(container: container)
-    
-    MyView()
-        .modelContainer(container)
-}
-
-// ✅ WORKS - Explicit return statement
-#Preview("My View") {
-    let container = SAMModelContainer.shared
-    PeopleRepository.shared.configure(container: container)
-    
-    return MyView()
-        .modelContainer(container)
-}
-```
-
-**Single-expression previews** don't need explicit return (implicit):
-
-```swift
-// ✅ WORKS - Single expression, implicit return
-#Preview("Simple") {
-    MyView()
-}
-```
-
-**Why this happens**:
-- Swift's closure return type inference requires single expression for implicit return
-- Multiple statements (let bindings, setup code) make the return type ambiguous
-- Adding `return` explicitly tells the compiler what the closure returns
-
----
-
-#### ForEach with Non-Identifiable Collections
-
-When iterating over collections that don't conform to `Identifiable`, use `Array.enumerated()` with offset as ID:
-
-```swift
-// ❌ BROKEN - Generic parameter 'C' could not be inferred
-ForEach(contact.phoneNumbers, id: \.value) { phone in
-    Text(phone.value)
-}
-
-// ❌ BROKEN - Cannot convert '[PhoneNumberDTO]' to 'Binding<C>'
-ForEach(person.participations) { participation in
-    Text(participation.role)
-}
-
-// ✅ WORKS - Use enumerated() with offset as ID
-ForEach(Array(contact.phoneNumbers.enumerated()), id: \.offset) { index, phone in
-    Text(phone.value)
-}
-
-// ✅ WORKS - Works for SwiftData relationships too
-ForEach(Array(person.participations.enumerated()), id: \.offset) { index, participation in
-    Text(participation.role)
-}
-```
-
-**When to use this pattern**:
-- DTOs with nested collections (`ContactDTO.phoneNumbers`, `ContactDTO.emailAddresses`)
-- SwiftData relationships without stable IDs (`person.participations`, `person.coverages`)
-- Arrays where elements might not be unique or don't conform to `Identifiable`
-
-**How it works**:
-- `enumerated()` creates tuples of `(offset: Int, element: T)`
-- `offset` is guaranteed unique within the collection (0, 1, 2, ...)
-- `Array()` wrapper ensures `RandomAccessCollection` conformance
-- SwiftUI uses offset as the stable ID for each row
-
-**Performance**:
-- `enumerated()` is lazy (O(1) setup)
-- `Array()` forces evaluation but acceptable for small collections (< 100 items)
-- Offset comparison is O(1) (integer equality)
-
-**Caution - Offset IDs are not stable across mutations**:
-
-```swift
-// ⚠️ CAUTION - Don't use offset IDs for editable lists
-ForEach(Array(items.enumerated()), id: \.offset) { index, item in
-    // If user deletes item at index 2, all items after shift indices
-    // SwiftUI may not animate correctly or may show wrong data
-}
-
-// ✅ BETTER - Use stable ID for editable lists
-extension PhoneNumberDTO: Identifiable {
-    var id: String { value + label }  // Composite key
-}
-
-ForEach(contact.phoneNumbers) { phone in
-    Text(phone.value)
-}
-```
-
-**For read-only lists** (most common case in SAM): offset IDs are fine.
-
-**For editable lists**: Implement proper `Identifiable` conformance with stable IDs.
-
-**Affected Views**:
-- PersonDetailView: Phone numbers, participations, coverages, insights
-- Any view displaying DTO nested collections or SwiftData relationships
-
----
-
-### 6.7 SwiftData Model Selection in Lists
-
-**The Problem**: Using SwiftData models directly in `NavigationLink` selection bindings can cause SwiftUI to show incorrect detail views — all items may display the first item's details even though the list renders correctly.
-
-**Why This Happens**:
-- SwiftUI uses identity and equality checks to track selection
-- SwiftData models are reference types with complex identity semantics
-- After data updates, SwiftUI may fail to correctly match selected models
-- Even with explicit `id: \.id` in `ForEach`, the selection binding itself can fail
-
-**The Solution**: Use primitive ID types (UUID, String, etc.) for selection state, not the model itself.
-
-```swift
-// ❌ BROKEN - Model in selection binding
-@State private var selectedPerson: SamPerson?
-
-List(selection: $selectedPerson) {
-    ForEach(people, id: \.id) { person in
-        NavigationLink(value: person) {  // Passing model as value
-            PersonRowView(person: person)
-        }
-    }
-}
-
-// Detail view
-if let selected = selectedPerson {
-    PersonDetailView(person: selected)  // May show wrong person!
-}
-
-// ✅ CORRECT - UUID in selection binding
-@State private var selectedPersonID: UUID?
-
-List(selection: $selectedPersonID) {
-    ForEach(people, id: \.id) { person in
-        NavigationLink(value: person.id) {  // Passing ID as value
-            PersonRowView(person: person)
-        }
-    }
-}
-
-// Detail view - look up by ID
-if let selectedID = selectedPersonID,
-   let selected = people.first(where: { $0.id == selectedID }) {
-    PersonDetailView(person: selected)  // Correct person every time
-}
-```
-
-**When to Apply This Pattern**:
-- Any `List` with `NavigationLink` and `selection` binding
-- Any list displaying SwiftData models
-- Both master-detail and navigation stack patterns
-
-**Affected Views**:
-- ✅ PeopleListView (fixed in Phase D)
-- Any future list views with selectable SwiftData models
-
-**Related Patterns**:
-- Always use explicit `id: \.id` in `ForEach` with SwiftData models
-- For non-selectable lists, passing models to views is fine
-- For toolbar/menu actions, fetch fresh model by ID when needed
-
----
-
-### 6.8 Coordinator Consistency
-
-**The Pattern**: Coordinators handling similar operations (import, sync, etc.) should expose **identical API shapes** for consistency.
-
-**Why This Matters**:
-- Enables code reuse across Settings views
-- Reduces copy-paste errors
-- Improves maintainability
-- Makes testing easier (shared test utilities)
-
-**Example of Good Consistency**:
-
-```swift
-// ✅ GOOD - Both coordinators have same API
-ContactsImportCoordinator.shared.importStatus  // returns ImportStatus enum
-CalendarImportCoordinator.shared.importStatus  // returns ImportStatus enum
-
-ContactsImportCoordinator.shared.lastImportedAt  // returns Date?
-CalendarImportCoordinator.shared.lastImportedAt  // returns Date?
-
-await ContactsImportCoordinator.shared.importNow()  // async func
-await CalendarImportCoordinator.shared.importNow()  // async func
-```
-
-**Example of Bad Inconsistency** (current state, to be fixed):
-
-```swift
-// ❌ BAD - Inconsistent APIs
-ContactsImportCoordinator.shared.isImporting      // returns Bool
-CalendarImportCoordinator.shared.importStatus     // returns ImportStatus enum
-
-ContactsImportCoordinator.shared.lastImportResult  // returns ImportResult?
-CalendarImportCoordinator.shared.lastImportedAt    // returns Date?
-```
-
-**Current Status**:
-- **CalendarImportCoordinator** follows the standard (Phase E)
-- **NoteAnalysisCoordinator** follows the standard (Phase H)
-- **InsightGenerator** follows the standard with `GenerationStatus` (Phase I)
-- **ContactsImportCoordinator** uses older pattern (Phase C, predates standard)
-- See §2.4 for standard coordinator API template
-- Migration planned for Phase J
-
-**When Building New Coordinators**:
-1. Copy CalendarImportCoordinator as template
-2. Use `ImportStatus` enum (not Bool for state)
-3. Provide `lastImportedAt: Date?` (not custom result types)
-4. Make `importNow()` async (wrap in Task at call site)
-5. Use `@ObservationIgnored` for UserDefaults-backed settings
+- Enum storage: always `rawValue` pattern with `@Transient` computed property
+- Model initialization: provide all required parameters
+- Search: fetch-all + in-memory filter (Swift 6 predicate capture limitation)
+- Container: singleton `SAMModelContainer.shared`
+- List selection: use primitive IDs (UUID), not model references
+
+### 6.5 Store Singletons — One CNContactStore, one EKEventStore. Never create duplicates.
+
+### 6.6 SwiftUI Patterns — Explicit `return` in multi-statement preview closures. `enumerated()` for non-Identifiable collections. UUID-based list selection.
+
+### 6.7 Background AI Task Rules (NEW)
+- All Layer 2 (Business Intelligence) tasks use `TaskPriority.background`
+- Call `Task.yield()` every ~10 iterations in batch processing loops
+- Check `Task.isCancelled` at each specialist call boundary
+- If user is actively typing or navigating (detected via focus state), pause background tasks
+- Cache specialist results with TTL; never re-run if cache is fresh
+- Log all specialist calls and durations to `DevLogStore` for performance tuning
 
 ---
 
 ## 7. Testing Strategy
 
-### Unit Testing Approach
-
+### Unit Testing
 Each layer tested independently:
+- **Services**: Test with real system APIs (requires authorization)
+- **Repositories**: Use in-memory `ModelContainer`
+- **Coordinators**: Mock services/repositories with protocols
+- **Views**: SwiftUI preview data
+- **Strategic Coordinator**: Mock specialist services, verify synthesis logic deterministically
+- **Specialist Analysts**: Test prompt construction with known data, verify structured output parsing
 
-```swift
-import Testing
-
-@Suite("ContactsService Tests")
-struct ContactsServiceTests {
-    
-    @Test("Fetch contact returns DTO")
-    func testFetchContact() async throws {
-        let contact = await ContactsService.shared.fetchContact(
-            identifier: "test-id",
-            keys: .minimal
-        )
-        #expect(contact != nil)
-    }
-}
-
-@Suite("PeopleRepository Tests")
-struct PeopleRepositoryTests {
-    
-    @Test("Upsert creates new person")
-    func testUpsert() throws {
-        let repo = PeopleRepository()
-        repo.configure(container: testContainer)
-        
-        let dto = ContactDTO(
-            identifier: "123",
-            givenName: "John",
-            familyName: "Doe"
-        )
-        
-        try repo.upsert(contact: dto)
-        
-        let people = try repo.fetchAll()
-        #expect(people.count == 1)
-        #expect(people.first?.displayNameCache == "John Doe")
-    }
-}
-```
-
-**Testing Guidelines**:
-- Services: Test with real CNContactStore (requires authorization)
-- Repositories: Use in-memory ModelContainer
-- Coordinators: Mock services/repositories with protocols
-- Views: Use SwiftUI preview data
+### Business Intelligence Testing
+- Pipeline metrics: Create known stage transitions, verify conversion rates and velocity calculations match expected values
+- Goal decomposition: Set known goals with known dates, verify weekly targets are mathematically correct
+- Strategic synthesis: Provide known specialist outputs, verify priority ranking and conflict resolution
+- Performance: Verify background tasks yield appropriately under simulated load
 
 ---
 
@@ -1223,158 +702,97 @@ struct PeopleRepositoryTests {
 ### Adding a New Feature
 
 **Checklist**:
-- [ ] Does it need external API access? → Add method to appropriate Service
-- [ ] Does it need persistent storage? → Add method to appropriate Repository
+- [ ] Does it need external API access? → Add to appropriate Service
+- [ ] Does it need persistent storage? → Add to appropriate Repository; plan schema migration
 - [ ] Does it need business logic? → Create/update Coordinator
-- [ ] Does it need UI? → Create View that uses DTOs
+- [ ] Does it need AI reasoning? → Which layer? Foreground (Layer 1) or Background (Layer 2)?
+- [ ] If Layer 2: Does it need a specialist analyst? Or can it use an existing one?
+- [ ] Does it need UI? → Create View using DTOs/ViewModels
 - [ ] Is all data crossing actors `Sendable`?
 - [ ] Are all CNContact/EKEvent accesses through Services?
+- [ ] Does it respect the priority hierarchy? (see agent.md)
 - [ ] Can it be tested without launching the full app?
 
-### Debugging Permission Issues
+### Adding a New Specialist Analyst
 
-1. Check authorization status: `await contactsService.authorizationStatus()`
-2. Verify using shared store: `ContactsService.shared` or `PermissionsManager.shared.contactStore`
-3. Look for direct CNContactStore creation (search codebase for `CNContactStore()`)
-4. Check if method checks auth before data access
-5. Review PermissionsManager logs for auth changes
+1. Create `XYZAnalystService` as an `actor` in Services/
+2. Define input DTO (pre-aggregated data, <2000 tokens when serialized)
+3. Define output DTO (structured JSON that Swift can parse)
+4. Write the specialist prompt — expose in Settings
+5. Register the analyst in `StrategicCoordinator`
+6. Add to the `TaskGroup` dispatch in the coordinator's analysis cycle
+7. Add synthesis handling in the coordinator's merge step
+8. Test: mock input → verify output parsing → verify synthesis integration
 
-### Debugging Concurrency Issues
+---
 
-1. Check actor isolation: Services are `actor`, Repositories are `@MainActor`
-2. Verify DTOs are `Sendable` (structs with Sendable members)
-3. Look for `nonisolated(unsafe)` (should be rare/never)
-4. Check for CNContact/EKEvent crossing boundaries (should never happen)
-5. Enable Swift 6 complete concurrency checking: `-strict-concurrency=complete`
+## 9. Schema Migration Plan
+
+| Version | Phase | Changes |
+|---------|-------|---------|
+| v16 | O (current) | Multi-step sequences on SamOutcome |
+| v17 | R | + StageTransition model |
+| v18 | S | + ProductionRecord, RecruitingStage |
+| v19 | V | + StrategicDigest |
+| v20 | X | + BusinessGoal |
+
+Each migration uses SwiftData lightweight migration. New models are additive (no breaking changes to existing models). Backfill logic runs once on first launch after migration.
 
 ---
 
 ## 10. Key Files Reference
 
 ### Documentation
-
-- **context.md** (this file): Current architecture, active phases, future roadmap
+- **context.md** (this file): Architecture, active phases, future roadmap
 - **changelog.md**: Completed phases, architectural decisions, historical notes
-- **agent.md**: Product philosophy and AI assistant guidelines
+- **agent.md**: Product philosophy, AI architecture, UX principles
 
 ### Core Implementation Files
-
-**Foundation**:
-- `SAMApp.swift`: App entry point, lifecycle, permission checks, repository configuration
-- `SAMModelContainer.swift`: SwiftData container (v16 schema — Multi-Step Sequences)
-- `AppShellView.swift`: Three-column navigation shell (sidebar → list → detail)
-
-**Models** (SwiftData @Model):
-- `SAMModels.swift`: Core models — SamPerson, SamContext, SamEvidenceItem, SamInsight, ContextParticipation, etc.
-- `SAMModels-Notes.swift`: SamNote, SamAnalysisArtifact
-- `SAMModels-Supporting.swift`: Value types — ParticipantHint, EvidenceSignal, ExtractedPersonMention, NoteActionItem, DiscoveredRelationship, SequenceTriggerCondition, ActionLane, CommunicationChannel, enums
-
-**Services** (Actor-isolated, returns DTOs):
-- `ContactsService.swift`: All CNContact operations
-- `CalendarService.swift`: All EKEvent operations
-- `NoteAnalysisService.swift`: On-device LLM analysis via Apple Foundation Models (role-aware prompts, discovered relationships)
-
-**Repositories** (@MainActor, SwiftData CRUD):
-- `PeopleRepository.swift`: SamPerson operations (upsert, bulk, email cache)
-- `EvidenceRepository.swift`: SamEvidenceItem operations (bulk upsert, email resolution, pruning)
-- `ContextsRepository.swift`: SamContext operations (participant management)
-- `NotesRepository.swift`: SamNote operations (analysis storage, action items)
-
-**Coordinators** (@MainActor, orchestration):
-- `ContactsImportCoordinator.swift`: Contact import with debouncing/throttling
-- `CalendarImportCoordinator.swift`: Calendar import (standard API pattern)
-- `NoteAnalysisCoordinator.swift`: Save → analyze → store pipeline
-- `InsightGenerator.swift`: Multi-source insight generation (notes, relationships, calendar, discovered relationships) with role-weighted thresholds
-
-**DTOs** (Sendable):
-- `ContactDTO.swift`: CNContact wrapper with nested types (PhoneNumberDTO, etc.)
-- `EventDTO.swift`: EKEvent wrapper with AttendeeDTO
-- `NoteAnalysisDTO.swift`: LLM analysis results (PersonMentionDTO, ActionItemDTO, DiscoveredRelationshipDTO)
+(See §3 for full tree with completion status)
 
 ---
 
 ## 11. Success Metrics
 
-**We know the rebuild succeeded when**:
-- ✅ No direct CNContactStore/EKEventStore access outside Services/
+**Architecture health:**
+- ✅ No direct CNContactStore/EKEventStore outside Services/
 - ✅ No `nonisolated(unsafe)` escape hatches
 - ✅ All concurrency warnings resolved
-- ✅ Each layer has < 10 files (cohesive responsibilities)
-- 🎯 New features take < 1 hour to add (vs. full day of debugging)
-- 🎯 Tests run in < 2 seconds (fast feedback loop)
-- 🎯 Zero permission dialog surprises during normal operation
+- ✅ Each layer has cohesive responsibilities
+- 🎯 New features take < 1 hour to scaffold
+- 🎯 Tests run in < 2 seconds
+
+**Business Intelligence health:**
+- 🎯 Background AI tasks never perceptibly slow the UI
+- 🎯 Strategic digest generation completes in < 60 seconds total
+- 🎯 Each specialist analyst call completes in < 10 seconds
+- 🎯 Pipeline metrics refresh in < 1 second (pure Swift computation)
+- 🎯 User rates weekly digest as useful >70% of the time (tracked via feedback)
+
+**User impact:**
+- 🎯 Time from "meeting ended" to "CRM updated with notes and follow-ups" < 5 minutes
+- 🎯 User acts on >50% of coaching outcomes (measured by CoachingAdvisor)
+- 🎯 Pipeline stalls identified within 48 hours of threshold breach
+- 🎯 Zero compliance-flagged messages sent without user acknowledgment
 
 ---
 
 ## 12. Development Environment
 
 ### Requirements
-
-- macOS 14.0+
-- Xcode 16.0+ (Swift 6)
-- Access to Contacts and Calendar (for testing)
+- macOS 26+ (Tahoe)
+- Xcode 18+ (Swift 6)
+- Access to Contacts, Calendar, Mail (for testing)
+- Security-scoped bookmark grants for iMessage/CallHistory databases
 
 ### Build Settings
-
 - Swift Language Version: Swift 6
 - Concurrency Checking: Complete (`-strict-concurrency=complete`)
-- Minimum macOS Deployment: 14.0
-
-### Test Data Setup
-
-1. Create test Contacts group named "SAM"
-2. Add 5-10 test contacts to group
-3. Create test Calendar named "SAM"
-4. Add upcoming test events
-5. Grant permissions in Settings → Permissions
+- Minimum macOS Deployment: 26.0
 
 ---
 
-## 13. Support & Documentation
-
-### Questions?
-
-- Check **CLEAN_REBUILD_PLAN.md** for phase-by-phase guidance
-- Review **PHASE_*_COMPLETE.md** for implementation details
-- Read relevant Service/Repository file headers for API documentation
-
-### Reporting Issues
-
-When reporting bugs or architectural concerns:
-1. Which layer is involved? (View/Coordinator/Service/Repository)
-2. Which phase does it belong to?
-3. Is it a concurrency issue, permission issue, or logic issue?
-4. Include relevant logs (search for service/coordinator name in console)
-
----
-
-## 14. Future Enhancements
-
-**Post-Phase O** (after all core phases complete):
-
-- **Advanced Search**: Full-text search across evidence, notes, mail summaries,Plea and insights
-- **Export/Import**: Backup and restore SAM data (SwiftData export)
-- **Multi-language**: Localization support
-- **Performance**: Optimize large dataset handling (10,000+ contacts)
-- **Mail Integration**: Email thread observation and analysis
-- **Zoom/Teams Integration**: Alternative to iMessage/FaceTime if APIs unavailable
-- **Advanced Analytics**: Relationship health scoring, engagement metrics
-- **Calendar Writing**: Create follow-up events from insights (requires calendar write permission)
-- **Contact Editing**: Limited contact field editing from SAM (sync back to Contacts)
-- **Custom Activity Types**: User-defined time tracking categories
-- **Undo Compression**: Archive old undo entries to reduce storage
-
-**Long-term**:
-- **iOS Companion**: Read-only iOS app (separate architecture, phase TBD)
-- **Team Collaboration**: Shared contexts and evidence (multi-user support)
-- **API Integration**: Connect to financial planning software (CRM sync)
-- **Advanced AI**: Custom LLM fine-tuning for financial advisor insights
-- **Relationship Graph**: Visual network of people, contexts, and connections
-
----
-
-**Document Version**: 5.4 (Phases A–O complete, Multi-Step Sequences, schema SAM_v16)
-**Previous Versions**: See `changelog.md` for version history
-**Last Major Update**: February 24, 2026 — Phase O Intelligent Actions + Multi-Step Sequences
+**Document Version**: 6.0 (Post-research roadmap, Business Intelligence architecture, Phases P–Z)  
+**Previous Versions**: See `changelog.md` for version history  
+**Last Major Update**: February 25, 2026 — Business Intelligence roadmap, RLM architecture, Phase R+ planning  
 **Clean Rebuild Started**: February 9, 2026
-

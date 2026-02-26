@@ -206,23 +206,54 @@ final class OutcomeRepository {
 
     // MARK: - Status Updates
 
-    /// Mark an outcome as completed.
+    /// Mark an outcome as completed (captures undo snapshot before mutation).
     func markCompleted(id: UUID) throws {
         guard let context else { throw RepositoryError.notConfigured }
         guard let outcome = try fetch(id: id) else { return }
+
+        // Capture snapshot before mutation
+        let snapshot = OutcomeSnapshot(
+            id: outcome.id,
+            title: outcome.title,
+            previousStatusRawValue: outcome.statusRawValue,
+            previousDismissedAt: outcome.dismissedAt,
+            previousCompletedAt: outcome.completedAt,
+            previousWasActedOn: outcome.wasActedOn
+        )
 
         outcome.statusRawValue = OutcomeStatus.completed.rawValue
         outcome.completedAt = .now
         outcome.wasActedOn = true
         try context.save()
         logger.info("Outcome completed: \(outcome.title)")
+
+        if let entry = try? UndoRepository.shared.capture(
+            operation: .statusChanged,
+            entityType: .outcome,
+            entityID: outcome.id,
+            entityDisplayName: outcome.title,
+            snapshot: snapshot
+        ) {
+            UndoCoordinator.shared.showToast(for: entry)
+        }
     }
 
     /// Mark an outcome as dismissed (user clicked Skip).
+    /// Captures undo snapshot before mutation.
     /// If the outcome is part of a sequence, also dismisses all subsequent steps.
     func markDismissed(id: UUID) throws {
         guard let context else { throw RepositoryError.notConfigured }
         guard let outcome = try fetch(id: id) else { return }
+
+        // Capture snapshot before mutation
+        let snapshot = OutcomeSnapshot(
+            id: outcome.id,
+            title: outcome.title,
+            previousStatusRawValue: outcome.statusRawValue,
+            previousDismissedAt: outcome.dismissedAt,
+            previousCompletedAt: outcome.completedAt,
+            previousWasActedOn: outcome.wasActedOn
+        )
 
         outcome.statusRawValue = OutcomeStatus.dismissed.rawValue
         outcome.dismissedAt = .now
@@ -232,6 +263,16 @@ final class OutcomeRepository {
         // Auto-dismiss subsequent sequence steps
         if let seqID = outcome.sequenceID {
             try dismissRemainingSteps(sequenceID: seqID, fromIndex: outcome.sequenceIndex + 1)
+        }
+
+        if let entry = try? UndoRepository.shared.capture(
+            operation: .statusChanged,
+            entityType: .outcome,
+            entityID: outcome.id,
+            entityDisplayName: outcome.title,
+            snapshot: snapshot
+        ) {
+            UndoCoordinator.shared.showToast(for: entry)
         }
     }
 
