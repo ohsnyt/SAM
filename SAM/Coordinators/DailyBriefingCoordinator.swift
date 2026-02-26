@@ -1235,9 +1235,48 @@ final class DailyBriefingCoordinator {
             }
         }
 
+        // 9. Scenario projection pace check (Phase Y)
+        if priorities.count < 10 {
+            ScenarioProjectionEngine.shared.refresh()
+            // Prefer decelerating trends, otherwise fall back to client pipeline
+            let allProjections = ScenarioProjectionEngine.shared.projections
+            let notable = allProjections.first(where: { $0.trend == .decelerating && $0.hasEnoughData })
+                ?? allProjections.first(where: { $0.category == .clientPipeline && $0.hasEnoughData })
+            if let proj = notable, let threeMonth = proj.points.first(where: { $0.months == 3 }) {
+                let midStr: String
+                if proj.category.isCurrency {
+                    midStr = formatProjectionCurrency(threeMonth.mid)
+                } else {
+                    midStr = "~\(Int(threeMonth.mid.rounded()))"
+                }
+                let rangeStr: String
+                if proj.category.isCurrency {
+                    rangeStr = "\(formatProjectionCurrency(threeMonth.low))–\(formatProjectionCurrency(threeMonth.high))"
+                } else {
+                    rangeStr = "\(Int(threeMonth.low.rounded()))–\(Int(threeMonth.high.rounded()))"
+                }
+                priorities.append(BriefingAction(
+                    title: "Pace check: \(midStr) \(proj.category.displayName.lowercased()) projected over next 3 months",
+                    rationale: "Based on trailing 90-day velocity (range: \(rangeStr)).",
+                    urgency: proj.trend == .decelerating ? "soon" : "standard",
+                    sourceKind: "projection"
+                ))
+            }
+        }
+
         // Return top 5 sorted by urgency
         let urgencyOrder = ["immediate": 0, "soon": 1, "standard": 2, "low": 3]
         return Array(priorities.sorted { urgencyOrder[$0.urgency, default: 9] < urgencyOrder[$1.urgency, default: 9] }.prefix(5))
+    }
+
+    private func formatProjectionCurrency(_ value: Double) -> String {
+        if value >= 1_000_000 {
+            return "$\(String(format: "%.1f", value / 1_000_000))M"
+        } else if value >= 1_000 {
+            return "$\(String(format: "%.0f", value / 1_000))K"
+        } else {
+            return "$\(Int(value.rounded()))"
+        }
     }
 
     private func gatherAccomplishments() -> [BriefingAccomplishment] {

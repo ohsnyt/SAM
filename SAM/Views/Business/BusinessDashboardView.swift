@@ -53,6 +53,7 @@ struct BusinessDashboardView: View {
                     tracker.refresh()
                     if selectedTab == 3 {
                         Task { await strategic.generateDigest(type: .onDemand) }
+                        ScenarioProjectionEngine.shared.refresh()
                     }
                 } label: {
                     Label("Refresh", systemImage: "arrow.clockwise")

@@ -2164,6 +2164,105 @@ All follow the same actor pattern: singleton, `checkAvailability()` guard, call 
 
 ---
 
+## February 26, 2026 - Phase X: Goal Setting & Decomposition (Schema SAM_v24)
+
+### Overview
+Phase X implements a business goal tracking system with 7 goal types that compute live progress from existing SAM data repositories — no redundant progress values stored. Goals are decomposed into adaptive pacing targets with pace indicators (ahead/on-track/behind/at-risk) and linear projected completion.
+
+### New Models
+
+**`BusinessGoal`** (@Model) — `id: UUID`, `goalTypeRawValue: String` (+ `@Transient goalType: GoalType`), `title: String`, `targetValue: Double`, `startDate: Date`, `endDate: Date`, `isActive: Bool`, `notes: String?`, `createdAt: Date`, `updatedAt: Date`. Progress computed live from existing repositories — no stored `currentValue`.
+
+**`GoalType`** (enum, 7 cases) — `.newClients`, `.policiesSubmitted`, `.productionVolume`, `.recruiting`, `.meetingsHeld`, `.contentPosts`, `.deepWorkHours`. Each has `displayName`, `icon` (SF Symbol), `unit`, `isCurrency` (true only for `.productionVolume`).
+
+**`GoalPace`** (enum, 4 cases) — `.ahead` (green), `.onTrack` (blue), `.behind` (orange), `.atRisk` (red). Each has `displayName` and `icon`.
+
+### New Components
+
+**`GoalRepository`** (@MainActor @Observable singleton) — `create(goalType:title:targetValue:startDate:endDate:notes:)`, `fetchActive()`, `fetchAll()`, `update(id:...)`, `archive(id:)`, `delete(id:)`.
+
+**`GoalProgressEngine`** (@MainActor @Observable singleton) — Read-only; computes live progress from PipelineRepository (transitions), ProductionRepository (records + premium), EvidenceRepository (calendar events), ContentPostRepository (posts), TimeTrackingRepository (deep work hours). `GoalProgress` struct: `currentValue`, `targetValue`, `percentComplete`, `pace`, `dailyNeeded`, `weeklyNeeded`, `daysRemaining`, `projectedCompletion`. Pace thresholds: ratio-based (1.1+ ahead, 0.9–1.1 on-track, 0.5–0.9 behind, <0.5 at-risk).
+
+**`GoalProgressView`** (SwiftUI) — 5th tab in BusinessDashboardView. Goal cards with progress bars, pace badges, pacing hints (adapts daily/weekly/monthly granularity), projected completion, edit/archive actions. Sheet for create/edit via GoalEntryForm.
+
+**`GoalEntryForm`** (SwiftUI) — Type picker (dropdown with 7 GoalType icons), auto-title generation, target value field (currency prefix for production goals), date range pickers, optional notes. Frame: 450×520.
+
+**`GoalPacingSection`** (SwiftUI) — Compact cards (up to 3) in AwarenessView Today's Focus group, prioritized by atRisk → behind → nearest deadline. Mini progress bars + pace badges.
+
+### Components Modified
+
+**`BusinessDashboardView.swift`** — Added 5th "Goals" tab (tag 4) rendering GoalProgressView.
+
+**`AwarenessView.swift`** — Added GoalPacingSection to Today's Focus group.
+
+**`DailyBriefingCoordinator.swift`** — `gatherWeeklyPriorities()` section 7: goal deadline warnings for goals ≤14 days remaining with behind/atRisk pace.
+
+**`SAMModelContainer.swift`** — Schema bumped to SAM_v24, added `BusinessGoal.self` to allModels.
+
+**`SAMApp.swift`** — Added `GoalRepository.shared.configure(container:)` in `configureDataLayer()`.
+
+### Key Design Decisions
+- **No stored progress** — current values computed live from existing repositories; avoids stale data
+- **Soft archive** — `isActive` flag hides completed goals without data loss
+- **Auto-title** — Pattern "[target] [type]" (e.g., "50 New Clients"), user-overridable
+- **Linear pace calculation** — compares elapsed fraction vs. progress fraction; simple and transparent
+- **7 goal types** — each maps to a specific repository query; covers all WFG business activities
+
+---
+
+## February 26, 2026 - Phase Y: Scenario Projections (No Schema Change)
+
+### Overview
+Phase Y adds deterministic linear projections based on trailing 90-day velocity across 5 business categories. Computes 3/6/12 month horizons with confidence bands (low/mid/high) and trend detection. Pure math — no AI calls, no data persistence.
+
+### New Components
+
+**`ScenarioProjectionEngine`** (@MainActor @Observable singleton) — `refresh()` computes all 5 projections from trailing 90 days, stores in `projections: [ScenarioProjection]`.
+
+**Value types** (in ScenarioProjectionEngine.swift):
+- `ProjectionCategory` enum (5 cases): `.clientPipeline` (green, person.badge.plus), `.recruiting` (teal, person.3.fill), `.revenue` (purple, dollarsign.circle.fill, isCurrency), `.meetings` (orange, calendar), `.content` (pink, text.bubble.fill).
+- `ProjectionPoint` struct: `months` (3/6/12), `low`, `mid`, `high` confidence range.
+- `ProjectionTrend` enum: `.accelerating`, `.steady`, `.decelerating`, `.insufficientData`.
+- `ScenarioProjection` struct: `category`, `trailingMonthlyRate`, `points` (3 entries), `trend`, `hasEnoughData`.
+
+**Computation**:
+1. Bucket trailing 90 days into 3 monthly periods (0=oldest 60–90d, 1=30–60d, 2=recent 0–30d)
+2. Per-category measurement: client transitions to "Client" stage, recruiting transitions to licensed/firstSale/producing, production annualPremium sum, calendar evidence count, content post count
+3. Rate = mean of 3 buckets; stdev across buckets
+4. Trend: compare bucket[2] vs avg(bucket[0], bucket[1]) — >1.15 accelerating, <0.85 decelerating, else steady
+5. Confidence bands: mid = rate × months, band = max(stdev × sqrt(months), mid × 0.2), low = max(mid - band, 0)
+6. `hasEnoughData` = true if ≥2 non-zero buckets
+
+**`ScenarioProjectionsView`** (SwiftUI) — 2-column LazyVGrid of projection cards. Per card: category icon + name, trend badge (colored capsule with arrow + label), 3-column horizons (3mo/6mo/12mo with mid bold + low–high range), "Limited data" indicator. Currency formatting ($XK/$XM). Embedded at top of StrategicInsightsView.
+
+### Components Modified
+
+**`StrategicInsightsView.swift`** — Added `@State projectionEngine`, `ScenarioProjectionsView` as first section, `.task { projectionEngine.refresh() }`.
+
+**`BusinessDashboardView.swift`** — Toolbar refresh calls `ScenarioProjectionEngine.shared.refresh()` when Strategic tab active.
+
+**`DailyBriefingCoordinator.swift`** — `gatherWeeklyPriorities()` section 9: picks most notable projection (decelerating preferred, otherwise client pipeline), appends pace-check BriefingAction with `sourceKind: "projection"`. Only included if `hasEnoughData == true` and under priority cap.
+
+### Key Design Decisions
+- **90-day trailing only** — fixed window; simple and transparent
+- **3 monthly buckets** — balances recency with data volume for trend detection
+- **15% threshold** — captures meaningful trend changes without noise
+- **Confidence as stdev-based bands** — wider for high variance; minimum 20% floor for small rates
+- **No persistence** — computed on-demand; always fresh
+- **Embedded in Strategic tab** — positioned before narrative summaries for immediate forward-looking context
+
+### Files Summary
+
+| File | Action |
+|------|--------|
+| `Coordinators/ScenarioProjectionEngine.swift` | NEW |
+| `Views/Business/ScenarioProjectionsView.swift` | NEW |
+| `Views/Business/StrategicInsightsView.swift` | MODIFY |
+| `Views/Business/BusinessDashboardView.swift` | MODIFY |
+| `Coordinators/DailyBriefingCoordinator.swift` | MODIFY |
+
+---
+
 **Changelog Started**: February 10, 2026
 **Maintained By**: Project team
 **Related Docs**: See `context.md` for current state and roadmap

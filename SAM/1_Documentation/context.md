@@ -3,11 +3,11 @@
 **Language**: Swift 6  
 **Architecture**: Clean layered architecture with strict separation of concerns  
 **Framework**: SwiftUI + SwiftData  
-**Last Updated**: February 26, 2026 (Phases A–W complete, schema SAM_v23)
+**Last Updated**: February 26, 2026 (Phases A–Y complete, schema SAM_v24)
 
 **Related Docs**: 
 - See `agent.md` for product philosophy, AI architecture, and UX principles
-- See `changelog.md` for historical completion notes (Phases A–W)
+- See `changelog.md` for historical completion notes (Phases A–Y)
 
 ---
 
@@ -129,7 +129,7 @@ SAM is a **native macOS business coaching and relationship management applicatio
 SAM/SAM/
 ├── App/
 │   ├── SAMApp.swift                    ✅ App entry point, lifecycle, permissions
-│   └── SAMModelContainer.swift         ✅ SwiftData container (v23)
+│   └── SAMModelContainer.swift         ✅ SwiftData container (v24)
 │
 ├── Services/
 │   ├── ContactsService.swift           ✅ Actor — CNContact operations
@@ -164,7 +164,8 @@ SAM/SAM/
 │   ├── UndoCoordinator.swift           ✅ Undo toast display + restore dispatch
 │   ├── PipelineTracker.swift           ✅ Funnel metrics, stage transitions, stall detection, production metrics
 │   ├── StrategicCoordinator.swift      ✅ RLM orchestrator — dispatches specialists, synthesizes
-│   └── GoalDecomposer.swift            ⬜ Goal → weekly/daily targets → progress tracking
+│   ├── GoalProgressEngine.swift       ✅ Live goal progress from existing repos + pace calculation
+│   └── ScenarioProjectionEngine.swift ✅ Deterministic 90-day trailing velocity projections
 │
 ├── Repositories/
 │   ├── PeopleRepository.swift          ✅ CRUD for SamPerson
@@ -177,7 +178,7 @@ SAM/SAM/
 │   ├── PipelineRepository.swift        ✅ CRUD for StageTransition + RecruitingStage
 │   ├── ProductionRepository.swift     ✅ CRUD for ProductionRecord + metric queries
 │   ├── ContentPostRepository.swift    ✅ CRUD for ContentPost + cadence + streak queries
-│   └── BusinessMetricsRepository.swift ⬜ CRUD for goals
+│   └── GoalRepository.swift           ✅ CRUD for BusinessGoal + archive
 │
 ├── Models/
 │   ├── SAMModels.swift                 ✅ Core models (SamPerson, SamContext, etc.)
@@ -188,6 +189,7 @@ SAM/SAM/
 │   ├── SAMModels-Production.swift     ✅ ProductionRecord, WFGProductType, ProductionStatus
 │   ├── SAMModels-Strategic.swift      ✅ StrategicDigest, DigestType
 │   ├── SAMModels-ContentPost.swift   ✅ ContentPost, ContentPlatform
+│   ├── SAMModels-Goal.swift          ✅ BusinessGoal, GoalType, GoalPace
 │   └── DTOs/
 │       ├── ContactDTO.swift            ✅
 │       ├── EventDTO.swift              ✅
@@ -212,8 +214,10 @@ SAM/SAM/
 │   │   ├── RecruitingPipelineDashboardView.swift ✅ 7-stage funnel, licensing rate, mentoring
 │   │   ├── ProductionDashboardView.swift ✅ Status overview, product mix, pending aging, all records
 │   │   ├── ProductionEntryForm.swift  ✅ Add/edit production record sheet
-│   │   ├── StrategicInsightsView.swift ✅ Strategic digest + recommendation cards
-│   │   └── GoalProgressView.swift      ⬜ Goals vs. actuals with pace indicators
+│   │   ├── StrategicInsightsView.swift ✅ Strategic digest + recommendation cards + scenario projections
+│   │   ├── ScenarioProjectionsView.swift ✅ 2-column projection cards with trend badges
+│   │   ├── GoalProgressView.swift     ✅ Goal cards with progress bars + pace indicators
+│   │   └── GoalEntryForm.swift        ✅ Goal create/edit sheet
 │   ├── Shared/                         ✅ Reusable components
 │   └── Settings/                       ✅ Tabbed settings
 │
@@ -229,7 +233,7 @@ SAM/SAM/
 
 ## 4. Data Models
 
-### 4.1 Existing Models (Phases A–W, schema v23)
+### 4.1 Existing Models (Phases A–Y, schema v24)
 
 (All existing models unchanged — see `changelog.md` for full schema. Summary below.)
 
@@ -248,24 +252,7 @@ SAM/SAM/
 - **StrategicDigest** — Cached business intelligence output (pipeline/time/pattern/content summaries, strategic recommendations with feedback tracking)
 - **SamDailyBriefing** — `strategicHighlights: [BriefingAction]` field added (Phase V)
 - **ContentPost** — Social media posting tracker (platform, topic, postedAt, sourceOutcomeID)
-
-### 4.2 Future Business Models
-
-**BusinessGoal** — User-defined targets
-```swift
-@Model
-final class BusinessGoal {
-    var title: String               // "Write 10 policies this quarter"
-    var goalTypeRawValue: String    // "production", "recruiting", "prospecting", "time"
-    var targetValue: Double         // Numeric target
-    var currentValue: Double        // Current progress (updated by trackers)
-    var unitLabel: String           // "policies", "agents", "contacts", "hours"
-    var startDate: Date
-    var endDate: Date
-    var isActive: Bool
-    var weeklyMilestones: [Double]  // Decomposed weekly targets (computed by GoalDecomposer)
-}
-```
+- **BusinessGoal** — User-defined targets (goalType, title, targetValue, startDate, endDate, isActive, notes); progress computed live from existing repos
 
 ---
 
@@ -297,50 +284,10 @@ final class BusinessGoal {
 - ✅ **Phase U**: Relationship Decay Prediction (no schema change)
 - ✅ **Phase V**: Business Intelligence — Strategic Coordinator (schema SAM_v22)
 - ✅ **Phase W**: Content Assist & Social Media Coaching (schema SAM_v23)
+- ✅ **Phase X**: Goal Setting & Decomposition (schema SAM_v24)
+- ✅ **Phase Y**: Scenario Projections (no schema change)
 
 ### Active / Next Phases
-
----
-
-### ⬜ Phase X: Goal Setting & Decomposition
-
-**Goal**: Let the user set business goals; SAM decomposes them into actionable weekly/daily targets and tracks progress.
-
-**Impact**: HIGH — connects daily activities to strategic objectives.
-
-**Key deliverables**:
-
-**X.1 — Goal Entry & Management**
-- `BusinessGoal` model + UI
-- Goal types: Production ("Write 10 policies this quarter"), Recruiting ("Recruit 3 agents this month"), Prospecting ("Contact 5 new leads per week"), Time ("Spend 60% of time on client-facing activities")
-- Start/end dates, numeric targets
-
-**X.2 — Goal Decomposition**
-- `GoalDecomposer` coordinator
-- Breaks quarterly goals into monthly → weekly → daily targets
-- Adjusts pace based on progress (behind pace → higher daily targets; ahead → maintenance mode)
-- Computation in Swift, narration by LLM
-
-**X.3 — Goal Progress Dashboard**
-- `GoalProgressView` — progress bars, pace indicators, projected completion
-- "On track" / "Behind pace" / "Ahead" status per goal
-- Integrated into morning briefing: "To stay on pace for your Q2 production goal, aim to submit 2 applications this week."
-
----
-
-### ⬜ Phase Y: Scenario Projections
-
-**Goal**: "If you maintain current pace, here's where you'll be in 3/6/12 months."
-
-**Impact**: MEDIUM — valuable for motivation and planning, but dependent on Phases R–X data.
-
-**Key deliverables**:
-- Simple linear projections based on trailing 90-day velocity
-- Pipeline throughput projection (new clients per month at current conversion rate)
-- Recruiting projection (producing agents per quarter at current licensing rate)
-- Revenue estimate range (based on production trends and average policy size)
-- All projections clearly labeled as estimates with confidence ranges
-- Displayed in Business Dashboard and weekly digest
 
 ---
 
@@ -373,7 +320,7 @@ final class BusinessGoal {
 
 ## 6. Critical Patterns & Gotchas
 
-(All existing patterns from Phases A–W remain in effect. See `changelog.md` for full documentation of each. Summary of key rules below.)
+(All existing patterns from Phases A–Y remain in effect. See `changelog.md` for full documentation of each. Summary of key rules below.)
 
 ### 6.1 Permissions — Never trigger surprise dialogs. Always check auth before access.
 
@@ -461,8 +408,8 @@ Each layer tested independently:
 | v20 | S | + ProductionRecord, WFGProductType, ProductionStatus |
 | v21 | U enhancement | + SamPerson.preferredCadenceDays (cadence override) |
 | v22 | V | + StrategicDigest, + SamDailyBriefing.strategicHighlights |
-| v23 | W (current) | + ContentPost model |
-| v24 | X | + BusinessGoal |
+| v23 | W | + ContentPost model |
+| v24 | X (current) | + BusinessGoal model |
 
 Each migration uses SwiftData lightweight migration. New models are additive (no breaking changes to existing models). Backfill logic runs once on first launch after migration.
 
@@ -520,8 +467,8 @@ Each migration uses SwiftData lightweight migration. New models are additive (no
 
 ---
 
-**Document Version**: 12.0 (Phase W complete, Content Assist & Social Media Coaching, Phases X–Z roadmap)
+**Document Version**: 14.0 (Phases X–Y complete, Goal Setting & Scenario Projections, Phase Z roadmap)
 **Previous Versions**: See `changelog.md` for version history
-**Last Major Update**: February 26, 2026 — Phase W: Content Assist & Social Media Coaching — content topic suggestions, AI draft generation, posting cadence tracking, briefing integration (schema SAM_v23)
+**Last Major Update**: February 26, 2026 — Phase Y: Scenario Projections — deterministic 90-day trailing velocity projections across 5 categories, embedded in Strategic Insights tab and weekly briefing (schema SAM_v24)
 **Clean Rebuild Started**: February 9, 2026
     

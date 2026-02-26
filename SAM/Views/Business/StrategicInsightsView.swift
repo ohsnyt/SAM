@@ -14,9 +14,13 @@ import SwiftUI
 struct StrategicInsightsView: View {
 
     @Bindable var coordinator: StrategicCoordinator
+    @State private var projectionEngine = ScenarioProjectionEngine.shared
 
     var body: some View {
         VStack(spacing: 16) {
+            // Scenario Projections (Phase Y)
+            ScenarioProjectionsView(engine: projectionEngine)
+
             // Status banner
             statusBanner
 
@@ -56,6 +60,9 @@ struct StrategicInsightsView: View {
             Spacer()
         }
         .padding()
+        .task {
+            projectionEngine.refresh()
+        }
     }
 
     // MARK: - Status Banner
