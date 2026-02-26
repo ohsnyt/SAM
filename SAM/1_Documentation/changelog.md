@@ -4,6 +4,50 @@
 
 ---
 
+## February 26, 2026 - Phase T: Meeting Lifecycle Automation (No Schema Change)
+
+### Overview
+Connected SAM's existing meeting infrastructure into a coherent lifecycle: enriched pre-meeting attendee profiles with interaction history, pending actions, life events, pipeline stage, and product holdings; AI-generated talking points per meeting; auto-expanding briefings within 15 minutes of start; structured post-meeting capture sheet (replacing plain-text templates); auto-created outcomes from note analysis action items; enhanced meeting quality scoring with follow-up detection; and weekly meeting quality stats in Monday briefings.
+
+### Components Modified
+
+**`MeetingPrepCoordinator`** — Extended `AttendeeProfile` with 5 new fields: `lastInteractions` (last 3 interactions from evidence), `pendingActionItems` (from note action items), `recentLifeEvents` (last 30 days from notes), `pipelineStage` (from role badges), `productHoldings` (from ProductionRepository). Added `talkingPoints: [String]` to `MeetingBriefing`. New `generateTalkingPoints()` method calls AIService with attendee context and parses JSON array response. `buildBriefings()` is now async.
+
+**`MeetingPrepSection`** — `BriefingCard` auto-expands when meeting starts within 15 minutes (computed in `init`). New `talkingPointsSection` shows AI-generated talking points with lightbulb icons. Expanded attendee section now shows per-attendee interaction history, pending actions, life events, and product holdings inline.
+
+**`PostMeetingCaptureView`** (NEW) — Structured sheet with 4 sections: Discussion (TextEditor), Action Items (dynamic list of text fields with + button), Follow-Up (TextEditor), Life Events (TextEditor). Per-section dictation buttons using DictationService pattern. Saves combined content as a note linked to attendees, triggers background NoteAnalysisCoordinator analysis. `PostMeetingPayload` struct for notification-driven presentation.
+
+**`DailyBriefingCoordinator`** — `createMeetingNoteTemplate()` now posts `.samOpenPostMeetingCapture` notification instead of creating plain-text notes directly. Still creates follow-up outcome. New meeting quality stats in `gatherWeeklyPriorities()`: computes average quality score for past 7 days, adds "Improve meeting documentation" action if below 60.
+
+**`NoteAnalysisCoordinator`** — Added Step 10 after Step 9: `createOutcomesFromAnalysis()`. For each pending action item with a linked person, maps action type to `OutcomeKind`, urgency to deadline, deduplicates via `hasSimilarOutcome()`, creates `SamOutcome` with draft message text. Max 5 outcomes per note.
+
+**`MeetingQualitySection`** — Reweighted scoring: Note(35) + Timely(20) + Action items(15) + Attendees(10) + Follow-up drafted(10) + Follow-up sent(10) = 100. New `checkFollowUpSent()` detects outgoing communication (iMessage/email/phone/FaceTime) to attendees within 48h of meeting end. Added `followUpSent` field to `ScoredMeeting`. "No follow-up" tag in missing list.
+
+**`SAMModels`** — Added `.samOpenPostMeetingCapture` notification name.
+
+**`AppShellView`** — Listens for `.samOpenPostMeetingCapture` notification. Stores `@State postMeetingPayload: PostMeetingPayload?`. Presents `PostMeetingCaptureView` as `.sheet(item:)` in both two-column and three-column layouts.
+
+### Files
+| File | Status |
+|------|--------|
+| `Coordinators/MeetingPrepCoordinator.swift` | MODIFIED — Enhanced AttendeeProfile, talking points, async buildBriefings |
+| `Views/Awareness/MeetingPrepSection.swift` | MODIFIED — Auto-expand, talking points section, enriched attendee display |
+| `Views/Awareness/PostMeetingCaptureView.swift` | NEW — Structured 4-section capture sheet with dictation |
+| `Coordinators/DailyBriefingCoordinator.swift` | MODIFIED — Notification-based capture, weekly meeting stats |
+| `Coordinators/NoteAnalysisCoordinator.swift` | MODIFIED — Step 10: auto-create outcomes from action items |
+| `Views/Awareness/MeetingQualitySection.swift` | MODIFIED — Follow-up detection, reweighted scoring |
+| `Models/SAMModels.swift` | MODIFIED — .samOpenPostMeetingCapture notification name |
+| `Views/AppShellView.swift` | MODIFIED — Post-meeting capture sheet listener |
+
+### What did NOT change
+- `SamNote` model — no new fields needed
+- `SamOutcome` model — existing fields suffice
+- `OutcomeEngine` — scanner pattern unchanged
+- `InlineNoteCaptureView` — still available for quick notes
+- Schema version — stays at SAM_v20
+
+---
+
 ## February 25, 2026 - Phase S: Production Tracking (Schema SAM_v20)
 
 ### Overview
