@@ -965,5 +965,9 @@ extension Notification.Name {
     /// Posted to open a QuickNote window from anywhere in the app.
     /// userInfo: ["payload": QuickNotePayload]
     static let samOpenQuickNote = Notification.Name("samOpenQuickNote")
+
+    /// Posted after UndoCoordinator successfully restores an entity.
+    /// Listeners should refresh their data.
+    static let samUndoDidRestore = Notification.Name("samUndoDidRestore")
 }
 

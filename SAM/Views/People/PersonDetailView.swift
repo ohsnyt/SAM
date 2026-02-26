@@ -117,6 +117,9 @@ struct PersonDetailView: View {
             await loadFullContact()
             loadNotes()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .samUndoDidRestore)) { _ in
+            loadNotes()
+        }
         .sheet(isPresented: $showingContextPicker) {
             ContextPickerSheet(person: person)
         }

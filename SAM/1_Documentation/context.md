@@ -3,7 +3,7 @@
 **Language**: Swift 6  
 **Architecture**: Clean layered architecture with strict separation of concerns  
 **Framework**: SwiftUI + SwiftData  
-**Last Updated**: February 25, 2026 (Phases A–O complete, schema SAM_v16, planning Phase R+)
+**Last Updated**: February 25, 2026 (Phases A–Q complete, schema SAM_v18, planning Phase R+)
 
 **Related Docs**: 
 - See `agent.md` for product philosophy, AI architecture, and UX principles
@@ -129,7 +129,7 @@ SAM is a **native macOS business coaching and relationship management applicatio
 SAM/SAM/
 ├── App/
 │   ├── SAMApp.swift                    ✅ App entry point, lifecycle, permissions
-│   └── SAMModelContainer.swift         ✅ SwiftData container (v16 → v17+)
+│   └── SAMModelContainer.swift         ✅ SwiftData container (v18)
 │
 ├── Services/
 │   ├── ContactsService.swift           ✅ Actor — CNContact operations
@@ -161,6 +161,7 @@ SAM/SAM/
 │   ├── OutcomeEngine.swift             ✅ Outcome generation + scoring
 │   ├── CoachingAdvisor.swift           ✅ Adaptive feedback
 │   ├── DailyBriefingCoordinator.swift  ✅ Briefings + sequence triggers
+│   ├── UndoCoordinator.swift           ✅ Undo toast display + restore dispatch
 │   ├── StrategicCoordinator.swift      ⬜ RLM orchestrator — dispatches specialists, synthesizes
 │   ├── PipelineTracker.swift           ⬜ Funnel metrics, stage transitions, stall detection
 │   ├── ProductionTracker.swift         ⬜ Policies, products, revenue trends
@@ -172,13 +173,15 @@ SAM/SAM/
 │   ├── ContextsRepository.swift        ✅ CRUD for SamContext
 │   ├── NotesRepository.swift           ✅ CRUD for SamNote
 │   ├── OutcomeRepository.swift         ✅ CRUD for SamOutcome
-│   ├── BusinessMetricsRepository.swift ⬜ CRUD for production, goals, stage transitions
-│   └── TimeTrackingRepository.swift    ⬜ CRUD for TimeEntry with categories
+│   ├── UndoRepository.swift            ✅ CRUD for SamUndoEntry (30-day snapshots)
+│   ├── TimeTrackingRepository.swift    ✅ CRUD for TimeEntry with categories
+│   └── BusinessMetricsRepository.swift ⬜ CRUD for production, goals, stage transitions
 │
 ├── Models/
 │   ├── SAMModels.swift                 ✅ Core models (SamPerson, SamContext, etc.)
 │   ├── SAMModels-Notes.swift           ✅ SamNote, SamAnalysisArtifact
 │   ├── SAMModels-Supporting.swift      ✅ Value types, enums
+│   ├── SAMModels-Undo.swift            ✅ SamUndoEntry, snapshots
 │   ├── SAMModels-Business.swift        ⬜ StageTransition, ProductionRecord, BusinessGoal, etc.
 │   └── DTOs/
 │       ├── ContactDTO.swift            ✅
@@ -233,8 +236,8 @@ SAM/SAM/
 - **SamInsight** — AI-generated per-person insights
 - **SamOutcome** — Coaching suggestions with priority scoring, action lanes, sequences
 - **CoachingProfile** — Singleton tracking encouragement style and user patterns
-- **TimeEntry** — Time tracking (defined but not fully implemented)
-- **UndoEntry** — Universal undo (defined but not fully implemented)
+- **TimeEntry** — Time tracking with 10-category WFG categorization
+- **SamUndoEntry** — 30-day undo snapshots for destructive operations
 
 ### 4.2 New Business Models (Phase R+)
 
@@ -347,33 +350,10 @@ enum TimeCategory: String, CaseIterable, Sendable {
 - ✅ **Phase N**: Outcome-Focused Coaching Engine
 - ✅ **Awareness UX Overhaul**: Dashboard sections, time-of-day coaching, App Intents/Siri
 - ✅ **Phase O**: Intelligent Actions + Multi-Step Sequences (schema SAM_v16)
+- ✅ **Phase P**: Universal Undo System (schema SAM_v17)
+- ✅ **Phase Q**: Time Tracking & Categorization (schema SAM_v18)
 
 ### Active / Next Phases
-
----
-
-### ⬜ Phase P: Universal Undo System
-
-**Goal**: 30-day undo history for all destructive operations.
-
-**Scope**: UndoEntry model already defined. Implement capture and replay.
-
-**Priority**: Medium. Implement before business intelligence to establish data safety net.
-
----
-
-### ⬜ Phase Q: Time Tracking & Categorization
-
-**Goal**: Allow user to document and categorize how time is spent. Auto-categorize calendar events by attendee roles and title keywords.
-
-**Key deliverables**:
-- TimeEntry CRUD with `TimeCategory` enum
-- Calendar event auto-categorization heuristics (client meeting if attendee has Client role, etc.)
-- Manual override UI (quick-tap category on calendar events in Awareness view)
-- Time allocation summary in Awareness (today: X% client-facing, Y% admin, Z% prospecting)
-- `TimeTrackingRepository` following standard patterns
-
-**Priority**: High — feeds directly into Business Intelligence time analysis.
 
 ---
 
@@ -730,11 +710,13 @@ Each layer tested independently:
 
 | Version | Phase | Changes |
 |---------|-------|---------|
-| v16 | O (current) | Multi-step sequences on SamOutcome |
-| v17 | R | + StageTransition model |
-| v18 | S | + ProductionRecord, RecruitingStage |
-| v19 | V | + StrategicDigest |
-| v20 | X | + BusinessGoal |
+| v16 | O | Multi-step sequences on SamOutcome |
+| v17 | P | + SamUndoEntry model |
+| v18 | Q (current) | + TimeEntry model, TimeCategory enum |
+| v19 | R | + StageTransition model |
+| v20 | S | + ProductionRecord, RecruitingStage |
+| v21 | V | + StrategicDigest |
+| v22 | X | + BusinessGoal |
 
 Each migration uses SwiftData lightweight migration. New models are additive (no breaking changes to existing models). Backfill logic runs once on first launch after migration.
 

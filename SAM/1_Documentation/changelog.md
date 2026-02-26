@@ -22,6 +22,73 @@ All three import coordinators (iMessage, Calls, Email) previously re-scanned the
 
 ---
 
+## February 25, 2026 - Undo Restore UI Refresh Fix
+
+### Overview
+After restoring a deleted note via undo, the note didn't appear in PersonDetailView or ContextDetailView until navigating away and back. Root cause: both views use `@State` arrays with manual `loadNotes()` fetches rather than `@Query`, so SwiftData inserts from UndoRepository didn't trigger a re-render.
+
+### Changes
+- **`SAMModels.swift`** — Added `Notification.Name.samUndoDidRestore`
+- **`UndoCoordinator.swift`** — Posts `.samUndoDidRestore` after successful restore
+- **`PersonDetailView.swift`** — Added `.onReceive(.samUndoDidRestore)` → `loadNotes()`
+- **`ContextDetailView.swift`** — Same listener
+
+---
+
+## February 25, 2026 - Phase Q: Time Tracking & Categorization (Schema SAM_v18)
+
+### Overview
+Added time tracking with automatic categorization of calendar events into 10 WFG-relevant categories based on attendee roles and title keywords. Manual override available in Awareness view.
+
+### Data Model
+- **`TimeEntry`** `@Model` — person, category, start/end, source (calendar/manual), override flag
+- **`TimeCategory`** enum (10 cases): Prospecting, Client Meeting, Policy Review, Recruiting, Training/Mentoring, Admin, Deep Work, Personal Development, Travel, Other
+
+### Components
+- **`TimeTrackingRepository`** — Standard `@MainActor @Observable` singleton; CRUD, fetch by date range, category breakdown queries
+- **`TimeCategorizationEngine`** — Heuristic auto-categorization: title keywords → role badges → solo event fallback
+- **`TimeAllocationSection`** — 7-day breakdown in Review & Analytics section of AwarenessView
+- **`TimeCategoryPicker`** — Inline override UI for manual category correction
+
+### Schema
+- SAM_v17 → **SAM_v18** (lightweight migration, additive)
+
+---
+
+## February 25, 2026 - Phase P: Universal Undo System (Schema SAM_v17)
+
+### Overview
+30-day undo history for all destructive operations. Captures full JSON snapshots before deletion/status changes, displays a dark bottom toast with 10-second auto-dismiss, and restores entities on tap.
+
+### Data Model
+- **`SamUndoEntry`** `@Model` — operation, entityType, entityID, entityDisplayName, snapshotData (JSON blob), capturedAt, expiresAt, isRestored, restoredAt
+- **`UndoOperation`** enum: `.deleted`, `.statusChanged`
+- **`UndoEntityType`** enum: `.note`, `.outcome`, `.context`, `.participation`, `.insight`
+- **Snapshot structs** (Codable): `NoteSnapshot`, `OutcomeSnapshot`, `ContextSnapshot` (cascades participations), `ParticipationSnapshot`, `InsightSnapshot`
+
+### Components
+- **`UndoRepository`** — `@MainActor @Observable` singleton; `capture()` creates entry, `restore()` dispatches to entity-specific helpers, `pruneExpired()` at launch
+- **`UndoCoordinator`** — `@MainActor @Observable` singleton; manages toast state, 10s auto-dismiss timer, `performUndo()` calls repository
+- **`UndoToastView`** — Dark rounded banner pinned to bottom; slide-up animation; Undo button + dismiss X
+
+### Undoable Actions
+- Note deletion → full note snapshot restored (images excluded — too large)
+- Outcome dismiss/complete → previous status reverted
+- Context deletion → context + all participations cascade-restored
+- Participant removal → participation restored with role data
+- Insight dismissal → `dismissedAt` cleared
+
+### Integration Points
+- `NotesRepository.deleteNote()` — captures snapshot before delete
+- `OutcomeRepository.markCompleted()` / `markDismissed()` — captures previous status
+- `ContextsRepository.deleteContext()` / `removeParticipant()` — captures snapshot
+- Insight dismiss handlers in AwarenessView — captures snapshot
+
+### Schema
+- SAM_v16 → **SAM_v17** (lightweight migration, additive)
+
+---
+
 ## February 24, 2026 - App Intents / Siri Integration (#14)
 
 ### Overview
