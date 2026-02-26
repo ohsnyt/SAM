@@ -44,6 +44,8 @@ public final class SamDailyBriefing {
     public var streakUpdates: [BriefingStreakUpdate]
     /// Monday morning only — top priorities for the week
     public var weeklyPriorities: [BriefingAction]
+    /// Top strategic recommendations for today (Phase V)
+    public var strategicHighlights: [BriefingAction]
 
     // MARK: - Raw Metrics (for recap aggregation)
 
@@ -82,7 +84,8 @@ public final class SamDailyBriefing {
         tomorrowPreview: [BriefingCalendarItem] = [],
         accomplishments: [BriefingAccomplishment] = [],
         streakUpdates: [BriefingStreakUpdate] = [],
-        weeklyPriorities: [BriefingAction] = []
+        weeklyPriorities: [BriefingAction] = [],
+        strategicHighlights: [BriefingAction] = []
     ) {
         self.id = UUID()
         self.briefingTypeRawValue = briefingType.rawValue
@@ -98,6 +101,7 @@ public final class SamDailyBriefing {
         self.accomplishments = accomplishments
         self.streakUpdates = streakUpdates
         self.weeklyPriorities = weeklyPriorities
+        self.strategicHighlights = strategicHighlights
         self.meetingCount = 0
         self.notesTakenCount = 0
         self.outcomesCompletedCount = 0

@@ -1990,6 +1990,106 @@ As phases complete, add entries here following this template:
 
 ---
 
-**Changelog Started**: February 10, 2026  
-**Maintained By**: Project team  
-**Related Docs**: See `context.md` for current state and roadmap  
+---
+
+## February 26, 2026 - Phase V: Business Intelligence — Strategic Coordinator (Schema SAM_v22)
+
+### Overview
+Implemented the RLM-inspired Strategic Coordinator: a Swift orchestrator that dispatches 4 specialist LLM analysts in parallel, synthesizes their outputs deterministically, and surfaces strategic recommendations via the Business Dashboard and Daily Briefings. All numerical computation stays in Swift; the LLM interprets and narrates. This is SAM's Layer 2 (Business Intelligence) — complementing the existing Layer 1 (Relationship Intelligence).
+
+### New Models
+
+**`StrategicDigest`** (@Model) — Persisted business intelligence output. Fields: `digestTypeRawValue` ("morning"/"evening"/"weekly"/"onDemand"), `pipelineSummary`, `timeSummary`, `patternInsights`, `contentSuggestions`, `strategicActions` (JSON array of StrategicRec), `rawJSON`, `feedbackJSON`. Transient `digestType: DigestType` computed property.
+
+**`DigestType`** (enum) — `.morning`, `.evening`, `.weekly`, `.onDemand`.
+
+### New DTOs
+
+**`StrategicDigestDTO.swift`** — All specialist output types:
+- `PipelineAnalysis` — healthSummary, recommendations, riskAlerts
+- `TimeAnalysis` — balanceSummary, recommendations, imbalances
+- `PatternAnalysis` — patterns (DiscoveredPattern), recommendations
+- `ContentAnalysis` — topicSuggestions (ContentTopic)
+- `StrategicRec` — title, rationale, priority (0-1), category, feedback
+- `RecommendationFeedback` — .actedOn, .dismissed, .ignored
+- `DiscoveredPattern` — description, confidence, dataPoints
+- `ContentTopic` — topic, keyPoints, suggestedTone, complianceNotes
+- Internal LLM response types for JSON parsing (LLMPipelineAnalysis, LLMTimeAnalysis, etc.)
+
+### New Coordinator
+
+**`StrategicCoordinator`** (`@MainActor @Observable`, singleton) — RLM orchestrator:
+- `configure(container:)` — creates own ModelContext, loads latest digest
+- `generateDigest(type:)` — gathers pre-aggregated data from PipelineTracker/TimeTrackingRepository/PeopleRepository/EvidenceRepository, dispatches 4 specialists via async/await, synthesizes results deterministically, persists StrategicDigest
+- Data gathering: all deterministic Swift (<500 tokens per specialist). Pipeline data from PipelineTracker snapshot; time data from categoryBreakdown(7d/30d); pattern data from role distribution, interaction frequency, note quality, engagement gaps; content data from recent meeting topics + note analysis topics + seasonal context
+- Synthesis: collects all StrategicRec from 4 specialists, applies feedback-based category weights (±10% based on 30-day acted/dismissed ratio), deduplicates by Jaccard title similarity (>0.6 threshold), caps at 7, sorts by priority descending
+- Cache TTLs: pipeline=4h, time=12h, patterns=24h, content=24h
+- `recordFeedback(recommendationID:feedback:)` — updates feedbackJSON on digest and strategicActions JSON
+- `computeCategoryWeights()` — reads historical feedback from recent digests, adjusts per-category scoring weights
+- `hasFreshDigest(maxAge:)` — cache freshness check for briefing integration
+
+### New Services (4 Specialist Analysts)
+
+All follow the same actor pattern: singleton, `checkAvailability()` guard, call `AIService.shared.generate()`, parse JSON via `extractJSON()` + `JSONDecoder`, fallback to plain text on parse failure.
+
+**`PipelineAnalystService`** (actor) — System prompt: pipeline analyst for financial services practice. Analyzes funnel counts, conversion rates, velocity, stuck people, production metrics. Returns PipelineAnalysis (healthSummary, 2-3 recommendations, risk alerts).
+
+**`TimeAnalystService`** (actor) — System prompt: time allocation analyst. Analyzes 7-day/30-day category breakdowns and role distribution. Returns TimeAnalysis (balanceSummary, 2-3 recommendations, imbalances). Benchmark: 40-60% client-facing time.
+
+**`PatternDetectorService`** (actor) — System prompt: behavioral pattern detector. Analyzes interaction frequency by role, meeting note quality, engagement gaps, referral network. Returns PatternAnalysis (2-3 patterns with confidence/dataPoints, 1-2 recommendations).
+
+**`ContentAdvisorService`** (actor) — System prompt: educational content advisor for WFG. Analyzes recent meeting/note topics and seasonal context. Returns ContentAnalysis (3-5 topic suggestions with key points, suggested tone, compliance notes).
+
+### New Views
+
+**`StrategicInsightsView`** — 4th tab in BusinessDashboardView:
+- Status banner with relative time + Refresh button
+- Strategic Actions section: recommendation cards with priority color dot, category badge, title/rationale, Act/Dismiss feedback buttons
+- Pipeline Health / Time Balance / Patterns narrative sections with icons
+- Content Ideas numbered list
+- Empty state with lightbulb icon + instructions
+
+### Modified Files
+
+**`SAMModelContainer.swift`** — Added `StrategicDigest.self` to schema, bumped `SAM_v21` → `SAM_v22`.
+
+**`SAMApp.swift`** — Added `StrategicCoordinator.shared.configure(container:)` in `configureDataLayer()`.
+
+**`BusinessDashboardView.swift`** — Added "Strategic" as 4th segmented picker tab (tag 3), routes to `StrategicInsightsView(coordinator:)`. Toolbar refresh also triggers `strategic.generateDigest(type: .onDemand)` when on Strategic tab.
+
+**`SAMModels-DailyBriefing.swift`** — Added `strategicHighlights: [BriefingAction]` field (default `[]`). Additive optional change — existing briefings remain valid.
+
+**`DailyBriefingCoordinator.swift`** — Morning briefing: checks `strategicBriefingIntegration` UserDefaults toggle, triggers `StrategicCoordinator.generateDigest(type: .morning)` if no fresh digest (< 4h), pulls top 3 recommendations as `strategicHighlights` (BriefingAction with sourceKind "strategic"). Evening briefing: counts acted-on strategic recommendations, adds accomplishment if any.
+
+**`CoachingSettingsView.swift`** — Added "Business Intelligence" section with two toggles: `strategicDigestEnabled` (default true, controls whether coordinator runs), `strategicBriefingIntegration` (default true, includes strategic highlights in daily briefing). Descriptive captions for each.
+
+### Files Summary
+
+| File | Action | Description |
+|------|--------|-------------|
+| `Models/SAMModels-Strategic.swift` | NEW | StrategicDigest @Model + DigestType enum |
+| `Models/DTOs/StrategicDigestDTO.swift` | NEW | All specialist output DTOs + LLM response types |
+| `Coordinators/StrategicCoordinator.swift` | NEW | RLM orchestrator |
+| `Services/PipelineAnalystService.swift` | NEW | Pipeline health analyst |
+| `Services/TimeAnalystService.swift` | NEW | Time allocation analyst |
+| `Services/PatternDetectorService.swift` | NEW | Pattern detector |
+| `Services/ContentAdvisorService.swift` | NEW | Content advisor |
+| `Views/Business/StrategicInsightsView.swift` | NEW | Strategic dashboard tab |
+| `App/SAMModelContainer.swift` | MODIFY | Schema v22, + StrategicDigest |
+| `App/SAMApp.swift` | MODIFY | Configure StrategicCoordinator |
+| `Views/Business/BusinessDashboardView.swift` | MODIFY | 4th "Strategic" tab |
+| `Coordinators/DailyBriefingCoordinator.swift` | MODIFY | Briefing integration |
+| `Models/SAMModels-DailyBriefing.swift` | MODIFY | + strategicHighlights field |
+| `Views/Settings/CoachingSettingsView.swift` | MODIFY | Business Intelligence settings |
+
+### Key Design Decisions
+- **No new repository** — StrategicDigest is simple enough that StrategicCoordinator manages its own ModelContext (same pattern as DailyBriefingCoordinator with SamDailyBriefing)
+- **Specialist prompts hardcoded initially** — Exposing prompts in Settings deferred to avoid UI complexity
+- **Feedback is lightweight** — JSON field on StrategicDigest, not a separate model. Simple category-level weighting adjustment (±10%)
+- **Cache TTLs** — Pipeline: 4h, Time: 12h, Patterns: 24h, Content: 24h. Stored as `lastAnalyzed` timestamps on coordinator
+
+---
+
+**Changelog Started**: February 10, 2026
+**Maintained By**: Project team
+**Related Docs**: See `context.md` for current state and roadmap

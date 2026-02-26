@@ -3,11 +3,11 @@
 **Language**: Swift 6  
 **Architecture**: Clean layered architecture with strict separation of concerns  
 **Framework**: SwiftUI + SwiftData  
-**Last Updated**: February 26, 2026 (Phases A–U complete, schema SAM_v21)
+**Last Updated**: February 26, 2026 (Phases A–V complete, schema SAM_v22)
 
 **Related Docs**: 
 - See `agent.md` for product philosophy, AI architecture, and UX principles
-- See `changelog.md` for historical completion notes (Phases A–U)
+- See `changelog.md` for historical completion notes (Phases A–V)
 
 ---
 
@@ -129,7 +129,7 @@ SAM is a **native macOS business coaching and relationship management applicatio
 SAM/SAM/
 ├── App/
 │   ├── SAMApp.swift                    ✅ App entry point, lifecycle, permissions
-│   └── SAMModelContainer.swift         ✅ SwiftData container (v21)
+│   └── SAMModelContainer.swift         ✅ SwiftData container (v22)
 │
 ├── Services/
 │   ├── ContactsService.swift           ✅ Actor — CNContact operations
@@ -145,10 +145,10 @@ SAM/SAM/
 │   ├── CallHistoryService.swift        ✅ Actor — SQLite3 call records
 │   ├── MessageAnalysisService.swift    ✅ Actor — Message thread LLM
 │   ├── ComposeService.swift            ✅ @MainActor — Send via URL/AppleScript
-│   ├── PipelineAnalystService.swift    ⬜ Actor — Specialist LLM for pipeline analysis
-│   ├── PatternDetectorService.swift    ⬜ Actor — Specialist LLM for cross-relationship patterns
-│   ├── TimeAnalystService.swift        ⬜ Actor — Specialist LLM for time allocation
-│   └── ContentAdvisorService.swift     ⬜ Actor — Specialist LLM for content suggestions
+│   ├── PipelineAnalystService.swift    ✅ Actor — Specialist LLM for pipeline analysis
+│   ├── PatternDetectorService.swift    ✅ Actor — Specialist LLM for cross-relationship patterns
+│   ├── TimeAnalystService.swift        ✅ Actor — Specialist LLM for time allocation
+│   └── ContentAdvisorService.swift     ✅ Actor — Specialist LLM for content suggestions
 │
 ├── Coordinators/
 │   ├── ContactsImportCoordinator.swift ✅ Contact import
@@ -163,7 +163,7 @@ SAM/SAM/
 │   ├── DailyBriefingCoordinator.swift  ✅ Briefings + sequence triggers
 │   ├── UndoCoordinator.swift           ✅ Undo toast display + restore dispatch
 │   ├── PipelineTracker.swift           ✅ Funnel metrics, stage transitions, stall detection, production metrics
-│   ├── StrategicCoordinator.swift      ⬜ RLM orchestrator — dispatches specialists, synthesizes
+│   ├── StrategicCoordinator.swift      ✅ RLM orchestrator — dispatches specialists, synthesizes
 │   └── GoalDecomposer.swift            ⬜ Goal → weekly/daily targets → progress tracking
 │
 ├── Repositories/
@@ -185,6 +185,7 @@ SAM/SAM/
 │   ├── SAMModels-Undo.swift            ✅ SamUndoEntry, snapshots
 │   ├── SAMModels-Pipeline.swift        ✅ StageTransition, RecruitingStage, PipelineType
 │   ├── SAMModels-Production.swift     ✅ ProductionRecord, WFGProductType, ProductionStatus
+│   ├── SAMModels-Strategic.swift      ✅ StrategicDigest, DigestType
 │   └── DTOs/
 │       ├── ContactDTO.swift            ✅
 │       ├── EventDTO.swift              ✅
@@ -192,10 +193,7 @@ SAM/SAM/
 │       ├── EmailAnalysisDTO.swift      ✅
 │       ├── NoteAnalysisDTO.swift       ✅
 │       ├── EvernoteNoteDTO.swift       ✅
-│       ├── PipelineAnalysisDTO.swift   ⬜ Specialist analyst output
-│       ├── PatternAnalysisDTO.swift    ⬜ Specialist analyst output
-│       ├── TimeAnalysisDTO.swift       ⬜ Specialist analyst output
-│       └── StrategicDigestDTO.swift    ⬜ Synthesized business intelligence output
+│       └── StrategicDigestDTO.swift    ✅ All specialist analyst output DTOs + synthesis types
 │
 ├── Views/
 │   ├── AppShellView.swift              ✅ Three-column navigation shell
@@ -205,14 +203,13 @@ SAM/SAM/
 │   ├── Awareness/                      ✅ Coaching dashboard
 │   ├── Notes/                          ✅ Note editing + journal
 │   ├── Business/                       ✅ Business Intelligence dashboard (pipeline)
-│   │   ├── BusinessDashboardView.swift ✅ Top-level BI view (segmented Client/Recruiting/Production)
+│   │   ├── BusinessDashboardView.swift ✅ Top-level BI view (segmented Client/Recruiting/Production/Strategic)
 │   │   ├── ClientPipelineDashboardView.swift ✅ Client funnel, metrics, stuck, transitions
 │   │   ├── RecruitingPipelineDashboardView.swift ✅ 7-stage funnel, licensing rate, mentoring
 │   │   ├── ProductionDashboardView.swift ✅ Status overview, product mix, pending aging, all records
 │   │   ├── ProductionEntryForm.swift  ✅ Add/edit production record sheet
-│   │   ├── GoalProgressView.swift      ⬜ Goals vs. actuals with pace indicators
-│   │   ├── PatternInsightsView.swift   ⬜ Cross-relationship pattern cards
-│   │   └── WeeklyDigestView.swift      ⬜ Strategic digest (also in briefing)
+│   │   ├── StrategicInsightsView.swift ✅ Strategic digest + recommendation cards
+│   │   └── GoalProgressView.swift      ⬜ Goals vs. actuals with pace indicators
 │   ├── Shared/                         ✅ Reusable components
 │   └── Settings/                       ✅ Tabbed settings
 │
@@ -228,7 +225,7 @@ SAM/SAM/
 
 ## 4. Data Models
 
-### 4.1 Existing Models (Phases A–U, schema v21)
+### 4.1 Existing Models (Phases A–V, schema v22)
 
 (All existing models unchanged — see `changelog.md` for full schema. Summary below.)
 
@@ -244,6 +241,8 @@ SAM/SAM/
 - **StageTransition** — Immutable pipeline audit log (client + recruiting transitions)
 - **RecruitingStage** — Current recruiting pipeline state per person (7 WFG stages)
 - **ProductionRecord** — Policies/products per person (product type, status, carrier, premium, dates)
+- **StrategicDigest** — Cached business intelligence output (pipeline/time/pattern/content summaries, strategic recommendations with feedback tracking)
+- **SamDailyBriefing** — `strategicHighlights: [BriefingAction]` field added (Phase V)
 
 ### 4.2 Future Business Models
 
@@ -260,21 +259,6 @@ final class BusinessGoal {
     var endDate: Date
     var isActive: Bool
     var weeklyMilestones: [Double]  // Decomposed weekly targets (computed by GoalDecomposer)
-}
-```
-
-**StrategicDigest** — Cached business intelligence output
-```swift
-@Model
-final class StrategicDigest {
-    var generatedAt: Date
-    var digestTypeRawValue: String  // "morning", "evening", "weekly", "onDemand"
-    var pipelineSummary: String     // From PipelineAnalyst
-    var timeSummary: String         // From TimeAnalyst
-    var patternInsights: String     // From PatternDetector
-    var contentSuggestions: String  // From ContentAdvisor
-    var strategicActions: String    // Synthesized top recommendations
-    var rawJSON: String?            // Full structured output for dashboard rendering
 }
 ```
 
@@ -306,51 +290,9 @@ final class StrategicDigest {
 - ✅ **Phase S**: Production Tracking (schema SAM_v20)
 - ✅ **Phase T**: Meeting Lifecycle Automation (no schema change)
 - ✅ **Phase U**: Relationship Decay Prediction (no schema change)
+- ✅ **Phase V**: Business Intelligence — Strategic Coordinator (schema SAM_v22)
 
 ### Active / Next Phases
-
----
-
-### ⬜ Phase V: Business Intelligence — Strategic Coordinator
-
-**Goal**: Implement the RLM-inspired background reasoning system that synthesizes business-level insights.
-
-**Impact**: VERY HIGH — this is the "business plan from divergent data" capability.
-
-**Key deliverables**:
-
-**V.1 — Strategic Coordinator (Swift Orchestrator)**
-- `StrategicCoordinator` — `@MainActor @Observable`
-- Runs on configurable schedule (default: 6 AM for morning briefing, 6 PM for evening recap, Monday 5 AM for weekly digest)
-- Decomposes analysis into specialist tasks
-- Dispatches specialists as `TaskGroup` with `.background` priority
-- Synthesizes results deterministically in Swift
-- Stores `StrategicDigest` for dashboard and briefing consumption
-- Yields to foreground work; pauses under thermal pressure
-
-**V.2 — Specialist Analysts (AI Services)**
-- `PipelineAnalystService` — Receives stage counts, conversion rates, stall list (all pre-computed in Swift by PipelineTracker). LLM produces narrative assessment + recommendations.
-- `TimeAnalystService` — Receives categorized time data (pre-aggregated). LLM identifies imbalances and recommends adjustments.
-- `PatternDetectorService` — Receives aggregated behavioral metrics (not raw data). LLM identifies correlations: best referral sources, optimal meeting times, effective communication patterns.
-- `ContentAdvisorService` — Receives recent meeting topics, client questions, seasonal context. LLM suggests 3–5 educational content ideas with draft outlines.
-
-**V.3 — Specialist Prompt Design**
-- Each specialist prompt is <2000 tokens of context
-- Structured output format (JSON) that Swift can parse deterministically
-- Prompts exposed in Settings for user tuning
-- Version-tracked so re-analysis can be triggered when prompts change
-
-**V.4 — Synthesis & Conflict Resolution**
-- Swift aggregation layer merges specialist outputs
-- Resolves scheduling conflicts (e.g., more follow-ups recommended than calendar slots available)
-- Priority-ranks all recommendations using the existing scoring formula (time urgency + relationship health + role importance + evidence recency + user engagement)
-- Formats final output for daily briefing integration and Business Dashboard
-
-**V.5 — Feedback Loop**
-- Every strategic recommendation tracks: acted on, dismissed, or ignored
-- Coaching effectiveness score computed weekly
-- User can rate the weekly digest (thumbs up/down per recommendation)
-- Feedback signals adjust specialist prompt emphasis and coordinator prioritization weights over time
 
 ---
 
@@ -472,7 +414,7 @@ final class StrategicDigest {
 
 ### 6.6 SwiftUI Patterns — Explicit `return` in multi-statement preview closures. `enumerated()` for non-Identifiable collections. UUID-based list selection.
 
-### 6.7 Background AI Task Rules (NEW)
+### 6.7 Background AI Task Rules
 - All Layer 2 (Business Intelligence) tasks use `TaskPriority.background`
 - Call `Task.yield()` every ~10 iterations in batch processing loops
 - Check `Task.isCancelled` at each specialist call boundary
@@ -539,8 +481,8 @@ Each layer tested independently:
 | v18 | Q | + TimeEntry model, TimeCategory enum |
 | v19 | R | + StageTransition, RecruitingStage models |
 | v20 | S | + ProductionRecord, WFGProductType, ProductionStatus |
-| v21 | U enhancement (current) | + SamPerson.preferredCadenceDays (cadence override) |
-| v22 | V | + StrategicDigest |
+| v21 | U enhancement | + SamPerson.preferredCadenceDays (cadence override) |
+| v22 | V (current) | + StrategicDigest, + SamDailyBriefing.strategicHighlights |
 | v23 | X | + BusinessGoal |
 
 Each migration uses SwiftData lightweight migration. New models are additive (no breaking changes to existing models). Backfill logic runs once on first launch after migration.
@@ -599,8 +541,8 @@ Each migration uses SwiftData lightweight migration. New models are additive (no
 
 ---
 
-**Document Version**: 10.1 (Phase U + role-aware velocity complete, Business Intelligence architecture, Phases V–Z)
+**Document Version**: 11.0 (Phase V complete, Business Intelligence implemented, Phases W–Z roadmap)
 **Previous Versions**: See `changelog.md` for version history
-**Last Major Update**: February 26, 2026 — Role-aware velocity thresholds, per-person cadence override, Referral Partner role integration (schema SAM_v21)
+**Last Major Update**: February 26, 2026 — Phase V: Business Intelligence — Strategic Coordinator with 4 specialist LLM analysts, dashboard tab, briefing integration, feedback loop (schema SAM_v22)
 **Clean Rebuild Started**: February 9, 2026
     

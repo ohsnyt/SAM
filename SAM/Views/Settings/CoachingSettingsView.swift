@@ -36,6 +36,18 @@ struct CoachingSettingsContent: View {
     // Direct Send
     @State private var directSendEnabled: Bool = UserDefaults.standard.bool(forKey: "directSendEnabled")
 
+    // Business Intelligence (Phase V)
+    @State private var strategicDigestEnabled: Bool = {
+        UserDefaults.standard.object(forKey: "strategicDigestEnabled") == nil
+            ? true
+            : UserDefaults.standard.bool(forKey: "strategicDigestEnabled")
+    }()
+    @State private var strategicBriefingIntegration: Bool = {
+        UserDefaults.standard.object(forKey: "strategicBriefingIntegration") == nil
+            ? true
+            : UserDefaults.standard.bool(forKey: "strategicBriefingIntegration")
+    }()
+
     // Autonomous Actions
     @State private var autoMeetingNoteTemplates: Bool = {
         UserDefaults.standard.object(forKey: "autoMeetingNoteTemplates") == nil
@@ -85,6 +97,11 @@ struct CoachingSettingsContent: View {
 
             // ── Re-analyze ───────────────────────────────
             reanalyzeSection
+
+            Divider()
+
+            // ── Business Intelligence ────────────────────
+            businessIntelligenceSection
 
             Divider()
 
@@ -435,6 +452,39 @@ struct CoachingSettingsContent: View {
                 }
 
             Text("When enabled, SAM sends iMessages and emails via AppleScript without leaving the app. Requires one-time Automation permission grant.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: - Business Intelligence Section
+
+    private var businessIntelligenceSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Business Intelligence")
+                .font(.headline)
+
+            Text("Strategic insights analyze your pipeline, time allocation, and relationship patterns to suggest business-level actions.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Toggle("Enable strategic digest", isOn: $strategicDigestEnabled)
+                .onChange(of: strategicDigestEnabled) { _, newValue in
+                    UserDefaults.standard.set(newValue, forKey: "strategicDigestEnabled")
+                }
+
+            Text("When enabled, SAM periodically analyzes your business data and generates strategic recommendations.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.bottom, 4)
+
+            Toggle("Include in daily briefing", isOn: $strategicBriefingIntegration)
+                .onChange(of: strategicBriefingIntegration) { _, newValue in
+                    UserDefaults.standard.set(newValue, forKey: "strategicBriefingIntegration")
+                }
+                .disabled(!strategicDigestEnabled)
+
+            Text("When enabled, your morning briefing includes top strategic recommendations.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

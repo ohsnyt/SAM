@@ -13,6 +13,7 @@ import SwiftUI
 struct BusinessDashboardView: View {
 
     @State private var tracker = PipelineTracker.shared
+    @State private var strategic = StrategicCoordinator.shared
     @State private var selectedTab = 0
 
     var body: some View {
@@ -23,6 +24,7 @@ struct BusinessDashboardView: View {
                     Text("Client Pipeline").tag(0)
                     Text("Recruiting").tag(1)
                     Text("Production").tag(2)
+                    Text("Strategic").tag(3)
                 }
                 .pickerStyle(.segmented)
                 .padding()
@@ -34,6 +36,8 @@ struct BusinessDashboardView: View {
                     ClientPipelineDashboardView(tracker: tracker)
                 case 2:
                     ProductionDashboardView(tracker: tracker)
+                case 3:
+                    StrategicInsightsView(coordinator: strategic)
                 default:
                     RecruitingPipelineDashboardView(tracker: tracker)
                 }
@@ -44,6 +48,9 @@ struct BusinessDashboardView: View {
             ToolbarItem {
                 Button {
                     tracker.refresh()
+                    if selectedTab == 3 {
+                        Task { await strategic.generateDigest(type: .onDemand) }
+                    }
                 } label: {
                     Label("Refresh", systemImage: "arrow.clockwise")
                 }

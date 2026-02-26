@@ -216,6 +216,26 @@ final class DailyBriefingCoordinator {
                 briefing.ttsNarrative = narrative.tts.isEmpty ? nil : narrative.tts
             }
 
+            // Strategic highlights (Phase V)
+            let strategicEnabled = UserDefaults.standard.object(forKey: "strategicBriefingIntegration") == nil
+                ? true
+                : UserDefaults.standard.bool(forKey: "strategicBriefingIntegration")
+            if strategicEnabled {
+                let strategicCoord = StrategicCoordinator.shared
+                if !strategicCoord.hasFreshDigest(maxAge: 4 * 60 * 60) {
+                    await strategicCoord.generateDigest(type: .morning)
+                }
+                let topRecs = Array(strategicCoord.strategicRecommendations.prefix(3))
+                briefing.strategicHighlights = topRecs.map { rec in
+                    BriefingAction(
+                        title: rec.title,
+                        rationale: rec.rationale,
+                        urgency: rec.priority >= 0.7 ? "immediate" : "standard",
+                        sourceKind: "strategic"
+                    )
+                }
+            }
+
             // Persist
             context?.insert(briefing)
             try context?.save()
@@ -229,7 +249,7 @@ final class DailyBriefingCoordinator {
             let formatter = ISO8601DateFormatter()
             UserDefaults.standard.set(formatter.string(from: todayKey), forKey: "lastBriefingDate")
 
-            logger.info("Morning briefing generated: \(calendarItems.count) calendar, \(priorityActions.count) actions, \(followUps.count) follow-ups")
+            logger.info("Morning briefing generated: \(calendarItems.count) calendar, \(priorityActions.count) actions, \(followUps.count) follow-ups, \(briefing.strategicHighlights.count) strategic")
 
         } catch {
             generationStatus = .failed
@@ -413,6 +433,18 @@ final class DailyBriefingCoordinator {
             )
             briefing.narrativeSummary = narrative.visual.isEmpty ? nil : narrative.visual
             briefing.ttsNarrative = narrative.tts.isEmpty ? nil : narrative.tts
+        }
+
+        // Pull strategic actions completed today into accomplishments
+        let strategicCoord = StrategicCoordinator.shared
+        let actedOnCount = strategicCoord.strategicRecommendations
+            .filter { $0.feedback == .actedOn }
+            .count
+        if actedOnCount > 0 {
+            briefing.accomplishments.append(BriefingAccomplishment(
+                title: "Completed \(actedOnCount) strategic recommendation\(actedOnCount == 1 ? "" : "s")",
+                category: "strategic"
+            ))
         }
 
         context?.insert(briefing)
