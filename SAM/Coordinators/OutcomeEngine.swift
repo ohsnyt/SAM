@@ -101,6 +101,12 @@ final class OutcomeEngine {
             // 6. Coverage gap cross-sell (Phase S)
             newOutcomes.append(contentsOf: try scanCoverageGaps(people: allPeople))
 
+            // 7. Content suggestions (Phase W)
+            newOutcomes.append(contentsOf: await scanContentSuggestions())
+
+            // 8. Content cadence nudges (Phase W)
+            newOutcomes.append(contentsOf: try scanContentCadence())
+
             // Classify action lanes and suggest channels
             for outcome in newOutcomes {
                 classifyActionLane(for: outcome)
@@ -415,6 +421,115 @@ final class OutcomeEngine {
         return outcomes
     }
 
+    // MARK: - Content Scanners (Phase W)
+
+    /// Suggest educational content topics from StrategicCoordinator's cached digest
+    /// or fall back to ContentAdvisorService.
+    private func scanContentSuggestions() async -> [SamOutcome] {
+        // Guard: user has content suggestions enabled (default true)
+        let enabled = UserDefaults.standard.object(forKey: "contentSuggestionsEnabled") == nil
+            ? true
+            : UserDefaults.standard.bool(forKey: "contentSuggestionsEnabled")
+        guard enabled else { return [] }
+
+        // Dedup: at most one batch of content outcomes per week
+        let hasSimilar = (try? outcomeRepo.hasSimilarOutcome(
+            kind: .contentCreation,
+            personID: nil,
+            withinHours: 168
+        )) ?? false
+        guard !hasSimilar else { return [] }
+
+        // Try to get topics from cached strategic digest first
+        var topics: [ContentTopic] = []
+        if let digest = StrategicCoordinator.shared.latestDigest,
+           !digest.contentSuggestions.isEmpty,
+           let data = digest.contentSuggestions.data(using: .utf8) {
+            if let analysis = try? JSONDecoder().decode(ContentAnalysis.self, from: data) {
+                topics = analysis.topicSuggestions
+            } else {
+                // Try decoding as array of ContentTopic directly
+                topics = (try? JSONDecoder().decode([ContentTopic].self, from: data)) ?? []
+            }
+        }
+
+        // Fall back to direct ContentAdvisorService call
+        if topics.isEmpty {
+            let recentData = "Suggest 3 educational content topics for a financial strategist based on current market context."
+            if let analysis = try? await ContentAdvisorService.shared.analyze(data: recentData) {
+                topics = analysis.topicSuggestions
+            }
+        }
+
+        // Map top 3 topics to outcomes
+        return Array(topics.prefix(3)).compactMap { topic -> SamOutcome? in
+            let keyPointsSummary = topic.keyPoints.joined(separator: ". ")
+            let rationale = keyPointsSummary.isEmpty ? topic.topic : keyPointsSummary
+            let complianceNote = topic.complianceNotes.map { " Compliance: \($0)" } ?? ""
+
+            // Store full topic as JSON for round-trip in draft sheet
+            let topicJSON = (try? String(data: JSONEncoder().encode(topic), encoding: .utf8)) ?? ""
+
+            return SamOutcome(
+                title: "Post about: \(topic.topic)",
+                rationale: "\(rationale).\(complianceNote)",
+                outcomeKind: .contentCreation,
+                sourceInsightSummary: topicJSON,
+                suggestedNextStep: "Open the draft sheet to generate a platform-specific post"
+            )
+        }
+    }
+
+    /// Nudge the user when posting cadence has lapsed on key platforms.
+    private func scanContentCadence() throws -> [SamOutcome] {
+        let enabled = UserDefaults.standard.object(forKey: "contentSuggestionsEnabled") == nil
+            ? true
+            : UserDefaults.standard.bool(forKey: "contentSuggestionsEnabled")
+        guard enabled else { return [] }
+
+        var outcomes: [SamOutcome] = []
+
+        // LinkedIn: nudge after 10 days
+        if let linkedInDays = try? ContentPostRepository.shared.daysSinceLastPost(platform: .linkedin),
+           linkedInDays >= 10 {
+            let hasSimilar = (try? outcomeRepo.hasSimilarOutcome(
+                kind: .contentCreation,
+                personID: nil,
+                withinHours: 72
+            )) ?? false
+            if !hasSimilar {
+                outcomes.append(SamOutcome(
+                    title: "Post on LinkedIn — \(linkedInDays) days since last post",
+                    rationale: "Consistent LinkedIn presence keeps you top-of-mind with professional connections. Aim for at least weekly.",
+                    outcomeKind: .contentCreation,
+                    sourceInsightSummary: "",
+                    suggestedNextStep: "Share an educational insight or client success story"
+                ))
+            }
+        }
+
+        // Facebook: nudge after 14 days
+        if let fbDays = try? ContentPostRepository.shared.daysSinceLastPost(platform: .facebook),
+           fbDays >= 14 {
+            let hasSimilar = outcomes.isEmpty ? ((try? outcomeRepo.hasSimilarOutcome(
+                kind: .contentCreation,
+                personID: nil,
+                withinHours: 72
+            )) ?? false) : true // Already have one cadence nudge, skip second
+            if !hasSimilar {
+                outcomes.append(SamOutcome(
+                    title: "Post on Facebook — \(fbDays) days since last post",
+                    rationale: "Regular Facebook content builds trust with your personal network. A quick educational post goes a long way.",
+                    outcomeKind: .contentCreation,
+                    sourceInsightSummary: "",
+                    suggestedNextStep: "Share a relatable financial tip or seasonal reminder"
+                ))
+            }
+        }
+
+        return outcomes
+    }
+
     // MARK: - Role Transition Outcomes
 
     /// Generate outcomes when a person's role badges change.
@@ -649,7 +764,7 @@ final class OutcomeEngine {
         switch outcome.outcomeKind {
         case .outreach, .growth:
             outcome.actionLane = .communicate
-        case .proposal, .training:
+        case .proposal, .training, .contentCreation:
             outcome.actionLane = .deepWork
         case .followUp, .preparation, .compliance:
             outcome.actionLane = .record

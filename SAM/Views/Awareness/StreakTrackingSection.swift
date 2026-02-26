@@ -24,7 +24,7 @@ struct StreakTrackingSection: View {
     }
 
     private var hasAnyStreak: Bool {
-        streaks.meetingNotes > 0 || streaks.weeklyTouch > 0 || streaks.followUp > 0
+        streaks.meetingNotes > 0 || streaks.weeklyTouch > 0 || streaks.followUp > 0 || streaks.contentPosting > 0
     }
 
     var body: some View {
@@ -68,6 +68,14 @@ struct StreakTrackingSection: View {
                             isActive: streaks.followUp >= 3
                         )
                     }
+                    if streaks.contentPosting > 0 {
+                        StreakCard(
+                            icon: "text.badge.star",
+                            count: streaks.contentPosting,
+                            label: "Weekly Posting",
+                            isActive: streaks.contentPosting >= 3
+                        )
+                    }
                 }
                 .padding()
             }
@@ -82,10 +90,12 @@ struct StreakTrackingSection: View {
         let meetingNotesStreak = computeMeetingNotesStreak(meetings: meetings)
         let weeklyTouchStreak = computeWeeklyTouchStreak()
         let followUpStreak = computeFollowUpStreak(meetings: meetings)
+        let contentPostingStreak = (try? ContentPostRepository.shared.weeklyPostingStreak()) ?? 0
         return StreakResults(
             meetingNotes: meetingNotesStreak,
             weeklyTouch: weeklyTouchStreak,
-            followUp: followUpStreak
+            followUp: followUpStreak,
+            contentPosting: contentPostingStreak
         )
     }
 
@@ -161,6 +171,7 @@ private struct StreakResults {
     let meetingNotes: Int
     let weeklyTouch: Int
     let followUp: Int
+    let contentPosting: Int
 }
 
 // MARK: - Streak Card

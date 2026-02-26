@@ -3,11 +3,11 @@
 **Language**: Swift 6  
 **Architecture**: Clean layered architecture with strict separation of concerns  
 **Framework**: SwiftUI + SwiftData  
-**Last Updated**: February 26, 2026 (Phases A–V complete, schema SAM_v22)
+**Last Updated**: February 26, 2026 (Phases A–W complete, schema SAM_v23)
 
 **Related Docs**: 
 - See `agent.md` for product philosophy, AI architecture, and UX principles
-- See `changelog.md` for historical completion notes (Phases A–V)
+- See `changelog.md` for historical completion notes (Phases A–W)
 
 ---
 
@@ -129,7 +129,7 @@ SAM is a **native macOS business coaching and relationship management applicatio
 SAM/SAM/
 ├── App/
 │   ├── SAMApp.swift                    ✅ App entry point, lifecycle, permissions
-│   └── SAMModelContainer.swift         ✅ SwiftData container (v22)
+│   └── SAMModelContainer.swift         ✅ SwiftData container (v23)
 │
 ├── Services/
 │   ├── ContactsService.swift           ✅ Actor — CNContact operations
@@ -148,7 +148,7 @@ SAM/SAM/
 │   ├── PipelineAnalystService.swift    ✅ Actor — Specialist LLM for pipeline analysis
 │   ├── PatternDetectorService.swift    ✅ Actor — Specialist LLM for cross-relationship patterns
 │   ├── TimeAnalystService.swift        ✅ Actor — Specialist LLM for time allocation
-│   └── ContentAdvisorService.swift     ✅ Actor — Specialist LLM for content suggestions
+│   └── ContentAdvisorService.swift     ✅ Actor — Specialist LLM for content suggestions + draft generation
 │
 ├── Coordinators/
 │   ├── ContactsImportCoordinator.swift ✅ Contact import
@@ -176,6 +176,7 @@ SAM/SAM/
 │   ├── TimeTrackingRepository.swift    ✅ CRUD for TimeEntry with categories
 │   ├── PipelineRepository.swift        ✅ CRUD for StageTransition + RecruitingStage
 │   ├── ProductionRepository.swift     ✅ CRUD for ProductionRecord + metric queries
+│   ├── ContentPostRepository.swift    ✅ CRUD for ContentPost + cadence + streak queries
 │   └── BusinessMetricsRepository.swift ⬜ CRUD for goals
 │
 ├── Models/
@@ -186,6 +187,7 @@ SAM/SAM/
 │   ├── SAMModels-Pipeline.swift        ✅ StageTransition, RecruitingStage, PipelineType
 │   ├── SAMModels-Production.swift     ✅ ProductionRecord, WFGProductType, ProductionStatus
 │   ├── SAMModels-Strategic.swift      ✅ StrategicDigest, DigestType
+│   ├── SAMModels-ContentPost.swift   ✅ ContentPost, ContentPlatform
 │   └── DTOs/
 │       ├── ContactDTO.swift            ✅
 │       ├── EventDTO.swift              ✅
@@ -193,7 +195,8 @@ SAM/SAM/
 │       ├── EmailAnalysisDTO.swift      ✅
 │       ├── NoteAnalysisDTO.swift       ✅
 │       ├── EvernoteNoteDTO.swift       ✅
-│       └── StrategicDigestDTO.swift    ✅ All specialist analyst output DTOs + synthesis types
+│       ├── StrategicDigestDTO.swift    ✅ All specialist analyst output DTOs + synthesis types
+│       └── ContentDraftDTO.swift      ✅ ContentDraft + LLMContentDraft
 │
 ├── Views/
 │   ├── AppShellView.swift              ✅ Three-column navigation shell
@@ -202,6 +205,7 @@ SAM/SAM/
 │   ├── Contexts/                       ✅ Context management
 │   ├── Awareness/                      ✅ Coaching dashboard
 │   ├── Notes/                          ✅ Note editing + journal
+│   ├── Content/                        ✅ ContentDraftSheet
 │   ├── Business/                       ✅ Business Intelligence dashboard (pipeline)
 │   │   ├── BusinessDashboardView.swift ✅ Top-level BI view (segmented Client/Recruiting/Production/Strategic)
 │   │   ├── ClientPipelineDashboardView.swift ✅ Client funnel, metrics, stuck, transitions
@@ -225,7 +229,7 @@ SAM/SAM/
 
 ## 4. Data Models
 
-### 4.1 Existing Models (Phases A–V, schema v22)
+### 4.1 Existing Models (Phases A–W, schema v23)
 
 (All existing models unchanged — see `changelog.md` for full schema. Summary below.)
 
@@ -243,6 +247,7 @@ SAM/SAM/
 - **ProductionRecord** — Policies/products per person (product type, status, carrier, premium, dates)
 - **StrategicDigest** — Cached business intelligence output (pipeline/time/pattern/content summaries, strategic recommendations with feedback tracking)
 - **SamDailyBriefing** — `strategicHighlights: [BriefingAction]` field added (Phase V)
+- **ContentPost** — Social media posting tracker (platform, topic, postedAt, sourceOutcomeID)
 
 ### 4.2 Future Business Models
 
@@ -291,36 +296,9 @@ final class BusinessGoal {
 - ✅ **Phase T**: Meeting Lifecycle Automation (no schema change)
 - ✅ **Phase U**: Relationship Decay Prediction (no schema change)
 - ✅ **Phase V**: Business Intelligence — Strategic Coordinator (schema SAM_v22)
+- ✅ **Phase W**: Content Assist & Social Media Coaching (schema SAM_v23)
 
 ### Active / Next Phases
-
----
-
-### ⬜ Phase W: Content Assist & Social Media Coaching
-
-**Goal**: Help the user create educational content for Facebook/LinkedIn — a proven growth driver.
-
-**Impact**: HIGH — research shows consistent educational content is the #1 digital growth lever for independent agents.
-
-**Key deliverables**:
-
-**W.1 — Content Suggestion Engine**
-- Analyze recent meeting topics, client questions, and seasonal relevance
-- Generate 3–5 post topic suggestions per week as coaching outcomes
-- Each suggestion includes: topic, key points to cover, suggested tone, compliance notes
-- Surfaced in Action Queue with `.deepWork` action lane
-
-**W.2 — Draft Generation**
-- User selects a topic → AI generates a draft post in the user's voice
-- Platform-aware: LinkedIn posts are more professional; Facebook posts are more conversational
-- Never includes specific product claims, return promises, or comparative statements
-- Copy-to-clipboard for pasting into the platform
-
-**W.3 — Posting Cadence Tracking**
-- User can log "I posted today" (manual, since SAM doesn't access social platforms)
-- Track posting frequency and surface coaching when engagement lapses
-- "You haven't posted on LinkedIn in 12 days. Here are 3 topic ideas."
-- Integrated into weekly digest
 
 ---
 
@@ -395,7 +373,7 @@ final class BusinessGoal {
 
 ## 6. Critical Patterns & Gotchas
 
-(All existing patterns from Phases A–O remain in effect. See `changelog.md` for full documentation of each. Summary of key rules below.)
+(All existing patterns from Phases A–W remain in effect. See `changelog.md` for full documentation of each. Summary of key rules below.)
 
 ### 6.1 Permissions — Never trigger surprise dialogs. Always check auth before access.
 
@@ -482,8 +460,9 @@ Each layer tested independently:
 | v19 | R | + StageTransition, RecruitingStage models |
 | v20 | S | + ProductionRecord, WFGProductType, ProductionStatus |
 | v21 | U enhancement | + SamPerson.preferredCadenceDays (cadence override) |
-| v22 | V (current) | + StrategicDigest, + SamDailyBriefing.strategicHighlights |
-| v23 | X | + BusinessGoal |
+| v22 | V | + StrategicDigest, + SamDailyBriefing.strategicHighlights |
+| v23 | W (current) | + ContentPost model |
+| v24 | X | + BusinessGoal |
 
 Each migration uses SwiftData lightweight migration. New models are additive (no breaking changes to existing models). Backfill logic runs once on first launch after migration.
 
@@ -541,8 +520,8 @@ Each migration uses SwiftData lightweight migration. New models are additive (no
 
 ---
 
-**Document Version**: 11.0 (Phase V complete, Business Intelligence implemented, Phases W–Z roadmap)
+**Document Version**: 12.0 (Phase W complete, Content Assist & Social Media Coaching, Phases X–Z roadmap)
 **Previous Versions**: See `changelog.md` for version history
-**Last Major Update**: February 26, 2026 — Phase V: Business Intelligence — Strategic Coordinator with 4 specialist LLM analysts, dashboard tab, briefing integration, feedback loop (schema SAM_v22)
+**Last Major Update**: February 26, 2026 — Phase W: Content Assist & Social Media Coaching — content topic suggestions, AI draft generation, posting cadence tracking, briefing integration (schema SAM_v23)
 **Clean Rebuild Started**: February 9, 2026
     

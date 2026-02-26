@@ -1116,7 +1116,35 @@ final class DailyBriefingCoordinator {
             }
         }
 
-        // 5. Life events requiring outreach
+        // 5. Content cadence nudges (Phase W)
+        if priorities.count < 8 {
+            let contentEnabled = UserDefaults.standard.object(forKey: "contentSuggestionsEnabled") == nil
+                ? true
+                : UserDefaults.standard.bool(forKey: "contentSuggestionsEnabled")
+            if contentEnabled {
+                if let linkedInDays = try? ContentPostRepository.shared.daysSinceLastPost(platform: .linkedin),
+                   linkedInDays >= 10 {
+                    priorities.append(BriefingAction(
+                        title: "Post on LinkedIn",
+                        rationale: "\(linkedInDays) days since last post. Consistent presence keeps you top-of-mind.",
+                        urgency: linkedInDays > 14 ? "soon" : "standard",
+                        sourceKind: "content_cadence"
+                    ))
+                }
+                if let fbDays = try? ContentPostRepository.shared.daysSinceLastPost(platform: .facebook),
+                   fbDays >= 14,
+                   priorities.count < 8 {
+                    priorities.append(BriefingAction(
+                        title: "Post on Facebook",
+                        rationale: "\(fbDays) days since last post. A quick educational tip builds trust with your network.",
+                        urgency: fbDays > 21 ? "soon" : "standard",
+                        sourceKind: "content_cadence"
+                    ))
+                }
+            }
+        }
+
+        // 6. Life events requiring outreach
         if let allNotes = try? notesRepo.fetchAll() {
             let thirtyDaysAgo = Calendar.current.date(byAdding: .day, value: -30, to: .now)!
             for note in allNotes where note.updatedAt >= thirtyDaysAgo && priorities.count < 8 {

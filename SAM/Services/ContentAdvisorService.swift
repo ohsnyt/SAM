@@ -68,6 +68,117 @@ actor ContentAdvisorService {
         return try parseResponse(responseText)
     }
 
+    // MARK: - Draft Generation (Phase W)
+
+    /// Generate a platform-aware social media draft from a topic.
+    func generateDraft(
+        topic: String,
+        keyPoints: [String],
+        platform: ContentPlatform,
+        tone: String,
+        complianceNotes: String?
+    ) async throws -> ContentDraft {
+        guard case .available = await AIService.shared.checkAvailability() else {
+            throw AnalysisError.modelUnavailable
+        }
+
+        let platformGuidelines: String
+        switch platform {
+        case .linkedin:
+            platformGuidelines = """
+                Platform: LinkedIn
+                - Professional, educational tone
+                - 150-250 words
+                - Open with a hook question or bold statement
+                - Include 1-3 relevant hashtags at the end
+                - End with a call-to-action or thought-provoking question
+                """
+        case .facebook:
+            platformGuidelines = """
+                Platform: Facebook
+                - Conversational, relatable tone
+                - 100-150 words
+                - Make it personal — share a lesson or observation
+                - End with an engagement question
+                - No hashtags (or 1-2 at most)
+                """
+        case .instagram:
+            platformGuidelines = """
+                Platform: Instagram
+                - Brief, hook-focused
+                - 50-100 words for caption
+                - Start with a strong hook line
+                - Include 5-10 relevant hashtags
+                - Use line breaks for readability
+                """
+        case .other:
+            platformGuidelines = """
+                Platform: General
+                - Clear, educational tone
+                - 100-200 words
+                - Focus on providing value
+                """
+        }
+
+        let complianceSection = complianceNotes.map { "Compliance considerations: \($0)" } ?? ""
+        let keyPointsText = keyPoints.isEmpty ? "" : "Key points to cover: \(keyPoints.joined(separator: "; "))"
+
+        let instructions = """
+            You write social media posts for a WFG (World Financial Group) financial strategist. \
+            The content must be educational and compliant with financial services regulations.
+
+            STRICT COMPLIANCE RULES:
+            - NEVER mention specific product names, company names, or fund names
+            - NEVER promise returns, guarantees, or specific financial outcomes
+            - NEVER make comparative claims against competitors
+            - NEVER give specific financial advice (e.g., "You should invest in X")
+            - Always use educational framing: "Consider...", "Many people find...", "A common strategy is..."
+            - If the topic is sensitive, add a disclaimer
+
+            \(platformGuidelines)
+
+            Tone: \(tone)
+            \(keyPointsText)
+            \(complianceSection)
+
+            CRITICAL: Respond with ONLY valid JSON (no markdown code blocks):
+            {
+              "draft_text": "The full post text ready to copy-paste",
+              "compliance_flags": ["Any compliance concerns about this specific post"]
+            }
+
+            If there are no compliance concerns, return an empty array for compliance_flags.
+            """
+
+        let prompt = "Write a social media post about: \(topic)"
+        let responseText = try await AIService.shared.generate(prompt: prompt, systemInstruction: instructions)
+        return try parseDraftResponse(responseText)
+    }
+
+    private func parseDraftResponse(_ jsonString: String) throws -> ContentDraft {
+        let cleaned = extractJSON(from: jsonString)
+        guard let data = cleaned.data(using: .utf8) else {
+            throw AnalysisError.invalidResponse
+        }
+
+        do {
+            let llm = try JSONDecoder().decode(LLMContentDraft.self, from: data)
+            return ContentDraft(
+                draftText: llm.draftText ?? "",
+                complianceFlags: llm.complianceFlags ?? []
+            )
+        } catch {
+            // If JSON parsing fails, treat the entire response as the draft text
+            let plainText = jsonString.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !plainText.isEmpty {
+                logger.info("Draft generation returned plain text, using as draft body")
+                return ContentDraft(draftText: String(plainText.prefix(2000)))
+            }
+            logger.error("Draft generation JSON parsing failed: \(error.localizedDescription)")
+            throw error
+        }
+    }
+
     // MARK: - Parsing
 
     private func parseResponse(_ jsonString: String) throws -> ContentAnalysis {

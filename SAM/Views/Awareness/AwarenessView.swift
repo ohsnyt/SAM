@@ -305,6 +305,7 @@ struct AwarenessView: View {
         case engagementVelocity
         case meetingQuality
         case streaks
+        case contentCadence
         case calendarPatterns
         case timeAllocation
         case referralTracking
@@ -336,7 +337,7 @@ struct AwarenessView: View {
             switch self {
             case .actionQueue:     return [.outcomes, .followUpCoach, .unknownSenders]
             case .todaysFocus:     return [.meetingPrep, .pipeline, .lifeEvents, .engagementVelocity]
-            case .reviewAnalytics: return [.streaks, .meetingQuality, .calendarPatterns, .timeAllocation, .referralTracking]
+            case .reviewAnalytics: return [.streaks, .contentCadence, .meetingQuality, .calendarPatterns, .timeAllocation, .referralTracking]
             }
         }
     }
@@ -492,6 +493,7 @@ struct AwarenessView: View {
         case .engagementVelocity: EngagementVelocitySection()
         case .meetingQuality:     MeetingQualitySection()
         case .streaks:            StreakTrackingSection()
+        case .contentCadence:     ContentCadenceSection()
         case .calendarPatterns:   CalendarPatternsSection()
         case .timeAllocation:     TimeAllocationSection()
         case .referralTracking:   ReferralTrackingSection()

@@ -241,8 +241,9 @@ extension OutcomeKind {
         case .proposal:    return "Proposal"
         case .outreach:    return "Outreach"
         case .growth:      return "Growth"
-        case .training:    return "Training"
-        case .compliance:  return "Compliance"
+        case .training:        return "Training"
+        case .compliance:      return "Compliance"
+        case .contentCreation: return "Content"
         }
     }
 
@@ -253,8 +254,9 @@ extension OutcomeKind {
         case .proposal:    return .purple
         case .outreach:    return .teal
         case .growth:      return .green
-        case .training:    return .indigo
-        case .compliance:  return .red
+        case .training:        return .indigo
+        case .compliance:      return .red
+        case .contentCreation: return .mint
         }
     }
 
@@ -265,8 +267,9 @@ extension OutcomeKind {
         case .proposal:    return "doc.richtext"
         case .outreach:    return "hand.wave"
         case .growth:      return "chart.line.uptrend.xyaxis"
-        case .training:    return "book"
-        case .compliance:  return "checkmark.shield"
+        case .training:        return "book"
+        case .compliance:      return "checkmark.shield"
+        case .contentCreation: return "text.badge.star"
         }
     }
 }

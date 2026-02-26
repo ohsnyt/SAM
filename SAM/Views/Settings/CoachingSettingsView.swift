@@ -33,6 +33,13 @@ struct CoachingSettingsContent: View {
     @State private var reanalyzeStatus: String?
     @State private var isReanalyzing = false
 
+    // Content Suggestions (Phase W)
+    @State private var contentSuggestionsEnabled: Bool = {
+        UserDefaults.standard.object(forKey: "contentSuggestionsEnabled") == nil
+            ? true
+            : UserDefaults.standard.bool(forKey: "contentSuggestionsEnabled")
+    }()
+
     // Direct Send
     @State private var directSendEnabled: Bool = UserDefaults.standard.bool(forKey: "directSendEnabled")
 
@@ -452,6 +459,16 @@ struct CoachingSettingsContent: View {
                 }
 
             Text("When enabled, SAM sends iMessages and emails via AppleScript without leaving the app. Requires one-time Automation permission grant.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.bottom, 4)
+
+            Toggle("Content posting suggestions", isOn: $contentSuggestionsEnabled)
+                .onChange(of: contentSuggestionsEnabled) { _, newValue in
+                    UserDefaults.standard.set(newValue, forKey: "contentSuggestionsEnabled")
+                }
+
+            Text("SAM suggests 3 educational content topics per week based on your recent meetings and client conversations.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

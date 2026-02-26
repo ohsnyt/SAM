@@ -4,6 +4,80 @@
 
 ---
 
+## February 26, 2026 - Phase W: Content Assist & Social Media Coaching (Schema SAM_v23)
+
+### Overview
+Phase W builds a complete content coaching flow for social media posting: topic suggestions surfaced as coaching outcomes, AI-generated platform-aware drafts with compliance guardrails, posting cadence tracking with streak reinforcement, and briefing integration. Research shows consistent educational content is the #1 digital growth lever for independent financial agents — this phase helps the user create and maintain a posting habit.
+
+### New Models
+
+**`ContentPost`** (@Model) — Lightweight record tracking posted social media content: `id: UUID`, `platformRawValue: String` (+ `@Transient platform: ContentPlatform`), `topic: String`, `postedAt: Date`, `sourceOutcomeID: UUID?`, `createdAt: Date`. Uses UUID reference (not @Relationship) to source outcome.
+
+**`ContentPlatform`** (enum) — `.linkedin`, `.facebook`, `.instagram`, `.other` with `rawValue` storage, `color: Color`, `icon: String` SF Symbol helpers.
+
+**`ContentDraft`** (DTO, Sendable) — `draftText: String`, `complianceFlags: [String]`. Paired with `LLMContentDraft` for JSON parsing from AI responses.
+
+### Model Changes
+
+**`OutcomeKind`** — Added `.contentCreation` case with display name "Content", theme color `.mint`, icon `text.badge.star`, action label "Draft".
+
+### New Components
+
+**`ContentPostRepository`** (@MainActor @Observable singleton) — `logPost(platform:topic:sourceOutcomeID:)`, `fetchRecent(days:)`, `lastPost(platform:)`, `daysSinceLastPost(platform:)`, `postCountByPlatform(days:)`, `weeklyPostingStreak()`, `delete(id:)`.
+
+**`ContentDraftSheet`** (SwiftUI) — Sheet for generating AI-powered social media drafts: platform picker (segmented LinkedIn/Facebook/Instagram), "Generate Draft" button, draft TextEditor (read-only with Edit toggle), compliance flags as orange warning capsules, "Copy to Clipboard" via NSPasteboard, "Log as Posted" → logs to ContentPostRepository + marks outcome completed, "Regenerate" button.
+
+**`ContentCadenceSection`** (SwiftUI) — Review & Analytics section: platform cadence cards (icon + name + days since last post + monthly count, color-coded green/orange/red), posting streak with flame icon, inline "Log a Post" row (platform picker + topic field + button).
+
+### Components Modified
+
+**`OutcomeEngine.swift`** — Two new scanner methods: `scanContentSuggestions()` reads cached StrategicCoordinator digest for ContentTopic data (falls back to direct ContentAdvisorService call), maps top 3 to `.contentCreation` outcomes with JSON-encoded topic in `sourceInsightSummary`; `scanContentCadence()` checks LinkedIn (10d) and Facebook (14d) thresholds, creates nudge outcomes. `classifyActionLane()` maps `.contentCreation` → `.deepWork`.
+
+**`ContentAdvisorService.swift`** — Added `generateDraft(topic:keyPoints:platform:tone:complianceNotes:)` with platform-specific guidelines (LinkedIn: 150-250 words professional; Facebook: 100-150 words conversational; Instagram: 50-100 words hook-focused), strict compliance rules (no product names, no return promises, no comparative claims), returns `ContentDraft`.
+
+**`OutcomeQueueView.swift`** — Content creation outcomes intercept `actClosure` before the `actionLane` switch, routing to `ContentDraftSheet`. Added `parseContentTopic(from:)` helper to decode JSON-encoded `ContentTopic` from `sourceInsightSummary`.
+
+**`AwarenessView.swift`** — Added `.contentCadence` to `AwarenessSection` enum, placed in `reviewAnalytics` group after `.streaks`.
+
+**`StreakTrackingSection.swift`** — Added `contentPosting: Int` to `StreakResults`, computed via `ContentPostRepository.shared.weeklyPostingStreak()`. Shows "Weekly Posting" streak card with `text.badge.star` icon.
+
+**`DailyBriefingCoordinator.swift`** — `gatherWeeklyPriorities()` checks LinkedIn (10d) and Facebook (14d) cadence, appends `BriefingAction` with `sourceKind: "content_cadence"` to Monday weekly priorities.
+
+**`CoachingSettingsView.swift`** — Added `contentSuggestionsEnabled` toggle (default true) in Autonomous Actions section with description caption.
+
+**`SAMModelContainer.swift`** — Schema bumped to SAM_v23, added `ContentPost.self` to `SAMSchema.allModels`.
+
+**`SAMApp.swift`** — Added `ContentPostRepository.shared.configure(container:)` in `configureDataLayer()`.
+
+### Files Summary
+| File | Action | Description |
+|------|--------|-------------|
+| `Models/SAMModels-ContentPost.swift` | NEW | ContentPlatform enum + ContentPost @Model |
+| `Repositories/ContentPostRepository.swift` | NEW | CRUD, cadence queries, weekly streak |
+| `Models/DTOs/ContentDraftDTO.swift` | NEW | ContentDraft + LLMContentDraft DTOs |
+| `Views/Content/ContentDraftSheet.swift` | NEW | AI draft generation sheet |
+| `Views/Awareness/ContentCadenceSection.swift` | NEW | Cadence tracking section |
+| `Models/SAMModels-Supporting.swift` | MODIFY | + .contentCreation OutcomeKind |
+| `Views/Shared/OutcomeCardView.swift` | MODIFY | Display extensions for .contentCreation |
+| `App/SAMModelContainer.swift` | MODIFY | Schema SAM_v22 → SAM_v23 |
+| `App/SAMApp.swift` | MODIFY | Configure ContentPostRepository |
+| `Coordinators/OutcomeEngine.swift` | MODIFY | Content scanners + action lane |
+| `Services/ContentAdvisorService.swift` | MODIFY | + generateDraft() method |
+| `Views/Awareness/OutcomeQueueView.swift` | MODIFY | Wire ContentDraftSheet |
+| `Views/Awareness/AwarenessView.swift` | MODIFY | + .contentCadence section |
+| `Views/Awareness/StreakTrackingSection.swift` | MODIFY | + posting streak |
+| `Coordinators/DailyBriefingCoordinator.swift` | MODIFY | Content cadence in weekly priorities |
+| `Views/Settings/CoachingSettingsView.swift` | MODIFY | + contentSuggestionsEnabled toggle |
+
+### Key Design Decisions
+- **UUID reference, not @Relationship** — ContentPost uses `sourceOutcomeID: UUID?` to avoid inverse requirements on SamOutcome
+- **JSON round-trip for ContentTopic** — Outcome's `sourceInsightSummary` stores full ContentTopic as JSON so the draft sheet can reconstruct topic/keyPoints/tone/complianceNotes without re-fetching
+- **Manual post logging** — SAM doesn't access social platforms directly; user confirms posting with "Log as Posted"
+- **Compliance-first AI drafts** — System prompt enforces strict financial services compliance rules; compliance flags surface as orange warnings
+- **Cadence thresholds** — LinkedIn 10 days, Facebook 14 days; nudge outcomes limited to one per 72h to avoid noise
+
+---
+
 ## February 26, 2026 - Role-Aware Velocity Thresholds + Per-Person Cadence Override (Schema SAM_v21)
 
 ### Overview

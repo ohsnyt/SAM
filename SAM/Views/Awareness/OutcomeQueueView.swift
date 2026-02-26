@@ -33,6 +33,8 @@ struct OutcomeQueueView: View {
     @State private var showCompleted = false
     @State private var showDeepWorkSheet = false
     @State private var deepWorkOutcome: SamOutcome?
+    @State private var showContentDraftSheet = false
+    @State private var contentDraftOutcome: SamOutcome?
 
     // MARK: - Computed
 
@@ -112,6 +114,25 @@ struct OutcomeQueueView: View {
                         },
                         onCancel: {
                             showDeepWorkSheet = false
+                        }
+                    )
+                }
+            }
+            .sheet(isPresented: $showContentDraftSheet) {
+                if let outcome = contentDraftOutcome {
+                    let parsed = parseContentTopic(from: outcome.sourceInsightSummary)
+                    ContentDraftSheet(
+                        topic: parsed.topic,
+                        keyPoints: parsed.keyPoints,
+                        suggestedTone: parsed.suggestedTone,
+                        complianceNotes: parsed.complianceNotes,
+                        sourceOutcomeID: outcome.id,
+                        onPosted: {
+                            try? outcomeRepo.markCompleted(id: outcome.id)
+                            showContentDraftSheet = false
+                        },
+                        onCancel: {
+                            showContentDraftSheet = false
                         }
                     )
                 }
@@ -264,6 +285,14 @@ struct OutcomeQueueView: View {
     // MARK: - Actions
 
     private func actClosure(for outcome: SamOutcome) -> (() -> Void)? {
+        // Content creation outcomes always open the draft sheet
+        if outcome.outcomeKind == .contentCreation {
+            return {
+                contentDraftOutcome = outcome
+                showContentDraftSheet = true
+            }
+        }
+
         switch outcome.actionLane {
         case .record:
             return {
@@ -358,5 +387,18 @@ struct OutcomeQueueView: View {
             .filter { $0.sequenceID == seqID && $0.sequenceIndex > outcome.sequenceIndex && $0.isAwaitingTrigger && $0.status == .pending }
             .sorted(by: { $0.sequenceIndex < $1.sequenceIndex })
             .first
+    }
+
+    // MARK: - Content Topic Parsing (Phase W)
+
+    /// Parse a ContentTopic from JSON stored in sourceInsightSummary.
+    /// Falls back to using the outcome title as the topic.
+    private func parseContentTopic(from json: String) -> (topic: String, keyPoints: [String], suggestedTone: String, complianceNotes: String?) {
+        guard !json.isEmpty,
+              let data = json.data(using: .utf8),
+              let topic = try? JSONDecoder().decode(ContentTopic.self, from: data) else {
+            return (topic: "Educational content", keyPoints: [], suggestedTone: "educational", complianceNotes: nil)
+        }
+        return (topic: topic.topic, keyPoints: topic.keyPoints, suggestedTone: topic.suggestedTone, complianceNotes: topic.complianceNotes)
     }
 }

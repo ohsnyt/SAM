@@ -157,6 +157,7 @@ struct SAMApp: App {
         PipelineRepository.shared.configure(container: SAMModelContainer.shared)
         ProductionRepository.shared.configure(container: SAMModelContainer.shared)
         StrategicCoordinator.shared.configure(container: SAMModelContainer.shared)
+        ContentPostRepository.shared.configure(container: SAMModelContainer.shared)
     }
     
     /// Check permissions and decide whether to show onboarding or proceed with imports

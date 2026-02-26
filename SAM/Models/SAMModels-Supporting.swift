@@ -714,8 +714,9 @@ public enum OutcomeKind: String, Codable, Sendable, CaseIterable {
     case proposal       // Build/send a proposal or recommendation
     case outreach       // Reach out to someone going cold
     case growth         // Business growth activity (prospecting, networking)
-    case training       // Learning/development activity
-    case compliance     // Regulatory or compliance action
+    case training          // Learning/development activity
+    case compliance        // Regulatory or compliance action
+    case contentCreation   // Social media / educational content
 }
 
 public enum OutcomeStatus: String, Codable, Sendable {
@@ -737,13 +738,14 @@ extension OutcomeKind {
     var defaultAction: OutcomeAction {
         switch self {
         case .followUp, .preparation: return .captureNote
-        case .proposal, .outreach, .growth, .training, .compliance: return .openPerson
+        case .proposal, .outreach, .growth, .training, .compliance, .contentCreation: return .openPerson
         }
     }
 
     var actionLabel: String {
         switch self {
         case .followUp, .preparation: return "Write Note"
+        case .contentCreation: return "Draft"
         case .proposal, .outreach, .growth, .training, .compliance: return "View"
         }
     }
@@ -751,6 +753,7 @@ extension OutcomeKind {
     var actionIcon: String {
         switch self {
         case .followUp, .preparation: return "square.and.pencil"
+        case .contentCreation: return "text.badge.star"
         case .proposal, .outreach, .growth, .training, .compliance: return "arrow.right.circle"
         }
     }
