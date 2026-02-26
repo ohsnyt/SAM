@@ -891,13 +891,14 @@ final class DailyBriefingCoordinator {
             // Use role-based thresholds
             let threshold: Int
             switch person.roleBadges.first?.lowercased() {
-            case "client":          threshold = 45
-            case "applicant":       threshold = 14
-            case "lead":            threshold = 30
-            case "agent":           threshold = 21
-            case "external agent":  threshold = 60
-            case "vendor":          threshold = 90
-            default:                threshold = 60
+            case "client":           threshold = 45
+            case "applicant":        threshold = 14
+            case "lead":             threshold = 30
+            case "agent":            threshold = 21
+            case "referral partner": threshold = 45
+            case "external agent":   threshold = 60
+            case "vendor":           threshold = 90
+            default:                 threshold = 60
             }
 
             // 1. Static threshold follow-ups (existing behavior)
@@ -916,10 +917,10 @@ final class DailyBriefingCoordinator {
                 continue
             }
 
-            // 2. Predictive follow-ups: decayRisk >= moderate, predicted overdue within 7 days
+            // 2. Predictive follow-ups: decayRisk >= moderate, predicted overdue within half role lead time
             if health.decayRisk >= .moderate,
                let predicted = health.predictedOverdueDays,
-               predicted <= 7,
+               predicted <= health.predictiveLeadDays / 2,
                !staticPersonIDs.contains(person.id) {
                 let name = person.displayNameCache ?? person.displayName
 
@@ -1017,13 +1018,14 @@ final class DailyBriefingCoordinator {
 
             let threshold: Int
             switch role {
-            case "client":          threshold = 45
-            case "applicant":       threshold = 14
-            case "lead":            threshold = 30
-            case "agent":           threshold = 21
-            case "external agent":  threshold = 60
-            case "vendor":          threshold = 90
-            default:                threshold = 60
+            case "client":           threshold = 45
+            case "applicant":        threshold = 14
+            case "lead":             threshold = 30
+            case "agent":            threshold = 21
+            case "referral partner": threshold = 45
+            case "external agent":   threshold = 60
+            case "vendor":           threshold = 90
+            default:                 threshold = 60
             }
 
             guard days >= threshold else { continue }

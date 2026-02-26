@@ -84,6 +84,9 @@ public final class SamPerson {
     /// Explicit user override for preferred communication channel.
     public var preferredChannelRawValue: String?
 
+    /// User-set cadence override in days (nil = use computed median gap).
+    public var preferredCadenceDays: Int?
+
     /// Returns explicit preference if set, else inferred preference.
     @Transient
     public var effectiveChannel: CommunicationChannel? {

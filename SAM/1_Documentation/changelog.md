@@ -4,6 +4,63 @@
 
 ---
 
+## February 26, 2026 - Role-Aware Velocity Thresholds + Per-Person Cadence Override (Schema SAM_v21)
+
+### Overview
+Enhanced Phase U's velocity-aware relationship health with three improvements: (1) per-role velocity thresholds — Client/Applicant relationships trigger decay alerts at lower overdue ratios (1.2–1.3×) than Vendor/External Agent (2.0–4.0×), reflecting differing urgency levels; (2) per-person cadence override — users can set manual contact cadence (Weekly/Biweekly/Monthly/Quarterly) on any person, overriding the computed median-gap cadence; (3) "Referral Partner" role integrated into every role-based threshold system (45-day static threshold, matching Client).
+
+### New Types
+
+**`RoleVelocityConfig`** (struct, `Sendable`) — Per-role velocity thresholds: `ratioModerate` (overdue ratio for moderate risk), `ratioHigh` (for high risk), `predictiveLeadDays` (alert lead time). Static factory `forRole(_:)` maps roles: Client (1.3/2.0/14d), Applicant (1.2/1.8/14d), Lead (1.3/2.0/10d), Agent (1.5/2.5/10d), Referral Partner (1.5/2.5/14d), External Agent (2.0/3.5/21d), Vendor (2.5/4.0/30d).
+
+### Model Changes
+
+**`SamPerson`** — Added `preferredCadenceDays: Int?` (nil = use computed median gap). Additive optional field, lightweight migration.
+
+**`RelationshipHealth`** — Added `effectiveCadenceDays: Int?` (user override or computed, used for all health logic), `predictiveLeadDays: Int` (role-aware alert lead time). `statusColor` now checks `effectiveCadenceDays` instead of `cadenceDays`.
+
+### Components Modified
+
+**`MeetingPrepCoordinator.swift`** — Added `RoleVelocityConfig` struct. `assessDecayRisk()` now uses `RoleVelocityConfig.forRole(role)` instead of hard-coded 1.5/2.5 ratios. `computeHealth()` applies `preferredCadenceDays` override before computing overdue ratio and predicted overdue. `staticRoleThreshold()` and `colorThresholds()` both include "Referral Partner" (45d, green:14/yellow:30/orange:45).
+
+**`OutcomeEngine.swift`** — `scanRelationshipHealth()` uses `health.predictiveLeadDays` instead of hard-coded 14. `roleImportanceScore()` adds "Referral Partner" at 0.5. `roleThreshold()` adds "Referral Partner" at 45d.
+
+**`InsightGenerator.swift`** — `RoleThresholds.forRole()` adds "Referral Partner" (45d, no urgency boost).
+
+**`DailyBriefingCoordinator.swift`** — Predictive follow-ups use `health.predictiveLeadDays / 2` instead of hard-coded 7. Both threshold switch blocks add "Referral Partner" at 45d.
+
+**`EngagementVelocitySection.swift`** — Overdue filter uses `health.decayRisk >= .moderate` instead of `ratio >= 1.5` (already role-aware via `assessDecayRisk`). Uses `effectiveCadenceDays` for display.
+
+**`PersonDetailView.swift`** — New `cadencePreferenceView` below channel preference picker: Automatic/Weekly/Every 2 weeks/Monthly/Quarterly menu. Shows "(computed: ~Xd)" hint when set to Automatic with sufficient data.
+
+**`WhoToReachOutIntent.swift`** — `roleThreshold()` adds "Referral Partner" at 45d.
+
+**`RoleFilter.swift`** — Added `.referralPartner` case with display representation "Referral Partner" and badge mapping.
+
+**`SAMModelContainer.swift`** — Schema bumped to `SAM_v21`.
+
+### Files Modified
+| File | Action | Description |
+|------|--------|-------------|
+| `Coordinators/MeetingPrepCoordinator.swift` | MODIFY | RoleVelocityConfig, role-aware assessDecayRisk, cadence override in computeHealth, referral partner thresholds |
+| `Models/SAMModels.swift` | MODIFY | + SamPerson.preferredCadenceDays: Int? |
+| `App/SAMModelContainer.swift` | MODIFY | Schema SAM_v20 → SAM_v21 |
+| `Views/People/PersonDetailView.swift` | MODIFY | Cadence picker UI |
+| `Coordinators/OutcomeEngine.swift` | MODIFY | Role-aware predictive lead, referral partner in role switches |
+| `Coordinators/InsightGenerator.swift` | MODIFY | Referral partner in RoleThresholds |
+| `Coordinators/DailyBriefingCoordinator.swift` | MODIFY | Role-aware predictive lead, referral partner in threshold switches |
+| `Views/Awareness/EngagementVelocitySection.swift` | MODIFY | decayRisk-based filter, effectiveCadenceDays |
+| `Intents/WhoToReachOutIntent.swift` | MODIFY | Referral partner threshold |
+| `Intents/RoleFilter.swift` | MODIFY | + .referralPartner case |
+
+### Architecture Decisions
+- **Role-scaled velocity**: Vendors at 2× cadence overdue are far less concerning than Applicants at 2× — thresholds scale accordingly
+- **Cadence override stored on model**: `preferredCadenceDays` on `SamPerson` rather than a separate settings table — simpler and co-located with the person
+- **Effective cadence pattern**: `effectiveCadenceDays` is always used for health logic; raw `cadenceDays` preserved for "computed cadence" display hint
+- **Referral Partner = Client-tier cadence**: 45-day static threshold with moderate velocity sensitivity (1.5×/2.5×) — valuable relationships that need regular but not aggressive contact
+
+---
+
 ## February 26, 2026 - Phase U: Relationship Decay Prediction (No Schema Change)
 
 ### Overview

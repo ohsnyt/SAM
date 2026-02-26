@@ -3,7 +3,7 @@
 **Language**: Swift 6  
 **Architecture**: Clean layered architecture with strict separation of concerns  
 **Framework**: SwiftUI + SwiftData  
-**Last Updated**: February 26, 2026 (Phases A–U complete, schema SAM_v20)
+**Last Updated**: February 26, 2026 (Phases A–U complete, schema SAM_v21)
 
 **Related Docs**: 
 - See `agent.md` for product philosophy, AI architecture, and UX principles
@@ -129,7 +129,7 @@ SAM is a **native macOS business coaching and relationship management applicatio
 SAM/SAM/
 ├── App/
 │   ├── SAMApp.swift                    ✅ App entry point, lifecycle, permissions
-│   └── SAMModelContainer.swift         ✅ SwiftData container (v20)
+│   └── SAMModelContainer.swift         ✅ SwiftData container (v21)
 │
 ├── Services/
 │   ├── ContactsService.swift           ✅ Actor — CNContact operations
@@ -228,11 +228,11 @@ SAM/SAM/
 
 ## 4. Data Models
 
-### 4.1 Existing Models (Phases A–U, schema v20)
+### 4.1 Existing Models (Phases A–U, schema v21)
 
 (All existing models unchanged — see `changelog.md` for full schema. Summary below.)
 
-- **SamPerson** — Contact anchor + CRM enrichment (roles, referrals, channel preferences, phone aliases, stageTransitions, recruitingStages, productionRecords)
+- **SamPerson** — Contact anchor + CRM enrichment (roles, referrals, channel preferences, phone aliases, preferredCadenceDays, stageTransitions, recruitingStages, productionRecords)
 - **SamContext** — Households, businesses, groups
 - **SamEvidenceItem** — Observations from Calendar/Mail/iMessage/Phone/FaceTime/Notes
 - **SamNote** — User notes with LLM analysis (action items, topics, life events, follow-up drafts)
@@ -538,9 +538,10 @@ Each layer tested independently:
 | v17 | P | + SamUndoEntry model |
 | v18 | Q | + TimeEntry model, TimeCategory enum |
 | v19 | R | + StageTransition, RecruitingStage models |
-| v20 | S (current) | + ProductionRecord, WFGProductType, ProductionStatus |
-| v21 | V | + StrategicDigest |
-| v22 | X | + BusinessGoal |
+| v20 | S | + ProductionRecord, WFGProductType, ProductionStatus |
+| v21 | U enhancement (current) | + SamPerson.preferredCadenceDays (cadence override) |
+| v22 | V | + StrategicDigest |
+| v23 | X | + BusinessGoal |
 
 Each migration uses SwiftData lightweight migration. New models are additive (no breaking changes to existing models). Backfill logic runs once on first launch after migration.
 
@@ -598,8 +599,8 @@ Each migration uses SwiftData lightweight migration. New models are additive (no
 
 ---
 
-**Document Version**: 10.0 (Phase U complete, Business Intelligence architecture, Phases V–Z)
+**Document Version**: 10.1 (Phase U + role-aware velocity complete, Business Intelligence architecture, Phases V–Z)
 **Previous Versions**: See `changelog.md` for version history
-**Last Major Update**: February 26, 2026 — Phase U: Relationship Decay Prediction complete
+**Last Major Update**: February 26, 2026 — Role-aware velocity thresholds, per-person cadence override, Referral Partner role integration (schema SAM_v21)
 **Clean Rebuild Started**: February 9, 2026
     

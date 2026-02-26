@@ -6,6 +6,7 @@ enum RoleFilter: String, AppEnum {
     case lead
     case applicant
     case agent
+    case referralPartner
     case vendor
     case externalAgent
 
@@ -17,6 +18,7 @@ enum RoleFilter: String, AppEnum {
         .lead: "Lead",
         .applicant: "Applicant",
         .agent: "Agent",
+        .referralPartner: "Referral Partner",
         .vendor: "Vendor",
         .externalAgent: "External Agent",
     ]
@@ -29,6 +31,7 @@ enum RoleFilter: String, AppEnum {
         case .lead: return "Lead"
         case .applicant: return "Applicant"
         case .agent: return "Agent"
+        case .referralPartner: return "Referral Partner"
         case .vendor: return "Vendor"
         case .externalAgent: return "External Agent"
         }

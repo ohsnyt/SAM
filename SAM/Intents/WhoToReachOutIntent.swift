@@ -60,13 +60,14 @@ struct WhoToReachOutIntent: AppIntent {
 
     private static func roleThreshold(for role: String?) -> Int {
         switch role?.lowercased() {
-        case "client":         return 45
-        case "applicant":      return 14
-        case "lead":           return 30
-        case "agent":          return 21
-        case "external agent": return 60
-        case "vendor":         return 90
-        default:               return 60
+        case "client":           return 45
+        case "applicant":        return 14
+        case "lead":             return 30
+        case "agent":            return 21
+        case "referral partner": return 45
+        case "external agent":   return 60
+        case "vendor":           return 90
+        default:                 return 60
         }
     }
 }

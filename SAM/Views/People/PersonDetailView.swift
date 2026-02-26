@@ -215,6 +215,7 @@ struct PersonDetailView: View {
                 // Channel preference
                 if !person.isMe {
                     channelPreferenceView
+                    cadencePreferenceView
                 }
             }
 
@@ -642,6 +643,43 @@ struct PersonDetailView: View {
             get: { person.preferredChannelRawValue ?? "" },
             set: { newValue in
                 person.preferredChannelRawValue = newValue.isEmpty ? nil : newValue
+            }
+        )
+    }
+
+    private var cadencePreferenceView: some View {
+        HStack(spacing: 8) {
+            Text("Cadence:")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Picker("Cadence", selection: cadencePreferenceBinding) {
+                Text("Automatic").tag(0)
+                Text("Weekly").tag(7)
+                Text("Every 2 weeks").tag(14)
+                Text("Monthly").tag(30)
+                Text("Quarterly").tag(90)
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .controlSize(.small)
+
+            if person.preferredCadenceDays == nil {
+                let health = MeetingPrepCoordinator.shared.computeHealth(for: person)
+                if let computed = health.cadenceDays {
+                    Text("(computed: ~\(computed)d)")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        }
+    }
+
+    private var cadencePreferenceBinding: Binding<Int> {
+        Binding(
+            get: { person.preferredCadenceDays ?? 0 },
+            set: { newValue in
+                person.preferredCadenceDays = newValue == 0 ? nil : newValue
             }
         )
     }

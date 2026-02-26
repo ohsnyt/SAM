@@ -21,9 +21,9 @@ struct EngagementVelocitySection: View {
 
         for person in people {
             let health = coordinator.computeHealth(for: person)
-            guard let cadence = health.cadenceDays,
+            guard let cadence = health.effectiveCadenceDays,
                   let ratio = health.overdueRatio,
-                  ratio >= 1.5 else { continue }
+                  health.decayRisk >= .moderate else { continue }
 
             let currentGapDays = health.daysSinceLastInteraction ?? 0
 
@@ -63,7 +63,7 @@ struct EngagementVelocitySection: View {
                 personID: person.id,
                 displayName: person.displayNameCache ?? person.displayName,
                 roleBadges: person.roleBadges,
-                cadenceDays: health.cadenceDays ?? 0,
+                cadenceDays: health.effectiveCadenceDays ?? 0,
                 currentGapDays: currentGapDays,
                 overdueRatio: ratio,
                 decayRisk: health.decayRisk,

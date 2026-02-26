@@ -299,10 +299,10 @@ final class OutcomeEngine {
                 continue // Skip predictive if already past static threshold
             }
 
-            // 2. Predictive: decay risk >= moderate AND predicted overdue within 14 days
+            // 2. Predictive: decay risk >= moderate AND predicted overdue within role-aware lead time
             if health.decayRisk >= .moderate,
                let predicted = health.predictedOverdueDays,
-               predicted <= 14 {
+               predicted <= health.predictiveLeadDays {
                 outcomes.append(SamOutcome(
                     title: "Reach out to \(name) soon",
                     rationale: "Engagement declining — predicted overdue in \(predicted) day\(predicted == 1 ? "" : "s"). \(role) relationship.",
@@ -726,25 +726,27 @@ final class OutcomeEngine {
 
     private func roleImportanceScore(for role: String?) -> Double {
         switch role?.lowercased() {
-        case "client":          return 1.0
-        case "applicant":       return 0.9
-        case "lead":            return 0.7
-        case "agent":           return 0.6
-        case "external agent":  return 0.4
-        case "vendor":          return 0.3
-        default:                return 0.5
+        case "client":           return 1.0
+        case "applicant":        return 0.9
+        case "lead":             return 0.7
+        case "agent":            return 0.6
+        case "referral partner": return 0.5
+        case "external agent":   return 0.4
+        case "vendor":           return 0.3
+        default:                 return 0.5
         }
     }
 
     private func roleThreshold(for role: String?) -> Int {
         switch role?.lowercased() {
-        case "client":          return 45
-        case "applicant":       return 14
-        case "lead":            return 30
-        case "agent":           return 21
-        case "external agent":  return 60
-        case "vendor":          return 90
-        default:                return 60
+        case "client":           return 45
+        case "applicant":        return 14
+        case "lead":             return 30
+        case "agent":            return 21
+        case "referral partner": return 45
+        case "external agent":   return 60
+        case "vendor":           return 90
+        default:                 return 60
         }
     }
 

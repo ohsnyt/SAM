@@ -33,6 +33,26 @@ enum VelocityTrend: String, Sendable {
     case noData
 }
 
+/// Per-role velocity thresholds for decay risk assessment.
+struct RoleVelocityConfig: Sendable {
+    let ratioModerate: Double   // Overdue ratio → moderate risk
+    let ratioHigh: Double       // Overdue ratio → high risk
+    let predictiveLeadDays: Int // Alert this many days before predicted overdue
+
+    static func forRole(_ role: String?) -> RoleVelocityConfig {
+        switch role?.lowercased() {
+        case "client":           return .init(ratioModerate: 1.3, ratioHigh: 2.0, predictiveLeadDays: 14)
+        case "applicant":        return .init(ratioModerate: 1.2, ratioHigh: 1.8, predictiveLeadDays: 14)
+        case "lead":             return .init(ratioModerate: 1.3, ratioHigh: 2.0, predictiveLeadDays: 10)
+        case "agent":            return .init(ratioModerate: 1.5, ratioHigh: 2.5, predictiveLeadDays: 10)
+        case "referral partner": return .init(ratioModerate: 1.5, ratioHigh: 2.5, predictiveLeadDays: 14)
+        case "external agent":   return .init(ratioModerate: 2.0, ratioHigh: 3.5, predictiveLeadDays: 21)
+        case "vendor":           return .init(ratioModerate: 2.5, ratioHigh: 4.0, predictiveLeadDays: 30)
+        default:                 return .init(ratioModerate: 1.5, ratioHigh: 2.5, predictiveLeadDays: 14)
+        }
+    }
+}
+
 /// Overall decay risk assessment combining overdue ratio + velocity trend.
 enum DecayRisk: String, Sendable, Comparable {
     case none       // Healthy, within cadence
@@ -64,18 +84,20 @@ struct RelationshipHealth: Sendable {
     let role: String?
 
     // Velocity fields (Phase U)
-    let cadenceDays: Int?              // Median gap in days (nil if <3 interactions)
-    let overdueRatio: Double?          // currentGap / cadence (nil if no cadence)
+    let cadenceDays: Int?              // Computed median gap in days (nil if <3 interactions)
+    let effectiveCadenceDays: Int?     // User override or computed (used for health logic)
+    let overdueRatio: Double?          // currentGap / effectiveCadence (nil if no cadence)
     let velocityTrend: VelocityTrend   // Gap acceleration direction
     let qualityScore30: Double         // Quality-weighted interaction score (last 30d)
     let predictedOverdueDays: Int?     // Days until predicted overdue (nil = not predictable)
     let decayRisk: DecayRisk           // Overall risk assessment
+    let predictiveLeadDays: Int        // Role-aware lead time for predictive alerts
 
     /// Color incorporating decay risk when velocity data is available;
     /// falls back to static role-based thresholds otherwise.
     var statusColor: Color {
         // If we have velocity data, use decay risk for color
-        if cadenceDays != nil {
+        if effectiveCadenceDays != nil {
             switch decayRisk {
             case .none:     return .green
             case .low:      return .green
@@ -115,6 +137,8 @@ struct RelationshipHealth: Sendable {
             return ColorThresholds(green: 7, yellow: 21, orange: 45)
         case "agent":
             return ColorThresholds(green: 7, yellow: 14, orange: 30)
+        case "referral partner":
+            return ColorThresholds(green: 14, yellow: 30, orange: 45)
         case "vendor":
             return ColorThresholds(green: 30, yellow: 60, orange: 90)
         default:
@@ -262,9 +286,17 @@ final class MeetingPrepCoordinator {
             cadenceDays = nil
         }
 
-        // --- Overdue ratio ---
+        // --- Effective cadence (user override or computed) ---
+        let effectiveCadenceDays: Int?
+        if let override = person.preferredCadenceDays, override > 0 {
+            effectiveCadenceDays = override
+        } else {
+            effectiveCadenceDays = cadenceDays
+        }
+
+        // --- Overdue ratio (against effective cadence) ---
         let currentGapDays = evidence.last.map { now.timeIntervalSince($0.occurredAt) / 86400.0 }
-        let overdueRatio = cadenceDays.flatMap { cd in currentGapDays.map { $0 / Double(cd) } }
+        let overdueRatio = effectiveCadenceDays.flatMap { cd in currentGapDays.map { $0 / Double(cd) } }
 
         // --- Velocity trend ---
         let velocityTrend = computeVelocityTrend(gaps: gaps)
@@ -276,8 +308,11 @@ final class MeetingPrepCoordinator {
 
         // --- Predicted overdue ---
         let predictedOverdueDays = computePredictedOverdue(
-            cadenceDays: cadenceDays, currentGapDays: currentGapDays, velocityTrend: velocityTrend
+            cadenceDays: effectiveCadenceDays, currentGapDays: currentGapDays, velocityTrend: velocityTrend
         )
+
+        // --- Role velocity config ---
+        let roleConfig = RoleVelocityConfig.forRole(person.roleBadges.first)
 
         // --- Decay risk ---
         let decayRisk = assessDecayRisk(
@@ -292,11 +327,13 @@ final class MeetingPrepCoordinator {
             trend: trend,
             role: person.roleBadges.first,
             cadenceDays: cadenceDays,
+            effectiveCadenceDays: effectiveCadenceDays,
             overdueRatio: overdueRatio,
             velocityTrend: velocityTrend,
             qualityScore30: qualityScore30,
             predictedOverdueDays: predictedOverdueDays,
-            decayRisk: decayRisk
+            decayRisk: decayRisk,
+            predictiveLeadDays: roleConfig.predictiveLeadDays
         )
     }
 
@@ -379,21 +416,22 @@ final class MeetingPrepCoordinator {
             }
         }
 
-        // Velocity-aware assessment
+        // Velocity-aware assessment (role-scaled thresholds)
+        let config = RoleVelocityConfig.forRole(role)
         switch velocityTrend {
         case .decelerating:
-            if ratio >= 2.5 { return .high }
-            if ratio >= 1.5 { return .moderate }
+            if ratio >= config.ratioHigh { return .high }
+            if ratio >= config.ratioModerate { return .moderate }
             if ratio >= 1.0 { return .moderate }
             return .low
         case .steady:
-            if ratio >= 2.5 { return .high }
-            if ratio >= 1.5 { return .moderate }
+            if ratio >= config.ratioHigh { return .high }
+            if ratio >= config.ratioModerate { return .moderate }
             if ratio >= 1.0 { return .low }
             return .none
         case .accelerating, .noData:
-            if ratio >= 2.5 { return .moderate }
-            if ratio >= 1.5 { return .low }
+            if ratio >= config.ratioHigh { return .moderate }
+            if ratio >= config.ratioModerate { return .low }
             return .none
         }
     }
@@ -401,13 +439,14 @@ final class MeetingPrepCoordinator {
     /// Static per-role thresholds (matching OutcomeEngine/InsightGenerator).
     private func staticRoleThreshold(for role: String?) -> Int {
         switch role?.lowercased() {
-        case "client":          return 45
-        case "applicant":       return 14
-        case "lead":            return 30
-        case "agent":           return 21
-        case "external agent":  return 60
-        case "vendor":          return 90
-        default:                return 60
+        case "client":           return 45
+        case "applicant":        return 14
+        case "lead":             return 30
+        case "agent":            return 21
+        case "referral partner": return 45
+        case "external agent":   return 60
+        case "vendor":           return 90
+        default:                 return 60
         }
     }
 

@@ -161,13 +161,14 @@ final class InsightGenerator {
 
         static func forRole(_ role: String?) -> RoleThresholds {
             switch role?.lowercased() {
-            case "client":         return RoleThresholds(noContactDays: 45, urgencyBoost: true)
-            case "applicant":      return RoleThresholds(noContactDays: 14, urgencyBoost: true)
-            case "lead":           return RoleThresholds(noContactDays: 30, urgencyBoost: false)
-            case "agent":          return RoleThresholds(noContactDays: 21, urgencyBoost: true)
-            case "external agent": return RoleThresholds(noContactDays: 60, urgencyBoost: false)
-            case "vendor":         return RoleThresholds(noContactDays: 90, urgencyBoost: false)
-            default:               return RoleThresholds(noContactDays: 60, urgencyBoost: false)
+            case "client":           return RoleThresholds(noContactDays: 45, urgencyBoost: true)
+            case "applicant":        return RoleThresholds(noContactDays: 14, urgencyBoost: true)
+            case "lead":             return RoleThresholds(noContactDays: 30, urgencyBoost: false)
+            case "agent":            return RoleThresholds(noContactDays: 21, urgencyBoost: true)
+            case "referral partner": return RoleThresholds(noContactDays: 45, urgencyBoost: false)
+            case "external agent":   return RoleThresholds(noContactDays: 60, urgencyBoost: false)
+            case "vendor":           return RoleThresholds(noContactDays: 90, urgencyBoost: false)
+            default:                 return RoleThresholds(noContactDays: 60, urgencyBoost: false)
             }
         }
     }
