@@ -274,6 +274,7 @@ final class OutcomeEngine {
     }
 
     /// Scan relationship health for people going cold → outreach outcomes.
+    /// Includes both static-threshold outcomes and velocity-aware predictive outcomes.
     private func scanRelationshipHealth(people: [SamPerson]) throws -> [SamOutcome] {
         var outcomes: [SamOutcome] = []
 
@@ -281,19 +282,36 @@ final class OutcomeEngine {
             let health = meetingPrep.computeHealth(for: person)
             guard let days = health.daysSinceLastInteraction else { continue }
 
-            let threshold = roleThreshold(for: person.roleBadges.first)
-            guard days >= threshold else { continue }
-
             let name = person.displayNameCache ?? person.displayName
             let role = person.roleBadges.first ?? "Contact"
 
-            outcomes.append(SamOutcome(
-                title: "Reconnect with \(name)",
-                rationale: "\(days) days since last interaction. \(role) relationship.",
-                outcomeKind: .outreach,
-                sourceInsightSummary: "No interaction in \(days) days (threshold: \(threshold) for \(role))",
-                linkedPerson: person
-            ))
+            // 1. Static threshold: existing behavior
+            let threshold = roleThreshold(for: person.roleBadges.first)
+            if days >= threshold {
+                outcomes.append(SamOutcome(
+                    title: "Reconnect with \(name)",
+                    rationale: "\(days) days since last interaction. \(role) relationship.",
+                    outcomeKind: .outreach,
+                    priorityScore: 0.7,
+                    sourceInsightSummary: "No interaction in \(days) days (threshold: \(threshold) for \(role))",
+                    linkedPerson: person
+                ))
+                continue // Skip predictive if already past static threshold
+            }
+
+            // 2. Predictive: decay risk >= moderate AND predicted overdue within 14 days
+            if health.decayRisk >= .moderate,
+               let predicted = health.predictedOverdueDays,
+               predicted <= 14 {
+                outcomes.append(SamOutcome(
+                    title: "Reach out to \(name) soon",
+                    rationale: "Engagement declining — predicted overdue in \(predicted) day\(predicted == 1 ? "" : "s"). \(role) relationship.",
+                    outcomeKind: .outreach,
+                    priorityScore: 0.4,
+                    sourceInsightSummary: "Engagement velocity declining (predicted overdue in \(predicted)d)",
+                    linkedPerson: person
+                ))
+            }
         }
 
         return outcomes

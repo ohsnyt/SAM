@@ -42,6 +42,30 @@ public enum EvidenceSource: String, Codable, Sendable {
     case faceTime = "FaceTime"
 }
 
+extension EvidenceSource {
+    /// Quality weight for relationship health scoring.
+    public var qualityWeight: Double {
+        switch self {
+        case .calendar:  return 3.0   // In-person meetings highest
+        case .phoneCall: return 2.5
+        case .faceTime:  return 2.5
+        case .mail:      return 1.5
+        case .iMessage:  return 1.0
+        case .note:      return 0.5   // Passive (user notes about person)
+        case .contacts:  return 0.0   // Not an interaction
+        case .manual:    return 1.0
+        }
+    }
+
+    /// Whether this source represents a direct interaction (not passive data).
+    public var isInteraction: Bool {
+        switch self {
+        case .contacts, .note: return false
+        default:               return true
+        }
+    }
+}
+
 public enum EvidenceTriageState: String, Codable, Sendable {
     case needsReview = "needsReview"
     case done = "done"

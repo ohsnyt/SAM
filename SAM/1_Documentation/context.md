@@ -3,11 +3,11 @@
 **Language**: Swift 6  
 **Architecture**: Clean layered architecture with strict separation of concerns  
 **Framework**: SwiftUI + SwiftData  
-**Last Updated**: February 26, 2026 (Phases A–T complete, schema SAM_v20)
+**Last Updated**: February 26, 2026 (Phases A–U complete, schema SAM_v20)
 
 **Related Docs**: 
 - See `agent.md` for product philosophy, AI architecture, and UX principles
-- See `changelog.md` for historical completion notes (Phases A–S)
+- See `changelog.md` for historical completion notes (Phases A–U)
 
 ---
 
@@ -228,7 +228,7 @@ SAM/SAM/
 
 ## 4. Data Models
 
-### 4.1 Existing Models (Phases A–T, schema v20)
+### 4.1 Existing Models (Phases A–U, schema v20)
 
 (All existing models unchanged — see `changelog.md` for full schema. Summary below.)
 
@@ -305,33 +305,9 @@ final class StrategicDigest {
 - ✅ **Phase R**: Pipeline Intelligence (schema SAM_v19)
 - ✅ **Phase S**: Production Tracking (schema SAM_v20)
 - ✅ **Phase T**: Meeting Lifecycle Automation (no schema change)
+- ✅ **Phase U**: Relationship Decay Prediction (no schema change)
 
 ### Active / Next Phases
-
----
-
-### ⬜ Phase U: Relationship Decay Prediction
-
-**Goal**: Upgrade from static threshold-based health scoring to velocity-based predictive decay.
-
-**Impact**: HIGH — catches cooling relationships before they go cold.
-
-**Key deliverables**:
-
-**U.1 — Velocity-Based Health Model**
-- Compute communication velocity per person: median gap between evidence items over trailing 90 days
-- Track velocity trend: accelerating, steady, or decelerating
-- Weight by interaction quality: 45-min meeting > email reply > 2-word text
-- Factor in reciprocity: is the contact initiating, or always one-directional?
-
-**U.2 — Predictive Alerts**
-- "Communication with [Client] has declined 40% over 60 days. Suggested: reference their [life event] and schedule a review."
-- Proactive alerts surface 1–2 weeks BEFORE the relationship crosses the static threshold
-- Integrated into Awareness dashboard and daily briefing
-
-**U.3 — Engagement Heatmap**
-- Visual per-person engagement over time (mini sparkline on People list or Person detail)
-- Color-coded: green (healthy), yellow (cooling), red (at risk)
 
 ---
 
@@ -622,8 +598,8 @@ Each migration uses SwiftData lightweight migration. New models are additive (no
 
 ---
 
-**Document Version**: 9.0 (Phase T complete, Business Intelligence architecture, Phases U–Z)
+**Document Version**: 10.0 (Phase U complete, Business Intelligence architecture, Phases V–Z)
 **Previous Versions**: See `changelog.md` for version history
-**Last Major Update**: February 26, 2026 — Phase T: Meeting Lifecycle Automation complete
+**Last Major Update**: February 26, 2026 — Phase U: Relationship Decay Prediction complete
 **Clean Rebuild Started**: February 9, 2026
     

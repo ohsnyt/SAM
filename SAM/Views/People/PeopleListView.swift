@@ -239,6 +239,13 @@ private struct PersonRowView: View {
 
             // Badges and alerts
             HStack(spacing: 8) {
+                // Health status dot (skip for Me and people with no interactions)
+                if !person.isMe && !person.linkedEvidence.isEmpty {
+                    Circle()
+                        .fill(MeetingPrepCoordinator.shared.computeHealth(for: person).statusColor)
+                        .frame(width: 6, height: 6)
+                }
+
                 // Role badge icons (compact, color-coded)
                 ForEach(person.roleBadges, id: \.self) { badge in
                     RoleBadgeIconView(badge: badge)

@@ -882,6 +882,7 @@ final class DailyBriefingCoordinator {
 
         let activePeople = people.filter { !$0.isMe && !$0.isArchived }
         var followUps: [BriefingFollowUp] = []
+        var staticPersonIDs: Set<UUID> = []
 
         for person in activePeople {
             let health = meetingPrep.computeHealth(for: person)
@@ -899,18 +900,37 @@ final class DailyBriefingCoordinator {
             default:                threshold = 60
             }
 
-            guard days >= threshold else { continue }
+            // 1. Static threshold follow-ups (existing behavior)
+            if days >= threshold {
+                let name = person.displayNameCache ?? person.displayName
+                let role = person.roleBadges.first ?? "Contact"
 
-            let name = person.displayNameCache ?? person.displayName
-            let role = person.roleBadges.first ?? "Contact"
+                followUps.append(BriefingFollowUp(
+                    personName: name,
+                    personID: person.id,
+                    reason: "\(role) — no interaction in \(days) days",
+                    daysSinceInteraction: days,
+                    suggestedAction: "Send a brief check-in message"
+                ))
+                staticPersonIDs.insert(person.id)
+                continue
+            }
 
-            followUps.append(BriefingFollowUp(
-                personName: name,
-                personID: person.id,
-                reason: "\(role) — no interaction in \(days) days",
-                daysSinceInteraction: days,
-                suggestedAction: "Send a brief check-in message"
-            ))
+            // 2. Predictive follow-ups: decayRisk >= moderate, predicted overdue within 7 days
+            if health.decayRisk >= .moderate,
+               let predicted = health.predictedOverdueDays,
+               predicted <= 7,
+               !staticPersonIDs.contains(person.id) {
+                let name = person.displayNameCache ?? person.displayName
+
+                followUps.append(BriefingFollowUp(
+                    personName: name,
+                    personID: person.id,
+                    reason: "Engagement declining — reach out before it goes cold",
+                    daysSinceInteraction: days,
+                    suggestedAction: "Send a brief check-in message"
+                ))
+            }
         }
 
         return followUps.sorted { $0.daysSinceInteraction > $1.daysSinceInteraction }.prefix(5).map { $0 }

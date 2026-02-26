@@ -4,6 +4,68 @@
 
 ---
 
+## February 26, 2026 - Phase U: Relationship Decay Prediction (No Schema Change)
+
+### Overview
+Upgraded SAM's relationship health evaluation from static threshold-based scoring to velocity-aware predictive decay. All health systems now use cadence-relative scoring (median gap between interactions), quality-weighted interactions (meetings count more than texts), velocity trend detection (are gaps growing or shrinking?), and predictive overdue estimation. This catches cooling relationships 1–2 weeks before static thresholds fire. No schema migration — all computation uses existing `SamEvidenceItem` linked relationships.
+
+### New Types
+
+**`VelocityTrend`** (enum) — Gap acceleration direction: `.accelerating` (gaps shrinking), `.steady`, `.decelerating` (gaps growing — decay signal), `.noData`.
+
+**`DecayRisk`** (enum, `Comparable`) — Overall risk assessment combining overdue ratio + velocity trend: `.none`, `.low`, `.moderate`, `.high`, `.critical`. Used to color-code health indicators and trigger predictive alerts.
+
+### Components Modified
+
+**`SAMModels-Supporting.swift`** — Added `EvidenceSource` extension with `qualityWeight: Double` (calendar=3.0, phoneCall/faceTime=2.5, mail=1.5, iMessage=1.0, note=0.5, contacts=0.0, manual=1.0) and `isInteraction: Bool` (false for contacts and notes).
+
+**`MeetingPrepCoordinator.swift`** — Major changes:
+- Added `VelocityTrend` and `DecayRisk` enums near `ContactTrend`
+- Extended `RelationshipHealth` with 6 new fields: `cadenceDays` (median gap), `overdueRatio` (currentGap/cadence), `velocityTrend`, `qualityScore30` (quality-weighted 30-day score), `predictedOverdueDays`, `decayRisk`
+- `statusColor` now uses decay risk when velocity data is available; falls back to static role-based thresholds when <3 interactions
+- Rewrote `computeHealth(for:)` to use `person.linkedEvidence` directly (no more `evidenceRepository.fetchAll()` + filter), with full velocity computation
+- Added private helpers: `computeVelocityTrend(gaps:)` (split gaps into halves, compare medians — >1.3× ratio = decelerating), `computePredictedOverdue(cadenceDays:currentGapDays:velocityTrend:)` (extrapolate days until 2.0× ratio), `assessDecayRisk(overdueRatio:velocityTrend:daysSince:role:)` (combine overdue ratio + velocity + static threshold into DecayRisk), `staticRoleThreshold(for:)` (matching OutcomeEngine/InsightGenerator thresholds)
+
+**`PersonDetailView.swift`** — Enhanced `RelationshipHealthView`:
+- Velocity trend arrows replace simple trend when cadence data available (accelerating=green up-right, steady=gray right, decelerating=orange down-right)
+- New row: cadence chip ("~every 12 days"), overdue ratio chip ("1.8×" in orange/red), quality score chip ("Q: 8.5")
+- Decay risk badge (capsule): "Moderate Risk" / "High Risk" / "Critical" shown only when risk >= moderate
+- Predicted overdue caption: "Predicted overdue in ~5 days"
+- Existing frequency chips (30d/60d/90d) preserved
+
+**`EngagementVelocitySection.swift`** — Replaced inline `computeOverdue()` with `MeetingPrepCoordinator.shared.computeHealth(for:)`. Added `predictedPeople` computed property for people not yet overdue but with `decayRisk >= .moderate`. UI shows overdue entries as before, plus new "Predicted" subsection below. `OverdueEntry` struct now includes `decayRisk` and `predictedOverdueDays` fields.
+
+**`PeopleListView.swift`** — Added 6pt health status dot in `PersonRowView` trailing HStack, before role badge icons. Uses `MeetingPrepCoordinator.shared.computeHealth(for:).statusColor`. Hidden for `person.isMe` and people with no linked evidence.
+
+**`OutcomeEngine.swift`** — `scanRelationshipHealth()` now generates two types of outreach outcomes:
+1. Static threshold (existing): priority 0.7 when days >= role threshold
+2. Predictive (new): priority 0.4 when `decayRisk >= .moderate` AND `predictedOverdueDays <= 14`, even if static threshold hasn't fired. Rationale includes "Engagement declining — predicted overdue in X days". Skips predictive if already past static threshold.
+
+**`InsightGenerator.swift`** — `generateRelationshipInsights()` now generates predictive decay insights in addition to static threshold insights. Predictive insight created when: `velocityTrend == .decelerating` AND `overdueRatio >= 1.0` AND `decayRisk >= .moderate`. Title: "Engagement declining with [Name]". Body includes cadence, current gap, predicted overdue. Priority: `.medium`. Skips if static-threshold insight already exists for same person.
+
+**`DailyBriefingCoordinator.swift`** — `gatherFollowUps()` now includes predictive entries for people with `decayRisk >= .moderate` and `predictedOverdueDays <= 7`. Reason: "Engagement declining — reach out before it goes cold". Interleaved with static entries, still capped at 5 total sorted by days since interaction.
+
+### Files Modified
+| File | Action | Description |
+|------|--------|-------------|
+| `Models/SAMModels-Supporting.swift` | MODIFY | `qualityWeight` + `isInteraction` on EvidenceSource |
+| `Coordinators/MeetingPrepCoordinator.swift` | MODIFY | VelocityTrend, DecayRisk, extended RelationshipHealth, rewritten computeHealth() |
+| `Views/People/PersonDetailView.swift` | MODIFY | Enhanced RelationshipHealthView with velocity fields |
+| `Views/Awareness/EngagementVelocitySection.swift` | MODIFY | Centralized health + predictive subsection |
+| `Views/People/PeopleListView.swift` | MODIFY | 6pt health dot on PersonRowView |
+| `Coordinators/OutcomeEngine.swift` | MODIFY | Predictive outreach outcomes |
+| `Coordinators/InsightGenerator.swift` | MODIFY | Predictive decay insights |
+| `Coordinators/DailyBriefingCoordinator.swift` | MODIFY | Predictive follow-ups in briefing |
+
+### Architecture Decisions
+- **No schema change**: All velocity computation derives from existing `person.linkedEvidence` relationship — no new persisted fields needed
+- **Centralized computation**: `computeHealth(for:)` is the single source of truth; `EngagementVelocitySection` no longer duplicates gap calculation
+- **Direct relationship traversal**: Switched from `evidenceRepository.fetchAll()` + filter to `person.linkedEvidence` for better performance
+- **Graceful degradation**: Velocity features require ≥3 interactions; below that, falls back to static threshold logic
+- **Conservative predictions**: Only surfaces predictive alerts when gap is already ≥80% of cadence AND decelerating; avoids false positives
+
+---
+
 ## February 26, 2026 - Phase T: Meeting Lifecycle Automation (No Schema Change)
 
 ### Overview

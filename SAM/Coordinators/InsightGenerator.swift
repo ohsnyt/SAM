@@ -202,13 +202,16 @@ final class InsightGenerator {
     }
 
     /// Generate insights from relationship patterns (no recent contact).
-    /// Uses per-role thresholds (e.g. 14 days for Applicants, 90 for Vendors).
+    /// Uses per-role thresholds (e.g. 14 days for Applicants, 90 for Vendors)
+    /// plus velocity-aware predictive decay insights.
     private func generateRelationshipInsights() async throws -> [GeneratedInsight] {
         var insights: [GeneratedInsight] = []
+        var staticInsightPersonIDs: Set<UUID> = []
 
         // Fetch all people and evidence
         let allPeople = try peopleRepository.fetchAll()
         let allEvidence = try evidenceRepository.fetchAll()
+        let meetingPrep = MeetingPrepCoordinator.shared
 
         for person in allPeople {
             guard !person.isArchived, !person.isMe else { continue }
@@ -232,7 +235,7 @@ final class InsightGenerator {
             }
             let mostRecent = personEvidence.max(by: { $0.occurredAt < $1.occurredAt })
 
-            // Check if last contact was before threshold
+            // 1. Static threshold: existing behavior
             if let lastContact = mostRecent?.occurredAt, lastContact < cutoffDate {
                 let daysSince = Calendar.current.dateComponents([.day], from: lastContact, to: .now).day ?? 0
 
@@ -254,7 +257,38 @@ final class InsightGenerator {
                     createdAt: .now
                 )
                 insights.append(insight)
+                staticInsightPersonIDs.insert(person.id)
             }
+        }
+
+        // 2. Predictive decay insights (skip if static insight already exists for same person)
+        for person in allPeople {
+            guard !person.isArchived, !person.isMe else { continue }
+            guard !staticInsightPersonIDs.contains(person.id) else { continue }
+
+            let health = meetingPrep.computeHealth(for: person)
+
+            guard health.velocityTrend == .decelerating,
+                  let ratio = health.overdueRatio, ratio >= 1.0,
+                  health.decayRisk >= .moderate else { continue }
+
+            let name = person.displayNameCache ?? person.displayName
+            let cadenceLabel = health.cadenceDays.map { "Usual cadence: ~\($0) days." } ?? ""
+            let predictedLabel = health.predictedOverdueDays.map { "Predicted overdue in ~\($0) days." } ?? ""
+            let currentGap = health.daysSinceLastInteraction.map { "\($0) days since last interaction." } ?? ""
+
+            let insight = GeneratedInsight(
+                kind: .relationshipAtRisk,
+                title: "Engagement declining with \(name)",
+                body: "\(currentGap) \(cadenceLabel) \(predictedLabel) Contact gaps are growing — consider reaching out before the relationship goes cold.",
+                personID: person.id,
+                sourceType: .pattern,
+                sourceID: nil,
+                urgency: .medium,
+                confidence: 0.7,
+                createdAt: .now
+            )
+            insights.append(insight)
         }
 
         return insights

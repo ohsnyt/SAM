@@ -4,6 +4,7 @@
 //
 //  Created on February 24, 2026.
 //  Engagement Velocity — surfaces people overdue based on their personal contact rhythm.
+//  Phase U: Now uses centralized MeetingPrepCoordinator.computeHealth() instead of inline computation.
 //
 
 import SwiftUI
@@ -15,11 +16,27 @@ struct EngagementVelocitySection: View {
     private var people: [SamPerson]
 
     private var overduePeople: [OverdueEntry] {
+        let coordinator = MeetingPrepCoordinator.shared
         var entries: [OverdueEntry] = []
 
         for person in people {
-            guard let entry = computeOverdue(for: person) else { continue }
-            entries.append(entry)
+            let health = coordinator.computeHealth(for: person)
+            guard let cadence = health.cadenceDays,
+                  let ratio = health.overdueRatio,
+                  ratio >= 1.5 else { continue }
+
+            let currentGapDays = health.daysSinceLastInteraction ?? 0
+
+            entries.append(OverdueEntry(
+                personID: person.id,
+                displayName: person.displayNameCache ?? person.displayName,
+                roleBadges: person.roleBadges,
+                cadenceDays: cadence,
+                currentGapDays: currentGapDays,
+                overdueRatio: ratio,
+                decayRisk: health.decayRisk,
+                predictedOverdueDays: nil
+            ))
         }
 
         return entries
@@ -28,9 +45,42 @@ struct EngagementVelocitySection: View {
             .map { $0 }
     }
 
+    private var predictedPeople: [OverdueEntry] {
+        let coordinator = MeetingPrepCoordinator.shared
+        var entries: [OverdueEntry] = []
+
+        for person in people {
+            let health = coordinator.computeHealth(for: person)
+            // Not yet overdue (ratio < 1.5) but decayRisk >= moderate with prediction
+            guard health.decayRisk >= .moderate,
+                  let predicted = health.predictedOverdueDays,
+                  let ratio = health.overdueRatio,
+                  ratio < 1.5 else { continue }
+
+            let currentGapDays = health.daysSinceLastInteraction ?? 0
+
+            entries.append(OverdueEntry(
+                personID: person.id,
+                displayName: person.displayNameCache ?? person.displayName,
+                roleBadges: person.roleBadges,
+                cadenceDays: health.cadenceDays ?? 0,
+                currentGapDays: currentGapDays,
+                overdueRatio: ratio,
+                decayRisk: health.decayRisk,
+                predictedOverdueDays: predicted
+            ))
+        }
+
+        return entries
+            .sorted { ($0.predictedOverdueDays ?? 999) < ($1.predictedOverdueDays ?? 999) }
+            .prefix(5)
+            .map { $0 }
+    }
+
     var body: some View {
         let overdue = overduePeople
-        if !overdue.isEmpty {
+        let predicted = predictedPeople
+        if !overdue.isEmpty || !predicted.isEmpty {
             VStack(spacing: 0) {
                 // Section header
                 HStack {
@@ -38,7 +88,8 @@ struct EngagementVelocitySection: View {
                         .foregroundStyle(.orange)
                     Text("Engagement Velocity")
                         .font(.headline)
-                    Text("\(overdue.count)")
+                    let total = overdue.count + predicted.count
+                    Text("\(total)")
                         .font(.caption)
                         .fontWeight(.semibold)
                         .foregroundStyle(.white)
@@ -57,64 +108,31 @@ struct EngagementVelocitySection: View {
                 Divider()
 
                 VStack(spacing: 8) {
+                    // Overdue entries
                     ForEach(overdue) { entry in
                         OverduePersonRow(entry: entry)
+                    }
+
+                    // Predicted entries (not yet overdue but at risk)
+                    if !predicted.isEmpty {
+                        HStack {
+                            Text("Predicted")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                        }
+                        .padding(.top, 4)
+
+                        ForEach(predicted) { entry in
+                            OverduePersonRow(entry: entry)
+                        }
                     }
                 }
                 .padding()
             }
             .background(Color(nsColor: .controlBackgroundColor))
         }
-    }
-
-    // MARK: - Computation
-
-    private func computeOverdue(for person: SamPerson) -> OverdueEntry? {
-        let evidence = person.linkedEvidence
-        guard evidence.count >= 3 else { return nil }
-
-        let sorted = evidence.sorted { $0.occurredAt < $1.occurredAt }
-
-        // Compute gaps between consecutive evidence items
-        var gaps: [TimeInterval] = []
-        for i in 1..<sorted.count {
-            let gap = sorted[i].occurredAt.timeIntervalSince(sorted[i - 1].occurredAt)
-            gaps.append(gap)
-        }
-
-        guard !gaps.isEmpty else { return nil }
-
-        // Median gap
-        let sortedGaps = gaps.sorted()
-        let medianGap: TimeInterval
-        let mid = sortedGaps.count / 2
-        if sortedGaps.count.isMultiple(of: 2) {
-            medianGap = (sortedGaps[mid - 1] + sortedGaps[mid]) / 2.0
-        } else {
-            medianGap = sortedGaps[mid]
-        }
-
-        // Cadence in days
-        let cadenceDays = medianGap / 86400.0
-        guard cadenceDays >= 1 else { return nil } // Ignore sub-day cadences
-
-        // Current gap
-        guard let mostRecent = sorted.last else { return nil }
-        let currentGapSeconds = Date.now.timeIntervalSince(mostRecent.occurredAt)
-        let currentGapDays = currentGapSeconds / 86400.0
-
-        // Overdue ratio
-        let ratio = currentGapDays / cadenceDays
-        guard ratio >= 1.5 else { return nil }
-
-        return OverdueEntry(
-            personID: person.id,
-            displayName: person.displayNameCache ?? person.displayName,
-            roleBadges: person.roleBadges,
-            cadenceDays: Int(round(cadenceDays)),
-            currentGapDays: Int(round(currentGapDays)),
-            overdueRatio: ratio
-        )
     }
 }
 
@@ -127,11 +145,18 @@ private struct OverdueEntry: Identifiable {
     let cadenceDays: Int
     let currentGapDays: Int
     let overdueRatio: Double
+    let decayRisk: DecayRisk
+    let predictedOverdueDays: Int?
 
     var id: UUID { personID }
 
     var severityColor: Color {
-        overdueRatio > 2.5 ? .red : .orange
+        switch decayRisk {
+        case .critical: return .red
+        case .high:     return .red
+        case .moderate: return .orange
+        default:        return overdueRatio > 2.5 ? .red : .orange
+        }
     }
 
     var formattedRatio: String {
@@ -157,6 +182,9 @@ private struct OverdueEntry: Identifiable {
     }
 
     var gapLabel: String {
+        if let predicted = predictedOverdueDays {
+            return "overdue in ~\(predicted)d"
+        }
         if currentGapDays == 1 {
             return "1 day ago"
         } else if currentGapDays < 7 {
@@ -221,11 +249,18 @@ private struct OverduePersonRow: View {
 
                 Spacer()
 
-                // Overdue ratio badge
-                Text("\(entry.formattedRatio) longer than usual")
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundStyle(entry.severityColor)
+                // Overdue ratio badge or predicted label
+                if entry.predictedOverdueDays != nil {
+                    Text("Predicted")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundStyle(.yellow)
+                } else {
+                    Text("\(entry.formattedRatio) longer than usual")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundStyle(entry.severityColor)
+                }
             }
             .padding(10)
             .background(Color(nsColor: .windowBackgroundColor))

@@ -25,6 +25,36 @@ enum ContactTrend: String, Sendable {
     case noData
 }
 
+/// Velocity trend of engagement gaps (are gaps growing or shrinking?).
+enum VelocityTrend: String, Sendable {
+    case accelerating   // Gaps shrinking — engagement increasing
+    case steady         // Gaps consistent
+    case decelerating   // Gaps growing — decay signal
+    case noData
+}
+
+/// Overall decay risk assessment combining overdue ratio + velocity trend.
+enum DecayRisk: String, Sendable, Comparable {
+    case none       // Healthy, within cadence
+    case low        // Slightly overdue (<1.5×)
+    case moderate   // Overdue (1.5-2.5×) or decelerating
+    case high       // Severely overdue (>2.5×) or rapid deceleration
+    case critical   // Past static threshold AND decelerating
+
+    static func < (lhs: DecayRisk, rhs: DecayRisk) -> Bool {
+        lhs.sortOrder < rhs.sortOrder
+    }
+    private var sortOrder: Int {
+        switch self {
+        case .none: return 0
+        case .low: return 1
+        case .moderate: return 2
+        case .high: return 3
+        case .critical: return 4
+        }
+    }
+}
+
 /// Health metrics for a person's relationship.
 struct RelationshipHealth: Sendable {
     let daysSinceLastInteraction: Int?
@@ -33,8 +63,28 @@ struct RelationshipHealth: Sendable {
     let trend: ContactTrend
     let role: String?
 
-    /// Color based on days since last interaction, adjusted by role.
+    // Velocity fields (Phase U)
+    let cadenceDays: Int?              // Median gap in days (nil if <3 interactions)
+    let overdueRatio: Double?          // currentGap / cadence (nil if no cadence)
+    let velocityTrend: VelocityTrend   // Gap acceleration direction
+    let qualityScore30: Double         // Quality-weighted interaction score (last 30d)
+    let predictedOverdueDays: Int?     // Days until predicted overdue (nil = not predictable)
+    let decayRisk: DecayRisk           // Overall risk assessment
+
+    /// Color incorporating decay risk when velocity data is available;
+    /// falls back to static role-based thresholds otherwise.
     var statusColor: Color {
+        // If we have velocity data, use decay risk for color
+        if cadenceDays != nil {
+            switch decayRisk {
+            case .none:     return .green
+            case .low:      return .green
+            case .moderate: return .yellow
+            case .high:     return .orange
+            case .critical: return .red
+            }
+        }
+        // Fallback: static threshold logic
         guard let days = daysSinceLastInteraction else { return .gray }
         let thresholds = Self.colorThresholds(for: role)
         switch days {
@@ -163,35 +213,28 @@ final class MeetingPrepCoordinator {
         }
     }
 
-    /// Compute health for a single person (reused by PersonDetailView).
+    /// Compute health for a single person (reused by PersonDetailView, EngagementVelocitySection, etc.).
     func computeHealth(for person: SamPerson) -> RelationshipHealth {
         let now = Date()
         let thirtyDaysAgo = Calendar.current.date(byAdding: .day, value: -30, to: now)!
         let sixtyDaysAgo = Calendar.current.date(byAdding: .day, value: -60, to: now)!
         let ninetyDaysAgo = Calendar.current.date(byAdding: .day, value: -90, to: now)!
 
-        let allEvidence: [SamEvidenceItem]
-        do {
-            allEvidence = try evidenceRepository.fetchAll()
-        } catch {
-            return RelationshipHealth(daysSinceLastInteraction: nil, interactionCount30: 0, interactionCount90: 0, trend: .noData, role: person.roleBadges.first)
-        }
+        // Use person.linkedEvidence (direct relationship) filtered to real interactions
+        let evidence = person.linkedEvidence
+            .filter { $0.source.isInteraction }
+            .sorted { $0.occurredAt < $1.occurredAt }
 
-        let personID = person.id
-        let linked = allEvidence.filter { item in
-            item.linkedPeople.contains(where: { $0.id == personID })
-        }
-
-        // Days since last interaction
-        let lastDate = linked.first?.occurredAt // fetchAll returns sorted by occurredAt desc
+        // --- Days since last interaction ---
+        let lastDate = evidence.last?.occurredAt
         let daysSince: Int? = lastDate.map { Calendar.current.dateComponents([.day], from: $0, to: now).day ?? 0 }
 
-        // Counts
-        let count30 = linked.filter { $0.occurredAt >= thirtyDaysAgo }.count
-        let count90 = linked.filter { $0.occurredAt >= ninetyDaysAgo }.count
-        let countPrior30 = linked.filter { $0.occurredAt >= sixtyDaysAgo && $0.occurredAt < thirtyDaysAgo }.count
+        // --- Counts ---
+        let count30 = evidence.filter { $0.occurredAt >= thirtyDaysAgo }.count
+        let count90 = evidence.filter { $0.occurredAt >= ninetyDaysAgo }.count
+        let countPrior30 = evidence.filter { $0.occurredAt >= sixtyDaysAgo && $0.occurredAt < thirtyDaysAgo }.count
 
-        // Trend
+        // --- Trend ---
         let trend: ContactTrend
         if count30 == 0 && countPrior30 == 0 {
             trend = .noData
@@ -203,13 +246,169 @@ final class MeetingPrepCoordinator {
             trend = .stable
         }
 
+        // --- Cadence via median gap ---
+        let cadenceDays: Int?
+        let gaps: [TimeInterval]
+        if evidence.count >= 3 {
+            gaps = zip(evidence.dropFirst(), evidence).map { $0.occurredAt.timeIntervalSince($1.occurredAt) }
+            let sorted = gaps.sorted()
+            let mid = sorted.count / 2
+            let median = sorted.count.isMultiple(of: 2)
+                ? (sorted[mid - 1] + sorted[mid]) / 2.0
+                : sorted[mid]
+            cadenceDays = max(1, Int(round(median / 86400.0)))
+        } else {
+            gaps = []
+            cadenceDays = nil
+        }
+
+        // --- Overdue ratio ---
+        let currentGapDays = evidence.last.map { now.timeIntervalSince($0.occurredAt) / 86400.0 }
+        let overdueRatio = cadenceDays.flatMap { cd in currentGapDays.map { $0 / Double(cd) } }
+
+        // --- Velocity trend ---
+        let velocityTrend = computeVelocityTrend(gaps: gaps)
+
+        // --- Quality-weighted 30-day score ---
+        let qualityScore30 = evidence
+            .filter { $0.occurredAt >= thirtyDaysAgo }
+            .reduce(0.0) { $0 + $1.source.qualityWeight }
+
+        // --- Predicted overdue ---
+        let predictedOverdueDays = computePredictedOverdue(
+            cadenceDays: cadenceDays, currentGapDays: currentGapDays, velocityTrend: velocityTrend
+        )
+
+        // --- Decay risk ---
+        let decayRisk = assessDecayRisk(
+            overdueRatio: overdueRatio, velocityTrend: velocityTrend,
+            daysSince: daysSince, role: person.roleBadges.first
+        )
+
         return RelationshipHealth(
             daysSinceLastInteraction: daysSince,
             interactionCount30: count30,
             interactionCount90: count90,
             trend: trend,
-            role: person.roleBadges.first
+            role: person.roleBadges.first,
+            cadenceDays: cadenceDays,
+            overdueRatio: overdueRatio,
+            velocityTrend: velocityTrend,
+            qualityScore30: qualityScore30,
+            predictedOverdueDays: predictedOverdueDays,
+            decayRisk: decayRisk
         )
+    }
+
+    // MARK: - Velocity Helpers (Phase U)
+
+    /// Compare first-half vs second-half gap medians to determine trend.
+    private func computeVelocityTrend(gaps: [TimeInterval]) -> VelocityTrend {
+        guard gaps.count >= 4 else { return .noData }
+
+        let midpoint = gaps.count / 2
+        let firstHalf = Array(gaps.prefix(midpoint)).sorted()
+        let secondHalf = Array(gaps.suffix(gaps.count - midpoint)).sorted()
+
+        func median(_ arr: [TimeInterval]) -> TimeInterval {
+            let m = arr.count / 2
+            return arr.count.isMultiple(of: 2) ? (arr[m - 1] + arr[m]) / 2.0 : arr[m]
+        }
+
+        let firstMedian = median(firstHalf)
+        let secondMedian = median(secondHalf)
+
+        guard firstMedian > 0 else { return .steady }
+
+        let ratio = secondMedian / firstMedian
+        if ratio > 1.3 {
+            return .decelerating  // Gaps growing
+        } else if ratio < 0.7 {
+            return .accelerating  // Gaps shrinking
+        }
+        return .steady
+    }
+
+    /// Predict days until overdue (ratio hits 2.0) based on current trajectory.
+    /// Returns nil when not at risk or insufficient data.
+    private func computePredictedOverdue(
+        cadenceDays: Int?,
+        currentGapDays: Double?,
+        velocityTrend: VelocityTrend
+    ) -> Int? {
+        guard let cd = cadenceDays, let gap = currentGapDays else { return nil }
+        let ratio = gap / Double(cd)
+
+        switch velocityTrend {
+        case .decelerating:
+            // If already past 0.8× cadence and decelerating, estimate days to 2.0×
+            guard ratio >= 0.8 else { return nil }
+            let targetGapDays = Double(cd) * 2.0
+            let remainingDays = targetGapDays - gap
+            guard remainingDays > 0 else { return 0 }
+            // Gap grows by 1 day per day; result is simply the remaining days
+            return max(1, Int(ceil(remainingDays)))
+        case .steady:
+            // If already overdue, predict how many more days until 2.0×
+            guard ratio >= 1.0 else { return nil }
+            let targetGapDays = Double(cd) * 2.0
+            let remainingDays = targetGapDays - gap
+            return remainingDays > 0 ? max(1, Int(ceil(remainingDays))) : 0
+        case .accelerating, .noData:
+            return nil
+        }
+    }
+
+    /// Combine overdue ratio, velocity trend, and static thresholds into a DecayRisk level.
+    private func assessDecayRisk(
+        overdueRatio: Double?,
+        velocityTrend: VelocityTrend,
+        daysSince: Int?,
+        role: String?
+    ) -> DecayRisk {
+        let ratio = overdueRatio ?? 0
+
+        // Static threshold check for critical
+        if let days = daysSince {
+            let staticThreshold = staticRoleThreshold(for: role)
+            if days >= staticThreshold && velocityTrend == .decelerating {
+                return .critical
+            }
+            if days >= staticThreshold {
+                return .high
+            }
+        }
+
+        // Velocity-aware assessment
+        switch velocityTrend {
+        case .decelerating:
+            if ratio >= 2.5 { return .high }
+            if ratio >= 1.5 { return .moderate }
+            if ratio >= 1.0 { return .moderate }
+            return .low
+        case .steady:
+            if ratio >= 2.5 { return .high }
+            if ratio >= 1.5 { return .moderate }
+            if ratio >= 1.0 { return .low }
+            return .none
+        case .accelerating, .noData:
+            if ratio >= 2.5 { return .moderate }
+            if ratio >= 1.5 { return .low }
+            return .none
+        }
+    }
+
+    /// Static per-role thresholds (matching OutcomeEngine/InsightGenerator).
+    private func staticRoleThreshold(for role: String?) -> Int {
+        switch role?.lowercased() {
+        case "client":          return 45
+        case "applicant":       return 14
+        case "lead":            return 30
+        case "agent":           return 21
+        case "external agent":  return 60
+        case "vendor":          return 90
+        default:                return 60
+        }
     }
 
     // MARK: - Channel Preference Inference (Phase O)

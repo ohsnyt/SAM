@@ -244,7 +244,7 @@ struct PersonDetailView: View {
 
     private static let predefinedBadges = [
         "Client", "Applicant", "Lead", "Vendor",
-        "Agent", "External Agent"
+        "Agent", "External Agent", "Referral Partner"
     ]
 
     private var roleBadgesView: some View {
@@ -1675,8 +1675,21 @@ struct RelationshipHealthView: View {
 
                 Spacer()
 
-                // Trend indicator
-                trendIndicator
+                // Velocity trend indicator (replaces simple trend when available)
+                velocityTrendIndicator
+            }
+
+            // Cadence + overdue ratio row (when velocity data available)
+            if health.cadenceDays != nil || health.overdueRatio != nil {
+                HStack(spacing: 8) {
+                    if let cadence = health.cadenceDays {
+                        cadenceChip(days: cadence)
+                    }
+                    if let ratio = health.overdueRatio, ratio >= 1.0 {
+                        overdueRatioChip(ratio: ratio)
+                    }
+                    qualityScoreChip(score: health.qualityScore30)
+                }
             }
 
             // Frequency chips
@@ -1685,11 +1698,47 @@ struct RelationshipHealthView: View {
                 frequencyChip(label: "60d", count: health.interactionCount90 - health.interactionCount30)
                 frequencyChip(label: "90d", count: health.interactionCount90)
             }
+
+            // Decay risk badge + predicted overdue (if applicable)
+            if health.decayRisk >= .moderate {
+                HStack(spacing: 8) {
+                    decayRiskBadge
+                    if let predicted = health.predictedOverdueDays, predicted > 0 {
+                        Text("Predicted overdue in ~\(predicted) day\(predicted == 1 ? "" : "s")")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
         }
         .padding(.vertical, 6)
     }
 
-    private var trendIndicator: some View {
+    private var velocityTrendIndicator: some View {
+        Group {
+            if health.cadenceDays != nil {
+                // Use velocity trend when we have enough data
+                switch health.velocityTrend {
+                case .accelerating:
+                    Label("Accelerating", systemImage: "arrow.up.right")
+                        .foregroundStyle(.green)
+                case .steady:
+                    Label("Steady", systemImage: "arrow.right")
+                        .foregroundStyle(.secondary)
+                case .decelerating:
+                    Label("Decelerating", systemImage: "arrow.down.right")
+                        .foregroundStyle(.orange)
+                case .noData:
+                    simpleTrendLabel
+                }
+            } else {
+                simpleTrendLabel
+            }
+        }
+        .font(.caption)
+    }
+
+    private var simpleTrendLabel: some View {
         Group {
             switch health.trend {
             case .increasing:
@@ -1706,7 +1755,79 @@ struct RelationshipHealthView: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .font(.caption)
+    }
+
+    private func cadenceChip(days: Int) -> some View {
+        let label: String
+        if days == 1 {
+            label = "~every day"
+        } else if days == 7 {
+            label = "~weekly"
+        } else if days >= 13 && days <= 15 {
+            label = "~every 2 weeks"
+        } else if days >= 28 && days <= 32 {
+            label = "~monthly"
+        } else {
+            label = "~every \(days) days"
+        }
+        return Text(label)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Color.secondary.opacity(0.1))
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+    }
+
+    private func overdueRatioChip(ratio: Double) -> some View {
+        let formatted: String
+        let rounded = (ratio * 10).rounded() / 10
+        if rounded == rounded.rounded() {
+            formatted = "\(Int(rounded))\u{00D7}"
+        } else {
+            formatted = String(format: "%.1f\u{00D7}", rounded)
+        }
+        let color: Color = ratio >= 2.5 ? .red : .orange
+        return Text(formatted)
+            .font(.caption)
+            .fontWeight(.semibold)
+            .foregroundStyle(color)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(color.opacity(0.1))
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+    }
+
+    private func qualityScoreChip(score: Double) -> some View {
+        Text("Q: \(String(format: "%.1f", score))")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Color.secondary.opacity(0.1))
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+    }
+
+    @ViewBuilder
+    private var decayRiskBadge: some View {
+        let (label, color): (String, Color) = {
+            switch health.decayRisk {
+            case .moderate: return ("Moderate Risk", .yellow)
+            case .high:     return ("High Risk", .orange)
+            case .critical: return ("Critical", .red)
+            default:        return ("", .clear)
+            }
+        }()
+        if !label.isEmpty {
+            Text(label)
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundStyle(color)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(color.opacity(0.12))
+                .clipShape(Capsule())
+        }
     }
 
     private func frequencyChip(label: String, count: Int) -> some View {
