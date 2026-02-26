@@ -4,6 +4,64 @@
 
 ---
 
+## February 25, 2026 - Phase R: Pipeline Intelligence (Schema SAM_v19)
+
+### Overview
+Added immutable audit log of every role badge change (StageTransition), recruiting pipeline state tracking (RecruitingStage with 7 WFG stages), full Business dashboard with client and recruiting pipeline views, and a PipelineTracker coordinator computing all metrics deterministically in Swift (no LLM).
+
+### Data Models
+- **`StageTransition`** `@Model` — Immutable audit log entry: person (nullify on delete for historical metrics), fromStage, toStage, transitionDate, pipelineType (client/recruiting), notes. Inverse on `SamPerson.stageTransitions`.
+- **`RecruitingStage`** `@Model` — Current recruiting state per person: stage (7-case enum), enteredDate, mentoringLastContact, notes. Repository enforces 1:1. Inverse on `SamPerson.recruitingStages`.
+- **`PipelineType`** enum — `.client`, `.recruiting`
+- **`RecruitingStageKind`** enum — 7 cases: Prospect → Presented → Signed Up → Studying → Licensed → First Sale → Producing. Each has `order`, `color`, `icon`, `next` properties.
+
+### Components
+- **`PipelineRepository`** — Standard `@MainActor @Observable` singleton. CRUD for StageTransition and RecruitingStage. Cross-context safe (re-resolves person in own context). `backfillInitialTransitions()` creates "" → badge transitions for all existing Lead/Applicant/Client/Agent badges on first launch. `advanceRecruitingStage()` updates stage + records transition atomically. `updateMentoringContact()` for cadence tracking.
+- **`PipelineTracker`** — `@MainActor @Observable` singleton. All computation in Swift, no LLM. Observable state: `clientFunnel` (Lead/Applicant/Client counts), `clientConversionRates` (Lead→Applicant, Applicant→Client over configurable window), `clientTimeInStage` (avg days), `clientStuckPeople` (30d Lead / 14d Applicant thresholds), `clientVelocity` (transitions/week), `recentClientTransitions` (last 10), `recruitFunnel` (7-stage counts), `recruitLicensingRate` (% Licensed+), `recruitMentoringAlerts` (overdue by stage-specific thresholds: Studying 7d, Licensed 14d, Producing 30d). `configWindowDays` (30/60/90/180) for conversion rate window.
+
+### Views
+- **`BusinessDashboardView`** — Container with segmented picker (Client Pipeline / Recruiting Pipeline), toolbar refresh button, triggers `PipelineTracker.refresh()` on appear.
+- **`ClientPipelineDashboardView`** — Funnel bars (proportional widths with counts), 2×2 metrics grid (conversion rates, avg days as Lead, velocity), window picker (30/60/90/180d), stuck callouts with click-through via `.samNavigateToPerson`, recent transitions timeline (last 10).
+- **`RecruitingPipelineDashboardView`** — 7-stage funnel with stage-specific colors and counts, licensing rate hero metric card, mentoring cadence list with overdue alerts and "Log Contact" buttons, click-through navigation.
+
+### Badge Edit Hook (PersonDetailView)
+- When exiting badge edit mode, `recordPipelineTransitions()` records client pipeline transitions for any added/removed Lead/Applicant/Client badges.
+- New recruiting stage section shown when person has "Agent" badge: horizontal 7-dot progress indicator, current stage badge, days since mentoring contact, "Log Contact" and "Advance" buttons.
+
+### Sidebar Routing (AppShellView)
+- New "Business" sidebar section with "Pipeline" navigation link (chart.bar.horizontal.page icon).
+- Routes to `BusinessDashboardView` in the two-column layout branch.
+
+### App Launch (SAMApp)
+- `PipelineRepository.shared.configure(container:)` in `configureDataLayer()`
+- One-time backfill gated by `pipelineBackfillComplete` UserDefaults key in `triggerImportsForEnabledSources()`
+
+### Schema
+- SAM_v18 → **SAM_v19** (lightweight migration, additive only — 2 new models)
+
+### Files
+| File | Status |
+|------|--------|
+| `Models/SAMModels-Pipeline.swift` | NEW — StageTransition, RecruitingStage, PipelineType, RecruitingStageKind |
+| `Models/SAMModels.swift` | MODIFIED — stageTransitions + recruitingStages inverse relationships on SamPerson |
+| `Repositories/PipelineRepository.swift` | NEW — Full CRUD + backfill |
+| `Coordinators/PipelineTracker.swift` | NEW — Metric computation + observable state |
+| `Views/Business/BusinessDashboardView.swift` | NEW — Segmented container |
+| `Views/Business/ClientPipelineDashboardView.swift` | NEW — Client funnel + metrics |
+| `Views/Business/RecruitingPipelineDashboardView.swift` | NEW — Recruiting funnel + mentoring |
+| `Views/People/PersonDetailView.swift` | MODIFIED — Badge edit hook + recruiting stage section |
+| `Views/AppShellView.swift` | MODIFIED — Business sidebar section |
+| `App/SAMApp.swift` | MODIFIED — Repository config + backfill |
+| `App/SAMModelContainer.swift` | MODIFIED — Schema v19, 2 new models registered |
+
+### What did NOT change
+- Existing `PipelineStageSection` in Awareness stays as compact summary
+- `RoleBadgeStyle.swift` unchanged — recruiting stage colors live on `RecruitingStageKind` enum
+- No LLM usage — all metrics are deterministic Swift computation
+- Undo system not extended — stage transitions are immutable audit logs, not undoable
+
+---
+
 ## February 25, 2026 - Import Watermark Optimization
 
 ### Overview

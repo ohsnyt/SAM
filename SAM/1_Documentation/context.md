@@ -3,11 +3,11 @@
 **Language**: Swift 6  
 **Architecture**: Clean layered architecture with strict separation of concerns  
 **Framework**: SwiftUI + SwiftData  
-**Last Updated**: February 25, 2026 (Phases A–Q complete, schema SAM_v18, planning Phase R+)
+**Last Updated**: February 25, 2026 (Phases A–R complete, schema SAM_v19, planning Phase S+)
 
 **Related Docs**: 
 - See `agent.md` for product philosophy, AI architecture, and UX principles
-- See `changelog.md` for historical completion notes (Phases A–O)
+- See `changelog.md` for historical completion notes (Phases A–R)
 
 ---
 
@@ -129,7 +129,7 @@ SAM is a **native macOS business coaching and relationship management applicatio
 SAM/SAM/
 ├── App/
 │   ├── SAMApp.swift                    ✅ App entry point, lifecycle, permissions
-│   └── SAMModelContainer.swift         ✅ SwiftData container (v18)
+│   └── SAMModelContainer.swift         ✅ SwiftData container (v19)
 │
 ├── Services/
 │   ├── ContactsService.swift           ✅ Actor — CNContact operations
@@ -162,8 +162,8 @@ SAM/SAM/
 │   ├── CoachingAdvisor.swift           ✅ Adaptive feedback
 │   ├── DailyBriefingCoordinator.swift  ✅ Briefings + sequence triggers
 │   ├── UndoCoordinator.swift           ✅ Undo toast display + restore dispatch
+│   ├── PipelineTracker.swift           ✅ Funnel metrics, stage transitions, stall detection
 │   ├── StrategicCoordinator.swift      ⬜ RLM orchestrator — dispatches specialists, synthesizes
-│   ├── PipelineTracker.swift           ⬜ Funnel metrics, stage transitions, stall detection
 │   ├── ProductionTracker.swift         ⬜ Policies, products, revenue trends
 │   └── GoalDecomposer.swift            ⬜ Goal → weekly/daily targets → progress tracking
 │
@@ -175,14 +175,16 @@ SAM/SAM/
 │   ├── OutcomeRepository.swift         ✅ CRUD for SamOutcome
 │   ├── UndoRepository.swift            ✅ CRUD for SamUndoEntry (30-day snapshots)
 │   ├── TimeTrackingRepository.swift    ✅ CRUD for TimeEntry with categories
-│   └── BusinessMetricsRepository.swift ⬜ CRUD for production, goals, stage transitions
+│   ├── PipelineRepository.swift        ✅ CRUD for StageTransition + RecruitingStage
+│   └── BusinessMetricsRepository.swift ⬜ CRUD for production, goals
 │
 ├── Models/
 │   ├── SAMModels.swift                 ✅ Core models (SamPerson, SamContext, etc.)
 │   ├── SAMModels-Notes.swift           ✅ SamNote, SamAnalysisArtifact
 │   ├── SAMModels-Supporting.swift      ✅ Value types, enums
 │   ├── SAMModels-Undo.swift            ✅ SamUndoEntry, snapshots
-│   ├── SAMModels-Business.swift        ⬜ StageTransition, ProductionRecord, BusinessGoal, etc.
+│   ├── SAMModels-Pipeline.swift        ✅ StageTransition, RecruitingStage, PipelineType
+│   ├── SAMModels-Business.swift        ⬜ ProductionRecord, BusinessGoal, etc.
 │   └── DTOs/
 │       ├── ContactDTO.swift            ✅
 │       ├── EventDTO.swift              ✅
@@ -202,11 +204,11 @@ SAM/SAM/
 │   ├── Contexts/                       ✅ Context management
 │   ├── Awareness/                      ✅ Coaching dashboard
 │   ├── Notes/                          ✅ Note editing + journal
-│   ├── Business/                       ⬜ Business Intelligence dashboard
-│   │   ├── BusinessDashboardView.swift ⬜ Top-level BI view
-│   │   ├── PipelineFunnelView.swift    ⬜ Visual client + recruiting funnels
+│   ├── Business/                       ✅ Business Intelligence dashboard (pipeline)
+│   │   ├── BusinessDashboardView.swift ✅ Top-level BI view (segmented Client/Recruiting)
+│   │   ├── ClientPipelineDashboardView.swift ✅ Client funnel, metrics, stuck, transitions
+│   │   ├── RecruitingPipelineDashboardView.swift ✅ 7-stage funnel, licensing rate, mentoring
 │   │   ├── ProductionTrendView.swift   ⬜ 30/60/90/180-day production charts
-│   │   ├── TimeAllocationView.swift    ⬜ Time categorization analysis
 │   │   ├── GoalProgressView.swift      ⬜ Goals vs. actuals with pace indicators
 │   │   ├── PatternInsightsView.swift   ⬜ Cross-relationship pattern cards
 │   │   └── WeeklyDigestView.swift      ⬜ Strategic digest (also in briefing)
@@ -225,11 +227,11 @@ SAM/SAM/
 
 ## 4. Data Models
 
-### 4.1 Existing Models (Phases A–O, schema v16)
+### 4.1 Existing Models (Phases A–R, schema v19)
 
 (All existing models unchanged — see `changelog.md` for full schema. Summary below.)
 
-- **SamPerson** — Contact anchor + CRM enrichment (roles, referrals, channel preferences, phone aliases)
+- **SamPerson** — Contact anchor + CRM enrichment (roles, referrals, channel preferences, phone aliases, stageTransitions, recruitingStages)
 - **SamContext** — Households, businesses, groups
 - **SamEvidenceItem** — Observations from Calendar/Mail/iMessage/Phone/FaceTime/Notes
 - **SamNote** — User notes with LLM analysis (action items, topics, life events, follow-up drafts)
@@ -238,21 +240,10 @@ SAM/SAM/
 - **CoachingProfile** — Singleton tracking encouragement style and user patterns
 - **TimeEntry** — Time tracking with 10-category WFG categorization
 - **SamUndoEntry** — 30-day undo snapshots for destructive operations
+- **StageTransition** — Immutable pipeline audit log (client + recruiting transitions)
+- **RecruitingStage** — Current recruiting pipeline state per person (7 WFG stages)
 
-### 4.2 New Business Models (Phase R+)
-
-**StageTransition** — Immutable log of pipeline stage changes
-```swift
-@Model
-final class StageTransition {
-    var person: SamPerson?
-    var fromStage: String           // Role badge value or recruiting stage
-    var toStage: String
-    var transitionDate: Date
-    var pipelineTypeRawValue: String // "client" or "recruiting"
-    var notes: String?              // Optional context
-}
-```
+### 4.2 New Business Models (Phase S+)
 
 **ProductionRecord** — Policies, products, applications
 ```swift
@@ -284,18 +275,6 @@ final class BusinessGoal {
 }
 ```
 
-**RecruitingStage** — WFG-specific recruiting lifecycle
-```swift
-@Model
-final class RecruitingStage {
-    var person: SamPerson?          // The recruit
-    var stageRawValue: String       // "prospect", "presented", "signedUp", "studying", "licensed", "firstSale", "producing"
-    var enteredDate: Date
-    var mentoringLastContact: Date? // When user last checked in with this recruit
-    var notes: String?
-}
-```
-
 **StrategicDigest** — Cached business intelligence output
 ```swift
 @Model
@@ -308,23 +287,6 @@ final class StrategicDigest {
     var contentSuggestions: String  // From ContentAdvisor
     var strategicActions: String    // Synthesized top recommendations
     var rawJSON: String?            // Full structured output for dashboard rendering
-}
-```
-
-**TimeCategorization** extension on existing TimeEntry:
-```swift
-// Extend TimeEntry with WFG-relevant categories
-enum TimeCategory: String, CaseIterable, Sendable {
-    case prospecting       = "Prospecting"
-    case clientMeeting     = "Client Meeting"
-    case policyReview      = "Policy Review"
-    case recruiting        = "Recruiting"
-    case trainingMentoring = "Training/Mentoring"
-    case admin             = "Admin"
-    case deepWork          = "Deep Work"
-    case personalDev       = "Personal Development"
-    case travel            = "Travel"
-    case other             = "Other"
 }
 ```
 
@@ -352,47 +314,9 @@ enum TimeCategory: String, CaseIterable, Sendable {
 - ✅ **Phase O**: Intelligent Actions + Multi-Step Sequences (schema SAM_v16)
 - ✅ **Phase P**: Universal Undo System (schema SAM_v17)
 - ✅ **Phase Q**: Time Tracking & Categorization (schema SAM_v18)
+- ✅ **Phase R**: Pipeline Intelligence (schema SAM_v19)
 
 ### Active / Next Phases
-
----
-
-### ⬜ Phase R: Pipeline Intelligence
-
-**Goal**: Visual pipeline dashboards with velocity metrics, stall detection, and stage transition tracking.
-
-**Impact**: VERY HIGH — addresses the #1 gap identified in research. WFG agents need to see their dual funnels at a glance.
-
-**Key deliverables**:
-
-**R.1 — Stage Transition Tracking**
-- `StageTransition` model + `BusinessMetricsRepository`
-- Record transitions when user changes `roleBadges` on a SamPerson
-- Backfill: on first run, create synthetic transitions from current role badges with `createdAt` dates
-- Schema migration: SAM_v17
-
-**R.2 — Client Pipeline Dashboard**
-- `PipelineFunnelView` — Visual funnel: Lead → Applicant → Client
-- Count badges at each stage
-- Conversion rates (Lead→Applicant, Applicant→Client) over configurable window
-- Average time-in-stage with stall indicators (>30d for Leads, >14d for Applicants)
-- Click-through to filtered People list for any stage
-- "Stuck" callouts with specific people names and days-in-stage
-
-**R.3 — Recruiting Pipeline Dashboard**
-- `RecruitingStage` model + repository support
-- Visual funnel: Prospect → Presented → Signed Up → Studying → Licensed → First Sale → Producing
-- Mentoring cadence indicators (days since last check-in per recruit)
-- Licensing completion rate and average time-to-license
-- Click-through to person detail
-
-**R.4 — Pipeline Intelligence Coordinator**
-- `PipelineTracker` coordinator — computes velocity, stall detection, conversion rates
-- All computation in Swift (not LLM) — deterministic metrics
-- Exposes observable state for dashboard views
-- Refreshes on evidence import and manual role changes
-
-**UI location**: New "Business" sidebar section → Pipeline tab
 
 ---
 
@@ -712,9 +636,9 @@ Each layer tested independently:
 |---------|-------|---------|
 | v16 | O | Multi-step sequences on SamOutcome |
 | v17 | P | + SamUndoEntry model |
-| v18 | Q (current) | + TimeEntry model, TimeCategory enum |
-| v19 | R | + StageTransition model |
-| v20 | S | + ProductionRecord, RecruitingStage |
+| v18 | Q | + TimeEntry model, TimeCategory enum |
+| v19 | R (current) | + StageTransition, RecruitingStage models |
+| v20 | S | + ProductionRecord |
 | v21 | V | + StrategicDigest |
 | v22 | X | + BusinessGoal |
 
@@ -774,7 +698,7 @@ Each migration uses SwiftData lightweight migration. New models are additive (no
 
 ---
 
-**Document Version**: 6.0 (Post-research roadmap, Business Intelligence architecture, Phases P–Z)  
-**Previous Versions**: See `changelog.md` for version history  
-**Last Major Update**: February 25, 2026 — Business Intelligence roadmap, RLM architecture, Phase R+ planning  
+**Document Version**: 7.0 (Phase R complete, Business Intelligence architecture, Phases S–Z)
+**Previous Versions**: See `changelog.md` for version history
+**Last Major Update**: February 25, 2026 — Phase R: Pipeline Intelligence complete, schema SAM_v19
 **Clean Rebuild Started**: February 9, 2026
