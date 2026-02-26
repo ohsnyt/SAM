@@ -102,6 +102,21 @@ final class EvidenceRepository {
         return allItems.first { $0.sourceUID == sourceUID }
     }
 
+    // MARK: - Search
+
+    /// Search evidence items by title and snippet (case-insensitive).
+    func search(query: String) throws -> [SamEvidenceItem] {
+        guard !query.isEmpty else { return try fetchAll() }
+
+        let lowercaseQuery = query.lowercased()
+        let all = try fetchAll()
+
+        return all.filter { item in
+            item.title.lowercased().contains(lowercaseQuery) ||
+            item.snippet.lowercased().contains(lowercaseQuery)
+        }
+    }
+
     // MARK: - Create Operations
 
     /// Create or update an evidence item from any source (notes, manual, etc.).

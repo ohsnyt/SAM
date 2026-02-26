@@ -115,6 +115,10 @@ struct AppShellView: View {
     private var sidebar: some View {
         List(selection: $sidebarSelection) {
             Section("Intelligence") {
+                NavigationLink(value: "search") {
+                    Label("Search", systemImage: "magnifyingglass")
+                }
+
                 NavigationLink(value: "awareness") {
                     Label("Awareness", systemImage: "brain.head.profile")
                 }
@@ -151,6 +155,9 @@ struct AppShellView: View {
     @ViewBuilder
     private var detailView: some View {
         switch sidebarSelection {
+        case "search":
+            SearchView()
+
         case "awareness":
             AwarenessView()
 

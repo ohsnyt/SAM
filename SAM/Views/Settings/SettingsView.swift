@@ -10,8 +10,10 @@
 //
 
 import SwiftUI
+import SwiftData
 import EventKit
 import Contacts
+import UniformTypeIdentifiers
 import os.log
 
 private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "SettingsView")
@@ -1020,6 +1022,13 @@ struct GeneralSettingsView: View {
         return stored > 0 ? stored : 2.0
     }()
 
+    // Backup/restore
+    @State private var backupCoordinator = BackupCoordinator.shared
+    @State private var showImportFilePicker = false
+    @State private var showImportConfirmation = false
+    @State private var pendingImportURL: URL?
+    @State private var pendingImportPreview: ImportPreview?
+
     private var appVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
     }
@@ -1057,6 +1066,11 @@ struct GeneralSettingsView: View {
 
                     // Dictation
                     dictationSection
+
+                    Divider()
+
+                    // Data Backup
+                    dataBackupSection
 
                     Divider()
 
@@ -1152,6 +1166,48 @@ struct GeneralSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .fileImporter(
+            isPresented: $showImportFilePicker,
+            allowedContentTypes: [.samBackup, .json],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                guard let url = urls.first else { return }
+                Task {
+                    do {
+                        let preview = try await backupCoordinator.validateBackup(from: url)
+                        pendingImportURL = url
+                        pendingImportPreview = preview
+                        showImportConfirmation = true
+                    } catch {
+                        backupCoordinator.status = .failed(error.localizedDescription)
+                    }
+                }
+            case .failure(let error):
+                backupCoordinator.status = .failed(error.localizedDescription)
+            }
+        }
+        .alert("Replace All Data?", isPresented: $showImportConfirmation) {
+            Button("Cancel", role: .cancel) {
+                pendingImportURL = nil
+                pendingImportPreview = nil
+            }
+            Button("Replace All Data", role: .destructive) {
+                guard let url = pendingImportURL else { return }
+                Task {
+                    await backupCoordinator.performImport(from: url)
+                }
+                pendingImportURL = nil
+                pendingImportPreview = nil
+            }
+        } message: {
+            if let preview = pendingImportPreview {
+                let counts = preview.metadata.counts
+                let schemaNote = preview.schemaMatch ? "" : "\n\nNote: This backup was created with a different schema version (\(preview.metadata.schemaVersion))."
+                Text("This will delete ALL existing data and replace it with:\n\n\(counts.people) people, \(counts.notes) notes, \(counts.evidence) evidence items, \(counts.contexts) contexts\n\nA safety backup will be saved to your temp directory first.\(schemaNote)")
+            }
+        }
     }
 
     private func resetOnboarding() {
@@ -1168,6 +1224,93 @@ struct GeneralSettingsView: View {
         UserDefaults.standard.removeObject(forKey: "lastCalendarImport")
 
         logger.notice("All settings cleared. SwiftData requires app restart to fully reset.")
+    }
+
+    // MARK: - Data Backup Section
+
+    private var dataBackupSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Data Backup")
+                .font(.headline)
+
+            Text("Export all your data to a .sambackup file or restore from a previous backup. Importing replaces all existing data.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 12) {
+                Button("Export Backup...") {
+                    let panel = NSSavePanel()
+                    let formatter = DateFormatter()
+                    formatter.dateFormat = "yyyy-MM-dd"
+                    panel.nameFieldStringValue = "SAM-Backup-\(formatter.string(from: .now)).sambackup"
+                    panel.allowedContentTypes = [.samBackup]
+                    panel.canCreateDirectories = true
+
+                    if panel.runModal() == .OK, let url = panel.url {
+                        Task {
+                            await backupCoordinator.exportBackup(to: url)
+                        }
+                    }
+                }
+                .buttonStyle(.bordered)
+                .disabled(backupCoordinator.status == .exporting || backupCoordinator.status == .importing)
+
+                Button("Import Backup...") {
+                    showImportFilePicker = true
+                }
+                .buttonStyle(.bordered)
+                .disabled(backupCoordinator.status == .exporting || backupCoordinator.status == .importing)
+            }
+
+            // Status display
+            switch backupCoordinator.status {
+            case .idle:
+                EmptyView()
+            case .exporting:
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text(backupCoordinator.progress.isEmpty ? "Exporting..." : backupCoordinator.progress)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            case .importing:
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text(backupCoordinator.progress.isEmpty ? "Importing..." : backupCoordinator.progress)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            case .validating:
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Validating backup...")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            case .success(let message):
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                        .font(.caption)
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            case .failed(let message):
+                HStack(spacing: 6) {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.red)
+                        .font(.caption)
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .lineLimit(3)
+                }
+            }
+        }
     }
 
     // MARK: - Dictation Section

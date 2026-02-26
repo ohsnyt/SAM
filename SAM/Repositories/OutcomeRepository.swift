@@ -87,6 +87,26 @@ final class OutcomeRepository {
         return all.first { $0.id == id }
     }
 
+    // MARK: - Search
+
+    /// Search outcomes by title, rationale, and suggestedNextStep (case-insensitive).
+    func search(query: String) throws -> [SamOutcome] {
+        guard let context else { throw RepositoryError.notConfigured }
+        guard !query.isEmpty else { return try fetchActive() }
+
+        let lowercaseQuery = query.lowercased()
+        let descriptor = FetchDescriptor<SamOutcome>(
+            sortBy: [SortDescriptor(\.priorityScore, order: .reverse)]
+        )
+        let all = try context.fetch(descriptor)
+
+        return all.filter { outcome in
+            outcome.title.lowercased().contains(lowercaseQuery) ||
+            outcome.rationale.lowercased().contains(lowercaseQuery) ||
+            outcome.suggestedNextStep?.lowercased().contains(lowercaseQuery) == true
+        }
+    }
+
     // MARK: - Sequence Queries
 
     /// Fetch outcomes that are awaiting a sequence trigger and still pending.
