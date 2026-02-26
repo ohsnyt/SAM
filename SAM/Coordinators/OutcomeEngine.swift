@@ -107,6 +107,9 @@ final class OutcomeEngine {
             // 8. Content cadence nudges (Phase W)
             newOutcomes.append(contentsOf: try scanContentCadence())
 
+            // 9. Goal pacing coaching (Phase X)
+            newOutcomes.append(contentsOf: scanGoalPacing())
+
             // Classify action lanes and suggest channels
             for outcome in newOutcomes {
                 classifyActionLane(for: outcome)
@@ -527,6 +530,150 @@ final class OutcomeEngine {
         }
 
         return outcomes
+    }
+
+    // MARK: - Goal Pacing Scanner (Phase X)
+
+    /// Generate coaching outcomes for goals that are behind or at risk.
+    private func scanGoalPacing() -> [SamOutcome] {
+        let allProgress = GoalProgressEngine.shared.computeAllProgress()
+        var outcomes: [SamOutcome] = []
+
+        for gp in allProgress {
+            guard gp.pace == .behind || gp.pace == .atRisk else { continue }
+
+            // Dedup: one goal-pacing outcome per goal type every 72 hours
+            let hasSimilar = (try? outcomeRepo.hasSimilarOutcome(
+                kind: goalOutcomeKind(for: gp.goalType),
+                personID: nil,
+                withinHours: 72
+            )) ?? false
+            guard !hasSimilar else { continue }
+
+            let remaining = max(gp.targetValue - gp.currentValue, 0)
+            let rateText = goalRateText(gp)
+            let paceLabel = gp.pace.displayName
+
+            let (title, rationale, step, kind) = goalOutcomeDetails(
+                goalType: gp.goalType,
+                paceLabel: paceLabel,
+                remaining: remaining,
+                rateText: rateText,
+                daysRemaining: gp.daysRemaining
+            )
+
+            let outcome = SamOutcome(
+                title: title,
+                rationale: rationale,
+                outcomeKind: kind,
+                priorityScore: gp.pace == .atRisk ? 0.8 : 0.6,
+                deadlineDate: Calendar.current.date(byAdding: .day, value: min(gp.daysRemaining, 7), to: .now),
+                sourceInsightSummary: "Goal: \(gp.title) — \(Int(gp.currentValue))/\(Int(gp.targetValue))",
+                suggestedNextStep: step
+            )
+            outcomes.append(outcome)
+        }
+
+        return outcomes
+    }
+
+    /// Map GoalType to the most appropriate OutcomeKind.
+    private func goalOutcomeKind(for goalType: GoalType) -> OutcomeKind {
+        switch goalType {
+        case .newClients:        return .growth
+        case .policiesSubmitted: return .proposal
+        case .productionVolume:  return .growth
+        case .recruiting:        return .outreach
+        case .meetingsHeld:      return .preparation
+        case .contentPosts:      return .contentCreation
+        case .deepWorkHours:     return .growth
+        }
+    }
+
+    /// Generate title, rationale, next step, and kind for a behind/at-risk goal.
+    private func goalOutcomeDetails(
+        goalType: GoalType,
+        paceLabel: String,
+        remaining: Double,
+        rateText: String,
+        daysRemaining: Int
+    ) -> (title: String, rationale: String, step: String, kind: OutcomeKind) {
+        let kind = goalOutcomeKind(for: goalType)
+
+        switch goalType {
+        case .newClients:
+            return (
+                "Review pipeline for client conversions",
+                "\(paceLabel) on new clients goal — \(Int(remaining)) more needed. \(rateText).",
+                "Identify your warmest leads and schedule next-step meetings",
+                kind
+            )
+        case .policiesSubmitted:
+            return (
+                "Push pending applications forward",
+                "\(paceLabel) on submissions goal — \(Int(remaining)) more needed. \(rateText).",
+                "Review in-progress applications and gather missing documents",
+                kind
+            )
+        case .productionVolume:
+            let volStr = remaining >= 1_000 ? String(format: "$%.0fK", remaining / 1_000) : String(format: "$%.0f", remaining)
+            return (
+                "Focus on premium volume opportunities",
+                "\(paceLabel) on production goal — \(volStr) more needed. \(rateText).",
+                "Review clients who may benefit from higher-coverage or additional products",
+                kind
+            )
+        case .recruiting:
+            return (
+                "Schedule recruiting conversations",
+                "\(paceLabel) on recruiting goal — \(Int(remaining)) more needed. \(rateText).",
+                "Reach out to warm prospects or ask top agents for referrals",
+                kind
+            )
+        case .meetingsHeld:
+            return (
+                "Book more meetings this period",
+                "\(paceLabel) on meetings goal — \(Int(remaining)) more needed. \(rateText).",
+                "Check your contact list for overdue check-ins to schedule",
+                kind
+            )
+        case .contentPosts:
+            return (
+                "Create and publish content",
+                "\(paceLabel) on content goal — \(Int(remaining)) more posts needed. \(rateText).",
+                "Draft a quick educational post or client success story",
+                kind
+            )
+        case .deepWorkHours:
+            let hoursStr = String(format: "%.1f", remaining)
+            return (
+                "Block focused work time",
+                "\(paceLabel) on deep work goal — \(hoursStr) more hours needed. \(rateText).",
+                "Schedule a 2-hour focus block on your calendar for tomorrow",
+                kind
+            )
+        }
+    }
+
+    /// Rate text for goal pacing (day/week/month, picking the first unit >= 1).
+    private func goalRateText(_ gp: GoalProgress) -> String {
+        let remaining = max(gp.targetValue - gp.currentValue, 0)
+        let days = Double(max(gp.daysRemaining, 1))
+        let perDay = remaining / days
+        let perWeek = remaining / (days / 7.0)
+        let perMonth = remaining / (days / 30.0)
+
+        let format: (Double) -> String = { val in
+            val == val.rounded() ? String(format: "%.0f", val) : String(format: "%.1f", val)
+        }
+
+        if perDay >= 1 {
+            return "Need \(format(perDay)) per day"
+        } else if perWeek >= 1 {
+            return "Need \(format(perWeek)) per week"
+        } else {
+            return "Need \(format(perMonth)) per month"
+        }
     }
 
     // MARK: - Role Transition Outcomes

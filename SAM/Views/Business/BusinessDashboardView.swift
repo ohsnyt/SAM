@@ -25,6 +25,7 @@ struct BusinessDashboardView: View {
                     Text("Recruiting").tag(1)
                     Text("Production").tag(2)
                     Text("Strategic").tag(3)
+                    Text("Goals").tag(4)
                 }
                 .pickerStyle(.segmented)
                 .padding()
@@ -38,6 +39,8 @@ struct BusinessDashboardView: View {
                     ProductionDashboardView(tracker: tracker)
                 case 3:
                     StrategicInsightsView(coordinator: strategic)
+                case 4:
+                    GoalProgressView()
                 default:
                     RecruitingPipelineDashboardView(tracker: tracker)
                 }

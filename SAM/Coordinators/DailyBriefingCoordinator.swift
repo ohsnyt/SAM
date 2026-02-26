@@ -236,6 +236,22 @@ final class DailyBriefingCoordinator {
                 }
             }
 
+            // Goal pacing alerts (Phase X)
+            let goalProgress = GoalProgressEngine.shared.computeAllProgress()
+            let atRiskGoals = goalProgress.filter { $0.pace == .atRisk || $0.pace == .behind }
+            for gp in atRiskGoals {
+                let paceLabel = gp.pace.displayName
+                let pctStr = String(format: "%.0f", gp.percentComplete * 100)
+                let deadlineDate = Calendar.current.date(byAdding: .day, value: gp.daysRemaining, to: .now) ?? .now
+                let deadlineStr = deadlineDate.formatted(date: .abbreviated, time: .omitted)
+                briefing.strategicHighlights.append(BriefingAction(
+                    title: "\(gp.goalType.displayName) goal: \(Int(gp.currentValue))/\(Int(gp.targetValue)) — \(paceLabel)",
+                    rationale: "Need \(goalPacingRateText(gp)) to hit target by \(deadlineStr). Currently \(pctStr)% complete.",
+                    urgency: gp.pace == .atRisk ? "soon" : "standard",
+                    sourceKind: "goal_pacing"
+                ))
+            }
+
             // Persist
             context?.insert(briefing)
             try context?.save()
@@ -1144,7 +1160,23 @@ final class DailyBriefingCoordinator {
             }
         }
 
-        // 6. Life events requiring outreach
+        // 7. Goal deadlines approaching (Phase X)
+        if priorities.count < 8 {
+            let goalProgress = GoalProgressEngine.shared.computeAllProgress()
+            for gp in goalProgress where priorities.count < 8 {
+                guard gp.daysRemaining <= 14, gp.pace == .behind || gp.pace == .atRisk else { continue }
+                let endDate = Calendar.current.date(byAdding: .day, value: gp.daysRemaining, to: .now) ?? .now
+                let dateStr = endDate.formatted(date: .abbreviated, time: .omitted)
+                priorities.append(BriefingAction(
+                    title: "\(gp.goalType.displayName) goal deadline \(dateStr)",
+                    rationale: "\(Int(gp.currentValue))/\(Int(gp.targetValue)) — \(gp.pace.displayName). Need \(goalPacingRateText(gp)).",
+                    urgency: gp.pace == .atRisk ? "immediate" : "soon",
+                    sourceKind: "goal_deadline"
+                ))
+            }
+        }
+
+        // 8. Life events requiring outreach
         if let allNotes = try? notesRepo.fetchAll() {
             let thirtyDaysAgo = Calendar.current.date(byAdding: .day, value: -30, to: .now)!
             for note in allNotes where note.updatedAt >= thirtyDaysAgo && priorities.count < 8 {
@@ -1319,5 +1351,24 @@ final class DailyBriefingCoordinator {
             outcomesCompletedCount: outcomesCompleted,
             outcomesDismissedCount: outcomesDismissed
         )
+    }
+
+    // MARK: - Goal Pacing Helper
+
+    /// Picks the smallest time unit where the rate is >= 1 (day → week → month).
+    private func goalPacingRateText(_ gp: GoalProgress) -> String {
+        let remaining = max(gp.targetValue - gp.currentValue, 0)
+        let days = Double(max(gp.daysRemaining, 1))
+        let perDay = remaining / days
+        let perWeek = remaining / (days / 7.0)
+        let perMonth = remaining / (days / 30.0)
+
+        if perDay >= 1 {
+            return "\(String(format: "%.1f", perDay)) per day"
+        } else if perWeek >= 1 {
+            return "\(String(format: "%.1f", perWeek)) per week"
+        } else {
+            return "\(String(format: "%.1f", perMonth)) per month"
+        }
     }
 }
