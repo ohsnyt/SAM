@@ -21,16 +21,20 @@ struct BusinessDashboardView: View {
                 // Segmented picker
                 Picker("Pipeline", selection: $selectedTab) {
                     Text("Client Pipeline").tag(0)
-                    Text("Recruiting Pipeline").tag(1)
+                    Text("Recruiting").tag(1)
+                    Text("Production").tag(2)
                 }
                 .pickerStyle(.segmented)
                 .padding()
 
                 Divider()
 
-                if selectedTab == 0 {
+                switch selectedTab {
+                case 0:
                     ClientPipelineDashboardView(tracker: tracker)
-                } else {
+                case 2:
+                    ProductionDashboardView(tracker: tracker)
+                default:
                     RecruitingPipelineDashboardView(tracker: tracker)
                 }
             }

@@ -181,6 +181,10 @@ public final class SamPerson {
     @Relationship(deleteRule: .cascade, inverse: \RecruitingStage.person)
     public var recruitingStages: [RecruitingStage] = []
 
+    /// Production records (Phase S). Cascade so deleting a person cleans up.
+    @Relationship(deleteRule: .cascade, inverse: \ProductionRecord.person)
+    public var productionRecords: [ProductionRecord] = []
+
     // ── Context chips (denormalised snapshot for list / search) ────
     /// Lightweight context membership chips.  Kept in sync with
     /// `participations` but stored flat so the People list can render

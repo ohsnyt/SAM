@@ -98,6 +98,9 @@ final class OutcomeEngine {
                 newOutcomes.append(contentsOf: try scanGrowthOpportunities(people: allPeople))
             }
 
+            // 6. Coverage gap cross-sell (Phase S)
+            newOutcomes.append(contentsOf: try scanCoverageGaps(people: allPeople))
+
             // Classify action lanes and suggest channels
             for outcome in newOutcomes {
                 classifyActionLane(for: outcome)
@@ -329,6 +332,64 @@ final class OutcomeEngine {
                 rationale: "Active client relationship — good time to ask about referrals.",
                 outcomeKind: .growth,
                 sourceInsightSummary: "Active client \(name) — referral opportunity",
+                linkedPerson: client
+            ))
+        }
+
+        return outcomes
+    }
+
+    // MARK: - Coverage Gap Cross-Sell (Phase S)
+
+    /// Scan clients with production records for coverage gaps.
+    /// Compares their existing product types against a "complete coverage" baseline.
+    private func scanCoverageGaps(people: [SamPerson]) throws -> [SamOutcome] {
+        var outcomes: [SamOutcome] = []
+
+        // Complete coverage baseline: at least one life product + retirement + education
+        let lifeTypes: Set<WFGProductType> = [.iul, .termLife, .wholeLife]
+        let retirementTypes: Set<WFGProductType> = [.retirementPlan, .annuity]
+        let educationTypes: Set<WFGProductType> = [.educationPlan]
+
+        let clients = people.filter { $0.roleBadges.contains("Client") }
+
+        for client in clients {
+            let records = (try? ProductionRepository.shared.fetchRecords(forPerson: client.id)) ?? []
+            guard !records.isEmpty else { continue }
+
+            let existingTypes = Set(records.map(\.productType))
+            let name = client.displayNameCache ?? client.displayName
+
+            var gaps: [String] = []
+
+            if existingTypes.isDisjoint(with: lifeTypes) {
+                gaps.append("life insurance")
+            }
+            if existingTypes.isDisjoint(with: retirementTypes) {
+                gaps.append("retirement planning")
+            }
+            if existingTypes.isDisjoint(with: educationTypes) {
+                gaps.append("education planning")
+            }
+
+            guard !gaps.isEmpty else { continue }
+
+            // Dedup check
+            let isDuplicate = try outcomeRepo.hasSimilarOutcome(
+                kind: .growth,
+                personID: client.id
+            )
+            guard !isDuplicate else { continue }
+
+            let gapList = gaps.joined(separator: " and ")
+            let existingList = existingTypes.map(\.displayName).joined(separator: ", ")
+
+            outcomes.append(SamOutcome(
+                title: "Consider \(gapList) for \(name)",
+                rationale: "Has \(existingList) but no \(gapList). A complete financial strategy covers life, retirement, and education.",
+                outcomeKind: .growth,
+                sourceInsightSummary: "Coverage gap detected for \(name): missing \(gapList)",
+                suggestedNextStep: "Schedule a review meeting to discuss \(gapList) options",
                 linkedPerson: client
             ))
         }

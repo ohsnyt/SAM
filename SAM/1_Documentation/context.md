@@ -3,7 +3,7 @@
 **Language**: Swift 6  
 **Architecture**: Clean layered architecture with strict separation of concerns  
 **Framework**: SwiftUI + SwiftData  
-**Last Updated**: February 25, 2026 (Phases A–R complete, schema SAM_v19, planning Phase S+)
+**Last Updated**: February 25, 2026 (Phases A–S complete, schema SAM_v20)
 
 **Related Docs**: 
 - See `agent.md` for product philosophy, AI architecture, and UX principles
@@ -129,7 +129,7 @@ SAM is a **native macOS business coaching and relationship management applicatio
 SAM/SAM/
 ├── App/
 │   ├── SAMApp.swift                    ✅ App entry point, lifecycle, permissions
-│   └── SAMModelContainer.swift         ✅ SwiftData container (v19)
+│   └── SAMModelContainer.swift         ✅ SwiftData container (v20)
 │
 ├── Services/
 │   ├── ContactsService.swift           ✅ Actor — CNContact operations
@@ -162,9 +162,8 @@ SAM/SAM/
 │   ├── CoachingAdvisor.swift           ✅ Adaptive feedback
 │   ├── DailyBriefingCoordinator.swift  ✅ Briefings + sequence triggers
 │   ├── UndoCoordinator.swift           ✅ Undo toast display + restore dispatch
-│   ├── PipelineTracker.swift           ✅ Funnel metrics, stage transitions, stall detection
+│   ├── PipelineTracker.swift           ✅ Funnel metrics, stage transitions, stall detection, production metrics
 │   ├── StrategicCoordinator.swift      ⬜ RLM orchestrator — dispatches specialists, synthesizes
-│   ├── ProductionTracker.swift         ⬜ Policies, products, revenue trends
 │   └── GoalDecomposer.swift            ⬜ Goal → weekly/daily targets → progress tracking
 │
 ├── Repositories/
@@ -176,7 +175,8 @@ SAM/SAM/
 │   ├── UndoRepository.swift            ✅ CRUD for SamUndoEntry (30-day snapshots)
 │   ├── TimeTrackingRepository.swift    ✅ CRUD for TimeEntry with categories
 │   ├── PipelineRepository.swift        ✅ CRUD for StageTransition + RecruitingStage
-│   └── BusinessMetricsRepository.swift ⬜ CRUD for production, goals
+│   ├── ProductionRepository.swift     ✅ CRUD for ProductionRecord + metric queries
+│   └── BusinessMetricsRepository.swift ⬜ CRUD for goals
 │
 ├── Models/
 │   ├── SAMModels.swift                 ✅ Core models (SamPerson, SamContext, etc.)
@@ -184,7 +184,7 @@ SAM/SAM/
 │   ├── SAMModels-Supporting.swift      ✅ Value types, enums
 │   ├── SAMModels-Undo.swift            ✅ SamUndoEntry, snapshots
 │   ├── SAMModels-Pipeline.swift        ✅ StageTransition, RecruitingStage, PipelineType
-│   ├── SAMModels-Business.swift        ⬜ ProductionRecord, BusinessGoal, etc.
+│   ├── SAMModels-Production.swift     ✅ ProductionRecord, WFGProductType, ProductionStatus
 │   └── DTOs/
 │       ├── ContactDTO.swift            ✅
 │       ├── EventDTO.swift              ✅
@@ -205,10 +205,11 @@ SAM/SAM/
 │   ├── Awareness/                      ✅ Coaching dashboard
 │   ├── Notes/                          ✅ Note editing + journal
 │   ├── Business/                       ✅ Business Intelligence dashboard (pipeline)
-│   │   ├── BusinessDashboardView.swift ✅ Top-level BI view (segmented Client/Recruiting)
+│   │   ├── BusinessDashboardView.swift ✅ Top-level BI view (segmented Client/Recruiting/Production)
 │   │   ├── ClientPipelineDashboardView.swift ✅ Client funnel, metrics, stuck, transitions
 │   │   ├── RecruitingPipelineDashboardView.swift ✅ 7-stage funnel, licensing rate, mentoring
-│   │   ├── ProductionTrendView.swift   ⬜ 30/60/90/180-day production charts
+│   │   ├── ProductionDashboardView.swift ✅ Status overview, product mix, pending aging, all records
+│   │   ├── ProductionEntryForm.swift  ✅ Add/edit production record sheet
 │   │   ├── GoalProgressView.swift      ⬜ Goals vs. actuals with pace indicators
 │   │   ├── PatternInsightsView.swift   ⬜ Cross-relationship pattern cards
 │   │   └── WeeklyDigestView.swift      ⬜ Strategic digest (also in briefing)
@@ -227,11 +228,11 @@ SAM/SAM/
 
 ## 4. Data Models
 
-### 4.1 Existing Models (Phases A–R, schema v19)
+### 4.1 Existing Models (Phases A–S, schema v20)
 
 (All existing models unchanged — see `changelog.md` for full schema. Summary below.)
 
-- **SamPerson** — Contact anchor + CRM enrichment (roles, referrals, channel preferences, phone aliases, stageTransitions, recruitingStages)
+- **SamPerson** — Contact anchor + CRM enrichment (roles, referrals, channel preferences, phone aliases, stageTransitions, recruitingStages, productionRecords)
 - **SamContext** — Households, businesses, groups
 - **SamEvidenceItem** — Observations from Calendar/Mail/iMessage/Phone/FaceTime/Notes
 - **SamNote** — User notes with LLM analysis (action items, topics, life events, follow-up drafts)
@@ -242,22 +243,9 @@ SAM/SAM/
 - **SamUndoEntry** — 30-day undo snapshots for destructive operations
 - **StageTransition** — Immutable pipeline audit log (client + recruiting transitions)
 - **RecruitingStage** — Current recruiting pipeline state per person (7 WFG stages)
+- **ProductionRecord** — Policies/products per person (product type, status, carrier, premium, dates)
 
-### 4.2 New Business Models (Phase S+)
-
-**ProductionRecord** — Policies, products, applications
-```swift
-@Model
-final class ProductionRecord {
-    var person: SamPerson?          // Client this production is for
-    var productType: String         // "IUL", "Term Life", "Retirement", etc.
-    var statusRawValue: String      // "submitted", "approved", "issued", "declined"
-    var submittedDate: Date
-    var resolvedDate: Date?
-    var premiumAmount: Double?      // Optional — user-entered
-    var notes: String?
-}
-```
+### 4.2 Future Business Models
 
 **BusinessGoal** — User-defined targets
 ```swift
@@ -315,40 +303,9 @@ final class StrategicDigest {
 - ✅ **Phase P**: Universal Undo System (schema SAM_v17)
 - ✅ **Phase Q**: Time Tracking & Categorization (schema SAM_v18)
 - ✅ **Phase R**: Pipeline Intelligence (schema SAM_v19)
+- ✅ **Phase S**: Production Tracking (schema SAM_v20)
 
 ### Active / Next Phases
-
----
-
-### ⬜ Phase S: Production Tracking
-
-**Goal**: Track policies written, applications submitted, products sold. Trend analysis.
-
-**Impact**: HIGH — enables revenue projection and cross-sell intelligence.
-
-**Key deliverables**:
-
-**S.1 — Production Data Entry**
-- `ProductionRecord` model + `BusinessMetricsRepository` extension
-- Simple entry form on PersonDetailView: product type, status, date, optional premium
-- Product type picker: IUL, Term Life, Whole Life, Annuity, Retirement Plan, Education Plan, Other
-- Status flow: Submitted → Approved/Declined → Issued
-
-**S.2 — Production Dashboard**
-- `ProductionTrendView` — 30/60/90/180-day trend charts (SwiftUI Charts)
-- Policies submitted vs. approved vs. issued
-- Product mix breakdown
-- Top clients by production volume
-- Pending applications with aging indicators
-
-**S.3 — Cross-Sell Intelligence (AI-assisted)**
-- Based on client's existing products and life situation (from notes, life events)
-- Flag clients likely to have coverage gaps
-- Generate natural conversation starters (not sales pitches)
-- Priority-rank by estimated receptivity
-- Surfaces as coaching outcomes in the Action Queue
-
-**UI location**: Business → Production tab; cross-sell outcomes in Awareness
 
 ---
 
@@ -637,8 +594,8 @@ Each layer tested independently:
 | v16 | O | Multi-step sequences on SamOutcome |
 | v17 | P | + SamUndoEntry model |
 | v18 | Q | + TimeEntry model, TimeCategory enum |
-| v19 | R (current) | + StageTransition, RecruitingStage models |
-| v20 | S | + ProductionRecord |
+| v19 | R | + StageTransition, RecruitingStage models |
+| v20 | S (current) | + ProductionRecord, WFGProductType, ProductionStatus |
 | v21 | V | + StrategicDigest |
 | v22 | X | + BusinessGoal |
 
@@ -698,7 +655,7 @@ Each migration uses SwiftData lightweight migration. New models are additive (no
 
 ---
 
-**Document Version**: 7.0 (Phase R complete, Business Intelligence architecture, Phases S–Z)
+**Document Version**: 8.0 (Phase S complete, Business Intelligence architecture, Phases T–Z)
 **Previous Versions**: See `changelog.md` for version history
-**Last Major Update**: February 25, 2026 — Phase R: Pipeline Intelligence complete, schema SAM_v19
+**Last Major Update**: February 25, 2026 — Phase S: Production Tracking complete, schema SAM_v20
 **Clean Rebuild Started**: February 9, 2026

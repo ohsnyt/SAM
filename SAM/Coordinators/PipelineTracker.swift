@@ -38,6 +38,15 @@ final class PipelineTracker {
     var recruitLicensingRate: Double = 0
     var recruitMentoringAlerts: [MentoringAlert] = []
 
+    // Production metrics (Phase S)
+    var productionByStatus: [ProductionStatusSummary] = []
+    var productionByType: [ProductionTypeSummary] = []
+    var productionTotalPremium: Double = 0
+    var productionPendingCount: Int = 0
+    var productionPendingAging: [PendingAgingItem] = []
+    var productionAllRecords: [ProductionRecordItem] = []
+    var productionWindowDays: Int = 90
+
     var configWindowDays: Int = 90
 
     // MARK: - Refresh
@@ -45,6 +54,7 @@ final class PipelineTracker {
     func refresh() {
         refreshClientPipeline()
         refreshRecruitingPipeline()
+        refreshProduction()
     }
 
     // MARK: - Client Pipeline
@@ -254,6 +264,89 @@ final class PipelineTracker {
             logger.error("Failed to refresh recruiting pipeline: \(error)")
         }
     }
+
+    // MARK: - Production
+
+    private func refreshProduction() {
+        do {
+            let windowStart = Calendar.current.date(
+                byAdding: .day, value: -productionWindowDays, to: .now
+            ) ?? .now
+            let windowRecords = try ProductionRepository.shared.fetchRecords(since: windowStart)
+
+            // By status
+            var statusMap: [ProductionStatus: (count: Int, premium: Double)] = [:]
+            for record in windowRecords {
+                var entry = statusMap[record.status] ?? (count: 0, premium: 0)
+                entry.count += 1
+                entry.premium += record.annualPremium
+                statusMap[record.status] = entry
+            }
+            productionByStatus = ProductionStatus.allCases.map { status in
+                let data = statusMap[status] ?? (count: 0, premium: 0)
+                return ProductionStatusSummary(
+                    status: status,
+                    count: data.count,
+                    totalPremium: data.premium
+                )
+            }
+
+            // By product type
+            var typeMap: [WFGProductType: (count: Int, premium: Double)] = [:]
+            for record in windowRecords {
+                var entry = typeMap[record.productType] ?? (count: 0, premium: 0)
+                entry.count += 1
+                entry.premium += record.annualPremium
+                typeMap[record.productType] = entry
+            }
+            productionByType = WFGProductType.allCases.compactMap { type in
+                guard let data = typeMap[type] else { return nil }
+                return ProductionTypeSummary(
+                    productType: type,
+                    count: data.count,
+                    totalPremium: data.premium
+                )
+            }
+
+            // Totals
+            productionTotalPremium = windowRecords.reduce(0) { $0 + $1.annualPremium }
+            productionPendingCount = windowRecords.filter { $0.status == .submitted }.count
+
+            // Pending aging
+            let allPending = try ProductionRepository.shared.pendingWithAge()
+            productionPendingAging = allPending.map { item in
+                PendingAgingItem(
+                    recordID: item.record.id,
+                    personID: item.record.person?.id,
+                    personName: item.record.person?.displayNameCache
+                        ?? item.record.person?.displayName ?? "Unknown",
+                    productType: item.record.productType,
+                    carrierName: item.record.carrierName,
+                    daysPending: item.daysPending,
+                    premium: item.record.annualPremium
+                )
+            }
+
+            // All records in window (for master list)
+            productionAllRecords = windowRecords.map { record in
+                ProductionRecordItem(
+                    recordID: record.id,
+                    personID: record.person?.id,
+                    personName: record.person?.displayNameCache
+                        ?? record.person?.displayName ?? "Unknown",
+                    productType: record.productType,
+                    status: record.status,
+                    carrierName: record.carrierName,
+                    annualPremium: record.annualPremium,
+                    submittedDate: record.submittedDate,
+                    resolvedDate: record.resolvedDate
+                )
+            }
+
+        } catch {
+            logger.error("Failed to refresh production metrics: \(error)")
+        }
+    }
 }
 
 // MARK: - Value Types
@@ -310,5 +403,49 @@ extension PipelineTracker {
         let fromStage: String
         let toStage: String
         let date: Date
+    }
+
+    // Phase S: Production value types
+
+    struct ProductionStatusSummary: Identifiable {
+        let status: ProductionStatus
+        let count: Int
+        let totalPremium: Double
+
+        var id: String { status.rawValue }
+    }
+
+    struct ProductionTypeSummary: Identifiable {
+        let productType: WFGProductType
+        let count: Int
+        let totalPremium: Double
+
+        var id: String { productType.rawValue }
+    }
+
+    struct PendingAgingItem: Identifiable {
+        let recordID: UUID
+        let personID: UUID?
+        let personName: String
+        let productType: WFGProductType
+        let carrierName: String
+        let daysPending: Int
+        let premium: Double
+
+        var id: UUID { recordID }
+    }
+
+    struct ProductionRecordItem: Identifiable {
+        let recordID: UUID
+        let personID: UUID?
+        let personName: String
+        let productType: WFGProductType
+        let status: ProductionStatus
+        let carrierName: String
+        let annualPremium: Double
+        let submittedDate: Date
+        let resolvedDate: Date?
+
+        var id: UUID { recordID }
     }
 }

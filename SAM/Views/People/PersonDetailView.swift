@@ -41,6 +41,8 @@ struct PersonDetailView: View {
     @State private var showingCorrectionSheet = false
     @State private var showingReferrerPicker = false
     @State private var recruitingStage: RecruitingStage?
+    @State private var productionRecords: [ProductionRecord] = []
+    @State private var showingProductionForm = false
 
     @Query(filter: #Predicate<SamPerson> { !$0.isArchived })
     private var allPeople: [SamPerson]
@@ -118,6 +120,7 @@ struct PersonDetailView: View {
             await loadFullContact()
             loadNotes()
             recruitingStage = try? PipelineRepository.shared.fetchRecruitingStage(forPerson: person.id)
+            productionRecords = (try? ProductionRepository.shared.fetchRecords(forPerson: person.id)) ?? []
         }
         .onReceive(NotificationCenter.default.publisher(for: .samUndoDidRestore)) { _ in
             loadNotes()
@@ -137,6 +140,15 @@ struct PersonDetailView: View {
             CorrectionSheetView(
                 person: person,
                 currentSummary: person.relationshipSummary ?? ""
+            )
+        }
+        .sheet(isPresented: $showingProductionForm) {
+            ProductionEntryForm(
+                personName: person.displayNameCache ?? person.displayName,
+                personID: person.id,
+                onSave: {
+                    productionRecords = (try? ProductionRepository.shared.fetchRecords(forPerson: person.id)) ?? []
+                }
             )
         }
         .alert("Error", isPresented: $showingError) {
@@ -512,6 +524,93 @@ struct PersonDetailView: View {
         }
     }
 
+    // MARK: - Production Section (Phase S)
+
+    private var productionSection: some View {
+        samSection(title: "Production") {
+            VStack(alignment: .leading, spacing: 10) {
+                // Summary line
+                if !productionRecords.isEmpty {
+                    let totalPremium = productionRecords.reduce(0) { $0 + $1.annualPremium }
+                    HStack {
+                        Text("\(productionRecords.count) record\(productionRecords.count == 1 ? "" : "s")")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text(totalPremium, format: .currency(code: "USD"))
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                // Record list (most recent 5)
+                ForEach(productionRecords.prefix(5), id: \.id) { record in
+                    HStack(spacing: 8) {
+                        Image(systemName: record.productType.icon)
+                            .font(.caption)
+                            .foregroundStyle(record.productType.color)
+                            .frame(width: 16)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(record.productType.displayName)
+                                .font(.subheadline)
+                                .lineLimit(1)
+                            Text(record.carrierName)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+
+                        Spacer()
+
+                        Text(record.annualPremium, format: .currency(code: "USD"))
+                            .font(.caption)
+                            .monospacedDigit()
+
+                        // Status badge — tap to advance
+                        Button {
+                            try? ProductionRepository.shared.advanceStatus(recordID: record.id)
+                            productionRecords = (try? ProductionRepository.shared.fetchRecords(forPerson: person.id)) ?? []
+                        } label: {
+                            HStack(spacing: 3) {
+                                Image(systemName: record.status.icon)
+                                    .font(.system(size: 9))
+                                Text(record.status.displayName)
+                                    .font(.system(size: 10))
+                            }
+                            .foregroundStyle(record.status.color)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(record.status.color.opacity(0.12))
+                            .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .help(record.status.next != nil
+                              ? "Advance to \(record.status.next!.displayName)"
+                              : record.status.displayName)
+                    }
+                }
+
+                if productionRecords.count > 5 {
+                    Text("\(productionRecords.count - 5) more…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                // Add button
+                Button {
+                    showingProductionForm = true
+                } label: {
+                    Label("Add Production", systemImage: "plus.circle")
+                        .font(.caption)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+        }
+    }
+
     private var channelPreferenceView: some View {
         HStack(spacing: 8) {
             Text("Communication:")
@@ -784,6 +883,11 @@ struct PersonDetailView: View {
             // Recruiting Pipeline (Phase R — shown for Agent badge)
             if person.roleBadges.contains("Agent") {
                 recruitingStageSection
+            }
+
+            // Production (Phase S — shown for Client or Applicant badge)
+            if person.roleBadges.contains("Client") || person.roleBadges.contains("Applicant") {
+                productionSection
             }
 
             // Referred by (Client / Applicant / Lead only)

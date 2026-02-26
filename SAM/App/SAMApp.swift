@@ -155,6 +155,7 @@ struct SAMApp: App {
         UndoRepository.shared.configure(container: SAMModelContainer.shared)
         TimeTrackingRepository.shared.configure(container: SAMModelContainer.shared)
         PipelineRepository.shared.configure(container: SAMModelContainer.shared)
+        ProductionRepository.shared.configure(container: SAMModelContainer.shared)
     }
     
     /// Check permissions and decide whether to show onboarding or proceed with imports

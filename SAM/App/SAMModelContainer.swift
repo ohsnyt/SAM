@@ -43,6 +43,7 @@ enum SAMSchema {
         TimeEntry.self,            // Phase Q: Time tracking & categorization
         StageTransition.self,      // Phase R: Pipeline intelligence audit log
         RecruitingStage.self,      // Phase R: Recruiting pipeline state
+        ProductionRecord.self,     // Phase S: Production tracking
     ]
 }
 
@@ -59,7 +60,7 @@ enum SAMModelContainer {
     nonisolated(unsafe) private static var _shared: ModelContainer = {
         let schema     = Schema(SAMSchema.allModels)
         let config     = ModelConfiguration(
-            "SAM_v19", // v19: pipeline intelligence
+            "SAM_v20", // v19: pipeline intelligence
             schema: schema,
             isStoredInMemoryOnly: false   // persistent on disk
         )
@@ -78,7 +79,7 @@ enum SAMModelContainer {
     nonisolated static func makeFreshContainer() -> ModelContainer {
         let schema = Schema(SAMSchema.allModels)
         let config = ModelConfiguration(
-            "SAM_v19", // v19: pipeline intelligence
+            "SAM_v20", // v19: pipeline intelligence
             schema: schema,
             isStoredInMemoryOnly: false
         )
@@ -98,7 +99,7 @@ enum SAMModelContainer {
     nonisolated static let shared: ModelContainer = {
         let schema     = Schema(SAMSchema.allModels)
         let config     = ModelConfiguration(
-            "SAM_v19", // v19: pipeline intelligence
+            "SAM_v20", // v19: pipeline intelligence
             schema: schema,
             isStoredInMemoryOnly: false   // persistent on disk
         )

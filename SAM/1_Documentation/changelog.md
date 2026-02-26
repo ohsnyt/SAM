@@ -4,6 +4,58 @@
 
 ---
 
+## February 25, 2026 - Phase S: Production Tracking (Schema SAM_v20)
+
+### Overview
+Added production tracking for policies and products sold per person. Includes a `ProductionRecord` model (product type, status, carrier, premium), `ProductionRepository` with CRUD and metric queries, production metrics in `PipelineTracker`, a Production dashboard tab in BusinessDashboardView, per-person production sections on PersonDetailView for Client/Applicant contacts, and cross-sell intelligence via coverage gap detection in `OutcomeEngine`.
+
+### Data Models
+- **`ProductionRecord`** `@Model` — id (.unique), person (@Relationship, nullify), productTypeRawValue, statusRawValue, carrierName, annualPremium, submittedDate, resolvedDate?, policyNumber?, notes?, createdAt, updatedAt. @Transient computed `productType` and `status`. Inverse on `SamPerson.productionRecords`.
+- **`WFGProductType`** enum (7 cases) — IUL, Term Life, Whole Life, Annuity, Retirement Plan, Education Plan, Other. Each has `displayName`, `icon`, `color`.
+- **`ProductionStatus`** enum (4 cases) — Submitted, Approved, Declined, Issued. Each has `displayName`, `icon`, `color`, `next` (happy-path progression).
+
+### Components
+- **`ProductionRepository`** — Standard `@MainActor @Observable` singleton. CRUD: `createRecord()` (cross-context safe person resolution), `updateRecord()`, `advanceStatus()` (Submitted→Approved→Issued with auto resolvedDate), `deleteRecord()`. Fetch: `fetchRecords(forPerson:)`, `fetchAllRecords()`, `fetchRecords(since:)`. Metrics: `countByStatus()`, `countByProductType()`, `totalPremiumByStatus()`, `pendingWithAge()` (aging report sorted oldest first).
+- **`PipelineTracker`** — Extended with production observable state: `productionByStatus`, `productionByType`, `productionTotalPremium`, `productionPendingCount`, `productionPendingAging`, `productionAllRecords`, `productionWindowDays`. New `refreshProduction()` method called from `refresh()`. New value types: `ProductionStatusSummary`, `ProductionTypeSummary`, `PendingAgingItem`, `ProductionRecordItem`.
+- **`OutcomeEngine`** — New `scanCoverageGaps(people:)` scanner. For each Client with production records, checks against complete coverage baseline (life + retirement + education). Generates `.growth` outcomes with dedup for missing coverage categories. Called from `generateOutcomes()` alongside other scanners.
+
+### Views
+- **`ProductionDashboardView`** — Status overview (4 cards: Submitted/Approved/Declined/Issued with counts and premiums), product mix (list with icons, counts, premiums), window picker (30/60/90/180 days), pending aging (sorted by age, click-through via `.samNavigateToPerson`), all records list (full production record listing with status badges and person click-through).
+- **`ProductionEntryForm`** — Sheet form: product type picker, carrier text field, annual premium currency field, submitted date picker, notes. Save/Cancel with validation.
+- **`BusinessDashboardView`** — Updated from 2-tab to 3-tab segmented picker: Client Pipeline, Recruiting, Production.
+- **`PersonDetailView`** — New production section (shown for Client/Applicant badge holders): record count + total premium summary, list of recent 5 records with product type icon, carrier, premium, status badge (tap to advance status), "Add Production" button opening `ProductionEntryForm` sheet.
+
+### App Launch (SAMApp)
+- `ProductionRepository.shared.configure(container:)` in `configureDataLayer()`
+
+### Schema
+- SAM_v19 → **SAM_v20** (lightweight migration, additive — 1 new model)
+
+### Files
+| File | Status |
+|------|--------|
+| `Models/SAMModels-Production.swift` | NEW — ProductionRecord, WFGProductType, ProductionStatus |
+| `Models/SAMModels.swift` | MODIFIED — productionRecords inverse relationship on SamPerson |
+| `Repositories/ProductionRepository.swift` | NEW — Full CRUD + metric queries |
+| `Coordinators/PipelineTracker.swift` | MODIFIED — Production metrics + refreshProduction() + 4 value types |
+| `Coordinators/OutcomeEngine.swift` | MODIFIED — scanCoverageGaps() cross-sell scanner |
+| `Views/Business/ProductionDashboardView.swift` | NEW — Production dashboard |
+| `Views/Business/ProductionEntryForm.swift` | NEW — Add/edit production record sheet |
+| `Views/Business/BusinessDashboardView.swift` | MODIFIED — 3rd tab (Production) |
+| `Views/People/PersonDetailView.swift` | MODIFIED — Production section + sheet for Client/Applicant |
+| `App/SAMApp.swift` | MODIFIED — ProductionRepository config |
+| `App/SAMModelContainer.swift` | MODIFIED — Schema v20, ProductionRecord registered |
+
+### What did NOT change
+- Existing pipeline views (Client Pipeline, Recruiting Pipeline) — untouched
+- PipelineRepository — production has its own ProductionRepository
+- StageTransition model — production records are separate from pipeline transitions
+- Undo system — production records use standard CRUD (add undo support if needed later)
+- No LLM usage in production tracking — all metrics are deterministic Swift computation
+- Cross-sell scanner is deterministic coverage gap detection, not LLM-generated
+
+---
+
 ## February 25, 2026 - Phase R: Pipeline Intelligence (Schema SAM_v19)
 
 ### Overview
