@@ -36,6 +36,9 @@ struct ComposeWindowView: View {
     @State private var errorMessage: String?
     @State private var isSending = false
     @State private var showCopiedToast = false
+    @State private var complianceFlags: [ComplianceFlag] = []
+    @State private var complianceFlagsExpanded = false
+    @State private var auditEntryID: UUID?
 
     @Environment(\.dismiss) private var dismiss
 
@@ -129,6 +132,11 @@ struct ComposeWindowView: View {
                             .allowsHitTesting(false)
                     }
                 }
+
+            // Compliance banner
+            if !complianceFlags.isEmpty {
+                complianceBanner
+            }
 
             // Context
             if !payload.contextTitle.isEmpty {
@@ -229,6 +237,77 @@ struct ComposeWindowView: View {
         }
         .padding()
         .frame(minWidth: 480, idealWidth: 540, minHeight: 340, idealHeight: 400)
+        .onChange(of: draftBody) {
+            complianceFlags = ComplianceScanner.scanWithSettings(draftBody)
+        }
+        .task {
+            // Log AI-generated draft for audit trail
+            let draft = payload.draftBody.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !draft.isEmpty {
+                let flags = ComplianceScanner.scanWithSettings(draft)
+                complianceFlags = flags
+                if let entry = try? ComplianceAuditRepository.shared.logDraft(
+                    channel: payload.channel.rawValue,
+                    recipientName: payload.personName,
+                    recipientAddress: payload.recipientAddress,
+                    originalDraft: draft,
+                    complianceFlags: flags,
+                    outcomeID: payload.outcomeID
+                ) {
+                    auditEntryID = entry.id
+                }
+            }
+        }
+    }
+
+    // MARK: - Compliance Banner
+
+    private var complianceBanner: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    complianceFlagsExpanded.toggle()
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                    Text("\(complianceFlags.count) compliance flag\(complianceFlags.count == 1 ? "" : "s")")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                    Spacer()
+                    Image(systemName: complianceFlagsExpanded ? "chevron.up" : "chevron.down")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .buttonStyle(.plain)
+
+            if complianceFlagsExpanded {
+                ForEach(complianceFlags) { flag in
+                    HStack(spacing: 6) {
+                        Image(systemName: flag.category.icon)
+                            .font(.caption2)
+                            .foregroundStyle(flag.category.color)
+                            .frame(width: 14)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("\"\(flag.matchedPhrase)\"")
+                                .font(.caption)
+                                .foregroundStyle(.primary)
+                            if let suggestion = flag.suggestion {
+                                Text(suggestion)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .padding(8)
+        .background(Color.orange.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
     // MARK: - Available Channels
@@ -337,6 +416,11 @@ struct ComposeWindowView: View {
     }
 
     private func completeAndDismiss() {
+        // Mark audit entry as sent
+        if let auditID = auditEntryID {
+            let finalText = draftBody.trimmingCharacters(in: .whitespacesAndNewlines)
+            try? ComplianceAuditRepository.shared.markSent(entryID: auditID, finalDraft: finalText)
+        }
         try? outcomeRepo.markCompleted(id: payload.outcomeID)
         logger.info("Compose completed — outcome \(payload.outcomeID) marked done")
         dismiss()

@@ -47,6 +47,7 @@ enum SAMSchema {
         StrategicDigest.self,      // Phase V: Business intelligence digests
         ContentPost.self,          // Phase W: Content posting tracker
         BusinessGoal.self,         // Phase X: Goal setting & decomposition
+        ComplianceAuditEntry.self, // Phase Z: Compliance audit trail
     ]
 }
 
@@ -63,7 +64,7 @@ enum SAMModelContainer {
     nonisolated(unsafe) private static var _shared: ModelContainer = {
         let schema     = Schema(SAMSchema.allModels)
         let config     = ModelConfiguration(
-            "SAM_v24", // Phase X: goal setting
+            "SAM_v25", // Phase Z: compliance awareness
             schema: schema,
             isStoredInMemoryOnly: false   // persistent on disk
         )
@@ -82,7 +83,7 @@ enum SAMModelContainer {
     nonisolated static func makeFreshContainer() -> ModelContainer {
         let schema = Schema(SAMSchema.allModels)
         let config = ModelConfiguration(
-            "SAM_v24", // Phase X: goal setting
+            "SAM_v25", // Phase Z: compliance awareness
             schema: schema,
             isStoredInMemoryOnly: false
         )
@@ -102,7 +103,7 @@ enum SAMModelContainer {
     nonisolated static let shared: ModelContainer = {
         let schema     = Schema(SAMSchema.allModels)
         let config     = ModelConfiguration(
-            "SAM_v24", // Phase X: goal setting
+            "SAM_v25", // Phase Z: compliance awareness
             schema: schema,
             isStoredInMemoryOnly: false   // persistent on disk
         )

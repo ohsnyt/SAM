@@ -25,12 +25,24 @@ struct OutcomeCardView: View {
 
     @State private var copiedStep = false
 
+    /// Compliance flags for any AI-generated draft on this outcome.
+    private var draftComplianceFlags: [ComplianceFlag] {
+        guard let draft = outcome.draftMessageText, !draft.isEmpty else { return [] }
+        return ComplianceScanner.scanWithSettings(draft)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             // Kind badge + priority dot
             HStack(spacing: 8) {
                 priorityDot
                 kindBadge
+                if !draftComplianceFlags.isEmpty {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                        .help("Draft contains \(draftComplianceFlags.count) compliance-sensitive phrase\(draftComplianceFlags.count == 1 ? "" : "s")")
+                }
                 Spacer()
                 if let deadline = outcome.deadlineDate {
                     deadlineLabel(deadline)

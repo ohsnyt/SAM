@@ -140,6 +140,13 @@ struct AISettingsView: View {
                 } label: {
                     Label("Briefings", systemImage: "text.book.closed")
                 }
+
+                DisclosureGroup {
+                    ComplianceSettingsContent()
+                        .padding(.top, 8)
+                } label: {
+                    Label("Compliance", systemImage: "checkmark.shield")
+                }
             }
         }
         .formStyle(.grouped)

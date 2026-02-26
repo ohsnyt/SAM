@@ -6,54 +6,216 @@
 //  Phase D: First Feature - People
 //
 //  List view for all people in SAM.
-//  Displays contacts from PeopleRepository with search and filtering.
+//  Displays contacts from PeopleRepository with search, sorting, and role filtering.
 //
 
 import SwiftUI
 import SwiftData
 
+// MARK: - Sort & Filter Types
+
+enum PeopleSortOrder: String, CaseIterable, Identifiable {
+    case firstName = "First Name"
+    case lastName = "Last Name"
+    case email = "Email"
+    case health = "Relationship Health"
+
+    var id: String { rawValue }
+}
+
 struct PeopleListView: View {
-    
+
     // MARK: - Bindings
-    
+
     @Binding var selectedPersonID: UUID?
-    
+
     // MARK: - Dependencies
-    
-    @State private var repository = PeopleRepository.shared
+
+    @Query(sort: \SamPerson.displayNameCache) private var allPeople: [SamPerson]
     @State private var importCoordinator = ContactsImportCoordinator.shared
-    
+
     // MARK: - State
-    
-    @State private var people: [SamPerson] = []
+
     @State private var searchText = ""
-    @State private var isLoading = false
-    @State private var errorMessage: String?
-    
-    // MARK: - Body
-    
-    var body: some View {
-        Group {
-            if isLoading && people.isEmpty {
-                loadingView
-            } else if let error = errorMessage {
-                errorView(error)
-            } else if people.isEmpty {
-                emptyView
-            } else {
-                peopleList
+    @State private var sortOrder: PeopleSortOrder = .firstName
+    @State private var activeRoleFilters: Set<String> = []
+
+    // MARK: - Computed
+
+    /// All roles present across all people (unfiltered), for the filter menu.
+    private var availableRoles: [String] {
+        let allRoles = allPeople.flatMap(\.roleBadges)
+        let predefined = ["Client", "Applicant", "Lead", "Vendor", "Agent", "External Agent", "Referral Partner"]
+        var seen = Set<String>()
+        var result: [String] = []
+        for role in predefined where allRoles.contains(role) {
+            if seen.insert(role).inserted { result.append(role) }
+        }
+        for role in allRoles.sorted() {
+            if seen.insert(role).inserted { result.append(role) }
+        }
+        return result
+    }
+
+    /// People after search, role filter, and sort.
+    private var displayedPeople: [SamPerson] {
+        var list = Array(allPeople)
+
+        // Search
+        if !searchText.isEmpty {
+            let query = searchText.lowercased()
+            list = list.filter { person in
+                let name = person.displayNameCache ?? person.displayName
+                if name.lowercased().contains(query) { return true }
+                if let email = person.emailCache ?? person.email,
+                   email.lowercased().contains(query) { return true }
+                return false
             }
         }
-        .navigationTitle("People")
+
+        // Role filter
+        if !activeRoleFilters.isEmpty {
+            list = list.filter { person in
+                !activeRoleFilters.isDisjoint(with: person.roleBadges)
+            }
+        }
+
+        // Sort
+        list.sort { a, b in
+            let nameA = a.displayNameCache ?? a.displayName
+            let nameB = b.displayNameCache ?? b.displayName
+            switch sortOrder {
+            case .firstName:
+                return nameA.localizedCaseInsensitiveCompare(nameB) == .orderedAscending
+            case .lastName:
+                return lastNameSort(nameA).localizedCaseInsensitiveCompare(lastNameSort(nameB)) == .orderedAscending
+            case .email:
+                let emailA = a.emailCache ?? a.email ?? ""
+                let emailB = b.emailCache ?? b.email ?? ""
+                if emailA.isEmpty && emailB.isEmpty {
+                    return nameA.localizedCaseInsensitiveCompare(nameB) == .orderedAscending
+                }
+                if emailA.isEmpty { return false }
+                if emailB.isEmpty { return true }
+                return emailA.localizedCaseInsensitiveCompare(emailB) == .orderedAscending
+            case .health:
+                let scoreA = healthSortScore(a)
+                let scoreB = healthSortScore(b)
+                if scoreA != scoreB { return scoreA > scoreB }
+                // Tie-break by name
+                return nameA.localizedCaseInsensitiveCompare(nameB) == .orderedAscending
+            }
+        }
+
+        return list
+    }
+
+    /// Extract "LastName, FirstName..." style key for last-name sorting.
+    private func lastNameSort(_ fullName: String) -> String {
+        let parts = fullName.split(separator: " ")
+        guard parts.count > 1 else { return fullName }
+        let last = parts.last!
+        let rest = parts.dropLast().joined(separator: " ")
+        return "\(last) \(rest)"
+    }
+
+    /// Numeric health urgency score: higher = needs attention sooner.
+    /// No interactions / Me = -1 (bottom). Healthy = 1+. At risk = 3+.
+    private func healthSortScore(_ person: SamPerson) -> Double {
+        guard !person.isMe, !person.linkedEvidence.isEmpty else { return -1 }
+        let health = MeetingPrepCoordinator.shared.computeHealth(for: person)
+        // Base score from decay risk: healthy people get 1-2, at-risk get 3-5
+        let riskScore: Double
+        switch health.decayRisk {
+        case .none:     riskScore = 1
+        case .low:      riskScore = 2
+        case .moderate: riskScore = 3
+        case .high:     riskScore = 4
+        case .critical: riskScore = 5
+        }
+        // Add fractional overdue ratio for finer ordering within same risk tier
+        let overdue = min(health.overdueRatio ?? 0, 10)
+        return riskScore + (overdue / 20)
+    }
+
+    // MARK: - Body
+
+    var body: some View {
+        peopleList
+            .overlay {
+                if allPeople.isEmpty {
+                    emptyView
+                } else if displayedPeople.isEmpty {
+                    noMatchView
+                }
+            }
+            .navigationTitle("People")
         .searchable(text: $searchText, prompt: "Search people")
         .toolbar {
             ToolbarItemGroup {
+                // Sort picker
+                Menu {
+                    ForEach(PeopleSortOrder.allCases) { order in
+                        Button {
+                            sortOrder = order
+                        } label: {
+                            HStack {
+                                Text(order.rawValue)
+                                if sortOrder == order {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    Label("Sort", systemImage: "arrow.up.arrow.down")
+                }
+                .help("Sort people")
+
+                // Role filter
+                Menu {
+                    if !activeRoleFilters.isEmpty {
+                        Button("Clear Filters") {
+                            activeRoleFilters.removeAll()
+                        }
+                        Divider()
+                    }
+                    ForEach(availableRoles, id: \.self) { role in
+                        let isSelected = activeRoleFilters.contains(role)
+                        Button {
+                            if isSelected {
+                                activeRoleFilters.remove(role)
+                            } else {
+                                activeRoleFilters.insert(role)
+                            }
+                        } label: {
+                            HStack {
+                                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                                    .foregroundStyle(isSelected
+                                        ? RoleBadgeStyle.forBadge(role).color
+                                        : .secondary)
+                                Image(systemName: RoleBadgeStyle.forBadge(role).icon)
+                                    .foregroundStyle(RoleBadgeStyle.forBadge(role).color)
+                                Text(role)
+                            }
+                        }
+                    }
+                    if availableRoles.isEmpty {
+                        Text("No roles assigned yet")
+                            .foregroundStyle(.secondary)
+                    }
+                } label: {
+                    Label("Filter", systemImage: activeRoleFilters.isEmpty
+                          ? "line.3.horizontal.decrease"
+                          : "line.3.horizontal.decrease.circle.fill")
+                }
+                .help(activeRoleFilters.isEmpty ? "Filter by role" : "Filtering by \(activeRoleFilters.count) role\(activeRoleFilters.count == 1 ? "" : "s")")
+
                 importStatusBadge
-                
+
                 Button {
                     Task {
                         await importCoordinator.importNow()
-                        await loadPeople()
                     }
                 } label: {
                     Label("Import Now", systemImage: "arrow.clockwise")
@@ -62,26 +224,35 @@ struct PeopleListView: View {
                 .help("Import contacts from Apple Contacts")
             }
         }
-        .task {
-            await loadPeople()
-        }
-        .onChange(of: searchText) { _, _ in
-            Task {
-                await searchPeople()
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .samPersonDidChange)) { _ in
-            Task {
-                await searchText.isEmpty ? loadPeople() : searchPeople()
-            }
-        }
     }
-    
+
     // MARK: - People List
-    
+
     private var peopleList: some View {
         List(selection: $selectedPersonID) {
-            ForEach(people, id: \.id) { person in
+            // Active filter summary
+            if !activeRoleFilters.isEmpty {
+                HStack(spacing: 6) {
+                    ForEach(Array(activeRoleFilters).sorted(), id: \.self) { role in
+                        let style = RoleBadgeStyle.forBadge(role)
+                        HStack(spacing: 3) {
+                            Image(systemName: style.icon)
+                                .font(.system(size: 10))
+                            Text(role)
+                                .font(.caption2)
+                        }
+                        .foregroundStyle(style.color)
+                    }
+                    Spacer()
+                    Text("\(displayedPeople.count) of \(allPeople.count)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 2)
+                .listRowSeparator(.hidden)
+            }
+
+            ForEach(displayedPeople, id: \.id) { person in
                 Button(action: {
                     selectedPersonID = person.id
                 }) {
@@ -92,9 +263,32 @@ struct PeopleListView: View {
         }
         .listStyle(.sidebar)
     }
-    
+
+    // MARK: - No Match State
+
+    private var noMatchView: some View {
+        ContentUnavailableView {
+            Label("No Matches", systemImage: "person.2.slash")
+        } description: {
+            if !searchText.isEmpty && !activeRoleFilters.isEmpty {
+                Text("No people match your search and filters")
+            } else if !searchText.isEmpty {
+                Text("No people match \"\(searchText)\"")
+            } else {
+                Text("No people match the current filters")
+            }
+        } actions: {
+            if !activeRoleFilters.isEmpty {
+                Button("Clear Filters") {
+                    activeRoleFilters.removeAll()
+                }
+                .buttonStyle(.borderedProminent)
+            }
+        }
+    }
+
     // MARK: - Empty State
-    
+
     private var emptyView: some View {
         ContentUnavailableView {
             Label("No People", systemImage: "person.2.slash")
@@ -104,7 +298,6 @@ struct PeopleListView: View {
             Button {
                 Task {
                     await importCoordinator.importNow()
-                    await loadPeople()
                 }
             } label: {
                 Text("Import Now")
@@ -112,36 +305,9 @@ struct PeopleListView: View {
             .buttonStyle(.borderedProminent)
         }
     }
-    
-    // MARK: - Loading State
-    
-    private var loadingView: some View {
-        VStack(spacing: 16) {
-            ProgressView()
-            Text("Loading people...")
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-    
-    // MARK: - Error State
-    
-    private func errorView(_ message: String) -> some View {
-        ContentUnavailableView {
-            Label("Error", systemImage: "exclamationmark.triangle")
-        } description: {
-            Text(message)
-        } actions: {
-            Button("Try Again") {
-                Task {
-                    await loadPeople()
-                }
-            }
-        }
-    }
-    
+
     // MARK: - Import Status Badge
-    
+
     @ViewBuilder
     private var importStatusBadge: some View {
         if importCoordinator.importStatus == .importing {
@@ -158,43 +324,22 @@ struct PeopleListView: View {
                 .foregroundStyle(importCoordinator.importStatus == .failed ? .red : .green)
         }
     }
-    
-    // MARK: - Data Operations
-    
-    private func loadPeople() async {
-        isLoading = true
-        errorMessage = nil
-        
-        do {
-            people = try repository.fetchAll()
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-        
-        isLoading = false
-    }
-    
-    private func searchPeople() async {
-        guard !searchText.isEmpty else {
-            await loadPeople()
-            return
-        }
-        
-        do {
-            people = try repository.search(query: searchText)
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
 }
 
 // MARK: - Person Row View
 
 private struct PersonRowView: View {
     let person: SamPerson
-    
+
+    private var healthColor: Color? {
+        guard !person.isMe, !person.linkedEvidence.isEmpty else { return nil }
+        let color = MeetingPrepCoordinator.shared.computeHealth(for: person).statusColor
+        // Hide bar when health is indeterminate (grey = not enough data)
+        return color == .gray ? nil : color
+    }
+
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 8) {
             // Photo thumbnail
             if let photoData = person.photoThumbnailCache,
                let nsImage = NSImage(data: photoData) {
@@ -209,8 +354,15 @@ private struct PersonRowView: View {
                     .frame(width: 32, height: 32)
                     .foregroundStyle(.secondary)
             }
-            
-            // Name and email
+
+            // Health indicator bar between thumbnail and name
+            if let color = healthColor {
+                RoundedRectangle(cornerRadius: 1.5)
+                    .fill(color)
+                    .frame(width: 3, height: 28)
+            }
+
+            // Name, role badges, and email
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 5) {
                     Text(person.displayNameCache ?? person.displayName)
@@ -226,6 +378,11 @@ private struct PersonRowView: View {
                             .background(.secondary)
                             .clipShape(Capsule())
                     }
+
+                    // Role badge icons after name
+                    ForEach(person.roleBadges, id: \.self) { badge in
+                        RoleBadgeIconView(badge: badge)
+                    }
                 }
 
                 if let email = person.emailCache ?? person.email {
@@ -237,20 +394,8 @@ private struct PersonRowView: View {
 
             Spacer()
 
-            // Badges and alerts
+            // Trailing badges and alerts
             HStack(spacing: 8) {
-                // Health status dot (skip for Me and people with no interactions)
-                if !person.isMe && !person.linkedEvidence.isEmpty {
-                    Circle()
-                        .fill(MeetingPrepCoordinator.shared.computeHealth(for: person).statusColor)
-                        .frame(width: 6, height: 6)
-                }
-
-                // Role badge icons (compact, color-coded)
-                ForEach(person.roleBadges, id: \.self) { badge in
-                    RoleBadgeIconView(badge: badge)
-                }
-                
                 // Not in Contacts badge (clickable — adds to Apple Contacts)
                 NotInContactsCapsule(person: person)
 
@@ -260,7 +405,7 @@ private struct PersonRowView: View {
                         .font(.caption)
                         .foregroundStyle(.orange)
                 }
-                
+
                 // Review alerts
                 if person.reviewAlertsCount > 0 {
                     Label("\(person.reviewAlertsCount)", systemImage: "bell.fill")
@@ -278,10 +423,9 @@ private struct PersonRowView: View {
 #Preview("With People") {
     let container = SAMModelContainer.shared
     PeopleRepository.shared.configure(container: container)
-    
-    // Add sample data
+
     let context = ModelContext(container)
-    
+
     let person1 = SamPerson(
         id: UUID(),
         displayName: "John Doe",
@@ -292,7 +436,7 @@ private struct PersonRowView: View {
     )
     person1.displayNameCache = "John Doe"
     person1.emailCache = "john@example.com"
-    
+
     let person2 = SamPerson(
         id: UUID(),
         displayName: "Jane Smith",
@@ -302,11 +446,11 @@ private struct PersonRowView: View {
     )
     person2.displayNameCache = "Jane Smith"
     person2.emailCache = "jane@example.com"
-    
+
     context.insert(person1)
     context.insert(person2)
     try? context.save()
-    
+
     return NavigationStack {
         PeopleListView(selectedPersonID: .constant(nil))
             .modelContainer(container)
@@ -317,7 +461,7 @@ private struct PersonRowView: View {
 #Preview("Empty") {
     let container = SAMModelContainer.shared
     PeopleRepository.shared.configure(container: container)
-    
+
     return NavigationStack {
         PeopleListView(selectedPersonID: .constant(nil))
             .modelContainer(container)

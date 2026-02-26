@@ -3,11 +3,11 @@
 **Language**: Swift 6  
 **Architecture**: Clean layered architecture with strict separation of concerns  
 **Framework**: SwiftUI + SwiftData  
-**Last Updated**: February 26, 2026 (Phases A–Y complete, schema SAM_v24)
+**Last Updated**: February 26, 2026 (Phases A–Z complete, schema SAM_v25)
 
 **Related Docs**: 
 - See `agent.md` for product philosophy, AI architecture, and UX principles
-- See `changelog.md` for historical completion notes (Phases A–Y)
+- See `changelog.md` for historical completion notes (Phases A–Z)
 
 ---
 
@@ -129,7 +129,7 @@ SAM is a **native macOS business coaching and relationship management applicatio
 SAM/SAM/
 ├── App/
 │   ├── SAMApp.swift                    ✅ App entry point, lifecycle, permissions
-│   └── SAMModelContainer.swift         ✅ SwiftData container (v24)
+│   └── SAMModelContainer.swift         ✅ SwiftData container (v25)
 │
 ├── Services/
 │   ├── ContactsService.swift           ✅ Actor — CNContact operations
@@ -178,7 +178,8 @@ SAM/SAM/
 │   ├── PipelineRepository.swift        ✅ CRUD for StageTransition + RecruitingStage
 │   ├── ProductionRepository.swift     ✅ CRUD for ProductionRecord + metric queries
 │   ├── ContentPostRepository.swift    ✅ CRUD for ContentPost + cadence + streak queries
-│   └── GoalRepository.swift           ✅ CRUD for BusinessGoal + archive
+│   ├── GoalRepository.swift           ✅ CRUD for BusinessGoal + archive
+│   └── ComplianceAuditRepository.swift ✅ CRUD for ComplianceAuditEntry + prune
 │
 ├── Models/
 │   ├── SAMModels.swift                 ✅ Core models (SamPerson, SamContext, etc.)
@@ -190,6 +191,7 @@ SAM/SAM/
 │   ├── SAMModels-Strategic.swift      ✅ StrategicDigest, DigestType
 │   ├── SAMModels-ContentPost.swift   ✅ ContentPost, ContentPlatform
 │   ├── SAMModels-Goal.swift          ✅ BusinessGoal, GoalType, GoalPace
+│   ├── SAMModels-Compliance.swift    ✅ ComplianceAuditEntry
 │   └── DTOs/
 │       ├── ContactDTO.swift            ✅
 │       ├── EventDTO.swift              ✅
@@ -221,7 +223,8 @@ SAM/SAM/
 │   ├── Shared/                         ✅ Reusable components
 │   └── Settings/                       ✅ Tabbed settings
 │
-├── Utilities/                          ✅ Logging, filters
+├── Utilities/
+│   └── ComplianceScanner.swift        ✅ Deterministic keyword compliance scanner
 │
 └── 1_Documentation/
     ├── context.md                      This file
@@ -233,7 +236,7 @@ SAM/SAM/
 
 ## 4. Data Models
 
-### 4.1 Existing Models (Phases A–Y, schema v24)
+### 4.1 Existing Models (Phases A–Z, schema v25)
 
 (All existing models unchanged — see `changelog.md` for full schema. Summary below.)
 
@@ -253,6 +256,7 @@ SAM/SAM/
 - **SamDailyBriefing** — `strategicHighlights: [BriefingAction]` field added (Phase V)
 - **ContentPost** — Social media posting tracker (platform, topic, postedAt, sourceOutcomeID)
 - **BusinessGoal** — User-defined targets (goalType, title, targetValue, startDate, endDate, isActive, notes); progress computed live from existing repos
+- **ComplianceAuditEntry** — Draft audit trail (channel, recipient, original/final draft, compliance flags JSON, sent timestamp)
 
 ---
 
@@ -286,25 +290,7 @@ SAM/SAM/
 - ✅ **Phase W**: Content Assist & Social Media Coaching (schema SAM_v23)
 - ✅ **Phase X**: Goal Setting & Decomposition (schema SAM_v24)
 - ✅ **Phase Y**: Scenario Projections (no schema change)
-
-### Active / Next Phases
-
----
-
-### ⬜ Phase Z: Compliance Awareness
-
-**Goal**: Help the user avoid compliance issues in communications.
-
-**Impact**: MEDIUM — important for regulated financial services but not a primary productivity driver.
-
-**Key deliverables**:
-- Flag keywords in draft messages that may need compliance review (return promises, guarantees, comparative claims)
-- Visual warning badge on flagged drafts
-- Does NOT block sending — advisory only
-- Audit trail of AI-generated drafts (what was generated, was it modified before sending)
-- Configurable keyword/phrase list in Settings
-
----
+- ✅ **Phase Z**: Compliance Awareness (schema SAM_v25)
 
 ### Future Phases (Unscheduled)
 
@@ -320,7 +306,7 @@ SAM/SAM/
 
 ## 6. Critical Patterns & Gotchas
 
-(All existing patterns from Phases A–Y remain in effect. See `changelog.md` for full documentation of each. Summary of key rules below.)
+(All existing patterns from Phases A–Z remain in effect. See `changelog.md` for full documentation of each. Summary of key rules below.)
 
 ### 6.1 Permissions — Never trigger surprise dialogs. Always check auth before access.
 
@@ -409,7 +395,8 @@ Each layer tested independently:
 | v21 | U enhancement | + SamPerson.preferredCadenceDays (cadence override) |
 | v22 | V | + StrategicDigest, + SamDailyBriefing.strategicHighlights |
 | v23 | W | + ContentPost model |
-| v24 | X (current) | + BusinessGoal model |
+| v24 | X | + BusinessGoal model |
+| v25 | Z (current) | + ComplianceAuditEntry model |
 
 Each migration uses SwiftData lightweight migration. New models are additive (no breaking changes to existing models). Backfill logic runs once on first launch after migration.
 
@@ -467,8 +454,8 @@ Each migration uses SwiftData lightweight migration. New models are additive (no
 
 ---
 
-**Document Version**: 14.0 (Phases X–Y complete, Goal Setting & Scenario Projections, Phase Z roadmap)
+**Document Version**: 15.0 (Phases A–Z complete, schema SAM_v25)
 **Previous Versions**: See `changelog.md` for version history
-**Last Major Update**: February 26, 2026 — Phase Y: Scenario Projections — deterministic 90-day trailing velocity projections across 5 categories, embedded in Strategic Insights tab and weekly briefing (schema SAM_v24)
+**Last Major Update**: February 26, 2026 — Phase Z: Compliance Awareness — deterministic keyword scanning, audit trail, compliance settings, UI integration across all draft surfaces (schema SAM_v25)
 **Clean Rebuild Started**: February 9, 2026
     

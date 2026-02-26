@@ -4,6 +4,47 @@
 
 ---
 
+## February 26, 2026 - Phase Z: Compliance Awareness (Schema SAM_v25)
+
+### Overview
+Phase Z adds deterministic keyword-based compliance scanning across all draft surfaces (ComposeWindowView, OutcomeEngine, ContentDraftSheet) plus an audit trail of AI-generated drafts for regulatory record-keeping. SAM users are independent financial strategists in a regulated environment — this phase helps them avoid compliance-sensitive language in communications. All scanning is advisory only; it never blocks sending.
+
+### New Models
+
+**`ComplianceAuditEntry`** (@Model) — Audit trail for AI-generated drafts: `id: UUID`, `channelRawValue: String`, `recipientName: String?`, `recipientAddress: String?`, `originalDraft: String`, `finalDraft: String?`, `wasModified: Bool`, `complianceFlagsJSON: String?`, `outcomeID: UUID?`, `createdAt: Date`, `sentAt: Date?`.
+
+### New Components
+
+**`ComplianceScanner.swift`** (Utility) — Pure-computation stateless keyword matcher. `ComplianceCategory` enum (6 categories: guarantees, returns, promises, comparativeClaims, suitability, specificAdvice) each with displayName, icon, color. `ComplianceFlag` struct (id, category, matchedPhrase, suggestion). Static `scan(_:enabledCategories:customKeywords:)` and `scanWithSettings(_:)` convenience. Supports literal phrase matching and regex patterns (e.g., `earn \d+%`).
+
+**`ComplianceAuditRepository.swift`** (@MainActor @Observable singleton) — `logDraft(channel:recipientName:recipientAddress:originalDraft:complianceFlags:outcomeID:)`, `markSent(entryID:finalDraft:)`, `fetchRecent(limit:)`, `count()`, `pruneExpired(retentionDays:)`, `clearAll()`.
+
+**`ComplianceSettingsContent.swift`** (SwiftUI) — Master toggle, 6 per-category toggles with @AppStorage, custom keywords TextEditor, audit retention picker (30/60/90/180 days), entry count, clear button with confirmation alert. Embedded in SettingsView AI tab as Compliance DisclosureGroup.
+
+### Components Modified
+
+**`ComposeWindowView.swift`** — Added expandable compliance banner between TextEditor and context line. Live scanning via `.onChange(of: draftBody)`. Audit logging on `.task` for AI-generated drafts. `markSent()` call in `completeAndDismiss()`.
+
+**`OutcomeEngine.swift`** — After `generateDraftMessage()` sets `outcome.draftMessageText`, scans draft and logs to ComplianceAuditRepository.
+
+**`OutcomeCardView.swift`** — Added `draftComplianceFlags` computed property. Orange `exclamationmark.triangle.fill` badge when flags found.
+
+**`ContentDraftSheet.swift`** — Added local scanner via `.onChange(of: draftText)`. Merges LLM compliance flags with local scanner flags. Added audit logging on generate and `markSent()` on "Log as Posted".
+
+**`SettingsView.swift`** — Added Compliance DisclosureGroup with `checkmark.shield` icon in AISettingsView.
+
+**`SAMModelContainer.swift`** — Schema bumped to SAM_v25, added `ComplianceAuditEntry.self` to `SAMSchema.allModels`.
+
+**`SAMApp.swift`** — Added `ComplianceAuditRepository.shared.configure(container:)` in `configureDataLayer()`. Added `pruneExpired(retentionDays:)` call on launch.
+
+### Also in this session
+
+**PeopleListView improvements** — Switched from repository-based fetching to `@Query` for reactive updates. Added sort options (first name, last name, email, relationship health). Added multi-select role filtering with leading checkmark icons. Health bar (vertical 3px bar between thumbnail and name, hidden when grey/insufficient data). Role badge icons after name. Filter summary row. Health sort scoring (no-data = -1 bottom, healthy = 1+, at-risk = 3-5+).
+
+**PersonDetailView improvements** — "Add a role" placeholder when no roles assigned. Auto-assign Prospect recruiting stage when Agent role added (removed Start Tracking button). Clickable recruiting pipeline stage dots with regression confirmation alert (removed Advance and Log Contact buttons). Removed duplicate stage info row below dots.
+
+---
+
 ## February 26, 2026 - Phase W: Content Assist & Social Media Coaching (Schema SAM_v23)
 
 ### Overview

@@ -29,10 +29,12 @@ struct ContentDraftSheet: View {
     @State private var selectedPlatform: ContentPlatform = .linkedin
     @State private var draftText: String = ""
     @State private var complianceFlags: [String] = []
+    @State private var localComplianceFlags: [ComplianceFlag] = []
     @State private var isGenerating = false
     @State private var isEditing = false
     @State private var errorMessage: String?
     @State private var hasGenerated = false
+    @State private var auditEntryID: UUID?
 
     // MARK: - Body
 
@@ -174,8 +176,8 @@ struct ContentDraftSheet: View {
                 }
             }
 
-            // Compliance flags
-            if !complianceFlags.isEmpty {
+            // Compliance flags (LLM + local scanner)
+            if !complianceFlags.isEmpty || !localComplianceFlags.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(complianceFlags, id: \.self) { flag in
                         HStack(spacing: 4) {
@@ -185,6 +187,21 @@ struct ContentDraftSheet: View {
                             Text(flag)
                                 .font(.caption)
                                 .foregroundStyle(.orange)
+                        }
+                    }
+                    ForEach(localComplianceFlags) { flag in
+                        HStack(spacing: 4) {
+                            Image(systemName: flag.category.icon)
+                                .font(.caption2)
+                                .foregroundStyle(.orange)
+                            Text("\"\(flag.matchedPhrase)\"")
+                                .font(.caption)
+                                .foregroundStyle(.orange)
+                            if let suggestion = flag.suggestion {
+                                Text("— \(suggestion)")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
                 }
@@ -235,6 +252,9 @@ struct ContentDraftSheet: View {
         }
         .padding(20)
         .frame(width: 480)
+        .onChange(of: draftText) {
+            localComplianceFlags = ComplianceScanner.scanWithSettings(draftText)
+        }
     }
 
     // MARK: - Actions
@@ -255,6 +275,17 @@ struct ContentDraftSheet: View {
                 draftText = draft.draftText
                 complianceFlags = draft.complianceFlags
                 hasGenerated = true
+
+                // Log to compliance audit trail
+                let flags = ComplianceScanner.scanWithSettings(draft.draftText)
+                if let entry = try? ComplianceAuditRepository.shared.logDraft(
+                    channel: "content:\(selectedPlatform.rawValue)",
+                    originalDraft: draft.draftText,
+                    complianceFlags: flags,
+                    outcomeID: sourceOutcomeID
+                ) {
+                    auditEntryID = entry.id
+                }
             } catch {
                 errorMessage = "Could not generate draft. \(error.localizedDescription)"
                 logger.error("Draft generation failed: \(error.localizedDescription)")
@@ -270,6 +301,13 @@ struct ContentDraftSheet: View {
 
     private func logAsPosted() {
         do {
+            // Mark audit entry as sent
+            if let auditID = auditEntryID {
+                try? ComplianceAuditRepository.shared.markSent(
+                    entryID: auditID,
+                    finalDraft: draftText.trimmingCharacters(in: .whitespacesAndNewlines)
+                )
+            }
             try ContentPostRepository.shared.logPost(
                 platform: selectedPlatform,
                 topic: topic,

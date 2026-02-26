@@ -23,7 +23,8 @@ struct PersonDetailView: View {
     let person: SamPerson
     
     // MARK: - Dependencies
-    
+
+    @Environment(\.modelContext) private var modelContext
     @State private var contactsService = ContactsService.shared
     @State private var notesRepository = NotesRepository.shared
     
@@ -262,6 +263,14 @@ struct PersonDetailView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 4))
                 }
 
+                // Placeholder when no roles assigned
+                if person.roleBadges.isEmpty && !person.isMe && !isEditingBadges {
+                    Text("Add a role")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .italic()
+                }
+
                 // Display current badges
                 ForEach(person.roleBadges, id: \.self) { badge in
                     let style = RoleBadgeStyle.forBadge(badge)
@@ -386,6 +395,21 @@ struct PersonDetailView: View {
     }
 
     private func notifyBadgeChange() {
+        // Auto-assign Prospect recruiting stage when Agent role is added
+        if person.roleBadges.contains("Agent"), recruitingStage == nil {
+            try? PipelineRepository.shared.upsertRecruitingStage(
+                personID: person.id,
+                stage: .prospect
+            )
+            try? PipelineRepository.shared.recordTransition(
+                personID: person.id,
+                fromStage: "",
+                toStage: RecruitingStageKind.prospect.rawValue,
+                pipelineType: .recruiting
+            )
+            recruitingStage = try? PipelineRepository.shared.fetchRecruitingStage(forPerson: person.id)
+        }
+        try? modelContext.save()
         NotificationCenter.default.post(name: .samPersonDidChange, object: nil)
     }
 
@@ -421,108 +445,83 @@ struct PersonDetailView: View {
 
     // MARK: - Recruiting Stage Section
 
+    @State private var showRecruitingRegressionAlert = false
+    @State private var pendingRecruitingStage: RecruitingStageKind?
+
     private var recruitingStageSection: some View {
         samSection(title: "Recruiting Pipeline") {
             VStack(alignment: .leading, spacing: 10) {
-                // Stage progress dots
+                // Stage selector — tap any stage to set it
                 HStack(spacing: 0) {
                     ForEach(RecruitingStageKind.allCases, id: \.rawValue) { kind in
                         let isCurrent = recruitingStage?.stage == kind
                         let isReached = (recruitingStage?.stage.order ?? -1) >= kind.order
 
-                        VStack(spacing: 4) {
-                            Circle()
-                                .fill(isReached ? kind.color : Color.gray.opacity(0.3))
-                                .frame(width: isCurrent ? 14 : 10, height: isCurrent ? 14 : 10)
-                                .overlay {
-                                    if isCurrent {
-                                        Circle()
-                                            .strokeBorder(.white, lineWidth: 2)
+                        Button {
+                            selectRecruitingStage(kind)
+                        } label: {
+                            VStack(spacing: 4) {
+                                Circle()
+                                    .fill(isReached ? kind.color : Color.gray.opacity(0.3))
+                                    .frame(width: isCurrent ? 14 : 10, height: isCurrent ? 14 : 10)
+                                    .overlay {
+                                        if isCurrent {
+                                            Circle()
+                                                .strokeBorder(.white, lineWidth: 2)
+                                        }
                                     }
-                                }
 
-                            Text(kind.rawValue)
-                                .font(.system(size: 8))
-                                .foregroundStyle(isReached ? .primary : .secondary)
-                                .lineLimit(1)
+                                Text(kind.rawValue)
+                                    .font(.system(size: 8))
+                                    .foregroundStyle(isReached ? .primary : .secondary)
+                                    .lineLimit(1)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .contentShape(Rectangle())
                         }
-                        .frame(maxWidth: .infinity)
+                        .buttonStyle(.plain)
                     }
                 }
 
-                // Current stage info + actions
-                HStack(spacing: 12) {
-                    if let stage = recruitingStage {
-                        // Current stage badge
-                        HStack(spacing: 4) {
-                            Image(systemName: stage.stage.icon)
-                                .font(.caption)
-                            Text(stage.stage.rawValue)
-                                .font(.caption)
-                                .fontWeight(.semibold)
-                        }
-                        .foregroundStyle(stage.stage.color)
-
-                        Spacer()
-
-                        // Mentoring contact info
-                        if let lastContact = stage.mentoringLastContact {
-                            let days = Int(Date.now.timeIntervalSince(lastContact) / (24 * 60 * 60))
-                            Text("\(days)d since contact")
-                                .font(.caption)
-                                .foregroundStyle(days > 14 ? .orange : .secondary)
-                        }
-
-                        // Log contact button
-                        Button {
-                            try? PipelineRepository.shared.updateMentoringContact(personID: person.id)
-                            recruitingStage = try? PipelineRepository.shared.fetchRecruitingStage(forPerson: person.id)
-                        } label: {
-                            Label("Log Contact", systemImage: "hand.wave")
-                                .font(.caption)
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-
-                        // Advance button
-                        if let nextStage = stage.stage.next {
-                            Button {
-                                try? PipelineRepository.shared.advanceRecruitingStage(
-                                    personID: person.id,
-                                    to: nextStage
-                                )
-                                recruitingStage = try? PipelineRepository.shared.fetchRecruitingStage(forPerson: person.id)
-                            } label: {
-                                Label("Advance", systemImage: "arrow.right.circle")
-                                    .font(.caption)
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                        }
-                    } else {
-                        // No recruiting stage yet — offer to start tracking
-                        Button {
-                            try? PipelineRepository.shared.upsertRecruitingStage(
-                                personID: person.id,
-                                stage: .prospect
-                            )
-                            try? PipelineRepository.shared.recordTransition(
-                                personID: person.id,
-                                fromStage: "",
-                                toStage: RecruitingStageKind.prospect.rawValue,
-                                pipelineType: .recruiting
-                            )
-                            recruitingStage = try? PipelineRepository.shared.fetchRecruitingStage(forPerson: person.id)
-                        } label: {
-                            Label("Start Tracking", systemImage: "play.circle")
-                                .font(.caption)
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
+            }
+            .alert("Move to Earlier Stage?", isPresented: $showRecruitingRegressionAlert) {
+                Button("Cancel", role: .cancel) {
+                    pendingRecruitingStage = nil
+                }
+                if let pending = pendingRecruitingStage {
+                    Button("Move to \(pending.rawValue)") {
+                        applyRecruitingStage(pending)
+                        pendingRecruitingStage = nil
                     }
+                }
+            } message: {
+                if let pending = pendingRecruitingStage, let current = recruitingStage?.stage {
+                    Text("This will move \(person.displayNameCache ?? person.displayName) from \(current.rawValue) back to \(pending.rawValue).")
                 }
             }
         }
+    }
+
+    private func selectRecruitingStage(_ kind: RecruitingStageKind) {
+        let currentOrder = recruitingStage?.stage.order ?? -1
+
+        if kind.order < currentOrder {
+            // Going backwards — confirm
+            pendingRecruitingStage = kind
+            showRecruitingRegressionAlert = true
+        } else if kind.order > currentOrder {
+            // Going forwards — apply directly
+            applyRecruitingStage(kind)
+        }
+        // Same stage — do nothing
+    }
+
+    private func applyRecruitingStage(_ kind: RecruitingStageKind) {
+        try? PipelineRepository.shared.advanceRecruitingStage(
+            personID: person.id,
+            to: kind
+        )
+        recruitingStage = try? PipelineRepository.shared.fetchRecruitingStage(forPerson: person.id)
     }
 
     // MARK: - Production Section (Phase S)

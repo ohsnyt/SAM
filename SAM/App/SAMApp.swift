@@ -159,6 +159,11 @@ struct SAMApp: App {
         StrategicCoordinator.shared.configure(container: SAMModelContainer.shared)
         ContentPostRepository.shared.configure(container: SAMModelContainer.shared)
         GoalRepository.shared.configure(container: SAMModelContainer.shared)
+        ComplianceAuditRepository.shared.configure(container: SAMModelContainer.shared)
+
+        // Prune expired compliance audit entries on launch
+        let retentionDays = UserDefaults.standard.object(forKey: "complianceAuditRetentionDays") as? Int ?? 90
+        try? ComplianceAuditRepository.shared.pruneExpired(retentionDays: retentionDays)
     }
     
     /// Check permissions and decide whether to show onboarding or proceed with imports

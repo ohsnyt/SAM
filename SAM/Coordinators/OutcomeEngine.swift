@@ -1126,6 +1126,16 @@ final class OutcomeEngine {
             if !draft.isEmpty {
                 outcome.draftMessageText = draft
                 logger.debug("Generated draft message for '\(outcome.title)'")
+
+                // Phase Z: Compliance audit logging
+                let flags = ComplianceScanner.scanWithSettings(draft)
+                try? ComplianceAuditRepository.shared.logDraft(
+                    channel: channel.rawValue,
+                    recipientName: personName,
+                    originalDraft: draft,
+                    complianceFlags: flags,
+                    outcomeID: outcome.id
+                )
             }
         } catch {
             logger.warning("Draft generation failed for '\(outcome.title)': \(error.localizedDescription)")
