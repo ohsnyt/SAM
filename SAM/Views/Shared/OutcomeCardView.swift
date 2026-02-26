@@ -100,7 +100,7 @@ struct OutcomeCardView: View {
 
                 if let onAct {
                     Button(action: onAct) {
-                        Label(outcome.actionLane.actionLabel, systemImage: outcome.actionLane.actionIcon)
+                        Label(actionButtonLabel, systemImage: actionButtonIcon)
                             .font(.caption)
                     }
                     .buttonStyle(.borderedProminent)
@@ -228,6 +228,21 @@ struct OutcomeCardView: View {
 
     private var kindColor: Color {
         outcome.outcomeKind.themeColor
+    }
+
+    /// Content outcomes use their own label; everything else defers to action lane.
+    private var actionButtonLabel: String {
+        if outcome.outcomeKind == .contentCreation {
+            return "Draft Post"
+        }
+        return outcome.actionLane.actionLabel
+    }
+
+    private var actionButtonIcon: String {
+        if outcome.outcomeKind == .contentCreation {
+            return "text.badge.star"
+        }
+        return outcome.actionLane.actionIcon
     }
 }
 

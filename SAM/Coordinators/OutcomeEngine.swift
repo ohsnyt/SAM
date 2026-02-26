@@ -453,12 +453,11 @@ final class OutcomeEngine {
             }
         }
 
-        // Fall back to direct ContentAdvisorService call
+        // Fall back to direct ContentAdvisorService call (skip if no digest —
+        // avoid blocking outcome generation with a slow LLM call on first run)
         if topics.isEmpty {
-            let recentData = "Suggest 3 educational content topics for a financial strategist based on current market context."
-            if let analysis = try? await ContentAdvisorService.shared.analyze(data: recentData) {
-                topics = analysis.topicSuggestions
-            }
+            logger.info("No cached content topics from StrategicCoordinator; skipping AI fallback to avoid stalling outcome generation")
+            return []
         }
 
         // Map top 3 topics to outcomes
