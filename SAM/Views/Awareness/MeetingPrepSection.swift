@@ -59,8 +59,15 @@ struct MeetingPrepSection: View {
 private struct BriefingCard: View {
 
     let briefing: MeetingBriefing
-    @State private var isExpanded = false
+    @State private var isExpanded: Bool
     @State private var showingCapture = false
+
+    init(briefing: MeetingBriefing) {
+        self.briefing = briefing
+        // Auto-expand if meeting starts within 15 minutes
+        let timeUntilStart = briefing.startsAt.timeIntervalSinceNow
+        self._isExpanded = State(initialValue: timeUntilStart <= 15 * 60 && timeUntilStart > 0)
+    }
 
     private var attendeeIDs: [UUID] {
         briefing.attendees.compactMap { attendee in
@@ -129,6 +136,11 @@ private struct BriefingCard: View {
                     .padding(.horizontal, 12)
 
                 VStack(alignment: .leading, spacing: 16) {
+                    // Talking Points
+                    if !briefing.talkingPoints.isEmpty {
+                        talkingPointsSection
+                    }
+
                     // Attendees
                     attendeesSection
 
@@ -188,6 +200,28 @@ private struct BriefingCard: View {
 
     // MARK: - Expanded Sections
 
+    private var talkingPointsSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Talking Points")
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .foregroundStyle(.blue)
+
+            ForEach(briefing.talkingPoints, id: \.self) { point in
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "lightbulb.fill")
+                        .font(.caption2)
+                        .foregroundStyle(.yellow)
+                        .frame(width: 14)
+                    Text(point)
+                        .font(.caption)
+                    Spacer()
+                    CopyButton(text: point)
+                }
+            }
+        }
+    }
+
     private var attendeesSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Attendees")
@@ -196,49 +230,134 @@ private struct BriefingCard: View {
                 .foregroundStyle(.secondary)
 
             ForEach(briefing.attendees) { attendee in
-                HStack(spacing: 10) {
-                    AttendeeAvatar(attendee: attendee)
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 10) {
+                        AttendeeAvatar(attendee: attendee)
 
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(spacing: 6) {
-                            Text(attendee.displayName)
-                                .font(.subheadline)
-                                .fontWeight(.medium)
-                            ForEach(attendee.roleBadges, id: \.self) { badge in
-                                Text(badge)
-                                    .font(.caption2)
-                                    .padding(.horizontal, 5)
-                                    .padding(.vertical, 1)
-                                    .background(.blue.opacity(0.15))
-                                    .foregroundStyle(.blue)
-                                    .clipShape(RoundedRectangle(cornerRadius: 3))
-                            }
-                        }
-
-                        HStack(spacing: 6) {
-                            Circle()
-                                .fill(attendee.health.statusColor)
-                                .frame(width: 6, height: 6)
-                            Text("Last contact \(attendee.health.statusLabel)")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-
-                        if !attendee.contexts.isEmpty {
-                            HStack(spacing: 4) {
-                                ForEach(attendee.contexts.prefix(3), id: \.name) { ctx in
-                                    Text(ctx.name)
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 6) {
+                                Text(attendee.displayName)
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                if let stage = attendee.pipelineStage {
+                                    Text(stage)
                                         .font(.caption2)
                                         .padding(.horizontal, 5)
                                         .padding(.vertical, 1)
-                                        .background(Color.secondary.opacity(0.1))
+                                        .background(.blue.opacity(0.15))
+                                        .foregroundStyle(.blue)
+                                        .clipShape(RoundedRectangle(cornerRadius: 3))
+                                }
+                                ForEach(attendee.roleBadges.filter({ $0 != attendee.pipelineStage }), id: \.self) { badge in
+                                    Text(badge)
+                                        .font(.caption2)
+                                        .padding(.horizontal, 5)
+                                        .padding(.vertical, 1)
+                                        .background(.blue.opacity(0.15))
+                                        .foregroundStyle(.blue)
                                         .clipShape(RoundedRectangle(cornerRadius: 3))
                                 }
                             }
+
+                            HStack(spacing: 6) {
+                                Circle()
+                                    .fill(attendee.health.statusColor)
+                                    .frame(width: 6, height: 6)
+                                Text("Last contact \(attendee.health.statusLabel)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            if !attendee.contexts.isEmpty {
+                                HStack(spacing: 4) {
+                                    ForEach(attendee.contexts.prefix(3), id: \.name) { ctx in
+                                        Text(ctx.name)
+                                            .font(.caption2)
+                                            .padding(.horizontal, 5)
+                                            .padding(.vertical, 1)
+                                            .background(Color.secondary.opacity(0.1))
+                                            .clipShape(RoundedRectangle(cornerRadius: 3))
+                                    }
+                                }
+                            }
                         }
+
+                        Spacer()
                     }
 
-                    Spacer()
+                    // Interaction history
+                    if !attendee.lastInteractions.isEmpty {
+                        VStack(alignment: .leading, spacing: 3) {
+                            ForEach(attendee.lastInteractions) { record in
+                                HStack(spacing: 6) {
+                                    Image(systemName: sourceIcon(record.source))
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 12)
+                                    Text(record.title)
+                                        .font(.caption2)
+                                        .lineLimit(1)
+                                    Spacer()
+                                    Text(record.date, style: .relative)
+                                        .font(.caption2)
+                                        .foregroundStyle(.tertiary)
+                                }
+                            }
+                        }
+                        .padding(.leading, 38)
+                    }
+
+                    // Pending actions
+                    if !attendee.pendingActionItems.isEmpty {
+                        VStack(alignment: .leading, spacing: 2) {
+                            ForEach(attendee.pendingActionItems, id: \.self) { action in
+                                HStack(spacing: 6) {
+                                    Image(systemName: "circle")
+                                        .font(.system(size: 6))
+                                        .foregroundStyle(.orange)
+                                    Text(action)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                            }
+                        }
+                        .padding(.leading, 38)
+                    }
+
+                    // Life events
+                    if !attendee.recentLifeEvents.isEmpty {
+                        VStack(alignment: .leading, spacing: 2) {
+                            ForEach(attendee.recentLifeEvents, id: \.self) { event in
+                                HStack(spacing: 6) {
+                                    Image(systemName: "star.fill")
+                                        .font(.system(size: 7))
+                                        .foregroundStyle(.yellow)
+                                    Text(event)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                            }
+                        }
+                        .padding(.leading, 38)
+                    }
+
+                    // Product holdings
+                    if !attendee.productHoldings.isEmpty {
+                        HStack(spacing: 4) {
+                            ForEach(attendee.productHoldings, id: \.self) { product in
+                                Text(product)
+                                    .font(.caption2)
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 1)
+                                    .background(Color.green.opacity(0.1))
+                                    .foregroundStyle(.green)
+                                    .clipShape(RoundedRectangle(cornerRadius: 3))
+                            }
+                        }
+                        .padding(.leading, 38)
+                    }
                 }
             }
         }

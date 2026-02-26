@@ -659,3 +659,4 @@ Each migration uses SwiftData lightweight migration. New models are additive (no
 **Previous Versions**: See `changelog.md` for version history
 **Last Major Update**: February 25, 2026 — Phase S: Production Tracking complete, schema SAM_v20
 **Clean Rebuild Started**: February 9, 2026
+    

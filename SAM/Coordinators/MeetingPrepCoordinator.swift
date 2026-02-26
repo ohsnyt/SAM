@@ -82,6 +82,11 @@ struct AttendeeProfile: Identifiable, Sendable {
     let roleBadges: [String]
     let contexts: [(name: String, kind: String)]
     let health: RelationshipHealth
+    let lastInteractions: [InteractionRecord]
+    let pendingActionItems: [String]
+    let recentLifeEvents: [String]
+    let pipelineStage: String?
+    let productHoldings: [String]
 }
 
 /// Compact interaction record for display in briefings.
@@ -107,6 +112,7 @@ struct MeetingBriefing: Identifiable, Sendable {
     let topics: [String]
     let signals: [EvidenceSignal]
     let sharedContexts: [SamContext]
+    let talkingPoints: [String]
 }
 
 /// A follow-up prompt for a past meeting with no linked note.
@@ -149,7 +155,7 @@ final class MeetingPrepCoordinator {
     /// Main refresh — called from AwarenessView .task and on calendar sync.
     func refresh() async {
         do {
-            briefings = try buildBriefings()
+            briefings = try await buildBriefings()
             followUpPrompts = try buildFollowUpPrompts()
             logger.info("Refresh complete: \(self.briefings.count) briefings, \(self.followUpPrompts.count) follow-ups")
         } catch {
@@ -251,7 +257,7 @@ final class MeetingPrepCoordinator {
 
     // MARK: - Private: Briefings
 
-    private func buildBriefings() throws -> [MeetingBriefing] {
+    private func buildBriefings() async throws -> [MeetingBriefing] {
         let now = Date()
         let fortyEightHoursFromNow = Calendar.current.date(byAdding: .hour, value: 48, to: now)!
 
@@ -270,7 +276,9 @@ final class MeetingPrepCoordinator {
         // Pre-fetch notes with pending actions
         let notesWithActions = try notesRepository.fetchNotesWithPendingActions()
 
-        return upcomingEvents.map { event in
+        var results: [MeetingBriefing] = []
+
+        for event in upcomingEvents {
             let otherPeople = event.linkedPeople.filter { !$0.isMe }
             let attendees = otherPeople.map { person in
                 buildAttendeeProfile(person: person, allEvidence: allEvidence)
@@ -293,7 +301,16 @@ final class MeetingPrepCoordinator {
 
             let sharedContexts = findSharedContexts(among: event.linkedPeople)
 
-            return MeetingBriefing(
+            // Generate AI talking points
+            let talkingPoints = await generateTalkingPoints(
+                eventTitle: event.title,
+                attendees: attendees,
+                recentHistory: recentHistory,
+                openActions: openActions,
+                topics: topics
+            )
+
+            results.append(MeetingBriefing(
                 id: event.id,
                 eventID: event.id,
                 title: event.title,
@@ -305,10 +322,12 @@ final class MeetingPrepCoordinator {
                 openActionItems: openActions,
                 topics: topics,
                 signals: signals,
-                sharedContexts: sharedContexts
-            )
+                sharedContexts: sharedContexts,
+                talkingPoints: talkingPoints
+            ))
         }
-        .sorted { $0.startsAt < $1.startsAt }
+
+        return results.sorted { $0.startsAt < $1.startsAt }
     }
 
     // MARK: - Private: Follow-Up Prompts
@@ -385,13 +404,56 @@ final class MeetingPrepCoordinator {
             return (name: context.name, kind: context.kind.rawValue)
         }
 
+        // Last 3 interactions
+        let lastInteractions = fetchRecentHistory(for: [person], allEvidence: allEvidence, limit: 3)
+
+        // Pending action items from notes
+        let pendingActions: [String]
+        if let notes = try? notesRepository.fetchNotes(forPerson: person) {
+            pendingActions = notes.flatMap { $0.extractedActionItems }
+                .filter { $0.status == .pending }
+                .prefix(5)
+                .map(\.description)
+        } else {
+            pendingActions = []
+        }
+
+        // Recent life events from notes (last 30 days)
+        let thirtyDaysAgo = Calendar.current.date(byAdding: .day, value: -30, to: Date())!
+        let lifeEvents: [String]
+        if let notes = try? notesRepository.fetchNotes(forPerson: person) {
+            lifeEvents = notes
+                .filter { $0.updatedAt >= thirtyDaysAgo }
+                .flatMap(\.lifeEvents)
+                .map { "\($0.personName): \($0.eventDescription)" }
+        } else {
+            lifeEvents = []
+        }
+
+        // Pipeline stage from role badges
+        let pipelineRoles: Set<String> = ["Client", "Applicant", "Lead", "Agent"]
+        let pipelineStage = person.roleBadges.first(where: { pipelineRoles.contains($0) })
+
+        // Product holdings
+        let productHoldings: [String]
+        if let records = try? ProductionRepository.shared.fetchRecords(forPerson: person.id) {
+            productHoldings = records.map { $0.productType.displayName }
+        } else {
+            productHoldings = []
+        }
+
         return AttendeeProfile(
             personID: person.id,
             displayName: person.displayNameCache ?? person.displayName,
             photoThumbnail: person.photoThumbnailCache,
             roleBadges: person.roleBadges,
             contexts: contexts,
-            health: computeHealth(for: person)
+            health: computeHealth(for: person),
+            lastInteractions: lastInteractions,
+            pendingActionItems: pendingActions,
+            recentLifeEvents: lifeEvents,
+            pipelineStage: pipelineStage,
+            productHoldings: productHoldings
         )
     }
 
@@ -476,5 +538,71 @@ final class MeetingPrepCoordinator {
         return contextCounts.values
             .filter { $0.count >= 2 }
             .map(\.context)
+    }
+
+    // MARK: - AI Talking Points
+
+    /// Generate AI-powered talking points for an upcoming meeting.
+    /// Fails gracefully — returns empty array if AI is unavailable.
+    private func generateTalkingPoints(
+        eventTitle: String,
+        attendees: [AttendeeProfile],
+        recentHistory: [InteractionRecord],
+        openActions: [NoteActionItem],
+        topics: [String]
+    ) async -> [String] {
+        let attendeeSummaries = attendees.map { a in
+            var parts = [a.displayName]
+            if let stage = a.pipelineStage { parts.append("(\(stage))") }
+            if !a.productHoldings.isEmpty { parts.append("Products: \(a.productHoldings.joined(separator: ", "))") }
+            if !a.pendingActionItems.isEmpty { parts.append("Pending: \(a.pendingActionItems.joined(separator: "; "))") }
+            if !a.recentLifeEvents.isEmpty { parts.append("Life events: \(a.recentLifeEvents.joined(separator: "; "))") }
+            return parts.joined(separator: " — ")
+        }
+
+        let historySummary = recentHistory.prefix(3).map { "\($0.title) (\($0.date.formatted(date: .abbreviated, time: .omitted)))" }
+
+        let actionSummary = openActions.prefix(3).map(\.description)
+
+        let prompt = """
+            You are a relationship advisor for a financial strategist. Generate 3-5 concise talking points for an upcoming meeting.
+
+            Meeting: \(eventTitle)
+            Attendees: \(attendeeSummaries.joined(separator: "\n"))
+            Recent interactions: \(historySummary.joined(separator: "; "))
+            Open action items: \(actionSummary.joined(separator: "; "))
+            Recent topics: \(topics.joined(separator: ", "))
+
+            Return ONLY a JSON array of strings, each being one talking point. Example:
+            ["Ask about their retirement timeline", "Follow up on the IUL proposal from last week"]
+            """
+
+        do {
+            let response = try await AIService.shared.generate(prompt: prompt)
+            return parseTalkingPoints(response)
+        } catch {
+            logger.debug("Talking points generation skipped: \(error.localizedDescription)")
+            return []
+        }
+    }
+
+    /// Parse JSON array of strings from AI response, with fallback.
+    private func parseTalkingPoints(_ response: String) -> [String] {
+        // Try to extract JSON array from response
+        let trimmed = response.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let data = trimmed.data(using: .utf8),
+              let parsed = try? JSONDecoder().decode([String].self, from: data) else {
+            // Fallback: try to find JSON array within the response
+            if let start = trimmed.firstIndex(of: "["),
+               let end = trimmed.lastIndex(of: "]") {
+                let jsonSlice = String(trimmed[start...end])
+                if let sliceData = jsonSlice.data(using: .utf8),
+                   let parsed = try? JSONDecoder().decode([String].self, from: sliceData) {
+                    return Array(parsed.prefix(5))
+                }
+            }
+            return []
+        }
+        return Array(parsed.prefix(5))
     }
 }

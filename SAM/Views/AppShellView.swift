@@ -21,6 +21,7 @@ struct AppShellView: View {
     @State private var selectedEvidenceID: UUID?
     @State private var selectedContextID: UUID?
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @State private var postMeetingPayload: PostMeetingPayload?
     @Environment(\.openWindow) private var openWindow
     
     // MARK: - Body
@@ -49,6 +50,17 @@ struct AppShellView: View {
                     openWindow(id: "quick-note", value: payload)
                 }
             }
+            .onReceive(NotificationCenter.default.publisher(for: .samOpenPostMeetingCapture)) { notification in
+                handlePostMeetingNotification(notification)
+            }
+            .sheet(item: $postMeetingPayload) { payload in
+                PostMeetingCaptureView(
+                    eventTitle: payload.eventTitle,
+                    eventDate: payload.eventDate,
+                    attendeeIDs: payload.attendeeIDs,
+                    onSave: {}
+                )
+            }
             .overlay(alignment: .bottom) {
                 UndoToastView()
             }
@@ -72,14 +84,34 @@ struct AppShellView: View {
                     openWindow(id: "quick-note", value: payload)
                 }
             }
+            .onReceive(NotificationCenter.default.publisher(for: .samOpenPostMeetingCapture)) { notification in
+                handlePostMeetingNotification(notification)
+            }
+            .sheet(item: $postMeetingPayload) { payload in
+                PostMeetingCaptureView(
+                    eventTitle: payload.eventTitle,
+                    eventDate: payload.eventDate,
+                    attendeeIDs: payload.attendeeIDs,
+                    onSave: {}
+                )
+            }
             .overlay(alignment: .bottom) {
                 UndoToastView()
             }
         }
     }
 
+    // MARK: - Post-Meeting Notification Handler
+
+    private func handlePostMeetingNotification(_ notification: Notification) {
+        guard let title = notification.userInfo?["eventTitle"] as? String,
+              let date = notification.userInfo?["eventDate"] as? Date,
+              let ids = notification.userInfo?["attendeeIDs"] as? [UUID] else { return }
+        postMeetingPayload = PostMeetingPayload(eventTitle: title, eventDate: date, attendeeIDs: ids)
+    }
+
     // MARK: - Sidebar
-    
+
     private var sidebar: some View {
         List(selection: $sidebarSelection) {
             Section("Intelligence") {

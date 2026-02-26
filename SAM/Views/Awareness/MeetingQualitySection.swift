@@ -123,9 +123,9 @@ struct MeetingQualitySection: View {
         let hasNote = !item.linkedNotes.isEmpty
         let meetingEnd = item.endedAt ?? item.occurredAt
 
-        // +40: Note created
+        // +35: Note created
         if hasNote {
-            score += 40
+            score += 35
         } else {
             missing.append("No notes")
         }
@@ -141,11 +141,11 @@ struct MeetingQualitySection: View {
             }
         }
 
-        // +20: Action items identified
+        // +15: Action items identified
         if hasNote {
             let hasActionItems = item.linkedNotes.contains { !$0.extractedActionItems.isEmpty }
             if hasActionItems {
-                score += 20
+                score += 15
             } else {
                 missing.append("No action items")
             }
@@ -153,20 +153,50 @@ struct MeetingQualitySection: View {
             missing.append("No action items")
         }
 
-        // +20: Has attendees
+        // +10: Has attendees
         if !item.linkedPeople.isEmpty {
-            score += 20
+            score += 10
         } else {
             missing.append("No attendees")
+        }
+
+        // +10: Follow-up drafted (note has followUpDraft)
+        let hasDraft = item.linkedNotes.contains { $0.followUpDraft != nil && !($0.followUpDraft ?? "").isEmpty }
+        if hasDraft {
+            score += 10
+        }
+
+        // +10: Follow-up sent (outgoing communication to any attendee within 48h)
+        let attendeeIDs = Set(item.linkedPeople.filter { !$0.isMe }.map(\.id))
+        let followUpSent = checkFollowUpSent(attendeeIDs: attendeeIDs, after: meetingEnd)
+        if followUpSent {
+            score += 10
+        } else if hasNote {
+            // Only show "No follow-up" if they at least took notes (otherwise "No notes" is the bigger issue)
+            missing.append("No follow-up")
         }
 
         return ScoredMeeting(
             id: item.id,
             title: item.title,
             occurredAt: item.occurredAt,
-            score: score,
-            missing: missing
+            score: min(score, 100),
+            missing: missing,
+            followUpSent: followUpSent
         )
+    }
+
+    /// Check if outgoing communication was sent to any attendee within 48h after meeting end.
+    private func checkFollowUpSent(attendeeIDs: Set<UUID>, after meetingEnd: Date) -> Bool {
+        let fortyEightHoursLater = Calendar.current.date(byAdding: .hour, value: 48, to: meetingEnd)!
+        let commsSources: Set<EvidenceSource> = [.iMessage, .mail, .phoneCall, .faceTime]
+
+        return allEvidence.contains { item in
+            commsSources.contains(item.source)
+            && item.occurredAt > meetingEnd
+            && item.occurredAt <= fortyEightHoursLater
+            && item.linkedPeople.contains(where: { attendeeIDs.contains($0.id) })
+        }
     }
 
     // MARK: - Helpers
@@ -193,6 +223,7 @@ private struct ScoredMeeting: Identifiable {
     let occurredAt: Date
     let score: Int
     let missing: [String]
+    let followUpSent: Bool
 }
 
 // MARK: - Meeting Quality Card

@@ -605,51 +605,40 @@ final class DailyBriefingCoordinator {
         }
     }
 
-    /// Create a pre-filled note template for a recently ended meeting.
+    /// Post notification to open the structured post-meeting capture sheet.
+    /// Also creates a follow-up outcome so the Action Queue tracks it.
     private func createMeetingNoteTemplate(event: SamEvidenceItem, attendees: [SamPerson]) {
-        let dateStr = event.occurredAt.formatted(date: .abbreviated, time: .shortened)
-        let names = attendees.map { $0.displayNameCache ?? $0.displayName }.joined(separator: ", ")
-
-        let templateContent = """
-            Meeting: \(event.title)
-            Date: \(dateStr)
-            Attendees: \(names)
-
-            Discussion:
-
-
-            Action Items:
-
-
-            Follow-Up:
-
-            """
-
         let attendeeIDs = attendees.map(\.id)
-        do {
-            let note = try notesRepo.create(
-                content: templateContent,
-                sourceType: .typed,
-                linkedPeopleIDs: attendeeIDs
-            )
 
-            // Create a follow-up outcome so it appears in the Action Queue
+        // Post notification for the structured capture sheet
+        NotificationCenter.default.post(
+            name: .samOpenPostMeetingCapture,
+            object: nil,
+            userInfo: [
+                "eventTitle": event.title,
+                "eventDate": event.occurredAt,
+                "attendeeIDs": attendeeIDs
+            ]
+        )
+
+        // Create a follow-up outcome so it appears in the Action Queue
+        do {
             let primary = attendees.first!
             let outcome = SamOutcome(
                 title: "Complete meeting notes for \(event.title)",
-                rationale: "A note template was created. Fill in discussion points and action items.",
+                rationale: "Meeting ended — capture discussion points and action items.",
                 outcomeKind: .followUp,
                 deadlineDate: Calendar.current.date(byAdding: .hour, value: 24, to: .now),
-                sourceInsightSummary: "Auto-generated meeting note template",
-                suggestedNextStep: "Open the note and capture key takeaways",
+                sourceInsightSummary: "Post-meeting capture prompt",
+                suggestedNextStep: "Fill in the meeting notes capture sheet",
                 linkedPerson: primary
             )
             try outcomeRepo.upsert(outcome: outcome)
-
-            logger.info("Created meeting note template for '\(event.title)' with \(attendees.count) attendees")
         } catch {
-            logger.error("Failed to create meeting note template: \(error.localizedDescription)")
+            logger.error("Failed to create follow-up outcome: \(error.localizedDescription)")
         }
+
+        logger.info("Posted post-meeting capture notification for '\(event.title)' with \(attendees.count) attendees")
     }
 
     // MARK: - Multi-Step Sequence Trigger Evaluation
@@ -1084,6 +1073,49 @@ final class DailyBriefingCoordinator {
                         personName: event.personName,
                         urgency: "standard",
                         sourceKind: "life_event"
+                    ))
+                }
+            }
+        }
+
+        // 6. Meeting quality stats (weekly review)
+        if let allEvidence = try? evidenceRepo.fetchAll() {
+            let sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: .now)!
+            let now = Date()
+            let weekMeetings = allEvidence.filter {
+                $0.source == .calendar
+                && $0.occurredAt >= sevenDaysAgo
+                && ($0.endedAt ?? $0.occurredAt) <= now
+                && !$0.linkedPeople.isEmpty
+            }
+
+            if !weekMeetings.isEmpty {
+                let meetingsWithNotes = weekMeetings.filter { !$0.linkedNotes.isEmpty }
+                let meetingsWithoutNotes = weekMeetings.count - meetingsWithNotes.count
+
+                // Simple quality score: note created + timely + action items
+                var totalScore = 0
+                for meeting in weekMeetings {
+                    var score = 0
+                    if !meeting.linkedNotes.isEmpty { score += 40 }
+                    if let earliest = meeting.linkedNotes.map(\.createdAt).min() {
+                        let meetingEnd = meeting.endedAt ?? meeting.occurredAt
+                        if earliest.timeIntervalSince(meetingEnd) / 3600 <= 24 { score += 30 }
+                    }
+                    if meeting.linkedNotes.contains(where: { !$0.extractedActionItems.isEmpty }) { score += 30 }
+                    totalScore += score
+                }
+                let avgScore = totalScore / weekMeetings.count
+
+                if avgScore < 60 && priorities.count < 8 {
+                    let context = meetingsWithoutNotes > 0
+                        ? "\(meetingsWithoutNotes) of \(weekMeetings.count) meetings lack notes"
+                        : "Average quality score: \(avgScore)/100"
+                    priorities.append(BriefingAction(
+                        title: "Improve meeting documentation",
+                        rationale: context,
+                        urgency: "standard",
+                        sourceKind: "meeting_quality"
                     ))
                 }
             }

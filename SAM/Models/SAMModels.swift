@@ -981,5 +981,9 @@ extension Notification.Name {
     /// Posted after UndoCoordinator successfully restores an entity.
     /// Listeners should refresh their data.
     static let samUndoDidRestore = Notification.Name("samUndoDidRestore")
+
+    /// Posted when a meeting ends to open the structured post-meeting capture sheet.
+    /// userInfo: ["eventTitle": String, "eventDate": Date, "attendeeIDs": [UUID]]
+    static let samOpenPostMeetingCapture = Notification.Name("samOpenPostMeetingCapture")
 }
 

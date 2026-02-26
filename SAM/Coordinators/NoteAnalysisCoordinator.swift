@@ -163,6 +163,9 @@ final class NoteAnalysisCoordinator {
             // Step 9: Generate follow-up draft if this is a meeting-related note
             await generateFollowUpDraftIfMeeting(note)
 
+            // Step 10: Auto-create outcomes from extracted action items
+            await createOutcomesFromAnalysis(note)
+
             // Update state
             analysisStatus = .success
             lastAnalyzedAt = .now
@@ -386,6 +389,87 @@ final class NoteAnalysisCoordinator {
             logger.info("Generated follow-up draft for note linked to \(personName, privacy: .public)")
         } catch {
             logger.debug("Follow-up draft skipped for \(personName, privacy: .public): \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - Auto Outcome Creation (Step 10)
+
+    /// Create outcomes from extracted action items after analysis.
+    /// Max 5 outcomes per note to avoid flooding the Action Queue.
+    private func createOutcomesFromAnalysis(_ note: SamNote) async {
+        let pendingActions = note.extractedActionItems.filter { $0.status == .pending && $0.linkedPersonID != nil }
+        guard !pendingActions.isEmpty else { return }
+
+        let outcomeRepo = OutcomeRepository.shared
+        var createdCount = 0
+
+        for action in pendingActions {
+            guard createdCount < 5 else { break }
+            guard let personID = action.linkedPersonID else { continue }
+
+            // Map action type to outcome kind
+            let outcomeKind: OutcomeKind
+            switch action.type {
+            case .generalFollowUp, .sendReminder:
+                outcomeKind = .followUp
+            case .createProposal:
+                outcomeKind = .proposal
+            case .scheduleMeeting:
+                outcomeKind = .preparation
+            case .sendCongratulations:
+                outcomeKind = .outreach
+            case .updateContact, .updateBeneficiary:
+                outcomeKind = .compliance
+            }
+
+            // Dedup: skip if a similar outcome already exists
+            if let hasSimilar = try? outcomeRepo.hasSimilarOutcome(kind: outcomeKind, personID: personID),
+               hasSimilar {
+                continue
+            }
+
+            // Fetch person for linking
+            guard let person = try? peopleRepository.fetch(id: personID) else { continue }
+
+            // Map urgency to deadline
+            let deadline: Date?
+            switch action.urgency {
+            case .immediate:
+                deadline = Calendar.current.date(byAdding: .hour, value: 4, to: .now)
+            case .soon:
+                deadline = Calendar.current.date(byAdding: .day, value: 3, to: .now)
+            case .standard:
+                deadline = Calendar.current.date(byAdding: .day, value: 7, to: .now)
+            case .low:
+                deadline = Calendar.current.date(byAdding: .day, value: 14, to: .now)
+            }
+
+            let outcome = SamOutcome(
+                title: action.description,
+                rationale: "Extracted from note analysis",
+                outcomeKind: outcomeKind,
+                deadlineDate: deadline,
+                sourceInsightSummary: "Auto-created from note action item",
+                suggestedNextStep: action.suggestedText,
+                linkedPerson: person
+            )
+
+            // Set draft message text if available
+            if let draft = action.suggestedText {
+                outcome.draftMessageText = draft
+            }
+
+            do {
+                try outcomeRepo.upsert(outcome: outcome)
+                createdCount += 1
+                logger.info("Auto-created outcome '\(action.description)' for \(person.displayNameCache ?? person.displayName, privacy: .public)")
+            } catch {
+                logger.debug("Failed to create outcome from action: \(error.localizedDescription)")
+            }
+        }
+
+        if createdCount > 0 {
+            logger.info("Created \(createdCount) outcome(s) from note analysis")
         }
     }
 
