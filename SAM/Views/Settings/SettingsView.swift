@@ -740,6 +740,30 @@ struct CalendarSettingsContent: View {
 
             Divider()
 
+            // Lookback period
+            Picker("Look back", selection: Binding(
+                get: { coordinator.lookbackDays },
+                set: { coordinator.lookbackDays = $0 }
+            )) {
+                Text("7 days").tag(7)
+                Text("14 days").tag(14)
+                Text("30 days").tag(30)
+                Text("90 days").tag(90)
+                Text("All").tag(0)
+            }
+
+            if coordinator.lookbackDays == 0 {
+                Text("First import will scan all available calendar history. Subsequent imports use incremental sync.")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            } else {
+                Text("How far back to look for calendar events.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Divider()
+
             // Status
             HStack {
                 Text("Import Status:")

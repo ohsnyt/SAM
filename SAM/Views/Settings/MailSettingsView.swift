@@ -95,6 +95,13 @@ struct MailSettingsContent: View {
                     Text("14 days").tag(14)
                     Text("30 days").tag(30)
                     Text("90 days").tag(90)
+                    Text("All").tag(0)
+                }
+
+                if coordinator.lookbackDays == 0 {
+                    Text("First import will scan all available email history. Subsequent imports use incremental sync.")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
                 }
             }
 

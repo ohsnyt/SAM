@@ -153,21 +153,21 @@ actor CalendarService {
         return events.map { EventDTO(from: $0) }
     }
     
-    /// Fetch all events from specific calendars (last 30 days + next 90 days).
-    func fetchRecentAndUpcomingEvents(from calendars: [String]) -> [EventDTO]? {
+    /// Fetch events from specific calendars.
+    /// - Parameter lookbackDays: How far back to look. 0 means "All" (uses distantPast).
+    /// - Parameter forwardDays: How far forward to look (default 90).
+    func fetchRecentAndUpcomingEvents(from calendars: [String], lookbackDays: Int = 30, forwardDays: Int = 90) -> [EventDTO]? {
         let calendar = Calendar.current
         let now = Date()
-        
-        // Last 30 days
-        guard let startDate = calendar.date(byAdding: .day, value: -30, to: now) else {
+
+        let startDate: Date = lookbackDays == 0
+            ? .distantPast
+            : (calendar.date(byAdding: .day, value: -lookbackDays, to: now) ?? now)
+
+        guard let endDate = calendar.date(byAdding: .day, value: forwardDays, to: now) else {
             return nil
         }
-        
-        // Next 90 days
-        guard let endDate = calendar.date(byAdding: .day, value: 90, to: now) else {
-            return nil
-        }
-        
+
         return fetchEvents(from: calendars, startDate: startDate, endDate: endDate)
     }
     

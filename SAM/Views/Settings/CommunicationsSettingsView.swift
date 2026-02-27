@@ -161,8 +161,15 @@ struct CommunicationsSettingsContent: View {
                     Text("90 days").tag(90)
                     Text("180 days").tag(180)
                     Text("365 days").tag(365)
+                    Text("All").tag(0)
                 }
                 .frame(width: 120)
+            }
+
+            if coordinator.lookbackDays == 0 {
+                Text("First import will scan all available message and call history. Subsequent imports use incremental sync.")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
             }
         }
     }

@@ -71,6 +71,22 @@ final class CalendarImportCoordinator {
         set { UserDefaults.standard.set(newValue, forKey: "calendarImportIntervalSeconds") }
     }
 
+    /// Lookback days for calendar import. 0 means "All" (no limit). Default: 30.
+    @ObservationIgnored
+    var lookbackDays: Int {
+        get {
+            let days = UserDefaults.standard.integer(forKey: "calendarLookbackDays")
+            // 0 means "All" (no limit), negative means unset → default 30
+            if UserDefaults.standard.object(forKey: "calendarLookbackDays") != nil {
+                return days >= 0 ? days : 30
+            }
+            return 30
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "calendarLookbackDays")
+        }
+    }
+
     // MARK: - Private State
 
     private var lastImportTime: Date?
@@ -201,8 +217,11 @@ final class CalendarImportCoordinator {
                 throw ImportError.noCalendarsSelected
             }
 
-            // Fetch events from single calendar
-            guard let events = await calendarService.fetchRecentAndUpcomingEvents(from: [selectedCalendarIdentifier]) else {
+            // Fetch events from single calendar using configurable lookback
+            guard let events = await calendarService.fetchRecentAndUpcomingEvents(
+                from: [selectedCalendarIdentifier],
+                lookbackDays: lookbackDays
+            ) else {
                 throw ImportError.fetchFailed
             }
 

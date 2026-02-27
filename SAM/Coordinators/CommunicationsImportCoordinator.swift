@@ -41,6 +41,7 @@ final class CommunicationsImportCoordinator {
 
     private(set) var messagesEnabled: Bool = false
     private(set) var callsEnabled: Bool = false
+    /// Lookback days for initial import. 0 means "All" (no limit).
     private(set) var lookbackDays: Int = 90
     private(set) var analyzeMessages: Bool = true
     private(set) var lastMessageWatermark: Date?
@@ -52,7 +53,8 @@ final class CommunicationsImportCoordinator {
         messagesEnabled = UserDefaults.standard.bool(forKey: "commsMessagesEnabled")
         callsEnabled = UserDefaults.standard.bool(forKey: "commsCallsEnabled")
         let days = UserDefaults.standard.integer(forKey: "commsLookbackDays")
-        lookbackDays = days > 0 ? days : 90
+        // 0 means "All" (no limit), negative means unset → default 90
+        lookbackDays = days >= 0 && UserDefaults.standard.object(forKey: "commsLookbackDays") != nil ? days : 90
         if UserDefaults.standard.object(forKey: "commsAnalyzeMessages") != nil {
             analyzeMessages = UserDefaults.standard.bool(forKey: "commsAnalyzeMessages")
         }
@@ -137,7 +139,9 @@ final class CommunicationsImportCoordinator {
         importStatus = .importing
         lastError = nil
 
-        let lookbackDate = Calendar.current.date(byAdding: .day, value: -lookbackDays, to: Date()) ?? Date()
+        let lookbackDate: Date = lookbackDays == 0
+            ? .distantPast
+            : (Calendar.current.date(byAdding: .day, value: -lookbackDays, to: Date()) ?? Date())
         let messageSince = lastMessageWatermark ?? lookbackDate
         let callSince = lastCallWatermark ?? lookbackDate
         var totalMessages = 0

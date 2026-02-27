@@ -39,6 +39,7 @@ final class MailImportCoordinator {
     private(set) var mailEnabled: Bool = false
     private(set) var selectedAccountIDs: [String] = []
     private(set) var importIntervalSeconds: TimeInterval = 600
+    /// Lookback days for initial import. 0 means "All" (no limit).
     private(set) var lookbackDays: Int = 30
     private(set) var filterRules: [MailFilterRule] = []
 
@@ -53,7 +54,8 @@ final class MailImportCoordinator {
         let interval = UserDefaults.standard.double(forKey: "mailImportInterval")
         importIntervalSeconds = interval > 0 ? interval : 600
         let days = UserDefaults.standard.integer(forKey: "mailLookbackDays")
-        lookbackDays = days > 0 ? days : 30
+        // 0 means "All" (no limit), negative means unset → default 30
+        lookbackDays = days >= 0 && UserDefaults.standard.object(forKey: "mailLookbackDays") != nil ? days : 30
         if let data = UserDefaults.standard.data(forKey: "mailFilterRules"),
            let rules = try? JSONDecoder().decode([MailFilterRule].self, from: data) {
             filterRules = rules
@@ -167,7 +169,9 @@ final class MailImportCoordinator {
         lastError = nil
 
         do {
-            let lookbackDate = Calendar.current.date(byAdding: .day, value: -lookbackDays, to: Date()) ?? Date()
+            let lookbackDate: Date = lookbackDays == 0
+                ? .distantPast
+                : (Calendar.current.date(byAdding: .day, value: -lookbackDays, to: Date()) ?? Date())
             let since = lastMailWatermark ?? lookbackDate
 
             // 1. Fast metadata sweep (all messages)
@@ -278,7 +282,9 @@ final class MailImportCoordinator {
         guard isConfigured else { return }
 
         do {
-            let since = Calendar.current.date(byAdding: .day, value: -lookbackDays, to: Date()) ?? Date()
+            let since: Date = lookbackDays == 0
+                ? .distantPast
+                : (Calendar.current.date(byAdding: .day, value: -lookbackDays, to: Date()) ?? Date())
 
             // 1. Full metadata sweep
             let (allMetas, _) = try await mailService.fetchMetadata(

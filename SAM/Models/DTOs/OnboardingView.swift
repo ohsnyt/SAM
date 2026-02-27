@@ -522,12 +522,19 @@ struct OnboardingView: View {
                     Text("14 days").tag(14)
                     Text("30 days").tag(30)
                     Text("90 days").tag(90)
+                    Text("All").tag(0)
                 }
                 .pickerStyle(.segmented)
 
-                Text("How far back to scan for emails on first import. You can change this later in Settings.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if onboardingLookbackDays == 0 {
+                    Text("First import will scan all available history. This may take several minutes for large inboxes.")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                } else {
+                    Text("How far back to scan for emails on first import. You can change this later in Settings.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
     }
@@ -993,7 +1000,10 @@ struct OnboardingView: View {
     private func applyMailFilterRules() {
         let rules = selectedMailAddresses.map { MailFilterRule(id: UUID(), value: $0) }
         MailImportCoordinator.shared.setFilterRules(rules)
+        // Apply scan depth to all import coordinators
         MailImportCoordinator.shared.setLookbackDays(onboardingLookbackDays)
+        CommunicationsImportCoordinator.shared.setLookbackDays(onboardingLookbackDays)
+        CalendarImportCoordinator.shared.lookbackDays = onboardingLookbackDays
     }
 
     // MARK: - Groups & Calendars
