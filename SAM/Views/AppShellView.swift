@@ -16,153 +16,117 @@ struct AppShellView: View {
     
     // MARK: - Navigation State
     
-    @AppStorage("sam.sidebar.selection") private var sidebarSelection: String = "awareness"
+    @AppStorage("sam.sidebar.selection") private var sidebarSelection: String = "today"
     @State private var selectedPersonID: UUID?
-    @State private var selectedEvidenceID: UUID?
-    @State private var selectedContextID: UUID?
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var postMeetingPayload: PostMeetingPayload?
+    @State private var showCommandPalette = false
     @Environment(\.openWindow) private var openWindow
     
     // MARK: - Body
     
     var body: some View {
-        if sidebarSelection == "people" || sidebarSelection == "inbox" || sidebarSelection == "contexts" {
-            // Three-column layout for People, Inbox, and Contexts sections
-            NavigationSplitView(columnVisibility: $columnVisibility) {
-                sidebar
-                    .navigationSplitViewColumnWidth(min: 120, ideal: 130, max: 200)
-            } content: {
-                threeColumnContent
-                    .navigationSplitViewColumnWidth(min: 200, ideal: 280, max: 500)
-            } detail: {
-                threeColumnDetail
-            }
-            .navigationTitle("SAM")
-            .onReceive(NotificationCenter.default.publisher(for: .samNavigateToPerson)) { notification in
-                if let personID = notification.userInfo?["personID"] as? UUID {
-                    sidebarSelection = "people"
-                    selectedPersonID = personID
+        Group {
+            if sidebarSelection == "people" {
+                // Three-column layout for People section
+                NavigationSplitView(columnVisibility: $columnVisibility) {
+                    sidebar
+                        .navigationSplitViewColumnWidth(min: 120, ideal: 130, max: 200)
+                } content: {
+                    PeopleListView(selectedPersonID: $selectedPersonID)
+                        .navigationSplitViewColumnWidth(min: 200, ideal: 280, max: 500)
+                } detail: {
+                    peopleDetailView
                 }
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .samOpenQuickNote)) { notification in
-                if let payload = notification.userInfo?["payload"] as? QuickNotePayload {
-                    openWindow(id: "quick-note", value: payload)
+                .navigationTitle("SAM")
+            } else {
+                // Two-column layout for Today, Business, Search
+                NavigationSplitView {
+                    sidebar
+                        .navigationSplitViewColumnWidth(min: 120, ideal: 130, max: 200)
+                } detail: {
+                    detailView
                 }
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .samOpenPostMeetingCapture)) { notification in
-                handlePostMeetingNotification(notification)
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .samNavigateToGraph)) { notification in
-                sidebarSelection = "graph"
-                if let focusMode = notification.userInfo?["focusMode"] as? String {
-                    RelationshipGraphCoordinator.shared.activateFocusMode(focusMode)
-                }
-            }
-            .sheet(item: $postMeetingPayload) { payload in
-                PostMeetingCaptureView(
-                    eventTitle: payload.eventTitle,
-                    eventDate: payload.eventDate,
-                    attendeeIDs: payload.attendeeIDs,
-                    onSave: {}
-                )
-            }
-            .overlay(alignment: .bottom) {
-                UndoToastView()
-            }
-        } else {
-            // Two-column layout for other sections
-            NavigationSplitView {
-                sidebar
-                    .navigationSplitViewColumnWidth(min: 120, ideal: 130, max: 200)
-            } detail: {
-                detailView
-            }
-            .navigationTitle("SAM")
-            .onReceive(NotificationCenter.default.publisher(for: .samNavigateToPerson)) { notification in
-                if let personID = notification.userInfo?["personID"] as? UUID {
-                    sidebarSelection = "people"
-                    selectedPersonID = personID
-                }
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .samOpenQuickNote)) { notification in
-                if let payload = notification.userInfo?["payload"] as? QuickNotePayload {
-                    openWindow(id: "quick-note", value: payload)
-                }
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .samOpenPostMeetingCapture)) { notification in
-                handlePostMeetingNotification(notification)
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .samNavigateToGraph)) { notification in
-                sidebarSelection = "graph"
-                if let focusMode = notification.userInfo?["focusMode"] as? String {
-                    RelationshipGraphCoordinator.shared.activateFocusMode(focusMode)
-                }
-            }
-            .sheet(item: $postMeetingPayload) { payload in
-                PostMeetingCaptureView(
-                    eventTitle: payload.eventTitle,
-                    eventDate: payload.eventDate,
-                    attendeeIDs: payload.attendeeIDs,
-                    onSave: {}
-                )
-            }
-            .overlay(alignment: .bottom) {
-                UndoToastView()
+                .navigationTitle("SAM")
             }
         }
-    }
-
-    // MARK: - Post-Meeting Notification Handler
-
-    private func handlePostMeetingNotification(_ notification: Notification) {
-        guard let title = notification.userInfo?["eventTitle"] as? String,
-              let date = notification.userInfo?["eventDate"] as? Date,
-              let ids = notification.userInfo?["attendeeIDs"] as? [UUID] else { return }
-        postMeetingPayload = PostMeetingPayload(eventTitle: title, eventDate: date, attendeeIDs: ids)
+        .modifier(AppShellNotificationHandlers(
+            sidebarSelection: $sidebarSelection,
+            selectedPersonID: $selectedPersonID,
+            postMeetingPayload: $postMeetingPayload,
+            openWindow: openWindow
+        ))
+        .sheet(item: $postMeetingPayload) { payload in
+            PostMeetingCaptureView(
+                eventTitle: payload.eventTitle,
+                eventDate: payload.eventDate,
+                attendeeIDs: payload.attendeeIDs,
+                onSave: {}
+            )
+        }
+        .sheet(isPresented: $showCommandPalette) {
+            CommandPaletteView(
+                onNavigate: { section in
+                    sidebarSelection = section
+                },
+                onSelectPerson: { personID in
+                    sidebarSelection = "people"
+                    selectedPersonID = personID
+                },
+                onDismiss: {
+                    showCommandPalette = false
+                }
+            )
+        }
+        .overlay(alignment: .bottom) {
+            UndoToastView()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .samToggleCommandPalette)) { _ in
+            showCommandPalette.toggle()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .samNavigateToSection)) { notification in
+            if let section = notification.userInfo?["section"] as? String {
+                sidebarSelection = section
+            }
+        }
     }
 
     // MARK: - Sidebar
 
     private var sidebar: some View {
         List(selection: $sidebarSelection) {
-            Section("Intelligence") {
-                NavigationLink(value: "search") {
-                    Label("Search", systemImage: "magnifyingglass")
-                }
-
-                NavigationLink(value: "awareness") {
-                    Label("Awareness", systemImage: "brain.head.profile")
-                }
-
-                NavigationLink(value: "inbox") {
-                    Label("Inbox", systemImage: "tray")
-                }
+            NavigationLink(value: "today") {
+                Label("Today", systemImage: "sun.max")
             }
 
-            Section("Relationships") {
-                NavigationLink(value: "people") {
-                    Label("People", systemImage: "person.2")
-                }
-
-                NavigationLink(value: "contexts") {
-                    Label("Contexts", systemImage: "building.2")
-                }
+            NavigationLink(value: "people") {
+                Label("People", systemImage: "person.2")
             }
 
-            Section("Business") {
-                NavigationLink(value: "business") {
-                    Label("Pipeline", systemImage: "chart.bar.horizontal.page")
-                }
+            NavigationLink(value: "business") {
+                Label("Business", systemImage: "chart.bar.horizontal.page")
+            }
 
-                NavigationLink(value: "graph") {
-                    Label("Relationship Map", systemImage: "circle.grid.cross")
-                }
+            NavigationLink(value: "search") {
+                Label("Search", systemImage: "magnifyingglass")
             }
         }
         .navigationTitle("SAM")
         .safeAreaInset(edge: .bottom) {
             ProcessingStatusView()
+        }
+        .onAppear {
+            // Migrate stale @AppStorage values from old sidebar items
+            switch sidebarSelection {
+            case "awareness", "inbox":
+                sidebarSelection = "today"
+            case "contexts":
+                sidebarSelection = "people"
+            case "graph":
+                sidebarSelection = "business"
+            default:
+                break
+            }
         }
     }
     
@@ -171,17 +135,14 @@ struct AppShellView: View {
     @ViewBuilder
     private var detailView: some View {
         switch sidebarSelection {
-        case "search":
-            SearchView()
-
-        case "awareness":
+        case "today":
             AwarenessView()
 
         case "business":
             BusinessDashboardView()
 
-        case "graph":
-            RelationshipGraphView()
+        case "search":
+            SearchView()
 
         default:
             ContentUnavailableView(
@@ -189,38 +150,6 @@ struct AppShellView: View {
                 systemImage: "sidebar.left",
                 description: Text("Choose a section from the sidebar")
             )
-        }
-    }
-
-    // MARK: - Three-Column Content (list column)
-
-    @ViewBuilder
-    private var threeColumnContent: some View {
-        switch sidebarSelection {
-        case "people":
-            PeopleListView(selectedPersonID: $selectedPersonID)
-        case "inbox":
-            InboxListView(selectedEvidenceID: $selectedEvidenceID)
-        case "contexts":
-            ContextListView(selectedContextID: $selectedContextID)
-        default:
-            EmptyView()
-        }
-    }
-
-    // MARK: - Three-Column Detail
-
-    @ViewBuilder
-    private var threeColumnDetail: some View {
-        switch sidebarSelection {
-        case "people":
-            peopleDetailView
-        case "inbox":
-            inboxDetailView
-        case "contexts":
-            contextsDetailView
-        default:
-            EmptyView()
         }
     }
 
@@ -240,36 +169,44 @@ struct AppShellView: View {
         }
     }
 
-    // MARK: - Inbox Detail View
+}
 
-    @ViewBuilder
-    private var inboxDetailView: some View {
-        if let selectedID = selectedEvidenceID {
-            InboxDetailContainer(evidenceID: selectedID)
-                .id(selectedID)
-        } else {
-            ContentUnavailableView(
-                "Select an Item",
-                systemImage: "tray",
-                description: Text("Choose an evidence item from the list to view its details")
-            )
-        }
-    }
+// MARK: - Notification Handlers (shared between layout branches)
 
-    // MARK: - Contexts Detail View
+private struct AppShellNotificationHandlers: ViewModifier {
+    @Binding var sidebarSelection: String
+    @Binding var selectedPersonID: UUID?
+    @Binding var postMeetingPayload: PostMeetingPayload?
+    let openWindow: OpenWindowAction
 
-    @ViewBuilder
-    private var contextsDetailView: some View {
-        if let selectedID = selectedContextID {
-            ContextsDetailContainer(contextID: selectedID)
-                .id(selectedID)
-        } else {
-            ContentUnavailableView(
-                "Select a Context",
-                systemImage: "building.2",
-                description: Text("Choose a context from the list to view its details")
-            )
-        }
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .samNavigateToPerson)) { notification in
+                if let personID = notification.userInfo?["personID"] as? UUID {
+                    sidebarSelection = "people"
+                    selectedPersonID = personID
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .samOpenQuickNote)) { notification in
+                if let payload = notification.userInfo?["payload"] as? QuickNotePayload {
+                    openWindow(id: "quick-note", value: payload)
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .samOpenPostMeetingCapture)) { notification in
+                guard let title = notification.userInfo?["eventTitle"] as? String,
+                      let date = notification.userInfo?["eventDate"] as? Date,
+                      let ids = notification.userInfo?["attendeeIDs"] as? [UUID] else { return }
+                postMeetingPayload = PostMeetingPayload(eventTitle: title, eventDate: date, attendeeIDs: ids)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .samNavigateToGraph)) { notification in
+                sidebarSelection = "business"
+                if let focusMode = notification.userInfo?["focusMode"] as? String {
+                    RelationshipGraphCoordinator.shared.activateFocusMode(focusMode)
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .samNavigateToStrategicInsights)) { _ in
+                sidebarSelection = "business"
+            }
     }
 }
 
@@ -299,57 +236,7 @@ private struct PeopleDetailContainer: View {
     }
 }
 
-// MARK: - Inbox Detail Container
 
-/// Helper view that fetches an evidence item by ID and displays InboxDetailView
-private struct InboxDetailContainer: View {
-    let evidenceID: UUID
-
-    @Query private var allItems: [SamEvidenceItem]
-
-    var item: SamEvidenceItem? {
-        allItems.first(where: { $0.id == evidenceID })
-    }
-
-    var body: some View {
-        if let item = item {
-            InboxDetailView(item: item)
-                .id(evidenceID)
-        } else {
-            ContentUnavailableView(
-                "Item Not Found",
-                systemImage: "tray.slash",
-                description: Text("This evidence item may have been deleted")
-            )
-        }
-    }
-}
-
-// MARK: - Contexts Detail Container
-
-/// Helper view that fetches a context by ID and displays ContextDetailView
-private struct ContextsDetailContainer: View {
-    let contextID: UUID
-
-    @Query private var allContexts: [SamContext]
-
-    var context: SamContext? {
-        allContexts.first(where: { $0.id == contextID })
-    }
-
-    var body: some View {
-        if let context = context {
-            ContextDetailView(context: context)
-                .id(contextID)
-        } else {
-            ContentUnavailableView(
-                "Context Not Found",
-                systemImage: "building.2.crop.circle.badge.questionmark",
-                description: Text("This context may have been deleted")
-            )
-        }
-    }
-}
 
 // MARK: - Preview
 

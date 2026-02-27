@@ -51,6 +51,13 @@ final class OutcomeRepository {
         }
     }
 
+    /// Fetch the top active outcome linked to a specific person.
+    /// Returns the highest-priority active outcome for the person, or nil.
+    func fetchTopActiveOutcome(forPersonID personID: UUID) -> SamOutcome? {
+        guard let active = try? fetchActive() else { return nil }
+        return active.first { $0.linkedPerson?.id == personID }
+    }
+
     /// Fetch completed outcomes, most recent first.
     func fetchCompleted(limit: Int = 20) throws -> [SamOutcome] {
         guard let context else { throw RepositoryError.notConfigured }

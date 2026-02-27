@@ -1034,5 +1034,16 @@ extension Notification.Name {
     /// Posted to draft a message for a person from the graph context menu.
     /// userInfo: ["personID": UUID]
     static let samDraftMessageForPerson = Notification.Name("samDraftMessageForPerson")
+
+    /// Posted to navigate to the Strategic Insights tab in the Business dashboard.
+    /// userInfo: ["recommendationID": String] (optional — UUID string of specific plan)
+    static let samNavigateToStrategicInsights = Notification.Name("samNavigateToStrategicInsights")
+
+    /// Posted to toggle the ⌘K command palette.
+    static let samToggleCommandPalette = Notification.Name("samToggleCommandPalette")
+
+    /// Posted to navigate to a sidebar section.
+    /// userInfo: ["section": String] — one of "today", "people", "business", "search"
+    static let samNavigateToSection = Notification.Name("samNavigateToSection")
 }
 

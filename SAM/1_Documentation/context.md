@@ -3,7 +3,7 @@
 **Language**: Swift 6  
 **Architecture**: Clean layered architecture with strict separation of concerns  
 **Framework**: SwiftUI + SwiftData  
-**Last Updated**: February 27, 2026 (Phases A–Z + Advanced Search + Export/Import + Phase AA complete including advanced interaction, edge bundling, visual polish + accessibility, schema SAM_v27)
+**Last Updated**: February 27, 2026 (Phases A–Z + Advanced Search + Export/Import + Phase AA complete + Strategic Action Coaching Flow + Life Event Coaching + Interactive Content Ideas + ⌘K Command Palette, schema SAM_v27)
 
 **Related Docs**:
 - See `agent.md` for product philosophy, AI architecture, and UX principles
@@ -149,7 +149,11 @@ SAM/SAM/
 │   ├── PatternDetectorService.swift    ✅ Actor — Specialist LLM for cross-relationship patterns
 │   ├── TimeAnalystService.swift        ✅ Actor — Specialist LLM for time allocation
 │   ├── ContentAdvisorService.swift     ✅ Actor — Specialist LLM for content suggestions + draft generation
-│   └── GraphBuilderService.swift      ✅ Actor — Force-directed graph layout + edge assembly + edge bundling
+│   ├── GraphBuilderService.swift      ✅ Actor — Force-directed graph layout + edge assembly + edge bundling
+│   ├── CoachingPlannerService.swift   ✅ Actor — AI coaching chat for strategic action planning
+│   ├── BestPracticesService.swift     ✅ Actor — Best practices knowledge base (bundled + user)
+│   ├── SystemNotificationService.swift ✅ @MainActor — macOS system notifications (UNUserNotificationCenter)
+│   └── LifeEventCoachingService.swift ✅ Actor — Event-type-calibrated AI coaching for life events
 │
 ├── Coordinators/
 │   ├── ContactsImportCoordinator.swift ✅ Contact import
@@ -209,18 +213,20 @@ SAM/SAM/
 │       ├── ContentDraftDTO.swift      ✅ ContentDraft + LLMContentDraft
 │       ├── GraphNode.swift            ✅ Graph node DTO (position, role, health, production)
 │       ├── GraphEdge.swift            ✅ Graph edge DTO (9 edge types incl. roleRelationship, weight, direction, deduced relation ID)
-│       └── GraphInputDTOs.swift       ✅ Input DTOs for graph builder (9 types incl. RoleRelationshipLink + DeducedFamilyLink)
+│       ├── GraphInputDTOs.swift       ✅ Input DTOs for graph builder (9 types incl. RoleRelationshipLink + DeducedFamilyLink)
+│       ├── CoachingSessionDTO.swift   ✅ CoachingMessage, CoachingAction (7 types), CoachingSessionContext, LifeEventCoachingContext
+│       └── BestPracticeDTO.swift      ✅ BestPractice knowledge base entry
 │
 ├── Views/
-│   ├── AppShellView.swift              ✅ Three-column navigation shell
-│   ├── People/                         ✅ People list + detail
-│   ├── Inbox/                          ✅ Evidence triage
-│   ├── Contexts/                       ✅ Context management
-│   ├── Awareness/                      ✅ Coaching dashboard
+│   ├── AppShellView.swift              ✅ Navigation shell (4 sidebar items: Today, People, Business, Search)
+│   ├── People/                         ✅ People list + detail (initials fallback, coaching preview, urgency strips)
+│   ├── Inbox/                          ✅ Evidence triage (accessible via search/contexts)
+│   ├── Contexts/                       ✅ Context management (accessible via People → More Details)
+│   ├── Awareness/                      ✅ "Today" view — Hero card + Today's Actions + collapsed Review & Analytics + Life Event coaching
 │   ├── Notes/                          ✅ Note editing + journal
 │   ├── Content/                        ✅ ContentDraftSheet
-│   ├── Business/                       ✅ Business Intelligence dashboard (pipeline) + Relationship Graph
-│   │   ├── BusinessDashboardView.swift ✅ Top-level BI view (segmented tabs + graph mini-preview)
+│   ├── Business/                       ✅ Business dashboard (health summary + 6 tabs: Strategic, Client, Recruiting, Production, Goals, Graph)
+│   │   ├── BusinessDashboardView.swift ✅ Top-level BI view (health summary + segmented tabs incl. Graph)
 │   │   ├── ClientPipelineDashboardView.swift ✅ Client funnel, metrics, stuck, transitions
 │   │   ├── RecruitingPipelineDashboardView.swift ✅ 7-stage funnel, licensing rate, mentoring
 │   │   ├── ProductionDashboardView.swift ✅ Status overview, product mix, pending aging, all records
@@ -229,13 +235,18 @@ SAM/SAM/
 │   │   ├── ScenarioProjectionsView.swift ✅ 2-column projection cards with trend badges
 │   │   ├── GoalProgressView.swift     ✅ Goal cards with progress bars + pace indicators
 │   │   ├── GoalEntryForm.swift        ✅ Goal create/edit sheet
-│   │   ├── RelationshipGraphView.swift ✅ Canvas-based interactive relationship map
+│   │   ├── RelationshipGraphView.swift ✅ Canvas-based interactive relationship map (now also embedded in Business tab)
 │   │   ├── GraphToolbarView.swift     ✅ Zoom/filter/rebuild toolbar for graph
 │   │   ├── GraphTooltipView.swift     ✅ Hover tooltip with person summary
-│   │   └── GraphMiniPreviewView.swift ✅ Non-interactive graph thumbnail for dashboard
+│   │   ├── GraphMiniPreviewView.swift ✅ Non-interactive graph thumbnail (deprecated — Graph now embedded in Business tabs)
+│   │   ├── StrategicActionSheet.swift ✅ Approach selection sheet when "Act" is clicked
+│   │   └── CoachingSessionView.swift  ✅ Chat-style AI coaching session with action buttons
 │   ├── Search/                         ✅ SearchView + SearchResultRow
-│   ├── Shared/                         ✅ Reusable components
+│   ├── Shared/                         ✅ Reusable components (incl. FlowLayout, CommandPaletteView)
 │   └── Settings/                       ✅ Tabbed settings (incl. Data Backup section)
+│
+├── Resources/
+│   └── BestPractices.json             ✅ Bundled best practices knowledge base (24 entries, 6 categories)
 │
 ├── Utilities/
 │   ├── ComplianceScanner.swift        ✅ Deterministic keyword compliance scanner
@@ -316,6 +327,10 @@ SAM/SAM/
   - Phase 8: Ghost marching ants, role glyphs at close-up zoom, intelligence overlays (referral hub/betweenness centrality, communication flow, recruiting health, coverage gap), high contrast + reduce transparency + reduce motion accessibility, spring animation presets, drag grid pattern
 - ✅ **Deduced Relationships + Me Toggle**: Contact relations import, deduced family edges in graph, Me node toggle, focus mode, Awareness integration (schema SAM_v26)
 - ✅ **Household Removal**: Removed `.household` ContextKind from UI/graph, replaced with DeducedRelation-based family clustering; ConsentRequirement.context removed; MeetingBriefing family relations from DeducedRelation; Phase AA specs rewritten for family clusters (schema SAM_v27)
+- ✅ **Strategic Action Coaching Flow**: Act button → approach selection → AI coaching chat with action buttons (compose, schedule, draft, note, navigate). Concurrent plan generation with per-recommendation tracking. Best practices knowledge base (24 bundled entries). Constrained AI prompts. macOS system notifications for plan readiness (no schema change)
+- ✅ **Life Event Coaching**: Action buttons on Life Event cards (Send Message, Coach Me, Create Note). AI coaching chatbot with event-type-calibrated tone (empathy for loss/health, celebration for milestones, transition support for job changes). Shared FlowLayout extracted. (no schema change)
+- ✅ **Interactive Content Ideas**: Content Ideas in Strategic view now persist full structured ContentTopic JSON (keyPoints, suggestedTone, complianceNotes). Each idea is clickable → opens ContentDraftSheet. Backward-compatible with legacy semicolon-separated data. (no schema change)
+- ✅ **⌘K Command Palette**: Spotlight-style overlay (⌘K) for quick navigation and people search. Also adds ⌘1–4 sidebar navigation shortcuts. Reuses SearchCoordinator for people search. Static commands: Go to Today/People/Business/Search, New Note, Open Settings. (no schema change)
 
 ### Future Phases (Unscheduled)
 
@@ -477,8 +492,8 @@ Each migration uses SwiftData lightweight migration. New models are additive (no
 
 ---
 
-**Document Version**: 21.0 (Phases A–Z + Advanced Search + Export/Import + Phase AA (complete) + Deduced Relationships + Household Removal, schema SAM_v27)
+**Document Version**: 24.0 (Phases A–Z + Advanced Search + Export/Import + Phase AA (complete) + Deduced Relationships + Household Removal + Strategic Action Coaching Flow + Life Event Coaching + Interactive Content Ideas + ⌘K Command Palette, schema SAM_v27)
 **Previous Versions**: See `changelog.md` for version history
-**Last Major Update**: February 27, 2026 — Phase AA complete: advanced selection mechanics, edge bundling, label collision avoidance, visual polish, accessibility, intelligence overlays
+**Last Major Update**: February 27, 2026 — ⌘K Command Palette: Spotlight-style quick navigation + people search, ⌘1–4 sidebar shortcuts
 **Clean Rebuild Started**: February 9, 2026
     

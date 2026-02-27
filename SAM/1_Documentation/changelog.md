@@ -4,6 +4,232 @@
 
 ---
 
+## February 27, 2026 - ⌘K Command Palette
+
+### Overview
+Adds a Spotlight-style ⌘K command palette overlay for quick navigation and people search, plus ⌘1–4 keyboard shortcuts for direct sidebar navigation. Reduces navigation friction for power users.
+
+### Changes
+
+**CommandPaletteView.swift** (new): Sheet overlay with search field, static navigation/action commands, and dynamic people results via SearchCoordinator. Features:
+- Auto-focused search field with fuzzy substring matching on command labels
+- Arrow key navigation, Enter to select, Escape to dismiss
+- Static commands: Go to Today/People/Business/Search, New Note, Open Settings
+- People results (top 5) from SearchCoordinator with photo thumbnails, role badges, email
+- Selecting a person navigates to People section and selects that person
+
+**AppShellView.swift**: Refactored body to use shared `Group` for command palette sheet and notification handlers (eliminates duplication across 2-column and 3-column layout branches). Added `.sheet(isPresented: $showCommandPalette)`, `.samToggleCommandPalette` and `.samNavigateToSection` notification receivers.
+
+**SAMApp.swift**: Added `CommandGroup(after: .sidebar)` with ⌘K (command palette toggle) and ⌘1–4 (direct sidebar navigation) keyboard shortcuts via `.samNavigateToSection` notifications.
+
+**SAMModels.swift**: Added `.samToggleCommandPalette` and `.samNavigateToSection` notification names.
+
+### Files Summary
+| File | Action |
+|------|--------|
+| `Views/Shared/CommandPaletteView.swift` | NEW |
+| `Views/AppShellView.swift` | MODIFY |
+| `App/SAMApp.swift` | MODIFY |
+| `Models/SAMModels.swift` | MODIFY |
+
+---
+
+## February 27, 2026 - Strategic Action Coaching Flow
+
+### Overview
+Transforms the "Act" button on Strategic Actions from a passive "mark as acted on" flag into an active coaching pipeline. When recommendations are generated, each now includes 2-3 implementation approaches. Clicking "Act" opens an approach selection sheet, and selecting an approach launches a chatbot-style planning session that connects to concrete actions (compose, schedule, draft content, create note).
+
+### Phase A: Data Layer — Implementation Approaches
+- **StrategicDigestDTO.swift**: Added `ImplementationApproach` struct (id, title, summary, steps, effort), `EffortLevel` enum (quick/moderate/substantial), and `LLMImplementationApproach` parsing type
+- **StrategicRec**: Added `approaches: [ImplementationApproach]` property (default empty, backward-compatible)
+- **PipelineAnalystService, TimeAnalystService, PatternDetectorService**: Extended LLM prompts to generate 2-3 implementation approaches per recommendation; updated parsing to convert `LLMImplementationApproach` → `ImplementationApproach`
+- **StrategicCoordinator**: Updated `synthesize()` to pass approaches through when adjusting priorities; added `condensedBusinessSnapshot()` for bounded coaching context
+
+### Phase B: Approach Selection Sheet
+- **StrategicActionSheet.swift** (new): Sheet showing recommendation context + implementation approach cards with effort badges. Each approach has a "Plan This" button that opens the coaching session. Includes "Mark as Done" and "Dismiss" for users who handle things on their own. Empty-approaches fallback shows a "Get Planning Help" button.
+- **StrategicInsightsView.swift**: Rewired "Act" button to present StrategicActionSheet instead of directly recording feedback. Added state for action sheet and coaching session flow.
+
+### Phase C: Coaching Chat Session
+- **CoachingSessionDTO.swift** (new): `CoachingMessage` (id, role, content, timestamp, actions), `CoachingAction` (id, label, actionType, metadata), `CoachingSessionContext` (recommendation, approach, businessSnapshot)
+- **CoachingPlannerService.swift** (new): Actor service managing AI interactions with bounded context windows (~1500 tokens per call). Generates initial plan and follow-up responses. Extracts actionable items from AI text via keyword matching (compose, schedule, draft, note patterns).
+- **CoachingSessionView.swift** (new): Chat-style interface with message bubbles, action buttons routed to existing infrastructure (ComposeWindowView, ContentDraftSheet, DeepWorkScheduleSheet, QuickNoteWindow), text input with send, and "Done" button that records feedback.
+
+### Files Created
+- `SAM/Views/Business/StrategicActionSheet.swift`
+- `SAM/Views/Business/CoachingSessionView.swift`
+- `SAM/Models/DTOs/CoachingSessionDTO.swift`
+- `SAM/Services/CoachingPlannerService.swift`
+
+### Phase D: Concurrent Plan Generation Fix
+- **StrategicInsightsView.swift**: Replaced single-valued state (`preparingPlanForRecID`, `preparedMessages`) with dictionary-based `preparations: [UUID: PlanPreparation]` keyed by recommendation ID. Multiple plans can now generate simultaneously without clobbering each other. Completed plans show "View Plan" / "Discard" buttons instead of auto-opening the coaching session. New `PlanPreparation` struct tracks per-recommendation state (recommendation, approach, messages, isReady).
+
+### Phase E: Best Practices Knowledge Base
+- **BestPractices.json** (new): Bundled JSON database of 24 WFG-relevant best practices across 6 categories (pipeline, recruiting, time, content, pattern, general). Each entry includes title, description, and suggested actions.
+- **BestPracticeDTO.swift** (new): Sendable DTO for best practice entries (id, title, category, description, suggestedActions).
+- **BestPracticesService.swift** (new): Actor service that loads bundled + user-contributed practices from UserDefaults. Queries by category with limit. Supports user CRUD for custom practices.
+
+### Phase F: Constrained Coaching Prompts
+- **CoachingPlannerService.swift**: Completely rewritten system instruction with explicit allowlist of actions (compose, schedule, draft, review data, consult upline, visit places, suggest talking points) and blocklist (no tool research, IT hiring, software purchases, website building). Best practices injected into system instruction for grounded advice. Initial plan and follow-up prompts tightened with constraint reminders.
+- **CoachingSessionDTO.swift**: Added `reviewPipeline` action type for navigating to Business dashboard.
+- **CoachingSessionView.swift**: Added handler for `reviewPipeline` action (posts `.samNavigateToStrategicInsights` notification). Added icon/tint for new action type.
+- **SAMModels.swift**: Added `.samNavigateToStrategicInsights` notification name.
+- **AppShellView.swift**: Added handler to navigate sidebar to "business" on strategic insights notification.
+- **BusinessDashboardView.swift**: Added handler to select Strategic tab (index 0) on strategic insights notification.
+- Action extraction updated with new patterns: "review your pipeline" → `.reviewPipeline`, "upline/trainer/field coach" → `.composeMessage` with "Contact Upline" label.
+
+### Phase G: System Notifications for Plan Readiness
+- **SystemNotificationService.swift** (new): `@MainActor` service managing macOS system notifications via `UNUserNotificationCenter`. Configures notification categories at app launch. Posts "Coaching Plan Ready" notification when background plan generation completes. Handles notification tap to bring app to foreground and navigate to Strategic Insights. Lazy permission request (first time only).
+- **SAMApp.swift**: Added `applicationDidFinishLaunching` to `SAMAppDelegate` for notification service configuration.
+- **StrategicInsightsView.swift**: Posts system notification after plan generation completes, so user knows even if they navigated away from the Business tab.
+
+### Files Created
+- `SAM/Views/Business/StrategicActionSheet.swift`
+- `SAM/Views/Business/CoachingSessionView.swift`
+- `SAM/Models/DTOs/CoachingSessionDTO.swift`
+- `SAM/Services/CoachingPlannerService.swift`
+- `SAM/Resources/BestPractices.json`
+- `SAM/Models/DTOs/BestPracticeDTO.swift`
+- `SAM/Services/BestPracticesService.swift`
+- `SAM/Services/SystemNotificationService.swift`
+
+### Files Modified
+- `SAM/Models/DTOs/StrategicDigestDTO.swift`
+- `SAM/Services/PipelineAnalystService.swift`
+- `SAM/Services/TimeAnalystService.swift`
+- `SAM/Services/PatternDetectorService.swift`
+- `SAM/Coordinators/StrategicCoordinator.swift`
+- `SAM/Views/Business/StrategicInsightsView.swift`
+- `SAM/Models/SAMModels.swift`
+- `SAM/Views/AppShellView.swift`
+- `SAM/Views/Business/BusinessDashboardView.swift`
+- `SAM/App/SAMApp.swift`
+
+---
+
+## February 27, 2026 - Interactive Content Ideas
+
+### Overview
+Content Ideas in the Business > Strategic view were previously rendered as plain, non-interactive numbered text. Users could not select, copy, or take action on any content idea. Additionally, the persistence layer was discarding structured `ContentTopic` data (keyPoints, suggestedTone, complianceNotes) by flattening to semicolon-separated titles.
+
+### Changes
+
+**StrategicCoordinator.swift**: `persistDigest()` now JSON-encodes the full `[ContentTopic]` array into `contentSuggestions` instead of flattening to semicolon-separated titles. This preserves keyPoints, suggestedTone, and complianceNotes for downstream rendering.
+
+**StrategicInsightsView.swift**: `contentIdeasSection` rewritten to decode structured `ContentTopic` JSON. Each idea is now a clickable button showing the topic title and key points. Clicking opens `ContentDraftSheet` pre-populated with the topic's structured data. Backward-compatible: falls back to semicolon-separated plain text rendering (with text selection enabled) for digests created before this change. Added `selectedContentTopic` state and `.sheet(item:)` for `ContentDraftSheet`.
+
+### Files Modified
+| File | Action |
+|------|--------|
+| `Coordinators/StrategicCoordinator.swift` | MODIFY — JSON-encode ContentTopic array |
+| `Views/Business/StrategicInsightsView.swift` | MODIFY — interactive content ideas + ContentDraftSheet |
+
+---
+
+## February 27, 2026 - Life Event Coaching
+
+### Overview
+Adds tangible action capabilities to Life Event cards in the Today view. Previously, life events showed only Done/Skip buttons with a copy-only outreach suggestion. Now each card includes Send Message, Coach Me, and Create Note buttons. The "Coach Me" button opens an AI coaching chatbot with event-type-calibrated tone — empathetic for loss/health events, celebratory for milestones, transition-supportive for job changes and retirement.
+
+### Phase H: Life Event Action Buttons + Coaching Chatbot
+
+**New Files:**
+- **LifeEventCoachingService.swift**: Actor service with event-type-calibrated AI prompts. `buildSystemInstruction()` selects tone guidance per event type (loss → empathy-first with no business pivot; new_baby/marriage/graduation → celebration then gentle coverage review; job_change/retirement/moving → congratulations + financial planning transition). Action extraction pre-populates person metadata. Follows CoachingPlannerService pattern.
+- **LifeEventCoachingView.swift**: Chat-style coaching interface for life events. Mirrors CoachingSessionView structure with message bubbles, action buttons (compose, schedule, note, navigate), and text input. Header shows event icon, person name, event type badge. Uses `.task` for initial coaching load via `LifeEventCoachingService`.
+- **FlowLayout.swift** (shared): Extracted `FlowLayout` from CoachingSessionView to `Views/Shared/FlowLayout.swift`. Removed duplicate private copies from CoachingSessionView, MeetingPrepSection, and PersonDetailView.
+
+**Modified Files:**
+- **CoachingSessionDTO.swift**: Added `LifeEventCoachingContext` struct (event, personID, personName, personRoles, relationshipSummary) alongside existing `CoachingSessionContext`.
+- **LifeEventsSection.swift**: Added 3 action buttons (Send Message/blue, Coach Me/purple, Create Note/green) to each card between outreach suggestion and Done/Skip. Added coaching sheet presentation via `activeCoachingContext` state. Added `resolvePersonID`, `sendMessage`, `createNote`, `openCoaching` handlers using existing payload types (ComposePayload, QuickNotePayload).
+- **CoachingSessionView.swift**: Removed private `FlowLayout` (now uses shared version).
+- **MeetingPrepSection.swift**: Removed private `FlowLayout` (now uses shared version).
+- **PersonDetailView.swift**: Removed private `FlowLayout` (now uses shared version).
+
+### Key Design Decisions
+- **Specialize, not generalize**: Created separate `LifeEventCoachingContext` and `LifeEventCoachingService` rather than generalizing the existing strategic coaching system. Life event coaching has fundamentally different prompt needs (emotional tone calibration) and context shape.
+- **Reused existing primitives**: `CoachingMessage`, `CoachingAction`, `CoachingAction.ActionType` are shared between strategic and life event coaching.
+- **Tone calibration**: AI is instructed to never pitch business services for loss/health events in initial outreach. For celebratory events, financial review is suggested as a separate later conversation, not embedded in the congratulatory message.
+
+### Files Summary
+
+| File | Action |
+|------|--------|
+| `Services/LifeEventCoachingService.swift` | NEW |
+| `Views/Awareness/LifeEventCoachingView.swift` | NEW |
+| `Views/Shared/FlowLayout.swift` | NEW (extracted) |
+| `Models/DTOs/CoachingSessionDTO.swift` | MODIFY |
+| `Views/Awareness/LifeEventsSection.swift` | MODIFY |
+| `Views/Business/CoachingSessionView.swift` | MODIFY (remove FlowLayout) |
+| `Views/Awareness/MeetingPrepSection.swift` | MODIFY (remove FlowLayout) |
+| `Views/People/PersonDetailView.swift` | MODIFY (remove FlowLayout) |
+
+---
+
+## February 27, 2026 - UX Restructuring: Signal Over Noise
+
+### Overview
+Major UX overhaul transforming SAM from a feature-dense tool organized by data type into a focused coaching assistant organized by user intent. The goal: answer three questions in under 60 seconds — "What should I do right now?", "Who needs my attention?", and "How is my business doing?"
+
+### Phase 1: Sidebar Consolidation
+- **AppShellView.swift**: Reduced sidebar from 7 items (3 sections) to 4 flat items: Today, People, Business, Search
+- Simplified layout: only People uses three-column layout; all others use two-column
+- Extracted notification handlers into shared `AppShellNotificationHandlers` ViewModifier (eliminates duplication between layout branches)
+- Added `@AppStorage` migration in `.onAppear` to remap stale values (`awareness`→`today`, `inbox`→`today`, `contexts`→`people`, `graph`→`business`)
+- Removed `InboxDetailContainer` and `ContextsDetailContainer` helper structs from AppShellView (source files remain in project)
+- Default sidebar selection changed from `"awareness"` to `"today"`
+
+### Phase 2: Today View (Awareness Restructure)
+- **AwarenessView.swift**: Renamed from "Awareness" to "Today"
+- Replaced header stat cards with time-of-day greeting (`.largeTitle` bold) + subtle "Updated X ago" timestamp
+- Added **Hero Card** zone: shows top-priority coaching outcome in a blue-tinted card with "Top Priority" label, or "You're on track" message when no urgent outcomes
+- **Today's Actions** zone: merged actionQueue + todaysFocus sections into flat list with lightweight dividers (no collapsible group headers)
+- **Review & Analytics** zone: wrapped 7 review sections in `DisclosureGroup` collapsed by default
+- Moved filter bar + insights list below Review section
+- Removed StatCard struct, `highPriorityCount`/`followUpCount`/`opportunityCount` computed properties, `collapsedGroups` state, `computedGroupOrder`, and `sectionGroupView`
+
+### Phase 3: People List Improvements
+- **PeopleListView.swift (PersonRowView)**: Cached health computation into single `health` property
+- Name font upgraded from `.body` to `.headline`
+- Replaced generic `person.circle.fill` fallback with colored **initials circle** (color from primary role via `RoleBadgeStyle`)
+- Added **coaching preview line** below name: "Follow up — N days since last contact" (high/critical decay), "Engagement slowing" (decelerating velocity), or email fallback
+- Added **urgency accent strip** (3pt red/orange bar on leading edge) for high/critical decay risk contacts
+
+### Phase 4: Person Detail Simplification
+- **OutcomeRepository.swift**: Added `fetchTopActiveOutcome(forPersonID:)` method
+- **PersonDetailView.swift**: Redesigned above-the-fold header:
+  - Photo enlarged to 96pt at full opacity with 12pt rounded corners + initials fallback
+  - Health status as clear sentence with colored dot ("Healthy — last spoke 3 days ago" / "At risk — 28 days since last contact")
+  - SAM recommendation card (blue-tinted) when active outcomes exist for the person
+  - Quick action buttons: Call, Email, Add Note (`.bordered`, `.controlSize(.small)`)
+  - Primary phone + email shown directly in header
+- Reordered sections: Notes first, then Recruiting Pipeline, Production, Relationship Summary
+- Added **"More Details"** `DisclosureGroup` (collapsed by default) containing: full contact info, referred by, alerts, contexts, coverages, communication preferences, relationship health details
+- Removed Sync Info and Raw Insights sections from UI
+- Updated `viewInGraph()` to set sidebar to `"business"` and post `.samNavigateToGraph` notification
+
+### Phase 5: Business Dashboard Improvements
+- **BusinessDashboardView.swift**: Added **Business Health Summary** above tabs — 4 metric cards in a grid (Active Pipeline, Clients, Recruiting, This Month)
+- Default tab changed to Strategic (index 0)
+- Reordered tabs: Strategic → Client Pipeline → Recruiting → Production → Goals → Graph
+- Added Graph tab embedding `RelationshipGraphView()`
+- Removed `GraphMiniPreviewView` from bottom of dashboard
+- Added `.onReceive(.samNavigateToGraph)` to switch to Graph tab
+- Navigation title changed from "Pipeline" to "Business"
+
+### Files Modified
+| File | Changes |
+|------|---------|
+| `AppShellView.swift` | Sidebar 7→4, layout simplification, notification ViewModifier |
+| `AwarenessView.swift` | Renamed "Today", hero card, flat sections, collapsed review |
+| `PeopleListView.swift` | Initials fallback, coaching preview, urgency strip |
+| `PersonDetailView.swift` | Header redesign, section reorder, More Details group |
+| `OutcomeRepository.swift` | `fetchTopActiveOutcome(forPersonID:)` |
+| `BusinessDashboardView.swift` | Health summary, Strategic default, Graph tab |
+
+### No Schema Changes
+All changes are view-layer only. No SwiftData model migrations required.
+
+---
+
 ## February 27, 2026 - Phase AA Completion: Advanced Interaction, Edge Bundling, Visual Polish + Accessibility (No Schema Change)
 
 ### Overview

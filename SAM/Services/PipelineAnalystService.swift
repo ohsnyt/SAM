@@ -45,7 +45,15 @@ actor PipelineAnalystService {
                   "title": "Short actionable title",
                   "rationale": "Why this matters and what to do",
                   "priority": 0.8,
-                  "category": "pipeline"
+                  "category": "pipeline",
+                  "approaches": [
+                    {
+                      "title": "Short approach name",
+                      "summary": "2-3 sentence description of this approach",
+                      "steps": ["Step 1", "Step 2", "Step 3"],
+                      "effort": "moderate"
+                    }
+                  ]
                 }
               ],
               "risk_alerts": ["Urgent issue description"]
@@ -57,6 +65,8 @@ actor PipelineAnalystService {
             - priority is 0.0 to 1.0 (1.0 = most urgent)
             - risk_alerts only for truly urgent issues (stuck people, zero conversion, etc.)
             - If data is sparse, keep recommendations brief rather than speculating
+            - Each recommendation should include 2-3 approaches (alternative ways to implement it)
+            - effort is "quick" (< 30 min), "moderate" (1-2 hours), or "substantial" (half-day+)
             """
 
         let prompt = """
@@ -87,7 +97,8 @@ actor PipelineAnalystService {
                         title: title,
                         rationale: rationale,
                         priority: rec.priority ?? 0.5,
-                        category: rec.category ?? "pipeline"
+                        category: rec.category ?? "pipeline",
+                        approaches: parseApproaches(rec.approaches)
                     )
                 },
                 riskAlerts: llm.riskAlerts ?? []
@@ -100,6 +111,18 @@ actor PipelineAnalystService {
             }
             logger.error("Pipeline analysis JSON parsing failed: \(error.localizedDescription)")
             throw error
+        }
+    }
+
+    private func parseApproaches(_ llmApproaches: [LLMImplementationApproach]?) -> [ImplementationApproach] {
+        (llmApproaches ?? []).compactMap { a in
+            guard let title = a.title, let summary = a.summary else { return nil }
+            return ImplementationApproach(
+                title: title,
+                summary: summary,
+                steps: a.steps ?? [],
+                effort: EffortLevel(rawValue: a.effort ?? "moderate") ?? .moderate
+            )
         }
     }
 }

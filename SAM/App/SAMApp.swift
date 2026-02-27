@@ -22,6 +22,11 @@ final class SAMAppDelegate: NSObject, NSApplicationDelegate {
     private let log = Logger(subsystem: "com.matthewsessions.SAM", category: "AppDelegate")
 
     @MainActor
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        SystemNotificationService.shared.configure()
+    }
+
+    @MainActor
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         log.info("App termination requested — cancelling background tasks")
         ContactsImportCoordinator.shared.cancelAll()
@@ -110,6 +115,36 @@ struct SAMApp: App {
                 }
         }
         .commands {
+            // ⌘K Command Palette + ⌘1–4 sidebar navigation
+            CommandGroup(after: .sidebar) {
+                Button("Command Palette") {
+                    NotificationCenter.default.post(name: .samToggleCommandPalette, object: nil)
+                }
+                .keyboardShortcut("k", modifiers: .command)
+
+                Divider()
+
+                Button("Go to Today") {
+                    NotificationCenter.default.post(name: .samNavigateToSection, object: nil, userInfo: ["section": "today"])
+                }
+                .keyboardShortcut("1", modifiers: .command)
+
+                Button("Go to People") {
+                    NotificationCenter.default.post(name: .samNavigateToSection, object: nil, userInfo: ["section": "people"])
+                }
+                .keyboardShortcut("2", modifiers: .command)
+
+                Button("Go to Business") {
+                    NotificationCenter.default.post(name: .samNavigateToSection, object: nil, userInfo: ["section": "business"])
+                }
+                .keyboardShortcut("3", modifiers: .command)
+
+                Button("Go to Search") {
+                    NotificationCenter.default.post(name: .samNavigateToSection, object: nil, userInfo: ["section": "search"])
+                }
+                .keyboardShortcut("4", modifiers: .command)
+            }
+
             CommandMenu("Debug") {
                 Button("Reset Onboarding") {
                     UserDefaults.standard.set(false, forKey: "hasCompletedOnboarding")

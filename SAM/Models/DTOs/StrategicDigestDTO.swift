@@ -90,6 +90,7 @@ nonisolated public struct StrategicRec: Codable, Sendable, Identifiable {
     public let priority: Double
     public let category: String
     public var feedback: RecommendationFeedback?
+    public let approaches: [ImplementationApproach]
 
     public init(
         id: UUID = UUID(),
@@ -97,7 +98,8 @@ nonisolated public struct StrategicRec: Codable, Sendable, Identifiable {
         rationale: String,
         priority: Double = 0.5,
         category: String,
-        feedback: RecommendationFeedback? = nil
+        feedback: RecommendationFeedback? = nil,
+        approaches: [ImplementationApproach] = []
     ) {
         self.id = id
         self.title = title
@@ -105,6 +107,7 @@ nonisolated public struct StrategicRec: Codable, Sendable, Identifiable {
         self.priority = priority
         self.category = category
         self.feedback = feedback
+        self.approaches = approaches
     }
 }
 
@@ -114,6 +117,38 @@ public enum RecommendationFeedback: String, Codable, Sendable {
     case actedOn
     case dismissed
     case ignored
+}
+
+// MARK: - Effort Level
+
+public enum EffortLevel: String, Codable, Sendable {
+    case quick        // < 30 min, single action
+    case moderate     // 1-2 hours, multiple steps
+    case substantial  // Half-day+, multi-session project
+}
+
+// MARK: - Implementation Approach
+
+nonisolated public struct ImplementationApproach: Codable, Sendable, Identifiable {
+    public let id: UUID
+    public let title: String
+    public let summary: String
+    public let steps: [String]
+    public let effort: EffortLevel
+
+    public init(
+        id: UUID = UUID(),
+        title: String,
+        summary: String,
+        steps: [String] = [],
+        effort: EffortLevel = .moderate
+    ) {
+        self.id = id
+        self.title = title
+        self.summary = summary
+        self.steps = steps
+        self.effort = effort
+    }
 }
 
 // MARK: - Discovered Pattern
@@ -202,6 +237,14 @@ nonisolated struct LLMStrategicRec: Codable, Sendable {
     let rationale: String?
     let priority: Double?
     let category: String?
+    let approaches: [LLMImplementationApproach]?
+}
+
+nonisolated struct LLMImplementationApproach: Codable, Sendable {
+    let title: String?
+    let summary: String?
+    let steps: [String]?
+    let effort: String?
 }
 
 nonisolated struct LLMDiscoveredPattern: Codable, Sendable {

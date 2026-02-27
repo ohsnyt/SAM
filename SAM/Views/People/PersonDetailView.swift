@@ -50,15 +50,17 @@ struct PersonDetailView: View {
     
     // MARK: - Body
     
+    @State private var showMoreDetails = false
+
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
-                // Header with photo and basic info
+                // Above-the-fold: photo, name, health, recommendation, quick actions, primary contact
                 headerSection
                     .padding(.horizontal)
                     .padding(.top)
-                
-                // Debug: Show loading state
+
+                // Loading state
                 if isLoadingContact {
                     HStack {
                         ProgressView()
@@ -67,18 +69,18 @@ struct PersonDetailView: View {
                     }
                     .padding()
                 }
-                
-                // Contact information
-                if let contact = fullContact {
-                    contactSections(contact)
-                } else if !isLoadingContact && person.contactIdentifier != nil {
-                    // Show helpful message if loading failed
+
+                // Error state for contacts
+                if !isLoadingContact && person.contactIdentifier != nil && fullContact == nil {
                     errorStateSection
                         .padding()
                 }
-                
-                // SAM-specific sections
-                samDataSections
+
+                // Primary sections (visible by default)
+                primarySections
+
+                // More Details (collapsed by default)
+                moreDetailsSection
             }
         }
         .navigationTitle("")  // Remove title since we show it in the header
@@ -166,87 +168,215 @@ struct PersonDetailView: View {
         }
     }
     
-    // MARK: - Header Section
-    
-    private var headerSection: some View {
-        HStack(alignment: .top, spacing: 16) {
-            // Left side: Name, company, phone, email
-            VStack(alignment: .leading, spacing: 6) {
-                // Name
-                Text(person.displayNameCache ?? person.displayName)
-                    .font(.system(size: 28, weight: .bold))
-                
-                // Company and job title
-                if let contact = fullContact {
-                    if !contact.organizationName.isEmpty {
-                        HStack(alignment: .bottom, spacing: 4) {
-                            Text(contact.organizationName)
-                                .font(.body)
-                            if !contact.jobTitle.isEmpty {
-                                Text("•")
-                                    .font(.caption)
-                                    .foregroundStyle(.green.opacity(0.7))
-                                Text(contact.jobTitle)
-                                    .font(.caption)
-                                    .foregroundStyle(.green.opacity(0.7))
-                            }
-                        }
-                    } else if !contact.jobTitle.isEmpty {
-                        Text(contact.jobTitle)
-                            .font(.body)
-                    }
-                    
-                    // Primary phone
-                    if let primaryPhone = contact.phoneNumbers.first {
-                        HStack(alignment: .bottom, spacing: 4) {
-                            Text(primaryPhone.number)
-                                .font(.body)
-                            if let label = primaryPhone.label, !label.isEmpty {
-                                Text(label)
-                                    .font(.caption)
-                                    .foregroundStyle(.green.opacity(0.7))
-                            }
-                        }
-                    }
-                    
-                    // Primary email
-                    if let primaryEmail = contact.emailAddresses.first {
-                        Text(primaryEmail)
-                            .font(.body)
-                            .foregroundStyle(.blue)
-                    }
-                }
-                
-                // Role badges
-                roleBadgesView
+    // MARK: - Header Section (Above the Fold)
 
-                // Channel preference
-                if !person.isMe {
-                    channelPreferenceView
-                    cadencePreferenceView
+    private var headerSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Row 1: Photo + Name + Company + Role Badges
+            HStack(alignment: .top, spacing: 16) {
+                // Photo (96pt, full opacity, rounded corners)
+                if let photoData = person.photoThumbnailCache,
+                   let nsImage = NSImage(data: photoData) {
+                    Image(nsImage: nsImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: 96, height: 96)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                } else {
+                    // Initials fallback
+                    let initials = personInitials
+                    let color = person.roleBadges.first.map { RoleBadgeStyle.forBadge($0).color } ?? .secondary
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(color.opacity(0.15))
+                            .frame(width: 96, height: 96)
+                        Text(initials)
+                            .font(.system(size: 36, weight: .semibold))
+                            .foregroundStyle(color)
+                    }
                 }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(person.displayNameCache ?? person.displayName)
+                        .font(.system(size: 28, weight: .bold))
+
+                    if let contact = fullContact {
+                        if !contact.organizationName.isEmpty {
+                            HStack(spacing: 4) {
+                                Text(contact.organizationName)
+                                    .font(.body)
+                                if !contact.jobTitle.isEmpty {
+                                    Text("•")
+                                        .foregroundStyle(.secondary)
+                                    Text(contact.jobTitle)
+                                        .font(.body)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        } else if !contact.jobTitle.isEmpty {
+                            Text(contact.jobTitle)
+                                .font(.body)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    // Role badges
+                    roleBadgesView
+                }
+
+                Spacer()
             }
 
-            Spacer()
+            // Row 2: Health status sentence
+            if !person.isMe {
+                healthStatusText
+            }
 
-            // Right side: Photo at 75% opacity
-            if let photoData = person.photoThumbnailCache,
-               let nsImage = NSImage(data: photoData) {
-                Image(nsImage: nsImage)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(width: 75, height: 75)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                    .opacity(0.75)
-            } else {
-                Image(systemName: "person.circle.fill")
-                    .resizable()
-                    .frame(width: 75, height: 75)
-                    .foregroundStyle(.secondary)
-                    .opacity(0.75)
+            // Row 3: Top recommendation card (if exists)
+            if let outcome = OutcomeRepository.shared.fetchTopActiveOutcome(forPersonID: person.id) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("SAM recommends")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.blue)
+                        .textCase(.uppercase)
+
+                    Text(outcome.title)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+
+                    Text(outcome.rationale)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(3)
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.blue.opacity(0.06))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.blue.opacity(0.2), lineWidth: 1)
+                )
+            }
+
+            // Row 4: Quick actions
+            quickActionsRow
+
+            // Row 5: Primary contact info
+            if let contact = fullContact {
+                primaryContactInfo(contact)
             }
         }
         .padding(.bottom, 16)
+    }
+
+    private var personInitials: String {
+        let name = person.displayNameCache ?? person.displayName
+        let words = name.split(separator: " ")
+        let chars = words.prefix(2).compactMap(\.first)
+        return String(chars).uppercased()
+    }
+
+    private var healthStatusText: some View {
+        let health = MeetingPrepCoordinator.shared.computeHealth(for: person)
+        return HStack(spacing: 6) {
+            Circle()
+                .fill(health.statusColor)
+                .frame(width: 8, height: 8)
+
+            if let days = health.daysSinceLastInteraction {
+                switch health.decayRisk {
+                case .none, .low:
+                    Text("Healthy — last spoke \(days) days ago")
+                case .moderate:
+                    Text("Needs attention — \(days) days since last contact")
+                case .high, .critical:
+                    Text("At risk — \(days) days since last contact")
+                }
+            } else {
+                Text("No interaction history")
+            }
+        }
+        .font(.subheadline)
+        .foregroundStyle(.secondary)
+    }
+
+    private var quickActionsRow: some View {
+        HStack(spacing: 8) {
+            if let contact = fullContact, let phone = contact.phoneNumbers.first {
+                Button {
+                    if let url = URL(string: "tel:\(phone.number.replacingOccurrences(of: " ", with: ""))") {
+                        NSWorkspace.shared.open(url)
+                    }
+                } label: {
+                    Label("Call", systemImage: "phone")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+
+            if let contact = fullContact, let email = contact.emailAddresses.first {
+                Button {
+                    if let url = URL(string: "mailto:\(email)") {
+                        NSWorkspace.shared.open(url)
+                    }
+                } label: {
+                    Label("Email", systemImage: "envelope")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+
+            Button {
+                let payload = QuickNotePayload(
+                    outcomeID: UUID(),
+                    personID: person.id,
+                    personName: person.displayNameCache ?? person.displayName,
+                    contextTitle: "Quick Note"
+                )
+                NotificationCenter.default.post(
+                    name: .samOpenQuickNote,
+                    object: nil,
+                    userInfo: ["payload": payload]
+                )
+            } label: {
+                Label("Add Note", systemImage: "square.and.pencil")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+
+            Spacer()
+        }
+    }
+
+    private func primaryContactInfo(_ contact: ContactDTO) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if let phone = contact.phoneNumbers.first {
+                HStack(spacing: 4) {
+                    Image(systemName: "phone")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(phone.number)
+                        .font(.subheadline)
+                    if let label = phone.label, !label.isEmpty {
+                        Text(label)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            if let email = contact.emailAddresses.first {
+                HStack(spacing: 4) {
+                    Image(systemName: "envelope")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(email)
+                        .font(.subheadline)
+                        .foregroundStyle(.blue)
+                }
+            }
+        }
     }
     
     // MARK: - Role Badges
@@ -915,71 +1045,86 @@ struct PersonDetailView: View {
     
     // SAM-specific data sections
     @ViewBuilder
-    private var samDataSections: some View {
-        VStack(spacing: 0) {
-            // Relationship Health (Phase K)
-            samSection(title: "Relationship Health") {
-                RelationshipHealthView(
-                    health: MeetingPrepCoordinator.shared.computeHealth(for: person)
-                )
-            }
+    // MARK: - Primary Sections (visible by default)
 
-            // Recruiting Pipeline (Phase R — shown for Agent badge)
+    private var primarySections: some View {
+        VStack(spacing: 0) {
+            // Notes — most used section, shown first
+            notesSection
+
+            // Recruiting Pipeline (Agent badge)
             if person.roleBadges.contains("Agent") {
                 recruitingStageSection
             }
 
-            // Production (Phase S — shown for Client or Applicant badge)
+            // Production (Client or Applicant badge)
             if person.roleBadges.contains("Client") || person.roleBadges.contains("Applicant") {
                 productionSection
             }
 
-            // Referred by (Client / Applicant / Lead only)
-            if hasReferralRole {
-                referredBySection
-            }
-
-            // Alert counts
-            if person.consentAlertsCount > 0 || person.reviewAlertsCount > 0 {
-                samSection(title: "Alerts") {
-                    alertsContent
-                }
-            }
-            
-            // Participations (contexts)
-            if !person.participations.isEmpty {
-                samSection(title: "Contexts") {
-                    participationsContent
-                }
-            }
-            
-            // Coverages (insurance/financial products)
-            if !person.coverages.isEmpty {
-                samSection(title: "Coverages") {
-                    coveragesContent
-                }
-            }
-            
-            // Relationship Summary (Phase L-2)
+            // Relationship Summary
             if person.relationshipSummary != nil {
                 relationshipSummarySection
             }
+        }
+    }
 
-            // Notes (Phase L-2)
-            notesSection
-            
-            // Insights
-            if !person.insights.isEmpty {
-                samSection(title: "Insights") {
-                    insightsContent
+    // MARK: - More Details (collapsed by default)
+
+    private var moreDetailsSection: some View {
+        DisclosureGroup("More Details", isExpanded: $showMoreDetails) {
+            VStack(spacing: 0) {
+                // Full contact info
+                if let contact = fullContact {
+                    contactSections(contact)
+                }
+
+                // Referred by
+                if hasReferralRole {
+                    referredBySection
+                }
+
+                // Alerts
+                if person.consentAlertsCount > 0 || person.reviewAlertsCount > 0 {
+                    samSection(title: "Alerts") {
+                        alertsContent
+                    }
+                }
+
+                // Contexts/participations
+                if !person.participations.isEmpty {
+                    samSection(title: "Contexts") {
+                        participationsContent
+                    }
+                }
+
+                // Coverages
+                if !person.coverages.isEmpty {
+                    samSection(title: "Coverages") {
+                        coveragesContent
+                    }
+                }
+
+                // Channel + cadence preferences
+                if !person.isMe {
+                    samSection(title: "Communication Preferences") {
+                        VStack(alignment: .leading, spacing: 4) {
+                            channelPreferenceView
+                            cadencePreferenceView
+                        }
+                    }
+                }
+
+                // Relationship health details
+                samSection(title: "Relationship Health") {
+                    RelationshipHealthView(
+                        health: MeetingPrepCoordinator.shared.computeHealth(for: person)
+                    )
                 }
             }
-            
-            // Sync info
-            samSection(title: "Sync") {
-                syncInfoContent
-            }
         }
+        .padding(.horizontal)
+        .padding(.vertical, 8)
     }
     
     // Helper view for SAM data sections
@@ -1419,7 +1564,8 @@ struct PersonDetailView: View {
         if let node = coordinator.nodes.first(where: { $0.id == person.id }) {
             coordinator.viewportCenter = node.position
         }
-        UserDefaults.standard.set("graph", forKey: "sam.sidebar.selection")
+        UserDefaults.standard.set("business", forKey: "sam.sidebar.selection")
+        NotificationCenter.default.post(name: .samNavigateToGraph, object: nil)
     }
 
     private func createInContacts() {
@@ -1610,64 +1756,7 @@ private struct ReferrerPickerSheet: View {
     }
 }
 
-// MARK: - Flow Layout (for wrapping badges)
 
-private struct FlowLayout: Layout {
-    var spacing: CGFloat = 8
-    
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
-        var totalHeight: CGFloat = 0
-        var totalWidth: CGFloat = 0
-
-        var lineWidth: CGFloat = 0
-        var lineHeight: CGFloat = 0
-
-        let maxWidth = proposal.width ?? .infinity
-
-        for size in sizes {
-            if lineWidth + size.width > maxWidth {
-                totalHeight += lineHeight + spacing
-                lineWidth = size.width
-                lineHeight = size.height
-            } else {
-                lineWidth += size.width + spacing
-                lineHeight = max(lineHeight, size.height)
-            }
-            
-            totalWidth = max(totalWidth, lineWidth)
-        }
-        
-        totalHeight += lineHeight
-        
-        return CGSize(width: totalWidth, height: totalHeight)
-    }
-    
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        let maxWidth = bounds.width
-        var lineWidth: CGFloat = 0
-        var lineHeight: CGFloat = 0
-        var y: CGFloat = bounds.minY
-        
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            
-            if lineWidth + size.width > maxWidth {
-                y += lineHeight + spacing
-                lineWidth = 0
-                lineHeight = 0
-            }
-            
-            subview.place(
-                at: CGPoint(x: bounds.minX + lineWidth, y: y),
-                proposal: ProposedViewSize(size)
-            )
-            
-            lineWidth += size.width + spacing
-            lineHeight = max(lineHeight, size.height)
-        }
-    }
-}
 
 // MARK: - Preview
 

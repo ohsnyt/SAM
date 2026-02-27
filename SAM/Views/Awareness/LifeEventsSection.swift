@@ -16,7 +16,10 @@ struct LifeEventsSection: View {
     @Query(sort: \SamNote.createdAt, order: .reverse)
     private var allNotes: [SamNote]
 
+    @Environment(\.openWindow) private var openWindow
+
     @State private var dismissedIDs: Set<UUID> = []
+    @State private var activeCoachingContext: LifeEventCoachingContext?
 
     /// Flatten all pending life events from notes, paired with their source note.
     private var pendingEvents: [(event: LifeEvent, note: SamNote)] {
@@ -66,6 +69,15 @@ struct LifeEventsSection: View {
                                 withAnimation { () -> Void in
                                     dismissedIDs.insert(item.event.id)
                                 }
+                            },
+                            onSendMessage: {
+                                sendMessage(event: item.event, note: item.note)
+                            },
+                            onCoachMe: {
+                                openCoaching(event: item.event, note: item.note)
+                            },
+                            onCreateNote: {
+                                createNote(event: item.event, note: item.note)
                             }
                         )
                     }
@@ -73,14 +85,82 @@ struct LifeEventsSection: View {
                 .padding()
             }
             .background(Color(nsColor: .controlBackgroundColor))
+            .sheet(item: $activeCoachingContext) { context in
+                LifeEventCoachingView(
+                    context: context,
+                    onDone: {
+                        if let item = pendingEvents.first(where: { $0.event.id == context.event.id }) {
+                            markActedOn(event: item.event, note: item.note)
+                        }
+                        activeCoachingContext = nil
+                    }
+                )
+            }
         }
     }
+
+    // MARK: - Actions
 
     private func markActedOn(event: LifeEvent, note: SamNote) {
         try? NotesRepository.shared.updateLifeEvent(
             note: note,
             lifeEventID: event.id,
             status: .actedOn
+        )
+    }
+
+    private func resolvePersonID(event: LifeEvent, note: SamNote) -> (id: UUID?, person: SamPerson?) {
+        let matchedPerson = note.linkedPeople.first { person in
+            let displayName = person.displayNameCache ?? person.displayName
+            return displayName.lowercased() == event.personName.lowercased()
+        } ?? note.linkedPeople.first
+        return (matchedPerson?.id, matchedPerson)
+    }
+
+    private func sendMessage(event: LifeEvent, note: SamNote) {
+        let (personID, person) = resolvePersonID(event: event, note: note)
+        let draftBody = event.outreachSuggestion ?? ""
+
+        let payload = ComposePayload(
+            outcomeID: UUID(),
+            personID: personID,
+            personName: event.personName,
+            recipientAddress: person?.emailCache ?? "",
+            channel: .iMessage,
+            subject: nil,
+            draftBody: draftBody,
+            contextTitle: "\(event.eventTypeLabel) — \(event.personName)"
+        )
+        openWindow(id: "compose-message", value: payload)
+    }
+
+    private func createNote(event: LifeEvent, note: SamNote) {
+        let (personID, _) = resolvePersonID(event: event, note: note)
+
+        let payload = QuickNotePayload(
+            outcomeID: UUID(),
+            personID: personID,
+            personName: event.personName,
+            contextTitle: "\(event.eventTypeLabel) — \(event.personName)",
+            prefillText: "Life event: \(event.eventTypeLabel)\n\(event.eventDescription)"
+        )
+        openWindow(id: "quick-note", value: payload)
+    }
+
+    private func openCoaching(event: LifeEvent, note: SamNote) {
+        let (personID, person) = resolvePersonID(event: event, note: note)
+
+        var summary = ""
+        if let roles = person?.roleBadges, !roles.isEmpty {
+            summary += "Roles: \(roles.joined(separator: ", ")). "
+        }
+
+        activeCoachingContext = LifeEventCoachingContext(
+            event: event,
+            personID: personID,
+            personName: event.personName,
+            personRoles: person?.roleBadges ?? [],
+            relationshipSummary: summary
         )
     }
 }
@@ -93,6 +173,9 @@ private struct LifeEventCard: View {
     let note: SamNote
     let onDone: () -> Void
     let onDismiss: () -> Void
+    let onSendMessage: () -> Void
+    let onCoachMe: () -> Void
+    let onCreateNote: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -162,7 +245,31 @@ private struct LifeEventCard: View {
                 Spacer()
             }
 
-            // Actions
+            // Action buttons
+            HStack(spacing: 8) {
+                Button(action: onSendMessage) {
+                    Label("Send Message", systemImage: "envelope")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .tint(.blue)
+
+                Button(action: onCoachMe) {
+                    Label("Coach Me", systemImage: "sparkles")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .tint(.purple)
+
+                Button(action: onCreateNote) {
+                    Label("Create Note", systemImage: "note.text")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .tint(.green)
+            }
+
+            // Done / Skip
             HStack(spacing: 10) {
                 Button(action: onDone) {
                     Label("Done", systemImage: "checkmark.circle")

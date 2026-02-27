@@ -51,7 +51,15 @@ actor PatternDetectorService {
                   "title": "Short actionable title",
                   "rationale": "Why this pattern matters and what to do about it",
                   "priority": 0.6,
-                  "category": "pattern"
+                  "category": "pattern",
+                  "approaches": [
+                    {
+                      "title": "Short approach name",
+                      "summary": "2-3 sentence description of this approach",
+                      "steps": ["Step 1", "Step 2", "Step 3"],
+                      "effort": "moderate"
+                    }
+                  ]
                 }
               ]
             }
@@ -63,6 +71,8 @@ actor PatternDetectorService {
             - Include 1-2 recommendations based on patterns found
             - priority is 0.0 to 1.0 (1.0 = most actionable)
             - Do not fabricate patterns — if data is sparse, report fewer patterns
+            - Each recommendation should include 2-3 approaches (alternative ways to implement it)
+            - effort is "quick" (< 30 min), "moderate" (1-2 hours), or "substantial" (half-day+)
             """
 
         let prompt = """
@@ -100,7 +110,8 @@ actor PatternDetectorService {
                         title: title,
                         rationale: rationale,
                         priority: rec.priority ?? 0.5,
-                        category: rec.category ?? "pattern"
+                        category: rec.category ?? "pattern",
+                        approaches: parseApproaches(rec.approaches)
                     )
                 }
             )
@@ -114,6 +125,18 @@ actor PatternDetectorService {
             }
             logger.error("Pattern analysis JSON parsing failed: \(error.localizedDescription)")
             throw error
+        }
+    }
+
+    private func parseApproaches(_ llmApproaches: [LLMImplementationApproach]?) -> [ImplementationApproach] {
+        (llmApproaches ?? []).compactMap { a in
+            guard let title = a.title, let summary = a.summary else { return nil }
+            return ImplementationApproach(
+                title: title,
+                summary: summary,
+                steps: a.steps ?? [],
+                effort: EffortLevel(rawValue: a.effort ?? "moderate") ?? .moderate
+            )
         }
     }
 }

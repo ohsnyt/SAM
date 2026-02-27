@@ -46,7 +46,15 @@ actor TimeAnalystService {
                   "title": "Short actionable title",
                   "rationale": "Why this matters and what to change",
                   "priority": 0.7,
-                  "category": "time"
+                  "category": "time",
+                  "approaches": [
+                    {
+                      "title": "Short approach name",
+                      "summary": "2-3 sentence description of this approach",
+                      "steps": ["Step 1", "Step 2", "Step 3"],
+                      "effort": "moderate"
+                    }
+                  ]
                 }
               ],
               "imbalances": ["Specific imbalance description"]
@@ -59,6 +67,8 @@ actor TimeAnalystService {
             - imbalances should be specific observations (e.g., "Only 15% client-facing time")
             - Financial advisors should typically spend 40-60% on client-facing activities
             - If data is sparse, note that and keep recommendations conservative
+            - Each recommendation should include 2-3 approaches (alternative ways to implement it)
+            - effort is "quick" (< 30 min), "moderate" (1-2 hours), or "substantial" (half-day+)
             """
 
         let prompt = """
@@ -89,7 +99,8 @@ actor TimeAnalystService {
                         title: title,
                         rationale: rationale,
                         priority: rec.priority ?? 0.5,
-                        category: rec.category ?? "time"
+                        category: rec.category ?? "time",
+                        approaches: parseApproaches(rec.approaches)
                     )
                 },
                 imbalances: llm.imbalances ?? []
@@ -102,6 +113,18 @@ actor TimeAnalystService {
             }
             logger.error("Time analysis JSON parsing failed: \(error.localizedDescription)")
             throw error
+        }
+    }
+
+    private func parseApproaches(_ llmApproaches: [LLMImplementationApproach]?) -> [ImplementationApproach] {
+        (llmApproaches ?? []).compactMap { a in
+            guard let title = a.title, let summary = a.summary else { return nil }
+            return ImplementationApproach(
+                title: title,
+                summary: summary,
+                steps: a.steps ?? [],
+                effort: EffortLevel(rawValue: a.effort ?? "moderate") ?? .moderate
+            )
         }
     }
 }

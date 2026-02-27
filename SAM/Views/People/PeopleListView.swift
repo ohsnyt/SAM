@@ -331,86 +331,136 @@ struct PeopleListView: View {
 private struct PersonRowView: View {
     let person: SamPerson
 
-    private var healthColor: Color? {
-        guard !person.isMe, !person.linkedEvidence.isEmpty else { return nil }
-        let color = MeetingPrepCoordinator.shared.computeHealth(for: person).statusColor
-        // Hide bar when health is indeterminate (grey = not enough data)
-        return color == .gray ? nil : color
+    // Cached health computation — avoids redundant calls per render
+    private var health: RelationshipHealth? {
+        guard !person.isMe else { return nil }
+        return MeetingPrepCoordinator.shared.computeHealth(for: person)
+    }
+
+    /// Coaching preview text for at-risk contacts.
+    private var coachingPreview: String? {
+        guard let h = health else { return nil }
+
+        // Priority 1: High/critical decay → follow up prompt
+        if h.decayRisk >= .high, let days = h.daysSinceLastInteraction {
+            return "Follow up — \(days) days since last contact"
+        }
+
+        // Priority 2: Decelerating velocity
+        if h.velocityTrend == .decelerating {
+            return "Engagement slowing"
+        }
+
+        return nil
+    }
+
+    /// Urgency strip color for leading edge accent.
+    private var urgencyStripColor: Color? {
+        guard let h = health else { return nil }
+        switch h.decayRisk {
+        case .critical: return .red
+        case .high:     return .orange
+        default:        return nil
+        }
+    }
+
+    /// Initials derived from the person's name (max 2 characters).
+    private var initials: String {
+        let name = person.displayNameCache ?? person.displayName
+        let words = name.split(separator: " ")
+        let chars = words.prefix(2).compactMap(\.first)
+        return String(chars).uppercased()
+    }
+
+    /// Color for the initials circle, based on primary role.
+    private var initialsColor: Color {
+        if let primaryRole = person.roleBadges.first {
+            return RoleBadgeStyle.forBadge(primaryRole).color
+        }
+        return .secondary
     }
 
     var body: some View {
-        HStack(spacing: 8) {
-            // Photo thumbnail
-            if let photoData = person.photoThumbnailCache,
-               let nsImage = NSImage(data: photoData) {
-                Image(nsImage: nsImage)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(width: 32, height: 32)
-                    .clipShape(Circle())
-            } else {
-                Image(systemName: "person.circle.fill")
-                    .resizable()
-                    .frame(width: 32, height: 32)
-                    .foregroundStyle(.secondary)
-            }
-
-            // Health indicator bar between thumbnail and name
-            if let color = healthColor {
+        HStack(spacing: 0) {
+            // Urgency accent strip on leading edge
+            if let stripColor = urgencyStripColor {
                 RoundedRectangle(cornerRadius: 1.5)
-                    .fill(color)
-                    .frame(width: 3, height: 28)
+                    .fill(stripColor)
+                    .frame(width: 3, height: 36)
+                    .padding(.trailing, 6)
             }
 
-            // Name, role badges, and email
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 5) {
-                    Text(person.displayNameCache ?? person.displayName)
-                        .font(.body)
-
-                    if person.isMe {
-                        Text("Me")
-                            .font(.caption2)
-                            .fontWeight(.medium)
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1)
-                            .background(.secondary)
-                            .clipShape(Capsule())
-                    }
-
-                    // Role badge icons after name
-                    ForEach(person.roleBadges, id: \.self) { badge in
-                        RoleBadgeIconView(badge: badge)
-                    }
-                }
-
-                if let email = person.emailCache ?? person.email {
-                    Text(email)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            Spacer()
-
-            // Trailing badges and alerts
             HStack(spacing: 8) {
-                // Not in Contacts badge (clickable — adds to Apple Contacts)
-                NotInContactsCapsule(person: person)
-
-                // Consent alerts
-                if person.consentAlertsCount > 0 {
-                    Label("\(person.consentAlertsCount)", systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
+                // Photo thumbnail or initials fallback
+                if let photoData = person.photoThumbnailCache,
+                   let nsImage = NSImage(data: photoData) {
+                    Image(nsImage: nsImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: 32, height: 32)
+                        .clipShape(Circle())
+                } else {
+                    ZStack {
+                        Circle()
+                            .fill(initialsColor.opacity(0.15))
+                            .frame(width: 32, height: 32)
+                        Text(initials)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(initialsColor)
+                    }
                 }
 
-                // Review alerts
-                if person.reviewAlertsCount > 0 {
-                    Label("\(person.reviewAlertsCount)", systemImage: "bell.fill")
-                        .font(.caption)
-                        .foregroundStyle(.red)
+                // Name, coaching preview, role badges
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 5) {
+                        Text(person.displayNameCache ?? person.displayName)
+                            .font(.headline)
+
+                        if person.isMe {
+                            Text("Me")
+                                .font(.caption2)
+                                .fontWeight(.medium)
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 1)
+                                .background(.secondary)
+                                .clipShape(Capsule())
+                        }
+
+                        // Role badge icons after name
+                        ForEach(person.roleBadges, id: \.self) { badge in
+                            RoleBadgeIconView(badge: badge)
+                        }
+                    }
+
+                    if let preview = coachingPreview {
+                        Text(preview)
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    } else if let email = person.emailCache ?? person.email {
+                        Text(email)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Spacer()
+
+                // Trailing badges and alerts
+                HStack(spacing: 8) {
+                    NotInContactsCapsule(person: person)
+
+                    if person.consentAlertsCount > 0 {
+                        Label("\(person.consentAlertsCount)", systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+
+                    if person.reviewAlertsCount > 0 {
+                        Label("\(person.reviewAlertsCount)", systemImage: "bell.fill")
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
                 }
             }
         }

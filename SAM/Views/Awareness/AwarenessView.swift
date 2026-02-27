@@ -33,6 +33,7 @@ struct AwarenessView: View {
     @State private var searchText = ""
     @State private var isGenerating = false
     @State private var reorderTick: Int = 0
+    @State private var showReview = false
 
     // MARK: - Briefing State
 
@@ -44,27 +45,36 @@ struct AwarenessView: View {
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 0) {
-                // Header
+                // Subtle last-updated timestamp
                 headerSection
-
-                Divider()
-
-                // Filter Bar
-                filterBar
-
-                Divider()
 
                 // Evening recap banner (if prompted)
                 if briefingCoordinator.showEveningPrompt {
                     EveningPromptBanner()
                 }
 
-                // Dynamic section groups — reorder based on time of day
-                ForEach(computedGroupOrder, id: \.self) { group in
-                    sectionGroupView(for: group)
-                }
+                // Zone 1 — Hero Card: top coaching recommendation
+                heroCardSection
+                    .padding(.horizontal)
+                    .padding(.bottom, 8)
 
-                // Insights List
+                Divider()
+
+                // Zone 2 — Today's Actions: merged actionQueue + todaysFocus sections
+                todayActionsSection
+
+                Divider()
+
+                // Zone 3 — Review & Analytics (collapsed by default)
+                reviewAnalyticsSection
+
+                Divider()
+
+                // Filter Bar + Insights (below review)
+                filterBar
+
+                Divider()
+
                 if filteredInsights.isEmpty {
                     emptyState
                 } else {
@@ -72,7 +82,7 @@ struct AwarenessView: View {
                 }
             }
         }
-        .navigationTitle("Awareness")
+        .navigationTitle("Today")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 HStack(spacing: 8) {
@@ -128,95 +138,117 @@ struct AwarenessView: View {
     // MARK: - Header Section
 
     private var headerSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Awareness Dashboard")
-                        .font(.title2)
-                        .fontWeight(.semibold)
+        HStack {
+            Text(timeOfDayGreeting)
+                .font(.largeTitle)
+                .fontWeight(.bold)
 
-                    if let lastGenerated = generator.lastGeneratedAt {
-                        Text("Last updated \(lastGenerated, style: .relative) ago")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Text("No insights generated yet")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
+            Spacer()
 
-                Spacer()
-
-                // Time period indicator
-                timePeriodBadge
-
-                // Status Badge
-                statusBadge
+            if let lastGenerated = generator.lastGeneratedAt {
+                Text("Updated \(lastGenerated, style: .relative) ago")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
             }
-
-            // Quick Stats
-            HStack(spacing: 20) {
-                StatCard(
-                    icon: "exclamationmark.triangle.fill",
-                    label: "High Priority",
-                    value: "\(highPriorityCount)",
-                    color: .red
-                )
-
-                StatCard(
-                    icon: "clock.fill",
-                    label: "Follow-ups",
-                    value: "\(followUpCount)",
-                    color: .orange
-                )
-
-                StatCard(
-                    icon: "sparkles",
-                    label: "Opportunities",
-                    value: "\(opportunityCount)",
-                    color: .green
-                )
-            }
-            .padding(.top, 8)
         }
         .padding()
-        .background(Color(nsColor: .controlBackgroundColor))
     }
 
-    private var timePeriodBadge: some View {
-        let period = currentTimePeriod
-        return Label(period.label, systemImage: period.icon)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(Color.secondary.opacity(0.08))
-            .clipShape(Capsule())
+    private var timeOfDayGreeting: String {
+        let hour = Calendar.current.component(.hour, from: Date())
+        switch hour {
+        case ..<12:  return "Good morning"
+        case 12..<17: return "Good afternoon"
+        default:     return "Good evening"
+        }
     }
 
-    private var statusBadge: some View {
+    // MARK: - Hero Card Section
+
+    private var heroCardSection: some View {
         Group {
-            switch generator.generationStatus {
-            case .idle:
-                Label("Ready", systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-            case .generating:
-                Label("Generating...", systemImage: "hourglass")
-                    .foregroundStyle(.blue)
-            case .success:
-                Label("Complete", systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-            case .failed:
-                Label("Failed", systemImage: "xmark.circle.fill")
-                    .foregroundStyle(.red)
+            if let topOutcome = heroOutcome {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Top Priority")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+
+                    OutcomeCardView(
+                        outcome: topOutcome,
+                        onAct: nil,
+                        onDone: {},
+                        onSkip: {}
+                    )
+                }
+                .padding()
+                .background(Color.blue.opacity(0.06))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.blue.opacity(0.2), lineWidth: 1)
+                )
+            } else {
+                VStack(spacing: 8) {
+                    Image(systemName: "checkmark.circle")
+                        .font(.title)
+                        .foregroundStyle(.green)
+                    Text("You're on track")
+                        .font(.headline)
+                    Text("No urgent coaching recommendations right now.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(Color.green.opacity(0.04))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
             }
         }
-        .font(.caption)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .background(Color.secondary.opacity(0.1))
-        .clipShape(Capsule())
+    }
+
+    private var heroOutcome: SamOutcome? {
+        try? OutcomeRepository.shared.fetchActive().first
+    }
+
+    // MARK: - Today's Actions Section
+
+    private var todayActionsSection: some View {
+        let actionSections = sectionsForGroup(.actionQueue).filter { $0 != .outcomes }
+        let focusSections = sectionsForGroup(.todaysFocus)
+        let allSections = actionSections + focusSections
+
+        return VStack(spacing: 0) {
+            if !allSections.isEmpty {
+                ForEach(Array(allSections.enumerated()), id: \.element) { index, section in
+                    sectionView(for: section)
+                    if index < allSections.count - 1 {
+                        Divider()
+                            .padding(.horizontal)
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Review & Analytics Section
+
+    private var reviewAnalyticsSection: some View {
+        DisclosureGroup("Review & Analytics", isExpanded: $showReview) {
+            VStack(spacing: 0) {
+                let sections = AwarenessSectionGroup.reviewAnalytics.sections
+                ForEach(Array(sections.enumerated()), id: \.element) { index, section in
+                    sectionView(for: section)
+                    if index < sections.count - 1 {
+                        Divider()
+                            .padding(.horizontal)
+                    }
+                }
+            }
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 8)
     }
 
     // MARK: - Filter Bar
@@ -373,23 +405,11 @@ struct AwarenessView: View {
         }
     }
 
-    @State private var collapsedGroups: Set<AwarenessSectionGroup> = []
-
     /// Current time period, refreshed via reorderTick.
     private var currentTimePeriod: TimePeriod {
         _ = reorderTick
         let hour = Calendar.current.component(.hour, from: Date())
         return TimePeriod.current(hour: hour)
-    }
-
-    /// Groups ordered by time of day.
-    private var computedGroupOrder: [AwarenessSectionGroup] {
-        _ = reorderTick
-        switch currentTimePeriod {
-        case .morning:   return [.todaysFocus, .actionQueue, .reviewAnalytics]
-        case .afternoon: return [.actionQueue, .todaysFocus, .reviewAnalytics]
-        case .evening:   return [.reviewAnalytics, .actionQueue, .todaysFocus]
-        }
     }
 
     /// Sections within a group, with float-to-top rules applied.
@@ -423,64 +443,6 @@ struct AwarenessView: View {
         }
 
         return sections
-    }
-
-    @ViewBuilder
-    private func sectionGroupView(for group: AwarenessSectionGroup) -> some View {
-        let isCollapsed = collapsedGroups.contains(group)
-        let sections = sectionsForGroup(group)
-
-        VStack(spacing: 0) {
-            // Group header
-            Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    if isCollapsed {
-                        collapsedGroups.remove(group)
-                    } else {
-                        collapsedGroups.insert(group)
-                    }
-                }
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: group.icon)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .frame(width: 20)
-
-                    Text(group.title)
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.primary)
-
-                    Text("\(sections.count)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.secondary.opacity(0.1))
-                        .clipShape(Capsule())
-
-                    Spacer()
-
-                    Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                }
-                .padding(.horizontal)
-                .padding(.vertical, 10)
-                .background(Color(nsColor: .controlBackgroundColor))
-            }
-            .buttonStyle(.plain)
-
-            Divider()
-
-            // Sections (when expanded)
-            if !isCollapsed {
-                ForEach(sections, id: \.self) { section in
-                    sectionView(for: section)
-                }
-            }
-        }
     }
 
     @ViewBuilder
@@ -537,17 +499,7 @@ struct AwarenessView: View {
         return filtered
     }
 
-    private var highPriorityCount: Int {
-        persistedInsights.filter { $0.urgency == .high }.count
-    }
 
-    private var followUpCount: Int {
-        persistedInsights.filter { $0.kind == .followUpNeeded }.count
-    }
-
-    private var opportunityCount: Int {
-        persistedInsights.filter { $0.kind == .opportunity }.count
-    }
 
     // MARK: - Actions
 
@@ -729,36 +681,7 @@ private struct InsightCard: View {
     }
 }
 
-// MARK: - Stat Card
 
-private struct StatCard: View {
-    let icon: String
-    let label: String
-    let value: String
-    let color: Color
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: icon)
-                .font(.title3)
-                .foregroundStyle(color)
-                .frame(width: 32, height: 32)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(value)
-                    .font(.title2)
-                    .fontWeight(.semibold)
-                Text(label)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-        .background(Color.secondary.opacity(0.05))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-    }
-}
 
 // MARK: - Filter Enum
 

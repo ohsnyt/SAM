@@ -502,7 +502,8 @@ final class StrategicCoordinator {
                 rationale: rec.rationale,
                 priority: min(1.0, rec.priority * weight),
                 category: rec.category,
-                feedback: rec.feedback
+                feedback: rec.feedback,
+                approaches: rec.approaches
             )
         }
 
@@ -606,7 +607,14 @@ final class StrategicCoordinator {
         digest.pipelineSummary = pipeline.healthSummary
         digest.timeSummary = time.balanceSummary
         digest.patternInsights = pattern.patterns.map(\.description).joined(separator: "; ")
-        digest.contentSuggestions = content.topicSuggestions.map(\.topic).joined(separator: "; ")
+        // Persist full structured ContentTopic data as JSON for interactive rendering
+        if let contentData = try? JSONEncoder().encode(content.topicSuggestions),
+           let contentJSON = String(data: contentData, encoding: .utf8) {
+            digest.contentSuggestions = contentJSON
+        } else {
+            // Fallback: semicolon-separated titles
+            digest.contentSuggestions = content.topicSuggestions.map(\.topic).joined(separator: "; ")
+        }
 
         // Encode recommendations
         if let data = try? JSONEncoder().encode(topRecs),
@@ -655,6 +663,38 @@ final class StrategicCoordinator {
         } catch {
             logger.error("Failed to load latest digest: \(error)")
         }
+    }
+
+    // MARK: - Business Snapshot
+
+    /// Condensed business snapshot for coaching session context (~200 tokens).
+    func condensedBusinessSnapshot() -> String {
+        tracker.refresh()
+        let funnel = tracker.clientFunnel
+        let recruitFunnel = tracker.recruitFunnel
+        let activeRecruits = recruitFunnel.filter { $0.count > 0 }
+
+        var lines: [String] = []
+        lines.append("Pipeline: \(funnel.leadCount) Leads, \(funnel.applicantCount) Applicants, \(funnel.clientCount) Clients")
+
+        if !activeRecruits.isEmpty {
+            let recruitTotal = activeRecruits.map(\.count).reduce(0, +)
+            lines.append("Recruiting: \(recruitTotal) active across \(activeRecruits.count) stages")
+        }
+
+        let stuck = tracker.clientStuckPeople
+        if !stuck.isEmpty {
+            lines.append("Stuck: \(stuck.count) people need attention")
+        }
+
+        let production = tracker.productionByStatus
+        let activeProduction = production.filter { $0.count > 0 }
+        if !activeProduction.isEmpty {
+            let totalCases = activeProduction.map(\.count).reduce(0, +)
+            lines.append("Production: \(totalCases) active cases")
+        }
+
+        return lines.joined(separator: ". ")
     }
 
     // MARK: - Helpers

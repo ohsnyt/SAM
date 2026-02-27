@@ -1,0 +1,266 @@
+[
+  {
+    "id": "pipeline-001",
+    "title": "The 48-Hour Follow-Up Rule",
+    "category": "pipeline",
+    "description": "Follow up with every new lead within 48 hours of first contact. Response rates drop dramatically after this window. A prompt, personalized follow-up signals professionalism and genuine interest.",
+    "suggestedActions": [
+      "Send a personalized message referencing your conversation",
+      "Propose a specific date and time for a next meeting",
+      "Share one relevant educational resource"
+    ]
+  },
+  {
+    "id": "pipeline-002",
+    "title": "Warm Market Mapping",
+    "category": "pipeline",
+    "description": "Systematically identify people in your existing network who might benefit from financial planning. Your warm market (friends, family, colleagues, community members) is the highest-conversion source of new leads.",
+    "suggestedActions": [
+      "Review your contacts for people experiencing life events (new baby, home purchase, job change)",
+      "Ask existing clients for introductions after positive interactions",
+      "List 10 people you haven't spoken to in 6+ months and reach out"
+    ]
+  },
+  {
+    "id": "pipeline-003",
+    "title": "Referral Ask Timing",
+    "category": "pipeline",
+    "description": "The best time to ask for referrals is right after delivering value — completing a policy review, resolving a claim, or receiving positive feedback. Frame the ask around helping others, not selling.",
+    "suggestedActions": [
+      "After a positive client interaction, ask: 'Who else in your life might benefit from this kind of planning?'",
+      "Send a thank-you note after receiving a referral",
+      "Track which clients are your best referral sources and nurture those relationships"
+    ]
+  },
+  {
+    "id": "pipeline-004",
+    "title": "Stalled Lead Re-engagement",
+    "category": "pipeline",
+    "description": "Leads that have gone quiet for 2+ weeks are not lost — they are waiting for the right prompt. A value-driven touchpoint (educational content, life event acknowledgment, or a simple check-in) can restart the conversation.",
+    "suggestedActions": [
+      "Send a brief check-in message: 'I was thinking about our conversation and wanted to share this...'",
+      "Share a relevant article or educational post",
+      "Propose a low-pressure coffee or phone catch-up"
+    ]
+  },
+  {
+    "id": "pipeline-005",
+    "title": "Life Event Outreach",
+    "category": "pipeline",
+    "description": "Life events (marriage, new baby, home purchase, job change, retirement, death in family) are the strongest triggers for financial planning conversations. Respond with genuine care first, then offer help when appropriate.",
+    "suggestedActions": [
+      "Send a congratulations or sympathy message within 24 hours of learning about the event",
+      "Wait 1-2 weeks, then offer to review how the life change affects their financial plan",
+      "Create a note with the life event details for future reference"
+    ]
+  },
+  {
+    "id": "recruiting-001",
+    "title": "First 30-Day Mentoring Cadence",
+    "category": "recruiting",
+    "description": "New recruits need daily contact in their first week, then every-other-day in weeks 2-4. This intensive mentoring period determines whether they stay or leave. Make each touchpoint short, encouraging, and action-oriented.",
+    "suggestedActions": [
+      "Schedule daily 10-minute check-ins for the first week",
+      "Set up a shared study schedule for licensing exam preparation",
+      "Introduce the recruit to 2-3 supportive team members"
+    ]
+  },
+  {
+    "id": "recruiting-002",
+    "title": "Licensing Study Accountability",
+    "category": "recruiting",
+    "description": "The licensing exam is the biggest dropout point for new recruits. Create accountability through regular study check-ins, practice tests, and milestone celebrations. Make it social, not solitary.",
+    "suggestedActions": [
+      "Schedule weekly study progress check-ins",
+      "Organize group study sessions with other recruits",
+      "Celebrate milestones: 'You completed Chapter 5 — that is the hardest one!'"
+    ]
+  },
+  {
+    "id": "recruiting-003",
+    "title": "First-Sale Coaching",
+    "category": "recruiting",
+    "description": "Getting a new agent to their first sale is critical for retention. Offer to sit in on their first few client meetings, provide scripts and talking points, and debrief after every appointment.",
+    "suggestedActions": [
+      "Role-play the first client conversation before the meeting",
+      "Offer to attend the meeting as a silent support",
+      "Debrief within 24 hours: what went well, what to adjust"
+    ]
+  },
+  {
+    "id": "recruiting-004",
+    "title": "Team Meeting Rhythm",
+    "category": "recruiting",
+    "description": "Regular team meetings build culture and accountability. Keep meetings short (30 min max), celebrate wins, share one learning, and end with action items. Consistency matters more than length.",
+    "suggestedActions": [
+      "Schedule a recurring weekly team call at a consistent time",
+      "Start each meeting by recognizing one team member's win",
+      "End with each person stating their top priority for the week"
+    ]
+  },
+  {
+    "id": "time-001",
+    "title": "Prospecting Power Hours",
+    "category": "time",
+    "description": "Block 1-2 hours daily for focused prospecting (calls, messages, outreach). Treat this time as sacred — no admin, no email, no distractions. The agents who prospect consistently outperform those who binge-prospect.",
+    "suggestedActions": [
+      "Schedule a daily prospecting block on your calendar",
+      "Prepare your call/message list the night before",
+      "Track how many contacts you make during each block"
+    ]
+  },
+  {
+    "id": "time-002",
+    "title": "80/20 Client Focus",
+    "category": "time",
+    "description": "Roughly 20% of your clients generate 80% of your referrals and revenue. Identify your top-tier clients and ensure they receive disproportionate attention — quarterly reviews, birthday calls, life event follow-ups.",
+    "suggestedActions": [
+      "Identify your top 10 clients by referral generation and policy value",
+      "Schedule quarterly personal check-ins with each",
+      "Send personalized messages on birthdays and anniversaries"
+    ]
+  },
+  {
+    "id": "time-003",
+    "title": "Deep Work Protection",
+    "category": "time",
+    "description": "Financial planning analysis, proposal preparation, and content creation require focused, uninterrupted time. Block 90-minute deep work sessions and defend them. These are revenue-generating activities.",
+    "suggestedActions": [
+      "Schedule 2-3 deep work blocks per week on your calendar",
+      "Batch similar tasks: all proposals on Tuesday, all reviews on Thursday",
+      "Turn off notifications during deep work blocks"
+    ]
+  },
+  {
+    "id": "time-004",
+    "title": "Batch Administrative Tasks",
+    "category": "time",
+    "description": "Administrative work (data entry, filing, compliance paperwork) expands to fill available time. Batch all admin into one or two dedicated blocks per week instead of doing it throughout the day.",
+    "suggestedActions": [
+      "Designate Friday afternoon as admin time",
+      "Create a running list of admin tasks throughout the week",
+      "Set a timer and work through the list without switching to other tasks"
+    ]
+  },
+  {
+    "id": "content-001",
+    "title": "Educational Post Formula",
+    "category": "content",
+    "description": "The most effective social media posts for financial professionals follow a simple formula: Problem → Insight → Action. Start with a relatable financial challenge, share one non-obvious insight, then invite engagement.",
+    "suggestedActions": [
+      "Draft a post: 'Most people don't realize [insight]. Here is what you can do about it...'",
+      "Use plain language, no jargon",
+      "End with a question to invite comments"
+    ]
+  },
+  {
+    "id": "content-002",
+    "title": "Consistency Over Virality",
+    "category": "content",
+    "description": "Posting 2-3 times per week consistently outperforms sporadic viral attempts. Your network needs to see you regularly to think of you when they need financial planning. Schedule posts in advance.",
+    "suggestedActions": [
+      "Plan next week's 2-3 posts today",
+      "Alternate between educational content, personal stories, and client wins (anonymized)",
+      "Post at consistent times when your audience is active"
+    ]
+  },
+  {
+    "id": "content-003",
+    "title": "Client Success Stories",
+    "category": "content",
+    "description": "Anonymized client success stories are the most powerful content you can share. They demonstrate real results without making claims. Frame them as 'a client recently...' and focus on the outcome, not the product.",
+    "suggestedActions": [
+      "Write up one recent client success (anonymized, no specific numbers)",
+      "Focus on the emotional outcome: peace of mind, confidence, relief",
+      "Ask the client if they would be willing to give a testimonial"
+    ]
+  },
+  {
+    "id": "content-004",
+    "title": "Seasonal Content Hooks",
+    "category": "content",
+    "description": "Seasonal events create natural content opportunities: tax season, open enrollment, New Year resolutions, back-to-school, graduation. Plan your content calendar around these predictable hooks.",
+    "suggestedActions": [
+      "Look at the calendar for upcoming seasonal events in the next 30 days",
+      "Draft 1-2 posts connecting the season to financial planning",
+      "Reference timely topics your clients are already thinking about"
+    ]
+  },
+  {
+    "id": "pattern-001",
+    "title": "Communication Channel Matching",
+    "category": "pattern",
+    "description": "Different people prefer different communication channels. Pay attention to how contacts respond — if someone always replies to texts within an hour but ignores emails for days, text them. Match the channel to the person.",
+    "suggestedActions": [
+      "Review your recent interactions with key contacts — which channel gets the fastest response?",
+      "Note preferred channels in SAM for each important contact",
+      "When in doubt, use the channel they most recently used to contact you"
+    ]
+  },
+  {
+    "id": "pattern-002",
+    "title": "Best Day and Time for Outreach",
+    "category": "pattern",
+    "description": "Track when your outreach gets the best response rates. Many financial professionals find Tuesday-Thursday mid-morning and early evening work best. Avoid Monday mornings and Friday afternoons.",
+    "suggestedActions": [
+      "Review your recent successful conversations — when did they happen?",
+      "Schedule important outreach during your proven best windows",
+      "Test different times and track response rates over a month"
+    ]
+  },
+  {
+    "id": "pattern-003",
+    "title": "Referral Source Tracking",
+    "category": "pattern",
+    "description": "Know where your leads come from. Track referral sources (which client, which event, which post) so you can double down on what works. Your best future leads will come from the same sources as your best current clients.",
+    "suggestedActions": [
+      "For every new lead, note how they found you",
+      "Review your pipeline — which sources produced clients who actually closed?",
+      "Invest more time in your top 2-3 referral sources"
+    ]
+  },
+  {
+    "id": "general-001",
+    "title": "Upline Consultation",
+    "category": "general",
+    "description": "Your upline trainer, supervisor, or field coach has seen your challenges before. Schedule regular consultations — not just when things go wrong. They can help you spot blind spots in your business before they become problems.",
+    "suggestedActions": [
+      "Schedule a monthly check-in with your upline or field trainer",
+      "Come prepared with specific questions, not just general updates",
+      "Ask for feedback on your client approach and recruiting strategy"
+    ]
+  },
+  {
+    "id": "general-002",
+    "title": "Weekly Goal Review",
+    "category": "general",
+    "description": "Spend 15 minutes each Sunday evening reviewing last week's goals and setting next week's priorities. This simple habit keeps you focused and prevents drift. Write down your top 3 priorities for the week.",
+    "suggestedActions": [
+      "Review this week: what did you accomplish? What carried over?",
+      "Set 3 specific, measurable goals for next week",
+      "Create a note in SAM with your weekly plan"
+    ]
+  },
+  {
+    "id": "general-003",
+    "title": "Personal Development Investment",
+    "category": "general",
+    "description": "The most successful agents invest in their own growth: reading, attending training, practicing presentations, learning new financial concepts. Dedicate at least 30 minutes daily to professional development.",
+    "suggestedActions": [
+      "Schedule a daily 30-minute learning block",
+      "Attend your team's training sessions and take notes",
+      "Read one industry article per day and note key takeaways"
+    ]
+  },
+  {
+    "id": "general-004",
+    "title": "Networking Event Preparation",
+    "category": "general",
+    "description": "Before any networking event, prepare 2-3 conversation openers that are not about insurance. Ask about people's work, families, recent events. Listen more than you talk. Exchange contact info and follow up within 48 hours.",
+    "suggestedActions": [
+      "Research the event and likely attendees beforehand",
+      "Prepare 2-3 genuine conversation starters unrelated to your business",
+      "Set a goal: meet 5 new people and exchange contact information"
+    ]
+  }
+]

@@ -11,10 +11,31 @@
 
 import SwiftUI
 
+/// Tracks the state of a single plan preparation.
+private struct PlanPreparation: Identifiable {
+    let id: UUID  // Same as the recommendation ID
+    let recommendation: StrategicRec
+    let approach: ImplementationApproach?
+    var messages: [CoachingMessage] = []
+    var isReady: Bool = false
+}
+
 struct StrategicInsightsView: View {
 
     @Bindable var coordinator: StrategicCoordinator
     @State private var projectionEngine = ScenarioProjectionEngine.shared
+
+    // Strategic Action coaching flow state
+    @State private var selectedRecForAction: StrategicRec?
+
+    /// Tracks in-flight and completed plan preparations keyed by recommendation ID.
+    @State private var preparations: [UUID: PlanPreparation] = [:]
+
+    /// The preparation currently being viewed in the coaching session sheet.
+    @State private var activeCoachingPlan: PlanPreparation?
+
+    /// The content topic selected for drafting via ContentDraftSheet.
+    @State private var selectedContentTopic: ContentTopic?
 
     var body: some View {
         VStack(spacing: 16) {
@@ -62,6 +83,45 @@ struct StrategicInsightsView: View {
         .padding()
         .task {
             projectionEngine.refresh()
+        }
+        .sheet(item: $selectedRecForAction) { rec in
+            StrategicActionSheet(
+                recommendation: rec,
+                onFeedback: { feedback in
+                    coordinator.recordFeedback(recommendationID: rec.id, feedback: feedback)
+                    selectedRecForAction = nil
+                },
+                onPlanApproach: { rec, approach in
+                    selectedRecForAction = nil
+                    startPlanPreparation(for: rec, approach: approach)
+                }
+            )
+        }
+        .sheet(item: $activeCoachingPlan) { plan in
+            CoachingSessionView(
+                context: CoachingSessionContext(
+                    recommendation: plan.recommendation,
+                    approach: plan.approach,
+                    businessSnapshot: coordinator.condensedBusinessSnapshot()
+                ),
+                initialMessages: plan.messages,
+                onDone: {
+                    coordinator.recordFeedback(recommendationID: plan.id, feedback: .actedOn)
+                    activeCoachingPlan = nil
+                    preparations.removeValue(forKey: plan.id)
+                }
+            )
+        }
+        .sheet(item: $selectedContentTopic) { topic in
+            ContentDraftSheet(
+                topic: topic.topic,
+                keyPoints: topic.keyPoints,
+                suggestedTone: topic.suggestedTone,
+                complianceNotes: topic.complianceNotes,
+                sourceOutcomeID: nil,
+                onPosted: { selectedContentTopic = nil },
+                onCancel: { selectedContentTopic = nil }
+            )
         }
     }
 
@@ -159,12 +219,44 @@ struct StrategicInsightsView: View {
                 }
             }
 
-            // Feedback buttons
-            if rec.feedback == nil {
+            // Preparing indicator, ready indicator, or feedback buttons
+            if let prep = preparations[rec.id], !prep.isReady {
+                HStack(spacing: 8) {
+                    Spacer()
+                    ProgressView()
+                        .controlSize(.mini)
+                    Text("SAM is developing a plan...")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            } else if let prep = preparations[rec.id], prep.isReady {
                 HStack(spacing: 8) {
                     Spacer()
                     Button {
-                        coordinator.recordFeedback(recommendationID: rec.id, feedback: .actedOn)
+                        activeCoachingPlan = prep
+                    } label: {
+                        Label("View Plan", systemImage: "doc.text.magnifyingglass")
+                            .font(.caption2)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
+                    .tint(.blue)
+
+                    Button {
+                        preparations.removeValue(forKey: rec.id)
+                    } label: {
+                        Label("Discard", systemImage: "xmark")
+                            .font(.caption2)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
+                    .tint(.secondary)
+                }
+            } else if rec.feedback == nil {
+                HStack(spacing: 8) {
+                    Spacer()
+                    Button {
+                        selectedRecForAction = rec
                     } label: {
                         Label("Act", systemImage: "checkmark.circle")
                             .font(.caption2)
@@ -218,8 +310,14 @@ struct StrategicInsightsView: View {
 
     // MARK: - Content Ideas
 
+    /// Decodes structured ContentTopic JSON; falls back to semicolon-separated plain text for older digests.
     private func contentIdeasSection(_ raw: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        let structuredTopics: [ContentTopic]? = {
+            guard let data = raw.data(using: .utf8) else { return nil }
+            return try? JSONDecoder().decode([ContentTopic].self, from: data)
+        }()
+
+        return VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Image(systemName: "doc.text.fill")
                     .foregroundStyle(.purple)
@@ -227,21 +325,92 @@ struct StrategicInsightsView: View {
                     .font(.headline)
             }
 
-            let topics = raw.components(separatedBy: "; ").filter { !$0.isEmpty }
-            ForEach(Array(topics.enumerated()), id: \.offset) { index, topic in
-                HStack(alignment: .top, spacing: 6) {
-                    Text("\(index + 1).")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .frame(width: 20, alignment: .trailing)
-                    Text(topic)
-                        .font(.callout)
+            if let topics = structuredTopics {
+                // Structured: clickable items that launch ContentDraftSheet
+                ForEach(Array(topics.enumerated()), id: \.element.id) { index, topic in
+                    Button {
+                        selectedContentTopic = topic
+                    } label: {
+                        HStack(alignment: .top, spacing: 6) {
+                            Text("\(index + 1).")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                                .frame(width: 20, alignment: .trailing)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(topic.topic)
+                                    .font(.callout)
+                                    .fontWeight(.medium)
+                                if !topic.keyPoints.isEmpty {
+                                    Text(topic.keyPoints.joined(separator: " \u{2022} "))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(2)
+                                }
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            } else {
+                // Legacy fallback: plain semicolon-separated titles
+                let titles = raw.components(separatedBy: "; ").filter { !$0.isEmpty }
+                ForEach(Array(titles.enumerated()), id: \.offset) { index, title in
+                    HStack(alignment: .top, spacing: 6) {
+                        Text("\(index + 1).")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .frame(width: 20, alignment: .trailing)
+                        Text(title)
+                            .font(.callout)
+                            .textSelection(.enabled)
+                    }
                 }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
         .background(.fill.quaternary, in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    // MARK: - Plan Preparation
+
+    private func startPlanPreparation(for rec: StrategicRec, approach: ImplementationApproach?) {
+        let recID = rec.id
+        preparations[recID] = PlanPreparation(
+            id: recID,
+            recommendation: rec,
+            approach: approach
+        )
+
+        Task {
+            do {
+                let context = CoachingSessionContext(
+                    recommendation: rec,
+                    approach: approach,
+                    businessSnapshot: coordinator.condensedBusinessSnapshot()
+                )
+                let initialMessage = try await CoachingPlannerService.shared.generateInitialPlan(context: context)
+                // Only update if this preparation hasn't been discarded
+                if preparations[recID] != nil {
+                    preparations[recID]?.messages = [initialMessage]
+                    preparations[recID]?.isReady = true
+
+                    // Post system notification so user knows even if they navigated away
+                    await SystemNotificationService.shared.postPlanReady(
+                        recommendationID: recID,
+                        title: rec.title
+                    )
+                }
+            } catch {
+                // Remove the failed preparation
+                preparations.removeValue(forKey: recID)
+            }
+        }
     }
 
     // MARK: - Helpers
