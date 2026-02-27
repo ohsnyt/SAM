@@ -4,6 +4,52 @@
 
 ---
 
+## February 26, 2026 - Remove Household ContextKind — Replace with DeducedRelation (Schema SAM_v27)
+
+### Overview
+Removed `.household` from the Context UI and Relationship Graph. Family relationships are now modeled exclusively through `DeducedRelation` (pairwise semantic bonds auto-imported from Apple Contacts). Household contexts still exist in the data layer for backward compatibility but cannot be created in the UI. Meeting briefings now surface family relations between attendees from `DeducedRelation` instead of shared household contexts. Phase AA specs rewritten to use "family cluster" (connected component of deducedFamily edges) instead of "household grouping".
+
+### Schema Changes (SAM_v27)
+- Removed `context: SamContext?` property from `ConsentRequirement` (consent belongs on Product + Person, not household)
+- Removed `consentRequirements: [ConsentRequirement]` relationship from `SamContext`
+- Schema bumped from SAM_v26 to SAM_v27
+
+### Graph Changes
+- Removed `EdgeType.household` enum case — family edges are `.deducedFamily` only
+- `GraphBuilderService`: household context inputs now produce zero edges (skipped by `default: continue`)
+- `RelationshipGraphCoordinator.gatherContextInputs()`: only gathers `.business` contexts
+- `RelationshipGraphView.edgeColor()`: removed `.household` green color case
+- `GraphToolbarView.EdgeType.displayName`: removed "Household" label
+
+### UI Changes
+- `ContextListView`: filter picker and create sheet only offer `.business` (no `.household`); updated empty state text; default kind is `.business`
+- `ContextDetailView`: edit picker shows `.household` only if the existing context is already a household (legacy support)
+- Preview data updated from `.household` to `.business` in both views
+
+### MeetingPrep Changes
+- Added `FamilyRelationInfo` struct (personAName, personBName, relationType)
+- Added `familyRelations: [FamilyRelationInfo]` field to `MeetingBriefing`
+- Added `findFamilyRelations(among:)` method using `DeducedRelationRepository`
+- `findSharedContexts()` now excludes `.household` contexts
+- `MeetingPrepSection`: new `familyRelationsSection` displays family relation chips (pink background, figure.2.and.child.holdinghands icon)
+
+### Backup Changes
+- Export: `ConsentRequirementBackup.contextID` always set to `nil`
+- Import: `context:` parameter removed from `ConsentRequirement` init call
+- `ConsentRequirementBackup.contextID: UUID?` kept for backward compat (old backups still decode)
+
+### Test Updates
+- `GraphBuilderServiceTests`: household test verifies zero edges; multipleEdgeTypes uses Business; realistic graph converts household contexts to business
+- `ContextsRepositoryTests`: all `.household` → `.business`
+- `NotesRepositoryTests`: all `.household` → `.business`
+
+### Spec Rewrites (Phase AA)
+- `phase-aa-interaction-spec.md`: "Household Grouping Mode" → "Family Clustering Mode"; boundaries from deducedFamily connected components; labels from shared surname
+- `phase-aa-relationship-graph.md`: removed `case household` from EdgeType; data dependencies updated for DeducedRelation
+- `phase-aa-visual-design.md`: "Household" edge/boundary → "Family (Deduced)"; green → pink
+
+---
+
 ## February 26, 2026 - Deduced Relationships + Me Toggle + Awareness Integration (Schema SAM_v26)
 
 ### Overview

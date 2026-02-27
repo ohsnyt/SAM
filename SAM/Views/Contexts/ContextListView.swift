@@ -53,7 +53,7 @@ struct ContextListView: View {
                 Picker("Filter", selection: $selectedFilter) {
                     Text("All").tag(nil as ContextKind?)
                     Divider()
-                    ForEach([ContextKind.household, .business], id: \.self) { kind in
+                    ForEach([ContextKind.business], id: \.self) { kind in
                         Text(kind.displayName).tag(kind as ContextKind?)
                     }
                 }
@@ -119,7 +119,7 @@ struct ContextListView: View {
         ContentUnavailableView {
             Label("No Contexts", systemImage: "building.2")
         } description: {
-            Text("Create contexts to organize households, businesses, and relationships")
+            Text("Create contexts to organize businesses and relationships")
         } actions: {
             Button {
                 showingCreateSheet = true
@@ -254,7 +254,7 @@ private struct CreateContextSheet: View {
     let onCreate: () -> Void
     
     @State private var name = ""
-    @State private var selectedKind: ContextKind = .household
+    @State private var selectedKind: ContextKind = .business
     @State private var isCreating = false
     @State private var errorMessage: String?
     
@@ -265,7 +265,7 @@ private struct CreateContextSheet: View {
                     .textFieldStyle(.roundedBorder)
                 
                 Picker("Type", selection: $selectedKind) {
-                    ForEach([ContextKind.household, .business], id: \.self) { kind in
+                    ForEach([ContextKind.business], id: \.self) { kind in
                         Label(kind.displayName, systemImage: kind.icon)
                             .tag(kind)
                     }
@@ -367,29 +367,29 @@ extension ContextKind {
     // Add sample data
     let context = ModelContext(container)
     
-    let household1 = SamContext(
+    let business1 = SamContext(
         id: UUID(),
-        name: "Smith Family",
-        kind: .household,
+        name: "Smith Group",
+        kind: .business,
         reviewAlertCount: 1
     )
-    
-    let household2 = SamContext(
+
+    let business2 = SamContext(
         id: UUID(),
-        name: "Johnson Household",
-        kind: .household
+        name: "Johnson Associates",
+        kind: .business
     )
-    
-    let business1 = SamContext(
+
+    let business3 = SamContext(
         id: UUID(),
         name: "Acme Corp",
         kind: .business,
         followUpAlertCount: 2
     )
-    
-    context.insert(household1)
-    context.insert(household2)
+
     context.insert(business1)
+    context.insert(business2)
+    context.insert(business3)
     try? context.save()
     
     return NavigationStack {

@@ -212,7 +212,6 @@ struct GraphToolbarView: ToolbarContent {
 extension EdgeType {
     var displayName: String {
         switch self {
-        case .household:         return "Household"
         case .business:          return "Business"
         case .referral:          return "Referral"
         case .recruitingTree:    return "Recruiting Tree"

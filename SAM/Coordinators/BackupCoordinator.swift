@@ -231,7 +231,7 @@ final class BackupCoordinator {
                 ConsentRequirementBackup(
                     id: c.id,
                     personID: c.person?.id,
-                    contextID: c.context?.id,
+                    contextID: nil,
                     productID: c.product?.id,
                     title: c.title,
                     reason: c.reason,
@@ -843,7 +843,6 @@ final class BackupCoordinator {
                     status: dto.status,
                     jurisdiction: dto.jurisdiction,
                     person: dto.personID.flatMap { personByID[$0] },
-                    context: dto.contextID.flatMap { contextByID[$0] },
                     product: dto.productID.flatMap { productByID[$0] },
                     requestedAt: dto.requestedAt
                 )
@@ -1174,7 +1173,7 @@ final class BackupCoordinator {
                 },
                 consentRequirements: consents.map { c in
                     ConsentRequirementBackup(
-                        id: c.id, personID: c.person?.id, contextID: c.context?.id,
+                        id: c.id, personID: c.person?.id, contextID: nil,
                         productID: c.product?.id, title: c.title, reason: c.reason,
                         jurisdiction: c.jurisdiction, status: c.status,
                         requestedAt: c.requestedAt, satisfiedAt: c.satisfiedAt, revokedAt: c.revokedAt

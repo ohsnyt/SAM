@@ -50,7 +50,7 @@ struct NotesRepositoryTests {
         let container = try makeTestContainer()
         configureAllRepositories(with: container)
 
-        let ctx = try ContextsRepository.shared.create(name: "Smith Household", kind: .household)
+        let ctx = try ContextsRepository.shared.create(name: "Smith Group", kind: .business)
 
         let note = try NotesRepository.shared.create(
             content: "Household review notes.",
@@ -149,7 +149,7 @@ struct NotesRepositoryTests {
         let container = try makeTestContainer()
         configureAllRepositories(with: container)
 
-        let ctx1 = try ContextsRepository.shared.create(name: "Smith Household", kind: .household)
+        let ctx1 = try ContextsRepository.shared.create(name: "Smith Group", kind: .business)
         let ctx2 = try ContextsRepository.shared.create(name: "Johnson Business", kind: .business)
 
         _ = try NotesRepository.shared.create(content: "Household note", linkedContextIDs: [ctx1.id])

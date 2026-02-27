@@ -288,7 +288,7 @@ final class RelationshipGraphCoordinator {
         let allContexts = try contextsRepository.fetchAll()
         return allContexts.compactMap { ctx -> ContextGraphInput? in
             let kind = ctx.kind
-            guard kind == .household || kind == .business else { return nil }
+            guard kind == .business else { return nil }
 
             let participantIDs = ctx.participations.compactMap { $0.person?.id }
             guard participantIDs.count >= 2 else { return nil }

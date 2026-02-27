@@ -929,7 +929,6 @@ struct RelationshipGraphView: View {
 
     private func edgeColor(for type: EdgeType) -> Color {
         switch type {
-        case .household:         return .green.opacity(0.6)
         case .business:          return .purple.opacity(0.6)
         case .referral:          return .orange.opacity(0.6)
         case .recruitingTree:    return .teal.opacity(0.6)

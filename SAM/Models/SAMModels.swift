@@ -247,9 +247,6 @@ public final class SamContext {
     @Relationship(deleteRule: .cascade)
     public var products: [Product] = []
 
-    @Relationship(deleteRule: .cascade)
-    public var consentRequirements: [ConsentRequirement] = []
-
     // ── Embedded collections (mirrors current struct) ──────────────
     /// Product cards shown on the context detail screen.
     /// Will become a pure @Relationship once Product is the single
@@ -425,9 +422,6 @@ public final class ConsentRequirement {
     /// described only as free text (legacy / not-yet-linked).
     public var person: SamPerson?
 
-    /// The context this requirement belongs to (if any).
-    public var context: SamContext?
-
     /// The product this requirement is attached to (if any).
     public var product: Product?
 
@@ -454,7 +448,6 @@ public final class ConsentRequirement {
         status: ConsentStatus     = .required,
         jurisdiction: String?     = nil,
         person: SamPerson?        = nil,
-        context: SamContext?      = nil,
         product: Product?         = nil,
         requestedAt: Date         = .now
     ) {
@@ -464,7 +457,6 @@ public final class ConsentRequirement {
         self.status      = status
         self.jurisdiction = jurisdiction
         self.person      = person
-        self.context     = context
         self.product     = product
         self.requestedAt = requestedAt
     }

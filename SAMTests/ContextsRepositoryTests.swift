@@ -21,10 +21,10 @@ struct ContextsRepositoryTests {
         let container = try makeTestContainer()
         configureAllRepositories(with: container)
 
-        let ctx = try ContextsRepository.shared.create(name: "Smith Household", kind: .household)
+        let ctx = try ContextsRepository.shared.create(name: "Smith Group", kind: .business)
 
-        #expect(ctx.name == "Smith Household")
-        #expect(ctx.kind == .household)
+        #expect(ctx.name == "Smith Group")
+        #expect(ctx.kind == .business)
         #expect(try ContextsRepository.shared.count() == 1)
     }
 
@@ -58,12 +58,12 @@ struct ContextsRepositoryTests {
         let container = try makeTestContainer()
         configureAllRepositories(with: container)
 
-        _ = try ContextsRepository.shared.create(name: "Smith Household", kind: .household)
-        _ = try ContextsRepository.shared.create(name: "Johnson Family", kind: .household)
+        _ = try ContextsRepository.shared.create(name: "Smith Group", kind: .business)
+        _ = try ContextsRepository.shared.create(name: "Johnson Associates", kind: .business)
 
         let results = try ContextsRepository.shared.search(query: "smith")
         #expect(results.count == 1)
-        #expect(results[0].name == "Smith Household")
+        #expect(results[0].name == "Smith Group")
     }
 
     @Test("Filter by kind returns matching contexts")
@@ -71,12 +71,12 @@ struct ContextsRepositoryTests {
         let container = try makeTestContainer()
         configureAllRepositories(with: container)
 
-        _ = try ContextsRepository.shared.create(name: "Household 1", kind: .household)
-        _ = try ContextsRepository.shared.create(name: "Household 2", kind: .household)
-        _ = try ContextsRepository.shared.create(name: "Business 1", kind: .business)
+        _ = try ContextsRepository.shared.create(name: "Group 1", kind: .business)
+        _ = try ContextsRepository.shared.create(name: "Group 2", kind: .business)
+        _ = try ContextsRepository.shared.create(name: "Recruiting 1", kind: .recruiting)
 
-        let households = try ContextsRepository.shared.filter(by: .household)
-        #expect(households.count == 2)
+        let businesses = try ContextsRepository.shared.filter(by: .business)
+        #expect(businesses.count == 2)
     }
 
     // MARK: - Update
@@ -86,7 +86,7 @@ struct ContextsRepositoryTests {
         let container = try makeTestContainer()
         configureAllRepositories(with: container)
 
-        let ctx = try ContextsRepository.shared.create(name: "Old Name", kind: .household)
+        let ctx = try ContextsRepository.shared.create(name: "Old Name", kind: .business)
         try ContextsRepository.shared.update(context: ctx, name: "New Name")
 
         #expect(ctx.name == "New Name")
@@ -97,10 +97,10 @@ struct ContextsRepositoryTests {
         let container = try makeTestContainer()
         configureAllRepositories(with: container)
 
-        let ctx = try ContextsRepository.shared.create(name: "Test", kind: .household)
-        try ContextsRepository.shared.update(context: ctx, kind: .business)
+        let ctx = try ContextsRepository.shared.create(name: "Test", kind: .business)
+        try ContextsRepository.shared.update(context: ctx, kind: .recruiting)
 
-        #expect(ctx.kind == .business)
+        #expect(ctx.kind == .recruiting)
     }
 
     // MARK: - Delete
@@ -110,7 +110,7 @@ struct ContextsRepositoryTests {
         let container = try makeTestContainer()
         configureAllRepositories(with: container)
 
-        let ctx = try ContextsRepository.shared.create(name: "To Delete", kind: .household)
+        let ctx = try ContextsRepository.shared.create(name: "To Delete", kind: .business)
         try ContextsRepository.shared.delete(context: ctx)
 
         #expect(try ContextsRepository.shared.count() == 0)
@@ -129,7 +129,7 @@ struct ContextsRepositoryTests {
         let person = try PeopleRepository.shared.fetchAll()[0]
 
         // Create context
-        let ctx = try ContextsRepository.shared.create(name: "Test Household", kind: .household)
+        let ctx = try ContextsRepository.shared.create(name: "Test Group", kind: .business)
 
         // Add participant
         try ContextsRepository.shared.addParticipant(person: person, to: ctx)
@@ -147,7 +147,7 @@ struct ContextsRepositoryTests {
         try PeopleRepository.shared.upsert(contact: contactDTO)
         let person = try PeopleRepository.shared.fetchAll()[0]
 
-        let ctx = try ContextsRepository.shared.create(name: "Test Household", kind: .household)
+        let ctx = try ContextsRepository.shared.create(name: "Test Group", kind: .business)
         try ContextsRepository.shared.addParticipant(person: person, to: ctx)
         try ContextsRepository.shared.removeParticipant(person: person, from: ctx)
 
@@ -166,7 +166,7 @@ struct ContextsRepositoryTests {
         try PeopleRepository.shared.upsert(contact: contactDTO)
         let person = try PeopleRepository.shared.fetchAll()[0]
 
-        let ctx = try ContextsRepository.shared.create(name: "Test Household", kind: .household)
+        let ctx = try ContextsRepository.shared.create(name: "Test Group", kind: .business)
         try ContextsRepository.shared.addParticipant(
             person: person,
             to: ctx,
@@ -183,9 +183,9 @@ struct ContextsRepositoryTests {
         let container = try makeTestContainer()
         configureAllRepositories(with: container)
 
-        _ = try ContextsRepository.shared.create(name: "A", kind: .household)
+        _ = try ContextsRepository.shared.create(name: "A", kind: .business)
         _ = try ContextsRepository.shared.create(name: "B", kind: .business)
-        _ = try ContextsRepository.shared.create(name: "C", kind: .household)
+        _ = try ContextsRepository.shared.create(name: "C", kind: .business)
         _ = try ContextsRepository.shared.create(name: "D", kind: .recruiting)
 
         #expect(try ContextsRepository.shared.count() == 4)

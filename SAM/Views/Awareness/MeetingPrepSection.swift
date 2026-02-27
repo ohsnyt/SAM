@@ -169,6 +169,11 @@ private struct BriefingCard: View {
                         sharedContextsSection
                     }
 
+                    // Family Relations
+                    if !briefing.familyRelations.isEmpty {
+                        familyRelationsSection
+                    }
+
                     // Note capture
                     if showingCapture {
                         InlineNoteCaptureView(
@@ -473,6 +478,30 @@ private struct BriefingCard: View {
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)
                     .background(Color.secondary.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                }
+            }
+        }
+    }
+
+    private var familyRelationsSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Family Relations")
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 4) {
+                ForEach(Array(briefing.familyRelations.enumerated()), id: \.offset) { _, rel in
+                    HStack(spacing: 3) {
+                        Image(systemName: "figure.2.and.child.holdinghands")
+                            .font(.caption2)
+                        Text("\(rel.personAName) — \(rel.relationType) — \(rel.personBName)")
+                            .font(.caption2)
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Color.pink.opacity(0.1))
                     .clipShape(RoundedRectangle(cornerRadius: 4))
                 }
             }

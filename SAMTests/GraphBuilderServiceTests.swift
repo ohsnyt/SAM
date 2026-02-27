@@ -68,8 +68,8 @@ struct GraphBuildingTests {
         #expect(allOrphaned)
     }
 
-    @Test("Household context creates edges between all participants")
-    func householdEdges() async throws {
+    @Test("Household context inputs produce zero edges (household removed)")
+    func householdContextIgnored() async throws {
         let alice = UUID(), bob = UUID(), charlie = UUID()
         let people = [
             makePerson(id: alice, name: "Alice"),
@@ -87,11 +87,9 @@ struct GraphBuildingTests {
             communicationMap: [], noteMentions: [], ghostMentions: []
         )
         #expect(result.nodes.count == 3)
-        // 3 people in household = C(3,2) = 3 edges
-        #expect(result.edges.count == 3)
-        #expect(result.edges.allSatisfy { $0.edgeType == .household })
-        // None should be orphaned
-        #expect(result.nodes.allSatisfy { !$0.isOrphaned })
+        #expect(result.edges.count == 0)
+        // All orphaned since no edges
+        #expect(result.nodes.allSatisfy { $0.isOrphaned })
     }
 
     @Test("Business context creates business edges")
@@ -258,7 +256,7 @@ struct GraphBuildingTests {
             makePerson(id: alice, name: "Alice"),
             makePerson(id: bob, name: "Bob"),
         ]
-        let context = ContextGraphInput(contextID: UUID(), contextType: "Household", participantIDs: [alice, bob])
+        let context = ContextGraphInput(contextID: UUID(), contextType: "Business", participantIDs: [alice, bob])
         let referral = ReferralLink(referrerID: alice, referredID: bob)
         let comm = CommLink(personA: alice, personB: bob, evidenceCount: 5, lastContactDate: Date(), dominantDirection: .outbound)
         let result = await service.buildGraph(
@@ -266,9 +264,9 @@ struct GraphBuildingTests {
             recruitingTree: [], coAttendanceMap: [],
             communicationMap: [comm], noteMentions: [], ghostMentions: []
         )
-        #expect(result.edges.count == 3)  // household + referral + communication
+        #expect(result.edges.count == 3)  // business + referral + communication
         let edgeTypes = Set(result.edges.map(\.edgeType))
-        #expect(edgeTypes.contains(.household))
+        #expect(edgeTypes.contains(.business))
         #expect(edgeTypes.contains(.referral))
         #expect(edgeTypes.contains(.communicationLink))
     }
@@ -427,12 +425,10 @@ struct GraphIntegrationTests {
                        production: i < 5 ? Double(i + 1) * 1000 : 0)
         }
 
-        // 2 households
-        let household1 = ContextGraphInput(contextID: UUID(), contextType: "Household", participantIDs: [ids[0], ids[1], ids[13]])
-        let household2 = ContextGraphInput(contextID: UUID(), contextType: "Household", participantIDs: [ids[2], ids[3]])
-
-        // 1 business
-        let business = ContextGraphInput(contextID: UUID(), contextType: "Business", participantIDs: [ids[4], ids[11], ids[12]])
+        // 3 business contexts
+        let business1 = ContextGraphInput(contextID: UUID(), contextType: "Business", participantIDs: [ids[0], ids[1], ids[13]])
+        let business2 = ContextGraphInput(contextID: UUID(), contextType: "Business", participantIDs: [ids[2], ids[3]])
+        let business3 = ContextGraphInput(contextID: UUID(), contextType: "Business", participantIDs: [ids[4], ids[11], ids[12]])
 
         // Referral chain
         let referrals = [
@@ -465,7 +461,7 @@ struct GraphIntegrationTests {
 
         let result = await service.buildGraph(
             people: people,
-            contexts: [household1, household2, business],
+            contexts: [business1, business2, business3],
             referralChains: referrals,
             recruitingTree: recruiting,
             coAttendanceMap: coAttend,
@@ -479,8 +475,7 @@ struct GraphIntegrationTests {
 
         // Count edges by type
         let edgesByType = Dictionary(grouping: result.edges, by: \.edgeType)
-        #expect(edgesByType[.household]?.count == 4)    // C(3,2)=3 + C(2,2)=1 = 4
-        #expect(edgesByType[.business]?.count == 3)     // C(3,2) = 3
+        #expect(edgesByType[.business]?.count == 7)     // C(3,2)=3 + C(2,2)=1 + C(3,2)=3 = 7
         #expect(edgesByType[.referral]?.count == 3)
         #expect(edgesByType[.recruitingTree]?.count == 2)
         #expect(edgesByType[.communicationLink]?.count == 2)

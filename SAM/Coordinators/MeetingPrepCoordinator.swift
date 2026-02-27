@@ -172,6 +172,13 @@ struct InteractionRecord: Identifiable, Sendable {
     let snippet: String?
 }
 
+/// Family relationship between two meeting attendees (from DeducedRelation).
+struct FamilyRelationInfo: Sendable {
+    let personAName: String
+    let personBName: String
+    let relationType: String  // "spouse", "parent", etc.
+}
+
 /// A single upcoming meeting briefing.
 struct MeetingBriefing: Identifiable, Sendable {
     let id: UUID  // Same as eventID
@@ -186,6 +193,7 @@ struct MeetingBriefing: Identifiable, Sendable {
     let topics: [String]
     let signals: [EvidenceSignal]
     let sharedContexts: [SamContext]
+    let familyRelations: [FamilyRelationInfo]
     let talkingPoints: [String]
 }
 
@@ -221,6 +229,7 @@ final class MeetingPrepCoordinator {
     private let evidenceRepository = EvidenceRepository.shared
     private let notesRepository = NotesRepository.shared
     private let peopleRepository = PeopleRepository.shared
+    private let deducedRelationRepository = DeducedRelationRepository.shared
 
     private init() {}
 
@@ -538,6 +547,7 @@ final class MeetingPrepCoordinator {
             let signals = aggregateSignals(for: event.linkedPeople, allEvidence: allEvidence)
 
             let sharedContexts = findSharedContexts(among: event.linkedPeople)
+            let familyRelations = findFamilyRelations(among: event.linkedPeople)
 
             // Generate AI talking points
             let talkingPoints = await generateTalkingPoints(
@@ -561,6 +571,7 @@ final class MeetingPrepCoordinator {
                 topics: topics,
                 signals: signals,
                 sharedContexts: sharedContexts,
+                familyRelations: familyRelations,
                 talkingPoints: talkingPoints
             ))
         }
@@ -765,6 +776,7 @@ final class MeetingPrepCoordinator {
         for person in people {
             for participation in person.participations {
                 guard let context = participation.context else { continue }
+                guard context.kind != .household else { continue }
                 if let existing = contextCounts[context.id] {
                     contextCounts[context.id] = (context, existing.count + 1)
                 } else {
@@ -776,6 +788,18 @@ final class MeetingPrepCoordinator {
         return contextCounts.values
             .filter { $0.count >= 2 }
             .map(\.context)
+    }
+
+    private func findFamilyRelations(among people: [SamPerson]) -> [FamilyRelationInfo] {
+        guard people.count >= 2 else { return [] }
+        let personIDs = Set(people.map(\.id))
+        guard let allRelations = try? deducedRelationRepository.fetchAll() else { return [] }
+        return allRelations.compactMap { rel in
+            guard personIDs.contains(rel.personAID) && personIDs.contains(rel.personBID) else { return nil }
+            let nameA = people.first { $0.id == rel.personAID }?.displayName ?? "Unknown"
+            let nameB = people.first { $0.id == rel.personBID }?.displayName ?? "Unknown"
+            return FamilyRelationInfo(personAName: nameA, personBName: nameB, relationType: rel.relationType.rawValue)
+        }
     }
 
     // MARK: - AI Talking Points

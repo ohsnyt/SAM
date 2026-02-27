@@ -37,11 +37,10 @@ actor GraphBuilderService {
         let personIDs = Set(people.map(\.id))
         var edges: [GraphEdge] = []
 
-        // --- Context edges (household/business) ---
+        // --- Context edges (business only) ---
         for ctx in contexts {
             let type: EdgeType
             switch ctx.contextType {
-            case "Household": type = .household
             case "Business":  type = .business
             default: continue
             }

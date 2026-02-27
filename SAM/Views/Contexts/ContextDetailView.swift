@@ -376,7 +376,9 @@ private struct EditContextSheet: View {
                     .textFieldStyle(.roundedBorder)
                 
                 Picker("Type", selection: $selectedKind) {
-                    ForEach([ContextKind.household, .business], id: \.self) { kind in
+                    ForEach(context.kind == .household
+                            ? [ContextKind.household, .business]
+                            : [ContextKind.business], id: \.self) { kind in
                         Label(kind.displayName, systemImage: kind.icon)
                             .tag(kind)
                     }
@@ -565,38 +567,38 @@ private struct AddParticipantSheet: View {
     jane.displayNameCache = "Jane Smith"
     
     // Create context
-    let household = SamContext(
+    let smithGroup = SamContext(
         id: UUID(),
-        name: "Smith Family",
-        kind: .household,
+        name: "Smith Group",
+        kind: .business,
         reviewAlertCount: 1
     )
-    
+
     // Create participations
     let participation1 = ContextParticipation(
         id: UUID(),
         person: john,
-        context: household,
+        context: smithGroup,
         roleBadges: ["Primary Insured", "Decision Maker"],
         isPrimary: true
     )
-    
+
     let participation2 = ContextParticipation(
         id: UUID(),
         person: jane,
-        context: household,
+        context: smithGroup,
         roleBadges: ["Spouse", "Beneficiary"]
     )
-    
-    household.participations = [participation1, participation2]
-    
+
+    smithGroup.participations = [participation1, participation2]
+
     context.insert(john)
     context.insert(jane)
-    context.insert(household)
+    context.insert(smithGroup)
     try? context.save()
-    
+
     return NavigationStack {
-        ContextDetailView(context: household)
+        ContextDetailView(context: smithGroup)
             .modelContainer(container)
     }
     .frame(width: 700, height: 600)

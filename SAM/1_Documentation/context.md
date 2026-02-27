@@ -3,7 +3,7 @@
 **Language**: Swift 6  
 **Architecture**: Clean layered architecture with strict separation of concerns  
 **Framework**: SwiftUI + SwiftData  
-**Last Updated**: February 26, 2026 (Phases A–Z + Advanced Search + Export/Import + Phase AA + Deduced Relationships complete, schema SAM_v26)
+**Last Updated**: February 26, 2026 (Phases A–Z + Advanced Search + Export/Import + Phase AA + Deduced Relationships complete, Household removal, schema SAM_v27)
 
 **Related Docs**:
 - See `agent.md` for product philosophy, AI architecture, and UX principles
@@ -311,6 +311,7 @@ SAM/SAM/
 - ✅ **Export/Import**: Backup/restore 20 model types + preferences to .sambackup JSON (no schema change)
 - ✅ **Phase AA**: Relationship Graph — Visual Network Intelligence (AA.1–AA.7 complete, no schema change)
 - ✅ **Deduced Relationships + Me Toggle**: Contact relations import, deduced family edges in graph, Me node toggle, focus mode, Awareness integration (schema SAM_v26)
+- ✅ **Household Removal**: Removed `.household` ContextKind from UI/graph, replaced with DeducedRelation-based family clustering; ConsentRequirement.context removed; MeetingBriefing family relations from DeducedRelation; Phase AA specs rewritten for family clusters (schema SAM_v27)
 
 ### Future Phases (Unscheduled)
 
@@ -472,8 +473,8 @@ Each migration uses SwiftData lightweight migration. New models are additive (no
 
 ---
 
-**Document Version**: 19.0 (Phases A–Z + Advanced Search + Export/Import + Phase AA + Deduced Relationships complete, schema SAM_v26)
+**Document Version**: 20.0 (Phases A–Z + Advanced Search + Export/Import + Phase AA + Deduced Relationships + Household Removal complete, schema SAM_v27)
 **Previous Versions**: See `changelog.md` for version history
-**Last Major Update**: February 26, 2026 — Deduced Relationships + Me Toggle + Awareness Integration (contact relations import, deduced family edges, focus mode, schema SAM_v26)
+**Last Major Update**: February 26, 2026 — Household Removal: replaced ContextKind.household with DeducedRelation-based family clustering (schema SAM_v27)
 **Clean Rebuild Started**: February 9, 2026
     

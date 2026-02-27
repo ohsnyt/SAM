@@ -65,7 +65,7 @@ enum SAMModelContainer {
     nonisolated(unsafe) private static var _shared: ModelContainer = {
         let schema     = Schema(SAMSchema.allModels)
         let config     = ModelConfiguration(
-            "SAM_v26", // Phase Z: compliance awareness
+            "SAM_v27", // Remove household context from ConsentRequirement
             schema: schema,
             isStoredInMemoryOnly: false   // persistent on disk
         )
@@ -84,7 +84,7 @@ enum SAMModelContainer {
     nonisolated static func makeFreshContainer() -> ModelContainer {
         let schema = Schema(SAMSchema.allModels)
         let config = ModelConfiguration(
-            "SAM_v26", // Phase Z: compliance awareness
+            "SAM_v27", // Remove household context from ConsentRequirement
             schema: schema,
             isStoredInMemoryOnly: false
         )
@@ -104,7 +104,7 @@ enum SAMModelContainer {
     nonisolated static let shared: ModelContainer = {
         let schema     = Schema(SAMSchema.allModels)
         let config     = ModelConfiguration(
-            "SAM_v26", // Phase Z: compliance awareness
+            "SAM_v27", // Remove household context from ConsentRequirement
             schema: schema,
             isStoredInMemoryOnly: false   // persistent on disk
         )

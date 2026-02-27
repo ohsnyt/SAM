@@ -54,7 +54,6 @@ struct GraphEdge: Identifiable, Sendable {
 }
 
 enum EdgeType: String, CaseIterable, Sendable {
-    case household          // Share a SamContext of type Household
     case business           // Share a SamContext of type Business
     case referral           // referredBy / referrals relationship
     case recruitingTree     // Agent recruited by user or by user's agents
