@@ -38,6 +38,7 @@ struct BackupDocument: Codable {
     var contentPosts: [ContentPostBackup]
     var businessGoals: [BusinessGoalBackup]
     var complianceAuditEntries: [ComplianceAuditBackup]
+    var deducedRelations: [DeducedRelationBackup]
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -479,4 +480,19 @@ struct ComplianceAuditBackup: Codable {
     var outcomeID: UUID?
     var createdAt: Date
     var sentAt: Date?
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// MARK: - 21. DeducedRelationBackup
+// ─────────────────────────────────────────────────────────────────────
+
+struct DeducedRelationBackup: Codable {
+    var id: UUID
+    var personAID: UUID
+    var personBID: UUID
+    var relationTypeRawValue: String
+    var sourceLabel: String
+    var isConfirmed: Bool
+    var createdAt: Date
+    var confirmedAt: Date?
 }

@@ -53,6 +53,12 @@ struct AppShellView: View {
             .onReceive(NotificationCenter.default.publisher(for: .samOpenPostMeetingCapture)) { notification in
                 handlePostMeetingNotification(notification)
             }
+            .onReceive(NotificationCenter.default.publisher(for: .samNavigateToGraph)) { notification in
+                sidebarSelection = "graph"
+                if let focusMode = notification.userInfo?["focusMode"] as? String {
+                    RelationshipGraphCoordinator.shared.activateFocusMode(focusMode)
+                }
+            }
             .sheet(item: $postMeetingPayload) { payload in
                 PostMeetingCaptureView(
                     eventTitle: payload.eventTitle,
@@ -86,6 +92,12 @@ struct AppShellView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .samOpenPostMeetingCapture)) { notification in
                 handlePostMeetingNotification(notification)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .samNavigateToGraph)) { notification in
+                sidebarSelection = "graph"
+                if let focusMode = notification.userInfo?["focusMode"] as? String {
+                    RelationshipGraphCoordinator.shared.activateFocusMode(focusMode)
+                }
             }
             .sheet(item: $postMeetingPayload) { payload in
                 PostMeetingCaptureView(
@@ -142,6 +154,10 @@ struct AppShellView: View {
                 NavigationLink(value: "business") {
                     Label("Pipeline", systemImage: "chart.bar.horizontal.page")
                 }
+
+                NavigationLink(value: "graph") {
+                    Label("Relationship Map", systemImage: "circle.grid.cross")
+                }
             }
         }
         .navigationTitle("SAM")
@@ -163,6 +179,9 @@ struct AppShellView: View {
 
         case "business":
             BusinessDashboardView()
+
+        case "graph":
+            RelationshipGraphView()
 
         default:
             ContentUnavailableView(

@@ -357,6 +357,15 @@ struct OutcomeQueueView: View {
                     userInfo: ["personID": personID]
                 )
             }
+
+        case .reviewGraph:
+            return {
+                NotificationCenter.default.post(
+                    name: .samNavigateToGraph,
+                    object: nil,
+                    userInfo: ["focusMode": "deducedRelationships"]
+                )
+            }
         }
     }
 

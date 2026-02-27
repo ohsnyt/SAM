@@ -242,6 +242,9 @@ final class ContactsImportCoordinator {
                 logger.error("Failed to re-resolve participants after contacts import: \(error.localizedDescription)")
             }
 
+            // Deduce family relationships from contact relation fields
+            deduceRelationships(from: contacts)
+
             let duration = Date().timeIntervalSince(startTime)
             logger.info("Import complete: \(created) created, \(updated) updated in \(String(format: "%.2f", duration))s")
 
@@ -258,6 +261,99 @@ final class ContactsImportCoordinator {
         }
     }
     
+    // MARK: - Deduced Relationships
+
+    /// Match contact relation names to existing SamPerson records and create deduced relationships.
+    private func deduceRelationships(from contacts: [ContactDTO]) {
+        let deducedRepo = DeducedRelationRepository.shared
+
+        // Build lookup: all people indexed by contactIdentifier
+        guard let allPeople = try? peopleRepo.fetchAll() else { return }
+        let byContactID = Dictionary(uniqueKeysWithValues: allPeople.compactMap { person -> (String, SamPerson)? in
+            guard let cid = person.contactIdentifier else { return nil }
+            return (cid, person)
+        })
+
+        // Build name lookup for fuzzy matching: lowercased first name → [SamPerson]
+        var byGivenName: [String: [SamPerson]] = [:]
+        var byFullName: [String: SamPerson] = [:]
+        for person in allPeople {
+            let full = (person.displayNameCache ?? person.displayName).lowercased()
+            byFullName[full] = person
+            // Extract given name as first word of display name
+            let given = full.split(separator: " ").first.map(String.init) ?? ""
+            if !given.isEmpty {
+                byGivenName[given, default: []].append(person)
+            }
+        }
+
+        var deducedCount = 0
+
+        for contact in contacts {
+            guard !contact.contactRelations.isEmpty else { continue }
+            guard let ownerPerson = byContactID[contact.identifier] else { continue }
+
+            for relation in contact.contactRelations {
+                let relName = relation.name.trimmingCharacters(in: .whitespaces)
+                guard !relName.isEmpty else { continue }
+
+                // Try to match relation name to an existing SamPerson
+                let matchedPerson: SamPerson?
+                let lowerName = relName.lowercased()
+
+                // 1. Exact full name match
+                if let exact = byFullName[lowerName] {
+                    matchedPerson = exact
+                }
+                // 2. Given name prefix match (e.g., "Ruth" matches "Ruth Snyder")
+                else if let candidates = byGivenName[lowerName], candidates.count == 1 {
+                    matchedPerson = candidates.first
+                }
+                else {
+                    matchedPerson = nil
+                }
+
+                guard let matched = matchedPerson, matched.id != ownerPerson.id else { continue }
+
+                // Map CNContact relation label to DeducedRelationType
+                let relationType = mapRelationLabel(relation.label)
+                let sourceLabel = relation.label ?? relationType.rawValue
+
+                do {
+                    try deducedRepo.upsert(
+                        personAID: ownerPerson.id,
+                        personBID: matched.id,
+                        relationType: relationType,
+                        sourceLabel: sourceLabel
+                    )
+                    deducedCount += 1
+                } catch {
+                    logger.error("Failed to upsert deduced relation: \(error.localizedDescription)")
+                }
+            }
+        }
+
+        if deducedCount > 0 {
+            logger.info("Deduced \(deducedCount) relationship(s) from contact relations")
+        }
+    }
+
+    /// Map Apple Contacts relation labels to DeducedRelationType.
+    private func mapRelationLabel(_ label: String?) -> DeducedRelationType {
+        guard let label = label?.lowercased() else { return .other }
+        // CNContact localized labels come through as human-readable strings after localizedString(forLabel:)
+        if label.contains("spouse") || label.contains("partner") || label.contains("husband") || label.contains("wife") {
+            return .spouse
+        } else if label.contains("child") || label.contains("son") || label.contains("daughter") {
+            return .child
+        } else if label.contains("parent") || label.contains("mother") || label.contains("father") || label.contains("mom") || label.contains("dad") {
+            return .parent
+        } else if label.contains("sister") || label.contains("brother") || label.contains("sibling") {
+            return .sibling
+        }
+        return .other
+    }
+
     // MARK: - Cancellation
 
     /// Cancel all background tasks. Called by AppDelegate on app termination.

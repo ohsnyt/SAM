@@ -548,6 +548,61 @@ final class NotesRepository {
         return note
     }
 
+    // MARK: - Ghost Merge
+
+    /// Merge all unmatched ghost mentions of `ghostName` into the given person.
+    /// Sets `matchedPersonID` on matching mentions and adds the person to `linkedPeople`.
+    /// Returns the number of notes affected.
+    @discardableResult
+    func mergeGhostMentions(ghostName: String, intoPersonID personID: UUID) throws -> Int {
+        guard let modelContext else { throw RepositoryError.notConfigured }
+
+        let allNotes = try fetchAll()
+        let targetDescriptor = FetchDescriptor<SamPerson>(
+            predicate: #Predicate { $0.id == personID }
+        )
+        guard let targetPerson = try modelContext.fetch(targetDescriptor).first else {
+            logger.warning("mergeGhostMentions: person \(personID) not found")
+            return 0
+        }
+
+        let normalizedGhost = ghostName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        var affectedCount = 0
+
+        for note in allNotes {
+            var modified = false
+            var updatedMentions = note.extractedMentions
+
+            for i in updatedMentions.indices {
+                guard updatedMentions[i].matchedPersonID == nil else { continue }
+                let mentionName = updatedMentions[i].name
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .lowercased()
+                guard mentionName == normalizedGhost else { continue }
+
+                updatedMentions[i].matchedPersonID = personID
+                modified = true
+            }
+
+            if modified {
+                note.extractedMentions = updatedMentions
+
+                // Add target person to linkedPeople if not already linked
+                if !note.linkedPeople.contains(where: { $0.id == personID }) {
+                    note.linkedPeople.append(targetPerson)
+                }
+                affectedCount += 1
+            }
+        }
+
+        if affectedCount > 0 {
+            try modelContext.save()
+            logger.info("Merged ghost '\(ghostName)' into person \(personID) across \(affectedCount) note(s)")
+        }
+
+        return affectedCount
+    }
+
     /// Find a note by its source import UID (for dedup)
     func fetchBySourceImportUID(_ uid: String) throws -> SamNote? {
         guard let modelContext = modelContext else {

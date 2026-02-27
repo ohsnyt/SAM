@@ -210,6 +210,7 @@ extension ContactDTO {
                     // CNContactNoteKey,  // Requires Notes entitlement - removed
                     CNContactImageDataKey,
                     CNContactThumbnailImageDataKey,
+                    CNContactRelationsKey,
                     CNContactSocialProfilesKey,
                     CNContactInstantMessageAddressesKey,
                     CNContactUrlAddressesKey

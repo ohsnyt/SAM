@@ -28,6 +28,18 @@ public enum ContextKind: String, Codable, Sendable {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// MARK: - Deduced Relation Types
+// ─────────────────────────────────────────────────────────────────────
+
+public enum DeducedRelationType: String, Codable, Sendable, CaseIterable {
+    case spouse
+    case parent
+    case child
+    case sibling
+    case other
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // MARK: - Evidence Types
 // ─────────────────────────────────────────────────────────────────────
 
@@ -563,6 +575,7 @@ public enum ActionLane: String, Codable, Sendable {
     case record         // Open QuickNoteWindowView (existing)
     case call           // Initiate call, offer post-call note
     case schedule       // Create calendar event with attendees
+    case reviewGraph    // Navigate to Relationship Graph in focus mode
 }
 
 extension ActionLane {
@@ -573,6 +586,7 @@ extension ActionLane {
         case .record:      return "Write Note"
         case .call:        return "Call"
         case .schedule:    return "Schedule"
+        case .reviewGraph: return "Review in Graph"
         }
     }
 
@@ -583,6 +597,7 @@ extension ActionLane {
         case .record:      return "square.and.pencil"
         case .call:        return "phone.arrow.up.right"
         case .schedule:    return "calendar.badge.plus"
+        case .reviewGraph: return "circle.grid.cross"
         }
     }
 
@@ -593,6 +608,7 @@ extension ActionLane {
         case .record:      return "Record"
         case .call:        return "Call"
         case .schedule:    return "Schedule"
+        case .reviewGraph: return "Review Graph"
         }
     }
 }

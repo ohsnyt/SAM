@@ -966,6 +966,48 @@ public final class CoachingProfile {
     }
 }
 
+// MARK: - DeducedRelation
+
+/// A deduced family/household relationship between two SamPerson contacts,
+/// discovered from Apple Contacts' related names field.
+@Model
+public final class DeducedRelation {
+    public var id: UUID
+    public var personAID: UUID
+    public var personBID: UUID
+    public var relationTypeRawValue: String
+    public var sourceLabel: String
+    public var isConfirmed: Bool
+    public var createdAt: Date
+    public var confirmedAt: Date?
+
+    @Transient
+    public var relationType: DeducedRelationType {
+        get { DeducedRelationType(rawValue: relationTypeRawValue) ?? .other }
+        set { relationTypeRawValue = newValue.rawValue }
+    }
+
+    public init(
+        id: UUID = UUID(),
+        personAID: UUID,
+        personBID: UUID,
+        relationType: DeducedRelationType,
+        sourceLabel: String,
+        isConfirmed: Bool = false,
+        createdAt: Date = .now,
+        confirmedAt: Date? = nil
+    ) {
+        self.id = id
+        self.personAID = personAID
+        self.personBID = personBID
+        self.relationTypeRawValue = relationType.rawValue
+        self.sourceLabel = sourceLabel
+        self.isConfirmed = isConfirmed
+        self.createdAt = createdAt
+        self.confirmedAt = confirmedAt
+    }
+}
+
 // MARK: - Notifications
 
 extension Notification.Name {
@@ -988,5 +1030,9 @@ extension Notification.Name {
     /// Posted when a meeting ends to open the structured post-meeting capture sheet.
     /// userInfo: ["eventTitle": String, "eventDate": Date, "attendeeIDs": [UUID]]
     static let samOpenPostMeetingCapture = Notification.Name("samOpenPostMeetingCapture")
+
+    /// Posted to navigate to the Relationship Graph view with optional focus mode.
+    /// userInfo: ["focusMode": String] (optional)
+    static let samNavigateToGraph = Notification.Name("samNavigateToGraph")
 }
 

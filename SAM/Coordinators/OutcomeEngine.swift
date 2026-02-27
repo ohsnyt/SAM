@@ -110,6 +110,9 @@ final class OutcomeEngine {
             // 9. Goal pacing coaching (Phase X)
             newOutcomes.append(contentsOf: scanGoalPacing())
 
+            // 10. Deduced relationships review
+            newOutcomes.append(contentsOf: scanDeducedRelationships())
+
             // Classify action lanes and suggest channels
             for outcome in newOutcomes {
                 classifyActionLane(for: outcome)
@@ -577,6 +580,40 @@ final class OutcomeEngine {
         return outcomes
     }
 
+    // MARK: - Deduced Relationships Scanner
+
+    private func scanDeducedRelationships() -> [SamOutcome] {
+        guard let unconfirmed = try? DeducedRelationRepository.shared.fetchUnconfirmed(),
+              !unconfirmed.isEmpty else { return [] }
+
+        // One batched outcome for all unconfirmed deductions
+        let hasSimilar = (try? outcomeRepo.hasSimilarOutcome(
+            kind: .outreach,
+            personID: nil,
+            withinHours: 24
+        )) ?? false
+
+        // Check title-based dedup since we use .outreach kind
+        if hasSimilar {
+            let active = (try? outcomeRepo.fetchActive()) ?? []
+            let alreadyExists = active.contains { $0.title.contains("deduced relationship") }
+            if alreadyExists { return [] }
+        }
+
+        let count = unconfirmed.count
+        let outcome = SamOutcome(
+            title: "Review \(count) deduced relationship\(count == 1 ? "" : "s")",
+            rationale: "SAM found family connections in your contact records that may link to people you know.",
+            outcomeKind: .outreach,
+            priorityScore: 0.5,
+            deadlineDate: Calendar.current.date(byAdding: .day, value: 7, to: .now),
+            sourceInsightSummary: "Deduced from Apple Contacts related names",
+            suggestedNextStep: "Open the Relationship Map to review and confirm these connections."
+        )
+        outcome.actionLaneRawValue = ActionLane.reviewGraph.rawValue
+        return [outcome]
+    }
+
     /// Map GoalType to the most appropriate OutcomeKind.
     private func goalOutcomeKind(for goalType: GoalType) -> OutcomeKind {
         switch goalType {
@@ -862,6 +899,9 @@ final class OutcomeEngine {
     /// Classify an outcome into the correct action lane.
     /// Called after creation and before persisting.
     func classifyActionLane(for outcome: SamOutcome) {
+        // Preserve pre-set lanes (e.g., reviewGraph from scanDeducedRelationships)
+        if outcome.actionLane == .reviewGraph { return }
+
         let title = outcome.title.lowercased()
 
         // 1. Source-based: if from a NoteActionItem, use action type heuristics

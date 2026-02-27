@@ -100,13 +100,20 @@ struct PersonDetailView: View {
                     .help("Create this person in Apple Contacts")
                 }
                 
+                Button {
+                    viewInGraph()
+                } label: {
+                    Label("View in Graph", systemImage: "circle.grid.cross")
+                }
+                .help("Show this person in the Relationship Map")
+
                 Menu {
                     Button("Add to Context", systemImage: "building.2") {
                         showingContextPicker = true
                     }
-                    
+
                     Divider()
-                    
+
                     Button("Refresh Contact", systemImage: "arrow.clockwise") {
                         Task {
                             await loadFullContact()
@@ -1403,6 +1410,16 @@ struct PersonDetailView: View {
         // Open Contacts app to this person
         let url = URL(string: "addressbook://\(identifier)")!
         NSWorkspace.shared.open(url)
+    }
+
+    private func viewInGraph() {
+        let coordinator = RelationshipGraphCoordinator.shared
+        coordinator.selectedNodeID = person.id
+        // Center on the person's node if graph is ready
+        if let node = coordinator.nodes.first(where: { $0.id == person.id }) {
+            coordinator.viewportCenter = node.position
+        }
+        UserDefaults.standard.set("graph", forKey: "sam.sidebar.selection")
     }
 
     private func createInContacts() {

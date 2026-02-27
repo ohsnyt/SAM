@@ -140,6 +140,9 @@ final class BackupCoordinator {
             progress = "Reading compliance entries..."
             let audits = try context.fetch(FetchDescriptor<ComplianceAuditEntry>())
 
+            progress = "Reading deduced relations..."
+            let deducedRelations = try context.fetch(FetchDescriptor<DeducedRelation>())
+
             // Map to DTOs
             progress = "Building backup document..."
 
@@ -446,6 +449,19 @@ final class BackupCoordinator {
                 )
             }
 
+            let deducedRelationDTOs = deducedRelations.map { r in
+                DeducedRelationBackup(
+                    id: r.id,
+                    personAID: r.personAID,
+                    personBID: r.personBID,
+                    relationTypeRawValue: r.relationTypeRawValue,
+                    sourceLabel: r.sourceLabel,
+                    isConfirmed: r.isConfirmed,
+                    createdAt: r.createdAt,
+                    confirmedAt: r.confirmedAt
+                )
+            }
+
             // Gather preferences
             progress = "Gathering preferences..."
             var prefs: [String: AnyCodableValue] = [:]
@@ -461,7 +477,7 @@ final class BackupCoordinator {
             let document = BackupDocument(
                 metadata: BackupMetadata(
                     exportDate: .now,
-                    schemaVersion: "SAM_v25",
+                    schemaVersion: "SAM_v26",
                     appVersion: appVersion,
                     buildNumber: buildNumber,
                     backupFormatVersion: 1,
@@ -492,7 +508,8 @@ final class BackupCoordinator {
                 productionRecords: productionDTOs,
                 contentPosts: postDTOs,
                 businessGoals: goalDTOs,
-                complianceAuditEntries: auditDTOs
+                complianceAuditEntries: auditDTOs,
+                deducedRelations: deducedRelationDTOs
             )
 
             // Encode
@@ -536,7 +553,7 @@ final class BackupCoordinator {
             throw BackupError.unsupportedFormat(doc.metadata.backupFormatVersion)
         }
 
-        let schemaMatch = doc.metadata.schemaVersion == "SAM_v25"
+        let schemaMatch = doc.metadata.schemaVersion == "SAM_v26"
         let preview = ImportPreview(metadata: doc.metadata, schemaMatch: schemaMatch)
 
         status = .idle
@@ -737,6 +754,20 @@ final class BackupCoordinator {
                 entry.createdAt = dto.createdAt
                 entry.sentAt = dto.sentAt
                 context.insert(entry)
+            }
+
+            for dto in doc.deducedRelations {
+                let relation = DeducedRelation(
+                    id: dto.id,
+                    personAID: dto.personAID,
+                    personBID: dto.personBID,
+                    relationType: DeducedRelationType(rawValue: dto.relationTypeRawValue) ?? .other,
+                    sourceLabel: dto.sourceLabel,
+                    isConfirmed: dto.isConfirmed,
+                    createdAt: dto.createdAt,
+                    confirmedAt: dto.confirmedAt
+                )
+                context.insert(relation)
             }
 
             try context.save()
@@ -1062,6 +1093,7 @@ final class BackupCoordinator {
             let posts = try context.fetch(FetchDescriptor<ContentPost>())
             let goals = try context.fetch(FetchDescriptor<BusinessGoal>())
             let audits = try context.fetch(FetchDescriptor<ComplianceAuditEntry>())
+            let deducedRelations = try context.fetch(FetchDescriptor<DeducedRelation>())
 
             let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
             let buildNumber = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
@@ -1076,7 +1108,7 @@ final class BackupCoordinator {
             let doc = BackupDocument(
                 metadata: BackupMetadata(
                     exportDate: .now,
-                    schemaVersion: "SAM_v25",
+                    schemaVersion: "SAM_v26",
                     appVersion: appVersion,
                     buildNumber: buildNumber,
                     backupFormatVersion: 1,
@@ -1275,6 +1307,14 @@ final class BackupCoordinator {
                         originalDraft: a.originalDraft, finalDraft: a.finalDraft,
                         wasModified: a.wasModified, complianceFlagsJSON: a.complianceFlagsJSON,
                         outcomeID: a.outcomeID, createdAt: a.createdAt, sentAt: a.sentAt
+                    )
+                },
+                deducedRelations: deducedRelations.map { r in
+                    DeducedRelationBackup(
+                        id: r.id, personAID: r.personAID, personBID: r.personBID,
+                        relationTypeRawValue: r.relationTypeRawValue,
+                        sourceLabel: r.sourceLabel, isConfirmed: r.isConfirmed,
+                        createdAt: r.createdAt, confirmedAt: r.confirmedAt
                     )
                 }
             )

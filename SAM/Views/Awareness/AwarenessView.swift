@@ -310,6 +310,7 @@ struct AwarenessView: View {
         case timeAllocation
         case referralTracking
         case goalPacing
+        case networkGrowth
     }
 
     /// Collapsible section groups with time-based ordering.
@@ -338,7 +339,7 @@ struct AwarenessView: View {
             switch self {
             case .actionQueue:     return [.outcomes, .followUpCoach, .unknownSenders]
             case .todaysFocus:     return [.goalPacing, .meetingPrep, .pipeline, .lifeEvents, .engagementVelocity]
-            case .reviewAnalytics: return [.streaks, .contentCadence, .meetingQuality, .calendarPatterns, .timeAllocation, .referralTracking]
+            case .reviewAnalytics: return [.streaks, .contentCadence, .meetingQuality, .calendarPatterns, .timeAllocation, .referralTracking, .networkGrowth]
             }
         }
     }
@@ -499,6 +500,7 @@ struct AwarenessView: View {
         case .timeAllocation:     TimeAllocationSection()
         case .referralTracking:   ReferralTrackingSection()
         case .goalPacing:         GoalPacingSection()
+        case .networkGrowth:      NetworkGrowthSection()
         }
     }
 

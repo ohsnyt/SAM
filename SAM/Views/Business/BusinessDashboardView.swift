@@ -44,6 +44,10 @@ struct BusinessDashboardView: View {
                 default:
                     RecruitingPipelineDashboardView(tracker: tracker)
                 }
+
+                // Relationship Map preview
+                GraphMiniPreviewView()
+                    .padding()
             }
         }
         .navigationTitle("Pipeline")

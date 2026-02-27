@@ -43,10 +43,23 @@ struct SAMApp: App {
 
     // MARK: - Lifecycle
 
+    /// True when launched as a test host (XCTest / Swift Testing).
+    private static let isTestHost = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+
     init() {
         // Initialize showOnboarding FIRST before any other operations
         let hasCompletedOnboarding = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
         _showOnboarding = State(initialValue: !hasCompletedOnboarding)
+
+        // Skip heavy initialization when running as a test host.
+        // Each parallel test runner spawns a full app instance;
+        // without this guard, N suites = N concurrent app launches,
+        // each triggering imports, LLM inference, and SwiftData I/O
+        // — enough to exhaust system resources.
+        guard !Self.isTestHost else {
+            logger.info("Running as test host — skipping data layer configuration")
+            return
+        }
 
         #if DEBUG
         // DEVELOPMENT ONLY: Uncomment the next line to force reset onboarding on every launch
@@ -160,6 +173,7 @@ struct SAMApp: App {
         ContentPostRepository.shared.configure(container: SAMModelContainer.shared)
         GoalRepository.shared.configure(container: SAMModelContainer.shared)
         ComplianceAuditRepository.shared.configure(container: SAMModelContainer.shared)
+        DeducedRelationRepository.shared.configure(container: SAMModelContainer.shared)
 
         // Prune expired compliance audit entries on launch
         let retentionDays = UserDefaults.standard.object(forKey: "complianceAuditRetentionDays") as? Int ?? 90
@@ -169,6 +183,9 @@ struct SAMApp: App {
     /// Check permissions and decide whether to show onboarding or proceed with imports
     /// This runs once at app launch, before user can interact with the UI
     private func checkPermissionsAndSetup() async {
+        // Skip when running as test host
+        guard !Self.isTestHost else { return }
+
         // Check if onboarding was completed
         let hasCompletedOnboarding = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
 

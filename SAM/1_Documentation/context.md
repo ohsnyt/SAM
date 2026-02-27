@@ -3,11 +3,11 @@
 **Language**: Swift 6  
 **Architecture**: Clean layered architecture with strict separation of concerns  
 **Framework**: SwiftUI + SwiftData  
-**Last Updated**: February 26, 2026 (Phases A–Z complete, schema SAM_v25)
+**Last Updated**: February 26, 2026 (Phases A–Z + Advanced Search + Export/Import + Phase AA + Deduced Relationships complete, schema SAM_v26)
 
-**Related Docs**: 
+**Related Docs**:
 - See `agent.md` for product philosophy, AI architecture, and UX principles
-- See `changelog.md` for historical completion notes (Phases A–Z)
+- See `changelog.md` for historical completion notes (Phases A–Z + post-phase features)
 
 ---
 
@@ -129,7 +129,7 @@ SAM is a **native macOS business coaching and relationship management applicatio
 SAM/SAM/
 ├── App/
 │   ├── SAMApp.swift                    ✅ App entry point, lifecycle, permissions
-│   └── SAMModelContainer.swift         ✅ SwiftData container (v25)
+│   └── SAMModelContainer.swift         ✅ SwiftData container (v26)
 │
 ├── Services/
 │   ├── ContactsService.swift           ✅ Actor — CNContact operations
@@ -148,7 +148,8 @@ SAM/SAM/
 │   ├── PipelineAnalystService.swift    ✅ Actor — Specialist LLM for pipeline analysis
 │   ├── PatternDetectorService.swift    ✅ Actor — Specialist LLM for cross-relationship patterns
 │   ├── TimeAnalystService.swift        ✅ Actor — Specialist LLM for time allocation
-│   └── ContentAdvisorService.swift     ✅ Actor — Specialist LLM for content suggestions + draft generation
+│   ├── ContentAdvisorService.swift     ✅ Actor — Specialist LLM for content suggestions + draft generation
+│   └── GraphBuilderService.swift      ✅ Actor — Force-directed graph layout + edge assembly
 │
 ├── Coordinators/
 │   ├── ContactsImportCoordinator.swift ✅ Contact import
@@ -165,7 +166,10 @@ SAM/SAM/
 │   ├── PipelineTracker.swift           ✅ Funnel metrics, stage transitions, stall detection, production metrics
 │   ├── StrategicCoordinator.swift      ✅ RLM orchestrator — dispatches specialists, synthesizes
 │   ├── GoalProgressEngine.swift       ✅ Live goal progress from existing repos + pace calculation
-│   └── ScenarioProjectionEngine.swift ✅ Deterministic 90-day trailing velocity projections
+│   ├── ScenarioProjectionEngine.swift ✅ Deterministic 90-day trailing velocity projections
+│   ├── BackupCoordinator.swift        ✅ Export/import .sambackup files (full replace)
+│   ├── SearchCoordinator.swift        ✅ Unified search across people, contexts, evidence, notes, outcomes
+│   └── RelationshipGraphCoordinator.swift ✅ Graph data gathering, filtering, layout orchestration
 │
 ├── Repositories/
 │   ├── PeopleRepository.swift          ✅ CRUD for SamPerson
@@ -179,7 +183,8 @@ SAM/SAM/
 │   ├── ProductionRepository.swift     ✅ CRUD for ProductionRecord + metric queries
 │   ├── ContentPostRepository.swift    ✅ CRUD for ContentPost + cadence + streak queries
 │   ├── GoalRepository.swift           ✅ CRUD for BusinessGoal + archive
-│   └── ComplianceAuditRepository.swift ✅ CRUD for ComplianceAuditEntry + prune
+│   ├── ComplianceAuditRepository.swift ✅ CRUD for ComplianceAuditEntry + prune
+│   └── DeducedRelationRepository.swift ✅ CRUD for DeducedRelation + confirm
 │
 ├── Models/
 │   ├── SAMModels.swift                 ✅ Core models (SamPerson, SamContext, etc.)
@@ -192,6 +197,7 @@ SAM/SAM/
 │   ├── SAMModels-ContentPost.swift   ✅ ContentPost, ContentPlatform
 │   ├── SAMModels-Goal.swift          ✅ BusinessGoal, GoalType, GoalPace
 │   ├── SAMModels-Compliance.swift    ✅ ComplianceAuditEntry
+│   ├── BackupDocument.swift          ✅ Backup DTOs (21 Codable structs) + AnyCodableValue
 │   └── DTOs/
 │       ├── ContactDTO.swift            ✅
 │       ├── EventDTO.swift              ✅
@@ -200,7 +206,10 @@ SAM/SAM/
 │       ├── NoteAnalysisDTO.swift       ✅
 │       ├── EvernoteNoteDTO.swift       ✅
 │       ├── StrategicDigestDTO.swift    ✅ All specialist analyst output DTOs + synthesis types
-│       └── ContentDraftDTO.swift      ✅ ContentDraft + LLMContentDraft
+│       ├── ContentDraftDTO.swift      ✅ ContentDraft + LLMContentDraft
+│       ├── GraphNode.swift            ✅ Graph node DTO (position, role, health, production)
+│       ├── GraphEdge.swift            ✅ Graph edge DTO (8 edge types, weight, direction, deduced relation ID)
+│       └── GraphInputDTOs.swift       ✅ Input DTOs for graph builder (8 types + DeducedFamilyLink)
 │
 ├── Views/
 │   ├── AppShellView.swift              ✅ Three-column navigation shell
@@ -210,8 +219,8 @@ SAM/SAM/
 │   ├── Awareness/                      ✅ Coaching dashboard
 │   ├── Notes/                          ✅ Note editing + journal
 │   ├── Content/                        ✅ ContentDraftSheet
-│   ├── Business/                       ✅ Business Intelligence dashboard (pipeline)
-│   │   ├── BusinessDashboardView.swift ✅ Top-level BI view (segmented Client/Recruiting/Production/Strategic)
+│   ├── Business/                       ✅ Business Intelligence dashboard (pipeline) + Relationship Graph
+│   │   ├── BusinessDashboardView.swift ✅ Top-level BI view (segmented tabs + graph mini-preview)
 │   │   ├── ClientPipelineDashboardView.swift ✅ Client funnel, metrics, stuck, transitions
 │   │   ├── RecruitingPipelineDashboardView.swift ✅ 7-stage funnel, licensing rate, mentoring
 │   │   ├── ProductionDashboardView.swift ✅ Status overview, product mix, pending aging, all records
@@ -219,12 +228,18 @@ SAM/SAM/
 │   │   ├── StrategicInsightsView.swift ✅ Strategic digest + recommendation cards + scenario projections
 │   │   ├── ScenarioProjectionsView.swift ✅ 2-column projection cards with trend badges
 │   │   ├── GoalProgressView.swift     ✅ Goal cards with progress bars + pace indicators
-│   │   └── GoalEntryForm.swift        ✅ Goal create/edit sheet
+│   │   ├── GoalEntryForm.swift        ✅ Goal create/edit sheet
+│   │   ├── RelationshipGraphView.swift ✅ Canvas-based interactive relationship map
+│   │   ├── GraphToolbarView.swift     ✅ Zoom/filter/rebuild toolbar for graph
+│   │   ├── GraphTooltipView.swift     ✅ Hover tooltip with person summary
+│   │   └── GraphMiniPreviewView.swift ✅ Non-interactive graph thumbnail for dashboard
+│   ├── Search/                         ✅ SearchView + SearchResultRow
 │   ├── Shared/                         ✅ Reusable components
-│   └── Settings/                       ✅ Tabbed settings
+│   └── Settings/                       ✅ Tabbed settings (incl. Data Backup section)
 │
 ├── Utilities/
-│   └── ComplianceScanner.swift        ✅ Deterministic keyword compliance scanner
+│   ├── ComplianceScanner.swift        ✅ Deterministic keyword compliance scanner
+│   └── SAMBackupUTType.swift          ✅ UTType.samBackup extension (.sambackup files)
 │
 └── 1_Documentation/
     ├── context.md                      This file
@@ -236,7 +251,7 @@ SAM/SAM/
 
 ## 4. Data Models
 
-### 4.1 Existing Models (Phases A–Z, schema v25)
+### 4.1 Existing Models (Phases A–Z + Deduced Relationships, schema v26)
 
 (All existing models unchanged — see `changelog.md` for full schema. Summary below.)
 
@@ -257,6 +272,7 @@ SAM/SAM/
 - **ContentPost** — Social media posting tracker (platform, topic, postedAt, sourceOutcomeID)
 - **BusinessGoal** — User-defined targets (goalType, title, targetValue, startDate, endDate, isActive, notes); progress computed live from existing repos
 - **ComplianceAuditEntry** — Draft audit trail (channel, recipient, original/final draft, compliance flags JSON, sent timestamp)
+- **DeducedRelation** — Family/household relationships deduced from Apple Contacts related names (personAID, personBID, relationType, sourceLabel, isConfirmed, confirmedAt)
 
 ---
 
@@ -291,13 +307,14 @@ SAM/SAM/
 - ✅ **Phase X**: Goal Setting & Decomposition (schema SAM_v24)
 - ✅ **Phase Y**: Scenario Projections (no schema change)
 - ✅ **Phase Z**: Compliance Awareness (schema SAM_v25)
+- ✅ **Advanced Search**: Unified search across people, contexts, evidence, notes, outcomes (no schema change)
+- ✅ **Export/Import**: Backup/restore 20 model types + preferences to .sambackup JSON (no schema change)
+- ✅ **Phase AA**: Relationship Graph — Visual Network Intelligence (AA.1–AA.7 complete, no schema change)
+- ✅ **Deduced Relationships + Me Toggle**: Contact relations import, deduced family edges in graph, Me node toggle, focus mode, Awareness integration (schema SAM_v26)
 
 ### Future Phases (Unscheduled)
 
-- **Advanced Search**: Full-text search across evidence, notes, mail summaries, and insights
-- **Export/Import**: Backup and restore SAM data
 - **iOS Companion**: Read-only iOS app
-- **Relationship Graph**: Visual network of people, contexts, and connections
 - **Custom Activity Types**: User-defined time tracking categories
 - **API Integration**: Connect to financial planning software
 - **Team Collaboration**: Shared contexts and evidence (multi-user support)
@@ -396,7 +413,8 @@ Each layer tested independently:
 | v22 | V | + StrategicDigest, + SamDailyBriefing.strategicHighlights |
 | v23 | W | + ContentPost model |
 | v24 | X | + BusinessGoal model |
-| v25 | Z (current) | + ComplianceAuditEntry model |
+| v25 | Z | + ComplianceAuditEntry model |
+| v26 | Deduced Relationships (current) | + DeducedRelation model, DeducedRelationType enum |
 
 Each migration uses SwiftData lightweight migration. New models are additive (no breaking changes to existing models). Backfill logic runs once on first launch after migration.
 
@@ -454,8 +472,8 @@ Each migration uses SwiftData lightweight migration. New models are additive (no
 
 ---
 
-**Document Version**: 15.0 (Phases A–Z complete, schema SAM_v25)
+**Document Version**: 19.0 (Phases A–Z + Advanced Search + Export/Import + Phase AA + Deduced Relationships complete, schema SAM_v26)
 **Previous Versions**: See `changelog.md` for version history
-**Last Major Update**: February 26, 2026 — Phase Z: Compliance Awareness — deterministic keyword scanning, audit trail, compliance settings, UI integration across all draft surfaces (schema SAM_v25)
+**Last Major Update**: February 26, 2026 — Deduced Relationships + Me Toggle + Awareness Integration (contact relations import, deduced family edges, focus mode, schema SAM_v26)
 **Clean Rebuild Started**: February 9, 2026
     

@@ -4,6 +4,168 @@
 
 ---
 
+## February 26, 2026 - Deduced Relationships + Me Toggle + Awareness Integration (Schema SAM_v26)
+
+### Overview
+Three enhancements to the Relationship Graph: (1) Show/Hide "Me" node toggle to optionally display the user's own node and all connections, (2) Deduced household/family relationships imported from Apple Contacts' related names field, displayed as distinct dashed pink edges in the graph with double-click confirmation, (3) Awareness-driven verification flow that creates an outcome navigating directly to the graph in a focused "review mode" showing only deduced relationships.
+
+### New Model
+
+**`DeducedRelation`** (@Model, schema SAM_v26) — `id: UUID`, `personAID: UUID`, `personBID: UUID`, `relationTypeRawValue: String` (spouse/parent/child/sibling/other via `DeducedRelationType` enum), `sourceLabel: String` (original contact relation label), `isConfirmed: Bool`, `createdAt: Date`, `confirmedAt: Date?`. Uses plain UUIDs (not @Relationship) to avoid coupling. `@Transient` computed `relationType` property for type-safe access.
+
+### New Files
+
+**`DeducedRelationRepository.swift`** (Repositories) — `@MainActor @Observable` singleton. Standard configure/fetchAll/fetchUnconfirmed/upsert (dedup by personAID+personBID+relationType in either direction)/confirm/deleteAll. Registered in `SAMApp.configureDataLayer()`.
+
+### Components Modified
+
+**`SAMModels-Supporting.swift`** — Added `DeducedRelationType` enum (spouse/parent/child/sibling/other). Added `.reviewGraph` case to `ActionLane` enum with actionLabel "Review in Graph", actionIcon "circle.grid.cross", displayName "Review Graph".
+
+**`SAMModels.swift`** — Added `DeducedRelation` @Model. Added `.samNavigateToGraph` Notification.Name (userInfo: `["focusMode": String]`).
+
+**`SAMModelContainer.swift`** — Added `DeducedRelation.self` to `SAMSchema.allModels`. Schema bumped from SAM_v25 to SAM_v26.
+
+**`ContactDTO.swift`** — Added `CNContactRelationsKey` to `.detail` KeySet (previously only in `.full`), enabling contact relation import during standard imports.
+
+**`ContactsImportCoordinator.swift`** — Added `deduceRelationships(from:)` step after `bulkUpsert` and re-resolve. Matches contact relation names to existing SamPerson by exact full name or unique given name prefix. Maps CNContact labels (spouse/partner/child/son/daughter/parent/mother/father/sibling/brother/sister) to `DeducedRelationType`. Added `mapRelationLabel()` helper.
+
+**`GraphEdge.swift`** — Added `deducedRelationID: UUID?` and `isConfirmedDeduction: Bool` fields. Added `init()` with default values for backward compatibility. Added `.deducedFamily` case to `EdgeType` enum.
+
+**`GraphInputDTOs.swift`** — Added `DeducedFamilyLink` Sendable DTO (personAID, personBID, relationType, label, isConfirmed, deducedRelationID).
+
+**`GraphBuilderService.swift`** — Added `deducedFamilyLinks: [DeducedFamilyLink]` parameter to `buildGraph()`. Builds `.deducedFamily` edges with weight 0.7, label from sourceLabel, carrying deducedRelationID and isConfirmed status.
+
+**`RelationshipGraphCoordinator.swift`** — Added `showMeNode: Bool` filter state (default false). Added `focusMode: String?` state. Added `DeducedRelationRepository` dependency. `gatherPeopleInputs()` respects `showMeNode` toggle. Added `gatherDeducedFamilyLinks()` data gatherer. Added `confirmDeducedRelation(id:)` (confirms + invalidates cache + rebuilds). Added `activateFocusMode()`/`clearFocusMode()`. `applyFilters()` enhanced with focus mode: when `focusMode == "deducedRelationships"`, restricts to deduced-edge participants + 1-hop neighbors.
+
+**`GraphToolbarView.swift`** — Added "My Connections" toggle in Visibility menu (triggers full `buildGraph()` since Me node inclusion changes data gathering). Added `.deducedFamily` display name "Deduced Family".
+
+**`RelationshipGraphView.swift`** — Deduced edge styling: dashed pink (unconfirmed) / solid pink (confirmed). Edge hit-testing: `hitTestEdge(at:center:)` with `distanceToLineSegment()` (8px threshold). Double-click on unconfirmed deduced edge shows confirmation alert. Edge hover tooltip showing relationship label and confirmation status. Focus mode banner ("Showing deduced relationships — Exit Focus Mode"). Updated `edgeColor(for:)` with `.deducedFamily: .pink.opacity(0.7)`.
+
+**`OutcomeEngine.swift`** — Added `scanDeducedRelationships()` scanner (scanner #10). Creates one batched outcome when unconfirmed deductions exist: "Review N deduced relationship(s)" with `.reviewGraph` ActionLane. `classifyActionLane()` preserves pre-set `.reviewGraph` lane.
+
+**`OutcomeQueueView.swift`** — Added `.reviewGraph` case to `actClosure(for:)`: posts `.samNavigateToGraph` notification with `focusMode: "deducedRelationships"`.
+
+**`AppShellView.swift`** — Added `.samNavigateToGraph` notification listener in both layout branches: sets `sidebarSelection = "graph"` and activates focus mode on coordinator.
+
+**`BackupDocument.swift`** — Added `deducedRelations: [DeducedRelationBackup]` field. Added `DeducedRelationBackup` Codable DTO (21st backup type).
+
+**`BackupCoordinator.swift`** — Full backup/restore support for DeducedRelation: export (fetch + map to DTO), import (Pass 1 insertion), safety backup. Schema version updated to SAM_v26.
+
+### Key Design Decisions
+- **Plain UUID references over @Relationship**: DeducedRelation uses personAID/personBID UUIDs rather than SwiftData relationships to keep it lightweight and avoid coupling
+- **Edge hit-testing**: Perpendicular distance to line segment with 8px threshold, checked before node hit-testing on double-click
+- **Focus mode**: Additive filtering on top of existing role/edge/orphan filters; shows deduced-edge participants + 1-hop neighbors for context
+- **Me toggle triggers rebuild**: Since Me node inclusion changes data gathering (not just filtering), the toggle calls `buildGraph()` rather than `applyFilters()`
+- **Batched outcome**: One outcome for all unconfirmed deductions rather than per-relationship, to avoid spamming the Awareness queue
+
+---
+
+## February 26, 2026 - Phase AA: Relationship Graph — AA.1–AA.7 (No Schema Change)
+
+### Overview
+Visual relationship network intelligence. Canvas-based interactive graph showing people as nodes (colored by role, sized by production, stroked by health) and connections as edges (7 types: household, business, referral, recruiting tree, co-attendee, communication, mentioned together). Force-directed layout with Barnes-Hut optimization for large graphs. Full pan/zoom/select/drag interactivity, hover tooltips, context menus, keyboard shortcuts, and search-to-zoom.
+
+### AA.1: Core Graph Engine
+
+**`GraphNode.swift`** (DTO) — Sendable struct with id, displayName, roleBadges, primaryRole, pipelineStage, relationshipHealth (HealthLevel enum: healthy/cooling/atRisk/cold/unknown), productionValue, isGhost, isOrphaned, topOutcome, photoThumbnail, mutable position/velocity/isPinned. Static `rolePriority` mapping for primary role selection.
+
+**`GraphEdge.swift`** (DTO) — Sendable struct with id, sourceID, targetID, edgeType (EdgeType enum: 7 cases), weight (0–1), label, isReciprocal, communicationDirection. `EdgeType.displayName` extension for UI labels.
+
+**`GraphBuilderService.swift`** (Service/actor) — Assembles nodes/edges from 8 input DTO types (PersonGraphInput, ContextGraphInput, ReferralLink, RecruitLink, CoAttendancePair, CommLink, MentionPair, GhostMention). Force-directed layout: deterministic initial positioning (context clusters + golden spiral), repulsion/attraction/gravity/collision forces, simulated annealing (300 iterations), Barnes-Hut quadtree for n>500. Input DTOs defined in GraphBuilderService.swift.
+
+**`RelationshipGraphCoordinator.swift`** (Coordinator) — `@MainActor @Observable` singleton. Gathers data from 9 dependencies (PeopleRepository, ContextsRepository, EvidenceRepository, NotesRepository, PipelineRepository, ProductionRepository, OutcomeRepository, MeetingPrepCoordinator, GraphBuilderService). Observable state: graphStatus (idle/computing/ready/failed), nodes, edges, selectedNodeID, hoveredNodeID, progress. Filter state: activeRoleFilters, activeEdgeTypeFilters, showOrphanedNodes, showGhostNodes, minimumEdgeWeight. `applyFilters()` derives filteredNodes/filteredEdges from allNodes/allEdges. Health mapping: DecayRisk → HealthLevel.
+
+### AA.2: Basic Graph Renderer
+
+**`RelationshipGraphView.swift`** — SwiftUI Canvas renderer with 4 drawing layers (edges → nodes → labels → selection ring). Coordinate transforms between graph space and screen space. MagnificationGesture for zoom (0.1×–5.0×), DragGesture for pan, onTapGesture for selection. Zoom-dependent detail levels: <0.3× dots only, 0.3–0.8× large labels, >0.8× all labels + photos, >2.0× ghost borders. Node sizing by productionValue (10–30pt radius). `fitToView()` auto-centers and auto-scales to show all nodes.
+
+**`GraphToolbarView.swift`** — ToolbarContent with zoom in/out/fit-to-view buttons, status text, rebuild button.
+
+**`AppShellView.swift`** — Added "Relationship Map" (circle.grid.cross) NavigationLink under Business section. Routed to RelationshipGraphView in detail switch.
+
+### AA.3: Interaction & Navigation
+
+**`GraphTooltipView.swift`** — Hover popover showing person name, role badges (color-coded), health status dot, connection count, top outcome. Material background with shadow.
+
+**`RelationshipGraphView.swift`** enhanced — Hover tooltips via onContinuousHover + hit testing. Right-click context menu (View Person, Focus in Graph, Unpin Node). Double-click navigation to PersonDetailView via .samNavigateToPerson notification. Node dragging (drag on node repositions + pins; drag on empty space pans). Search-to-zoom (⌘F floating field, finds by name, zooms to match). Keyboard shortcuts: Esc deselect, ⌘1 show all, ⌘2 clients only, ⌘3 recruiting tree, ⌘4 referral network. Pinned node indicator (pin.fill icon). Body refactored into sub-computed-properties to avoid type-checker timeout.
+
+**`PersonDetailView.swift`** — Added "View in Graph" toolbar button (circle.grid.cross). Sets coordinator.selectedNodeID, centers viewport on person's node, switches sidebar to graph.
+
+### AA.4: Filters & Dashboard Integration
+
+**`GraphToolbarView.swift`** enhanced — Role filter menu (8 roles, multi-select, color-coded icons, active badge count). Edge type filter menu (7 types, multi-select with display names). Visibility toggles (ghost nodes, orphaned nodes). Scale percentage display.
+
+**`GraphMiniPreviewView.swift`** — Non-interactive Canvas thumbnail showing all nodes (role-colored) and edges (thin lines). Auto-fits to bounds. Click navigates to full graph. Shows node count and loading states.
+
+**`BusinessDashboardView.swift`** — Added GraphMiniPreviewView at bottom of dashboard (visible across all tabs).
+
+### Key Design Decisions (Phase AA)
+- **Sidebar entry, not tab**: Graph is a separate sidebar item under Business (not a tab in BusinessDashboardView) because the full-screen Canvas doesn't belong in a ScrollView
+- **Canvas over AppKit**: Pure SwiftUI Canvas for rendering — no NSView subclassing needed
+- **Filter architecture**: Full graph stored as allNodes/allEdges; filtered view derived reactively via applyFilters(). No rebuild needed for filter changes
+- **Ghost nodes**: Created for unmatched name mentions in notes; visual distinction via dashed borders and muted color
+- **Force-directed determinism**: Initial positions are deterministic (context clusters at angles, unassigned in spiral), enabling reproducible layouts
+- **Layout caching**: Node positions cached in UserDefaults with 24h TTL; >50% match required to restore
+- **Auto-refresh**: Notification-driven incremental updates (samPersonDidChange) and full rebuilds (samUndoDidRestore)
+- **No schema change**: Phase AA is purely view/coordinator/service layer; all data comes from existing models
+
+### Info.plist
+- Added `LSMultipleInstancesProhibited = true` to prevent duplicate app instances
+
+---
+
+## February 26, 2026 - Export/Import (Backup/Restore)
+
+### Overview
+Full backup and restore capability for SAM. Exports 20 core model types plus portable UserDefaults preferences to a `.sambackup` JSON file; imports by replacing all existing data with dependency-ordered insertion and UUID-based relationship wiring. No new SwiftData models or schema change.
+
+### New Files
+
+**`SAMBackupUTType.swift`** (Utility) — `UTType.samBackup` extension declaring `com.matthewsessions.SAM.backup` conforming to `public.json`.
+
+**`BackupDocument.swift`** (Models) — Top-level `BackupDocument` Codable struct containing `BackupMetadata` (export date, schema version, format version, counts), `[String: AnyCodableValue]` preferences dict, and 20 flat DTO arrays. `AnyCodableValue` enum wraps Bool/Int/Double/String for heterogeneous UserDefaults serialization with type discriminator encoding. `ImportPreview` struct for pre-import validation. 20 backup DTOs mirror all core @Model classes with relationships expressed as UUID references and image data as base64 strings.
+
+**`BackupCoordinator.swift`** (Coordinators) — `@MainActor @Observable` singleton. `BackupStatus` enum (idle/exporting/importing/validating/success/failed). Export: fetches all 20 model types via fresh `ModelContext`, maps to DTOs, gathers included UserDefaults keys (38 portable preference keys, excludes machine-specific), encodes JSON with `.sortedKeys` + `.iso8601`. Import: creates safety backup to temp dir, severs all MTM relationships first (avoids CoreData batch-delete constraint failures on nullify inverses), deletes all instances individually via generic `deleteAll<T>()` helper, inserts in 4 dependency-ordered passes (independent → people/context-dependent → cross-referencing → self-references), applies preferences. Security-scoped resource access for sandboxed file reads.
+
+### Components Modified
+
+**`SettingsView.swift`** — Added "Data Backup" section to GeneralSettingsView between Dictation and Automatic Reset. Export button triggers `NSSavePanel`, import button triggers `.fileImporter` with destructive confirmation alert showing preview counts. Status display with ProgressView/checkmark/error states.
+
+**`Info.plist`** — Added `UTExportedTypeDeclarations` for `com.matthewsessions.SAM.backup` with `.sambackup` extension.
+
+### Key Design Decisions
+
+- **Export scope**: 20 of 26 model types — excludes regenerable data (SamInsight, SamOutcome, SamDailyBriefing, StrategicDigest, SamUndoEntry, UnknownSender)
+- **Import mode**: Full replace (delete all → insert) with safety backup
+- **MTM deletion fix**: `context.delete(model:)` batch delete fails on many-to-many nullify inverses; solution is to sever MTM relationships first via `.removeAll()`, then delete instances individually
+- **Sandbox**: `.fileImporter` returns security-scoped URLs; must call `startAccessingSecurityScopedResource()` before reading
+- **Onboarding**: Not auto-reset after import (same-machine restore is the common case); success message directs user to Reset Onboarding in Settings if needed
+
+---
+
+## February 26, 2026 - Advanced Search
+
+### Overview
+Unified search across people, contexts, evidence items, notes, and outcomes. Sidebar entry in Intelligence section. Case-insensitive text matching across display names, email, content, titles, and snippets.
+
+### New Files
+
+**`SearchCoordinator.swift`** (Coordinators) — Orchestrates search across PeopleRepository, ContextsRepository, EvidenceRepository, NotesRepository, OutcomeRepository. Returns mixed-type results.
+
+**`SearchView.swift`** (Views/Search) — Search field with results list, grouped by entity type.
+
+**`SearchResultRow.swift`** (Views/Search) — Row view for mixed-type search results with appropriate icons and metadata.
+
+### Components Modified
+
+**`AppShellView.swift`** — Added "Search" NavigationLink in Intelligence sidebar section, routing to SearchView.
+
+**`EvidenceRepository.swift`** — Added `search(query:)` method for case-insensitive title/snippet matching.
+
+**`OutcomeRepository.swift`** — Added `search(query:)` method for case-insensitive title/rationale/nextStep matching.
+
+---
+
 ## February 26, 2026 - Phase Z: Compliance Awareness (Schema SAM_v25)
 
 ### Overview
