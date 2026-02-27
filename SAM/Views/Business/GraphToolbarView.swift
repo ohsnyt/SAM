@@ -36,6 +36,36 @@ struct GraphToolbarView: ToolbarContent {
             filterMenus
         }
 
+        // MARK: - Toggle Controls
+
+        ToolbarItem(placement: .automatic) {
+            HStack(spacing: 4) {
+                Toggle(isOn: Binding(
+                    get: { coordinator.familyClusteringEnabled },
+                    set: { coordinator.familyClusteringEnabled = $0; coordinator.applyFilters() }
+                )) {
+                    Image(systemName: "person.2.circle")
+                }
+                .toggleStyle(.button)
+                .help("Toggle Family Clustering (⌘G)")
+
+                Toggle(isOn: Binding(
+                    get: { coordinator.edgeBundlingEnabled },
+                    set: { coordinator.edgeBundlingEnabled = $0 }
+                )) {
+                    Image(systemName: "line.3.horizontal.decrease.circle")
+                }
+                .toggleStyle(.button)
+                .help("Toggle Edge Bundling (⌘B)")
+            }
+        }
+
+        // MARK: - Intelligence Overlays
+
+        ToolbarItem(placement: .automatic) {
+            overlayMenu
+        }
+
         // MARK: - Zoom Controls
 
         ToolbarItem(placement: .automatic) {
@@ -53,6 +83,39 @@ struct GraphToolbarView: ToolbarContent {
             .help("Rebuild Graph")
             .disabled(coordinator.graphStatus == .computing)
         }
+    }
+
+    // MARK: - Overlay Menu
+
+    private var overlayMenu: some View {
+        Menu {
+            Button("No Overlay") {
+                coordinator.activeOverlay = nil
+            }
+            Divider()
+            ForEach(RelationshipGraphCoordinator.OverlayType.allCases, id: \.self) { overlay in
+                Button {
+                    if coordinator.activeOverlay == overlay {
+                        coordinator.activeOverlay = nil
+                    } else {
+                        coordinator.activeOverlay = overlay
+                        if overlay == .referralHub {
+                            coordinator.computeBetweennessCentrality()
+                        }
+                    }
+                } label: {
+                    HStack {
+                        Text(overlay.rawValue)
+                        if coordinator.activeOverlay == overlay {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: coordinator.activeOverlay != nil ? "eye.circle.fill" : "eye.circle")
+        }
+        .help("Intelligence Overlays")
     }
 
     // MARK: - Filter Menus
@@ -219,6 +282,7 @@ extension EdgeType {
         case .communicationLink: return "Communication"
         case .mentionedTogether: return "Mentioned Together"
         case .deducedFamily:     return "Deduced Family"
+        case .roleRelationship:  return "Role Relationship"
         }
     }
 }

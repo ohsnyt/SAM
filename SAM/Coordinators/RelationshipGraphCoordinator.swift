@@ -12,6 +12,7 @@
 
 import Foundation
 import CoreGraphics
+import SwiftUI
 import os
 
 @MainActor
@@ -28,9 +29,24 @@ final class RelationshipGraphCoordinator {
     var nodes: [GraphNode] = []
     var edges: [GraphEdge] = []
     var lastComputedAt: Date?
-    var selectedNodeID: UUID?
+    var selectedNodeIDs: Set<UUID> = []
+    var selectionAnchorID: UUID?
     var hoveredNodeID: UUID?
     var progress: String = ""
+
+    /// Convenience for single-selection contexts (e.g. tooltip, navigation).
+    var selectedNodeID: UUID? {
+        get { selectedNodeIDs.count == 1 ? selectedNodeIDs.first : selectionAnchorID }
+        set {
+            if let id = newValue {
+                selectedNodeIDs = [id]
+                selectionAnchorID = id
+            } else {
+                selectedNodeIDs.removeAll()
+                selectionAnchorID = nil
+            }
+        }
+    }
 
     // MARK: - Filter State
 
@@ -38,7 +54,7 @@ final class RelationshipGraphCoordinator {
     var activeEdgeTypeFilters: Set<EdgeType> = []    // Empty = show all
     var showOrphanedNodes: Bool = true
     var showGhostNodes: Bool = true
-    var showMeNode: Bool = false
+    var showMeNode: Bool = true
     var minimumEdgeWeight: Double = 0.0
     var focusMode: String?
 
@@ -50,6 +66,77 @@ final class RelationshipGraphCoordinator {
 
     var viewportCenter: CGPoint = .zero
     var viewportScale: CGFloat = 1.0
+
+    // MARK: - Precomputed Adjacency (for keyboard navigation & focus+context)
+
+    /// Maps nodeID → set of directly connected nodeIDs
+    var adjacencyMap: [UUID: Set<UUID>] = [:]
+
+    /// Maximum production value across all visible nodes (for sqrt scaling)
+    var maxProductionValue: Double = 1.0
+
+    // MARK: - Bridge Indicator State
+
+    /// Maps nodeID → count of "distant" connections (off-screen or far away).
+    /// Computed by the view during rendering based on viewport.
+    var bridgeIndicators: [UUID: Int] = [:]
+
+    /// Nodes that have been "pulled" toward a bridge node.
+    var activePulls: [UUID: Set<UUID>] = [:]  // bridgeNodeID → set of pulled nodeIDs
+
+    /// Original positions of pulled nodes, for release animation.
+    var pullOriginalPositions: [UUID: CGPoint] = [:]
+
+    // MARK: - Family Clustering State
+
+    /// Whether family clustering mode is active (toolbar toggle).
+    var familyClusteringEnabled: Bool = UserDefaults.standard.bool(forKey: "sam.graph.familyClustering") {
+        didSet { UserDefaults.standard.set(familyClusteringEnabled, forKey: "sam.graph.familyClustering") }
+    }
+
+    /// Computed family clusters: connected components of deducedFamily edges.
+    /// Each cluster is a set of node IDs.
+    var familyClusters: [FamilyCluster] = []
+
+    /// Collapsed family cluster IDs.
+    var collapsedFamilyClusters: Set<UUID> = []
+
+    /// Whether edge bundling mode is active (toolbar toggle).
+    var edgeBundlingEnabled: Bool = UserDefaults.standard.bool(forKey: "sam.graph.edgeBundling") {
+        didSet {
+            UserDefaults.standard.set(edgeBundlingEnabled, forKey: "sam.graph.edgeBundling")
+            if edgeBundlingEnabled {
+                recomputeEdgeBundling()
+            } else {
+                bundledEdgePaths = [:]
+            }
+        }
+    }
+
+    /// Bundled edge control points (computed by GraphBuilderService when bundling enabled).
+    var bundledEdgePaths: [UUID: [CGPoint]] = [:]
+
+    // MARK: - Intelligence Overlay State
+
+    /// Active intelligence overlay (only one at a time).
+    var activeOverlay: OverlayType?
+
+    /// Computed overlay data: maps node ID → betweenness centrality score (for hub detection).
+    var betweennessCentrality: [UUID: Double] = [:]
+
+    /// Intelligence overlay types.
+    enum OverlayType: String, CaseIterable, Sendable {
+        case referralHub = "Referral Hub Detection"
+        case communicationFlow = "Communication Flow"
+        case recruitingHealth = "Recruiting Tree Health"
+        case coverageGap = "Coverage Gap Detection"
+    }
+
+    /// Nodes explicitly hidden by the user via context menu.
+    var hiddenNodeIDs: Set<UUID> = []
+
+    /// Ghost names dismissed by the user.
+    var dismissedGhostNames: Set<String> = []
 
     // MARK: - Internal
 
@@ -100,6 +187,7 @@ final class RelationshipGraphCoordinator {
                 let noteMentions = try gatherNoteMentions()
                 let ghostMentions = try gatherGhostMentions()
                 let deducedFamilyLinks = try gatherDeducedFamilyLinks()
+                let roleRelationshipLinks = try gatherRoleRelationshipLinks()
 
                 guard !Task.isCancelled else { return }
                 progress = "Building graph..."
@@ -114,7 +202,8 @@ final class RelationshipGraphCoordinator {
                     communicationMap: communicationMap,
                     noteMentions: noteMentions,
                     ghostMentions: ghostMentions,
-                    deducedFamilyLinks: deducedFamilyLinks
+                    deducedFamilyLinks: deducedFamilyLinks,
+                    roleRelationshipLinks: roleRelationshipLinks
                 )
 
                 guard !Task.isCancelled else { return }
@@ -141,6 +230,15 @@ final class RelationshipGraphCoordinator {
                     guard !Task.isCancelled else { return }
                     allNodes = laidOutNodes
                     cacheLayout()
+                }
+
+                // --- Compute edge bundling if enabled ---
+                if edgeBundlingEnabled {
+                    progress = "Computing edge bundling..."
+                    bundledEdgePaths = await graphBuilder.bundleEdges(
+                        nodes: allNodes,
+                        edges: allEdges
+                    )
                 }
 
                 // --- Finalize ---
@@ -208,6 +306,10 @@ final class RelationshipGraphCoordinator {
         var visibleNodeIDs = Set<UUID>()
 
         filteredNodes = allNodes.filter { node in
+            // Hidden nodes filter
+            if hiddenNodeIDs.contains(node.id) { return false }
+            // Dismissed ghosts filter
+            if node.isGhost && dismissedGhostNames.contains(node.displayName) { return false }
             // Focus mode filter
             if let focusIDs = focusNodeIDs {
                 guard focusIDs.contains(node.id) else { return false }
@@ -238,6 +340,24 @@ final class RelationshipGraphCoordinator {
 
         nodes = filteredNodes
         edges = filteredEdges
+
+        // Precompute adjacency map for keyboard navigation & focus+context
+        var adj: [UUID: Set<UUID>] = [:]
+        for edge in edges {
+            adj[edge.sourceID, default: []].insert(edge.targetID)
+            adj[edge.targetID, default: []].insert(edge.sourceID)
+        }
+        adjacencyMap = adj
+
+        // Max production for sqrt scaling
+        maxProductionValue = max(1.0, nodes.map(\.productionValue).max() ?? 1.0)
+
+        // Compute family clusters when enabled
+        if familyClusteringEnabled {
+            computeFamilyClusters()
+        } else {
+            familyClusters = []
+        }
     }
 
     // MARK: - Data Gathering
@@ -313,6 +433,9 @@ final class RelationshipGraphCoordinator {
 
     private func gatherRecruitLinks() throws -> [RecruitLink] {
         let stages = try pipelineRepository.fetchAllRecruitingStages()
+        let allPeople = try peopleRepository.fetchAll()
+        let meID = allPeople.first(where: { $0.isMe })?.id
+
         // In SAM's model, agents are recruited by the user (Me).
         // The recruiting tree is user → agent. We connect agents to "Me" node
         // or to each other based on referredBy if available.
@@ -322,6 +445,14 @@ final class RelationshipGraphCoordinator {
             if let recruiter = recruit.referredBy {
                 return RecruitLink(
                     recruiterID: recruiter.id,
+                    recruitID: recruit.id,
+                    stage: rs.stage.rawValue
+                )
+            }
+            // Fall back to "Me" node as the recruiter
+            if let meID {
+                return RecruitLink(
+                    recruiterID: meID,
                     recruitID: recruit.id,
                     stage: rs.stage.rawValue
                 )
@@ -456,6 +587,29 @@ final class RelationshipGraphCoordinator {
         }
     }
 
+    private func gatherRoleRelationshipLinks() throws -> [RoleRelationshipLink] {
+        let allPeople = try peopleRepository.fetchAll()
+        guard let me = allPeople.first(where: { $0.isMe }) else { return [] }
+
+        return allPeople.compactMap { person -> RoleRelationshipLink? in
+            guard !person.isMe, !person.isArchived else { return nil }
+            guard !person.roleBadges.isEmpty else { return nil }
+
+            let health = meetingPrepCoordinator.computeHealth(for: person)
+            let healthLevel = mapHealthToLevel(health)
+
+            // Use the highest-priority role as the label
+            let role = GraphNode.primaryRole(from: person.roleBadges) ?? person.roleBadges.first ?? "Unknown"
+
+            return RoleRelationshipLink(
+                meID: me.id,
+                personID: person.id,
+                role: role,
+                healthLevel: healthLevel
+            )
+        }
+    }
+
     // MARK: - Incremental Updates
 
     /// Update a single node's properties without full rebuild.
@@ -499,6 +653,21 @@ final class RelationshipGraphCoordinator {
             )
 
             applyFilters()
+
+            // Run incremental layout for this node and its neighbors
+            Task {
+                var nodeCopy = allNodes
+                let edgeCopy = allEdges
+                await graphBuilder.incrementalLayout(
+                    nodes: &nodeCopy,
+                    edges: edgeCopy,
+                    hotNodeIDs: [personID],
+                    bounds: CGSize(width: 1200, height: 800)
+                )
+                allNodes = nodeCopy
+                applyFilters()
+            }
+
             logger.info("Incrementally updated node for person \(personID)")
         } catch {
             logger.error("Incremental node update failed: \(error)")
@@ -583,6 +752,377 @@ final class RelationshipGraphCoordinator {
         UserDefaults.standard.removeObject(forKey: Self.cacheTimestampKey)
     }
 
+    // MARK: - Focus + Context Depth
+
+    /// Compute the minimum hop distance from a node to any selected node.
+    /// Returns 0 for selected nodes, 1 for direct neighbors, 2 for 2-hop, etc.
+    /// Returns Int.max if unreachable.
+    func hopDistance(for nodeID: UUID) -> Int {
+        guard !selectedNodeIDs.isEmpty else { return 0 }
+        if selectedNodeIDs.contains(nodeID) { return 0 }
+
+        // BFS from selected nodes
+        var visited = selectedNodeIDs
+        var frontier = selectedNodeIDs
+        var depth = 0
+
+        while !frontier.isEmpty && depth < 4 {
+            depth += 1
+            var nextFrontier = Set<UUID>()
+            for id in frontier {
+                for neighbor in adjacencyMap[id, default: []] where !visited.contains(neighbor) {
+                    if neighbor == nodeID { return depth }
+                    visited.insert(neighbor)
+                    nextFrontier.insert(neighbor)
+                }
+            }
+            frontier = nextFrontier
+        }
+
+        return Int.max
+    }
+
+    // MARK: - Keyboard Navigation
+
+    /// Find the nearest connected node in the given direction from the anchor selection.
+    func nearestConnectedNode(inDirection direction: KeyEquivalent) -> UUID? {
+        guard let anchorID = selectionAnchorID,
+              let anchorNode = nodes.first(where: { $0.id == anchorID }) else { return nil }
+
+        let neighbors = adjacencyMap[anchorID, default: []]
+        guard !neighbors.isEmpty else { return nil }
+
+        let neighborNodes = nodes.filter { neighbors.contains($0.id) }
+        guard !neighborNodes.isEmpty else { return nil }
+
+        // Filter by direction quadrant
+        let candidates: [GraphNode]
+        switch direction {
+        case .leftArrow:
+            candidates = neighborNodes.filter { $0.position.x < anchorNode.position.x }
+        case .rightArrow:
+            candidates = neighborNodes.filter { $0.position.x > anchorNode.position.x }
+        case .upArrow:
+            candidates = neighborNodes.filter { $0.position.y < anchorNode.position.y }
+        case .downArrow:
+            candidates = neighborNodes.filter { $0.position.y > anchorNode.position.y }
+        default:
+            candidates = neighborNodes
+        }
+
+        // Find closest by distance
+        return (candidates.isEmpty ? neighborNodes : candidates)
+            .min(by: { a, b in
+                let da = hypot(a.position.x - anchorNode.position.x, a.position.y - anchorNode.position.y)
+                let db = hypot(b.position.x - anchorNode.position.x, b.position.y - anchorNode.position.y)
+                return da < db
+            })?.id
+    }
+
+    // MARK: - Family Cluster Computation
+
+    /// Compute family clusters from deducedFamily edges (connected components).
+    func computeFamilyClusters() {
+        var familyAdj: [UUID: Set<UUID>] = [:]
+        for edge in edges where edge.edgeType == .deducedFamily {
+            familyAdj[edge.sourceID, default: []].insert(edge.targetID)
+            familyAdj[edge.targetID, default: []].insert(edge.sourceID)
+        }
+
+        var visited = Set<UUID>()
+        var clusters: [FamilyCluster] = []
+
+        for nodeID in familyAdj.keys where !visited.contains(nodeID) {
+            // BFS to find connected component
+            var component = Set<UUID>()
+            var queue = [nodeID]
+            while !queue.isEmpty {
+                let current = queue.removeFirst()
+                guard !visited.contains(current) else { continue }
+                visited.insert(current)
+                component.insert(current)
+                for neighbor in familyAdj[current, default: []] where !visited.contains(neighbor) {
+                    queue.append(neighbor)
+                }
+            }
+
+            guard component.count >= 2 else { continue }
+
+            // Determine shared surname
+            let memberNames = component.compactMap { id in
+                nodes.first(where: { $0.id == id })?.displayName
+            }
+            let sharedSurname = mostCommonSurname(from: memberNames)
+            let clusterName = sharedSurname.map { "\($0) Family" } ?? "Family Group"
+
+            // Determine dominant role color
+            let roles = component.compactMap { id in
+                nodes.first(where: { $0.id == id })?.primaryRole
+            }
+            let dominantRole = roles.isEmpty ? nil : Dictionary(grouping: roles, by: { $0 })
+                .max(by: { $0.value.count < $1.value.count })?.key
+
+            clusters.append(FamilyCluster(
+                id: UUID(),
+                memberIDs: component,
+                displayName: clusterName,
+                dominantRole: dominantRole
+            ))
+        }
+
+        familyClusters = clusters
+    }
+
+    /// Extract the most common surname from a list of display names.
+    private func mostCommonSurname(from names: [String]) -> String? {
+        let surnames = names.compactMap { name -> String? in
+            let parts = name.split(separator: " ")
+            guard parts.count >= 2 else { return nil }
+            return String(parts.last!)
+        }
+        guard !surnames.isEmpty else { return nil }
+        let counts = Dictionary(grouping: surnames, by: { $0 })
+        return counts.max(by: { $0.value.count < $1.value.count })?.key
+    }
+
+    /// Find the family cluster containing the given node, if any.
+    func familyCluster(for nodeID: UUID) -> FamilyCluster? {
+        familyClusters.first(where: { $0.memberIDs.contains(nodeID) })
+    }
+
+    /// Expand selection to include all members of the given family cluster + optional 1-hop neighbors.
+    func selectFamilyCluster(_ cluster: FamilyCluster, includeNeighbors: Bool = false) {
+        var selected = cluster.memberIDs
+        if includeNeighbors {
+            for memberID in cluster.memberIDs {
+                for neighborID in adjacencyMap[memberID, default: []] {
+                    selected.insert(neighborID)
+                }
+            }
+        }
+        selectedNodeIDs = selected
+        selectionAnchorID = selected.first
+    }
+
+    /// Select all nodes connected via a specific edge type using BFS from the given node.
+    func selectConnectedByEdgeType(from startID: UUID, edgeType: EdgeType) {
+        var visited = Set<UUID>()
+        var queue = [startID]
+        while !queue.isEmpty {
+            let current = queue.removeFirst()
+            guard !visited.contains(current) else { continue }
+            visited.insert(current)
+            for edge in edges where edge.edgeType == edgeType {
+                if edge.sourceID == current && !visited.contains(edge.targetID) {
+                    queue.append(edge.targetID)
+                }
+                if edge.targetID == current && !visited.contains(edge.sourceID) {
+                    queue.append(edge.sourceID)
+                }
+            }
+        }
+        selectedNodeIDs = visited
+        selectionAnchorID = startID
+    }
+
+    /// Pull distant connections toward a bridge node.
+    func pullDistantConnections(bridgeNodeID: UUID, screenPositions: [UUID: CGPoint], viewport: CGRect, averageEdgeLength: CGFloat) {
+        // If already pulled, release instead
+        if activePulls[bridgeNodeID] != nil {
+            releasePulledConnections(bridgeNodeID: bridgeNodeID)
+            return
+        }
+
+        guard let bridgeNode = nodes.first(where: { $0.id == bridgeNodeID }) else { return }
+        let threshold = averageEdgeLength * 3
+        let neighbors = adjacencyMap[bridgeNodeID, default: []]
+
+        var distantIDs = Set<UUID>()
+        for neighborID in neighbors {
+            guard let neighborSP = screenPositions[neighborID] else {
+                distantIDs.insert(neighborID)
+                continue
+            }
+            if let bridgeSP = screenPositions[bridgeNodeID] {
+                let d = hypot(neighborSP.x - bridgeSP.x, neighborSP.y - bridgeSP.y)
+                let isOffScreen = !viewport.insetBy(dx: -20, dy: -20).contains(neighborSP)
+                if d > threshold || isOffScreen {
+                    distantIDs.insert(neighborID)
+                }
+            }
+        }
+
+        guard !distantIDs.isEmpty else { return }
+
+        // Store original positions and compute pull target positions
+        let pullRadius: CGFloat = 80 + CGFloat(distantIDs.count) * 12
+        let sortedIDs = Array(distantIDs).sorted { $0.uuidString < $1.uuidString }
+
+        for (i, nodeID) in sortedIDs.enumerated() {
+            guard let idx = nodes.firstIndex(where: { $0.id == nodeID }) else { continue }
+            pullOriginalPositions[nodeID] = nodes[idx].position
+
+            // Arrange pulled nodes in a circle around the bridge node
+            let angle = (2.0 * .pi * Double(i)) / max(1.0, Double(sortedIDs.count))
+            let targetPosition = CGPoint(
+                x: bridgeNode.position.x + pullRadius * cos(angle),
+                y: bridgeNode.position.y + pullRadius * sin(angle)
+            )
+            nodes[idx].position = targetPosition
+        }
+
+        activePulls[bridgeNodeID] = distantIDs
+        logger.info("Pulled \(distantIDs.count) distant connections toward bridge node \(bridgeNodeID)")
+    }
+
+    /// Release pulled connections, returning them to original positions.
+    func releasePulledConnections(bridgeNodeID: UUID) {
+        guard let pulledIDs = activePulls[bridgeNodeID] else { return }
+
+        for nodeID in pulledIDs {
+            guard let idx = nodes.firstIndex(where: { $0.id == nodeID }),
+                  let originalPosition = pullOriginalPositions[nodeID] else { continue }
+            nodes[idx].position = originalPosition
+            pullOriginalPositions.removeValue(forKey: nodeID)
+        }
+
+        activePulls.removeValue(forKey: bridgeNodeID)
+        logger.info("Released pulled connections from bridge node \(bridgeNodeID)")
+    }
+
+    /// Release all active pulls.
+    func releaseAllPulls() {
+        for bridgeID in activePulls.keys {
+            releasePulledConnections(bridgeNodeID: bridgeID)
+        }
+    }
+
+    /// Unpin all nodes.
+    func unpinAllNodes() {
+        for i in nodes.indices {
+            nodes[i].isPinned = false
+        }
+    }
+
+    /// Compute betweenness centrality for all nodes (simplified: counts shortest paths through each node).
+    func computeBetweennessCentrality() {
+        var centrality: [UUID: Double] = [:]
+        let nodeIDs = nodes.map(\.id)
+
+        for s in nodeIDs {
+            // BFS from s to find shortest paths
+            var dist: [UUID: Int] = [s: 0]
+            var sigma: [UUID: Double] = [s: 1.0]  // Number of shortest paths
+            var pred: [UUID: [UUID]] = [:]
+            var queue: [UUID] = [s]
+            var stack: [UUID] = []
+
+            while !queue.isEmpty {
+                let v = queue.removeFirst()
+                stack.append(v)
+                let neighbors = adjacencyMap[v] ?? []
+                for w in neighbors {
+                    if dist[w] == nil {
+                        dist[w] = (dist[v] ?? 0) + 1
+                        queue.append(w)
+                    }
+                    if dist[w] == (dist[v] ?? 0) + 1 {
+                        sigma[w, default: 0] += sigma[v] ?? 0
+                        pred[w, default: []].append(v)
+                    }
+                }
+            }
+
+            var delta: [UUID: Double] = [:]
+            while let w = stack.popLast() {
+                for v in pred[w] ?? [] {
+                    let contribution = (sigma[v] ?? 0) / (sigma[w] ?? 1) * (1.0 + (delta[w] ?? 0))
+                    delta[v, default: 0] += contribution
+                }
+                if w != s {
+                    centrality[w, default: 0] += delta[w] ?? 0
+                }
+            }
+        }
+
+        betweennessCentrality = centrality
+    }
+
+    /// Recompute edge bundling in the background.
+    func recomputeEdgeBundling() {
+        Task {
+            bundledEdgePaths = await graphBuilder.bundleEdges(
+                nodes: nodes,
+                edges: edges
+            )
+        }
+    }
+
+    /// Expand selection from a node to include N-hop neighbors, optionally filtered by edge type.
+    func expandSelection(from startID: UUID, hops: Int, edgeTypeFilter: EdgeType? = nil) {
+        var visited = Set<UUID>([startID])
+        var frontier = Set<UUID>([startID])
+
+        for _ in 0..<hops {
+            var nextFrontier = Set<UUID>()
+            for nodeID in frontier {
+                for edge in edges {
+                    let neighborID: UUID?
+                    if edge.sourceID == nodeID { neighborID = edge.targetID }
+                    else if edge.targetID == nodeID { neighborID = edge.sourceID }
+                    else { neighborID = nil }
+
+                    guard let nID = neighborID, !visited.contains(nID) else { continue }
+
+                    // Apply edge type filter if specified
+                    if let filter = edgeTypeFilter, edge.edgeType != filter { continue }
+
+                    visited.insert(nID)
+                    nextFrontier.insert(nID)
+                }
+            }
+            frontier = nextFrontier
+        }
+
+        selectedNodeIDs = visited
+        selectionAnchorID = startID
+    }
+
+    /// Compute bridge indicators: count of connections to nodes that are "distant".
+    /// A node is distant if its screen distance from the bridge exceeds 3× average edge length
+    /// or if it's off-screen. This is called by the view with viewport info.
+    func computeBridgeIndicators(
+        screenPositions: [UUID: CGPoint],
+        viewport: CGRect,
+        averageEdgeLength: CGFloat
+    ) {
+        var indicators: [UUID: Int] = [:]
+        let threshold = averageEdgeLength * 3
+
+        for (nodeID, neighbors) in adjacencyMap {
+            guard let nodeSP = screenPositions[nodeID] else { continue }
+            var distantCount = 0
+
+            for neighborID in neighbors {
+                guard let neighborSP = screenPositions[neighborID] else {
+                    distantCount += 1  // No screen position means likely off-screen
+                    continue
+                }
+                let d = hypot(neighborSP.x - nodeSP.x, neighborSP.y - nodeSP.y)
+                let isOffScreen = !viewport.insetBy(dx: -20, dy: -20).contains(neighborSP)
+                if d > threshold || isOffScreen {
+                    distantCount += 1
+                }
+            }
+
+            if distantCount > 0 {
+                indicators[nodeID] = distantCount
+            }
+        }
+
+        bridgeIndicators = indicators
+    }
+
     // MARK: - Health Mapping
 
     private func mapHealthToLevel(_ health: RelationshipHealth) -> GraphNode.HealthLevel {
@@ -597,6 +1137,15 @@ final class RelationshipGraphCoordinator {
             return .cold
         }
     }
+}
+
+// MARK: - Family Cluster DTO
+
+struct FamilyCluster: Identifiable, Sendable {
+    let id: UUID
+    let memberIDs: Set<UUID>
+    let displayName: String
+    let dominantRole: String?
 }
 
 // MARK: - Layout Cache Entry

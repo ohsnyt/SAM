@@ -31,7 +31,8 @@ actor GraphBuilderService {
         communicationMap: [CommLink],
         noteMentions: [MentionPair],
         ghostMentions: [GhostMention],
-        deducedFamilyLinks: [DeducedFamilyLink] = []
+        deducedFamilyLinks: [DeducedFamilyLink] = [],
+        roleRelationshipLinks: [RoleRelationshipLink] = []
     ) -> (nodes: [GraphNode], edges: [GraphEdge]) {
 
         let personIDs = Set(people.map(\.id))
@@ -150,6 +151,30 @@ actor GraphBuilderService {
             ))
         }
 
+        // --- Role relationship edges (Me → contacts by role) ---
+        for link in roleRelationshipLinks where personIDs.contains(link.meID) && personIDs.contains(link.personID) {
+            // Weight derived from health: healthy=0.9, cooling=0.6, atRisk=0.4, cold=0.2, unknown=0.3
+            let weight: Double
+            switch link.healthLevel {
+            case .healthy: weight = 0.9
+            case .cooling:  weight = 0.6
+            case .atRisk:   weight = 0.4
+            case .cold:     weight = 0.2
+            case .unknown:  weight = 0.3
+            }
+
+            edges.append(GraphEdge(
+                id: UUID(),
+                sourceID: link.meID,
+                targetID: link.personID,
+                edgeType: .roleRelationship,
+                weight: weight,
+                label: link.role,
+                isReciprocal: false,
+                communicationDirection: .outbound
+            ))
+        }
+
         // --- Identify connected person IDs ---
         var connectedIDs = Set<UUID>()
         for edge in edges {
@@ -214,10 +239,13 @@ actor GraphBuilderService {
         return (nodes, edges)
     }
 
-    // MARK: - Layout Algorithm
+    // MARK: - Layout Algorithm (Multi-Phase Pipeline per Interaction Spec §7.1)
 
-    /// Run force-directed layout simulation.
-    /// Returns updated node positions after N iterations.
+    /// Run multi-phase layout pipeline:
+    /// Phase 1: Deterministic initial placement
+    /// Phase 2: Stress majorization (global structure)
+    /// Phase 3: Fruchterman-Reingold refinement (local spacing)
+    /// Phase 4: PrEd edge-crossing reduction (polish)
     func layoutGraph(
         nodes: [GraphNode],
         edges: [GraphEdge],
@@ -231,50 +259,48 @@ actor GraphBuilderService {
         let nodeIndex = Dictionary(uniqueKeysWithValues: mutableNodes.enumerated().map { ($1.id, $0) })
         let useBarnesHut = mutableNodes.count > 500
 
-        // --- Initial positioning (deterministic, not random) ---
+        // --- Phase 1: Deterministic initial placement ---
         assignInitialPositions(&mutableNodes, nodeIndex: nodeIndex, contextClusters: contextClusters, bounds: bounds)
 
-        // --- Build adjacency for attraction ---
-        let adjacency = buildAdjacency(edges: edges, nodeIndex: nodeIndex)
+        guard !Task.isCancelled else { return mutableNodes }
 
-        // --- Force simulation parameters ---
+        // --- Phase 2: Stress majorization (global structure) ---
+        let shortestPaths = computeAllPairsShortestPaths(nodeCount: mutableNodes.count, edges: edges, nodeIndex: nodeIndex)
+        await applyStressMajorization(
+            &mutableNodes,
+            shortestPaths: shortestPaths,
+            iterations: min(100, mutableNodes.count > 200 ? 60 : 100),
+            bounds: bounds
+        )
+
+        guard !Task.isCancelled else { return mutableNodes }
+
+        // --- Phase 3: Fruchterman-Reingold refinement ---
+        let adjacency = buildAdjacency(edges: edges, nodeIndex: nodeIndex)
+        let frIterations = min(iterations, 200)
+        let center = CGPoint(x: bounds.width / 2, y: bounds.height / 2)
+
         let repulsionStrength: CGFloat = 5000.0
         let attractionStrength: CGFloat = 0.01
         let gravityStrength: CGFloat = 0.02
         let dampingFactor: CGFloat = 0.75
         let minNodeSpacing: CGFloat = 40.0
-        let center = CGPoint(x: bounds.width / 2, y: bounds.height / 2)
 
-        for iteration in 0..<iterations {
-            // Respect cancellation so callers can abort a stale layout
-            guard !Task.isCancelled else {
-                logger.info("Layout cancelled at iteration \(iteration)/\(iterations)")
-                break
-            }
+        for iteration in 0..<frIterations {
+            guard !Task.isCancelled else { break }
 
-            // Temperature decreases over time (simulated annealing)
-            let temperature = max(0.01, 1.0 - CGFloat(iteration) / CGFloat(iterations))
+            let temperature = max(0.01, 1.0 - CGFloat(iteration) / CGFloat(frIterations))
 
-            // --- Repulsion (all pairs) ---
             if useBarnesHut {
                 applyBarnesHutRepulsion(&mutableNodes, strength: repulsionStrength * temperature)
             } else {
                 applyDirectRepulsion(&mutableNodes, strength: repulsionStrength * temperature)
             }
 
-            // --- Attraction (connected nodes) ---
             applyAttraction(&mutableNodes, adjacency: adjacency, strength: attractionStrength)
-
-            // --- Gravity (toward center) ---
             applyGravity(&mutableNodes, center: center, strength: gravityStrength)
-
-            // --- Collision prevention ---
             resolveCollisions(&mutableNodes, minSpacing: minNodeSpacing)
 
-            // --- Apply velocity with temperature-scaled damping ---
-            // As temperature drops, damp more aggressively so the layout settles.
-            // At temp 1.0: effectiveDamping ≈ dampingFactor (full exploration).
-            // At temp 0.01: effectiveDamping ≈ 0 (rapid settling).
             let effectiveDamping = dampingFactor * temperature
             for i in mutableNodes.indices where !mutableNodes[i].isPinned {
                 mutableNodes[i].velocity.x *= effectiveDamping
@@ -283,14 +309,275 @@ actor GraphBuilderService {
                 mutableNodes[i].position.y += mutableNodes[i].velocity.y * temperature
             }
 
-            // Yield every 50 iterations
             if iteration > 0 && iteration.isMultiple(of: 50) {
                 await Task.yield()
             }
         }
 
-        logger.info("Layout complete: \(mutableNodes.count) nodes, \(iterations) iterations")
+        guard !Task.isCancelled else { return mutableNodes }
+
+        // --- Phase 4: PrEd edge-crossing reduction ---
+        await applyPrEdCrossingReduction(
+            &mutableNodes,
+            edges: edges,
+            nodeIndex: nodeIndex,
+            iterations: 50
+        )
+
+        logger.info("Multi-phase layout complete: \(mutableNodes.count) nodes")
         return mutableNodes
+    }
+
+    /// Incremental layout: only re-layout affected nodes and their 1-hop neighborhood.
+    /// Used when a single node changes (role, health, new edge).
+    func incrementalLayout(
+        nodes: inout [GraphNode],
+        edges: [GraphEdge],
+        hotNodeIDs: Set<UUID>,
+        bounds: CGSize
+    ) async {
+        let nodeIndex = Dictionary(uniqueKeysWithValues: nodes.enumerated().map { ($1.id, $0) })
+        let adjacency = buildAdjacency(edges: edges, nodeIndex: nodeIndex)
+
+        // Find hot nodes + 1-hop neighbors
+        var hotIndices = Set<Int>()
+        for id in hotNodeIDs {
+            guard let idx = nodeIndex[id] else { continue }
+            hotIndices.insert(idx)
+            for entry in adjacency[idx] {
+                hotIndices.insert(entry.neighborIndex)
+            }
+        }
+
+        // Pin everything except hot nodes for this pass
+        var wasPinned: [Int: Bool] = [:]
+        for i in nodes.indices {
+            wasPinned[i] = nodes[i].isPinned
+            if !hotIndices.contains(i) {
+                nodes[i].isPinned = true
+            }
+        }
+
+        // Reset velocity on hot nodes
+        for i in hotIndices {
+            nodes[i].velocity = .zero
+        }
+
+        let center = CGPoint(x: bounds.width / 2, y: bounds.height / 2)
+
+        // Run 50 iterations of FR on the hot subgraph
+        for iteration in 0..<50 {
+            guard !Task.isCancelled else { break }
+            let temperature = max(0.05, 1.0 - CGFloat(iteration) / 50.0)
+
+            applyDirectRepulsion(&nodes, strength: 5000.0 * temperature)
+            applyAttraction(&nodes, adjacency: adjacency, strength: 0.01)
+            applyGravity(&nodes, center: center, strength: 0.02)
+            resolveCollisions(&nodes, minSpacing: 40.0)
+
+            for i in nodes.indices where !nodes[i].isPinned {
+                nodes[i].velocity.x *= 0.75 * temperature
+                nodes[i].velocity.y *= 0.75 * temperature
+                nodes[i].position.x += nodes[i].velocity.x * temperature
+                nodes[i].position.y += nodes[i].velocity.y * temperature
+            }
+
+            if iteration.isMultiple(of: 25) {
+                await Task.yield()
+            }
+        }
+
+        // Restore pinned state
+        for (i, pinned) in wasPinned {
+            nodes[i].isPinned = pinned
+        }
+
+        logger.info("Incremental layout complete: \(hotIndices.count) hot nodes")
+    }
+
+    // MARK: - Phase 2: Stress Majorization
+
+    /// Compute all-pairs shortest paths using BFS (unweighted) via Floyd-Warshall for small graphs.
+    private func computeAllPairsShortestPaths(
+        nodeCount: Int,
+        edges: [GraphEdge],
+        nodeIndex: [UUID: Int]
+    ) -> [[Int]] {
+        // Use BFS from each node for efficiency at SAM's scale (50-300 nodes)
+        var adj = [[Int]](repeating: [], count: nodeCount)
+        for edge in edges {
+            guard let si = nodeIndex[edge.sourceID], let ti = nodeIndex[edge.targetID] else { continue }
+            adj[si].append(ti)
+            adj[ti].append(si)
+        }
+
+        var dist = [[Int]](repeating: [Int](repeating: Int.max / 2, count: nodeCount), count: nodeCount)
+
+        for source in 0..<nodeCount {
+            dist[source][source] = 0
+            var queue = [source]
+            var head = 0
+            while head < queue.count {
+                let current = queue[head]
+                head += 1
+                for neighbor in adj[current] {
+                    if dist[source][neighbor] > dist[source][current] + 1 {
+                        dist[source][neighbor] = dist[source][current] + 1
+                        queue.append(neighbor)
+                    }
+                }
+            }
+        }
+
+        return dist
+    }
+
+    /// Apply stress majorization to minimize graph-theoretic distance distortion.
+    private func applyStressMajorization(
+        _ nodes: inout [GraphNode],
+        shortestPaths: [[Int]],
+        iterations: Int,
+        bounds: CGSize
+    ) async {
+        let n = nodes.count
+        guard n > 1 else { return }
+
+        // Desired spacing per hop
+        let idealEdgeLength: CGFloat = min(bounds.width, bounds.height) / CGFloat(max(1, n / 3))
+
+        for iteration in 0..<iterations {
+            guard !Task.isCancelled else { break }
+
+            var newPositions = nodes.map(\.position)
+
+            for i in 0..<n {
+                guard !nodes[i].isPinned else { continue }
+
+                var weightedSumX: CGFloat = 0
+                var weightedSumY: CGFloat = 0
+                var weightSum: CGFloat = 0
+
+                for j in 0..<n where i != j {
+                    let graphDist = shortestPaths[i][j]
+                    guard graphDist < Int.max / 2 else { continue }
+
+                    let desiredDist = idealEdgeLength * CGFloat(graphDist)
+                    let weight = 1.0 / (CGFloat(graphDist) * CGFloat(graphDist))
+
+                    let dx = nodes[i].position.x - nodes[j].position.x
+                    let dy = nodes[i].position.y - nodes[j].position.y
+                    let actualDist = max(1.0, hypot(dx, dy))
+
+                    let factor = desiredDist / actualDist
+
+                    weightedSumX += weight * (nodes[j].position.x + dx * factor)
+                    weightedSumY += weight * (nodes[j].position.y + dy * factor)
+                    weightSum += weight
+                }
+
+                if weightSum > 0 {
+                    newPositions[i] = CGPoint(
+                        x: weightedSumX / weightSum,
+                        y: weightedSumY / weightSum
+                    )
+                }
+            }
+
+            // Apply positions with damping
+            for i in 0..<n where !nodes[i].isPinned {
+                nodes[i].position = newPositions[i]
+            }
+
+            if iteration > 0 && iteration.isMultiple(of: 25) {
+                await Task.yield()
+            }
+        }
+
+        logger.info("Stress majorization complete: \(iterations) iterations")
+    }
+
+    // MARK: - Phase 4: PrEd Edge-Crossing Reduction
+
+    /// Apply repulsive force between non-incident nodes and edges to reduce crossings.
+    private func applyPrEdCrossingReduction(
+        _ nodes: inout [GraphNode],
+        edges: [GraphEdge],
+        nodeIndex: [UUID: Int],
+        iterations: Int
+    ) async {
+        let temperature: CGFloat = 0.3  // Low temperature — small movements only
+
+        for iteration in 0..<iterations {
+            guard !Task.isCancelled else { break }
+
+            let t = temperature * max(0.1, 1.0 - CGFloat(iteration) / CGFloat(iterations))
+
+            for i in nodes.indices where !nodes[i].isPinned {
+                var fx: CGFloat = 0
+                var fy: CGFloat = 0
+
+                for edge in edges {
+                    guard let si = nodeIndex[edge.sourceID],
+                          let ti = nodeIndex[edge.targetID] else { continue }
+                    // Skip edges incident to this node
+                    guard si != i && ti != i else { continue }
+
+                    // Compute distance from node to edge segment
+                    let (closestPt, dist) = closestPointOnSegment(
+                        point: nodes[i].position,
+                        segStart: nodes[si].position,
+                        segEnd: nodes[ti].position
+                    )
+
+                    // Only apply force when node is close to a non-incident edge
+                    let threshold: CGFloat = 60.0
+                    guard dist < threshold && dist > 0.1 else { continue }
+
+                    // Repulsive force: push node away from edge
+                    let strength = (threshold - dist) / threshold * 2.0
+                    let dx = nodes[i].position.x - closestPt.x
+                    let dy = nodes[i].position.y - closestPt.y
+                    let d = max(1.0, hypot(dx, dy))
+                    fx += strength * dx / d
+                    fy += strength * dy / d
+                }
+
+                nodes[i].position.x += fx * t
+                nodes[i].position.y += fy * t
+            }
+
+            if iteration > 0 && iteration.isMultiple(of: 25) {
+                await Task.yield()
+            }
+        }
+
+        logger.info("PrEd crossing reduction complete: \(iterations) iterations")
+    }
+
+    /// Find closest point on a line segment to a given point, and the distance.
+    private func closestPointOnSegment(
+        point: CGPoint,
+        segStart: CGPoint,
+        segEnd: CGPoint
+    ) -> (closest: CGPoint, distance: CGFloat) {
+        let dx = segEnd.x - segStart.x
+        let dy = segEnd.y - segStart.y
+        let lengthSq = dx * dx + dy * dy
+
+        if lengthSq < 0.001 {
+            let d = hypot(point.x - segStart.x, point.y - segStart.y)
+            return (segStart, d)
+        }
+
+        var t = ((point.x - segStart.x) * dx + (point.y - segStart.y) * dy) / lengthSq
+        t = max(0, min(1, t))
+
+        let closest = CGPoint(
+            x: segStart.x + t * dx,
+            y: segStart.y + t * dy
+        )
+        let distance = hypot(point.x - closest.x, point.y - closest.y)
+        return (closest, distance)
     }
 
     // MARK: - Initial Positioning
@@ -453,6 +740,109 @@ actor GraphBuilderService {
                 }
             }
         }
+    }
+
+    // MARK: - Edge Bundling (Force-Directed)
+
+    /// Force-directed edge bundling: model each edge as a polyline with control points,
+    /// then iteratively attract nearby similarly-directed control points.
+    /// Returns a dictionary mapping edge ID → array of screen-space control points.
+    func bundleEdges(
+        nodes: [GraphNode],
+        edges: [GraphEdge],
+        subdivisions: Int = 5,
+        iterations: Int = 40,
+        springConstant: CGFloat = 0.1,
+        compatibilityThreshold: CGFloat = 0.3
+    ) -> [UUID: [CGPoint]] {
+        guard edges.count > 1 else { return [:] }
+
+        let nodeMap = Dictionary(uniqueKeysWithValues: nodes.map { ($0.id, $0.position) })
+        var result: [UUID: [CGPoint]] = [:]
+
+        // Initialize control points for each edge (evenly subdivided)
+        struct EdgePolyline {
+            let edgeID: UUID
+            var points: [CGPoint]  // includes endpoints
+        }
+
+        var polylines: [EdgePolyline] = []
+
+        for edge in edges {
+            guard let sp = nodeMap[edge.sourceID],
+                  let tp = nodeMap[edge.targetID] else { continue }
+
+            var pts: [CGPoint] = []
+            for i in 0...subdivisions {
+                let t = CGFloat(i) / CGFloat(subdivisions)
+                pts.append(CGPoint(
+                    x: sp.x + t * (tp.x - sp.x),
+                    y: sp.y + t * (tp.y - sp.y)
+                ))
+            }
+            polylines.append(EdgePolyline(edgeID: edge.id, points: pts))
+        }
+
+        // Pre-compute edge compatibility (angle-based)
+        // Two edges are compatible if their overall direction is similar (angle < 60°)
+        func edgeDirection(_ p: EdgePolyline) -> CGPoint {
+            let dx = p.points.last!.x - p.points.first!.x
+            let dy = p.points.last!.y - p.points.first!.y
+            let len = hypot(dx, dy)
+            guard len > 0.001 else { return .zero }
+            return CGPoint(x: dx / len, y: dy / len)
+        }
+
+        let directions = polylines.map { edgeDirection($0) }
+
+        // Iterative bundling: attract control points of compatible nearby edges
+        for iter in 0..<iterations {
+            let stepSize = springConstant * CGFloat(iterations - iter) / CGFloat(iterations)
+
+            for i in 0..<polylines.count {
+                // Skip first and last points (anchored to nodes)
+                for pi in 1..<(polylines[i].points.count - 1) {
+                    var forceX: CGFloat = 0
+                    var forceY: CGFloat = 0
+                    var neighborCount: CGFloat = 0
+
+                    for j in 0..<polylines.count where i != j {
+                        // Check angle compatibility
+                        let dot = directions[i].x * directions[j].x + directions[i].y * directions[j].y
+                        let compatibility = abs(dot)  // Both same and opposite directions
+                        guard compatibility > compatibilityThreshold else { continue }
+
+                        // Corresponding control point on the other edge
+                        let otherPt = polylines[j].points[pi]
+                        let thisPt = polylines[i].points[pi]
+
+                        let dx = otherPt.x - thisPt.x
+                        let dy = otherPt.y - thisPt.y
+                        let dist = hypot(dx, dy)
+
+                        // Only attract if reasonably close
+                        guard dist > 0.1, dist < 300 else { continue }
+
+                        // Attraction force inversely proportional to distance
+                        let attractionWeight = compatibility / max(1, dist * 0.1)
+                        forceX += dx * attractionWeight
+                        forceY += dy * attractionWeight
+                        neighborCount += 1
+                    }
+
+                    if neighborCount > 0 {
+                        polylines[i].points[pi].x += forceX / neighborCount * stepSize
+                        polylines[i].points[pi].y += forceY / neighborCount * stepSize
+                    }
+                }
+            }
+        }
+
+        for polyline in polylines {
+            result[polyline.edgeID] = polyline.points
+        }
+
+        return result
     }
 }
 

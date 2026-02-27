@@ -73,3 +73,10 @@ struct DeducedFamilyLink: Sendable {
     let isConfirmed: Bool
     let deducedRelationID: UUID         // For confirmation callback
 }
+
+struct RoleRelationshipLink: Sendable {
+    let meID: UUID                      // "Me" person ID
+    let personID: UUID                  // Target contact ID
+    let role: String                    // "Client", "Agent", "Lead", etc.
+    let healthLevel: GraphNode.HealthLevel
+}

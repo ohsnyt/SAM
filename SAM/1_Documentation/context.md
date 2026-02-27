@@ -3,7 +3,7 @@
 **Language**: Swift 6  
 **Architecture**: Clean layered architecture with strict separation of concerns  
 **Framework**: SwiftUI + SwiftData  
-**Last Updated**: February 26, 2026 (Phases A–Z + Advanced Search + Export/Import + Phase AA + Deduced Relationships complete, Household removal, schema SAM_v27)
+**Last Updated**: February 27, 2026 (Phases A–Z + Advanced Search + Export/Import + Phase AA complete including advanced interaction, edge bundling, visual polish + accessibility, schema SAM_v27)
 
 **Related Docs**:
 - See `agent.md` for product philosophy, AI architecture, and UX principles
@@ -149,7 +149,7 @@ SAM/SAM/
 │   ├── PatternDetectorService.swift    ✅ Actor — Specialist LLM for cross-relationship patterns
 │   ├── TimeAnalystService.swift        ✅ Actor — Specialist LLM for time allocation
 │   ├── ContentAdvisorService.swift     ✅ Actor — Specialist LLM for content suggestions + draft generation
-│   └── GraphBuilderService.swift      ✅ Actor — Force-directed graph layout + edge assembly
+│   └── GraphBuilderService.swift      ✅ Actor — Force-directed graph layout + edge assembly + edge bundling
 │
 ├── Coordinators/
 │   ├── ContactsImportCoordinator.swift ✅ Contact import
@@ -208,8 +208,8 @@ SAM/SAM/
 │       ├── StrategicDigestDTO.swift    ✅ All specialist analyst output DTOs + synthesis types
 │       ├── ContentDraftDTO.swift      ✅ ContentDraft + LLMContentDraft
 │       ├── GraphNode.swift            ✅ Graph node DTO (position, role, health, production)
-│       ├── GraphEdge.swift            ✅ Graph edge DTO (8 edge types, weight, direction, deduced relation ID)
-│       └── GraphInputDTOs.swift       ✅ Input DTOs for graph builder (8 types + DeducedFamilyLink)
+│       ├── GraphEdge.swift            ✅ Graph edge DTO (9 edge types incl. roleRelationship, weight, direction, deduced relation ID)
+│       └── GraphInputDTOs.swift       ✅ Input DTOs for graph builder (9 types incl. RoleRelationshipLink + DeducedFamilyLink)
 │
 ├── Views/
 │   ├── AppShellView.swift              ✅ Three-column navigation shell
@@ -309,7 +309,11 @@ SAM/SAM/
 - ✅ **Phase Z**: Compliance Awareness (schema SAM_v25)
 - ✅ **Advanced Search**: Unified search across people, contexts, evidence, notes, outcomes (no schema change)
 - ✅ **Export/Import**: Backup/restore 20 model types + preferences to .sambackup JSON (no schema change)
-- ✅ **Phase AA**: Relationship Graph — Visual Network Intelligence (AA.1–AA.7 complete, no schema change)
+- ✅ **Phase AA**: Relationship Graph — Visual Network Intelligence (AA.1–AA.7 + advanced interaction + edge bundling + visual polish + accessibility, no schema change)
+  - AA.1–AA.7: Core graph, force-directed layout, 9 edge types (incl. roleRelationship), family clustering, bridge indicators, ghost nodes, context menus, keyboard shortcuts
+  - Phase 6: Relational-distance selection (double/triple-click + modifier keys), lasso selection (Option+drag), group drag, ripple animation
+  - Phase 7: Force-directed edge bundling with polyline control points, label collision avoidance (6 candidate positions)
+  - Phase 8: Ghost marching ants, role glyphs at close-up zoom, intelligence overlays (referral hub/betweenness centrality, communication flow, recruiting health, coverage gap), high contrast + reduce transparency + reduce motion accessibility, spring animation presets, drag grid pattern
 - ✅ **Deduced Relationships + Me Toggle**: Contact relations import, deduced family edges in graph, Me node toggle, focus mode, Awareness integration (schema SAM_v26)
 - ✅ **Household Removal**: Removed `.household` ContextKind from UI/graph, replaced with DeducedRelation-based family clustering; ConsentRequirement.context removed; MeetingBriefing family relations from DeducedRelation; Phase AA specs rewritten for family clusters (schema SAM_v27)
 
@@ -473,8 +477,8 @@ Each migration uses SwiftData lightweight migration. New models are additive (no
 
 ---
 
-**Document Version**: 20.0 (Phases A–Z + Advanced Search + Export/Import + Phase AA + Deduced Relationships + Household Removal complete, schema SAM_v27)
+**Document Version**: 21.0 (Phases A–Z + Advanced Search + Export/Import + Phase AA (complete) + Deduced Relationships + Household Removal, schema SAM_v27)
 **Previous Versions**: See `changelog.md` for version history
-**Last Major Update**: February 26, 2026 — Household Removal: replaced ContextKind.household with DeducedRelation-based family clustering (schema SAM_v27)
+**Last Major Update**: February 27, 2026 — Phase AA complete: advanced selection mechanics, edge bundling, label collision avoidance, visual polish, accessibility, intelligence overlays
 **Clean Rebuild Started**: February 9, 2026
     

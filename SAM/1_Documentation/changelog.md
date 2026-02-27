@@ -4,6 +4,141 @@
 
 ---
 
+## February 27, 2026 - Phase AA Completion: Advanced Interaction, Edge Bundling, Visual Polish + Accessibility (No Schema Change)
+
+### Overview
+Completed the remaining 3 implementation phases of the Phase AA Relationship Graph feature. Phase 6 adds relational-distance selection (double/triple-click with modifier key filtering), freehand lasso selection, and group drag for multi-selected nodes. Phase 7 adds force-directed edge bundling with polyline control points and label collision avoidance. Phase 8 adds comprehensive visual polish (ghost marching ants, role glyphs, drag grid, spring presets) and full accessibility support (high contrast, reduce transparency, reduce motion gates) plus four intelligence overlays for advanced network analysis.
+
+### Phase 1: Role Relationship Edges (Previously Completed)
+- Added `roleRelationship` case to `EdgeType` enum
+- Added `RoleRelationshipLink` DTO
+- `RelationshipGraphCoordinator.gatherRoleRelationshipLinks()` connects Me node to all contacts by role
+- Role-colored edges with health-based weight; `showMeNode` defaults to `true`
+- `gatherRecruitLinks()` fallback to Me node when `referredBy` is nil
+
+### Phase 2: Family Clustering Completion (Previously Completed)
+- Group drag: dragging any node in a family cluster moves all members
+- Boundary click-to-select: tap inside cluster boundary selects all members
+- Collapse/expand: double-click cluster boundary collapses to composite node; double-click composite restores
+- ⌘G keyboard shortcut to toggle family clustering
+
+### Phase 3: Bridge Pull/Release (Previously Completed)
+- Bridge badge click pulls distant nodes toward bridge node with spring animation
+- Release: click bridge again to animate pulled nodes back to original positions
+- "Reset All Pulls" in toolbar and canvas context menu
+- Ghost silhouettes during hover preview
+
+### Phase 4: Ghost Merge UX (Previously Completed)
+- Fuzzy name matching: Levenshtein distance highlights compatible nodes during ghost drag
+- Magnetic snap within 40pt of compatible node
+- Dissolve/pulse animation on merge confirm (reduce motion gated)
+- "Dismiss Ghost" and "Dismiss All Ghosts" context menu items
+- Delete key to dismiss selected ghost
+
+### Phase 5: Keyboard Shortcuts + Context Menus (Previously Completed)
+- Added ⌘G (toggle families), ⌘B (toggle bundling), ⌘R (reset layout), Delete (dismiss ghost), Space (context menu on selected node) keyboard shortcuts
+- Expanded real node context menu: "Select Referral Chain", "Select Downline", "Hide from Graph"
+- Canvas context menu: "Fit to View", "Reset Layout", "Toggle Families", "Toggle Edge Bundling", "Release All Pulls", "Unpin All Nodes"
+
+### Phase 6: Selection Mechanics + Group Drag
+
+**Relational-distance selection:**
+- Double-click on node: select node + 1-hop neighbors (all edge types)
+- Triple-click: select node + 2-hop neighbors
+- Modifier key filters: Option = family only, Shift = recruiting only (no modifier = all types)
+- `expandSelection(from:hops:edgeTypeFilter:)` method on coordinator performs filtered BFS
+- Ripple animation: expanding circle from selected node, nodes highlight as ripple reaches them (reduce motion gated)
+
+**Lasso selection:**
+- Option+drag on empty canvas draws freehand lasso path
+- Closed path hit tests all nodes via `Path.contains()`
+- Shift+Option+drag adds to existing selection
+- Dashed accent-color stroke with light fill during drag
+
+**Group drag:**
+- Dragging a selected node when multiple are selected moves all selected nodes together
+- Preserves relative positions via `groupDragOffsets` map
+- All moved nodes become pinned on release
+
+**Navigation change:**
+- Double-click repurposed from navigation to selection
+- Return/Enter key now navigates to selected person (replacing double-click navigation)
+
+### Phase 7: Edge Bundling + Label Collision Avoidance
+
+**Edge bundling:**
+- `GraphBuilderService.bundleEdges()` method: force-directed edge bundling
+  - Subdivides each edge into polyline with configurable control points (default 5)
+  - 40 iterations of spring attraction between similarly-directed control points (angle < threshold)
+  - Compatibility check based on angular similarity
+  - Returns `[UUID: [CGPoint]]` map of bundled control point paths
+- `edgeBundlingEnabled: Bool` on coordinator (persisted in UserDefaults)
+- `recomputeEdgeBundling()` method for background computation
+- Bundled edges render as connected quadratic Bézier curves through control points
+- ⌘B toggle with toolbar button
+
+**Label collision avoidance:**
+- 6 candidate positions: below-center, below-right, below-left, above-center, right, left
+- For each label, try positions in priority order; select one with least overlap
+- Runs per-frame during Canvas draw (lightweight — only checks visible labels)
+
+### Phase 8: Visual Polish + Accessibility
+
+**Ghost marching ants:**
+- `ghostAnimationPhase: CGFloat` state driven by timer task (increments 1pt per 30ms)
+- Ghost node strokes use animated `dashPhase` for marching ants effect
+- Reduce Motion fallback: static double-dash pattern (4, 2, 2, 4)
+
+**Role glyphs:**
+- At Close-up zoom (>2.0×), SF Symbol glyph drawn at 10 o'clock position on each node
+- Role → glyph mapping: Client → `person.crop.circle.badge.checkmark`, Agent → `person.crop.circle.badge.fill`, Lead → `person.crop.circle.badge.plus`, etc.
+- `roleGlyphName(for:)` helper function
+
+**Intelligence overlays (4 modes):**
+- `OverlayType` enum: referralHub, communicationFlow, recruitingHealth, coverageGap
+- `activeOverlay: OverlayType?` on coordinator; toggle via toolbar menu
+- **Referral Hub Detection**: Brandes betweenness centrality algorithm (`computeBetweennessCentrality()`), top hubs get pulsing glow with centrality label
+- **Communication Flow**: Ring size proportional to evidence count for each person
+- **Recruiting Tree Health**: Stage-colored dots (green=producing, blue=licensed, yellow=studying, gray=prospect)
+- **Coverage Gap**: Indicator on family clusters with incomplete coverage
+
+**High contrast support:**
+- `@Environment(\.colorSchemeContrast)` detection
+- +1pt node strokes, +0.5pt edge thickness, medium→semibold label font weight
+
+**Reduce transparency support:**
+- `@Environment(\.accessibilityReduceTransparency)` detection
+- Ghost fills 15%→30%, family cluster fills 6%→15%, label pills fully opaque
+
+**Reduce motion comprehensive gate:**
+- All `withAnimation` calls gated on `!reduceMotion`
+- Static positions and instant transitions when enabled
+- No ripple, no marching ants, no spring physics
+
+**Drag grid pattern:**
+- Dot grid at 20pt spacing, 0.5pt radius, 8% foreground opacity
+- Appears during any node drag, fades on release
+
+**Spring animation presets:**
+- `Spring.responsive` (0.3 response, 0.7 damping) — selection glow bloom
+- `Spring.interactive` (0.5 response, 0.65 damping) — pull/release
+- `Spring.structural` (0.6 response, 0.8 damping) — layout transitions
+
+### Technical: Type-Checker Timeout Fix
+- `graphCanvas` property grew too complex for Swift type checker (~120 lines of chained modifiers)
+- Decomposed into: `canvasWithGestures()`, `handleHover()`, `canvasContextMenu`, `accessibilityNodes`, `drawCanvas()`, `handleDragChanged()`, `handleDragEnded()`
+- Each extraction reduced modifier chain complexity until type checker could handle it
+
+### Files Modified
+- `SAM/Models/DTOs/GraphEdge.swift` — Added `roleRelationship` edge type
+- `SAM/Models/DTOs/GraphInputDTOs.swift` — Added `RoleRelationshipLink` DTO
+- `SAM/Services/GraphBuilderService.swift` — Role relationship edge generation, `bundleEdges()` method
+- `SAM/Coordinators/RelationshipGraphCoordinator.swift` — Role relationship gathering, `expandSelection()`, edge bundling state, intelligence overlay state, `computeBetweennessCentrality()`
+- `SAM/Views/Business/RelationshipGraphView.swift` — All rendering, interaction, and accessibility changes (Phases 1–8)
+- `SAM/Views/Business/GraphToolbarView.swift` — Role relationship display name, intelligence overlay menu
+
+---
+
 ## February 26, 2026 - Remove Household ContextKind — Replace with DeducedRelation (Schema SAM_v27)
 
 ### Overview

@@ -61,4 +61,5 @@ enum EdgeType: String, CaseIterable, Sendable {
     case communicationLink  // Direct message/email/call evidence between two contacts
     case mentionedTogether  // Co-mentioned in notes
     case deducedFamily      // Deduced family relationship from Apple Contacts
+    case roleRelationship   // Direct role-based relationship between "Me" and a contact
 }

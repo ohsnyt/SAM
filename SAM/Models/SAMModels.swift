@@ -1026,5 +1026,13 @@ extension Notification.Name {
     /// Posted to navigate to the Relationship Graph view with optional focus mode.
     /// userInfo: ["focusMode": String] (optional)
     static let samNavigateToGraph = Notification.Name("samNavigateToGraph")
+
+    /// Posted to create a new note for a person from the graph context menu.
+    /// userInfo: ["personID": UUID]
+    static let samCreateNoteForPerson = Notification.Name("samCreateNoteForPerson")
+
+    /// Posted to draft a message for a person from the graph context menu.
+    /// userInfo: ["personID": UUID]
+    static let samDraftMessageForPerson = Notification.Name("samDraftMessageForPerson")
 }
 
