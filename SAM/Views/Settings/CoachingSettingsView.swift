@@ -32,6 +32,7 @@ struct CoachingSettingsContent: View {
     @State private var downloadError: String?
     @State private var reanalyzeStatus: String?
     @State private var isReanalyzing = false
+    @State private var mutePickerSelection: String = ""
 
     // Content Suggestions (Phase W)
     @State private var contentSuggestionsEnabled: Bool = {
@@ -361,13 +362,20 @@ struct CoachingSettingsContent: View {
         }
     }
 
-    // MARK: - Feedback Section
+    // MARK: - Feedback Section — "What SAM Has Learned"
 
     private var feedbackSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Feedback & Learning")
+            Text("What SAM Has Learned")
                 .font(.headline)
 
+            Text("SAM adapts to your patterns over time. Here's what it's learned so far.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            let ledger = CalibrationService.cachedLedger
+
+            // ── Overview Stats ──
             if let profile = try? advisor.fetchOrCreateProfile() {
                 HStack(spacing: 20) {
                     VStack(alignment: .leading) {
@@ -397,17 +405,170 @@ struct CoachingSettingsContent: View {
                 }
             }
 
-            Button("Reset Coaching Profile") {
+            // ── Outcome Preferences ──
+            if !ledger.kindStats.isEmpty {
+                Divider()
+                    .padding(.vertical, 4)
+
+                Text("Outcome Preferences")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+
+                let sortedKinds = ledger.kindStats.sorted { $0.value.actRate > $1.value.actRate }
+                ForEach(sortedKinds, id: \.key) { kind, stat in
+                    let total = stat.actedOn + stat.dismissed
+                    if total > 0 {
+                        HStack(spacing: 8) {
+                            Text(OutcomeKind(rawValue: kind)?.displayName ?? kind)
+                                .font(.caption)
+                                .frame(width: 90, alignment: .leading)
+
+                            ProgressView(value: stat.actRate)
+                                .tint(stat.actRate > 0.5 ? .green : stat.actRate > 0.25 ? .yellow : .orange)
+
+                            Text("\(Int(stat.actRate * 100))%")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .frame(width: 35, alignment: .trailing)
+
+                            Button {
+                                Task { await CalibrationService.shared.resetKind(kind) }
+                            } label: {
+                                Image(systemName: "arrow.counterclockwise")
+                                    .font(.caption2)
+                            }
+                            .buttonStyle(.borderless)
+                            .help("Reset \(kind) learning")
+                        }
+                    }
+                }
+            }
+
+            // ── Active Hours ──
+            if !ledger.peakHours.isEmpty || !ledger.peakDays.isEmpty {
+                Divider()
+                    .padding(.vertical, 4)
+
+                Text("Your Active Hours")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+
+                if !ledger.peakHours.isEmpty {
+                    let hourLabels = ledger.peakHours.map { formatSettingsHour($0) }
+                    Text("Peak hours: \(hourLabels.joined(separator: ", "))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if !ledger.peakDays.isEmpty {
+                    let dayLabels = ledger.peakDays.map { formatSettingsDay($0) }
+                    Text("Most active days: \(dayLabels.joined(separator: ", "))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Button("Reset Timing Data") {
+                    Task { await CalibrationService.shared.resetTiming() }
+                }
+                .controlSize(.mini)
+                .buttonStyle(.bordered)
+            }
+
+            // ── Strategic Focus ──
+            let adjustedCategories = ledger.strategicCategoryWeights.filter { $0.value != 1.0 }
+            if !adjustedCategories.isEmpty {
+                Divider()
+                    .padding(.vertical, 4)
+
+                Text("Strategic Focus")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+
+                ForEach(adjustedCategories.sorted(by: { $0.key < $1.key }), id: \.key) { category, weight in
+                    HStack {
+                        Text(category.capitalized)
+                            .font(.caption)
+                        Spacer()
+                        Text(String(format: "%.1fx", weight))
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundStyle(weight > 1.0 ? .green : .orange)
+                        Button {
+                            Task { await CalibrationService.shared.resetStrategicCategory(category) }
+                        } label: {
+                            Image(systemName: "arrow.counterclockwise")
+                                .font(.caption2)
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Reset \(category) weight")
+                    }
+                }
+            }
+
+            // ── Muted Types ──
+            if !ledger.mutedKinds.isEmpty {
+                Divider()
+                    .padding(.vertical, 4)
+
+                Text("Muted Types")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+
+                ForEach(ledger.mutedKinds, id: \.self) { kind in
+                    HStack {
+                        Text(OutcomeKind(rawValue: kind)?.displayName ?? kind)
+                            .font(.caption)
+                        Spacer()
+                        Button("Unmute") {
+                            Task { await CalibrationService.shared.setMuted(kind: kind, muted: false) }
+                        }
+                        .controlSize(.mini)
+                        .buttonStyle(.bordered)
+                    }
+                }
+            }
+
+            // ── Mute a Type ──
+            Divider()
+                .padding(.vertical, 4)
+
+            HStack {
+                Text("Mute a type:")
+                    .font(.caption)
+
+                Picker("", selection: $mutePickerSelection) {
+                    Text("Select…").tag("")
+                    ForEach(OutcomeKind.allCases, id: \.rawValue) { kind in
+                        if !ledger.mutedKinds.contains(kind.rawValue) {
+                            Text(kind.displayName).tag(kind.rawValue)
+                        }
+                    }
+                }
+                .labelsHidden()
+                .frame(width: 150)
+                .onChange(of: mutePickerSelection) { _, newValue in
+                    guard !newValue.isEmpty else { return }
+                    Task { await CalibrationService.shared.setMuted(kind: newValue, muted: true) }
+                    mutePickerSelection = ""
+                }
+            }
+
+            // ── Reset All ──
+            Divider()
+                .padding(.vertical, 4)
+
+            Button("Reset All Learning") {
                 showResetConfirmation = true
             }
             .controlSize(.small)
-            .alert("Reset Coaching Profile?", isPresented: $showResetConfirmation) {
+            .alert("Reset All Learning?", isPresented: $showResetConfirmation) {
                 Button("Cancel", role: .cancel) { }
                 Button("Reset", role: .destructive) {
                     resetProfile()
+                    Task { await CalibrationService.shared.resetAll() }
                 }
             } message: {
-                Text("This clears all learned preferences. SAM will start fresh.")
+                Text("This clears all learned preferences, timing data, and calibration. SAM will start fresh.")
             }
         }
     }
@@ -606,6 +767,27 @@ struct CoachingSettingsContent: View {
                 profile.updatedAt = .now
             }
             logger.info("Coaching profile reset")
+        }
+    }
+
+    // MARK: - Formatting Helpers
+
+    private func formatSettingsHour(_ hour: Int) -> String {
+        let h = hour % 12 == 0 ? 12 : hour % 12
+        let period = hour < 12 ? "AM" : "PM"
+        return "\(h) \(period)"
+    }
+
+    private func formatSettingsDay(_ day: Int) -> String {
+        switch day {
+        case 1: return "Sunday"
+        case 2: return "Monday"
+        case 3: return "Tuesday"
+        case 4: return "Wednesday"
+        case 5: return "Thursday"
+        case 6: return "Friday"
+        case 7: return "Saturday"
+        default: return "Day \(day)"
         }
     }
 }

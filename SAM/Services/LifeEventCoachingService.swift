@@ -30,7 +30,8 @@ actor LifeEventCoachingService {
             throw AnalysisError.modelUnavailable
         }
 
-        let systemInstruction = buildSystemInstruction(context: context)
+        let businessCtx = await BusinessProfileService.shared.fullContextBlock()
+        let systemInstruction = buildSystemInstruction(context: context, businessContext: businessCtx)
 
         let prompt = """
             The user has a life event to respond to:
@@ -76,7 +77,8 @@ actor LifeEventCoachingService {
             throw AnalysisError.modelUnavailable
         }
 
-        let systemInstruction = buildSystemInstruction(context: context)
+        let businessCtx = await BusinessProfileService.shared.fullContextBlock()
+        let systemInstruction = buildSystemInstruction(context: context, businessContext: businessCtx)
 
         // Build conversation context from recent history (last 4 messages)
         let historyWindow = recentHistory.suffix(4)
@@ -115,7 +117,7 @@ actor LifeEventCoachingService {
     // MARK: - System Instruction
 
     /// Build the system instruction with event-type-calibrated tone.
-    private func buildSystemInstruction(context: LifeEventCoachingContext) -> String {
+    private func buildSystemInstruction(context: LifeEventCoachingContext, businessContext: String = "") -> String {
         let toneGuidance = toneForEventType(context.event.eventType)
         let roleContext = context.personRoles.isEmpty
             ? "a contact"
@@ -123,8 +125,10 @@ actor LifeEventCoachingService {
 
         var instruction = """
             You are SAM, a relationship coaching assistant for an independent financial \
-            strategist at World Financial Group. You are helping the user respond to a \
+            strategist. You are helping the user respond to a \
             life event involving \(context.personName), who is \(roleContext).
+
+            \(businessContext)
 
             LIFE EVENT: \(eventLabel(for: context.event.eventType))
             DETAILS: \(context.event.eventDescription)

@@ -3,7 +3,7 @@
 **Language**: Swift 6  
 **Architecture**: Clean layered architecture with strict separation of concerns  
 **Framework**: SwiftUI + SwiftData  
-**Last Updated**: February 27, 2026 (Phases A–Z + Advanced Search + Export/Import + Phase AA complete + Strategic Action Coaching Flow + Life Event Coaching + Interactive Content Ideas + ⌘K Command Palette, schema SAM_v27)
+**Last Updated**: February 27, 2026 (Phases A–Z + Advanced Search + Export/Import + Phase AA complete + Strategic Action Coaching Flow + Life Event Coaching + Interactive Content Ideas + ⌘K Command Palette + Coaching Calibration Phases 1–4, schema SAM_v27)
 
 **Related Docs**:
 - See `agent.md` for product philosophy, AI architecture, and UX principles
@@ -152,6 +152,8 @@ SAM/SAM/
 │   ├── GraphBuilderService.swift      ✅ Actor — Force-directed graph layout + edge assembly + edge bundling
 │   ├── CoachingPlannerService.swift   ✅ Actor — AI coaching chat for strategic action planning
 │   ├── BestPracticesService.swift     ✅ Actor — Best practices knowledge base (bundled + user)
+│   ├── BusinessProfileService.swift  ✅ Actor — Business context profile persistence + AI blocklist + calibration injection
+│   ├── CalibrationService.swift     ✅ Actor — Calibration ledger persistence (UserDefaults), signal recording, AI fragment generation
 │   ├── SystemNotificationService.swift ✅ @MainActor — macOS system notifications (UNUserNotificationCenter)
 │   └── LifeEventCoachingService.swift ✅ Actor — Event-type-calibrated AI coaching for life events
 │
@@ -215,7 +217,9 @@ SAM/SAM/
 │       ├── GraphEdge.swift            ✅ Graph edge DTO (9 edge types incl. roleRelationship, weight, direction, deduced relation ID)
 │       ├── GraphInputDTOs.swift       ✅ Input DTOs for graph builder (9 types incl. RoleRelationshipLink + DeducedFamilyLink)
 │       ├── CoachingSessionDTO.swift   ✅ CoachingMessage, CoachingAction (7 types), CoachingSessionContext, LifeEventCoachingContext
-│       └── BestPracticeDTO.swift      ✅ BestPractice knowledge base entry
+│       ├── BestPracticeDTO.swift      ✅ BestPractice knowledge base entry
+│       ├── BusinessProfileDTO.swift   ✅ Business context profile (practice structure, market focus, tools, blocklist)
+│       └── CalibrationDTO.swift      ✅ CalibrationLedger (per-kind stats, timing patterns, strategic weights, muted kinds)
 │
 ├── Views/
 │   ├── AppShellView.swift              ✅ Navigation shell (4 sidebar items: Today, People, Business, Search)
@@ -331,6 +335,8 @@ SAM/SAM/
 - ✅ **Life Event Coaching**: Action buttons on Life Event cards (Send Message, Coach Me, Create Note). AI coaching chatbot with event-type-calibrated tone (empathy for loss/health, celebration for milestones, transition support for job changes). Shared FlowLayout extracted. (no schema change)
 - ✅ **Interactive Content Ideas**: Content Ideas in Strategic view now persist full structured ContentTopic JSON (keyPoints, suggestedTone, complianceNotes). Each idea is clickable → opens ContentDraftSheet. Backward-compatible with legacy semicolon-separated data. (no schema change)
 - ✅ **⌘K Command Palette**: Spotlight-style overlay (⌘K) for quick navigation and people search. Also adds ⌘1–4 sidebar navigation shortcuts. Reuses SearchCoordinator for people search. Static commands: Go to Today/People/Business/Search, New Note, Open Settings. (no schema change)
+- ✅ **Coaching Calibration Phase 1**: Business context profile (BusinessProfile DTO + BusinessProfileService) injected into all 6 AI specialist system instructions. Universal blocklist prevents irrelevant suggestions (CRM tools, team references for solo agents, software purchases). Settings > AI > Business Profile section for user configuration. (no schema change)
+- ✅ **Coaching Calibration Phases 2–4**: Full feedback system — CalibrationLedger (UserDefaults JSON) tracks per-kind act/dismiss/rating stats, timing patterns, strategic weights, muted kinds, session feedback. CalibrationService actor with cached synchronous accessor. Fixed broken wiring: `shouldRequestRating()` now controls rating frequency, `adjustedWeights()` used in OutcomeEngine. Muted-kind filtering, soft suppress (<15% act rate → 0.3x), per-kind engagement scoring. StrategicCoordinator reads wider calibration weights (0.5–2.0x). `calibrationFragment()` injected into all 6 AI agents via BusinessProfileService. Settings "What SAM Has Learned" section with per-kind progress bars, timing data, strategic weights, mute management, and per-dimension resets. Context menu "Stop suggesting this type" on outcome cards. "Personalized" indicator in queue header after 20+ interactions. Coaching session thumbs up/down feedback. 90-day counter pruning. (no schema change)
 
 ### Future Phases (Unscheduled)
 
@@ -492,8 +498,8 @@ Each migration uses SwiftData lightweight migration. New models are additive (no
 
 ---
 
-**Document Version**: 24.0 (Phases A–Z + Advanced Search + Export/Import + Phase AA (complete) + Deduced Relationships + Household Removal + Strategic Action Coaching Flow + Life Event Coaching + Interactive Content Ideas + ⌘K Command Palette, schema SAM_v27)
+**Document Version**: 26.0 (Phases A–Z + Advanced Search + Export/Import + Phase AA (complete) + Deduced Relationships + Household Removal + Strategic Action Coaching Flow + Life Event Coaching + Interactive Content Ideas + ⌘K Command Palette + Coaching Calibration Phases 1–4, schema SAM_v27)
 **Previous Versions**: See `changelog.md` for version history
-**Last Major Update**: February 27, 2026 — ⌘K Command Palette: Spotlight-style quick navigation + people search, ⌘1–4 sidebar shortcuts
+**Last Major Update**: February 27, 2026 — Coaching Calibration Phases 2–4: Full feedback system (CalibrationLedger, adaptive weights, muted kinds, soft suppress, "What SAM Has Learned" settings, personalized indicator)
 **Clean Rebuild Started**: February 9, 2026
     

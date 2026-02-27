@@ -170,26 +170,54 @@ final class CoachingAdvisor {
         return Int.random(in: 1...5) == 1  // 1 in 5 once we have enough
     }
 
-    /// Get adjusted priority weights based on user preferences.
+    /// Get adjusted priority weights based on user preferences and calibration data.
     func adjustedWeights() -> OutcomeEngine.OutcomeWeights {
         var weights = OutcomeEngine.OutcomeWeights()
 
-        guard let profile = try? fetchOrCreateProfile() else { return weights }
+        // Read from CalibrationLedger (synchronous, cached)
+        let ledger = CalibrationService.cachedLedger
+        let hasCalibrationData = ledger.totalInteractions > 10
 
-        // If user responds quickly, boost time urgency weight
-        if profile.avgResponseTimeMinutes > 0 && profile.avgResponseTimeMinutes < 60 {
-            weights.timeUrgency = 0.35
-            weights.evidenceRecency = 0.10
-        }
+        if hasCalibrationData {
+            // Compute overall avg response time from calibration
+            let responseTimes = ledger.kindStats.values.filter { $0.avgResponseMinutes > 0 }
+            let overallAvgResponse = responseTimes.isEmpty ? 0 :
+                responseTimes.map(\.avgResponseMinutes).reduce(0, +) / Double(responseTimes.count)
 
-        // If user dismisses a lot, reduce engagement weight
-        let total = profile.totalActedOn + profile.totalDismissed
-        if total > 10 {
-            let actedRatio = Double(profile.totalActedOn) / Double(total)
-            if actedRatio < 0.3 {
-                // User dismisses most — focus on higher-quality suggestions
+            // Fast responder → boost time urgency
+            if overallAvgResponse > 0 && overallAvgResponse < 60 {
+                weights.timeUrgency = 0.35
+                weights.evidenceRecency = 0.10
+            }
+            // Slow responder → reduce time urgency
+            else if overallAvgResponse > 240 {
+                weights.timeUrgency = 0.20
+                weights.evidenceRecency = 0.20
+            }
+
+            // High dismiss ratio → reduce engagement weight, boost role importance
+            let overallActRate = Double(ledger.kindStats.values.reduce(0) { $0 + $1.actedOn }) /
+                Double(max(1, ledger.totalInteractions))
+            if overallActRate < 0.3 {
                 weights.roleImportance = 0.25
                 weights.userEngagement = 0.10
+            }
+        } else {
+            // Fall back to CoachingProfile-based adjustments
+            guard let profile = try? fetchOrCreateProfile() else { return weights }
+
+            if profile.avgResponseTimeMinutes > 0 && profile.avgResponseTimeMinutes < 60 {
+                weights.timeUrgency = 0.35
+                weights.evidenceRecency = 0.10
+            }
+
+            let total = profile.totalActedOn + profile.totalDismissed
+            if total > 10 {
+                let actedRatio = Double(profile.totalActedOn) / Double(total)
+                if actedRatio < 0.3 {
+                    weights.roleImportance = 0.25
+                    weights.userEngagement = 0.10
+                }
             }
         }
 

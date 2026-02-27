@@ -30,6 +30,7 @@ struct CoachingSessionView: View {
     @State private var isGenerating: Bool = false
     @State private var errorMessage: String?
     @State private var showContentDraftSheet = false
+    @State private var sessionFeedbackGiven: Bool? // nil=not yet, true=helpful, false=unhelpful
 
     var body: some View {
         VStack(spacing: 0) {
@@ -109,6 +110,42 @@ struct CoachingSessionView: View {
                 }
 
                 Spacer()
+
+                // Session feedback
+                if let given = sessionFeedbackGiven {
+                    HStack(spacing: 4) {
+                        Image(systemName: given ? "hand.thumbsup.fill" : "hand.thumbsdown.fill")
+                            .font(.caption)
+                            .foregroundStyle(given ? .green : .orange)
+                        Text(given ? "Helpful" : "Not helpful")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    HStack(spacing: 4) {
+                        Button {
+                            sessionFeedbackGiven = true
+                            Task { await CalibrationService.shared.recordSessionFeedback(category: context.recommendation.category, helpful: true) }
+                        } label: {
+                            Image(systemName: "hand.thumbsup")
+                                .font(.caption)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.mini)
+                        .help("This session was helpful")
+
+                        Button {
+                            sessionFeedbackGiven = false
+                            Task { await CalibrationService.shared.recordSessionFeedback(category: context.recommendation.category, helpful: false) }
+                        } label: {
+                            Image(systemName: "hand.thumbsdown")
+                                .font(.caption)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.mini)
+                        .help("This session was not helpful")
+                    }
+                }
 
                 Button("Done") {
                     onDone()

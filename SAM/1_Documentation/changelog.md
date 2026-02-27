@@ -4,6 +4,109 @@
 
 ---
 
+## February 27, 2026 - Coaching Calibration Phases 2–4 (Full Feedback System)
+
+### Overview
+Complete feedback loop that helps SAM learn the user's style, preferences, and what works in their specific market. Builds on Phase 1 (BusinessProfile + universal blocklist). Three phases: signal collection + wiring fixes (Phase 2), adaptive learning engine (Phase 3), transparency + user control (Phase 4). No schema change — all data stored as JSON in UserDefaults via CalibrationLedger.
+
+### Phase 2: Feedback Collection + Wiring
+
+**CalibrationDTO.swift** (new): `CalibrationLedger` Sendable struct with: per-OutcomeKind `KindStat` (actedOn, dismissed, totalRatings, ratingSum, avgResponseMinutes — computed actRate, avgRating), timing patterns (hourOfDayActs, dayOfWeekActs), strategic category weights (0.5–2.0), muted kinds, session feedback (`SessionStat` — helpful/unhelpful). Inherently bounded: 8 OutcomeKinds × 24 hours × 7 days × ~5 categories.
+
+**CalibrationService.swift** (new): Actor with UserDefaults JSON persistence. API: `recordCompletion()`, `recordDismissal()`, `recordRating()`, `recordSessionFeedback()`, `setMuted()`, `calibrationFragment()` (human-readable AI injection), per-dimension resets. `static nonisolated(unsafe) var cachedLedger` for synchronous @MainActor access (populated on init, updated on every save).
+
+**OutcomeQueueView.swift**: Fixed broken rating trigger — replaced `Int.random(in: 1...5) == 1` with `CoachingAdvisor.shared.shouldRequestRating()` (adaptive frequency). Added `CalibrationService.recordCompletion()` in `markDone()` with hour/dayOfWeek/responseMinutes. Added `CalibrationService.recordDismissal()` in `markSkipped()`. Added `CalibrationService.recordRating()` + `CoachingAdvisor.updateProfile()` in rating Submit.
+
+**OutcomeEngine.swift**: Replaced `OutcomeWeights()` defaults with `CoachingAdvisor.shared.adjustedWeights()` in both `generateOutcomes()` and `reprioritize()`.
+
+**BusinessProfileService.swift**: Extended `fullContextBlock()` to `async`, appends `CalibrationService.shared.calibrationFragment()`. All 6 AI agents automatically receive calibration data.
+
+**CoachingSessionView.swift**: Added thumbs-up/thumbs-down session feedback in header. Routes to `CalibrationService.recordSessionFeedback(category:, helpful:)`.
+
+### Phase 3: Adaptive Learning Engine
+
+**CoachingAdvisor.swift**: Enhanced `adjustedWeights()` to read `CalibrationService.cachedLedger`. Fast responder (avg <60min) → timeUrgency 0.35. Slow responder (avg >240min) → timeUrgency 0.20. High dismiss ratio (>70%) → reduced userEngagement. Falls back to CoachingProfile when insufficient calibration data.
+
+**OutcomeEngine.swift**: Muted-kind filtering removes outcomes for muted OutcomeKinds. Soft suppress: kinds with <15% actRate after 20+ interactions get 0.3× priority multiplier. Per-kind engagement: `computePriority()` uses `kindStat.actRate` instead of static 0.5 (after 5+ interactions for that kind).
+
+**StrategicCoordinator.swift**: `computeCategoryWeights()` now reads CalibrationLedger strategic weights (0.5–2.0x range) when available. Falls back to existing digest-based computation (0.9–1.1x) if ledger has no data.
+
+**CalibrationService.swift**: `recomputeStrategicWeights()` computes 0.5–2.0x weights per category from session feedback helpful/unhelpful ratio. `maybePrune()` halves all counters after 90 days to let recent behavior dominate.
+
+### Phase 4: Transparency + User Control
+
+**CoachingSettingsView.swift**: Replaced read-only "Feedback & Learning" with interactive "What SAM Has Learned" section. Per-kind progress bars (act rate) with per-kind reset buttons. Active hours summary (peak hours/days). Strategic focus weights with per-category reset. Muted types list with unmute buttons + "Mute a type" picker. Reset All Learning clears both CoachingProfile and CalibrationLedger.
+
+**OutcomeCardView.swift**: Added `onMuteKind` callback + `.contextMenu` on Skip button with "Stop suggesting [type]" option → sets muted in CalibrationService then triggers skip.
+
+**OutcomeQueueView.swift**: Added "Personalized" indicator (brain icon + label) in queue header when CalibrationLedger has 20+ total interactions.
+
+### Feedback Loop
+```
+Signal               → Storage            → Processing         → Behavior Change
+Done/Skip outcome   → CalibrationLedger  → adjustedWeights() → Priority scoring shifts
+1–5 star rating     → CalibrationLedger  → kind act rates    → Low-rate kinds suppressed
+Mute via context    → CalibrationLedger  → OutcomeEngine     → Kind completely filtered
+Session thumbs      → CalibrationLedger  → category weights  → Strategic recs reweighted
+All of the above    → calibrationFragment → All 6 AI agents  → AI suggestions aligned
+```
+
+### Files Summary
+| File | Action |
+|------|--------|
+| `Models/DTOs/CalibrationDTO.swift` | NEW |
+| `Services/CalibrationService.swift` | NEW |
+| `Views/Awareness/OutcomeQueueView.swift` | MODIFY |
+| `Coordinators/OutcomeEngine.swift` | MODIFY |
+| `Services/BusinessProfileService.swift` | MODIFY |
+| `Views/Business/CoachingSessionView.swift` | MODIFY |
+| `Coordinators/CoachingAdvisor.swift` | MODIFY |
+| `Coordinators/StrategicCoordinator.swift` | MODIFY |
+| `Views/Settings/CoachingSettingsView.swift` | MODIFY |
+| `Views/Shared/OutcomeCardView.swift` | MODIFY |
+
+---
+
+## February 27, 2026 - Coaching Calibration Phase 1 (Business Context Profile)
+
+### Overview
+Introduces a business context profile system that injects core facts about the user's practice into every AI specialist's system instruction. This prevents irrelevant suggestions (e.g., "research CRM tools" when SAM is the CRM, or "have your sales team" for a solo practitioner). Adds a universal blocklist enforced across all 6 AI agents, and a Settings > AI > Business Profile section for user configuration.
+
+### Changes
+
+**BusinessProfileDTO.swift** (new): Sendable DTO with practice structure (solo/team, org, role, experience), market focus (focus areas, recruiting status, geography), tools/capabilities (SAM-is-CRM, social platforms, communication channels), and free-form additional context. Includes `systemInstructionFragment()` method that generates the context block for AI injection.
+
+**BusinessProfileService.swift** (new): Actor service with UserDefaults persistence. Provides `contextFragment()`, `blocklistFragment()`, and `fullContextBlock()` for AI injection. Universal blocklist prevents: software/tool suggestions, hiring suggestions, website/app building suggestions, ad purchases, and (for solo practitioners) team/staff/delegate references.
+
+**SettingsView.swift**: Added "Business Profile" DisclosureGroup at top of AI settings tab with GroupBox sections for Practice Structure, Market Focus, Tools & Capabilities, and Additional Context. Uses existing FlowLayout for toggle button chips.
+
+**PipelineAnalystService.swift**: Injects `BusinessProfileService.shared.fullContextBlock()` into system instruction.
+
+**TimeAnalystService.swift**: Injects `BusinessProfileService.shared.fullContextBlock()` into system instruction.
+
+**PatternDetectorService.swift**: Injects `BusinessProfileService.shared.fullContextBlock()` into system instruction.
+
+**ContentAdvisorService.swift**: Injects `BusinessProfileService.shared.fullContextBlock()` into analyze() and `contextFragment()` into generateDraft().
+
+**CoachingPlannerService.swift**: Updated `buildSystemInstruction()` to accept and inject business context block. Both `generateInitialPlan()` and `generateResponse()` now fetch and pass business context.
+
+**LifeEventCoachingService.swift**: Updated `buildSystemInstruction()` to accept and inject business context block. Both `generateInitialCoaching()` and `generateResponse()` now fetch and pass business context.
+
+### Files Summary
+| File | Action |
+|------|--------|
+| `Models/DTOs/BusinessProfileDTO.swift` | NEW |
+| `Services/BusinessProfileService.swift` | NEW |
+| `Views/Settings/SettingsView.swift` | MODIFY |
+| `Services/PipelineAnalystService.swift` | MODIFY |
+| `Services/TimeAnalystService.swift` | MODIFY |
+| `Services/PatternDetectorService.swift` | MODIFY |
+| `Services/ContentAdvisorService.swift` | MODIFY |
+| `Services/CoachingPlannerService.swift` | MODIFY |
+| `Services/LifeEventCoachingService.swift` | MODIFY |
+
+---
+
 ## February 27, 2026 - ⌘K Command Palette
 
 ### Overview

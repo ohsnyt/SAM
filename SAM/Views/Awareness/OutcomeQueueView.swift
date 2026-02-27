@@ -79,6 +79,9 @@ struct OutcomeQueueView: View {
                                 onAct: actClosure(for: outcome),
                                 onDone: { markDone(outcome) },
                                 onSkip: { markSkipped(outcome) },
+                                onMuteKind: {
+                                    Task { await CalibrationService.shared.setMuted(kind: outcome.outcomeKindRawValue, muted: true) }
+                                },
                                 sequenceStepCount: sequenceStepCount(for: outcome),
                                 nextAwaitingStep: nextAwaitingStep(for: outcome)
                             )
@@ -145,9 +148,26 @@ struct OutcomeQueueView: View {
     private var header: some View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
-                Text("SAM Coach")
-                    .font(.title3)
-                    .fontWeight(.semibold)
+                HStack(spacing: 6) {
+                    Text("SAM Coach")
+                        .font(.title3)
+                        .fontWeight(.semibold)
+
+                    if CalibrationService.cachedLedger.totalInteractions >= 20 {
+                        HStack(spacing: 3) {
+                            Image(systemName: "brain")
+                                .font(.caption2)
+                            Text("Personalized")
+                                .font(.caption2)
+                        }
+                        .foregroundStyle(.purple)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(.purple.opacity(0.1))
+                        .clipShape(Capsule())
+                        .help("SAM has learned from \(CalibrationService.cachedLedger.totalInteractions) interactions to personalize your coaching")
+                    }
+                }
 
                 let count = activeOutcomes.count
                 if count > 0 {
@@ -272,6 +292,8 @@ struct OutcomeQueueView: View {
                 Button("Submit") {
                     if let outcome = showRatingFor {
                         try? outcomeRepo.recordRating(id: outcome.id, rating: ratingValue)
+                        Task { await CalibrationService.shared.recordRating(kind: outcome.outcomeKindRawValue, rating: ratingValue) }
+                        try? CoachingAdvisor.shared.updateProfile()
                     }
                     showRatingFor = nil
                 }
@@ -372,8 +394,20 @@ struct OutcomeQueueView: View {
     private func markDone(_ outcome: SamOutcome) {
         try? outcomeRepo.markCompleted(id: outcome.id)
 
-        // Occasionally show rating (roughly 1 in 5)
-        if Int.random(in: 1...5) == 1 {
+        // Update coaching profile
+        try? CoachingAdvisor.shared.updateProfile()
+
+        // Record calibration signals
+        Task {
+            let hour = Calendar.current.component(.hour, from: .now)
+            let dow = Calendar.current.component(.weekday, from: .now)
+            let responseMin = outcome.lastSurfacedAt.map { Date.now.timeIntervalSince($0) / 60 } ?? 0
+            await CalibrationService.shared.recordCompletion(
+                kind: outcome.outcomeKindRawValue, responseMinutes: responseMin, hour: hour, dayOfWeek: dow)
+        }
+
+        // Adaptive rating frequency
+        if CoachingAdvisor.shared.shouldRequestRating() {
             ratingValue = 3
             showRatingFor = outcome
         }
@@ -381,6 +415,9 @@ struct OutcomeQueueView: View {
 
     private func markSkipped(_ outcome: SamOutcome) {
         try? outcomeRepo.markDismissed(id: outcome.id)
+
+        // Record calibration dismissal signal
+        Task { await CalibrationService.shared.recordDismissal(kind: outcome.outcomeKindRawValue) }
     }
 
     // MARK: - Sequence Helpers

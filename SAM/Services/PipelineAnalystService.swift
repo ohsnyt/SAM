@@ -28,10 +28,14 @@ actor PipelineAnalystService {
             throw AnalysisError.modelUnavailable
         }
 
+        let businessContext = await BusinessProfileService.shared.fullContextBlock()
+
         let instructions = """
-            You are a pipeline analyst for an independent financial services practice (World Financial Group). \
+            You are a pipeline analyst for an independent financial services practice. \
             Analyze the pipeline data provided and generate strategic recommendations. \
             Focus on conversion bottlenecks, stuck prospects, production gaps, and recruiting health.
+
+            \(businessContext)
 
             CRITICAL: You MUST respond with ONLY valid JSON.
             - Do NOT wrap the JSON in markdown code blocks

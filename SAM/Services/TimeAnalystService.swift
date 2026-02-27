@@ -28,11 +28,15 @@ actor TimeAnalystService {
             throw AnalysisError.modelUnavailable
         }
 
+        let businessContext = await BusinessProfileService.shared.fullContextBlock()
+
         let instructions = """
             You analyze how an independent financial strategist allocates their work time. \
             Identify imbalances, suggest improvements, and highlight trends. \
             Common categories: Prospecting, Client Meeting, Policy Review, Recruiting, \
             Training/Mentoring, Admin, Deep Work, Personal Development, Travel, Other.
+
+            \(businessContext)
 
             CRITICAL: You MUST respond with ONLY valid JSON.
             - Do NOT wrap the JSON in markdown code blocks

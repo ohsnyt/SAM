@@ -35,8 +35,9 @@ actor CoachingPlannerService {
             for: context.recommendation.category,
             limit: 3
         )
+        let businessCtx = await BusinessProfileService.shared.fullContextBlock()
 
-        let systemInstruction = buildSystemInstruction(context: context, practices: practices)
+        let systemInstruction = buildSystemInstruction(context: context, practices: practices, businessContext: businessCtx)
 
         let prompt: String
         if let approach = context.approach {
@@ -103,8 +104,9 @@ actor CoachingPlannerService {
             for: context.recommendation.category,
             limit: 3
         )
+        let businessCtx = await BusinessProfileService.shared.fullContextBlock()
 
-        let systemInstruction = buildSystemInstruction(context: context, practices: practices)
+        let systemInstruction = buildSystemInstruction(context: context, practices: practices, businessContext: businessCtx)
 
         // Build conversation context from recent history (last 4 messages)
         let historyWindow = recentHistory.suffix(4)
@@ -144,11 +146,13 @@ actor CoachingPlannerService {
     // MARK: - Private Helpers
 
     /// Build the system instruction with bounded context and constraints.
-    private func buildSystemInstruction(context: CoachingSessionContext, practices: [BestPractice] = []) -> String {
+    private func buildSystemInstruction(context: CoachingSessionContext, practices: [BestPractice] = [], businessContext: String = "") -> String {
         var instruction = """
-            You are SAM, a strategic coaching assistant for an independent financial strategist \
-            at World Financial Group. You help plan and implement business strategies using \
+            You are SAM, a strategic coaching assistant for an independent financial strategist. \
+            You help plan and implement business strategies using \
             ONLY the tools and capabilities available to the user right now.
+
+            \(businessContext)
 
             ACTIONS YOU MAY SUGGEST:
             • Compose messages to specific people (leads, clients, agents, upline) via iMessage, email, or phone

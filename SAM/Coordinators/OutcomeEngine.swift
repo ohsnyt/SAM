@@ -138,10 +138,26 @@ final class OutcomeEngine {
             }
             newOutcomes.append(contentsOf: sequenceSteps)
 
-            // Score all new outcomes
-            let weights = OutcomeWeights()
+            // Score all new outcomes using calibrated weights
+            let weights = CoachingAdvisor.shared.adjustedWeights()
             for outcome in newOutcomes {
                 outcome.priorityScore = computePriority(outcome: outcome, weights: weights)
+            }
+
+            // Filter muted kinds
+            let mutedKinds = Set(CalibrationService.cachedLedger.mutedKinds)
+            if !mutedKinds.isEmpty {
+                newOutcomes.removeAll { mutedKinds.contains($0.outcomeKindRawValue) }
+            }
+
+            // Soft suppress: kinds with <15% act rate after 20+ interactions get 0.3x priority
+            let calibrationLedger = CalibrationService.cachedLedger
+            for outcome in newOutcomes {
+                if let kindStat = calibrationLedger.kindStats[outcome.outcomeKindRawValue],
+                   kindStat.actedOn + kindStat.dismissed >= 20,
+                   kindStat.actRate < 0.15 {
+                    outcome.priorityScore *= 0.3
+                }
             }
 
             // Persist (deduplication inside upsert check)
@@ -176,7 +192,7 @@ final class OutcomeEngine {
 
     /// Re-score and sort all active outcomes.
     func reprioritize() throws {
-        let weights = OutcomeWeights()
+        let weights = CoachingAdvisor.shared.adjustedWeights()
         let active = try outcomeRepo.fetchActive()
         for outcome in active {
             outcome.priorityScore = computePriority(outcome: outcome, weights: weights)
@@ -1019,8 +1035,14 @@ final class OutcomeEngine {
         let recencyScore = max(0, 1.0 - (ageHours / 168))  // Decay over 7 days
         score += weights.evidenceRecency * recencyScore
 
-        // User engagement — placeholder (filled in by CoachingAdvisor later)
-        score += weights.userEngagement * 0.5  // Neutral until we have feedback data
+        // User engagement — per-kind act rate from calibration (after 5+ interactions for the kind)
+        let ledger = CalibrationService.cachedLedger
+        if let kindStat = ledger.kindStats[outcome.outcomeKindRawValue],
+           kindStat.actedOn + kindStat.dismissed >= 5 {
+            score += weights.userEngagement * kindStat.actRate
+        } else {
+            score += weights.userEngagement * 0.5  // Neutral until enough data
+        }
 
         return min(1.0, max(0.0, score))
     }

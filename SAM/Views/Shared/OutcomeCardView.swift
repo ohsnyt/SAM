@@ -17,6 +17,7 @@ struct OutcomeCardView: View {
     let onAct: (() -> Void)?
     let onDone: () -> Void
     let onSkip: () -> Void
+    var onMuteKind: (() -> Void)?
 
     /// Total steps in the sequence (injected by parent or computed).
     var sequenceStepCount: Int = 0
@@ -141,6 +142,14 @@ struct OutcomeCardView: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
+                .contextMenu {
+                    Button {
+                        onMuteKind?()
+                        onSkip()
+                    } label: {
+                        Label("Stop suggesting \(outcome.outcomeKind.displayName.lowercased())", systemImage: "speaker.slash")
+                    }
+                }
             }
         }
         .padding()

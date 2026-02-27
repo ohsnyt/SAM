@@ -28,10 +28,14 @@ actor ContentAdvisorService {
             throw AnalysisError.modelUnavailable
         }
 
+        let businessContext = await BusinessProfileService.shared.fullContextBlock()
+
         let instructions = """
-            You suggest educational content topics for a WFG (World Financial Group) financial strategist. \
+            You suggest educational content topics for an independent financial strategist. \
             Topics should be relevant to their client base, timely for the season, and compliant with \
             financial services regulations. Content is for social media posts, newsletters, or client education.
+
+            \(businessContext)
 
             CRITICAL: You MUST respond with ONLY valid JSON.
             - Do NOT wrap the JSON in markdown code blocks
@@ -122,10 +126,13 @@ actor ContentAdvisorService {
 
         let complianceSection = complianceNotes.map { "Compliance considerations: \($0)" } ?? ""
         let keyPointsText = keyPoints.isEmpty ? "" : "Key points to cover: \(keyPoints.joined(separator: "; "))"
+        let businessContext = await BusinessProfileService.shared.contextFragment()
 
         let instructions = """
-            You write social media posts for a WFG (World Financial Group) financial strategist. \
+            You write social media posts for an independent financial strategist. \
             The content must be educational and compliant with financial services regulations.
+
+            \(businessContext)
 
             STRICT COMPLIANCE RULES:
             - NEVER mention specific product names, company names, or fund names

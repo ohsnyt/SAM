@@ -28,10 +28,14 @@ actor PatternDetectorService {
             throw AnalysisError.modelUnavailable
         }
 
+        let businessContext = await BusinessProfileService.shared.fullContextBlock()
+
         let instructions = """
             You identify behavioral patterns and correlations in business relationship data \
-            for an independent financial strategist (World Financial Group). \
+            for an independent financial strategist. \
             Look for patterns in engagement, referral networks, meeting quality, and role transitions.
+
+            \(businessContext)
 
             CRITICAL: You MUST respond with ONLY valid JSON.
             - Do NOT wrap the JSON in markdown code blocks

@@ -123,6 +123,13 @@ struct AISettingsView: View {
         Form {
             Section {
                 DisclosureGroup {
+                    BusinessProfileSettingsContent()
+                        .padding(.top, 8)
+                } label: {
+                    Label("Business Profile", systemImage: "building.2")
+                }
+
+                DisclosureGroup {
                     IntelligenceSettingsContent()
                         .padding(.top, 8)
                 } label: {
@@ -860,6 +867,189 @@ struct CalendarSettingsView: View {
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+// MARK: - Business Profile Settings Content
+
+struct BusinessProfileSettingsContent: View {
+
+    @State private var profile = BusinessProfile()
+    @State private var isLoaded = false
+    @State private var marketFocusText: String = ""
+
+    // Common market focus options for quick selection
+    private let commonMarketFocus = [
+        "Life Insurance", "Retirement Planning", "Mortgage Protection",
+        "College Funding", "Annuities", "Debt Elimination"
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Text("Tell SAM about your practice so coaching suggestions are relevant and grounded.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            // Practice Structure
+            GroupBox("Practice Structure") {
+                VStack(alignment: .leading, spacing: 12) {
+                    Toggle("Solo practitioner (no team, no employees)", isOn: $profile.isSoloPractitioner)
+                        .onChange(of: profile.isSoloPractitioner) { _, _ in saveProfile() }
+
+                    HStack {
+                        Text("Organization:")
+                            .frame(width: 100, alignment: .leading)
+                        TextField("e.g., World Financial Group", text: $profile.organization)
+                            .textFieldStyle(.roundedBorder)
+                            .onSubmit { saveProfile() }
+                    }
+
+                    HStack {
+                        Text("Your role:")
+                            .frame(width: 100, alignment: .leading)
+                        TextField("e.g., Senior Marketing Director", text: $profile.roleTitle)
+                            .textFieldStyle(.roundedBorder)
+                            .onSubmit { saveProfile() }
+                    }
+
+                    HStack {
+                        Text("Experience:")
+                            .frame(width: 100, alignment: .leading)
+                        Picker("", selection: $profile.yearsExperience) {
+                            Text("New").tag(0)
+                            Text("1-2 years").tag(1)
+                            Text("3-5 years").tag(3)
+                            Text("5-10 years").tag(5)
+                            Text("10+ years").tag(10)
+                            Text("20+ years").tag(20)
+                        }
+                        .labelsHidden()
+                        .onChange(of: profile.yearsExperience) { _, _ in saveProfile() }
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+
+            // Market Focus
+            GroupBox("Market Focus") {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Select your primary focus areas:")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    FlowLayout(spacing: 6) {
+                        ForEach(commonMarketFocus, id: \.self) { focus in
+                            Toggle(focus, isOn: Binding(
+                                get: { profile.marketFocus.contains(focus) },
+                                set: { isOn in
+                                    if isOn {
+                                        if !profile.marketFocus.contains(focus) {
+                                            profile.marketFocus.append(focus)
+                                        }
+                                    } else {
+                                        profile.marketFocus.removeAll { $0 == focus }
+                                    }
+                                    saveProfile()
+                                }
+                            ))
+                            .toggleStyle(.button)
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                    }
+
+                    Toggle("Actively recruiting agents", isOn: $profile.isActivelyRecruiting)
+                        .onChange(of: profile.isActivelyRecruiting) { _, _ in saveProfile() }
+
+                    HStack {
+                        Text("Geographic market:")
+                        TextField("e.g., San Diego, CA", text: $profile.geographicMarket)
+                            .textFieldStyle(.roundedBorder)
+                            .onSubmit { saveProfile() }
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+
+            // Tools & Capabilities
+            GroupBox("Tools & Capabilities") {
+                VStack(alignment: .leading, spacing: 12) {
+                    Toggle("SAM is my CRM (prevent suggestions to buy other CRM tools)", isOn: $profile.samIsCRM)
+                        .onChange(of: profile.samIsCRM) { _, _ in saveProfile() }
+
+                    Text("Social platforms:")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    HStack(spacing: 8) {
+                        ForEach(["Facebook", "LinkedIn", "Instagram", "X/Twitter"], id: \.self) { platform in
+                            Toggle(platform, isOn: Binding(
+                                get: { profile.activeSocialPlatforms.contains(platform) },
+                                set: { isOn in
+                                    if isOn {
+                                        if !profile.activeSocialPlatforms.contains(platform) {
+                                            profile.activeSocialPlatforms.append(platform)
+                                        }
+                                    } else {
+                                        profile.activeSocialPlatforms.removeAll { $0 == platform }
+                                    }
+                                    saveProfile()
+                                }
+                            ))
+                            .toggleStyle(.button)
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+
+            // Additional Context
+            GroupBox("Additional Context") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Anything else SAM's AI should always know about your practice:")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    TextEditor(text: $profile.additionalContext)
+                        .font(.system(.caption, design: .monospaced))
+                        .frame(height: 80)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 4)
+                                .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
+                        )
+                        .overlay(alignment: .topLeading) {
+                            if profile.additionalContext.isEmpty {
+                                Text("e.g., \"I specialize in serving military families\" or \"My warm market is exhausted, focusing on referrals\"")
+                                    .font(.system(.caption, design: .monospaced))
+                                    .foregroundStyle(.tertiary)
+                                    .padding(.leading, 4)
+                                    .padding(.top, 8)
+                                    .allowsHitTesting(false)
+                            }
+                        }
+                        .onChange(of: profile.additionalContext) { _, _ in saveProfile() }
+                }
+                .padding(.vertical, 4)
+            }
+        }
+        .task {
+            await loadProfile()
+        }
+    }
+
+    private func loadProfile() async {
+        let loaded = await BusinessProfileService.shared.profile()
+        profile = loaded
+        isLoaded = true
+    }
+
+    private func saveProfile() {
+        guard isLoaded else { return }
+        Task {
+            await BusinessProfileService.shared.save(profile)
+        }
     }
 }
 

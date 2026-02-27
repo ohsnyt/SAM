@@ -537,13 +537,26 @@ final class StrategicCoordinator {
         return union > 0 ? Double(intersection) / Double(union) : 0
     }
 
-    /// Compute per-category weight adjustments based on historical feedback.
-    /// Categories with more "actedOn" feedback get boosted; those with more "dismissed" get reduced.
+    /// Compute per-category weight adjustments based on calibration ledger + historical feedback.
+    /// Uses CalibrationLedger (0.5–2.0 range) when available; falls back to digest-based (0.9–1.1).
     private func computeCategoryWeights() -> [String: Double] {
+        // Prefer CalibrationLedger strategic weights if available
+        let ledger = CalibrationService.cachedLedger
+        let ledgerWeights = ledger.strategicCategoryWeights
+        if !ledgerWeights.isEmpty {
+            // Ensure all categories are present, defaulting to 1.0
+            var weights: [String: Double] = [:]
+            let categories = ["pipeline", "time", "pattern"]
+            for cat in categories {
+                weights[cat] = ledgerWeights[cat] ?? 1.0
+            }
+            return weights
+        }
+
+        // Fall back to digest-based computation (original ±10% logic)
         var acted: [String: Int] = [:]
         var dismissed: [String: Int] = [:]
 
-        // Look at recent digests (last 30 days)
         guard let context else { return [:] }
         let thirtyDaysAgo = Calendar.current.date(byAdding: .day, value: -30, to: .now) ?? .now
 
@@ -575,7 +588,6 @@ final class StrategicCoordinator {
             logger.error("Failed to compute category weights: \(error)")
         }
 
-        // Build weights: ±10% per acted/dismissed ratio
         var weights: [String: Double] = [:]
         let categories = ["pipeline", "time", "pattern"]
         for cat in categories {
