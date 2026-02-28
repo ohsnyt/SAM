@@ -4,6 +4,21 @@
 
 ---
 
+## February 28, 2026 - Phase AB Polish: App Icon, Shimmer, Narration Timing
+
+### Overview
+Intro sequence polish: app icon on welcome slide with shimmer effect, narration timing fix (removed AVSpeechUtterance delays, coordinator-controlled inter-slide gap). No schema change.
+
+### Changes
+
+**IntroSequenceOverlay.swift**: Welcome slide now displays the SAM app icon (128×128, loaded via `NSApplication.shared.applicationIconImage`) instead of the `brain.head.profile` SF Symbol. App icon has rounded rectangle clip shape, shadow, and a shimmer effect (animated `LinearGradient` overlay in `.screen` blend mode) that triggers 1 second after the slide appears. Other slides unchanged (SF Symbols with pulse animation).
+
+**NarrationService.swift**: Removed `PRE_UTTERANCE_DELAY` and `POST_UTTERANCE_DELAY` global constants. Utterance `preUtteranceDelay` and `postUtteranceDelay` both set to 0. The synthesizer's internal delay handling caused increasing latency between slides — it considers itself "speaking" during delay periods, causing `stopSpeaking()` to interrupt the delay phase with accumulating overhead.
+
+**IntroSequenceCoordinator.swift**: Added `interSlideDelay` (0.75s) controlled by `Task.sleep` in `advanceFromSlide()`. This replaces the AVSpeechUtterance delays with precise coordinator-controlled timing. The delay occurs after `didFinish` fires and the slide advances visually, before narration starts on the next slide.
+
+---
+
 ## February 27, 2026 - Phase AB: In-App Guidance System
 
 ### Overview
@@ -11,11 +26,11 @@ First-launch narrated intro sequence + contextual TipKit coach marks with user t
 
 ### New Files
 
-**NarrationService.swift**: `@MainActor @Observable` singleton wrapping a single persistent `AVSpeechSynthesizer` (reused across all utterances to avoid CoreAudio session churn). Direct `speak()` API with `onFinish` callback — delegate lifecycle carefully managed to prevent double-advance (didCancel intentionally does NOT fire onFinish; callback is nil'd before stopSpeaking). Voice: Samantha Enhanced (en-US), with user-tunable global constants for RATE, PITCH_MULTIPLIER, PRE_UTTERANCE_DELAY, POST_UTTERANCE_DELAY. Diagnostic logging on didStart/didFinish/didCancel. Note: AVAudioSession is unavailable on macOS — no audio priority API exists.
+**NarrationService.swift**: `@MainActor @Observable` singleton wrapping a single persistent `AVSpeechSynthesizer` (reused across all utterances to avoid CoreAudio session churn). Direct `speak()` API with `onFinish` callback — delegate lifecycle carefully managed to prevent double-advance (didCancel intentionally does NOT fire onFinish; callback is nil'd before stopSpeaking). Voice: Samantha Enhanced (en-US), with global constants for RATE and PITCH_MULTIPLIER. Diagnostic logging on didStart/didFinish/didCancel. Note: AVAudioSession is unavailable on macOS — no audio priority API exists.
 
-**IntroSequenceCoordinator.swift**: `@MainActor @Observable` singleton managing 6-slide intro sequence (welcome, relationships, coaching, business, privacy, getStarted). Each slide has narration text, headline, subtitle, SF Symbol, and fallback duration. Auto-advances via NarrationService `onFinish` callback. Uses `narratingSlide` token to prevent double-advance race between didFinish callback and fallback timer — whichever fires first consumes the token, blocking the other. Generous fallback timers (15–20s + 10s buffer) as safety net only. UserDefaults key: `sam.intro.hasSeenIntroSequence`. Pause/resume/skip support.
+**IntroSequenceCoordinator.swift**: `@MainActor @Observable` singleton managing 6-slide intro sequence (welcome, relationships, coaching, business, privacy, getStarted). Each slide has narration text, headline, subtitle, SF Symbol, and fallback duration. Auto-advances via NarrationService `onFinish` callback. Uses `narratingSlide` token to prevent double-advance race between didFinish callback and fallback timer — whichever fires first consumes the token, blocking the other. Generous fallback timers (15–20s + 10s buffer) as safety net only. Coordinator-controlled 0.75s inter-slide delay via `Task.sleep`. UserDefaults key: `sam.intro.hasSeenIntroSequence`. Pause/resume/skip support.
 
-**IntroSequenceOverlay.swift**: Sheet view with 6 slides. `.ultraThinMaterial` background. Frame: 550–750×400–500. Bottom bar: pause/play, 6 progress dots, skip button. "Get Started" on final slide. `interactiveDismissDisabled()`. Respects `accessibilityReduceMotion` (opacity-only transitions).
+**IntroSequenceOverlay.swift**: Sheet view with 6 slides. `.ultraThinMaterial` background. Frame: 550–750×400–500. Welcome slide shows app icon with shimmer effect; other slides use SF Symbols with pulse animation. Bottom bar: pause/play, 6 progress dots, skip button. "Get Started" on final slide. `interactiveDismissDisabled()`. Respects `accessibilityReduceMotion` (opacity-only transitions).
 
 **SAMTips.swift**: 12 TipKit tip definitions + `SAMTipState` enum with `@Parameter` global toggle. Each tip has `MaxDisplayCount(1)` and `#Rule(SAMTipState.$guidanceEnabled) { $0 == true }`. Tips: TodayHeroCardTip, OutcomeQueueTip, BriefingButtonTip, PeopleListTip, PersonCoachingTip, AddNoteTip, DictationTip, BusinessDashboardTip, StrategicInsightsTip, GoalsTip, CommandPaletteTip, SearchTip.
 

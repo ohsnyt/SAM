@@ -11,8 +11,6 @@ import os.log
 
 let RATE: Float = 0.5
 let PITCH_MULTIPLIER: Float = 1.05
-let PRE_UTTERANCE_DELAY: TimeInterval = 0.25
-let POST_UTTERANCE_DELAY: TimeInterval = 1
 
 /// On-device speech synthesis using a persistent AVSpeechSynthesizer for
 /// natural-sounding narration with proper pauses and intonation.
@@ -94,8 +92,8 @@ final class NarrationService {
         let utterance = AVSpeechUtterance(string: text)
         utterance.rate = RATE
         utterance.pitchMultiplier = PITCH_MULTIPLIER
-        utterance.preUtteranceDelay = PRE_UTTERANCE_DELAY
-        utterance.postUtteranceDelay = POST_UTTERANCE_DELAY
+        utterance.preUtteranceDelay = 0
+        utterance.postUtteranceDelay = 0
         utterance.voice = Self.preferredVoice
 
         // Wire up the new callback

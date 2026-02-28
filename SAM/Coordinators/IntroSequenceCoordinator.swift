@@ -174,6 +174,10 @@ final class IntroSequenceCoordinator {
 
     /// Advance from the given slide to the next. Guarded by `narratingSlide` token
     /// to prevent double-advance when both didFinish and the fallback timer fire.
+    /// Inter-slide pause in seconds. Applied by the coordinator between
+    /// didFinish and the next slide's narration start.
+    private static let interSlideDelay: TimeInterval = 0.75
+
     private func advanceFromSlide(_ slide: IntroSlide) {
         // Consume the token — only the first caller gets through
         guard narratingSlide == slide else {
@@ -196,7 +200,14 @@ final class IntroSequenceCoordinator {
         logger.info("Advancing to slide: \(next.rawValue)")
 
         if !isPaused {
-            narrateCurrentSlide()
+            // Brief pause between slides for visual/auditory breathing room.
+            // Handled here (not in AVSpeechUtterance delays) so we have
+            // precise control and avoid synthesizer-internal timing quirks.
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(Self.interSlideDelay))
+                guard let self, self.isPlaying, !self.isPaused else { return }
+                self.narrateCurrentSlide()
+            }
         }
     }
 
