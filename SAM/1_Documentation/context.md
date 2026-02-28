@@ -155,7 +155,8 @@ SAM/SAM/
 │   ├── BusinessProfileService.swift  ✅ Actor — Business context profile persistence + AI blocklist + calibration injection
 │   ├── CalibrationService.swift     ✅ Actor — Calibration ledger persistence (UserDefaults), signal recording, AI fragment generation
 │   ├── SystemNotificationService.swift ✅ @MainActor — macOS system notifications (UNUserNotificationCenter)
-│   └── LifeEventCoachingService.swift ✅ Actor — Event-type-calibrated AI coaching for life events
+│   ├── LifeEventCoachingService.swift ✅ Actor — Event-type-calibrated AI coaching for life events
+│   └── NarrationService.swift        ✅ @MainActor — AVSpeechSynthesizer wrapper for narrated intro + future TTS
 │
 ├── Coordinators/
 │   ├── ContactsImportCoordinator.swift ✅ Contact import
@@ -175,7 +176,8 @@ SAM/SAM/
 │   ├── ScenarioProjectionEngine.swift ✅ Deterministic 90-day trailing velocity projections
 │   ├── BackupCoordinator.swift        ✅ Export/import .sambackup files (full replace)
 │   ├── SearchCoordinator.swift        ✅ Unified search across people, contexts, evidence, notes, outcomes
-│   └── RelationshipGraphCoordinator.swift ✅ Graph data gathering, filtering, layout orchestration
+│   ├── RelationshipGraphCoordinator.swift ✅ Graph data gathering, filtering, layout orchestration
+│   └── IntroSequenceCoordinator.swift ✅ First-launch intro slide machine + narration sync
 │
 ├── Repositories/
 │   ├── PeopleRepository.swift          ✅ CRUD for SamPerson
@@ -226,7 +228,7 @@ SAM/SAM/
 │   ├── People/                         ✅ People list + detail (initials fallback, coaching preview, urgency strips)
 │   ├── Inbox/                          ✅ Evidence triage (accessible via search/contexts)
 │   ├── Contexts/                       ✅ Context management (accessible via People → More Details)
-│   ├── Awareness/                      ✅ "Today" view — Hero card + Today's Actions + collapsed Review & Analytics + Life Event coaching
+│   ├── Awareness/                      ✅ "Today" view — Hero card + Today's Actions + collapsed Review & Analytics + Life Event coaching + IntroSequenceOverlay
 │   ├── Notes/                          ✅ Note editing + journal
 │   ├── Content/                        ✅ ContentDraftSheet
 │   ├── Business/                       ✅ Business dashboard (health summary + 6 tabs: Strategic, Client, Recruiting, Production, Goals, Graph)
@@ -246,8 +248,8 @@ SAM/SAM/
 │   │   ├── StrategicActionSheet.swift ✅ Approach selection sheet when "Act" is clicked
 │   │   └── CoachingSessionView.swift  ✅ Chat-style AI coaching session with action buttons
 │   ├── Search/                         ✅ SearchView + SearchResultRow
-│   ├── Shared/                         ✅ Reusable components (incl. FlowLayout, CommandPaletteView)
-│   └── Settings/                       ✅ Tabbed settings (incl. Data Backup section)
+│   ├── Shared/                         ✅ Reusable components (incl. FlowLayout, CommandPaletteView, SAMTips)
+│   └── Settings/                       ✅ Tabbed settings (incl. Data Backup + Guidance sections)
 │
 ├── Resources/
 │   └── BestPractices.json             ✅ Bundled best practices knowledge base (24 entries, 6 categories)
@@ -337,6 +339,7 @@ SAM/SAM/
 - ✅ **⌘K Command Palette**: Spotlight-style overlay (⌘K) for quick navigation and people search. Also adds ⌘1–4 sidebar navigation shortcuts. Reuses SearchCoordinator for people search. Static commands: Go to Today/People/Business/Search, New Note, Open Settings. (no schema change)
 - ✅ **Coaching Calibration Phase 1**: Business context profile (BusinessProfile DTO + BusinessProfileService) injected into all 6 AI specialist system instructions. Universal blocklist prevents irrelevant suggestions (CRM tools, team references for solo agents, software purchases). Settings > AI > Business Profile section for user configuration. (no schema change)
 - ✅ **Coaching Calibration Phases 2–4**: Full feedback system — CalibrationLedger (UserDefaults JSON) tracks per-kind act/dismiss/rating stats, timing patterns, strategic weights, muted kinds, session feedback. CalibrationService actor with cached synchronous accessor. Fixed broken wiring: `shouldRequestRating()` now controls rating frequency, `adjustedWeights()` used in OutcomeEngine. Muted-kind filtering, soft suppress (<15% act rate → 0.3x), per-kind engagement scoring. StrategicCoordinator reads wider calibration weights (0.5–2.0x). `calibrationFragment()` injected into all 6 AI agents via BusinessProfileService. Settings "What SAM Has Learned" section with per-kind progress bars, timing data, strategic weights, mute management, and per-dimension resets. Context menu "Stop suggesting this type" on outcome cards. "Personalized" indicator in queue header after 20+ interactions. Coaching session thumbs up/down feedback. 90-day counter pruning. (no schema change)
+- ✅ **Phase AB: In-App Guidance System**: First-launch narrated intro sequence (6 slides, AVSpeechSynthesizer auto-advance with fallback timers) + 12 TipKit contextual coach marks across all major views. NarrationService, IntroSequenceCoordinator, IntroSequenceOverlay, SAMTips with `@Parameter`-based global toggle. "?" toolbar button toggles tips on/off. Settings > General > Guidance section with toggle, Reset All Tips, Replay Intro. BackupCoordinator: added calendarLookbackDays to backup keys. (no schema change)
 
 ### Future Phases (Unscheduled)
 

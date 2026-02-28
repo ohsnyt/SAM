@@ -9,6 +9,7 @@ import SwiftUI
 import SwiftData
 import AppKit
 import UniformTypeIdentifiers
+import TipKit
 import os.log
 
 private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "NoteEditorView")
@@ -121,6 +122,7 @@ struct NoteEditorView: View {
                 }
                 .buttonStyle(.plain)
                 .help(isDictating ? "Stop dictation" : "Start dictation")
+                .popoverTip(DictationTip(), arrowEdge: .bottom)
                 .overlay {
                     if isDictating {
                         Circle()

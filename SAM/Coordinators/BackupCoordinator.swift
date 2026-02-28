@@ -65,6 +65,7 @@ final class BackupCoordinator {
         "mailImportInterval", "calendarImportIntervalSeconds",
         "insightAutoGenerateEnabled", "insightDaysSinceContactThreshold",
         "autoResetOnVersionChange", "autoDetectPermissionLoss", "pipelineBackfillComplete",
+        "calendarLookbackDays",
     ]
 
     // ─────────────────────────────────────────────────────────────────

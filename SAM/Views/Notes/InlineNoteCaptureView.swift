@@ -8,6 +8,7 @@
 import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
+import TipKit
 import os.log
 
 private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "InlineNoteCaptureView")
@@ -66,6 +67,7 @@ struct InlineNoteCaptureView: View {
             // Status indicators (below both states)
             statusIndicators
         }
+        .popoverTip(AddNoteTip(), arrowEdge: .bottom)
         .onAppear {
             if initiallyExpanded { isEditing = true }
         }

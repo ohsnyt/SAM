@@ -9,6 +9,7 @@
 //
 
 import SwiftUI
+import TipKit
 
 struct BusinessDashboardView: View {
 
@@ -22,6 +23,7 @@ struct BusinessDashboardView: View {
             VStack(spacing: 0) {
                 businessHealthSummary
                     .padding()
+                    .popoverTip(BusinessDashboardTip(), arrowEdge: .top)
 
                 Divider()
 

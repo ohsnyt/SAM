@@ -4,6 +4,58 @@
 
 ---
 
+## February 27, 2026 - Phase AB: In-App Guidance System
+
+### Overview
+First-launch narrated intro sequence + contextual TipKit coach marks with user toggle. Provides new user onboarding and ongoing feature discoverability. No schema change.
+
+### New Files
+
+**NarrationService.swift**: `@MainActor @Observable` singleton wrapping a single persistent `AVSpeechSynthesizer` (reused across all utterances to avoid CoreAudio session churn). Direct `speak()` API with `onFinish` callback — delegate lifecycle carefully managed to prevent double-advance (didCancel intentionally does NOT fire onFinish; callback is nil'd before stopSpeaking). Voice: Samantha Enhanced (en-US), with user-tunable global constants for RATE, PITCH_MULTIPLIER, PRE_UTTERANCE_DELAY, POST_UTTERANCE_DELAY. Diagnostic logging on didStart/didFinish/didCancel. Note: AVAudioSession is unavailable on macOS — no audio priority API exists.
+
+**IntroSequenceCoordinator.swift**: `@MainActor @Observable` singleton managing 6-slide intro sequence (welcome, relationships, coaching, business, privacy, getStarted). Each slide has narration text, headline, subtitle, SF Symbol, and fallback duration. Auto-advances via NarrationService `onFinish` callback. Uses `narratingSlide` token to prevent double-advance race between didFinish callback and fallback timer — whichever fires first consumes the token, blocking the other. Generous fallback timers (15–20s + 10s buffer) as safety net only. UserDefaults key: `sam.intro.hasSeenIntroSequence`. Pause/resume/skip support.
+
+**IntroSequenceOverlay.swift**: Sheet view with 6 slides. `.ultraThinMaterial` background. Frame: 550–750×400–500. Bottom bar: pause/play, 6 progress dots, skip button. "Get Started" on final slide. `interactiveDismissDisabled()`. Respects `accessibilityReduceMotion` (opacity-only transitions).
+
+**SAMTips.swift**: 12 TipKit tip definitions + `SAMTipState` enum with `@Parameter` global toggle. Each tip has `MaxDisplayCount(1)` and `#Rule(SAMTipState.$guidanceEnabled) { $0 == true }`. Tips: TodayHeroCardTip, OutcomeQueueTip, BriefingButtonTip, PeopleListTip, PersonCoachingTip, AddNoteTip, DictationTip, BusinessDashboardTip, StrategicInsightsTip, GoalsTip, CommandPaletteTip, SearchTip.
+
+### Modified Files
+
+**SAMApp.swift**: Added `Tips.configure([.displayFrequency(.immediate)])` in `init()`. Debug menu: "Reset Tips" + "Reset Intro".
+
+**AppShellView.swift**: Intro sheet presentation with `.interactiveDismissDisabled()`. Task checks `hasSeenIntro` after 300ms delay. "?" toolbar button toggles `SAMTipState.guidanceEnabled` (resets datastore on enable). CommandPaletteTip attached to sidebar.
+
+**SettingsView.swift**: Guidance section in General tab — toggle for contextual tips, Reset All Tips button, Replay Intro button.
+
+**AwarenessView.swift**: TodayHeroCardTip on hero card section, BriefingButtonTip on briefing toolbar button.
+
+**OutcomeQueueView.swift**: OutcomeQueueTip on queue header.
+
+**PeopleListView.swift**: PeopleListTip after navigation title.
+
+**PersonDetailView.swift**: PersonCoachingTip on header section.
+
+**NoteEditorView.swift**: DictationTip on mic button.
+
+**InlineNoteCaptureView.swift**: AddNoteTip on note capture area.
+
+**BusinessDashboardView.swift**: BusinessDashboardTip on health summary.
+
+**StrategicInsightsView.swift**: StrategicInsightsTip on strategic content.
+
+**GoalProgressView.swift**: GoalsTip on Add Goal button.
+
+**SearchView.swift**: SearchTip on search area.
+
+**BackupCoordinator.swift**: Added `"calendarLookbackDays"` to `includedPreferenceKeys` (missed during lookback extension work).
+
+### Key Decisions
+- TipKit `@Parameter` with `#Rule` macro for production toggle (avoids testing-only APIs like `hideAllTipsForTesting()`)
+- AVSpeechSynthesizer delegate pattern: private NSObject subclass because `@Observable` can't conform to `NSObjectProtocol`
+- Fallback timers for intro slides: each slide has estimated duration + 5s timeout in case speech synthesis silently fails
+
+---
+
 ## February 27, 2026 - Coaching Calibration Phases 2–4 (Full Feedback System)
 
 ### Overview

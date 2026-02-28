@@ -11,6 +11,7 @@
 import SwiftUI
 import SwiftData
 import Combine
+import TipKit
 
 struct AwarenessView: View {
 
@@ -93,6 +94,7 @@ struct AwarenessView: View {
                         Label("Briefing", systemImage: "text.book.closed")
                     }
                     .disabled(briefingCoordinator.morningBriefing == nil)
+                    .popoverTip(briefingTip, arrowEdge: .bottom)
                     .popover(isPresented: $showBriefingPopover) {
                         DailyBriefingPopover()
                             .frame(width: 400, height: 500)
@@ -163,6 +165,9 @@ struct AwarenessView: View {
         }
     }
 
+    private let heroCardTip = TodayHeroCardTip()
+    private let briefingTip = BriefingButtonTip()
+
     // MARK: - Hero Card Section
 
     private var heroCardSection: some View {
@@ -206,6 +211,7 @@ struct AwarenessView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12))
             }
         }
+        .popoverTip(heroCardTip, arrowEdge: .top)
     }
 
     private var heroOutcome: SamOutcome? {

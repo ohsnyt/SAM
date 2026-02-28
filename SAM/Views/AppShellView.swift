@@ -11,6 +11,7 @@
 
 import SwiftUI
 import SwiftData
+import TipKit
 
 struct AppShellView: View {
     
@@ -21,7 +22,9 @@ struct AppShellView: View {
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var postMeetingPayload: PostMeetingPayload?
     @State private var showCommandPalette = false
+    @State private var introCoordinator = IntroSequenceCoordinator.shared
     @Environment(\.openWindow) private var openWindow
+    private let commandPaletteTip = CommandPaletteTip()
     
     // MARK: - Body
     
@@ -81,6 +84,18 @@ struct AppShellView: View {
         .overlay(alignment: .bottom) {
             UndoToastView()
         }
+        .sheet(isPresented: Binding(
+            get: { introCoordinator.showIntroSequence },
+            set: { introCoordinator.showIntroSequence = $0 }
+        )) {
+            IntroSequenceOverlay()
+                .interactiveDismissDisabled()
+        }
+        .task(id: "introCheck") {
+            // Brief delay so main UI renders first
+            try? await Task.sleep(for: .milliseconds(300))
+            introCoordinator.checkAndShow()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .samToggleCommandPalette)) { _ in
             showCommandPalette.toggle()
         }
@@ -112,6 +127,21 @@ struct AppShellView: View {
             }
         }
         .navigationTitle("SAM")
+        .popoverTip(commandPaletteTip, arrowEdge: .trailing)
+        .toolbar {
+            ToolbarItem(placement: .automatic) {
+                Button {
+                    let newValue = !SAMTipState.guidanceEnabled
+                    SAMTipState.guidanceEnabled = newValue
+                    if newValue { try? Tips.resetDatastore() }
+                } label: {
+                    Image(systemName: SAMTipState.guidanceEnabled
+                          ? "questionmark.circle.fill"
+                          : "questionmark.circle")
+                }
+                .help(SAMTipState.guidanceEnabled ? "Hide tips" : "Show tips")
+            }
+        }
         .safeAreaInset(edge: .bottom) {
             ProcessingStatusView()
         }

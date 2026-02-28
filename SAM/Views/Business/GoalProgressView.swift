@@ -9,6 +9,7 @@
 //
 
 import SwiftUI
+import TipKit
 
 struct GoalProgressView: View {
 
@@ -34,6 +35,7 @@ struct GoalProgressView: View {
                     Label("Add Goal", systemImage: "plus")
                 }
                 .buttonStyle(.bordered)
+                .popoverTip(GoalsTip(), arrowEdge: .bottom)
             }
             .padding()
 

@@ -14,6 +14,7 @@ import SwiftData
 import EventKit
 import Contacts
 import UniformTypeIdentifiers
+import TipKit
 import os.log
 
 private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "SettingsView")
@@ -1283,6 +1284,11 @@ struct GeneralSettingsView: View {
 
                     Divider()
 
+                    // Guidance & Tips
+                    guidanceSection
+
+                    Divider()
+
                     // Data Backup
                     dataBackupSection
 
@@ -1559,6 +1565,39 @@ struct GeneralSettingsView: View {
                 Text("5.0s")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
+            }
+        }
+    }
+
+    private var guidanceSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Guidance")
+                .font(.headline)
+
+            Toggle("Show contextual tips", isOn: Binding(
+                get: { SAMTipState.guidanceEnabled },
+                set: { newValue in
+                    SAMTipState.guidanceEnabled = newValue
+                    if newValue { try? Tips.resetDatastore() }
+                }
+            ))
+
+            Text("Contextual tips appear near features to help you learn SAM's interface.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 12) {
+                Button("Reset All Tips") {
+                    try? Tips.resetDatastore()
+                    SAMTipState.guidanceEnabled = true
+                }
+                .buttonStyle(.bordered)
+
+                Button("Replay Intro") {
+                    UserDefaults.standard.set(false, forKey: "sam.intro.hasSeenIntroSequence")
+                    IntroSequenceCoordinator.shared.checkAndShow()
+                }
+                .buttonStyle(.bordered)
             }
         }
     }

@@ -11,6 +11,7 @@
 
 import SwiftUI
 import SwiftData
+import TipKit
 
 struct OutcomeQueueView: View {
 
@@ -64,6 +65,7 @@ struct OutcomeQueueView: View {
                 // Header
                 header
                     .padding()
+                    .popoverTip(OutcomeQueueTip(), arrowEdge: .top)
 
                 Divider()
 

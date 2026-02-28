@@ -11,6 +11,7 @@
 
 import SwiftUI
 import SwiftData
+import TipKit
 
 // MARK: - Sort & Filter Types
 
@@ -150,6 +151,7 @@ struct PeopleListView: View {
                 }
             }
             .navigationTitle("People")
+        .popoverTip(PeopleListTip(), arrowEdge: .top)
         .searchable(text: $searchText, prompt: "Search people")
         .toolbar {
             ToolbarItemGroup {

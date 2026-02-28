@@ -10,6 +10,7 @@
 //
 
 import SwiftUI
+import TipKit
 
 /// Tracks the state of a single plan preparation.
 private struct PlanPreparation: Identifiable {
@@ -36,6 +37,8 @@ struct StrategicInsightsView: View {
 
     /// The content topic selected for drafting via ContentDraftSheet.
     @State private var selectedContentTopic: ContentTopic?
+
+    private let strategicInsightsTip = StrategicInsightsTip()
 
     var body: some View {
         VStack(spacing: 16) {
@@ -81,6 +84,7 @@ struct StrategicInsightsView: View {
             Spacer()
         }
         .padding()
+        .popoverTip(strategicInsightsTip, arrowEdge: .top)
         .task {
             projectionEngine.refresh()
         }

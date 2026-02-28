@@ -11,6 +11,7 @@ import SwiftUI
 import SwiftData
 import Contacts
 import EventKit
+import TipKit
 import os.log
 
 private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "SAMApp")
@@ -82,6 +83,15 @@ struct SAMApp: App {
         // Configure repositories with shared container
         // Must happen before any data access
         configureDataLayer()
+
+        // Configure TipKit for contextual guidance
+        do {
+            try Tips.configure([
+                .displayFrequency(.immediate)
+            ])
+        } catch {
+            logger.error("TipKit configuration failed: \(error)")
+        }
     }
     
     // MARK: - Scene
@@ -155,6 +165,19 @@ struct SAMApp: App {
                     NSApplication.shared.terminate(nil)
                 }
                 .keyboardShortcut("r", modifiers: [.command, .shift])
+
+                Divider()
+
+                Button("Reset Tips") {
+                    try? Tips.resetDatastore()
+                    SAMTipState.guidanceEnabled = true
+                    logger.notice("Tips reset via Debug menu")
+                }
+
+                Button("Reset Intro") {
+                    UserDefaults.standard.set(false, forKey: "sam.intro.hasSeenIntroSequence")
+                    logger.notice("Intro reset via Debug menu")
+                }
             }
         }
 

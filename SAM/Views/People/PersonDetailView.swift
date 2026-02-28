@@ -12,6 +12,7 @@
 import SwiftUI
 import SwiftData
 import Contacts
+import TipKit
 import os.log
 
 private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "PersonDetailView")
@@ -168,6 +169,8 @@ struct PersonDetailView: View {
         }
     }
     
+    private let personCoachingTip = PersonCoachingTip()
+
     // MARK: - Header Section (Above the Fold)
 
     private var headerSection: some View {
@@ -269,6 +272,7 @@ struct PersonDetailView: View {
             }
         }
         .padding(.bottom, 16)
+        .popoverTip(personCoachingTip, arrowEdge: .top)
     }
 
     private var personInitials: String {

@@ -8,6 +8,7 @@
 
 import SwiftUI
 import SwiftData
+import TipKit
 
 struct SearchView: View {
 
@@ -97,6 +98,7 @@ struct SearchView: View {
             }
         }
         .searchable(text: $coordinator.searchText, prompt: "Search everything")
+        .popoverTip(SearchTip(), arrowEdge: .top)
         .searchScopes($coordinator.scope) {
             ForEach(SearchScope.allCases, id: \.self) { scope in
                 Text(scope.rawValue).tag(scope)
