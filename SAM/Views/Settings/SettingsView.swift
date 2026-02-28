@@ -13,6 +13,7 @@ import SwiftUI
 import SwiftData
 import EventKit
 import Contacts
+import TipKit
 import UniformTypeIdentifiers
 import TipKit
 import os.log
@@ -1237,6 +1238,8 @@ struct GeneralSettingsView: View {
         return stored > 0 ? stored : 2.0
     }()
 
+    @State private var tipsEnabled: Bool = SAMTipState.guidanceEnabled
+
     // Backup/restore
     @State private var backupCoordinator = BackupCoordinator.shared
     @State private var showImportFilePicker = false
@@ -1575,10 +1578,15 @@ struct GeneralSettingsView: View {
                 .font(.headline)
 
             Toggle("Show contextual tips", isOn: Binding(
-                get: { SAMTipState.guidanceEnabled },
+                get: { tipsEnabled },
                 set: { newValue in
-                    SAMTipState.guidanceEnabled = newValue
-                    if newValue { try? Tips.resetDatastore() }
+                    if newValue {
+                        SAMTipState.enableTips()
+                        tipsEnabled = true
+                    } else {
+                        SAMTipState.disableTips()
+                        tipsEnabled = false
+                    }
                 }
             ))
 
@@ -1588,8 +1596,8 @@ struct GeneralSettingsView: View {
 
             HStack(spacing: 12) {
                 Button("Reset All Tips") {
-                    try? Tips.resetDatastore()
-                    SAMTipState.guidanceEnabled = true
+                    SAMTipState.resetAllTips()
+                    tipsEnabled = true
                 }
                 .buttonStyle(.bordered)
 

@@ -23,8 +23,9 @@ struct AppShellView: View {
     @State private var postMeetingPayload: PostMeetingPayload?
     @State private var showCommandPalette = false
     @State private var introCoordinator = IntroSequenceCoordinator.shared
+    @State private var tipsEnabled: Bool = SAMTipState.guidanceEnabled
     @Environment(\.openWindow) private var openWindow
-    private let commandPaletteTip = CommandPaletteTip()
+
     
     // MARK: - Body
     
@@ -53,6 +54,7 @@ struct AppShellView: View {
                 .navigationTitle("SAM")
             }
         }
+        .tipViewStyle(SAMTipViewStyle())
         .modifier(AppShellNotificationHandlers(
             sidebarSelection: $sidebarSelection,
             selectedPersonID: $selectedPersonID,
@@ -127,23 +129,57 @@ struct AppShellView: View {
             }
         }
         .navigationTitle("SAM")
-        .popoverTip(commandPaletteTip, arrowEdge: .trailing)
-        .toolbar {
-            ToolbarItem(placement: .automatic) {
-                Button {
-                    let newValue = !SAMTipState.guidanceEnabled
-                    SAMTipState.guidanceEnabled = newValue
-                    if newValue { try? Tips.resetDatastore() }
-                } label: {
-                    Image(systemName: SAMTipState.guidanceEnabled
-                          ? "questionmark.circle.fill"
-                          : "questionmark.circle")
-                }
-                .help(SAMTipState.guidanceEnabled ? "Hide tips" : "Show tips")
+        .safeAreaInset(edge: .top) {
+            if tipsEnabled {
+                Text("Use ⌘K for quick navigation, ⌘1–4 to jump between sections.")
+                    .font(.caption)
+                    .foregroundStyle(.white)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .frame(maxWidth: .infinity)
+                    .background(Color.orange, in: RoundedRectangle(cornerRadius: 10))
+                    .padding(.horizontal, 8)
+                    .padding(.top, 6)
             }
         }
         .safeAreaInset(edge: .bottom) {
-            ProcessingStatusView()
+            VStack(spacing: 0) {
+                ProcessingStatusView()
+
+                Divider()
+
+                // Tips toggle — orange background when on, plain when off
+                Button {
+                    if tipsEnabled {
+                        SAMTipState.disableTips()
+                        tipsEnabled = false
+                    } else {
+                        SAMTipState.enableTips()
+                        tipsEnabled = true
+                    }
+                } label: {
+                    Label(
+                        tipsEnabled ? "Tips On" : "Tips Off",
+                        systemImage: tipsEnabled
+                            ? "questionmark.circle.fill"
+                            : "questionmark.circle"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(tipsEnabled ? Color.white : Color.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(
+                        tipsEnabled
+                            ? Color.orange.opacity(0.85).clipShape(RoundedRectangle(cornerRadius: 8))
+                            : nil
+                    )
+                    .padding(.horizontal, 4)
+                }
+                .buttonStyle(.plain)
+                .help(tipsEnabled ? "Hide tips" : "Show tips")
+            }
         }
         .onAppear {
             // Migrate stale @AppStorage values from old sidebar items

@@ -175,6 +175,9 @@ struct PersonDetailView: View {
 
     private var headerSection: some View {
         VStack(alignment: .leading, spacing: 12) {
+            TipView(personCoachingTip)
+                .tipViewStyle(SAMTipViewStyle())
+
             // Row 1: Photo + Name + Company + Role Badges
             HStack(alignment: .top, spacing: 16) {
                 // Photo (96pt, full opacity, rounded corners)
@@ -272,7 +275,6 @@ struct PersonDetailView: View {
             }
         }
         .padding(.bottom, 16)
-        .popoverTip(personCoachingTip, arrowEdge: .top)
     }
 
     private var personInitials: String {

@@ -86,9 +86,14 @@ struct SAMApp: App {
 
         // Configure TipKit for contextual guidance
         do {
+            #if DEBUG
+            // Development: always reset so tips reappear on every launch
+            try Tips.resetDatastore()
+            #endif
             try Tips.configure([
                 .displayFrequency(.immediate)
             ])
+
         } catch {
             logger.error("TipKit configuration failed: \(error)")
         }
@@ -155,6 +160,7 @@ struct SAMApp: App {
                 .keyboardShortcut("4", modifiers: .command)
             }
 
+            #if DEBUG
             CommandMenu("Debug") {
                 Button("Reset Onboarding") {
                     UserDefaults.standard.set(false, forKey: "hasCompletedOnboarding")
@@ -169,8 +175,7 @@ struct SAMApp: App {
                 Divider()
 
                 Button("Reset Tips") {
-                    try? Tips.resetDatastore()
-                    SAMTipState.guidanceEnabled = true
+                    SAMTipState.resetAllTips()
                     logger.notice("Tips reset via Debug menu")
                 }
 
@@ -179,6 +184,7 @@ struct SAMApp: App {
                     logger.notice("Intro reset via Debug menu")
                 }
             }
+            #endif
         }
 
         // Quick Note auxiliary window — opened from outcome cards

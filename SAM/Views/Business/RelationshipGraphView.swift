@@ -15,6 +15,7 @@
 //
 
 import SwiftUI
+import TipKit
 
 struct RelationshipGraphView: View {
 
@@ -219,6 +220,16 @@ struct RelationshipGraphView: View {
             tooltipOverlay
             edgeTooltipOverlay
             focusModeOverlay
+
+            // Tip overlay — pinned to top
+            VStack {
+                TipView(RelationshipGraphTip())
+                    .tipViewStyle(SAMTipViewStyle())
+                    .padding(.horizontal)
+                    .padding(.top, 8)
+                Spacer()
+            }
+            .allowsHitTesting(true)
         }
     }
 

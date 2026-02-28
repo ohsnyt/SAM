@@ -38,6 +38,20 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		63AE127F2F53910600DF87A2 /* Exceptions for "SAM" folder in "SAMTests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Assets.xcassets,
+			);
+			target = 6395F49E2F3ADF660018081A /* SAMTests */;
+		};
+		63AE12802F53910600DF87A2 /* Exceptions for "SAM" folder in "SAMUITests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Assets.xcassets,
+			);
+			target = 6395F4A82F3ADF660018081A /* SAMUITests */;
+		};
 		63B5DF232F3AE0BB001F32AB /* Exceptions for "SAM" folder in "SAM" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -52,6 +66,8 @@
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				63B5DF232F3AE0BB001F32AB /* Exceptions for "SAM" folder in "SAM" target */,
+				63AE127F2F53910600DF87A2 /* Exceptions for "SAM" folder in "SAMTests" target */,
+				63AE12802F53910600DF87A2 /* Exceptions for "SAM" folder in "SAMUITests" target */,
 			);
 			path = SAM;
 			sourceTree = "<group>";

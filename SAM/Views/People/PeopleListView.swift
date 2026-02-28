@@ -142,16 +142,22 @@ struct PeopleListView: View {
     // MARK: - Body
 
     var body: some View {
-        peopleList
-            .overlay {
-                if allPeople.isEmpty {
-                    emptyView
-                } else if displayedPeople.isEmpty {
-                    noMatchView
+        VStack(spacing: 0) {
+            TipView(PeopleListTip())
+                .tipViewStyle(SAMTipViewStyle())
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+
+            peopleList
+                .overlay {
+                    if allPeople.isEmpty {
+                        emptyView
+                    } else if displayedPeople.isEmpty {
+                        noMatchView
+                    }
                 }
-            }
-            .navigationTitle("People")
-        .popoverTip(PeopleListTip(), arrowEdge: .top)
+        }
+        .navigationTitle("People")
         .searchable(text: $searchText, prompt: "Search people")
         .toolbar {
             ToolbarItemGroup {

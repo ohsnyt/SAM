@@ -10,6 +10,7 @@
 //
 
 import SwiftUI
+import TipKit
 
 struct ProductionDashboardView: View {
 
@@ -17,6 +18,9 @@ struct ProductionDashboardView: View {
 
     var body: some View {
         VStack(spacing: 16) {
+            TipView(ProductionTip())
+                .tipViewStyle(SAMTipViewStyle())
+
             // Status overview cards
             statusOverview
 

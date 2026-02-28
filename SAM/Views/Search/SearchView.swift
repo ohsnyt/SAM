@@ -19,8 +19,15 @@ struct SearchView: View {
 
     var body: some View {
         HSplitView {
-            resultsList
-                .frame(minWidth: 250, idealWidth: 350)
+            VStack(spacing: 0) {
+                TipView(SearchTip())
+                    .tipViewStyle(SAMTipViewStyle())
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+
+                resultsList
+            }
+            .frame(minWidth: 250, idealWidth: 350)
 
             detailPane
                 .frame(minWidth: 300)
@@ -98,7 +105,6 @@ struct SearchView: View {
             }
         }
         .searchable(text: $coordinator.searchText, prompt: "Search everything")
-        .popoverTip(SearchTip(), arrowEdge: .top)
         .searchScopes($coordinator.scope) {
             ForEach(SearchScope.allCases, id: \.self) { scope in
                 Text(scope.rawValue).tag(scope)

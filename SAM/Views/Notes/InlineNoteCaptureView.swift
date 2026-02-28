@@ -58,6 +58,9 @@ struct InlineNoteCaptureView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
+            TipView(AddNoteTip())
+                .tipViewStyle(SAMTipViewStyle())
+
             if isEditing {
                 expandedEditor
             } else {
@@ -67,7 +70,6 @@ struct InlineNoteCaptureView: View {
             // Status indicators (below both states)
             statusIndicators
         }
-        .popoverTip(AddNoteTip(), arrowEdge: .bottom)
         .onAppear {
             if initiallyExpanded { isEditing = true }
         }

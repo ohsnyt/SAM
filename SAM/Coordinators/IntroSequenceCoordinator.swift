@@ -53,7 +53,7 @@ final class IntroSequenceCoordinator {
             case .business:
                 return "Beyond individual relationships, I analyze your entire practice. I look at pipeline health, production trends, time allocation and more, all to guide your business strategy."
             case .privacy:
-                return "Everything stays on your Apple devices. — All intelligence runs locally using Apple's on-device processing."
+                return "Everything stays on your Apple devicesT. — All intelligence runs locally using Apple's on-device processing."
             case .getStarted:
                 return "Your Today view is ready with your first briefing and coaching suggestions. — Let's build something great together."
             }

@@ -55,6 +55,10 @@ struct AwarenessView: View {
                 }
 
                 // Zone 1 — Hero Card: top coaching recommendation
+                TipView(heroCardTip)
+                    .tipViewStyle(SAMTipViewStyle())
+                    .padding(.horizontal)
+
                 heroCardSection
                     .padding(.horizontal)
                     .padding(.bottom, 8)
@@ -211,7 +215,6 @@ struct AwarenessView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12))
             }
         }
-        .popoverTip(heroCardTip, arrowEdge: .top)
     }
 
     private var heroOutcome: SamOutcome? {

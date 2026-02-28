@@ -65,7 +65,11 @@ struct OutcomeQueueView: View {
                 // Header
                 header
                     .padding()
-                    .popoverTip(OutcomeQueueTip(), arrowEdge: .top)
+
+                TipView(OutcomeQueueTip())
+                    .tipViewStyle(SAMTipViewStyle())
+                    .padding(.horizontal)
+                    .padding(.bottom, 8)
 
                 Divider()
 

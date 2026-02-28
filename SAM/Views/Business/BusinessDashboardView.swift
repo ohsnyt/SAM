@@ -23,7 +23,11 @@ struct BusinessDashboardView: View {
             VStack(spacing: 0) {
                 businessHealthSummary
                     .padding()
-                    .popoverTip(BusinessDashboardTip(), arrowEdge: .top)
+
+                TipView(BusinessDashboardTip())
+                    .tipViewStyle(SAMTipViewStyle())
+                    .padding(.horizontal)
+                    .padding(.bottom, 8)
 
                 Divider()
 

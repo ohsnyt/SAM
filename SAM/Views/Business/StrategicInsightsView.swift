@@ -42,6 +42,9 @@ struct StrategicInsightsView: View {
 
     var body: some View {
         VStack(spacing: 16) {
+            TipView(strategicInsightsTip)
+                .tipViewStyle(SAMTipViewStyle())
+
             // Scenario Projections (Phase Y)
             ScenarioProjectionsView(engine: projectionEngine)
 
@@ -84,7 +87,6 @@ struct StrategicInsightsView: View {
             Spacer()
         }
         .padding()
-        .popoverTip(strategicInsightsTip, arrowEdge: .top)
         .task {
             projectionEngine.refresh()
         }
@@ -155,6 +157,7 @@ struct StrategicInsightsView: View {
             .buttonStyle(.bordered)
             .controlSize(.small)
             .disabled(coordinator.generationStatus == .generating)
+            .popoverTip(RefreshAnalysisTip(), arrowEdge: .bottom)
         }
     }
 

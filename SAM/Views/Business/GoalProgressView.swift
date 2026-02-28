@@ -35,9 +35,13 @@ struct GoalProgressView: View {
                     Label("Add Goal", systemImage: "plus")
                 }
                 .buttonStyle(.bordered)
-                .popoverTip(GoalsTip(), arrowEdge: .bottom)
             }
             .padding()
+
+            TipView(GoalsTip())
+                .tipViewStyle(SAMTipViewStyle())
+                .padding(.horizontal)
+                .padding(.bottom, 8)
 
             Divider()
 

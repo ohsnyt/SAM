@@ -10,6 +10,7 @@
 //
 
 import SwiftUI
+import TipKit
 
 struct ClientPipelineDashboardView: View {
 
@@ -17,6 +18,9 @@ struct ClientPipelineDashboardView: View {
 
     var body: some View {
         VStack(spacing: 16) {
+            TipView(ClientPipelineTip())
+                .tipViewStyle(SAMTipViewStyle())
+
             // Funnel visualization
             funnelSection
 

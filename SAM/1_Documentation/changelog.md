@@ -4,6 +4,35 @@
 
 ---
 
+## February 28, 2026 - Phase AB Polish: Tip System Cleanup + Debug Guard
+
+### Overview
+Replaced TipKit-based sidebar tips with simpler, more reliable custom UI. Removed all debug-only tip overrides and guarded the Debug menu behind `#if DEBUG` so it is stripped from Archive builds. No schema change.
+
+### Changes
+
+**AppShellView.swift**:
+- Replaced `CommandPaletteTip` TipKit popover (which re-triggered on every sidebar selection) with a plain orange rounded-rect label above the nav links, visible only when Tips are enabled. Text: "Use ⌘K for quick navigation, ⌘1–4 to jump between sections."
+- Replaced `TipsToggleTip` TipKit popover on the Tips button with an orange rounded-rect background on the button label itself when Tips are on, and plain secondary styling when off. No TipKit involvement.
+- Removed `commandPaletteTip` and `tipsToggleTip` stored properties.
+
+**SAMTips.swift**: Removed `CommandPaletteTip` and `TipsToggleTip` structs and all references to them in `allTipTypes`, `enableTips()`, and `disableTips()`.
+
+**SAMApp.swift**:
+- Removed `Tips.showAllTipsForTesting()` from app `init()` (was causing all tips to show on every debug launch).
+- Removed `Tips.showAllTipsForTesting()` from the Debug menu Reset Tips action.
+- Wrapped `CommandMenu("Debug")` in `#if DEBUG` so the Debug menu is fully stripped from Archive/Release builds.
+
+**SettingsView.swift**: Removed `Tips.showAllTipsForTesting()` call from the Reset All Tips button action.
+
+### Archive Safety
+All debug-only code is now properly guarded:
+- `Tips.resetDatastore()` on launch — `#if DEBUG` ✓
+- `CommandMenu("Debug")` — `#if DEBUG` ✓ (newly added)
+- `Tips.showAllTipsForTesting()` — removed entirely ✓
+
+---
+
 ## February 28, 2026 - Phase AB Polish: App Icon, Shimmer, Narration Timing
 
 ### Overview
