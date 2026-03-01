@@ -1191,7 +1191,7 @@ final class OutcomeEngine {
 
                 // Phase Z: Compliance audit logging
                 let flags = ComplianceScanner.scanWithSettings(draft)
-                try? ComplianceAuditRepository.shared.logDraft(
+                try ComplianceAuditRepository.shared.logDraft(
                     channel: channel.rawValue,
                     recipientName: personName,
                     originalDraft: draft,

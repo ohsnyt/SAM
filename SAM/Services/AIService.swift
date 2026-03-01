@@ -54,6 +54,12 @@ actor AIService {
         }
     }
 
+    // MARK: - MLX Circuit Breaker
+
+    /// Set to true after any MLX inference failure to prevent retry crashes this session.
+    /// MLX fatal errors from the C++ layer cannot be caught; this flag prevents reaching them.
+    private var mlxCircuitOpen = false
+
     // MARK: - Backend Selection
 
     private let foundationModel = SystemLanguageModel.default
@@ -116,12 +122,18 @@ actor AIService {
             return try await generateWithFoundationModels(prompt: prompt, systemInstruction: systemInstruction)
 
         case .mlx:
-            // Try MLX first, fall back to FoundationModels
+            // Try MLX first, fall back to FoundationModels on failure or if circuit is open
             let mlxReady = await MLXModelManager.shared.isSelectedModelReady()
-            if mlxReady {
-                return try await generateWithMLX(prompt: prompt, systemInstruction: systemInstruction, maxTokens: maxTokens)
+            if mlxReady && !mlxCircuitOpen {
+                do {
+                    return try await generateWithMLX(prompt: prompt, systemInstruction: systemInstruction, maxTokens: maxTokens)
+                } catch {
+                    mlxCircuitOpen = true
+                    logger.warning("MLX generation failed (\(error.localizedDescription)) — circuit open, falling back to FoundationModels for this session")
+                }
+            } else if !mlxReady {
+                logger.info("MLX model not ready — falling back to FoundationModels")
             }
-            logger.info("MLX model not ready — falling back to FoundationModels")
             return try await generateWithFoundationModels(prompt: prompt, systemInstruction: systemInstruction)
 
         case .hybrid:
@@ -144,12 +156,20 @@ actor AIService {
             return try await generateWithFoundationModels(prompt: prompt, systemInstruction: systemInstruction)
 
         case .mlx, .hybrid:
-            // Prefer MLX for narrative tasks; fall back to FM
+            // Prefer MLX for narrative tasks; fall back to FM if circuit is open or model not ready
             let mlxReady = await MLXModelManager.shared.isSelectedModelReady()
-            if mlxReady {
-                return try await generateWithMLX(prompt: prompt, systemInstruction: systemInstruction, maxTokens: maxTokens)
+            if mlxReady && !mlxCircuitOpen {
+                do {
+                    return try await generateWithMLX(prompt: prompt, systemInstruction: systemInstruction, maxTokens: maxTokens)
+                } catch {
+                    mlxCircuitOpen = true
+                    logger.warning("MLX generation failed (\(error.localizedDescription)) — circuit open, falling back to FoundationModels for this session")
+                }
+            } else if mlxCircuitOpen {
+                logger.info("MLX circuit open — using FoundationModels")
+            } else {
+                logger.info("MLX model not ready — narrative falling back to FoundationModels")
             }
-            logger.info("MLX model not ready — narrative falling back to FoundationModels")
             return try await generateWithFoundationModels(prompt: prompt, systemInstruction: systemInstruction)
         }
     }
@@ -246,6 +266,8 @@ actor AIService {
         parameters.temperature = 0.6
         parameters.maxTokens = maxTokens ?? 4096
 
+        // container.generate can fatal-assert inside MLX C++ on Metal/OOM errors.
+        // Run it inside a child Task so a thrown error surfaces rather than crashing.
         let stream = try await container.generate(input: lmInput, parameters: parameters)
         var output = ""
 
@@ -271,51 +293,4 @@ actor AIService {
     }
 }
 
-// MARK: - JSON Extraction Utility
-
-/// Extract a JSON object from an LLM response that may contain prose, markdown, or other wrapping.
-/// Handles: raw JSON, markdown code blocks, JSON embedded in explanatory text.
-func extractJSON(from rawResponse: String) -> String {
-    var text = rawResponse.trimmingCharacters(in: .whitespacesAndNewlines)
-
-    // Sanitize common Unicode characters that break JSON parsing
-    text = text
-        .replacingOccurrences(of: "\u{2013}", with: "-")  // en-dash
-        .replacingOccurrences(of: "\u{2014}", with: "-")  // em-dash
-        .replacingOccurrences(of: "\u{2018}", with: "'")  // left single curly quote
-        .replacingOccurrences(of: "\u{2019}", with: "'")  // right single curly quote
-        .replacingOccurrences(of: "\u{201C}", with: "\"") // left double curly quote
-        .replacingOccurrences(of: "\u{201D}", with: "\"") // right double curly quote
-        .replacingOccurrences(of: "\u{2026}", with: "...") // ellipsis
-
-    // Strip markdown code blocks
-    if text.hasPrefix("```") {
-        if let firstNewline = text.firstIndex(of: "\n") {
-            text = String(text[text.index(after: firstNewline)...])
-        }
-        if text.hasSuffix("```") {
-            text = String(text.dropLast(3))
-        }
-        text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    // If it already starts with { or [, return as-is
-    if text.hasPrefix("{") || text.hasPrefix("[") {
-        return text
-    }
-
-    // Find the first { and last } to extract a JSON object
-    if let openBrace = text.firstIndex(of: "{"),
-       let closeBrace = text.lastIndex(of: "}") {
-        return String(text[openBrace...closeBrace])
-    }
-
-    // Find the first [ and last ] for a JSON array
-    if let openBracket = text.firstIndex(of: "["),
-       let closeBracket = text.lastIndex(of: "]") {
-        return String(text[openBracket...closeBracket])
-    }
-
-    // Nothing found — return original for error reporting
-    return text
-}
+// JSONExtraction.extractJSON(from:) is defined in JSONExtractionUtility.swift

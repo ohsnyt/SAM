@@ -121,11 +121,7 @@ struct GoalProgressView: View {
             HStack {
                 Text(formattedValue(progress.currentValue, type: progress.goalType))
                     .fontWeight(.semibold)
-                +
-                Text(" / ")
-                    .foregroundStyle(.secondary)
-                +
-                Text(formattedValue(progress.targetValue, type: progress.goalType))
+                Text(" / \(formattedValue(progress.targetValue, type: progress.goalType))")
                     .foregroundStyle(.secondary)
 
                 Spacer()

@@ -9,12 +9,11 @@ import Foundation
 import os.log
 
 /// Parses Evernote .enex XML export files into EvernoteNoteDTO values (Phase L)
-@MainActor
 enum ENEXParserService {
 
     private static let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "ENEXParserService")
 
-    static func parse(fileURL: URL) throws -> [EvernoteNoteDTO] {
+    @MainActor static func parse(fileURL: URL) throws -> [EvernoteNoteDTO] {
         let data = try Data(contentsOf: fileURL)
         let delegate = ENEXParserDelegate()
         let parser = XMLParser(data: data)
@@ -62,8 +61,7 @@ enum ENEXParserService {
 
     /// Convert ENML content to plain text, preserving image positions.
     /// Returns (plainText, [md5Hash: characterPosition]).
-    nonisolated static func convertENML(_ enml: String) -> (String, [String: Int]) {
-        let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "ENEXParserService")
+    static func convertENML(_ enml: String) -> (String, [String: Int]) {
         var text = enml
 
         // 1. Replace <en-media hash="XX" .../> with text markers (processed in reverse
@@ -124,7 +122,7 @@ enum ENEXParserService {
     // MARK: - HTML Stripping
 
     /// HTML tag stripping with newline preservation for block elements
-    nonisolated static func stripHTML(_ html: String) -> String {
+    static func stripHTML(_ html: String) -> String {
         var text = html
         // Convert block-level closing tags and <br> to newlines
         text = text.replacingOccurrences(of: "<br\\s*/?>", with: "\n", options: .regularExpression)

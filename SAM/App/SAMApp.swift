@@ -34,6 +34,7 @@ final class SAMAppDelegate: NSObject, NSApplicationDelegate {
         CalendarImportCoordinator.shared.cancelAll()
         MailImportCoordinator.shared.cancelAll()
         CommunicationsImportCoordinator.shared.cancelAll()
+        EvernoteImportCoordinator.shared.cancelAll()
         return .terminateNow
     }
 }
@@ -84,18 +85,24 @@ struct SAMApp: App {
         // Must happen before any data access
         configureDataLayer()
 
+        // Log person count before any import runs — confirms whether store was cleared
+        let preImportCount = (try? PeopleRepository.shared.count()) ?? -1
+        logger.notice("Pre-import SamPerson count: \(preImportCount, privacy: .public)")
+
         // Configure TipKit for contextual guidance
         do {
-            #if DEBUG
-            // Development: always reset so tips reappear on every launch
-            try Tips.resetDatastore()
-            #endif
             try Tips.configure([
                 .displayFrequency(.immediate)
             ])
-
         } catch {
             logger.error("TipKit configuration failed: \(error)")
+        }
+
+        // Ensure guidance defaults to on if the user has never explicitly turned it off.
+        // Guards against resetDatastore() or first-launch scenarios writing false.
+        let tipsKey = "sam.tips.guidanceEnabled"
+        if UserDefaults.standard.object(forKey: tipsKey) == nil {
+            UserDefaults.standard.set(true, forKey: tipsKey)
         }
     }
     
@@ -111,9 +118,17 @@ struct SAMApp: App {
                         // Users can use "Skip" buttons for each step or "Quit" to exit entirely
                         // This ensures intentional choices rather than accidental dismissal
                         .onDisappear {
-                            // When onboarding completes, trigger imports
-                            Task {
+                            // When onboarding completes, trigger imports then show intro.
+                            // Imports run at .utility so they don't compete with the intro
+                            // sequence, which runs at .userInitiated.
+                            Task(priority: .utility) {
                                 await triggerImportsAfterOnboarding()
+                                // Brief delay so the onboarding sheet fully dismisses
+                                // before we present the intro sheet
+                                try? await Task.sleep(for: .milliseconds(600))
+                                await MainActor.run {
+                                    IntroSequenceCoordinator.shared.checkAndShow()
+                                }
                             }
                         }
                 }
@@ -167,7 +182,8 @@ struct SAMApp: App {
                     UserDefaults.standard.set(false, forKey: "sam.contacts.enabled")
                     UserDefaults.standard.set(false, forKey: "calendarAutoImportEnabled")
                     UserDefaults.standard.set(false, forKey: "mailImportEnabled")
-                    logger.notice("Onboarding reset via Debug menu — terminating")
+                    UserDefaults.standard.set(false, forKey: "sam.intro.hasSeenIntroSequence")
+                    logger.notice("Onboarding + intro reset via Debug menu — terminating")
                     NSApplication.shared.terminate(nil)
                 }
                 .keyboardShortcut("r", modifiers: [.command, .shift])
@@ -182,6 +198,17 @@ struct SAMApp: App {
                 Button("Reset Intro") {
                     UserDefaults.standard.set(false, forKey: "sam.intro.hasSeenIntroSequence")
                     logger.notice("Intro reset via Debug menu")
+                }
+
+                Divider()
+
+                Button("Log Store Info") {
+                    let url = SAMModelContainer.shared.configurations.first?.url
+                    logger.notice("SwiftData store: \(url?.path(percentEncoded: false) ?? "<in-memory>", privacy: .public)")
+                    let exists = url.map { FileManager.default.fileExists(atPath: $0.path) } ?? false
+                    logger.notice("Store file exists on disk: \(exists, privacy: .public)")
+                    let count = (try? PeopleRepository.shared.count()) ?? -1
+                    logger.notice("SamPerson count in store: \(count, privacy: .public)")
                 }
             }
             #endif
@@ -218,6 +245,10 @@ struct SAMApp: App {
     // MARK: - Configuration
     
     private func configureDataLayer() {
+        // Log the store path so we can verify the correct file is being used/deleted
+        let storeURL = SAMModelContainer.shared.configurations.first?.url
+        logger.notice("SwiftData store: \(storeURL?.path(percentEncoded: false) ?? "<in-memory>", privacy: .public)")
+
         // Wire repositories to the shared container
         // This ensures all SwiftData operations hit the same store
         PeopleRepository.shared.configure(container: SAMModelContainer.shared)

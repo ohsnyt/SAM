@@ -10,9 +10,7 @@ struct PrepForMeetingIntent: AppIntent {
             MeetingPrepCoordinator.shared.briefings.first
         }
 
-        await MainActor.run {
-            Task { await MeetingPrepCoordinator.shared.refresh() }
-        }
+        await MeetingPrepCoordinator.shared.refresh()
 
         guard let briefing else {
             return .result(dialog: "No upcoming meetings in the next 48 hours.")
@@ -37,12 +35,15 @@ struct PrepForMeetingIntent: AppIntent {
             let names = briefing.attendees.map { $0.displayName }
             lines.append("With: \(names.joined(separator: ", "))")
 
-            // Health summary for each attendee
-            for attendee in briefing.attendees {
-                let healthLabel = attendee.health.statusLabel
-                let roles = attendee.roleBadges.isEmpty ? "" : " (\(attendee.roleBadges.joined(separator: ", ")))"
-                lines.append("  \(attendee.displayName)\(roles) — \(healthLabel)")
+            // Health summary for each attendee — compute labels on MainActor
+            let attendeeLines: [String] = await MainActor.run {
+                briefing.attendees.map { attendee in
+                    let healthLabel = attendee.health.statusLabel
+                    let roles = attendee.roleBadges.isEmpty ? "" : " (\(attendee.roleBadges.joined(separator: ", ")))"
+                    return "  \(attendee.displayName)\(roles) — \(healthLabel)"
+                }
             }
+            lines.append(contentsOf: attendeeLines)
         }
 
         // Topics

@@ -29,7 +29,7 @@ struct EvernoteImportSettingsContent: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            Text("Import notes from Evernote .enex export files. Tags will be matched to existing people by name.")
+            Text("Import notes from Evernote .enex export files. Tags will be matched to existing people by name. You need to select the folder that contains EverNote .enex files")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
@@ -38,11 +38,6 @@ struct EvernoteImportSettingsContent: View {
             // File/folder picker
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 12) {
-                    Button("Select .enex File") {
-                        showingFilePicker = true
-                    }
-                    .disabled(isDisabled)
-
                     Button("Select Folder") {
                         selectFolder()
                     }
@@ -91,11 +86,6 @@ struct EvernoteImportSettingsContent: View {
                             .font(.caption)
                             .foregroundStyle(.green)
                     }
-
-                    Button("Import More") {
-                        coordinator.cancelImport()
-                    }
-                    .buttonStyle(.bordered)
 
                 case .failed:
                     HStack(spacing: 6) {

@@ -540,17 +540,19 @@ struct PersonDetailView: View {
     private func notifyBadgeChange() {
         // Auto-assign Prospect recruiting stage when Agent role is added
         if person.roleBadges.contains("Agent"), recruitingStage == nil {
-            try? PipelineRepository.shared.upsertRecruitingStage(
-                personID: person.id,
-                stage: .prospect
-            )
-            try? PipelineRepository.shared.recordTransition(
-                personID: person.id,
-                fromStage: "",
-                toStage: RecruitingStageKind.prospect.rawValue,
-                pipelineType: .recruiting
-            )
-            recruitingStage = try? PipelineRepository.shared.fetchRecruitingStage(forPerson: person.id)
+            do {
+                try PipelineRepository.shared.upsertRecruitingStage(
+                    personID: person.id,
+                    stage: .prospect
+                )
+                try PipelineRepository.shared.recordTransition(
+                    personID: person.id,
+                    fromStage: "",
+                    toStage: RecruitingStageKind.prospect.rawValue,
+                    pipelineType: .recruiting
+                )
+                recruitingStage = try PipelineRepository.shared.fetchRecruitingStage(forPerson: person.id)
+            } catch {}
         }
         try? modelContext.save()
         NotificationCenter.default.post(name: .samPersonDidChange, object: nil)
@@ -564,23 +566,27 @@ struct PersonDetailView: View {
         for badge in added where clientStages.contains(badge) {
             // Find the removed client badge as the "from" stage, or "" if none
             let fromStage = removed.first(where: { clientStages.contains($0) }) ?? ""
-            try? PipelineRepository.shared.recordTransition(
-                personID: person.id,
-                fromStage: fromStage,
-                toStage: badge,
-                pipelineType: .client
-            )
+            do {
+                try PipelineRepository.shared.recordTransition(
+                    personID: person.id,
+                    fromStage: fromStage,
+                    toStage: badge,
+                    pipelineType: .client
+                )
+            } catch {}
         }
 
         // For each removed client badge with no replacement, record exit
         let addedClient = added.intersection(clientStages)
         for badge in removed where clientStages.contains(badge) && addedClient.isEmpty {
-            try? PipelineRepository.shared.recordTransition(
-                personID: person.id,
-                fromStage: badge,
-                toStage: "",
-                pipelineType: .client
-            )
+            do {
+                try PipelineRepository.shared.recordTransition(
+                    personID: person.id,
+                    fromStage: badge,
+                    toStage: "",
+                    pipelineType: .client
+                )
+            } catch {}
         }
     }
 

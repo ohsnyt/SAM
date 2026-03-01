@@ -90,69 +90,63 @@ final class StrategicCoordinator {
         generationStatus = .generating
         logger.info("Generating strategic digest (type: \(type.rawValue))")
 
-        do {
-            // Gather data (all deterministic Swift)
-            let pipelineData = gatherPipelineData()
-            let timeData = gatherTimeData()
-            let patternData = gatherPatternData()
-            let contentData = gatherContentData()
+        // Gather data (all deterministic Swift)
+        let pipelineData = gatherPipelineData()
+        let timeData = gatherTimeData()
+        let patternData = gatherPatternData()
+        let contentData = gatherContentData()
 
-            // Dispatch 4 specialists in parallel at background priority
-            let now = Date.now
-            let needsPipeline = !isCacheValid(lastPipelineAnalyzed, ttl: pipelineTTL)
-            let needsTime = !isCacheValid(lastTimeAnalyzed, ttl: timeTTL)
-            let needsPattern = !isCacheValid(lastPatternAnalyzed, ttl: patternTTL)
-            let needsContent = !isCacheValid(lastContentAnalyzed, ttl: contentTTL)
+        // Dispatch 4 specialists in parallel at background priority
+        let now = Date.now
+        let needsPipeline = !isCacheValid(lastPipelineAnalyzed, ttl: pipelineTTL)
+        let needsTime = !isCacheValid(lastTimeAnalyzed, ttl: timeTTL)
+        let needsPattern = !isCacheValid(lastPatternAnalyzed, ttl: patternTTL)
+        let needsContent = !isCacheValid(lastContentAnalyzed, ttl: contentTTL)
 
-            // Run specialists concurrently
-            async let pipelineResult = needsPipeline
-                ? runPipelineAnalyst(data: pipelineData)
-                : cachedPipelineAnalysis ?? PipelineAnalysis()
-            async let timeResult = needsTime
-                ? runTimeAnalyst(data: timeData)
-                : cachedTimeAnalysis ?? TimeAnalysis()
-            async let patternResult = needsPattern
-                ? runPatternDetector(data: patternData)
-                : cachedPatternAnalysis ?? PatternAnalysis()
-            async let contentResult = needsContent
-                ? runContentAdvisor(data: contentData)
-                : cachedContentAnalysis ?? ContentAnalysis()
+        // Run specialists concurrently
+        async let pipelineResult = needsPipeline
+            ? runPipelineAnalyst(data: pipelineData)
+            : cachedPipelineAnalysis ?? PipelineAnalysis()
+        async let timeResult = needsTime
+            ? runTimeAnalyst(data: timeData)
+            : cachedTimeAnalysis ?? TimeAnalysis()
+        async let patternResult = needsPattern
+            ? runPatternDetector(data: patternData)
+            : cachedPatternAnalysis ?? PatternAnalysis()
+        async let contentResult = needsContent
+            ? runContentAdvisor(data: contentData)
+            : cachedContentAnalysis ?? ContentAnalysis()
 
-            let pipeline = await pipelineResult
-            let time = await timeResult
-            let pattern = await patternResult
-            let content = await contentResult
+        let pipeline = await pipelineResult
+        let time = await timeResult
+        let pattern = await patternResult
+        let content = await contentResult
 
-            // Update caches
-            if needsPipeline { cachedPipelineAnalysis = pipeline; lastPipelineAnalyzed = now }
-            if needsTime { cachedTimeAnalysis = time; lastTimeAnalyzed = now }
-            if needsPattern { cachedPatternAnalysis = pattern; lastPatternAnalyzed = now }
-            if needsContent { cachedContentAnalysis = content; lastContentAnalyzed = now }
+        // Update caches
+        if needsPipeline { cachedPipelineAnalysis = pipeline; lastPipelineAnalyzed = now }
+        if needsTime { cachedTimeAnalysis = time; lastTimeAnalyzed = now }
+        if needsPattern { cachedPatternAnalysis = pattern; lastPatternAnalyzed = now }
+        if needsContent { cachedContentAnalysis = content; lastContentAnalyzed = now }
 
-            // Synthesize (deterministic)
-            let topRecs = synthesize(pipeline: pipeline, time: time, pattern: pattern, content: content)
+        // Synthesize (deterministic)
+        let topRecs = synthesize(pipeline: pipeline, time: time, pattern: pattern, content: content)
 
-            // Persist
-            let digest = persistDigest(
-                type: type,
-                pipeline: pipeline,
-                time: time,
-                pattern: pattern,
-                content: content,
-                topRecs: topRecs
-            )
+        // Persist
+        let digest = persistDigest(
+            type: type,
+            pipeline: pipeline,
+            time: time,
+            pattern: pattern,
+            content: content,
+            topRecs: topRecs
+        )
 
-            latestDigest = digest
-            strategicRecommendations = topRecs
-            lastGeneratedAt = now
-            generationStatus = .success
+        latestDigest = digest
+        strategicRecommendations = topRecs
+        lastGeneratedAt = now
+        generationStatus = .success
 
-            logger.info("Strategic digest generated: \(topRecs.count) recommendations")
-
-        } catch {
-            generationStatus = .failed
-            logger.error("Strategic digest generation failed: \(error.localizedDescription)")
-        }
+        logger.info("Strategic digest generated: \(topRecs.count) recommendations")
     }
 
     /// Check if a fresh digest exists (< maxAge old).
@@ -441,7 +435,7 @@ final class StrategicCoordinator {
 
     // MARK: - Specialist Dispatch
 
-    private nonisolated func runPipelineAnalyst(data: String) async -> PipelineAnalysis {
+    private func runPipelineAnalyst(data: String) async -> PipelineAnalysis {
         do {
             return try await PipelineAnalystService.shared.analyze(data: data)
         } catch {
@@ -450,7 +444,7 @@ final class StrategicCoordinator {
         }
     }
 
-    private nonisolated func runTimeAnalyst(data: String) async -> TimeAnalysis {
+    private func runTimeAnalyst(data: String) async -> TimeAnalysis {
         do {
             return try await TimeAnalystService.shared.analyze(data: data)
         } catch {
@@ -459,7 +453,7 @@ final class StrategicCoordinator {
         }
     }
 
-    private nonisolated func runPatternDetector(data: String) async -> PatternAnalysis {
+    private func runPatternDetector(data: String) async -> PatternAnalysis {
         do {
             return try await PatternDetectorService.shared.analyze(data: data)
         } catch {
@@ -468,7 +462,7 @@ final class StrategicCoordinator {
         }
     }
 
-    private nonisolated func runContentAdvisor(data: String) async -> ContentAnalysis {
+    private func runContentAdvisor(data: String) async -> ContentAnalysis {
         do {
             return try await ContentAdvisorService.shared.analyze(data: data)
         } catch {

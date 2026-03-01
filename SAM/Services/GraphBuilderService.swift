@@ -257,7 +257,6 @@ actor GraphBuilderService {
 
         var mutableNodes = nodes
         let nodeIndex = Dictionary(uniqueKeysWithValues: mutableNodes.enumerated().map { ($1.id, $0) })
-        let useBarnesHut = mutableNodes.count > 500
 
         // --- Phase 1: Deterministic initial placement ---
         assignInitialPositions(&mutableNodes, nodeIndex: nodeIndex, contextClusters: contextClusters, bounds: bounds)
@@ -291,11 +290,7 @@ actor GraphBuilderService {
 
             let temperature = max(0.01, 1.0 - CGFloat(iteration) / CGFloat(frIterations))
 
-            if useBarnesHut {
-                applyBarnesHutRepulsion(&mutableNodes, strength: repulsionStrength * temperature)
-            } else {
-                applyDirectRepulsion(&mutableNodes, strength: repulsionStrength * temperature)
-            }
+            applyDirectRepulsion(&mutableNodes, strength: repulsionStrength * temperature)
 
             applyAttraction(&mutableNodes, adjacency: adjacency, strength: attractionStrength)
             applyGravity(&mutableNodes, center: center, strength: gravityStrength)
@@ -670,17 +665,6 @@ actor GraphBuilderService {
         }
     }
 
-    // MARK: - Force: Barnes-Hut Repulsion O(n log n)
-
-    private func applyBarnesHutRepulsion(_ nodes: inout [GraphNode], strength: CGFloat) {
-        let tree = QuadTree(nodes: nodes)
-        for i in nodes.indices where !nodes[i].isPinned {
-            let force = tree.computeRepulsion(for: nodes[i].position, excludeIndex: i, strength: strength)
-            nodes[i].velocity.x += force.x
-            nodes[i].velocity.y += force.y
-        }
-    }
-
     // MARK: - Force: Attraction (Hooke's law)
 
     private func applyAttraction(_ nodes: inout [GraphNode], adjacency: [[AdjacencyEntry]], strength: CGFloat) {
@@ -846,162 +830,4 @@ actor GraphBuilderService {
     }
 }
 
-// MARK: - QuadTree (Barnes-Hut)
 
-/// Spatial partitioning structure for O(n log n) repulsion.
-private final class QuadTree: @unchecked Sendable {
-    private let root: QuadNode
-    private let theta: CGFloat = 0.8   // Accuracy threshold (lower = more accurate)
-
-    init(nodes: [GraphNode]) {
-        // Compute bounding box
-        var minX: CGFloat = .infinity, minY: CGFloat = .infinity
-        var maxX: CGFloat = -.infinity, maxY: CGFloat = -.infinity
-        for node in nodes {
-            minX = min(minX, node.position.x)
-            minY = min(minY, node.position.y)
-            maxX = max(maxX, node.position.x)
-            maxY = max(maxY, node.position.y)
-        }
-        let padding: CGFloat = 10.0
-        let bounds = CGRect(
-            x: minX - padding, y: minY - padding,
-            width: max(1, maxX - minX + 2 * padding),
-            height: max(1, maxY - minY + 2 * padding)
-        )
-
-        root = QuadNode(bounds: bounds)
-        for (index, node) in nodes.enumerated() {
-            root.insert(position: node.position, index: index)
-        }
-    }
-
-    func computeRepulsion(for position: CGPoint, excludeIndex: Int, strength: CGFloat) -> CGPoint {
-        var force = CGPoint.zero
-        root.computeForce(on: position, excludeIndex: excludeIndex, theta: theta, strength: strength, force: &force)
-        return force
-    }
-}
-
-private final class QuadNode: @unchecked Sendable {
-    let bounds: CGRect
-    let depth: Int
-    var centerOfMass: CGPoint = .zero
-    var totalMass: CGFloat = 0
-    var bodyIndex: Int? = nil
-    var bodyPosition: CGPoint? = nil
-    var children: [QuadNode?] = [nil, nil, nil, nil]
-    var isLeaf: Bool = true
-
-    /// Max subdivision depth — prevents infinite recursion for coincident points.
-    static let maxDepth = 40
-
-    init(bounds: CGRect, depth: Int = 0) {
-        self.bounds = bounds
-        self.depth = depth
-    }
-
-    func insert(position: CGPoint, index: Int) {
-        guard bounds.contains(position) else { return }
-
-        if totalMass == 0 {
-            // Empty node — place body here
-            bodyIndex = index
-            bodyPosition = position
-            centerOfMass = position
-            totalMass = 1
-            return
-        }
-
-        // At max depth, coalesce coincident or near-coincident points
-        // instead of subdividing further (prevents stack overflow).
-        if depth >= Self.maxDepth {
-            let newMass = totalMass + 1
-            centerOfMass = CGPoint(
-                x: (centerOfMass.x * totalMass + position.x) / newMass,
-                y: (centerOfMass.y * totalMass + position.y) / newMass
-            )
-            totalMass = newMass
-            return
-        }
-
-        if isLeaf {
-            // Subdivide and redistribute existing body
-            isLeaf = false
-            if let existingPos = bodyPosition, let existingIdx = bodyIndex {
-                bodyPosition = nil
-                bodyIndex = nil
-                insertIntoChild(position: existingPos, index: existingIdx)
-            }
-        }
-
-        // Insert new body into appropriate child
-        insertIntoChild(position: position, index: index)
-
-        // Update center of mass
-        let newMass = totalMass + 1
-        centerOfMass = CGPoint(
-            x: (centerOfMass.x * totalMass + position.x) / newMass,
-            y: (centerOfMass.y * totalMass + position.y) / newMass
-        )
-        totalMass = newMass
-    }
-
-    private func insertIntoChild(position: CGPoint, index: Int) {
-        let midX = bounds.midX
-        let midY = bounds.midY
-        let quadrant: Int
-        if position.x <= midX {
-            quadrant = position.y <= midY ? 0 : 2
-        } else {
-            quadrant = position.y <= midY ? 1 : 3
-        }
-
-        if children[quadrant] == nil {
-            let childBounds: CGRect
-            switch quadrant {
-            case 0: childBounds = CGRect(x: bounds.minX, y: bounds.minY, width: bounds.width / 2, height: bounds.height / 2)
-            case 1: childBounds = CGRect(x: midX, y: bounds.minY, width: bounds.width / 2, height: bounds.height / 2)
-            case 2: childBounds = CGRect(x: bounds.minX, y: midY, width: bounds.width / 2, height: bounds.height / 2)
-            default: childBounds = CGRect(x: midX, y: midY, width: bounds.width / 2, height: bounds.height / 2)
-            }
-            children[quadrant] = QuadNode(bounds: childBounds, depth: depth + 1)
-        }
-        children[quadrant]?.insert(position: position, index: index)
-    }
-
-    func computeForce(on position: CGPoint, excludeIndex: Int, theta: CGFloat, strength: CGFloat, force: inout CGPoint) {
-        guard totalMass > 0 else { return }
-
-        if isLeaf {
-            guard bodyIndex != excludeIndex, let bp = bodyPosition else { return }
-            let dx = position.x - bp.x
-            let dy = position.y - bp.y
-            let distSq = max(1.0, dx * dx + dy * dy)
-            let f = strength / distSq
-            let dist = sqrt(distSq)
-            force.x += f * dx / dist
-            force.y += f * dy / dist
-            return
-        }
-
-        // Check if this node is far enough to approximate
-        let dx = position.x - centerOfMass.x
-        let dy = position.y - centerOfMass.y
-        let distSq = max(1.0, dx * dx + dy * dy)
-        let size = max(bounds.width, bounds.height)
-
-        if size * size / distSq < theta * theta {
-            // Far enough — treat as single body
-            let f = strength * totalMass / distSq
-            let dist = sqrt(distSq)
-            force.x += f * dx / dist
-            force.y += f * dy / dist
-        } else {
-            // Too close — recurse into children
-            for child in children {
-                child?.computeForce(on: position, excludeIndex: excludeIndex, theta: theta, strength: strength, force: &force)
-            }
-        }
-    }
-}

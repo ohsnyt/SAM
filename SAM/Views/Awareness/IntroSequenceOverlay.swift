@@ -133,10 +133,17 @@ struct IntroSequenceOverlay: View {
     private func triggerShimmerAfterDelay() {
         shimmerActive = false
         Task {
-            try? await Task.sleep(for: .seconds(1.0))
-            guard coordinator.currentSlide == .welcome else { return }
-            withAnimation(.easeInOut(duration: 0.8)) {
-                shimmerActive = true
+            // Repeat shimmer sweep every ~2 seconds while on the welcome slide
+            while coordinator.currentSlide == .welcome {
+                try? await Task.sleep(for: .seconds(1.0))
+                guard coordinator.currentSlide == .welcome else { return }
+                withAnimation(.easeInOut(duration: 0.8)) {
+                    shimmerActive = true
+                }
+                // Wait for sweep to finish, then reset before next cycle
+                try? await Task.sleep(for: .seconds(3.2))
+                guard coordinator.currentSlide == .welcome else { return }
+                shimmerActive = false
             }
         }
     }

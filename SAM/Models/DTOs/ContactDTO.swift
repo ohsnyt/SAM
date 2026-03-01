@@ -33,17 +33,14 @@ struct ContactDTO: Sendable, Identifiable {
     let instantMessageAddresses: [InstantMessageDTO]
     let urlAddresses: [String]
     
-    var displayName: String {
-        let components = PersonNameComponents(
-            givenName: givenName.isEmpty ? nil : givenName,
-            familyName: familyName.isEmpty ? nil : familyName
-        )
-        let formatted = components.formatted(.name(style: .long))
-        
-        if formatted.isEmpty {
-            return organizationName.isEmpty ? "Unknown" : organizationName
-        }
-        return formatted
+    nonisolated var displayName: String {
+        // nonisolated: prevents @MainActor inference from propagating to callers
+        // in non-main-actor contexts (e.g. actor ContactsService).
+        let parts = [givenName, familyName].filter { !$0.isEmpty }
+        let fullName = parts.joined(separator: " ")
+        if !fullName.isEmpty { return fullName }
+        if !nickname.isEmpty { return nickname }
+        return organizationName.isEmpty ? "Unknown" : organizationName
     }
     
     var initials: String {

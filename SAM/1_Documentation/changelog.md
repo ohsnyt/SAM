@@ -4,6 +4,54 @@
 
 ---
 
+## February 28, 2026 - Bug Fixes: Intro Timing, Tips State, JSON Null, Contacts Container, Task Priorities
+
+### Overview
+Multiple targeted fixes across the intro sequence, TipKit state management, JSON decoding robustness, Apple Contacts container resolution, and task priority scheduling. No schema change.
+
+### Changes
+
+**IntroSequenceCoordinator.swift**:
+- **Two-phase fallback timer**: Previous fallback was `fallbackDuration + 10.0` measured from narration start — causing ~30s stalls when `AVAudioBuffer` zero-byte errors prevented `didFinish` from firing. Now: a pre-start timer fires at `fallbackDuration` (covers speech never starting); when `NarrationService.onStart` fires, the pre-start timer is cancelled and a tight post-start timer is set at `fallbackDuration + 3.0` from actual speech start. Stalls now recovered within ~3s instead of 30s.
+- **All internal Tasks raised to `.userInitiated`**: Inter-slide delay, `onFinish` callback dispatch, and fallback timers all use `.userInitiated` priority to prevent background import work from starving the intro sequence.
+- **Tips enabled on playback start**: `startPlayback()` now calls `SAMTipState.enableTips()` as a safety measure so tips are guaranteed on when the intro plays (the last slide directs users to Tips).
+- **Last slide text updated**: `narrationText` changed to direct users to explore Tips and find their briefing in the upper right area of the Today screen. `headline` → "You're Ready", `subtitle` → "Explore Tips, then check your first briefing", `fallbackDuration` → 25.0.
+
+**NarrationService.swift**:
+- Added `onStart` callback parameter to `speak()` — optional `@Sendable () -> Void`.
+- `SpeechDelegate` now implements `didStart` and fires the callback, enabling the coordinator to anchor post-start fallback timers to actual speech start rather than narration call time.
+
+**SAMApp.swift**:
+- Removed `#if DEBUG Tips.resetDatastore()` block that was running on every debug launch and interfering with tip state persistence.
+- Added startup guard: if `sam.tips.guidanceEnabled` key is absent from UserDefaults, write `true` — ensures Tips default to on for first-launch users without resetting them on subsequent launches.
+- Import tasks lowered to `Task(priority: .utility)` so background contacts/Evernote/calendar imports do not compete with the intro sequence.
+
+**SettingsView.swift**:
+- `clearAllData()` now calls `SAMTipState.resetAllTips()` before terminating, so TipKit datastore is wiped along with SwiftData — tips reappear fresh after relaunching from a clean-slate wipe.
+
+**NoteAnalysisService.swift**:
+- Fixed JSON decoding crash when LLM returns `"value": null` in `contact_updates`. `LLMContactUpdate.value` changed from `String` to `String?`. Mapping uses `.compactMap` to skip nil values, preventing `DecodingError.valueNotFound`.
+
+**ContactsService.swift**:
+- Fixed contact save failure `NSCocoaErrorDomain Code=134040` ("Save failed") caused by creating a new contact in the default iCloud container when the SAM group lived in a different container. Now resolves the SAM group's container via `CNContainer.predicateForContainerOfGroup(withIdentifier:)` before creating the contact, and passes that container ID to `save.add(mutable, toContainerWithIdentifier:)`.
+
+**EvernoteImportCoordinator.swift**:
+- Added observable `analysisTaskCount: Int` property, incremented/decremented around each analysis `Task`. `cancelAll()` resets count to 0. Analysis tasks use `Task(priority: .utility)` with `[weak self]` closures.
+
+**ProcessingStatusView.swift**:
+- Sidebar activity indicator now shows count-aware label: "Analyzing 1 note…" / "Analyzing N notes…" when `analysisTaskCount > 0`, falling back to the generic label from `NoteAnalysisCoordinator` otherwise.
+
+**IntroSequenceOverlay.swift**:
+- Shimmer effect on the welcome slide now repeats every ~2 seconds (1.0s wait → 0.8s sweep → 1.2s reset, loop while on welcome slide) instead of firing once.
+
+### Root Causes Addressed
+- **30s intro pauses**: `AVAudioBuffer` zero-byte errors cause `AVSpeechSynthesizer` to stall mid-utterance with `mDataByteSize = 0`; `didFinish` never fires. Two-phase fallback recovers within `fallbackDuration + 3.0s` of actual speech start.
+- **Tips showing Off on startup**: `Tips.resetDatastore()` in `#if DEBUG` block was wiping state on every debug launch. Fixed by removal + explicit key guard.
+- **Contact save Code=134040**: Contact created in default container (iCloud) while SAM group was in a separate container (e.g., On My Mac). Fixed by resolving group container before contact creation.
+- **JSON null crash**: On-device LLM occasionally returns `"value": null` in structured output; Swift `Codable` with non-optional `String` throws. Fixed by making field optional.
+
+---
+
 ## February 28, 2026 - Phase AB Polish: Tip System Cleanup + Debug Guard
 
 ### Overview

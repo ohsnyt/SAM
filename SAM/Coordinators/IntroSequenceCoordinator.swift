@@ -55,7 +55,7 @@ final class IntroSequenceCoordinator {
             case .privacy:
                 return "Everything stays on your Apple devicesT. — All intelligence runs locally using Apple's on-device processing."
             case .getStarted:
-                return "Your Today view is ready with your first briefing and coaching suggestions. — Let's build something great together."
+                return "Take a moment to explore SAM through the Tips — they'll show you where everything lives. When you're ready, your first briefing is waiting in the upper right area of the Today screen."
             }
         }
 
@@ -66,7 +66,7 @@ final class IntroSequenceCoordinator {
             case .coaching:      return "Daily Coaching"
             case .business:      return "Business Strategy"
             case .privacy:       return "Private by Design"
-            case .getStarted:    return "Ready to Go"
+            case .getStarted:    return "You're Ready"
             }
         }
 
@@ -77,7 +77,7 @@ final class IntroSequenceCoordinator {
             case .coaching:      return "Know what to do next — and why"
             case .business:      return "See the big picture"
             case .privacy:       return "100% on-device intelligence"
-            case .getStarted:    return "Your Today view is waiting"
+            case .getStarted:    return "Explore Tips, then check your first briefing"
             }
         }
 
@@ -98,12 +98,12 @@ final class IntroSequenceCoordinator {
         /// primary advance mechanism (that's the didFinish delegate callback).
         var fallbackDuration: Double {
             switch self {
-            case .welcome:       return 20.0
-            case .relationships: return 20.0
-            case .coaching:      return 20.0
-            case .business:      return 20.0
+            case .welcome:       return 17.0
+            case .relationships: return 15.0
+            case .coaching:      return 15.0
+            case .business:      return 15.0
             case .privacy:       return 15.0
-            case .getStarted:    return 20.0
+            case .getStarted:    return 25.0
             }
         }
 
@@ -141,6 +141,9 @@ final class IntroSequenceCoordinator {
         guard !isPlaying else { return }
         isPlaying = true
         isPaused = false
+
+        // Ensure tips are on when the intro plays — the last slide directs the user to them.
+        SAMTipState.enableTips()
         logger.info("Starting intro playback from slide: \(self.currentSlide.rawValue)")
         narrateCurrentSlide()
     }
@@ -203,7 +206,7 @@ final class IntroSequenceCoordinator {
             // Brief pause between slides for visual/auditory breathing room.
             // Handled here (not in AVSpeechUtterance delays) so we have
             // precise control and avoid synthesizer-internal timing quirks.
-            Task { [weak self] in
+            Task(priority: .userInitiated) { [weak self] in
                 try? await Task.sleep(for: .seconds(Self.interSlideDelay))
                 guard let self, self.isPlaying, !self.isPaused else { return }
                 self.narrateCurrentSlide()
@@ -231,24 +234,40 @@ final class IntroSequenceCoordinator {
         let slide = currentSlide
         narratingSlide = slide
 
-        NarrationService.shared.speak(slide.narrationText) { [weak self] in
-            Task { @MainActor in
-                self?.logger.info("onFinish callback for slide \(slide.rawValue)")
-                self?.advanceFromSlide(slide)
+        // Pre-start fallback: fires if speech never starts at all (e.g. synthesizer busy).
+        fallbackTimer?.cancel()
+        fallbackTimer = Task(priority: .userInitiated) { [weak self] in
+            try? await Task.sleep(for: .seconds(slide.fallbackDuration))
+            guard !Task.isCancelled, let self = self else { return }
+            if self.narratingSlide == slide && self.isPlaying == true {
+                self.logger.warning("Fallback timer fired for slide \(slide.rawValue) — force advancing")
+                self.advanceFromSlide(slide)
             }
         }
 
-        // Fallback timer in case speech synthesis silently fails (no didFinish).
-        // Duration is generous — this is a safety net, not the primary advance mechanism.
-        fallbackTimer?.cancel()
-        fallbackTimer = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(slide.fallbackDuration + 10.0))
-            guard !Task.isCancelled else { return }
-            if self?.narratingSlide == slide && self?.isPlaying == true {
-                self?.logger.warning("Fallback timer fired for slide \(slide.rawValue) — force advancing")
-                self?.advanceFromSlide(slide)
+        NarrationService.shared.speak(slide.narrationText, onStart: { [weak self] in
+            guard let self else { return }
+            // Speech started successfully — reset fallback timer to a tight window
+            // from now, so a mid-speech AVAudioBuffer stall recovers quickly (~3s grace).
+            Task(priority: .userInitiated) { @MainActor [weak self] in
+                guard let self, self.narratingSlide == slide else { return }
+                self.fallbackTimer?.cancel()
+                self.fallbackTimer = Task(priority: .userInitiated) { [weak self] in
+                    try? await Task.sleep(for: .seconds(slide.fallbackDuration + 3.0))
+                    guard !Task.isCancelled, let self = self else { return }
+                    if self.narratingSlide == slide && self.isPlaying == true {
+                        self.logger.warning("Post-start fallback fired for slide \(slide.rawValue) — force advancing")
+                        self.advanceFromSlide(slide)
+                    }
+                }
             }
-        }
+        }, onFinish: { [weak self] in
+            guard let self else { return }
+            Task(priority: .userInitiated) { @MainActor [self] in
+                self.logger.info("onFinish callback for slide \(slide.rawValue)")
+                self.advanceFromSlide(slide)
+            }
+        })
     }
 
     private func stopPlayback() {

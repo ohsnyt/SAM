@@ -23,7 +23,7 @@ struct AppShellView: View {
     @State private var postMeetingPayload: PostMeetingPayload?
     @State private var showCommandPalette = false
     @State private var introCoordinator = IntroSequenceCoordinator.shared
-    @State private var tipsEnabled: Bool = SAMTipState.guidanceEnabled
+    @AppStorage("sam.tips.guidanceEnabled") private var tipsEnabled: Bool = true
     @Environment(\.openWindow) private var openWindow
 
     
@@ -93,10 +93,14 @@ struct AppShellView: View {
             IntroSequenceOverlay()
                 .interactiveDismissDisabled()
         }
-        .task(id: "introCheck") {
-            // Brief delay so main UI renders first
-            try? await Task.sleep(for: .milliseconds(300))
-            introCoordinator.checkAndShow()
+        .onAppear {
+            // Show intro only if onboarding is already complete (returning user who
+            // hasn't seen intro yet, e.g. after a Reset Intro). First-launch case
+            // is handled sequentially from onboarding's onDisappear in SAMApp.
+            let onboardingDone = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
+            if onboardingDone {
+                introCoordinator.checkAndShow()
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .samToggleCommandPalette)) { _ in
             showCommandPalette.toggle()

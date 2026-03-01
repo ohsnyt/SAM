@@ -868,11 +868,11 @@ struct RelationshipGraphView: View {
 
     private func addGhostAsContact(_ node: GraphNode) {
         Task {
-            guard let contact = await ContactsService.shared.createContact(
+            guard await ContactsService.shared.createContact(
                 fullName: node.displayName,
                 email: nil,
                 note: nil
-            ) else { return }
+            ) != nil else { return }
             await ContactsImportCoordinator.shared.importNow()
             await coordinator.buildGraph()
             fitToView()

@@ -83,11 +83,12 @@ final class DailyBriefingCoordinator {
 
         // Start day-rollover timer (every 5 minutes) — also checks for recently ended meetings/calls and sequence triggers
         dayRolloverTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.checkDayRollover()
-                self?.checkRecentlyEndedMeetings()
-                self?.checkRecentlyEndedCalls()
-                self?.checkSequenceTriggers()
+            guard let self else { return }
+            Task { @MainActor [self] in
+                self.checkDayRollover()
+                self.checkRecentlyEndedMeetings()
+                self.checkRecentlyEndedCalls()
+                self.checkSequenceTriggers()
             }
         }
 
@@ -97,9 +98,10 @@ final class DailyBriefingCoordinator {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in
-                self?.checkDayRollover()
-                self?.recheckEveningState()
+            guard let self else { return }
+            Task { @MainActor [self] in
+                self.checkDayRollover()
+                self.recheckEveningState()
             }
         }
 
@@ -109,8 +111,9 @@ final class DailyBriefingCoordinator {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in
-                self?.recheckEveningState()
+            guard let self else { return }
+            Task { @MainActor [self] in
+                self.recheckEveningState()
             }
         }
 
@@ -381,8 +384,9 @@ final class DailyBriefingCoordinator {
         eveningState = .postponed
         postponeTimer?.invalidate()
         postponeTimer = Timer.scheduledTimer(withTimeInterval: TimeInterval(minutes * 60), repeats: false) { [weak self] _ in
-            Task { @MainActor in
-                self?.beginEveningCheck()
+            guard let self else { return }
+            Task { @MainActor [self] in
+                self.beginEveningCheck()
             }
         }
     }
@@ -481,8 +485,9 @@ final class DailyBriefingCoordinator {
     private func startActivityMonitor() {
         activityCheckTimer?.invalidate()
         activityCheckTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.checkForNewActivity()
+            guard let self else { return }
+            Task { @MainActor [self] in
+                self.checkForNewActivity()
             }
         }
     }
@@ -594,8 +599,9 @@ final class DailyBriefingCoordinator {
 
         let interval = targetDate.timeIntervalSince(now)
         eveningTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
-            Task { @MainActor in
-                self?.beginEveningCheck()
+            guard let self else { return }
+            Task { @MainActor [self] in
+                self.beginEveningCheck()
             }
         }
         logger.info("Evening check scheduled in \(Int(interval / 60)) minutes")

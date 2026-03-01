@@ -102,20 +102,24 @@ struct ProductionEntryForm: View {
             record.submittedDate = submittedDate
             record.notes = trimmedNotes.isEmpty ? nil : trimmedNotes
             record.updatedAt = .now
-            try? ProductionRepository.shared.updateRecord(
-                recordID: record.id,
-                notes: trimmedNotes.isEmpty ? nil : trimmedNotes
-            )
+            do {
+                try ProductionRepository.shared.updateRecord(
+                    recordID: record.id,
+                    notes: trimmedNotes.isEmpty ? nil : trimmedNotes
+                )
+            } catch {}
         } else {
             // Create new
-            try? ProductionRepository.shared.createRecord(
-                personID: personID,
-                productType: productType,
-                carrierName: trimmedCarrier,
-                annualPremium: annualPremium,
-                submittedDate: submittedDate,
-                notes: trimmedNotes.isEmpty ? nil : trimmedNotes
-            )
+            do {
+                try ProductionRepository.shared.createRecord(
+                    personID: personID,
+                    productType: productType,
+                    carrierName: trimmedCarrier,
+                    annualPremium: annualPremium,
+                    submittedDate: submittedDate,
+                    notes: trimmedNotes.isEmpty ? nil : trimmedNotes
+                )
+            } catch {}
         }
 
         onSave()

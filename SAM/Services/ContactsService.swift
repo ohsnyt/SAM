@@ -191,7 +191,7 @@ actor ContactsService {
         logger.info("Fetched \(contacts.count) contacts")
         let results = contacts.map { ContactDTO(from: $0) }
         #if DEBUG
-        for dto in results { if dto.emailAddresses.isEmpty { logger.debug("Contact has no emails: \(dto.displayName, privacy: .public)") } }
+        for dto in results { if dto.emailAddresses.isEmpty { let name = dto.displayName; logger.debug("Contact has no emails: \(name, privacy: .public)") } }
         #endif
         return results
     }
@@ -224,7 +224,7 @@ actor ContactsService {
             logger.info("Fetched \(contacts.count) contacts from group '\(groupName)'")
             let results = contacts.map { ContactDTO(from: $0) }
             #if DEBUG
-            for dto in results { if dto.emailAddresses.isEmpty { logger.debug("Contact has no emails: \(dto.displayName, privacy: .public)") } }
+            for dto in results { if dto.emailAddresses.isEmpty { let name = dto.displayName; logger.debug("Contact has no emails: \(name, privacy: .public)") } }
             #endif
             return results
             
@@ -255,7 +255,7 @@ actor ContactsService {
             logger.info("Fetched \(contacts.count) contacts from group ID '\(groupIdentifier)'")
             let results = contacts.map { ContactDTO(from: $0) }
             #if DEBUG
-            for dto in results { if dto.emailAddresses.isEmpty { logger.debug("Contact has no emails: \(dto.displayName, privacy: .public)") } }
+            for dto in results { if dto.emailAddresses.isEmpty { let name = dto.displayName; logger.debug("Contact has no emails: \(name, privacy: .public)") } }
             #endif
             return results
             
@@ -330,7 +330,7 @@ actor ContactsService {
             logger.info("Found \(contacts.count) contacts matching '\(query)'")
             let results = contacts.map { ContactDTO(from: $0) }
             #if DEBUG
-            for dto in results { if dto.emailAddresses.isEmpty { logger.debug("Contact has no emails: \(dto.displayName, privacy: .public)") } }
+            for dto in results { if dto.emailAddresses.isEmpty { let name = dto.displayName; logger.debug("Contact has no emails: \(name, privacy: .public)") } }
             #endif
             return results
         } catch {
@@ -382,6 +382,28 @@ actor ContactsService {
         }
 
         return validSet
+    }
+
+    /// Returns the set of contact identifiers belonging to a specific group.
+    /// Uses the group identifier (not name) for an efficient single fetch.
+    /// Returns an empty set on error or if no contacts are in the group.
+    func identifiersInGroup(withIdentifier groupIdentifier: String) async -> Set<String> {
+        guard authorizationStatus() == .authorized else {
+            logger.warning("Attempted to fetch group identifiers without authorization")
+            return []
+        }
+
+        do {
+            let predicate = CNContact.predicateForContactsInGroup(withIdentifier: groupIdentifier)
+            let keys: [CNKeyDescriptor] = [CNContactIdentifierKey as CNKeyDescriptor]
+            let contacts = try store.unifiedContacts(matching: predicate, keysToFetch: keys)
+            let ids = Set(contacts.map { $0.identifier })
+            logger.info("Group '\(groupIdentifier)' contains \(ids.count) contact identifier(s)")
+            return ids
+        } catch {
+            logger.error("Failed to fetch identifiers for group '\(groupIdentifier)': \(error.localizedDescription)")
+            return []
+        }
     }
 
     /// Check if a contact is in a specific group
@@ -467,11 +489,19 @@ actor ContactsService {
             // When entitlement is granted, uncomment the following line:
             // mutable.note = note ?? ""
 
+            // Resolve the SAM group's container so the new contact is created in the same
+            // container — required for addMember to succeed (contacts and groups must share a container).
+            let groupID = UserDefaults.standard.string(forKey: "selectedContactGroupIdentifier") ?? ""
+            let samContainerID: String? = groupID.isEmpty ? nil : {
+                let predicate = CNContainer.predicateForContainerOfGroup(withIdentifier: groupID)
+                return try? store.containers(matching: predicate).first?.identifier
+            }()
+
             let save = CNSaveRequest()
-            save.add(mutable, toContainerWithIdentifier: nil)
+            save.add(mutable, toContainerWithIdentifier: samContainerID)
             try store.execute(save)
 
-            logger.info("Created contact: \(fullName, privacy: .public)")
+            logger.info("Created contact: \(fullName, privacy: .public) in container: \(samContainerID ?? "default", privacy: .public)")
 
             // Auto-add to SAM group if configured
             addContactToSAMGroup(identifier: mutable.identifier)

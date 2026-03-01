@@ -37,20 +37,19 @@ struct GraphNode: Identifiable, Sendable {
 // MARK: - Role Priority
 
 extension GraphNode {
-    /// Role priority for determining primary display role (lower = higher priority).
-    static let rolePriority: [String: Int] = [
-        "Client": 0,
-        "Applicant": 1,
-        "Agent": 2,
-        "Lead": 3,
-        "External Agent": 4,
-        "Referral Partner": 5,
-        "Vendor": 6,
-        "Prospect": 7,
-    ]
-
     /// Returns the highest-priority role from a list of badges.
+    /// Priority dictionary is local to avoid @MainActor inference on file-level constants.
     nonisolated static func primaryRole(from badges: [String]) -> String? {
-        badges.min { (rolePriority[$0] ?? 99) < (rolePriority[$1] ?? 99) }
+        let priority: [String: Int] = [
+            "Client": 0,
+            "Applicant": 1,
+            "Agent": 2,
+            "Lead": 3,
+            "External Agent": 4,
+            "Referral Partner": 5,
+            "Vendor": 6,
+            "Prospect": 7,
+        ]
+        return badges.min { (priority[$0] ?? 99) < (priority[$1] ?? 99) }
     }
 }

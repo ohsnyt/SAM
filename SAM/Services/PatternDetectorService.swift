@@ -92,7 +92,7 @@ actor PatternDetectorService {
     // MARK: - Parsing
 
     private func parseResponse(_ jsonString: String) throws -> PatternAnalysis {
-        let cleaned = extractJSON(from: jsonString)
+        let cleaned = JSONExtraction.extractJSON(from: jsonString)
         guard let data = cleaned.data(using: .utf8) else {
             throw AnalysisError.invalidResponse
         }

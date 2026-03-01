@@ -365,6 +365,36 @@ final class PeopleRepository {
         return clearedCount
     }
 
+    /// Nil out contactIdentifier for SamPerson records whose contact is not in the SAM group.
+    /// Skips the "Me" contact. Returns count of unlinked records.
+    @discardableResult
+    func unlinkNonGroupContacts(groupIdentifiers: Set<String>) throws -> Int {
+        guard let modelContext = modelContext else {
+            throw RepositoryError.notConfigured
+        }
+
+        let descriptor = FetchDescriptor<SamPerson>(
+            predicate: #Predicate { $0.contactIdentifier != nil && $0.isMe == false }
+        )
+        let peopleWithContacts = try modelContext.fetch(descriptor)
+
+        var unlinkedCount = 0
+        for person in peopleWithContacts {
+            guard let identifier = person.contactIdentifier else { continue }
+            if !groupIdentifiers.contains(identifier) {
+                person.contactIdentifier = nil
+                unlinkedCount += 1
+                logger.info("Unlinked non-group contact for \(person.displayNameCache ?? person.displayName, privacy: .public)")
+            }
+        }
+
+        if unlinkedCount > 0 {
+            try modelContext.save()
+        }
+
+        return unlinkedCount
+    }
+
     /// Collect all known email addresses across all SamPerson records.
     /// Returns a Set of lowercased, trimmed emails for fast O(1) lookup.
     func allKnownEmails() throws -> Set<String> {

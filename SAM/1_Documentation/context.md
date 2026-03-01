@@ -3,7 +3,7 @@
 **Language**: Swift 6  
 **Architecture**: Clean layered architecture with strict separation of concerns  
 **Framework**: SwiftUI + SwiftData  
-**Last Updated**: February 28, 2026 (Phases A–Z + Advanced Search + Export/Import + Phase AA complete + Strategic Action Coaching Flow + Life Event Coaching + Interactive Content Ideas + ⌘K Command Palette + Coaching Calibration Phases 1–4 + Phase AB Polish, schema SAM_v27)
+**Last Updated**: February 28, 2026 (Phases A–Z + Advanced Search + Export/Import + Phase AA complete + Strategic Action Coaching Flow + Life Event Coaching + Interactive Content Ideas + ⌘K Command Palette + Coaching Calibration Phases 1–4 + Phase AB Polish + Bug fixes: intro timing, tips state, JSON null, Contacts container, task priorities, schema SAM_v27)
 
 **Related Docs**:
 - See `agent.md` for product philosophy, AI architecture, and UX principles

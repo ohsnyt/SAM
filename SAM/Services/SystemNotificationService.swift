@@ -12,9 +12,10 @@ import UserNotifications
 import AppKit
 import os.log
 
+
 /// Manages macOS system notifications (distinct from Foundation.NotificationCenter in-app events).
 @MainActor
-final class SystemNotificationService: NSObject, @preconcurrency UNUserNotificationCenterDelegate {
+final class SystemNotificationService: NSObject, UNUserNotificationCenterDelegate {
 
     static let shared = SystemNotificationService()
 
@@ -123,9 +124,15 @@ final class SystemNotificationService: NSObject, @preconcurrency UNUserNotificat
         didReceive response: UNNotificationResponse
     ) async {
         let categoryID = response.notification.request.content.categoryIdentifier
-        let userInfo = response.notification.request.content.userInfo
+        // Capture userInfo as Sendable string dictionary before crossing actor boundary
+        let rawUserInfo = response.notification.request.content.userInfo
+        let sendableUserInfo = rawUserInfo.reduce(into: [String: String]()) { result, pair in
+            if let key = pair.key as? String, let value = pair.value as? String {
+                result[key] = value
+            }
+        }
 
-        guard categoryID == Self.planReadyCategory else { return }
+        guard categoryID == "PLAN_READY" else { return }
 
         await MainActor.run {
             // Bring app to foreground
@@ -135,7 +142,7 @@ final class SystemNotificationService: NSObject, @preconcurrency UNUserNotificat
             NotificationCenter.default.post(
                 name: .samNavigateToStrategicInsights,
                 object: nil,
-                userInfo: userInfo
+                userInfo: sendableUserInfo
             )
         }
     }

@@ -55,7 +55,10 @@ struct ProcessingStatusView: View {
         if evernoteCoordinator.importStatus == .importing {
             labels.append("Importing notes\u{2026}")
         }
-        if noteAnalysis.analysisStatus == .analyzing {
+        let analysisCount = evernoteCoordinator.analysisTaskCount
+        if analysisCount > 0 {
+            labels.append("Analyzing \(analysisCount) note\(analysisCount == 1 ? "" : "s")\u{2026}")
+        } else if noteAnalysis.analysisStatus == .analyzing {
             labels.append("Analyzing notes\u{2026}")
         }
         if insightGenerator.generationStatus == .generating {

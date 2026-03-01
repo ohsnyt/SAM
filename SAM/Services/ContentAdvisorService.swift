@@ -163,7 +163,7 @@ actor ContentAdvisorService {
     }
 
     private func parseDraftResponse(_ jsonString: String) throws -> ContentDraft {
-        let cleaned = extractJSON(from: jsonString)
+        let cleaned = JSONExtraction.extractJSON(from: jsonString)
         guard let data = cleaned.data(using: .utf8) else {
             throw AnalysisError.invalidResponse
         }
@@ -189,7 +189,7 @@ actor ContentAdvisorService {
     // MARK: - Parsing
 
     private func parseResponse(_ jsonString: String) throws -> ContentAnalysis {
-        let cleaned = extractJSON(from: jsonString)
+        let cleaned = JSONExtraction.extractJSON(from: jsonString)
         guard let data = cleaned.data(using: .utf8) else {
             throw AnalysisError.invalidResponse
         }

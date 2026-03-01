@@ -180,9 +180,9 @@ actor iMessageService {
     }
 
     /// Decode typedstream data using NSUnarchiver.
-    /// NSUnarchiver is deprecated since macOS 10.13 but is the only Foundation API
-    /// that decodes the typedstream (NSArchiver) format used by iMessage attributedBody.
-    /// NSKeyedUnarchiver does NOT work for this format.
+    /// NSUnarchiver is the only Foundation API that decodes the typedstream (NSArchiver) format
+    /// used by iMessage attributedBody. NSKeyedUnarchiver does NOT work for this format.
+    @available(macOS, deprecated: 10.13, message: "Required for iMessage typedstream decoding — no alternative exists")
     private nonisolated func unarchiveTypedstream(_ data: Data) -> String? {
         guard let attrString = NSUnarchiver.unarchiveObject(with: data) as? NSAttributedString else { return nil }
         let text = attrString.string.trimmingCharacters(in: .whitespacesAndNewlines)

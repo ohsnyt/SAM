@@ -1238,7 +1238,7 @@ struct GeneralSettingsView: View {
         return stored > 0 ? stored : 2.0
     }()
 
-    @State private var tipsEnabled: Bool = SAMTipState.guidanceEnabled
+    @AppStorage("sam.tips.guidanceEnabled") private var tipsEnabled: Bool = true
 
     // Backup/restore
     @State private var backupCoordinator = BackupCoordinator.shared
@@ -1379,7 +1379,7 @@ struct GeneralSettingsView: View {
                                     clearAllData()
                                 }
                             } message: {
-                                Text("This will delete all people, evidence, and settings. You will need to re-import from Contacts and Calendar.")
+                                Text("This will delete all people, notes, evidence, and settings, then quit the app. On relaunch you will go through onboarding again.")
                             }
                         }
                     }
@@ -1435,18 +1435,62 @@ struct GeneralSettingsView: View {
 
     private func resetOnboarding() {
         UserDefaults.standard.removeObject(forKey: "hasCompletedOnboarding")
-        logger.notice("Onboarding reset — will show on next launch")
+        UserDefaults.standard.removeObject(forKey: "sam.intro.hasSeenIntroSequence")
+        logger.notice("Onboarding + intro reset — will show on next launch")
     }
 
     private func clearAllData() {
-        UserDefaults.standard.removeObject(forKey: "hasCompletedOnboarding")
-        UserDefaults.standard.removeObject(forKey: "selectedGroupIdentifier")
-        UserDefaults.standard.removeObject(forKey: "selectedCalendarIdentifier")
-        UserDefaults.standard.removeObject(forKey: "autoImportContacts")
-        UserDefaults.standard.removeObject(forKey: "lastContactsImport")
-        UserDefaults.standard.removeObject(forKey: "lastCalendarImport")
+        // Delete the store files directly — the only reliable approach when
+        // multiple ModelContext instances are live across repositories.
+        // Safe because we terminate immediately after.
+        if let storeURL = SAMModelContainer.shared.configurations.first?.url {
+            let fm = FileManager.default
+            // SwiftData writes three files: .store, .store-shm, .store-wal
+            let companions = [storeURL,
+                              storeURL.appendingPathExtension("shm"),
+                              storeURL.appendingPathExtension("wal")]
+            for url in companions {
+                do {
+                    if fm.fileExists(atPath: url.path) {
+                        try fm.removeItem(at: url)
+                        logger.notice("Deleted store file: \(url.lastPathComponent, privacy: .public)")
+                    }
+                } catch {
+                    logger.error("Failed to delete \(url.lastPathComponent, privacy: .public): \(error)")
+                }
+            }
+        } else {
+            logger.error("Could not resolve store URL — store files not deleted")
+        }
 
-        logger.notice("All settings cleared. SwiftData requires app restart to fully reset.")
+        // Clear relevant UserDefaults keys
+        let keysToRemove = [
+            "hasCompletedOnboarding",
+            "sam.intro.hasSeenIntroSequence",
+            "selectedContactGroupIdentifier",
+            "selectedGroupIdentifier",
+            "selectedCalendarIdentifier",
+            "autoImportContacts",
+            "lastContactsImport",
+            "lastCalendarImport",
+            "sam.contacts.enabled",
+            "calendarAutoImportEnabled",
+            "mailImportEnabled",
+            "commsMessagesEnabled",
+            "commsCallsEnabled",
+            "pipelineBackfillComplete",
+            "outcomeAutoGenerate",
+            "sam.contacts.import.lastRunAt",
+        ]
+        for key in keysToRemove {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+
+        // Reset TipKit datastore so all tips reappear fresh after relaunching
+        SAMTipState.resetAllTips()
+
+        logger.notice("All SAM data cleared — terminating so fresh state loads on relaunch")
+        NSApplication.shared.terminate(nil)
     }
 
     // MARK: - Data Backup Section

@@ -27,9 +27,17 @@ final class EvernoteImportCoordinator {
     private let peopleRepository = PeopleRepository.shared
     private let analysisCoordinator = NoteAnalysisCoordinator.shared
 
+    // MARK: - Task Tracking
+
+    /// Tracks background analysis tasks so they can be cancelled on app termination.
+    @ObservationIgnored
+    private var analysisTasks: [Task<Void, Never>] = []
+
     // MARK: - Observable State
 
     var importStatus: ImportStatus = .idle
+    /// Number of in-flight background LLM analysis tasks. Observed by ProcessingStatusView.
+    var analysisTaskCount: Int = 0
     var parsedNotes: [EvernoteNoteDTO] = []
     var newCount: Int = 0
     var duplicateCount: Int = 0
@@ -59,6 +67,18 @@ final class EvernoteImportCoordinator {
             case .failed: return "Failed"
             }
         }
+    }
+
+    // MARK: - Lifecycle
+
+    /// Cancel all in-flight analysis tasks. Called by AppDelegate on app termination
+    /// to prevent MLX inference from crashing mid-generation when the process exits.
+    func cancelAll() {
+        let count = analysisTasks.count
+        for task in analysisTasks { task.cancel() }
+        analysisTasks.removeAll()
+        analysisTaskCount = 0
+        logger.info("EvernoteImportCoordinator: cancelled \(count) analysis task(s)")
     }
 
     // MARK: - Public API
@@ -268,9 +288,12 @@ final class EvernoteImportCoordinator {
             // Fire background analysis AFTER all notes are imported
             // (avoids concurrent context modifications during import)
             for note in createdNotes {
-                Task {
-                    await analysisCoordinator.analyzeNote(note)
+                analysisTaskCount += 1
+                let task = Task(priority: .utility) { [weak self] in
+                    await self?.analysisCoordinator.analyzeNote(note)
+                    await MainActor.run { self?.analysisTaskCount = max(0, (self?.analysisTaskCount ?? 1) - 1) }
                 }
+                analysisTasks.append(task)
             }
 
         } catch {
@@ -325,9 +348,12 @@ final class EvernoteImportCoordinator {
                 note.isAnalyzed = false
 
                 // Queue AI analysis (will also auto-link from mentions)
-                Task {
-                    await analysisCoordinator.analyzeNote(note)
+                analysisTaskCount += 1
+                let task = Task(priority: .utility) { [weak self] in
+                    await self?.analysisCoordinator.analyzeNote(note)
+                    await MainActor.run { self?.analysisTaskCount = max(0, (self?.analysisTaskCount ?? 1) - 1) }
                 }
+                analysisTasks.append(task)
             }
 
             logger.info("Re-link: directly linked \(linkedCount)/\(unlinked.count) notes, all queued for AI analysis")

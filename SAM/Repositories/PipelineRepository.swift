@@ -173,7 +173,7 @@ final class PipelineRepository {
         to newStage: RecruitingStageKind,
         notes: String? = nil
     ) throws {
-        guard let context else { throw RepositoryError.notConfigured }
+        guard context != nil else { throw RepositoryError.notConfigured }
 
         let existing = try fetchRecruitingStage(forPerson: personID)
         let fromStage = existing?.stage.rawValue ?? ""

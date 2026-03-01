@@ -31,7 +31,7 @@ struct PersonEntity: AppEntity, Sendable {
 
 struct PersonEntityQuery: EntityStringQuery {
     func entities(for identifiers: [UUID]) async throws -> [PersonEntity] {
-        try await MainActor.run {
+        await MainActor.run {
             identifiers.compactMap { id in
                 guard let person = try? PeopleRepository.shared.fetch(id: id) else {
                     return nil

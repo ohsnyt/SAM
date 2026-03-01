@@ -228,6 +228,18 @@ final class ContactsImportCoordinator {
                 }
             }
 
+            // Reconcile: unlink SamPerson records whose contact exists but is not in the SAM group.
+            // This prevents contacts imported outside the group filter from persisting indefinitely.
+            if !selectedGroupIdentifier.isEmpty {
+                let groupIDs = await contactsService.identifiersInGroup(withIdentifier: selectedGroupIdentifier)
+                if !groupIDs.isEmpty {
+                    let pruned = try peopleRepo.unlinkNonGroupContacts(groupIdentifiers: groupIDs)
+                    if pruned > 0 {
+                        logger.info("Unlinked \(pruned) contact(s) not in SAM group")
+                    }
+                }
+            }
+
             // Update last run timestamp
             lastRunAt = Date().timeIntervalSince1970
 

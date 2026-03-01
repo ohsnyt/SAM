@@ -36,6 +36,7 @@ final class NarrationService {
     private let synthesizer = AVSpeechSynthesizer()
     private let speechDelegate = SpeechDelegate()
     private var onFinishCallback: (@Sendable () -> Void)?
+    private var onStartCallback: (@Sendable () -> Void)?
 
     /// Best available Samantha voice (American English), resolved once at init.
     /// Premium voices are Siri-optimized and produce empty audio buffers with
@@ -79,11 +80,13 @@ final class NarrationService {
     ///   - onFinish: Called on @MainActor when the utterance finishes naturally.
     ///              NOT called if the utterance is stopped/cancelled by a subsequent
     ///              call to `speak()` or `stop()`.
-    func speak(_ text: String, onFinish: @escaping @Sendable () -> Void) {
+    func speak(_ text: String, onStart: (@Sendable () -> Void)? = nil, onFinish: @escaping @Sendable () -> Void) {
         // Silence any in-progress speech WITHOUT triggering the old callback.
         // Detach the delegate callback first so didCancel doesn't fire the old onFinish.
         speechDelegate.onFinish = nil
+        speechDelegate.onStart = nil
         onFinishCallback = nil
+        onStartCallback = nil
 
         if synthesizer.isSpeaking {
             synthesizer.stopSpeaking(at: .immediate)
@@ -96,8 +99,18 @@ final class NarrationService {
         utterance.postUtteranceDelay = 0
         utterance.voice = Self.preferredVoice
 
-        // Wire up the new callback
+        // Wire up the new callbacks
+        self.onStartCallback = onStart
         self.onFinishCallback = onFinish
+        speechDelegate.onStart = { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                let cb = self.onStartCallback
+                self.onStartCallback = nil
+                self.speechDelegate.onStart = nil
+                cb?()
+            }
+        }
         speechDelegate.onFinish = { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
@@ -127,7 +140,9 @@ final class NarrationService {
 
     func stop() {
         speechDelegate.onFinish = nil
+        speechDelegate.onStart = nil
         onFinishCallback = nil
+        onStartCallback = nil
         if synthesizer.isSpeaking {
             synthesizer.stopSpeaking(at: .immediate)
         }
@@ -139,10 +154,12 @@ final class NarrationService {
 
 private final class SpeechDelegate: NSObject, AVSpeechSynthesizerDelegate, @unchecked Sendable {
     var onFinish: (() -> Void)?
+    var onStart: (() -> Void)?
     private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "SpeechDelegate")
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didStart utterance: AVSpeechUtterance) {
         logger.info("didStart: \"\(utterance.speechString.prefix(40))...\"")
+        onStart?()
     }
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {

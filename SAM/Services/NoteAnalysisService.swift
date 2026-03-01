@@ -159,7 +159,7 @@ actor NoteAnalysisService {
     }
 
     private func parseRelationshipSummary(_ jsonString: String) throws -> RelationshipSummaryDTO {
-        let cleaned = extractJSON(from: jsonString)
+        let cleaned = JSONExtraction.extractJSON(from: jsonString)
 
         guard let data = cleaned.data(using: .utf8) else {
             throw AnalysisError.invalidResponse
@@ -335,7 +335,7 @@ actor NoteAnalysisService {
     // MARK: - Response Parsing
     
     private func parseResponse(_ jsonString: String) throws -> NoteAnalysisDTO {
-        let cleaned = extractJSON(from: jsonString)
+        let cleaned = JSONExtraction.extractJSON(from: jsonString)
 
         logger.debug("Cleaned JSON length: \(cleaned.count) characters")
 
@@ -357,10 +357,11 @@ actor NoteAnalysisService {
                         name: person.name,
                         role: person.role,
                         relationshipTo: person.relationship_to,
-                        contactUpdates: (person.contact_updates ?? []).map { update in
-                            ContactUpdateDTO(
+                        contactUpdates: (person.contact_updates ?? []).compactMap { update in
+                            guard let value = update.value else { return nil }
+                            return ContactUpdateDTO(
                                 field: update.field,
-                                value: update.value,
+                                value: value,
                                 confidence: update.confidence ?? 0.5
                             )
                         },
@@ -460,7 +461,7 @@ nonisolated private struct LLMPerson: Codable, Sendable {
 
 nonisolated private struct LLMContactUpdate: Codable, Sendable {
     let field: String
-    let value: String
+    let value: String?
     let confidence: Double?
 }
 

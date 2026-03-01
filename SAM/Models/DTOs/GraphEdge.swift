@@ -28,7 +28,7 @@ struct GraphEdge: Identifiable, Sendable {
         case balanced
     }
 
-    init(
+    nonisolated init(
         id: UUID = UUID(),
         sourceID: UUID,
         targetID: UUID,
