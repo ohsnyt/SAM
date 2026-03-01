@@ -1440,6 +1440,14 @@ struct GeneralSettingsView: View {
     }
 
     private func clearAllData() {
+        // Cancel all background tasks before deleting the store to prevent
+        // SQLite I/O errors from in-flight queries hitting a deleted file.
+        ContactsImportCoordinator.shared.cancelAll()
+        CalendarImportCoordinator.shared.cancelAll()
+        MailImportCoordinator.shared.cancelAll()
+        CommunicationsImportCoordinator.shared.cancelAll()
+        EvernoteImportCoordinator.shared.cancelAll()
+
         // Delete the store files directly — the only reliable approach when
         // multiple ModelContext instances are live across repositories.
         // Safe because we terminate immediately after.
@@ -1486,8 +1494,10 @@ struct GeneralSettingsView: View {
             UserDefaults.standard.removeObject(forKey: key)
         }
 
-        // Reset TipKit datastore so all tips reappear fresh after relaunching
-        SAMTipState.resetAllTips()
+        // Schedule TipKit reset on next launch — calling Tips.resetDatastore() here
+        // fails with tipsDatastoreAlreadyConfigured because TipKit was already
+        // configured at app startup. The flag is checked in SAMApp.init before configure().
+        UserDefaults.standard.set(true, forKey: "sam.tips.pendingReset")
 
         logger.notice("All SAM data cleared — terminating so fresh state loads on relaunch")
         NSApplication.shared.terminate(nil)

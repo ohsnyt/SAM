@@ -89,6 +89,19 @@ struct SAMApp: App {
         let preImportCount = (try? PeopleRepository.shared.count()) ?? -1
         logger.notice("Pre-import SamPerson count: \(preImportCount, privacy: .public)")
 
+        // If a data clear was performed last session, reset TipKit datastore now —
+        // before configure() — so tips reappear fresh. This must happen before
+        // configure() because resetDatastore() fails once TipKit is configured.
+        if UserDefaults.standard.bool(forKey: "sam.tips.pendingReset") {
+            do {
+                try Tips.resetDatastore()
+                UserDefaults.standard.removeObject(forKey: "sam.tips.pendingReset")
+                logger.notice("TipKit datastore reset on launch after data clear")
+            } catch {
+                logger.error("TipKit pending reset failed: \(error)")
+            }
+        }
+
         // Configure TipKit for contextual guidance
         do {
             try Tips.configure([
