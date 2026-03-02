@@ -83,7 +83,7 @@ struct SAMApp: App {
 
         // Configure repositories with shared container
         // Must happen before any data access
-        configureDataLayer()
+        SAMApp.configureDataLayer()
 
         // Log person count before any import runs — confirms whether store was cleared
         let preImportCount = (try? PeopleRepository.shared.count()) ?? -1
@@ -242,7 +242,7 @@ struct SAMApp: App {
                 Button("Seed Harvey Snodgrass Test Data") {
                     Task { await TestDataSeeder.shared.seedFresh() }
                 }
-                .help("Wipes all data, seeds the Harvey Snodgrass fictional dataset, disables real imports, and relaunches.")
+                .help("Wipes all data in-process, seeds the Harvey Snodgrass fictional dataset, and disables real imports. No relaunch needed.")
 
                 if UserDefaults.standard.isTestDataActive {
                     Button("Clear Test Data & Re-enable Imports") {
@@ -287,31 +287,34 @@ struct SAMApp: App {
     
     // MARK: - Configuration
     
-    private func configureDataLayer() {
+    /// Wire all repositories to the given container.
+    /// Called at launch and again after an in-process store replacement (e.g. test data seed).
+    static func configureDataLayer(container: ModelContainer? = nil) {
+        let c = container ?? SAMModelContainer.shared
+
         // Log the store path so we can verify the correct file is being used/deleted
-        let storeURL = SAMModelContainer.shared.configurations.first?.url
+        let storeURL = c.configurations.first?.url
         logger.notice("SwiftData store: \(storeURL?.path(percentEncoded: false) ?? "<in-memory>", privacy: .public)")
 
-        // Wire repositories to the shared container
-        // This ensures all SwiftData operations hit the same store
-        PeopleRepository.shared.configure(container: SAMModelContainer.shared)
-        EvidenceRepository.shared.configure(container: SAMModelContainer.shared)
-        ContextsRepository.shared.configure(container: SAMModelContainer.shared)
-        NotesRepository.shared.configure(container: SAMModelContainer.shared)
-        UnknownSenderRepository.shared.configure(container: SAMModelContainer.shared)
-        InsightGenerator.shared.configure(container: SAMModelContainer.shared)
-        OutcomeRepository.shared.configure(container: SAMModelContainer.shared)
-        CoachingAdvisor.shared.configure(container: SAMModelContainer.shared)
-        DailyBriefingCoordinator.shared.configure(container: SAMModelContainer.shared)
-        UndoRepository.shared.configure(container: SAMModelContainer.shared)
-        TimeTrackingRepository.shared.configure(container: SAMModelContainer.shared)
-        PipelineRepository.shared.configure(container: SAMModelContainer.shared)
-        ProductionRepository.shared.configure(container: SAMModelContainer.shared)
-        StrategicCoordinator.shared.configure(container: SAMModelContainer.shared)
-        ContentPostRepository.shared.configure(container: SAMModelContainer.shared)
-        GoalRepository.shared.configure(container: SAMModelContainer.shared)
-        ComplianceAuditRepository.shared.configure(container: SAMModelContainer.shared)
-        DeducedRelationRepository.shared.configure(container: SAMModelContainer.shared)
+        // Wire repositories to the container
+        PeopleRepository.shared.configure(container: c)
+        EvidenceRepository.shared.configure(container: c)
+        ContextsRepository.shared.configure(container: c)
+        NotesRepository.shared.configure(container: c)
+        UnknownSenderRepository.shared.configure(container: c)
+        InsightGenerator.shared.configure(container: c)
+        OutcomeRepository.shared.configure(container: c)
+        CoachingAdvisor.shared.configure(container: c)
+        DailyBriefingCoordinator.shared.configure(container: c)
+        UndoRepository.shared.configure(container: c)
+        TimeTrackingRepository.shared.configure(container: c)
+        PipelineRepository.shared.configure(container: c)
+        ProductionRepository.shared.configure(container: c)
+        StrategicCoordinator.shared.configure(container: c)
+        ContentPostRepository.shared.configure(container: c)
+        GoalRepository.shared.configure(container: c)
+        ComplianceAuditRepository.shared.configure(container: c)
+        DeducedRelationRepository.shared.configure(container: c)
 
         // Prune expired compliance audit entries on launch
         let retentionDays = UserDefaults.standard.object(forKey: "complianceAuditRetentionDays") as? Int ?? 90

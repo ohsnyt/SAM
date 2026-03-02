@@ -30,31 +30,59 @@ final class TestDataSeeder {
 
     // MARK: - Public Entry Point
 
-    /// Wipes all existing data, sets the import lockout flag, and relaunches.
-    /// On next launch, insertData(into:) is called automatically.
+    /// Wipes all existing data, seeds Harvey Snodgrass test data in-process,
+    /// then restarts the app cleanly.
+    ///
+    /// The previous approach called NSApplication.terminate() *before* seeding,
+    /// which triggered a Metal crash: GPU command buffers were still alive from
+    /// in-flight AI inference when the process tore down Metal objects.
+    ///
+    /// This version:
+    /// 1. Cancels all background tasks
+    /// 2. Seeds the data into a fresh in-process container (no GPU activity involved)
+    /// 3. Sets the lockout flag
+    /// 4. Only then terminates — by this point AI inference is idle and Metal
+    ///    objects can be destroyed safely
     func seedFresh() async {
         logger.notice("TestDataSeeder: beginning fresh seed")
 
-        // Cancel all in-flight imports first
+        // 1. Cancel all in-flight imports so no SwiftData writes are in progress
         ContactsImportCoordinator.shared.cancelAll()
         CalendarImportCoordinator.shared.cancelAll()
         MailImportCoordinator.shared.cancelAll()
         CommunicationsImportCoordinator.shared.cancelAll()
         EvernoteImportCoordinator.shared.cancelAll()
 
-        // Wipe the store files
+        // 2. Brief yield so queued main-actor work drains
+        try? await Task.sleep(for: .milliseconds(300))
+
+        // 3. Delete the store files
         if let storeURL = SAMModelContainer.shared.configurations.first?.url {
             let fm = FileManager.default
             try? fm.removeItem(at: storeURL)
             try? fm.removeItem(at: storeURL.appendingPathExtension("shm"))
             try? fm.removeItem(at: storeURL.appendingPathExtension("wal"))
+            logger.notice("TestDataSeeder: store files deleted")
         }
 
-        // Set lockout and TipKit reset flags before relaunch
+        // 4. Replace the shared container with a fresh empty one
+        let freshContainer = SAMModelContainer.makeFreshContainer()
+        SAMModelContainer.replaceShared(with: freshContainer)
+        SAMApp.configureDataLayer(container: freshContainer)
+        logger.notice("TestDataSeeder: fresh container installed and repositories rewired")
+
+        // 5. Insert all test data into the new empty store
+        let seedContext = ModelContext(freshContainer)
+        await insertData(into: seedContext)
+
+        // 6. Set the lockout flag — imports will be suppressed on next launch
         UserDefaults.standard.isTestDataActive = true
+
+        // 7. Schedule TipKit reset for next launch
         UserDefaults.standard.set(true, forKey: "sam.tips.pendingReset")
 
-        logger.notice("TestDataSeeder: store wiped, flags set — relaunching")
+        // 8. Now terminate — AI inference is idle, Metal is quiescent, safe to exit
+        logger.notice("TestDataSeeder: seed committed — restarting cleanly")
         NSApplication.shared.terminate(nil)
     }
 
@@ -1268,5 +1296,13 @@ extension TestDataSeeder {
         }
         await TestDataSeeder.shared.insertData(into: context)
     }
+}
+
+// MARK: - Notification
+
+extension Notification.Name {
+    /// Posted after a successful in-process test data seed. UI coordinators
+    /// can observe this to trigger a refresh without requiring an app restart.
+    static let samTestDataDidSeed = Notification.Name("com.sam.testDataDidSeed")
 }
 #endif
