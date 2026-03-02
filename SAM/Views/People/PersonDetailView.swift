@@ -84,6 +84,7 @@ struct PersonDetailView: View {
                 moreDetailsSection
             }
         }
+        .focusable(false)  // Prevent ScrollView stealing first click on macOS
         .navigationTitle("")  // Remove title since we show it in the header
         .toolbar {
             ToolbarItemGroup {
