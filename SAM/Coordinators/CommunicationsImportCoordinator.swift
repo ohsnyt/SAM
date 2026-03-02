@@ -118,12 +118,18 @@ final class CommunicationsImportCoordinator {
 
     /// Fire-and-forget import — does not block the caller.
     func startImport() {
+        #if DEBUG
+        guard !UserDefaults.standard.isTestDataActive else { return }
+        #endif
         guard importStatus != .importing else { return }
         importTask?.cancel()
         importTask = Task { await performImport() }
     }
 
     func importNow() async {
+        #if DEBUG
+        guard !UserDefaults.standard.isTestDataActive else { return }
+        #endif
         guard importStatus != .importing else {
             logger.debug("Import already in progress, skipping")
             return

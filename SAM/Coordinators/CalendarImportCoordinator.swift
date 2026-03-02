@@ -120,6 +120,9 @@ final class CalendarImportCoordinator {
 
     /// Start auto-import if enabled and authorized.
     func startAutoImport() {
+        #if DEBUG
+        guard !UserDefaults.standard.isTestDataActive else { return }
+        #endif
         guard autoImportEnabled else { return }
 
         Task {
@@ -137,6 +140,9 @@ final class CalendarImportCoordinator {
     /// Fire-and-forget import — does not block the caller.
     /// The import Task is stored so it can be cancelled on app termination.
     func startImport() {
+        #if DEBUG
+        guard !UserDefaults.standard.isTestDataActive else { return }
+        #endif
         guard importStatus != .importing else { return }
         importTask?.cancel()
         importTask = Task { await performImport() }

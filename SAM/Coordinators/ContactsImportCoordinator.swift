@@ -115,6 +115,12 @@ final class ContactsImportCoordinator {
     /// Force an immediate import (bypasses throttling)
     /// Use this for user-initiated actions like tapping "Import Now" button
     func importNow() async {
+        #if DEBUG
+        guard !UserDefaults.standard.isTestDataActive else {
+            logger.info("Test data mode active — contacts import suppressed")
+            return
+        }
+        #endif
         logger.info("Manual import triggered")
         await performImport()
     }
@@ -127,6 +133,9 @@ final class ContactsImportCoordinator {
     
     /// Attempt import when both permission is granted and a group is selected
     func attemptImportAfterConfigChange(reason: String) {
+        #if DEBUG
+        guard !UserDefaults.standard.isTestDataActive else { return }
+        #endif
         debounceTask?.cancel()
         debounceTask = Task {
             // small debounce to coalesce rapid changes

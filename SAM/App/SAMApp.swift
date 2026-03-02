@@ -89,6 +89,19 @@ struct SAMApp: App {
         let preImportCount = (try? PeopleRepository.shared.count()) ?? -1
         logger.notice("Pre-import SamPerson count: \(preImportCount, privacy: .public)")
 
+        #if DEBUG
+        // Seed Harvey Snodgrass test data if test mode is active and store is empty.
+        // This runs synchronously at launch because we need the data present before
+        // any views render. The seeder inserts directly into a fresh ModelContext.
+        if UserDefaults.standard.isTestDataActive && preImportCount == 0 {
+            let seedContext = ModelContext(SAMModelContainer.shared)
+            Task { @MainActor in
+                await TestDataSeeder.shared.insertData(into: seedContext)
+                logger.notice("TestDataSeeder: Harvey Snodgrass dataset inserted")
+            }
+        }
+        #endif
+
         // If a data clear was performed last session, reset TipKit datastore now —
         // before configure() — so tips reappear fresh. This must happen before
         // configure() because resetDatastore() fails once TipKit is configured.
@@ -222,6 +235,23 @@ struct SAMApp: App {
                     logger.notice("Store file exists on disk: \(exists, privacy: .public)")
                     let count = (try? PeopleRepository.shared.count()) ?? -1
                     logger.notice("SamPerson count in store: \(count, privacy: .public)")
+                }
+
+                Divider()
+
+                Button("Seed Harvey Snodgrass Test Data") {
+                    Task { await TestDataSeeder.shared.seedFresh() }
+                }
+                .help("Wipes all data, seeds the Harvey Snodgrass fictional dataset, disables real imports, and relaunches.")
+
+                if UserDefaults.standard.isTestDataActive {
+                    Button("Clear Test Data & Re-enable Imports") {
+                        UserDefaults.standard.isTestDataActive = false
+                        UserDefaults.standard.set(true, forKey: "sam.tips.pendingReset")
+                        logger.notice("Test data mode disabled — relaunching")
+                        NSApplication.shared.terminate(nil)
+                    }
+                    .help("Wipes test data, re-enables real imports, and relaunches.")
                 }
             }
             #endif

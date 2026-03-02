@@ -85,6 +85,9 @@ final class EvernoteImportCoordinator {
 
     /// Parse an ENEX file and prepare for preview
     func loadFile(url: URL) async {
+        #if DEBUG
+        guard !UserDefaults.standard.isTestDataActive else { return }
+        #endif
         importStatus = .parsing
         lastError = nil
         parsedNotes = []
@@ -133,6 +136,9 @@ final class EvernoteImportCoordinator {
 
     /// Parse all .enex files in a directory and prepare for preview
     func loadDirectory(url: URL) async {
+        #if DEBUG
+        guard !UserDefaults.standard.isTestDataActive else { return }
+        #endif
         importStatus = .parsing
         lastError = nil
         parsedNotes = []

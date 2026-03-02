@@ -126,18 +126,27 @@ final class MailImportCoordinator {
     }
 
     func startAutoImport() {
+        #if DEBUG
+        guard !UserDefaults.standard.isTestDataActive else { return }
+        #endif
         guard mailEnabled, isConfigured else { return }
         Task { await importNow() }
     }
 
     /// Fire-and-forget import — does not block the caller.
     func startImport() {
+        #if DEBUG
+        guard !UserDefaults.standard.isTestDataActive else { return }
+        #endif
         guard importStatus != .importing, isConfigured else { return }
         importTask?.cancel()
         importTask = Task { await performImport(force: true) }
     }
 
     func importNow() async {
+        #if DEBUG
+        guard !UserDefaults.standard.isTestDataActive else { return }
+        #endif
         guard importStatus != .importing else {
             logger.debug("Import already in progress, skipping")
             return
