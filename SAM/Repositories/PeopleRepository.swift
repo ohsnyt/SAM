@@ -504,6 +504,21 @@ final class PeopleRepository {
         }
     }
 
+    /// Set the LinkedIn profile URL on a SamPerson by their Apple Contact identifier.
+    /// Used after promoting an unknown LinkedIn contact from the triage screen.
+    func setLinkedInProfileURL(contactIdentifier: String, profileURL: String) throws {
+        guard let modelContext else { throw RepositoryError.notConfigured }
+        let descriptor = FetchDescriptor<SamPerson>()
+        let all = try modelContext.fetch(descriptor)
+        guard let person = all.first(where: { $0.contactIdentifier == contactIdentifier }) else {
+            return
+        }
+        if person.linkedInProfileURL != profileURL {
+            person.linkedInProfileURL = profileURL
+            try modelContext.save()
+        }
+    }
+
     /// Get count of all people
     func count() throws -> Int {
         guard let modelContext = modelContext else {

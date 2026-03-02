@@ -29,6 +29,7 @@ struct UnknownSenderTriageSection: View {
     private let peopleRepository = PeopleRepository.shared
     private var mailCoordinator: MailImportCoordinator { MailImportCoordinator.shared }
     private var calendarCoordinator: CalendarImportCoordinator { CalendarImportCoordinator.shared }
+    private var linkedInCoordinator: LinkedInImportCoordinator { LinkedInImportCoordinator.shared }
 
     var body: some View {
         // VStack is always present so lifecycle modifiers always fire.
@@ -47,6 +48,11 @@ struct UnknownSenderTriageSection: View {
             }
         }
         .onChange(of: calendarCoordinator.importStatus) { _, newStatus in
+            if newStatus == .success {
+                loadPendingSenders()
+            }
+        }
+        .onChange(of: linkedInCoordinator.importStatus) { _, newStatus in
             if newStatus == .success {
                 loadPendingSenders()
             }
@@ -96,7 +102,7 @@ struct UnknownSenderTriageSection: View {
 
                 Spacer()
 
-                Text("Subject")
+                Text("Subject / Profile")
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.leading, 8)
             }
@@ -295,11 +301,19 @@ struct UnknownSenderTriageSection: View {
             var addedEmails: [String] = []
 
             for sender in toAdd {
-                let displayName = sender.displayName ?? sender.email
+                // LinkedIn entries use a "linkedin:<url>" synthetic key — not a real email.
+                // Create the contact without an email address and skip mail reprocessing.
+                let isLinkedIn = sender.email.hasPrefix("linkedin:") || sender.email.hasPrefix("linkedin-unknown-")
+                let contactEmail: String? = isLinkedIn ? nil : sender.email
+
+                // Extract LinkedIn profile URL from the subject field (stored there during import)
+                let linkedInURL: String? = isLinkedIn ? sender.latestSubject : nil
+
+                let displayName = sender.displayName ?? (isLinkedIn ? "LinkedIn Contact" : sender.email)
                 guard let contactDTO = await contactsService.createContact(
                     fullName: displayName,
-                    email: sender.email,
-                    note: nil
+                    email: contactEmail,
+                    note: linkedInURL.map { "LinkedIn: \($0)" }
                 ) else {
                     logger.error("Failed to create contact for \(sender.email, privacy: .public)")
                     continue
@@ -307,7 +321,13 @@ struct UnknownSenderTriageSection: View {
 
                 do {
                     try peopleRepository.upsert(contact: contactDTO)
-                    addedEmails.append(sender.email)
+                    if let email = contactEmail {
+                        addedEmails.append(email)
+                    }
+                    if let url = linkedInURL, !url.isEmpty {
+                        // Set the LinkedIn profile URL on the newly-created SamPerson
+                        try peopleRepository.setLinkedInProfileURL(contactIdentifier: contactDTO.id, profileURL: url)
+                    }
                 } catch {
                     logger.error("Failed to upsert contact for \(sender.email, privacy: .public): \(error)")
                 }
@@ -324,9 +344,9 @@ struct UnknownSenderTriageSection: View {
 
             isSaving = false
 
-            logger.info("Triage complete: \(addedEmails.count) contacts created, \(toNever.count) blocked, \(notNowCount) deferred")
+            logger.info("Triage complete: \(toAdd.count) contacts created, \(toNever.count) blocked, \(notNowCount) deferred")
 
-            // Reprocess added senders' emails in background
+            // Reprocess added senders' emails in background (mail-sourced only)
             for email in addedEmails {
                 await mailCoordinator.reprocessForSender(email: email)
             }
@@ -350,13 +370,20 @@ private struct TriageRow: View {
             radioButton(.never, color: .red)
                 .frame(width: 36)
 
-            // Sender email
-            Text(sender.displayName ?? sender.email)
-                .font(.body)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .frame(minWidth: 180, alignment: .leading)
-                .padding(.leading, 8)
+            // Sender name + source icon
+            HStack(spacing: 4) {
+                if sender.source == .linkedIn {
+                    Image(systemName: "network")
+                        .font(.caption2)
+                        .foregroundStyle(.blue)
+                }
+                Text(sender.displayName ?? sender.email)
+                    .font(.body)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            .frame(minWidth: 180, alignment: .leading)
+            .padding(.leading, 8)
 
             // Subject
             if let subject = sender.latestSubject {

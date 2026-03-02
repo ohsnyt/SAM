@@ -214,6 +214,11 @@ struct LinkedInImportSettingsContent: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            if coordinator.importStatus == .success && coordinator.unmatchedConnectionCount > 0 {
+                Text("· \(coordinator.unmatchedConnectionCount) unmatched — see Today → Unknown Senders")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
         }
     }
 

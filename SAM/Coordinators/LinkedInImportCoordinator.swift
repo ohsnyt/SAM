@@ -27,9 +27,10 @@ final class LinkedInImportCoordinator {
 
     // MARK: - Dependencies
 
-    private let linkedInService = LinkedInService.shared
-    private let evidenceRepo    = EvidenceRepository.shared
-    private let peopleRepo      = PeopleRepository.shared
+    private let linkedInService    = LinkedInService.shared
+    private let evidenceRepo       = EvidenceRepository.shared
+    private let peopleRepo         = PeopleRepository.shared
+    private let unknownSenderRepo  = UnknownSenderRepository.shared
 
     // MARK: - Settings (UserDefaults)
 
@@ -90,6 +91,7 @@ final class LinkedInImportCoordinator {
     private(set) var newMessageCount: Int = 0
     private(set) var duplicateMessageCount: Int = 0
     private(set) var matchedConnectionCount: Int = 0
+    private(set) var unmatchedConnectionCount: Int = 0
 
     // MARK: - Parsed state (held between preview and confirm)
 
@@ -172,12 +174,19 @@ final class LinkedInImportCoordinator {
 
         do {
             // 1. Enrich SamPerson records from connections (always, even without messages)
+            var unmatchedConnections: [LinkedInConnectionDTO] = []
             if !pendingConnections.isEmpty {
-                matched = try enrichPeopleFromConnections(pendingConnections)
+                let result = try enrichPeopleFromConnections(pendingConnections)
+                matched = result.matched
+                unmatchedConnections = result.unmatched
                 lastConnectionImportAt = Date()
+                if !unmatchedConnections.isEmpty {
+                    logger.info("\(unmatchedConnections.count) LinkedIn connection(s) unmatched — queuing for triage")
+                }
             }
 
             // 2. Import messages as SamEvidenceItem records
+            var unmatchedMessageSenders: [(profileURL: String, name: String, date: Date)] = []
             if !pendingMessages.isEmpty {
                 // Build lookup tables once for all messages
                 let allPeople = try peopleRepo.fetchAll()
@@ -202,6 +211,15 @@ final class LinkedInImportCoordinator {
                         byEmail: [:],
                         byFullName: byFullName
                     )
+
+                    if person == nil && !msg.senderName.isEmpty {
+                        // Track unmatched message senders for triage
+                        unmatchedMessageSenders.append((
+                            profileURL: msg.senderProfileURL,
+                            name: msg.senderName,
+                            date: msg.occurredAt
+                        ))
+                    }
 
                     let linkedPeople: [SamPerson] = person.map { [$0] } ?? []
                     let peopleIDs = linkedPeople.map(\.id)
@@ -230,8 +248,15 @@ final class LinkedInImportCoordinator {
                 lastMessageImportAt = Date()
             }
 
-            matchedConnectionCount = matched
-            lastImportCount        = importedCount
+            // 3. Queue unmatched connections and message senders for user triage
+            recordUnmatchedForTriage(
+                connections: unmatchedConnections,
+                messageSenders: unmatchedMessageSenders
+            )
+
+            matchedConnectionCount   = matched
+            unmatchedConnectionCount = unmatchedConnections.count
+            lastImportCount          = importedCount
             lastImportedAt         = Date()
             importStatus           = .success
 
@@ -267,10 +292,12 @@ final class LinkedInImportCoordinator {
     // MARK: - Private: Connection Enrichment
 
     /// Write LinkedIn profile URLs and connection dates onto matching SamPerson records.
-    /// Returns the number of people that were updated.
-    @discardableResult
-    private func enrichPeopleFromConnections(_ connections: [LinkedInConnectionDTO]) throws -> Int {
+    /// Returns a tuple: (matchedCount, unmatchedConnections).
+    private func enrichPeopleFromConnections(
+        _ connections: [LinkedInConnectionDTO]
+    ) throws -> (matched: Int, unmatched: [LinkedInConnectionDTO]) {
         var enrichedCount = 0
+        var unmatched: [LinkedInConnectionDTO] = []
         for conn in connections {
             let updated = try peopleRepo.updateLinkedInData(
                 profileURL: conn.profileURL,
@@ -278,9 +305,87 @@ final class LinkedInImportCoordinator {
                 email: conn.email,
                 fullName: "\(conn.firstName) \(conn.lastName)"
             )
-            if updated { enrichedCount += 1 }
+            if updated {
+                enrichedCount += 1
+            } else {
+                unmatched.append(conn)
+            }
         }
-        return enrichedCount
+        return (enrichedCount, unmatched)
+    }
+
+    // MARK: - Private: Triage Queue
+
+    /// Record unmatched LinkedIn connections and message senders in the UnknownSender triage system.
+    /// Uses "linkedin:<profileURL>" as the unique key so they surface in the Awareness triage section.
+    /// Connections with an email address use the email as key (consistent with mail-sourced unknowns).
+    private func recordUnmatchedForTriage(
+        connections: [LinkedInConnectionDTO],
+        messageSenders: [(profileURL: String, name: String, date: Date)]
+    ) {
+        // Build deduped input — prefer email key when available, otherwise linkedin: URL prefix
+        var senders: [(email: String, displayName: String?, subject: String, date: Date, source: EvidenceSource, isLikelyMarketing: Bool)] = []
+
+        // Deduplicate message senders by profileURL first, keeping the most recent message date
+        var sendersByURL: [String: (profileURL: String, name: String, date: Date)] = [:]
+        for s in messageSenders {
+            let key = s.profileURL.lowercased()
+            if let existing = sendersByURL[key] {
+                if s.date > existing.date { sendersByURL[key] = s }
+            } else {
+                sendersByURL[key] = s
+            }
+        }
+
+        for s in sendersByURL.values {
+            let uniqueKey = s.profileURL.isEmpty
+                ? "linkedin-unknown-\(s.name.lowercased().replacingOccurrences(of: " ", with: "-"))"
+                : "linkedin:\(s.profileURL.lowercased())"
+            senders.append((
+                email: uniqueKey,
+                displayName: s.name,
+                subject: s.profileURL.isEmpty ? "LinkedIn message" : s.profileURL,
+                date: s.date,
+                source: .linkedIn,
+                isLikelyMarketing: false
+            ))
+        }
+
+        // Deduplicate connections by profileURL, then add if not already captured from messages
+        let messageURLs = Set(sendersByURL.keys)
+        for conn in connections {
+            let urlKey = conn.profileURL.lowercased()
+            if messageURLs.contains(urlKey) { continue }  // already added via messages
+
+            let uniqueKey: String
+            if let email = conn.email, !email.isEmpty {
+                uniqueKey = email.lowercased()
+            } else {
+                uniqueKey = conn.profileURL.isEmpty
+                    ? "linkedin-unknown-\(conn.firstName.lowercased())-\(conn.lastName.lowercased())"
+                    : "linkedin:\(conn.profileURL.lowercased())"
+            }
+
+            let displayName = "\(conn.firstName) \(conn.lastName)".trimmingCharacters(in: .whitespaces)
+            let subject = conn.profileURL.isEmpty ? "LinkedIn connection" : conn.profileURL
+            senders.append((
+                email: uniqueKey,
+                displayName: displayName.isEmpty ? nil : displayName,
+                subject: subject,
+                date: conn.connectedOn ?? Date(),
+                source: .linkedIn,
+                isLikelyMarketing: false
+            ))
+        }
+
+        guard !senders.isEmpty else { return }
+
+        do {
+            try unknownSenderRepo.bulkRecordUnknownSenders(senders)
+            logger.info("Queued \(senders.count) unmatched LinkedIn contact(s) for triage")
+        } catch {
+            logger.error("Failed to record unmatched LinkedIn senders: \(error.localizedDescription)")
+        }
     }
 
     // MARK: - Private: Contact Matching (for messages)
