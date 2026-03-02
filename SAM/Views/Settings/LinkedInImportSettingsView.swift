@@ -205,9 +205,16 @@ struct LinkedInImportSettingsContent: View {
                     .font(.caption)
             }
 
-            Text(coordinator.importStatus.displayText)
-                .font(.caption)
-                .foregroundStyle(coordinator.importStatus == .failed ? .red : .secondary)
+            // Show granular phase description while importing, status text otherwise
+            if let progress = coordinator.progressMessage, isActive {
+                Text(progress)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text(coordinator.importStatus.displayText)
+                    .font(.caption)
+                    .foregroundStyle(coordinator.importStatus == .failed ? .red : .secondary)
+            }
 
             if coordinator.importStatus == .success && coordinator.matchedConnectionCount > 0 {
                 Text("· \(coordinator.matchedConnectionCount) connection(s) matched")

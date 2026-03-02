@@ -84,6 +84,8 @@ final class LinkedInImportCoordinator {
     }
 
     private(set) var importStatus: ImportStatus = .idle
+    /// Short phrase describing the current import phase — shown next to the progress spinner.
+    private(set) var progressMessage: String? = nil
     private(set) var lastError: String?
     private(set) var lastImportedAt: Date?
     private(set) var lastImportCount: Int = 0
@@ -167,16 +169,25 @@ final class LinkedInImportCoordinator {
         }
 
         importStatus = .importing
+        progressMessage = "Preparing…"
         lastError = nil
 
+        // Snapshot pending data so we can hand it to a background task
+        let connectionsToImport = pendingConnections
+        let messagesToImport = pendingMessages
+
+        // Phase labels published back to @MainActor between steps
         var importedCount = 0
         var matched = 0
 
         do {
             // 1. Enrich SamPerson records from connections (always, even without messages)
             var unmatchedConnections: [LinkedInConnectionDTO] = []
-            if !pendingConnections.isEmpty {
-                let result = try enrichPeopleFromConnections(pendingConnections)
+            if !connectionsToImport.isEmpty {
+                progressMessage = "Matching \(connectionsToImport.count) connection\(connectionsToImport.count == 1 ? "" : "s")…"
+                // Yield to let the UI update before the blocking work begins
+                await Task.yield()
+                let result = try enrichPeopleFromConnections(connectionsToImport)
                 matched = result.matched
                 unmatchedConnections = result.unmatched
                 lastConnectionImportAt = Date()
@@ -187,7 +198,9 @@ final class LinkedInImportCoordinator {
 
             // 2. Import messages as SamEvidenceItem records
             var unmatchedMessageSenders: [(profileURL: String, name: String, date: Date)] = []
-            if !pendingMessages.isEmpty {
+            if !messagesToImport.isEmpty {
+                progressMessage = "Importing \(messagesToImport.count) message\(messagesToImport.count == 1 ? "" : "s")…"
+                await Task.yield()
                 // Build lookup tables once for all messages
                 let allPeople = try peopleRepo.fetchAll()
                 var byLinkedInURL  = Dictionary(uniqueKeysWithValues: allPeople.compactMap { p -> (String, SamPerson)? in
@@ -203,7 +216,7 @@ final class LinkedInImportCoordinator {
                     dict[name] = p
                 }
 
-                for msg in pendingMessages {
+                for msg in messagesToImport {
                     let person = matchPerson(
                         profileURL: msg.senderProfileURL,
                         name: msg.senderName,
@@ -261,6 +274,8 @@ final class LinkedInImportCoordinator {
             }
 
             // 3. Queue unmatched connections and message senders for user triage
+            progressMessage = "Finalizing…"
+            await Task.yield()
             recordUnmatchedForTriage(
                 connections: unmatchedConnections,
                 messageSenders: unmatchedMessageSenders
@@ -269,8 +284,9 @@ final class LinkedInImportCoordinator {
             matchedConnectionCount   = matched
             unmatchedConnectionCount = unmatchedConnections.count
             lastImportCount          = importedCount
-            lastImportedAt         = Date()
-            importStatus           = .success
+            lastImportedAt           = Date()
+            importStatus             = .success
+            progressMessage          = nil
 
             // Clear pending state
             pendingMessages    = []
@@ -280,8 +296,9 @@ final class LinkedInImportCoordinator {
 
         } catch {
             logger.error("LinkedIn import failed: \(error.localizedDescription)")
-            importStatus = .failed
-            lastError    = error.localizedDescription
+            importStatus    = .failed
+            progressMessage = nil
+            lastError       = error.localizedDescription
         }
     }
 
