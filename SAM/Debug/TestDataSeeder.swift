@@ -53,7 +53,7 @@ final class TestDataSeeder {
 
         // Write all flags and synchronize to disk FIRST, then exit(0) immediately.
         //
-        // Why exit(0) with no waiting:
+        // Why _exit(0) with no waiting:
         //
         // MLX generation dispatches GPU work via Metal asyncEval onto a dedicated
         // command queue thread (com.Metal.CommandQueueDispatch). This work runs
@@ -62,10 +62,15 @@ final class TestDataSeeder {
         // (buffer, encoder) that ARC has already released — causing objc_msgSend
         // crashes on deallocated objects.
         //
-        // exit(0) terminates all threads simultaneously at the OS level before any
-        // ARC release or C++ destructor runs. Metal objects, SQLite handles, and
-        // MLX statics all vanish atomically with the process — no individual
-        // teardown, no races. The OS reclaims all resources cleanly.
+        // exit(0) calls registered atexit() handlers. Metal's debug validation layer
+        // (MTL_DEBUG_LAYER) registers atexit() handlers that can deadlock with the
+        // command queue thread if it holds a Metal lock — causing the beachball hang.
+        //
+        // _exit(0) is a raw POSIX process termination that bypasses ALL atexit()
+        // handlers and C++ destructors. All threads are killed, all file descriptors
+        // closed, and all memory returned to the OS atomically — no Metal teardown,
+        // no MLX destructor races, no deadlocks. UserDefaults has already been
+        // synchronized, so the flags are safely on disk before we call _exit.
         //
         // Cancelling import coordinators is still worthwhile to stop new SwiftData
         // writes, but we do NOT wait for anything — we exit as fast as possible.
@@ -86,11 +91,11 @@ final class TestDataSeeder {
         // Schedule TipKit reset for next launch (can't call resetDatastore after configure())
         UserDefaults.standard.set(true, forKey: "sam.tips.pendingReset")
 
-        // Flush to disk — must happen before exit(0) since there is no atexit handler
+        // Flush to disk — must happen before _exit(0) since _exit skips atexit handlers
         UserDefaults.standard.synchronize()
 
-        logger.notice("TestDataSeeder: flags written — calling exit(0)")
-        exit(0)
+        logger.notice("TestDataSeeder: flags written — calling _exit(0)")
+        _exit(0)
     }
 
     /// Inserts all Harvey Snodgrass test data into the provided ModelContext.
