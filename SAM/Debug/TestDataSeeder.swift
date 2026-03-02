@@ -33,16 +33,23 @@ final class TestDataSeeder {
     /// Wipes all existing data, seeds Harvey Snodgrass test data in-process,
     /// then restarts the app cleanly.
     ///
-    /// The previous approach called NSApplication.terminate() *before* seeding,
-    /// which triggered a Metal crash: GPU command buffers were still alive from
-    /// in-flight AI inference when the process tore down Metal objects.
+    /// Critical ordering constraint (SQLite file handle lifetime):
+    /// The old ModelContainer holds SQLite file descriptors open.  Deleting
+    /// the store files while those fds are open causes "vnode unlinked while
+    /// in use" (SQLite error 522) and the subsequent makeFreshContainer() call
+    /// fatals because CoreData cannot attach a store at a half-open path.
     ///
-    /// This version:
-    /// 1. Cancels all background tasks
-    /// 2. Seeds the data into a fresh in-process container (no GPU activity involved)
-    /// 3. Sets the lockout flag
-    /// 4. Only then terminates — by this point AI inference is idle and Metal
-    ///    objects can be destroyed safely
+    /// Correct sequence:
+    ///  1. Cancel imports + drain main-actor work
+    ///  2. Capture the store URL (before swapping containers)
+    ///  3. Swap the shared container for a throw-away in-memory one
+    ///     → this releases all file handles on the on-disk store
+    ///  4. Delete the store files (now safe — no open fds)
+    ///  5. Create the fresh on-disk container at the same path
+    ///  6. Swap in the fresh container + rewire repositories
+    ///  7. Insert test data
+    ///  8. Set lockout/TipKit flags
+    ///  9. Terminate — Metal is quiescent, all fds are clean
     func seedFresh() async {
         logger.notice("TestDataSeeder: beginning fresh seed")
 
@@ -53,35 +60,47 @@ final class TestDataSeeder {
         CommunicationsImportCoordinator.shared.cancelAll()
         EvernoteImportCoordinator.shared.cancelAll()
 
-        // 2. Brief yield so queued main-actor work drains
+        // Brief yield so queued main-actor work drains
         try? await Task.sleep(for: .milliseconds(300))
 
-        // 3. Delete the store files
-        if let storeURL = SAMModelContainer.shared.configurations.first?.url {
+        // 2. Capture store URL before we swap anything
+        let storeURL = SAMModelContainer.shared.configurations.first?.url
+
+        // 3. Swap to a throw-away in-memory container — releases all on-disk file handles
+        let tempContainer = SAMModelContainer.makeInMemoryContainer()
+        SAMModelContainer.replaceShared(with: tempContainer)
+        SAMApp.configureDataLayer(container: tempContainer)
+        logger.notice("TestDataSeeder: swapped to in-memory container — on-disk fds released")
+
+        // Another brief yield to let SwiftData finish any pending journal flush
+        try? await Task.sleep(for: .milliseconds(100))
+
+        // 4. Delete the store files — safe now that no container holds them open
+        if let url = storeURL {
             let fm = FileManager.default
-            try? fm.removeItem(at: storeURL)
-            try? fm.removeItem(at: storeURL.appendingPathExtension("shm"))
-            try? fm.removeItem(at: storeURL.appendingPathExtension("wal"))
-            logger.notice("TestDataSeeder: store files deleted")
+            try? fm.removeItem(at: url)
+            try? fm.removeItem(at: url.appendingPathExtension("shm"))
+            try? fm.removeItem(at: url.appendingPathExtension("wal"))
+            logger.notice("TestDataSeeder: store files deleted from \(url.lastPathComponent, privacy: .public)")
         }
 
-        // 4. Replace the shared container with a fresh empty one
+        // 5 + 6. Create fresh on-disk container and wire repositories to it
         let freshContainer = SAMModelContainer.makeFreshContainer()
         SAMModelContainer.replaceShared(with: freshContainer)
         SAMApp.configureDataLayer(container: freshContainer)
-        logger.notice("TestDataSeeder: fresh container installed and repositories rewired")
+        logger.notice("TestDataSeeder: fresh on-disk container installed and repositories rewired")
 
-        // 5. Insert all test data into the new empty store
+        // 7. Insert all test data into the new empty store
         let seedContext = ModelContext(freshContainer)
         await insertData(into: seedContext)
 
-        // 6. Set the lockout flag — imports will be suppressed on next launch
+        // 8. Set the lockout flag — imports will be suppressed on next launch
         UserDefaults.standard.isTestDataActive = true
 
-        // 7. Schedule TipKit reset for next launch
+        // Schedule TipKit reset for next launch
         UserDefaults.standard.set(true, forKey: "sam.tips.pendingReset")
 
-        // 8. Now terminate — AI inference is idle, Metal is quiescent, safe to exit
+        // 9. Now terminate — AI inference is idle, Metal is quiescent, safe to exit
         logger.notice("TestDataSeeder: seed committed — restarting cleanly")
         NSApplication.shared.terminate(nil)
     }

@@ -95,6 +95,18 @@ enum SAMModelContainer {
         }
     }
 
+    /// Construct a throw-away in-memory container with the same schema.
+    /// Used during reset to release on-disk file handles before deleting store files.
+    nonisolated static func makeInMemoryContainer() -> ModelContainer {
+        let schema = Schema(SAMSchema.allModels)
+        let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+        do {
+            return try ModelContainer(for: schema, configurations: config)
+        } catch {
+            fatalError("SAMModelContainer: failed to create in-memory ModelContainer — \(error)")
+        }
+    }
+
     /// Replace the shared container with a new one.
     nonisolated static func replaceShared(with container: ModelContainer) {
         _shared = container
