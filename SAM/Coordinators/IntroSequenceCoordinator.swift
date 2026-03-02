@@ -92,19 +92,15 @@ final class IntroSequenceCoordinator {
             }
         }
 
-        /// Fallback duration in seconds if speech synthesis silently fails.
-        /// At rate 0.5 with pre/post delays, each slide takes ~12–18 seconds.
-        /// These are generous — the fallback timer is a safety net, not the
-        /// primary advance mechanism (that's the didFinish delegate callback).
+        /// Pre-start timeout: if AVSpeechSynthesizer doesn't fire didStart within
+        /// this many seconds, assume a silent failure and force-advance.
+        /// Once speech starts (didStart fires), this timer is cancelled.
+        /// The primary advance mechanism is always didFinish.
         var fallbackDuration: Double {
-            switch self {
-            case .welcome:       return 17.0
-            case .relationships: return 15.0
-            case .coaching:      return 15.0
-            case .business:      return 15.0
-            case .privacy:       return 15.0
-            case .getStarted:    return 25.0
-            }
+            // 8 seconds is generous for the synthesizer to fire didStart.
+            // If it hasn't started by then, treat it as a silent failure.
+            // This timer is cancelled immediately once didStart fires.
+            return 8.0
         }
 
         var next: IntroSlide? {
@@ -247,19 +243,13 @@ final class IntroSequenceCoordinator {
 
         NarrationService.shared.speak(slide.narrationText, onStart: { [weak self] in
             guard let self else { return }
-            // Speech started successfully — reset fallback timer to a tight window
-            // from now, so a mid-speech AVAudioBuffer stall recovers quickly (~3s grace).
+            // Speech started — cancel the pre-start fallback. The primary advance
+            // mechanism is now didFinish alone; no post-start timer needed.
             Task(priority: .userInitiated) { @MainActor [weak self] in
                 guard let self, self.narratingSlide == slide else { return }
                 self.fallbackTimer?.cancel()
-                self.fallbackTimer = Task(priority: .userInitiated) { [weak self] in
-                    try? await Task.sleep(for: .seconds(slide.fallbackDuration + 3.0))
-                    guard !Task.isCancelled, let self = self else { return }
-                    if self.narratingSlide == slide && self.isPlaying == true {
-                        self.logger.warning("Post-start fallback fired for slide \(slide.rawValue) — force advancing")
-                        self.advanceFromSlide(slide)
-                    }
-                }
+                self.fallbackTimer = nil
+                self.logger.info("Speech started for slide \(slide.rawValue) — pre-start fallback cancelled")
             }
         }, onFinish: { [weak self] in
             guard let self else { return }
