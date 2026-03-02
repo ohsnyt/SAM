@@ -62,13 +62,22 @@ actor AIService {
 
     // MARK: - Active Generation Counter
 
-    /// Number of generate() / generateNarrative() calls currently in flight.
-    /// Observed by BackgroundTaskMonitor so the seeder can wait for quiescence.
+    /// Number of generate() / generateNarrative() calls currently in flight
+    /// at the Swift level (outer counter).
     private(set) var activeGenerationCount: Int = 0
 
-    /// Suspends until activeGenerationCount drops to zero, polling every 100ms.
+    /// Number of MLX for-await stream iterations currently in progress.
+    /// This is the inner counter that tracks the actual C++ mutex lifetime.
+    /// The outer counter can reach zero while a stream is still exhausting —
+    /// this one doesn't until the last token is consumed.
+    private(set) var activeMLXStreamCount: Int = 0
+
+    /// True when no generation work of any kind is in flight.
+    var isFullyIdle: Bool { activeGenerationCount == 0 && activeMLXStreamCount == 0 }
+
+    /// Suspends until both counters reach zero, polling every 100ms.
     func waitUntilIdle() async {
-        while activeGenerationCount > 0 {
+        while !isFullyIdle {
             try? await Task.sleep(for: .milliseconds(100))
         }
     }
@@ -289,6 +298,14 @@ actor AIService {
         // Run it inside a child Task so a thrown error surfaces rather than crashing.
         let stream = try await container.generate(input: lmInput, parameters: parameters)
         var output = ""
+
+        // Track the C++ stream lifetime separately from the outer call counter.
+        // The outer counter (activeGenerationCount) decrements via defer when the
+        // Swift function returns, but the MLX C++ mutex is held until this for-await
+        // loop exhausts.  prepareForTermination() / waitUntilIdle() must wait for
+        // activeMLXStreamCount == 0, not just activeGenerationCount == 0.
+        activeMLXStreamCount += 1
+        defer { activeMLXStreamCount -= 1 }
 
         for await generation in stream {
             if let chunk = generation.chunk {

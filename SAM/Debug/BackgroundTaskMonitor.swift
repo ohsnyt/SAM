@@ -89,10 +89,16 @@ final class BackgroundTaskMonitor {
             items.append("Evernote analysis (\(evernoteCount))")
         }
 
-        // AI generation calls live on the AIService actor — hop to read
-        let aiCount = await AIService.shared.activeGenerationCount
-        if aiCount > 0 {
-            items.append(aiCount == 1 ? "AI generation" : "AI generation (\(aiCount))")
+        // AI generation calls live on the AIService actor — hop to read both counters.
+        // activeMLXStreamCount is the inner counter tracking the C++ for-await loop;
+        // it must reach zero before it is safe to terminate.
+        let aiOuter = await AIService.shared.activeGenerationCount
+        let aiMLX   = await AIService.shared.activeMLXStreamCount
+        if aiOuter > 0 {
+            items.append(aiOuter == 1 ? "AI generation" : "AI generation (\(aiOuter))")
+        }
+        if aiMLX > 0 {
+            items.append(aiMLX == 1 ? "MLX stream" : "MLX stream (\(aiMLX))")
         }
 
         activeDescriptions = items
