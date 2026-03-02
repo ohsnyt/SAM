@@ -1496,6 +1496,13 @@ struct GeneralSettingsView: View {
             "pipelineBackfillComplete",
             "outcomeAutoGenerate",
             "sam.contacts.import.lastRunAt",
+            // Test data flags — must be cleared so Harvey doesn't re-seed after store wipe
+            "sam.testData.active",
+            "sam.testData.loaded",
+            // LinkedIn import watermarks
+            "sam.linkedin.enabled",
+            "sam.linkedin.messages.lastImportAt",
+            "sam.linkedin.connections.lastImportAt",
         ]
         for key in keysToRemove {
             UserDefaults.standard.removeObject(forKey: key)
