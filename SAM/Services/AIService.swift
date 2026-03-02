@@ -275,50 +275,65 @@ actor AIService {
 
     /// Generate text using the MLX backend.
     private func generateWithMLX(prompt: String, systemInstruction: String?, maxTokens: Int?) async throws -> String {
-        try await ensureMLXModelLoaded()
-
-        guard let container = mlxModelContainer else {
-            throw AIError.modelUnavailable("MLX model container not loaded")
-        }
-
-        var chat: [Chat.Message] = []
-        if let system = systemInstruction {
-            chat.append(.system(system))
-        }
-        chat.append(.user(prompt))
-
-        let userInput = UserInput(chat: chat)
-        let lmInput = try await container.prepare(input: userInput)
-
-        var parameters = GenerateParameters()
-        parameters.temperature = 0.6
-        parameters.maxTokens = maxTokens ?? 4096
-
-        // container.generate can fatal-assert inside MLX C++ on Metal/OOM errors.
-        // Run it inside a child Task so a thrown error surfaces rather than crashing.
-        let stream = try await container.generate(input: lmInput, parameters: parameters)
-        var output = ""
-
-        // Track the C++ stream lifetime separately from the outer call counter.
-        // The outer counter (activeGenerationCount) decrements via defer when the
-        // Swift function returns, but the MLX C++ mutex is held until this for-await
-        // loop exhausts.  prepareForTermination() / waitUntilIdle() must wait for
-        // activeMLXStreamCount == 0, not just activeGenerationCount == 0.
+        // Track the entire call (including C++ destructor teardown) with a single
+        // increment/decrement pair.  We use a local `decremented` flag to ensure
+        // exactly one decrement regardless of exit path, always paired with a
+        // Task.yield() so waitUntilIdle() gets one more polling cycle after the
+        // MLX C++ objects finish tearing down before the counter reaches zero.
         activeMLXStreamCount += 1
-        defer { activeMLXStreamCount -= 1 }
+        var decremented = false
+        func release() async {
+            guard !decremented else { return }
+            decremented = true
+            await Task.yield()  // let C++ destructor finish before count drops to 0
+            activeMLXStreamCount -= 1
+        }
 
-        for await generation in stream {
-            if let chunk = generation.chunk {
-                output += chunk
+        do {
+            try await ensureMLXModelLoaded()
+
+            guard let container = mlxModelContainer else {
+                await release()
+                throw AIError.modelUnavailable("MLX model container not loaded")
             }
-        }
 
-        let result = output.trimmingCharacters(in: .whitespacesAndNewlines)
-        if result.isEmpty {
-            throw AIError.generationFailed("MLX model returned empty response")
-        }
+            var chat: [Chat.Message] = []
+            if let system = systemInstruction {
+                chat.append(.system(system))
+            }
+            chat.append(.user(prompt))
 
-        return result
+            let userInput = UserInput(chat: chat)
+            let lmInput = try await container.prepare(input: userInput)
+
+            var parameters = GenerateParameters()
+            parameters.temperature = 0.6
+            parameters.maxTokens = maxTokens ?? 4096
+
+            let stream = try await container.generate(input: lmInput, parameters: parameters)
+            var output = ""
+
+            for await generation in stream {
+                if let chunk = generation.chunk {
+                    output += chunk
+                }
+            }
+            // `stream` goes out of scope at the end of this do-block.
+            // Its C++ destructor runs while activeMLXStreamCount is still > 0
+            // because we call release() (with yield) after this point.
+
+            let result = output.trimmingCharacters(in: .whitespacesAndNewlines)
+            await release()
+
+            if result.isEmpty {
+                throw AIError.generationFailed("MLX model returned empty response")
+            }
+            return result
+
+        } catch {
+            await release()
+            throw error
+        }
     }
 
     /// Unload the cached MLX model to free memory. Call when switching back to FoundationModels.
