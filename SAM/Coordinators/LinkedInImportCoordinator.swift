@@ -190,7 +190,7 @@ final class LinkedInImportCoordinator {
             if !pendingMessages.isEmpty {
                 // Build lookup tables once for all messages
                 let allPeople = try peopleRepo.fetchAll()
-                let byLinkedInURL  = Dictionary(uniqueKeysWithValues: allPeople.compactMap { p -> (String, SamPerson)? in
+                var byLinkedInURL  = Dictionary(uniqueKeysWithValues: allPeople.compactMap { p -> (String, SamPerson)? in
                     guard let url = p.linkedInProfileURL else { return nil }
                     return (url.lowercased(), p)
                 })
@@ -211,6 +211,16 @@ final class LinkedInImportCoordinator {
                         byEmail: [:],
                         byFullName: byFullName
                     )
+
+                    // If matched by name (not URL), back-fill their LinkedIn profile URL
+                    // so future lookups use the faster URL path and evidence stays linked.
+                    if let matched = person,
+                       !msg.senderProfileURL.isEmpty,
+                       (matched.linkedInProfileURL ?? "").lowercased() != msg.senderProfileURL.lowercased() {
+                        matched.linkedInProfileURL = msg.senderProfileURL
+                        // Update the lookup table so subsequent messages in this batch hit the URL path
+                        byLinkedInURL[msg.senderProfileURL.lowercased()] = matched
+                    }
 
                     if person == nil && !msg.senderName.isEmpty {
                         // Track unmatched message senders for triage
@@ -245,6 +255,8 @@ final class LinkedInImportCoordinator {
                     importedCount += 1
                 }
 
+                // Save any linkedInProfileURL back-fills written during the loop
+                try peopleRepo.save()
                 lastMessageImportAt = Date()
             }
 

@@ -504,6 +504,12 @@ final class PeopleRepository {
         }
     }
 
+    /// Persist any pending changes to the model context.
+    func save() throws {
+        guard let modelContext else { throw RepositoryError.notConfigured }
+        try modelContext.save()
+    }
+
     /// Set the LinkedIn profile URL on a SamPerson by their Apple Contact identifier.
     /// Used after promoting an unknown LinkedIn contact from the triage screen.
     func setLinkedInProfileURL(contactIdentifier: String, profileURL: String) throws {

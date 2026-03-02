@@ -313,7 +313,8 @@ struct UnknownSenderTriageSection: View {
                 guard let contactDTO = await contactsService.createContact(
                     fullName: displayName,
                     email: contactEmail,
-                    note: linkedInURL.map { "LinkedIn: \($0)" }
+                    note: nil,
+                    linkedInProfileURL: linkedInURL
                 ) else {
                     logger.error("Failed to create contact for \(sender.email, privacy: .public)")
                     continue

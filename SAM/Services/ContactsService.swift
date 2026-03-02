@@ -460,9 +460,10 @@ actor ContactsService {
         }
     }
     
-    /// Create a new contact with minimal fields (name, email). Optionally include a note (stored when entitlement available).
+    /// Create a new contact with minimal fields (name, email, optional LinkedIn URL).
+    /// The LinkedIn URL is stored as a social profile on the contact (visible in Contacts.app).
     /// Returns the created ContactDTO on success, or nil on failure.
-    func createContact(fullName: String, email: String?, note: String?) async -> ContactDTO? {
+    func createContact(fullName: String, email: String?, note: String?, linkedInProfileURL: String? = nil) async -> ContactDTO? {
         guard authorizationStatus() == .authorized else {
             logger.warning("Attempted to create contact without authorization")
             return nil
@@ -483,6 +484,16 @@ actor ContactsService {
             if let email = email, !email.isEmpty {
                 let labeled = CNLabeledValue(label: CNLabelWork, value: NSString(string: email))
                 mutable.emailAddresses = [labeled]
+            }
+
+            if let linkedInURL = linkedInProfileURL, !linkedInURL.isEmpty {
+                let profile = CNSocialProfile(
+                    urlString: linkedInURL.hasPrefix("http") ? linkedInURL : "https://\(linkedInURL)",
+                    username: nil,
+                    userIdentifier: nil,
+                    service: CNSocialProfileServiceLinkedIn
+                )
+                mutable.socialProfiles = [CNLabeledValue(label: CNLabelWork, value: profile)]
             }
 
             // Notes field requires special entitlement; store placeholder comment in future
