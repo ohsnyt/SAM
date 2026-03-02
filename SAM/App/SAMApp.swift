@@ -79,6 +79,16 @@ struct SAMApp: App {
             UserDefaults.standard.set(false, forKey: "sam.contacts.enabled")
             UserDefaults.standard.set(false, forKey: "calendarAutoImportEnabled")
         }
+
+        // Pending seed wipe: delete store files BEFORE _shared is ever accessed.
+        // The seeder set this flag then terminated; now we wipe on the way back up
+        // so the lazy _shared initializer creates a completely fresh store.
+        // This must run before configureDataLayer() (which touches _shared).
+        if UserDefaults.standard.bool(forKey: "sam.seed.pending") {
+            SAMModelContainer.deleteStoreFiles()
+            UserDefaults.standard.removeObject(forKey: "sam.seed.pending")
+            logger.notice("SAMApp: store files wiped for pending seed — fresh container will be created")
+        }
         #endif
 
         // Configure repositories with shared container

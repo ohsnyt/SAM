@@ -80,6 +80,26 @@ enum SAMModelContainer {
     /// DEBUG-only mutable shared container for reset flows.
     nonisolated static var shared: ModelContainer { _shared }
 
+    /// The default on-disk URL that ModelConfiguration("SAM_v27") uses.
+    /// Computed without touching _shared so it is safe to call before the
+    /// container is ever initialized (e.g. during a launch-time wipe).
+    nonisolated static var defaultStoreURL: URL {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        return appSupport.appendingPathComponent("SAM_v27.store")
+    }
+
+    /// Delete the on-disk SQLite store files (main + -shm + -wal).
+    /// MUST be called before _shared is first accessed; once any ModelContainer
+    /// opens the files the OS will report "vnode unlinked while in use".
+    nonisolated static func deleteStoreFiles() {
+        let fm = FileManager.default
+        let url = defaultStoreURL
+        for ext in ["", ".shm", ".wal"] {
+            let target = ext.isEmpty ? url : url.appendingPathExtension(String(ext.dropFirst()))
+            try? fm.removeItem(at: target)
+        }
+    }
+
     /// Construct a fresh ModelContainer for testing or reset.
     nonisolated static func makeFreshContainer() -> ModelContainer {
         let schema = Schema(SAMSchema.allModels)
@@ -92,18 +112,6 @@ enum SAMModelContainer {
             return try ModelContainer(for: schema, configurations: config)
         } catch {
             fatalError("SAMModelContainer: failed to create fresh ModelContainer — \(error)")
-        }
-    }
-
-    /// Construct a throw-away in-memory container with the same schema.
-    /// Used during reset to release on-disk file handles before deleting store files.
-    nonisolated static func makeInMemoryContainer() -> ModelContainer {
-        let schema = Schema(SAMSchema.allModels)
-        let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
-        do {
-            return try ModelContainer(for: schema, configurations: config)
-        } catch {
-            fatalError("SAMModelContainer: failed to create in-memory ModelContainer — \(error)")
         }
     }
 

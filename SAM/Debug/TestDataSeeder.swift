@@ -30,78 +30,49 @@ final class TestDataSeeder {
 
     // MARK: - Public Entry Point
 
-    /// Wipes all existing data, seeds Harvey Snodgrass test data in-process,
-    /// then restarts the app cleanly.
+    /// Schedules a full wipe-and-reseed, then terminates so the next launch
+    /// performs it cleanly.
     ///
-    /// Critical ordering constraint (SQLite file handle lifetime):
-    /// The old ModelContainer holds SQLite file descriptors open.  Deleting
-    /// the store files while those fds are open causes "vnode unlinked while
-    /// in use" (SQLite error 522) and the subsequent makeFreshContainer() call
-    /// fatals because CoreData cannot attach a store at a half-open path.
+    /// Why two launches are required:
+    ///   SwiftUI's .modelContainer() retains its own strong reference to the
+    ///   original ModelContainer (independent of SAMModelContainer._shared).
+    ///   That means the SQLite file descriptors stay open for the entire life
+    ///   of the process — no amount of in-process container swapping releases
+    ///   them.  Deleting the store files while those fds are live produces
+    ///   "vnode unlinked while in use" (SQLite error 522), and the subsequent
+    ///   attempt to open the store at the same path fatals.
     ///
-    /// Correct sequence:
-    ///  1. Cancel imports + drain main-actor work
-    ///  2. Capture the store URL (before swapping containers)
-    ///  3. Swap the shared container for a throw-away in-memory one
-    ///     → this releases all file handles on the on-disk store
-    ///  4. Delete the store files (now safe — no open fds)
-    ///  5. Create the fresh on-disk container at the same path
-    ///  6. Swap in the fresh container + rewire repositories
-    ///  7. Insert test data
-    ///  8. Set lockout/TipKit flags
-    ///  9. Terminate — Metal is quiescent, all fds are clean
+    ///   The only safe approach:
+    ///     Launch N   — set sam.seed.pending, terminate (fds close on exit)
+    ///     Launch N+1 — SAMApp.init detects the flag, deletes files BEFORE
+    ///                  _shared is ever initialized, proceeds normally.
+    ///                  isTestDataActive causes insertData() to run after
+    ///                  the fresh empty store is open.
     func seedFresh() async {
-        logger.notice("TestDataSeeder: beginning fresh seed")
+        logger.notice("TestDataSeeder: scheduling fresh seed — will complete on next launch")
 
-        // 1. Cancel all in-flight imports so no SwiftData writes are in progress
+        // Cancel all in-flight imports so any pending writes finish cleanly
         ContactsImportCoordinator.shared.cancelAll()
         CalendarImportCoordinator.shared.cancelAll()
         MailImportCoordinator.shared.cancelAll()
         CommunicationsImportCoordinator.shared.cancelAll()
         EvernoteImportCoordinator.shared.cancelAll()
 
-        // Brief yield so queued main-actor work drains
+        // Brief yield so queued main-actor work drains before we exit
         try? await Task.sleep(for: .milliseconds(300))
 
-        // 2. Capture store URL before we swap anything
-        let storeURL = SAMModelContainer.shared.configurations.first?.url
+        // Flag the wipe so SAMApp.init handles it on the next launch
+        UserDefaults.standard.set(true, forKey: "sam.seed.pending")
 
-        // 3. Swap to a throw-away in-memory container — releases all on-disk file handles
-        let tempContainer = SAMModelContainer.makeInMemoryContainer()
-        SAMModelContainer.replaceShared(with: tempContainer)
-        SAMApp.configureDataLayer(container: tempContainer)
-        logger.notice("TestDataSeeder: swapped to in-memory container — on-disk fds released")
-
-        // Another brief yield to let SwiftData finish any pending journal flush
-        try? await Task.sleep(for: .milliseconds(100))
-
-        // 4. Delete the store files — safe now that no container holds them open
-        if let url = storeURL {
-            let fm = FileManager.default
-            try? fm.removeItem(at: url)
-            try? fm.removeItem(at: url.appendingPathExtension("shm"))
-            try? fm.removeItem(at: url.appendingPathExtension("wal"))
-            logger.notice("TestDataSeeder: store files deleted from \(url.lastPathComponent, privacy: .public)")
-        }
-
-        // 5 + 6. Create fresh on-disk container and wire repositories to it
-        let freshContainer = SAMModelContainer.makeFreshContainer()
-        SAMModelContainer.replaceShared(with: freshContainer)
-        SAMApp.configureDataLayer(container: freshContainer)
-        logger.notice("TestDataSeeder: fresh on-disk container installed and repositories rewired")
-
-        // 7. Insert all test data into the new empty store
-        let seedContext = ModelContext(freshContainer)
-        await insertData(into: seedContext)
-
-        // 8. Set the lockout flag — imports will be suppressed on next launch
+        // Mark test data as active so insertData() runs after the fresh store opens
         UserDefaults.standard.isTestDataActive = true
 
-        // Schedule TipKit reset for next launch
+        // Schedule TipKit reset for next launch (can't call resetDatastore after configure())
         UserDefaults.standard.set(true, forKey: "sam.tips.pendingReset")
 
-        // 9. Now terminate — AI inference is idle, Metal is quiescent, safe to exit
-        logger.notice("TestDataSeeder: seed committed — restarting cleanly")
+        // Terminate — all file handles close on process exit, making the
+        // store files safe to delete at the start of the next launch
+        logger.notice("TestDataSeeder: flags set — terminating for clean relaunch")
         NSApplication.shared.terminate(nil)
     }
 
