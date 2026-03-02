@@ -60,6 +60,19 @@ actor AIService {
     /// MLX fatal errors from the C++ layer cannot be caught; this flag prevents reaching them.
     private var mlxCircuitOpen = false
 
+    // MARK: - Active Generation Counter
+
+    /// Number of generate() / generateNarrative() calls currently in flight.
+    /// Observed by BackgroundTaskMonitor so the seeder can wait for quiescence.
+    private(set) var activeGenerationCount: Int = 0
+
+    /// Suspends until activeGenerationCount drops to zero, polling every 100ms.
+    func waitUntilIdle() async {
+        while activeGenerationCount > 0 {
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+    }
+
     // MARK: - Backend Selection
 
     private let foundationModel = SystemLanguageModel.default
@@ -115,6 +128,9 @@ actor AIService {
         systemInstruction: String? = nil,
         maxTokens: Int? = nil
     ) async throws -> String {
+        activeGenerationCount += 1
+        defer { activeGenerationCount -= 1 }
+
         let backend = activeBackend()
 
         switch backend {
@@ -149,6 +165,9 @@ actor AIService {
         systemInstruction: String? = nil,
         maxTokens: Int? = nil
     ) async throws -> String {
+        activeGenerationCount += 1
+        defer { activeGenerationCount -= 1 }
+
         let backend = activeBackend()
 
         switch backend {

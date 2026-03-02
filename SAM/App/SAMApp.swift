@@ -183,6 +183,7 @@ struct SAMApp: App {
                     SAMShortcutsProvider.updateAppShortcutParameters()
                 }
         }
+
         .commands {
             // ⌘K Command Palette + ⌘1–4 sidebar navigation
             CommandGroup(after: .sidebar) {
