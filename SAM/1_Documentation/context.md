@@ -3,7 +3,7 @@
 **Language**: Swift 6  
 **Architecture**: Clean layered architecture with strict separation of concerns  
 **Framework**: SwiftUI + SwiftData  
-**Last Updated**: February 28, 2026 (Phases A–Z + Advanced Search + Export/Import + Phase AA complete + Strategic Action Coaching Flow + Life Event Coaching + Interactive Content Ideas + ⌘K Command Palette + Coaching Calibration Phases 1–4 + Phase AB Polish + Bug fixes: intro timing, tips state, JSON null, Contacts container, task priorities, schema SAM_v27)
+**Last Updated**: March 2, 2026 (Phases A–Z + Advanced Search + Export/Import + Phase AA complete + Strategic Action Coaching Flow + Life Event Coaching + Interactive Content Ideas + ⌘K Command Palette + Coaching Calibration Phases 1–4 + Phase AB Polish + Bug fixes: intro timing, tips state, JSON null, Contacts container, task priorities, schema SAM_v27 + LinkedIn/WhatsApp integration plan + permissions audit deferred)
 
 **Related Docs**:
 - See `agent.md` for product philosophy, AI architecture, and UX principles
@@ -347,6 +347,49 @@ SAM/SAM/
 - **Custom Activity Types**: User-defined time tracking categories
 - **API Integration**: Connect to financial planning software
 - **Team Collaboration**: Shared contexts and evidence (multi-user support)
+
+### Planned — LinkedIn & Third-Party Channel Integration
+
+Three interlocking pieces designed together to avoid duplicate evidence:
+
+**1. LinkedIn Data Archive Import** (periodic, watermark-based)
+- User requests export at https://www.linkedin.com/mypreferences/d/download-my-data (can take up to 24 hours — SAM should remind the user the next day)
+- Settings > Data Sources: "Request LinkedIn Data" button that opens the URL + sets a reminder
+- Import from LinkedIn's `messages.csv` (documented format: FROM, TO, DATE, SUBJECT, CONTENT columns)
+- Watermark stored in UserDefaults (`sam.linkedin.lastImportDate`) — only messages newer than this are processed on subsequent imports
+- Dedup key: `linkedin:<sendername>:<ISO8601timestamp>:<first50charshash>` stored as `sourceUID` on `SamEvidenceItem`
+- Contact matching: LinkedIn profile URL on `SamPerson` for exact match; fuzzy display name match with user confirmation fallback
+
+**2. Global Clipboard Capture Hotkey** (channel-agnostic)
+- Requires Accessibility permission (`AXIsProcessTrusted()`) — global `CGEventTap`
+- Works for LinkedIn, WhatsApp web, any platform Sarah copies from
+- Detects conversation structure in clipboard (multi-line, name/timestamp patterns)
+- Parses into individual messages and offers "Capture to SAM" sheet
+- Uses same `sourceUID` dedup scheme — if archive import later finds same message, existing record wins silently
+- One habit covers all channels Sarah uses
+
+**3. LinkedIn as Reply Channel**
+- Surfaces in channel recommendation logic alongside iMessage/email
+- Draft reply UI: "LinkedIn" option with copy button (same pattern as existing channels)
+- LinkedIn profile URL stored on `SamPerson` for deep-link open
+
+**4. WhatsApp Direct Database Integration** *(pending feasibility confirmation — see Deferred Investigation below)*
+- If feasible: user selects `ChatStorage.sqlite` once via `NSOpenPanel`, SAM stores security-scoped bookmark
+- Watermark on `ZMESSAGEDATE` (Apple Epoch, convert: `ZMESSAGEDATE + 978307200`)
+- Schema: `ZWAMESSAGE` table, `ZTEXT` body, `ZFROMJID` sender, `ZMESSAGEDATE` timestamp
+- Dedup key: `whatsapp:<jid>:<unix_timestamp>:<first50charshash>`
+
+### Deferred — Requires Investigation Before Implementation
+
+**WhatsApp database access on macOS 15 (Sequoia)**
+- Researched 2026-03-02. Finding: database at `~/Library/Group Containers/group.net.whatsapp.WhatsApp.shared/ChatStorage.sqlite` is unencrypted SQLite.
+- On macOS 15+, Group Containers are TCC-protected. A sandboxed Mac App Store app cannot do background reads. The viable path is user-initiated `NSOpenPanel` file selection + security-scoped bookmark (same pattern as iMessage/CallHistory).
+- Action needed: Verify that `NSOpenPanel` + security-scoped bookmark actually grants persistent read access to this specific path on macOS 15. Test on a real device before building the importer.
+- Schema confirmed: `ZWAMESSAGE` table, `ZISFROMME`, `ZTEXT`, `ZMESSAGEDATE` (Apple Epoch), `ZFROMJID`, `ZTOJID`, `ZPUSHNAME`, `ZCHATSESSION` → `ZWACHATSESSION.ZCONTACTJID`
+
+**Permissions & Onboarding Audit**
+- Identified 2026-03-02. The current onboarding flow does not have explicit permission prompts or user guidance for: (1) downloading the larger MLX model, (2) the Apple Intelligence / on-device hybrid switch in Settings, and (3) several other permission steps that were identified during first-run testing with a real user.
+- Action needed: Audit every permission that SAM requests (Contacts, Calendar, Mail, Messages/FDA, Accessibility for global hotkey, Notifications) and every one-time setup step (model download, hybrid toggle). Design a cohesive first-run onboarding sheet that covers all of them with clear explanations before the first request dialog appears. This is high priority before wider user testing.
 
 ---
 
