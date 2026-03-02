@@ -65,8 +65,9 @@ final class TestDataSeeder {
         // and drop the model container reference
         await AIService.shared.prepareForTermination()
 
-        // Wait until every background source reaches idle — the progress window
-        // (opened by the caller via openWindow) shows live status
+        // Wait until every Swift-observable source reaches idle.
+        // This covers import coordinators and any generation calls that haven't
+        // entered generateWithMLX yet.
         logger.notice("TestDataSeeder: waiting for background tasks to drain…")
         await BackgroundTaskMonitor.shared.waitUntilIdle()
         logger.notice("TestDataSeeder: all tasks drained")
@@ -80,10 +81,26 @@ final class TestDataSeeder {
         // Schedule TipKit reset for next launch (can't call resetDatastore after configure())
         UserDefaults.standard.set(true, forKey: "sam.tips.pendingReset")
 
-        // Terminate — all file handles close on process exit, making the
-        // store files safe to delete at the start of the next launch
-        logger.notice("TestDataSeeder: flags set — terminating for clean relaunch")
-        NSApplication.shared.terminate(nil)
+        // Flush UserDefaults to disk before we kill the process
+        UserDefaults.standard.synchronize()
+
+        // Use exit(0) instead of NSApplication.terminate().
+        //
+        // NSApplication.terminate() runs Cocoa's graceful shutdown — which includes
+        // destroying C++ static globals (MLX scheduler, device streams) on the main
+        // thread while concurrent worker threads may still be executing MLX C++ code.
+        // That races with the scheduler's unordered_map destruction and crashes.
+        //
+        // exit(0) kills all threads simultaneously at the OS level. The MLX C++
+        // statics are never given a chance to run their destructors in isolation,
+        // so there is no race. SQLite file handles are also closed cleanly by the
+        // OS, which is all we need for the next-launch wipe to work correctly.
+        //
+        // Give any in-flight MLX work 500ms to finish dispatching its final async
+        // hop before we pull the plug, to avoid writing partial results to SwiftData.
+        logger.notice("TestDataSeeder: flags set — using exit(0) for clean process termination")
+        try? await Task.sleep(for: .milliseconds(500))
+        exit(0)
     }
 
     /// Inserts all Harvey Snodgrass test data into the provided ModelContext.
