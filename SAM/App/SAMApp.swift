@@ -110,7 +110,10 @@ struct SAMApp: App {
             let seedContext = ModelContext(SAMModelContainer.shared)
             Task { @MainActor in
                 await TestDataSeeder.shared.insertData(into: seedContext)
-                logger.notice("TestDataSeeder: Harvey Snodgrass dataset inserted")
+                // Clear the one-shot trigger; set the persistent "loaded" marker
+                UserDefaults.standard.isTestDataActive = false
+                UserDefaults.standard.isTestDataLoaded = true
+                logger.notice("TestDataSeeder: Harvey Snodgrass dataset inserted — isTestDataActive cleared, isTestDataLoaded set")
             }
         }
         #endif
@@ -258,9 +261,9 @@ struct SAMApp: App {
                 }
                 .help("Wipes all data in-process, seeds the Harvey Snodgrass fictional dataset, and disables real imports. No relaunch needed.")
 
-                if UserDefaults.standard.isTestDataActive {
+                if UserDefaults.standard.isTestDataLoaded {
                     Button("Clear Test Data & Re-enable Imports") {
-                        UserDefaults.standard.isTestDataActive = false
+                        UserDefaults.standard.isTestDataLoaded = false
                         UserDefaults.standard.set(true, forKey: "sam.tips.pendingReset")
                         logger.notice("Test data mode disabled — relaunching")
                         NSApplication.shared.terminate(nil)

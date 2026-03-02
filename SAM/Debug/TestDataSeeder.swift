@@ -8,13 +8,21 @@ import Foundation
 import SwiftData
 import OSLog
 
-// MARK: - Test Data Active Flag
+// MARK: - Test Data Flags
 
 extension UserDefaults {
-    /// When true, all real-data imports are suppressed and the app runs on seeded test data.
+    /// One-shot flag: when true at launch, insertData() runs into the fresh store then this
+    /// is immediately cleared. Set by seedFresh() before _exit(0).
     var isTestDataActive: Bool {
         get { bool(forKey: "sam.testData.active") }
         set { set(newValue, forKey: "sam.testData.active") }
+    }
+
+    /// Persistent flag: true while Harvey Snodgrass seed data is in the store.
+    /// Set after insertData() completes; cleared when "Clear Test Data" is tapped.
+    var isTestDataLoaded: Bool {
+        get { bool(forKey: "sam.testData.loaded") }
+        set { set(newValue, forKey: "sam.testData.loaded") }
     }
 }
 
@@ -85,7 +93,7 @@ final class TestDataSeeder {
         // Flag the wipe so SAMApp.init handles it on the next launch
         UserDefaults.standard.set(true, forKey: "sam.seed.pending")
 
-        // Mark test data as active so insertData() runs after the fresh store opens
+        // One-shot trigger: SAMApp.init will call insertData() then clear this flag
         UserDefaults.standard.isTestDataActive = true
 
         // Schedule TipKit reset for next launch (can't call resetDatastore after configure())
