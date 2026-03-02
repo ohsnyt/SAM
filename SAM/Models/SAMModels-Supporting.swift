@@ -52,6 +52,7 @@ public enum EvidenceSource: String, Codable, Sendable {
     case iMessage = "iMessage"
     case phoneCall = "PhoneCall"
     case faceTime = "FaceTime"
+    case linkedIn = "LinkedIn"
 }
 
 extension EvidenceSource {
@@ -63,6 +64,7 @@ extension EvidenceSource {
         case .faceTime:  return 2.5
         case .mail:      return 1.5
         case .iMessage:  return 1.0
+        case .linkedIn:  return 1.0
         case .note:      return 0.5   // Passive (user notes about person)
         case .contacts:  return 0.0   // Not an interaction
         case .manual:    return 1.0
@@ -615,7 +617,7 @@ extension ActionLane {
 
 /// Communication channel for sending messages.
 public enum CommunicationChannel: String, Codable, Sendable, CaseIterable {
-    case iMessage, email, phone, faceTime
+    case iMessage, email, phone, faceTime, linkedIn
 
     public var displayName: String {
         switch self {
@@ -623,6 +625,7 @@ public enum CommunicationChannel: String, Codable, Sendable, CaseIterable {
         case .email:    return "Email"
         case .phone:    return "Phone"
         case .faceTime: return "FaceTime"
+        case .linkedIn: return "LinkedIn"
         }
     }
 
@@ -632,6 +635,7 @@ public enum CommunicationChannel: String, Codable, Sendable, CaseIterable {
         case .email:    return "envelope"
         case .phone:    return "phone"
         case .faceTime: return "video"
+        case .linkedIn: return "network"
         }
     }
 }

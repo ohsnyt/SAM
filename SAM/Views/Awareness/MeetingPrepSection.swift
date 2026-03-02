@@ -520,6 +520,7 @@ private struct BriefingCard: View {
         case .iMessage: return "message"
         case .phoneCall: return "phone"
         case .faceTime: return "video"
+        case .linkedIn: return "network"
         }
     }
 

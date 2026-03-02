@@ -440,6 +440,70 @@ final class PeopleRepository {
         return phones
     }
 
+    /// Bulk-update LinkedIn profile data on matching people.
+    /// Matches by email first, then full display name.
+    /// Returns the number of records updated.
+    @discardableResult
+    func updateLinkedInData(
+        profileURL: String,
+        connectedOn: Date?,
+        email: String?,
+        fullName: String
+    ) throws -> Bool {
+        guard let modelContext = modelContext else {
+            throw RepositoryError.notConfigured
+        }
+
+        let descriptor = FetchDescriptor<SamPerson>()
+        let allPeople = try modelContext.fetch(descriptor)
+
+        let normalizedURL  = profileURL.lowercased()
+        let normalizedName = fullName.lowercased().trimmingCharacters(in: .whitespaces)
+        let normalizedEmail = email?.lowercased()
+
+        // 1. Exact LinkedIn URL match
+        if let match = allPeople.first(where: { ($0.linkedInProfileURL ?? "").lowercased() == normalizedURL && !normalizedURL.isEmpty }) {
+            applyLinkedIn(match, profileURL: profileURL, connectedOn: connectedOn)
+            try modelContext.save()
+            return true
+        }
+
+        // 2. Email match
+        if let em = normalizedEmail, !em.isEmpty {
+            let emailMatch = allPeople.first { p in
+                p.emailCache?.lowercased() == em || p.emailAliases.contains { $0.lowercased() == em }
+            }
+            if let match = emailMatch {
+                applyLinkedIn(match, profileURL: profileURL, connectedOn: connectedOn)
+                try modelContext.save()
+                return true
+            }
+        }
+
+        // 3. Full name match
+        if !normalizedName.isEmpty {
+            let nameMatch = allPeople.first {
+                ($0.displayNameCache ?? $0.displayName).lowercased() == normalizedName
+            }
+            if let match = nameMatch {
+                applyLinkedIn(match, profileURL: profileURL, connectedOn: connectedOn)
+                try modelContext.save()
+                return true
+            }
+        }
+
+        return false
+    }
+
+    private func applyLinkedIn(_ person: SamPerson, profileURL: String, connectedOn: Date?) {
+        if person.linkedInProfileURL != profileURL {
+            person.linkedInProfileURL = profileURL
+        }
+        if let date = connectedOn, person.linkedInConnectedOn == nil {
+            person.linkedInConnectedOn = date
+        }
+    }
+
     /// Get count of all people
     func count() throws -> Int {
         guard let modelContext = modelContext else {

@@ -1144,6 +1144,7 @@ final class OutcomeEngine {
         case .email:    channelNote = "a professional email (2-3 short paragraphs)"
         case .phone:    channelNote = "talking points for a phone call (3-4 bullet points)"
         case .faceTime: channelNote = "talking points for a video call (3-4 bullet points)"
+        case .linkedIn: channelNote = "a brief, professional LinkedIn message"
         }
 
         let prompt = """
@@ -1177,6 +1178,11 @@ final class OutcomeEngine {
                 Write 3-4 brief talking points as a simple list, one per line.
                 Each point should be a conversation starter or key topic to cover.
                 No bullet markers, just plain text lines.
+                """
+        case .linkedIn:
+            systemInstruction = """
+                Write ONLY the message text — keep it under 3 sentences.
+                Professional but warm. No emojis. No signature. No connection requests phrasing.
                 """
         }
 

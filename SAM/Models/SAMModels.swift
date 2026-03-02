@@ -87,6 +87,15 @@ public final class SamPerson {
     /// User-set cadence override in days (nil = use computed median gap).
     public var preferredCadenceDays: Int?
 
+    // ── LinkedIn ─────────────────────────────────────────────────────
+
+    /// LinkedIn public profile URL (e.g. "www.linkedin.com/in/janesmith").
+    /// Set by LinkedInImportCoordinator when a connection or message is matched.
+    public var linkedInProfileURL: String?
+
+    /// Date this person connected with the user on LinkedIn (from Connections.csv).
+    public var linkedInConnectedOn: Date?
+
     /// Returns explicit preference if set, else inferred preference.
     @Transient
     public var effectiveChannel: CommunicationChannel? {

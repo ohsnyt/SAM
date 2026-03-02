@@ -492,6 +492,8 @@ final class MeetingPrepCoordinator {
                 channelScores[.phone, default: 0] += weight
             case .faceTime:
                 channelScores[.faceTime, default: 0] += weight
+            case .linkedIn:
+                channelScores[.linkedIn, default: 0] += weight
             case .calendar, .contacts, .note, .manual:
                 break
             }

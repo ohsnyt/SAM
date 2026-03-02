@@ -379,6 +379,12 @@ struct ComposeWindowView: View {
         case .faceTime:
             composeService.initiateFaceTime(recipient: recipient)
             completeAndDismiss()
+
+        case .linkedIn:
+            // LinkedIn messages can't be sent programmatically — copy to clipboard
+            composeService.copyToClipboard(body)
+            errorMessage = "Draft copied to clipboard — paste into LinkedIn"
+            isSending = false
         }
     }
 

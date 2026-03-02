@@ -112,6 +112,13 @@ struct DataSourcesSettingsView: View {
                 } label: {
                     Label("Evernote Import", systemImage: "square.and.arrow.down")
                 }
+
+                DisclosureGroup {
+                    LinkedInImportSettingsContent()
+                        .padding(.top, 8)
+                } label: {
+                    Label("LinkedIn Import", systemImage: "network")
+                }
             }
         }
         .formStyle(.grouped)

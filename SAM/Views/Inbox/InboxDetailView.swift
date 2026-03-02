@@ -412,6 +412,7 @@ struct InboxDetailView: View {
         case .iMessage: return "message"
         case .phoneCall: return "phone"
         case .faceTime: return "video"
+        case .linkedIn: return "network"
         }
     }
 
@@ -425,6 +426,7 @@ struct InboxDetailView: View {
         case .iMessage: return .teal
         case .phoneCall: return .green
         case .faceTime: return .mint
+        case .linkedIn: return .blue
         }
     }
 

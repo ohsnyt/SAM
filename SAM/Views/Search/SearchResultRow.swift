@@ -173,6 +173,7 @@ struct SearchEvidenceRow: View {
         case .contacts: return "person.crop.circle"
         case .note: return "note.text"
         case .manual: return "square.and.pencil"
+        case .linkedIn: return "network"
         }
     }
 
@@ -186,6 +187,7 @@ struct SearchEvidenceRow: View {
         case .contacts: return .green
         case .note: return .orange
         case .manual: return .purple
+        case .linkedIn: return .blue
         }
     }
 }
