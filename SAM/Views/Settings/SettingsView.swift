@@ -1499,10 +1499,11 @@ struct GeneralSettingsView: View {
             // Test data flags — must be cleared so Harvey doesn't re-seed after store wipe
             "sam.testData.active",
             "sam.testData.loaded",
-            // LinkedIn import watermarks
+            // LinkedIn import watermarks and folder bookmark
             "sam.linkedin.enabled",
             "sam.linkedin.messages.lastImportAt",
             "sam.linkedin.connections.lastImportAt",
+            "linkedInFolderBookmark",
         ]
         for key in keysToRemove {
             UserDefaults.standard.removeObject(forKey: key)

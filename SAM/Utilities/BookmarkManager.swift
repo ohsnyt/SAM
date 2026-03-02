@@ -5,7 +5,8 @@
 //  Phase M: Communications Evidence
 //
 //  Manages security-scoped bookmarks for user-selected database directories
-//  (iMessage ~/Library/Messages, Call History ~/Library/Application Support/CallHistoryDB).
+//  (iMessage ~/Library/Messages, Call History ~/Library/Application Support/CallHistoryDB,
+//   LinkedIn export folder for message reprocessing after triage contact promotion).
 //
 //  Users select the DIRECTORY via NSOpenPanel. This grants access to all files
 //  within (including WAL/SHM companions required by SQLite). The resolve methods
@@ -27,18 +28,22 @@ final class BookmarkManager {
 
     var hasMessagesAccess: Bool { messagesBookmarkData != nil }
     var hasCallHistoryAccess: Bool { callHistoryBookmarkData != nil }
+    var hasLinkedInFolderAccess: Bool { linkedInFolderBookmarkData != nil }
 
     // MARK: - Private
 
     private var messagesBookmarkData: Data?
     private var callHistoryBookmarkData: Data?
+    private var linkedInFolderBookmarkData: Data?
 
     private let messagesKey = "messagesDirBookmark"
     private let callHistoryKey = "callHistoryDirBookmark"
+    private let linkedInFolderKey = "linkedInFolderBookmark"
 
     private init() {
         messagesBookmarkData = UserDefaults.standard.data(forKey: messagesKey)
         callHistoryBookmarkData = UserDefaults.standard.data(forKey: callHistoryKey)
+        linkedInFolderBookmarkData = UserDefaults.standard.data(forKey: linkedInFolderKey)
 
         // Migrate from old file-level bookmark keys if present
         if messagesBookmarkData == nil, UserDefaults.standard.data(forKey: "messagesDBBookmark") != nil {
@@ -140,6 +145,24 @@ final class BookmarkManager {
         }
     }
 
+    /// Save a security-scoped bookmark for a LinkedIn export folder.
+    /// Called by LinkedInImportSettingsView immediately after the user picks the folder,
+    /// so we can re-access it later for triage reprocessing without another panel.
+    func saveLinkedInFolderBookmark(_ url: URL) {
+        do {
+            let bookmarkData = try url.bookmarkData(
+                options: .withSecurityScope,
+                includingResourceValuesForKeys: nil,
+                relativeTo: nil
+            )
+            linkedInFolderBookmarkData = bookmarkData
+            UserDefaults.standard.set(bookmarkData, forKey: linkedInFolderKey)
+            logger.info("LinkedIn folder bookmark saved for: \(url.path, privacy: .public)")
+        } catch {
+            logger.error("Failed to create LinkedIn folder bookmark: \(error)")
+        }
+    }
+
     // MARK: - Resolve Bookmarks
 
     /// Resolve saved messages directory bookmark and return the chat.db URL within it.
@@ -163,6 +186,13 @@ final class BookmarkManager {
         return (directory: dirURL, database: dbURL)
     }
 
+    /// Resolve the saved LinkedIn export folder bookmark.
+    /// Returns the folder URL if available; caller must call startAccessingSecurityScopedResource()
+    /// on it and stopAccessing(_:) in a defer block.
+    func resolveLinkedInFolderURL() -> URL? {
+        resolveDirectory(bookmarkData: linkedInFolderBookmarkData, key: linkedInFolderKey, label: "LinkedIn folder")
+    }
+
     /// Stop accessing a security-scoped resource.
     func stopAccessing(_ url: URL) {
         url.stopAccessingSecurityScopedResource()
@@ -180,6 +210,13 @@ final class BookmarkManager {
         callHistoryBookmarkData = nil
         UserDefaults.standard.removeObject(forKey: callHistoryKey)
         logger.info("Call history bookmark revoked")
+    }
+
+    /// Revoke saved LinkedIn folder access.
+    func revokeLinkedInFolderAccess() {
+        linkedInFolderBookmarkData = nil
+        UserDefaults.standard.removeObject(forKey: linkedInFolderKey)
+        logger.info("LinkedIn folder bookmark revoked")
     }
 
     // MARK: - Private Helpers
@@ -206,8 +243,10 @@ final class BookmarkManager {
                     UserDefaults.standard.set(newData, forKey: key)
                     if key == messagesKey {
                         messagesBookmarkData = newData
-                    } else {
+                    } else if key == callHistoryKey {
                         callHistoryBookmarkData = newData
+                    } else {
+                        linkedInFolderBookmarkData = newData
                     }
                 } catch {
                     logger.warning("Failed to refresh stale \(label) bookmark: \(error)")

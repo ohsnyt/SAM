@@ -346,9 +346,15 @@ struct UnknownSenderTriageSection: View {
 
             logger.info("Triage complete: \(toAdd.count) contacts created, \(toNever.count) blocked, \(notNowCount) deferred")
 
-            // Reprocess added senders' emails in background (mail-sourced only)
+            // Reprocess added senders' interaction history in background
             for email in addedEmails {
                 await mailCoordinator.reprocessForSender(email: email)
+            }
+            for sender in toAdd where sender.source == .linkedIn {
+                // latestSubject holds the LinkedIn profile URL for linkedin:-keyed entries
+                if let profileURL = sender.latestSubject, !profileURL.isEmpty {
+                    await linkedInCoordinator.reprocessForSender(profileURL: profileURL)
+                }
             }
         }
     }

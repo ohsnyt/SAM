@@ -247,6 +247,10 @@ struct LinkedInImportSettingsContent: View {
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
+        // Persist a security-scoped bookmark so we can re-access this folder
+        // later when promoting unknown LinkedIn contacts from triage.
+        BookmarkManager.shared.saveLinkedInFolderBookmark(url)
+
         Task {
             await coordinator.loadFolder(url: url)
         }

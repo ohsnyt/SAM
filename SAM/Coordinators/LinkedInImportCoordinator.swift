@@ -279,6 +279,87 @@ final class LinkedInImportCoordinator {
         logger.info("LinkedIn message watermark reset")
     }
 
+    /// Re-read messages.csv from the last-imported folder and import any messages
+    /// whose sender profile URL matches the given URL.
+    /// Called after a user promotes an unknown LinkedIn contact from the triage screen.
+    /// No-op if no folder bookmark exists.
+    func reprocessForSender(profileURL: String) async {
+        let bookmarkManager = BookmarkManager.shared
+        guard let folderURL = bookmarkManager.resolveLinkedInFolderURL() else {
+            logger.info("reprocessForSender: no LinkedIn folder bookmark — skipping")
+            return
+        }
+
+        let normalizedTarget = profileURL.lowercased()
+        guard !normalizedTarget.isEmpty else { return }
+
+        guard folderURL.startAccessingSecurityScopedResource() else {
+            logger.warning("reprocessForSender: could not access LinkedIn folder")
+            return
+        }
+        defer { bookmarkManager.stopAccessing(folderURL) }
+
+        let messagesURL = folderURL.appendingPathComponent("messages.csv")
+        guard FileManager.default.fileExists(atPath: messagesURL.path) else {
+            logger.info("reprocessForSender: messages.csv not found in bookmarked folder")
+            return
+        }
+
+        // Parse ALL messages (no watermark filter — we want full history for this sender)
+        let allMessages = await linkedInService.parseMessages(at: messagesURL, since: nil)
+        let matching = allMessages.filter { $0.senderProfileURL.lowercased() == normalizedTarget }
+
+        guard !matching.isEmpty else {
+            logger.info("reprocessForSender: no messages found for \(normalizedTarget, privacy: .public)")
+            return
+        }
+
+        // Find the newly-created SamPerson so we can link evidence to them
+        let allPeople: [SamPerson]
+        do {
+            allPeople = try peopleRepo.fetchAll()
+        } catch {
+            logger.error("reprocessForSender: fetchAll failed: \(error)")
+            return
+        }
+
+        let person = allPeople.first { ($0.linkedInProfileURL ?? "").lowercased() == normalizedTarget }
+
+        var imported = 0
+        var skipped = 0
+        for msg in matching {
+            // Skip if already imported
+            if (try? evidenceRepo.fetch(sourceUID: msg.sourceUID)) != nil {
+                skipped += 1
+                continue
+            }
+
+            let linkedPeople: [SamPerson] = person.map { [$0] } ?? []
+            let peopleIDs = linkedPeople.map(\.id)
+            let title = msg.conversationTitle.isEmpty
+                ? "LinkedIn message from \(msg.senderName)"
+                : msg.conversationTitle
+            let snippet = String(msg.plainTextContent.prefix(200))
+
+            do {
+                try evidenceRepo.createByIDs(
+                    sourceUID:       msg.sourceUID,
+                    source:          .linkedIn,
+                    occurredAt:      msg.occurredAt,
+                    title:           title,
+                    snippet:         snippet,
+                    bodyText:        msg.plainTextContent,
+                    linkedPeopleIDs: peopleIDs
+                )
+                imported += 1
+            } catch {
+                logger.error("reprocessForSender: failed to create evidence: \(error)")
+            }
+        }
+
+        logger.info("reprocessForSender: \(imported) message(s) imported, \(skipped) already present for \(normalizedTarget, privacy: .public)")
+    }
+
     /// Cancel a pending import (when user dismisses before confirming).
     func cancelImport() {
         pendingMessages    = []
