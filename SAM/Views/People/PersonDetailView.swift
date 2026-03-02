@@ -398,7 +398,7 @@ struct PersonDetailView: View {
                 // Me badge (non-editable, set via Apple Contacts)
                 if person.isMe {
                     Text("Me")
-                        .font(.caption)
+                        .font(.subheadline)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
                         .background(.secondary.opacity(0.2))
@@ -409,7 +409,7 @@ struct PersonDetailView: View {
                 // Placeholder when no roles assigned
                 if person.roleBadges.isEmpty && !person.isMe && !isEditingBadges {
                     Text("Add a role")
-                        .font(.caption)
+                        .font(.subheadline)
                         .foregroundStyle(.tertiary)
                         .italic()
                 }
@@ -440,7 +440,7 @@ struct PersonDetailView: View {
                         .buttonStyle(.plain)
                     } else {
                         Text(badge)
-                            .font(.caption)
+                            .font(.subheadline)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
                             .background(style.color.opacity(0.15))
@@ -1084,59 +1084,82 @@ struct PersonDetailView: View {
     // MARK: - More Details (collapsed by default)
 
     private var moreDetailsSection: some View {
-        DisclosureGroup("More Details", isExpanded: $showMoreDetails) {
-            VStack(spacing: 0) {
-                // Full contact info
-                if let contact = fullContact {
-                    contactSections(contact)
+        VStack(alignment: .leading, spacing: 0) {
+            // Toggle button — full row is clickable
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    showMoreDetails.toggle()
                 }
-
-                // Referred by
-                if hasReferralRole {
-                    referredBySection
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .rotationEffect(.degrees(showMoreDetails ? 90 : 0))
+                        .animation(.easeInOut(duration: 0.2), value: showMoreDetails)
+                    Text("More Details")
+                        .font(.subheadline)
                 }
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .padding(.horizontal)
+                .padding(.vertical, 8)
+            }
+            .buttonStyle(.plain)
 
-                // Alerts
-                if person.consentAlertsCount > 0 || person.reviewAlertsCount > 0 {
-                    samSection(title: "Alerts") {
-                        alertsContent
+            // Expanded content
+            if showMoreDetails {
+                VStack(spacing: 0) {
+                    // Full contact info
+                    if let contact = fullContact {
+                        contactSections(contact)
                     }
-                }
 
-                // Contexts/participations
-                if !person.participations.isEmpty {
-                    samSection(title: "Contexts") {
-                        participationsContent
+                    // Referred by
+                    if hasReferralRole {
+                        referredBySection
                     }
-                }
 
-                // Coverages
-                if !person.coverages.isEmpty {
-                    samSection(title: "Coverages") {
-                        coveragesContent
-                    }
-                }
-
-                // Channel + cadence preferences
-                if !person.isMe {
-                    samSection(title: "Communication Preferences") {
-                        VStack(alignment: .leading, spacing: 4) {
-                            channelPreferenceView
-                            cadencePreferenceView
+                    // Alerts
+                    if person.consentAlertsCount > 0 || person.reviewAlertsCount > 0 {
+                        samSection(title: "Alerts") {
+                            alertsContent
                         }
                     }
-                }
 
-                // Relationship health details
-                samSection(title: "Relationship Health") {
-                    RelationshipHealthView(
-                        health: MeetingPrepCoordinator.shared.computeHealth(for: person)
-                    )
+                    // Contexts/participations
+                    if !person.participations.isEmpty {
+                        samSection(title: "Contexts") {
+                            participationsContent
+                        }
+                    }
+
+                    // Coverages
+                    if !person.coverages.isEmpty {
+                        samSection(title: "Coverages") {
+                            coveragesContent
+                        }
+                    }
+
+                    // Channel + cadence preferences
+                    if !person.isMe {
+                        samSection(title: "Communication Preferences") {
+                            VStack(alignment: .leading, spacing: 4) {
+                                channelPreferenceView
+                                cadencePreferenceView
+                            }
+                        }
+                    }
+
+                    // Relationship health details
+                    samSection(title: "Relationship Health") {
+                        RelationshipHealthView(
+                            health: MeetingPrepCoordinator.shared.computeHealth(for: person)
+                        )
+                    }
                 }
             }
         }
-        .padding(.horizontal)
-        .padding(.vertical, 8)
     }
     
     // Helper view for SAM data sections
