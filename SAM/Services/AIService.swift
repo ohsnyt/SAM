@@ -291,6 +291,16 @@ actor AIService {
         loadedModelID = nil
         logger.info("MLX model unloaded")
     }
+
+    /// Open the circuit breaker and release the MLX model container.
+    /// Call before process termination to reduce the chance of MLX C++ mutex crashes
+    /// caused by teardown racing with an in-flight generation stream.
+    func prepareForTermination() {
+        mlxCircuitOpen = true
+        mlxModelContainer = nil
+        loadedModelID = nil
+        logger.info("AIService: circuit open and MLX container released for termination")
+    }
 }
 
 // JSONExtraction.extractJSON(from:) is defined in JSONExtractionUtility.swift

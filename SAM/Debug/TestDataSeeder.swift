@@ -58,8 +58,18 @@ final class TestDataSeeder {
         CommunicationsImportCoordinator.shared.cancelAll()
         EvernoteImportCoordinator.shared.cancelAll()
 
-        // Brief yield so queued main-actor work drains before we exit
-        try? await Task.sleep(for: .milliseconds(300))
+        // Open the AIService circuit breaker and release the MLX container.
+        // This prevents new MLX inference from starting and drops the Swift-side
+        // reference to the model.  Any generation stream that is already mid-flight
+        // will continue until the for-await loop exhausts — which happens quickly
+        // once no more tokens are being fed.  The sleep below gives that time.
+        await AIService.shared.prepareForTermination()
+
+        // Allow in-flight MLX generation streams to exhaust before we exit.
+        // MLX's C++ mutex crashes when the process tears down while a stream
+        // is still iterating.  A generous sleep here covers even slow token
+        // generation on large models.
+        try? await Task.sleep(for: .milliseconds(1500))
 
         // Flag the wipe so SAMApp.init handles it on the next launch
         UserDefaults.standard.set(true, forKey: "sam.seed.pending")

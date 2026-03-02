@@ -35,6 +35,9 @@ final class SAMAppDelegate: NSObject, NSApplicationDelegate {
         MailImportCoordinator.shared.cancelAll()
         CommunicationsImportCoordinator.shared.cancelAll()
         EvernoteImportCoordinator.shared.cancelAll()
+        // Open the MLX circuit breaker and drop the model container so any
+        // in-flight generation stream exhausts before the process exits.
+        Task { await AIService.shared.prepareForTermination() }
         return .terminateNow
     }
 }
