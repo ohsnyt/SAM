@@ -51,26 +51,31 @@ final class TestDataSeeder {
     func seedFresh() async {
         logger.notice("TestDataSeeder: scheduling fresh seed — will complete on next launch")
 
-        // Show the progress panel so the user can see what is draining
-        SeedProgressPanel.shared.show()
+        // Write all flags and synchronize to disk FIRST, then exit(0) immediately.
+        //
+        // Why exit(0) with no waiting:
+        //
+        // MLX generation dispatches GPU work via Metal asyncEval onto a dedicated
+        // command queue thread (com.Metal.CommandQueueDispatch). This work runs
+        // concurrently and cannot be cancelled or observed from Swift. Any delay
+        // before process termination gives that thread time to hit a Metal object
+        // (buffer, encoder) that ARC has already released — causing objc_msgSend
+        // crashes on deallocated objects.
+        //
+        // exit(0) terminates all threads simultaneously at the OS level before any
+        // ARC release or C++ destructor runs. Metal objects, SQLite handles, and
+        // MLX statics all vanish atomically with the process — no individual
+        // teardown, no races. The OS reclaims all resources cleanly.
+        //
+        // Cancelling import coordinators is still worthwhile to stop new SwiftData
+        // writes, but we do NOT wait for anything — we exit as fast as possible.
 
-        // Cancel all in-flight imports
+        // Cancel imports to stop any in-progress SwiftData writes
         ContactsImportCoordinator.shared.cancelAll()
         CalendarImportCoordinator.shared.cancelAll()
         MailImportCoordinator.shared.cancelAll()
         CommunicationsImportCoordinator.shared.cancelAll()
         EvernoteImportCoordinator.shared.cancelAll()
-
-        // Open the AIService circuit breaker so no new MLX inference starts,
-        // and drop the model container reference
-        await AIService.shared.prepareForTermination()
-
-        // Wait until every Swift-observable source reaches idle.
-        // This covers import coordinators and any generation calls that haven't
-        // entered generateWithMLX yet.
-        logger.notice("TestDataSeeder: waiting for background tasks to drain…")
-        await BackgroundTaskMonitor.shared.waitUntilIdle()
-        logger.notice("TestDataSeeder: all tasks drained")
 
         // Flag the wipe so SAMApp.init handles it on the next launch
         UserDefaults.standard.set(true, forKey: "sam.seed.pending")
@@ -81,25 +86,10 @@ final class TestDataSeeder {
         // Schedule TipKit reset for next launch (can't call resetDatastore after configure())
         UserDefaults.standard.set(true, forKey: "sam.tips.pendingReset")
 
-        // Flush UserDefaults to disk before we kill the process
+        // Flush to disk — must happen before exit(0) since there is no atexit handler
         UserDefaults.standard.synchronize()
 
-        // Use exit(0) instead of NSApplication.terminate().
-        //
-        // NSApplication.terminate() runs Cocoa's graceful shutdown — which includes
-        // destroying C++ static globals (MLX scheduler, device streams) on the main
-        // thread while concurrent worker threads may still be executing MLX C++ code.
-        // That races with the scheduler's unordered_map destruction and crashes.
-        //
-        // exit(0) kills all threads simultaneously at the OS level. The MLX C++
-        // statics are never given a chance to run their destructors in isolation,
-        // so there is no race. SQLite file handles are also closed cleanly by the
-        // OS, which is all we need for the next-launch wipe to work correctly.
-        //
-        // Give any in-flight MLX work 500ms to finish dispatching its final async
-        // hop before we pull the plug, to avoid writing partial results to SwiftData.
-        logger.notice("TestDataSeeder: flags set — using exit(0) for clean process termination")
-        try? await Task.sleep(for: .milliseconds(500))
+        logger.notice("TestDataSeeder: flags written — calling exit(0)")
         exit(0)
     }
 
