@@ -135,8 +135,21 @@ actor GraphBuilderService {
             ))
         }
 
-        // --- Deduced family edges ---
+        // --- Deduced family edges (deduplicated by node pair) ---
+        var seenFamilyPairs = Set<String>()
         for link in deducedFamilyLinks where personIDs.contains(link.personAID) && personIDs.contains(link.personBID) {
+            // Canonical key: sorted pair + normalized relation type.
+            // parent/child are complementary — collapse to one edge per pair.
+            let lo = min(link.personAID, link.personBID)
+            let hi = max(link.personAID, link.personBID)
+            let normalizedType: String
+            switch link.relationType {
+            case "parent", "child": normalizedType = "parent_child"
+            default: normalizedType = link.relationType
+            }
+            let key = "\(lo)-\(hi)-\(normalizedType)"
+            guard seenFamilyPairs.insert(key).inserted else { continue }
+
             edges.append(GraphEdge(
                 id: UUID(),
                 sourceID: link.personAID,

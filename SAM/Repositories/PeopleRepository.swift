@@ -753,6 +753,19 @@ final class PeopleRepository {
             }
         }
 
+        // Deduplicate DeducedRelation records that now share the same pair+type
+        struct DeducedKey: Hashable { let aID: UUID; let bID: UUID; let type: String }
+        var seenDeduced = Set<DeducedKey>()
+        for relation in allDeduced where relation.modelContext != nil {
+            let key = DeducedKey(aID: relation.personAID, bID: relation.personBID, type: relation.relationTypeRawValue)
+            if seenDeduced.contains(key) {
+                modelContext.delete(relation)
+                deducedRelationIDs.removeAll { $0 == relation.id }
+            } else {
+                seenDeduced.insert(key)
+            }
+        }
+
         // ── Update SamNote.extractedMentions ─────────────────────────
         let allNotes = try modelContext.fetch(FetchDescriptor<SamNote>())
         for note in allNotes {
