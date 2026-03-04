@@ -785,8 +785,26 @@ struct RelationshipGraphView: View {
         if let hovID = hoveredNodeID ?? coordinator.selectedNodeID,
            let node = coordinator.nodes.first(where: { $0.id == hovID }) {
             contextMenuItems(for: node)
+        } else if let edge = hoveredEdge,
+                  edge.edgeType == .deducedFamily,
+                  !edge.isConfirmedDeduction,
+                  edge.deducedRelationID != nil {
+            edgeContextMenuItems(for: edge)
         } else {
             canvasContextMenuItems
+        }
+    }
+
+    @ViewBuilder
+    private func edgeContextMenuItems(for edge: GraphEdge) -> some View {
+        let sourceName = coordinator.nodes.first(where: { $0.id == edge.sourceID })?.displayName ?? "?"
+        let targetName = coordinator.nodes.first(where: { $0.id == edge.targetID })?.displayName ?? "?"
+        Button {
+            if let relID = edge.deducedRelationID {
+                coordinator.confirmDeducedRelation(id: relID)
+            }
+        } label: {
+            Label("Confirm: \(sourceName) is \(edge.label ?? "related to") \(targetName)", systemImage: "checkmark.circle")
         }
     }
 
@@ -1954,7 +1972,7 @@ struct RelationshipGraphView: View {
             if scale >= 0.8 {
                 let isDirected: Bool
                 switch edge.edgeType {
-                case .referral, .recruitingTree, .roleRelationship:
+                case .referral, .recruitingTree, .roleRelationship, .deducedFamily:
                     isDirected = true
                 case .communicationLink:
                     isDirected = edge.communicationDirection != nil && edge.communicationDirection != .balanced

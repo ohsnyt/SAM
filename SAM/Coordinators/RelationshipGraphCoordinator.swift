@@ -137,8 +137,13 @@ final class RelationshipGraphCoordinator {
     /// Nodes explicitly hidden by the user via context menu.
     var hiddenNodeIDs: Set<UUID> = []
 
-    /// Ghost names dismissed by the user.
-    var dismissedGhostNames: Set<String> = []
+    /// Ghost names dismissed by the user (persisted across launches).
+    var dismissedGhostNames: Set<String> = {
+        let arr = UserDefaults.standard.stringArray(forKey: "sam.graph.dismissedGhostNames") ?? []
+        return Set(arr)
+    }() {
+        didSet { UserDefaults.standard.set(Array(dismissedGhostNames), forKey: "sam.graph.dismissedGhostNames") }
+    }
 
     // MARK: - Internal
 
@@ -276,6 +281,9 @@ final class RelationshipGraphCoordinator {
         } catch {
             logger.error("Ghost merge failed: \(error)")
         }
+
+        // Persist dismissal so the ghost doesn't reappear if any mention was missed
+        dismissedGhostNames.insert(ghostName)
 
         invalidateLayoutCache()
         await buildGraph()
