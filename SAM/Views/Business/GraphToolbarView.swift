@@ -205,7 +205,11 @@ struct GraphToolbarView: ToolbarContent {
                 ))
                 Toggle("Orphaned Nodes", isOn: Binding(
                     get: { coordinator.showOrphanedNodes },
-                    set: { coordinator.showOrphanedNodes = $0; coordinator.applyFilters() }
+                    set: {
+                        coordinator.showOrphanedNodes = $0
+                        if $0 { coordinator.revealedNodeIDs.removeAll() }
+                        coordinator.applyFilters()
+                    }
                 ))
             } label: {
                 Label("Visibility", systemImage: "eye")

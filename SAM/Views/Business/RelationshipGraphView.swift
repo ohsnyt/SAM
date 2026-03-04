@@ -38,6 +38,7 @@ struct RelationshipGraphView: View {
     @State private var draggedNodeID: UUID?
     @State private var searchText: String = ""
     @State private var searchIsActive: Bool = false
+    @State private var searchResults: [GraphNode] = []
     @FocusState private var searchFieldFocused: Bool
 
     // Marquee selection state
@@ -300,13 +301,61 @@ struct RelationshipGraphView: View {
             VStack {
                 HStack {
                     Spacer()
-                    searchField
-                        .padding(.trailing, 12)
-                        .padding(.top, 8)
+                    VStack(alignment: .trailing, spacing: 0) {
+                        searchField
+                        if searchResults.count > 1 {
+                            searchResultsDropdown
+                        }
+                    }
+                    .padding(.trailing, 12)
+                    .padding(.top, 8)
                 }
                 Spacer()
             }
         }
+    }
+
+    private var searchResultsDropdown: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(searchResults) { node in
+                Button {
+                    selectSearchResult(node)
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(node.displayName)
+                            .lineLimit(1)
+                        if !node.roleBadges.isEmpty {
+                            ForEach(node.roleBadges.prefix(2), id: \.self) { badge in
+                                Text(badge)
+                                    .font(.caption2)
+                                    .padding(.horizontal, 4)
+                                    .padding(.vertical, 1)
+                                    .background(RoleBadgeStyle.forBadge(badge).color.opacity(0.2))
+                                    .foregroundStyle(RoleBadgeStyle.forBadge(badge).color)
+                                    .clipShape(Capsule())
+                            }
+                        }
+                        Spacer()
+                        if node.isOrphaned && !coordinator.showOrphanedNodes
+                            && !coordinator.revealedNodeIDs.contains(node.id) {
+                            Image(systemName: "eye.slash")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                if node.id != searchResults.last?.id {
+                    Divider()
+                }
+            }
+        }
+        .frame(width: 220)
+        .background(.regularMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
     @ViewBuilder
@@ -471,6 +520,7 @@ struct RelationshipGraphView: View {
         if searchIsActive {
             searchIsActive = false
             searchText = ""
+            searchResults = []
             return .handled
         }
         coordinator.selectedNodeIDs.removeAll()
@@ -597,6 +647,7 @@ struct RelationshipGraphView: View {
             if !searchText.isEmpty {
                 Button {
                     searchText = ""
+                    searchResults = []
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(.secondary)
@@ -612,16 +663,33 @@ struct RelationshipGraphView: View {
 
     private func performSearch() {
         let query = searchText.trimmingCharacters(in: .whitespaces).lowercased()
-        guard !query.isEmpty else { return }
-
-        if let match = coordinator.nodes.first(where: {
-            $0.displayName.lowercased().contains(query)
-        }) {
-            coordinator.selectedNodeID = match.id
-            zoomToNode(match)
-            searchIsActive = false
-            searchText = ""
+        guard !query.isEmpty else {
+            searchResults = []
+            return
         }
+
+        let matches = coordinator.allNodes.filter {
+            $0.displayName.lowercased().contains(query)
+        }
+
+        if matches.count == 1, let match = matches.first {
+            selectSearchResult(match)
+        } else {
+            searchResults = Array(matches.prefix(8))
+        }
+    }
+
+    private func selectSearchResult(_ node: GraphNode) {
+        // Reveal the node if it's a hidden orphan
+        if node.isOrphaned && !coordinator.showOrphanedNodes {
+            coordinator.revealedNodeIDs.insert(node.id)
+            coordinator.applyFilters()
+        }
+        coordinator.selectedNodeID = node.id
+        zoomToNode(node)
+        searchIsActive = false
+        searchText = ""
+        searchResults = []
     }
 
     private func zoomToNode(_ node: GraphNode) {

@@ -53,7 +53,8 @@ final class RelationshipGraphCoordinator {
 
     var activeRoleFilters: Set<String> = []          // Empty = show all
     var activeEdgeTypeFilters: Set<EdgeType> = []    // Empty = show all
-    var showOrphanedNodes: Bool = true
+    var showOrphanedNodes: Bool = false
+    var revealedNodeIDs: Set<UUID> = []
     var showGhostNodes: Bool = true
     var showMeNode: Bool = true
     var minimumEdgeWeight: Double = 0.0
@@ -141,7 +142,7 @@ final class RelationshipGraphCoordinator {
 
     // MARK: - Internal
 
-    private var allNodes: [GraphNode] = []
+    private(set) var allNodes: [GraphNode] = []
     private var allEdges: [GraphEdge] = []
     private var buildTask: Task<Void, Never>?
 
@@ -352,7 +353,7 @@ final class RelationshipGraphCoordinator {
             // Ghost filter
             if !showGhostNodes && node.isGhost { return false }
             // Orphaned filter
-            if !showOrphanedNodes && node.isOrphaned { return false }
+            if !showOrphanedNodes && node.isOrphaned && !revealedNodeIDs.contains(node.id) { return false }
             visibleNodeIDs.insert(node.id)
             return true
         }
