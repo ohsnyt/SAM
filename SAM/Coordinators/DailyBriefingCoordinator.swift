@@ -345,7 +345,6 @@ final class DailyBriefingCoordinator {
 
             // Update state
             morningBriefing = briefing
-            showMorningBriefing = true
             generationStatus = .success
             generationProgress = 1.0
             generationStageLabel = ""

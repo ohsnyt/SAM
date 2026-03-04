@@ -12,8 +12,6 @@
 import SwiftUI
 import SwiftData
 import Combine
-import TipKit
-
 struct AwarenessView: View {
 
     // MARK: - Dependencies
@@ -39,8 +37,6 @@ struct AwarenessView: View {
     // MARK: - Briefing State
 
     private var briefingCoordinator: DailyBriefingCoordinator { DailyBriefingCoordinator.shared }
-    @State private var showBriefingPopover = false
-
     // MARK: - Body
 
     var body: some View {
@@ -68,34 +64,13 @@ struct AwarenessView: View {
         .navigationTitle("Today")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                HStack(spacing: 8) {
-                    // Briefing popover button
-                    Button(action: {
-                        showBriefingPopover.toggle()
-                    }) {
-                        Label("Briefing", systemImage: "text.book.closed")
-                    }
-                    .disabled(briefingCoordinator.morningBriefing == nil)
-                    .popoverTip(briefingTip, arrowEdge: .bottom)
-                    .popover(isPresented: $showBriefingPopover) {
-                        DailyBriefingPopover()
-                            .frame(width: 400, height: 500)
-                    }
-
-                    Button(action: {
-                        refreshInsights()
-                    }) {
-                        Label("Refresh", systemImage: "arrow.clockwise")
-                    }
-                    .disabled(isGenerating)
+                Button(action: {
+                    refreshInsights()
+                }) {
+                    Label("Refresh", systemImage: "arrow.clockwise")
                 }
+                .disabled(isGenerating)
             }
-        }
-        .sheet(isPresented: Binding(
-            get: { briefingCoordinator.showMorningBriefing },
-            set: { briefingCoordinator.showMorningBriefing = $0 }
-        )) {
-            DailyBriefingOverlay()
         }
         .sheet(isPresented: Binding(
             get: { briefingCoordinator.showEveningBriefing },
@@ -116,63 +91,77 @@ struct AwarenessView: View {
         }
     }
 
-    private let briefingTip = BriefingButtonTip()
-
     // MARK: - More Section (collapsed)
 
     private var moreSection: some View {
-        DisclosureGroup("More", isExpanded: $showMore) {
-            VStack(spacing: 0) {
-                // Completed outcomes today
-                completedTodaySection
+        VStack(spacing: 0) {
+            // Full-width toggle button
+            Button(action: { withAnimation { showMore.toggle() } }) {
+                HStack(spacing: 6) {
+                    Image(systemName: showMore ? "chevron.down" : "chevron.right")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Text("More")
+                        .font(.headline)
+                    Spacer()
+                }
+                .contentShape(Rectangle())
+                .padding(.horizontal)
+                .padding(.vertical, 8)
+            }
+            .buttonStyle(.plain)
 
-                // All individual sections
-                FollowUpCoachSection()
-                Divider().padding(.horizontal)
-                UnknownSenderTriageSection()
-                Divider().padding(.horizontal)
-                GoalPacingSection()
-                Divider().padding(.horizontal)
-                MeetingPrepSection()
-                Divider().padding(.horizontal)
-                PipelineStageSection()
-                Divider().padding(.horizontal)
-                LifeEventsSection()
-                Divider().padding(.horizontal)
-                EngagementVelocitySection()
-                Divider().padding(.horizontal)
-                ProfileAnalysisReadySection()
-                Divider().padding(.horizontal)
-                StreakTrackingSection()
-                Divider().padding(.horizontal)
-                ContentCadenceSection()
-                Divider().padding(.horizontal)
-                MeetingQualitySection()
-                Divider().padding(.horizontal)
-                CalendarPatternsSection()
-                Divider().padding(.horizontal)
-                TimeAllocationSection()
-                Divider().padding(.horizontal)
-                ReferralTrackingSection()
-                Divider().padding(.horizontal)
-                NetworkGrowthSection()
+            if showMore {
+                VStack(spacing: 0) {
+                    // Completed outcomes today
+                    completedTodaySection
 
-                Divider()
+                    // All individual sections
+                    FollowUpCoachSection()
+                    Divider().padding(.horizontal)
+                    UnknownSenderTriageSection()
+                    Divider().padding(.horizontal)
+                    GoalPacingSection()
+                    Divider().padding(.horizontal)
+                    MeetingPrepSection()
+                    Divider().padding(.horizontal)
+                    PipelineStageSection()
+                    Divider().padding(.horizontal)
+                    LifeEventsSection()
+                    Divider().padding(.horizontal)
+                    EngagementVelocitySection()
+                    Divider().padding(.horizontal)
+                    ProfileAnalysisReadySection()
+                    Divider().padding(.horizontal)
+                    StreakTrackingSection()
+                    Divider().padding(.horizontal)
+                    ContentCadenceSection()
+                    Divider().padding(.horizontal)
+                    MeetingQualitySection()
+                    Divider().padding(.horizontal)
+                    CalendarPatternsSection()
+                    Divider().padding(.horizontal)
+                    TimeAllocationSection()
+                    Divider().padding(.horizontal)
+                    ReferralTrackingSection()
+                    Divider().padding(.horizontal)
+                    NetworkGrowthSection()
 
-                // Filter Bar + Insights
-                filterBar
+                    Divider()
 
-                Divider()
+                    // Filter Bar + Insights
+                    filterBar
 
-                if filteredInsights.isEmpty {
-                    emptyState
-                } else {
-                    insightsSection
+                    Divider()
+
+                    if filteredInsights.isEmpty {
+                        emptyState
+                    } else {
+                        insightsSection
+                    }
                 }
             }
         }
-        .padding(.horizontal)
-        .padding(.vertical, 8)
     }
 
     // MARK: - Completed Today (moved from OutcomeQueueView)

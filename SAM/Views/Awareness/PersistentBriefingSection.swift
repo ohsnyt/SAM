@@ -99,6 +99,11 @@ struct PersistentBriefingSection: View {
                     .foregroundStyle(.secondary)
             }
 
+            // "Start your day" inline CTA when not yet viewed
+            if !briefing.wasViewed {
+                startYourDayCTA
+            }
+
             // All-done banner
             if coordinator.allItemsChecked {
                 allDoneBanner
@@ -322,6 +327,25 @@ struct PersistentBriefingSection: View {
         case "cold":    return .red
         default:        return .gray
         }
+    }
+
+    private var startYourDayCTA: some View {
+        Button(action: {
+            coordinator.markMorningViewed()
+        }) {
+            HStack(spacing: 8) {
+                Image(systemName: "sunrise.fill")
+                    .foregroundStyle(.orange)
+                Text("Start your day")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+            .background(.orange.opacity(0.08))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
     }
 
     private var allDoneBanner: some View {

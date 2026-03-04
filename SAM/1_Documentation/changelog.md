@@ -4,6 +4,29 @@
 
 ---
 
+## March 4, 2026 — Phase 4: Today View Polish
+
+### Overview
+Three UX improvements to AwarenessView: wider click target for "More" section, removed redundant morning briefing popup sheet, removed redundant briefing toolbar button/popover. No schema change.
+
+### Changes
+
+**AwarenessView** — Replaced `DisclosureGroup` with custom `Button` toggle so the entire row (chevron + text + trailing space) is clickable. Removed morning briefing `.sheet` presentation. Removed briefing popover toolbar button, `showBriefingPopover` state, `briefingTip`, and `TipKit` import. Toolbar now has only the Refresh button.
+
+**PersistentBriefingSection** — Added inline "Start your day" CTA at the bottom of the narrative when `briefing.wasViewed == false`. Orange sunrise icon, warm background. Tapping calls `coordinator.markMorningViewed()` and the CTA disappears.
+
+**DailyBriefingCoordinator** — Removed `showMorningBriefing = true` from `generateMorningBriefing()`. The persistent inline section now handles first-view acknowledgement instead of a popup sheet.
+
+### Files Summary
+
+| File | Action |
+|------|--------|
+| `Views/Awareness/AwarenessView.swift` | Edit — custom More toggle, remove sheet + toolbar button |
+| `Views/Awareness/PersistentBriefingSection.swift` | Edit — inline "Start your day" CTA |
+| `Coordinators/DailyBriefingCoordinator.swift` | Edit — stop auto-triggering morning sheet |
+
+---
+
 ## March 4, 2026 — Phase 3: Sidebar Reorganization + Business Tab Consolidation
 
 ### Overview
