@@ -47,11 +47,71 @@ final class DailyBriefingCoordinator {
     var morningBriefing: SamDailyBriefing?
     var eveningBriefing: SamDailyBriefing?
     var generationStatus: GenerationStatus = .idle
+    var generationProgress: Double = 0      // 0.0–1.0
+    var generationStageLabel: String = ""   // e.g. "Gathering calendar..."
     var showMorningBriefing = false
     var showEveningPrompt = false
     var showEveningBriefing = false
     var eveningState: EveningState = .idle
     var isRecompilingEvening = false
+
+    // MARK: - Briefing Check Tracking
+
+    /// IDs of briefing items the user has checked off today.
+    var checkedItemIDs: Set<String> = [] {
+        didSet { persistCheckedItems() }
+    }
+
+    /// Whether every item in today's briefing has been checked off.
+    var allItemsChecked: Bool {
+        guard let briefing = morningBriefing else { return false }
+        let allIDs = allBriefingItemIDs(from: briefing)
+        return !allIDs.isEmpty && allIDs.isSubset(of: checkedItemIDs)
+    }
+
+    func markItemChecked(_ id: String) {
+        checkedItemIDs.insert(id)
+    }
+
+    func markItemUnchecked(_ id: String) {
+        checkedItemIDs.remove(id)
+    }
+
+    func isItemChecked(_ id: String) -> Bool {
+        checkedItemIDs.contains(id)
+    }
+
+    private func allBriefingItemIDs(from briefing: SamDailyBriefing) -> Set<String> {
+        var ids = Set<String>()
+        for item in briefing.calendarItems { ids.insert(item.id.uuidString) }
+        // Priority actions excluded — shown as outcome cards in Zone 2, not as checkable briefing rows
+        for item in briefing.followUps { ids.insert(item.id.uuidString) }
+        for item in briefing.lifeEventOutreach { ids.insert(item.id.uuidString) }
+        return ids
+    }
+
+    private static let checkedItemsKeyPrefix = "sam.briefing.checked."
+
+    private var todayCheckedKey: String {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd"
+        return Self.checkedItemsKeyPrefix + fmt.string(from: Date())
+    }
+
+    private func persistCheckedItems() {
+        if let data = try? JSONEncoder().encode(Array(checkedItemIDs)) {
+            UserDefaults.standard.set(data, forKey: todayCheckedKey)
+        }
+    }
+
+    private func loadCheckedItems() {
+        guard let data = UserDefaults.standard.data(forKey: todayCheckedKey),
+              let ids = try? JSONDecoder().decode([String].self, from: data) else {
+            checkedItemIDs = []
+            return
+        }
+        checkedItemIDs = Set(ids)
+    }
 
     // MARK: - Private State
 
@@ -78,8 +138,9 @@ final class DailyBriefingCoordinator {
     func configure(container: ModelContainer) {
         self.context = ModelContext(container)
 
-        // Load today's briefings if they exist
+        // Load today's briefings and checked state
         loadTodaysBriefings()
+        loadCheckedItems()
 
         // Start day-rollover timer (every 5 minutes) — also checks for recently ended meetings/calls and sequence triggers
         dayRolloverTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
@@ -135,9 +196,14 @@ final class DailyBriefingCoordinator {
         let lastDate = ISO8601DateFormatter().date(from: lastDateStr)
 
         if let lastDate, Calendar.current.isDate(lastDate, inSameDayAs: todayKey) {
-            // Already briefed today — just load existing
+            // Already briefed today — try loading existing
             loadTodaysBriefings()
-            return
+            if morningBriefing != nil {
+                return
+            }
+            // Briefing was lost (e.g. DB wiped by test data) — clear stale date and regenerate
+            logger.notice("Briefing record missing despite lastBriefingDate — regenerating")
+            UserDefaults.standard.removeObject(forKey: "lastBriefingDate")
         }
 
         // Generate new morning briefing
@@ -177,16 +243,29 @@ final class DailyBriefingCoordinator {
     private func generateMorningBriefing() async {
         guard generationStatus != .generating else { return }
         generationStatus = .generating
+        generationProgress = 0
+        generationStageLabel = "Gathering schedule..."
 
         do {
             let todayKey = Calendar.current.startOfDay(for: .now)
 
-            // Gather data
+            // Stage 1: Gather data (0.0 → 0.2)
             let calendarItems = gatherCalendarItems()
+            generationProgress = 0.05
             let priorityActions = gatherPriorityActions()
+            generationProgress = 0.08
             let followUps = gatherFollowUps()
+            generationProgress = 0.12
+            generationStageLabel = "Checking life events..."
             let lifeEvents = gatherLifeEvents()
+            generationProgress = 0.15
             let tomorrowPreview = gatherTomorrowPreview()
+            generationProgress = 0.2
+
+            // Stage 2: Goal progress (0.2 → 0.3)
+            generationStageLabel = "Checking goal progress..."
+            let goalProgress = GoalProgressEngine.shared.computeAllProgress()
+            generationProgress = 0.3
 
             // Create briefing
             let briefing = SamDailyBriefing(
@@ -198,28 +277,31 @@ final class DailyBriefingCoordinator {
                 lifeEventOutreach: lifeEvents,
                 tomorrowPreview: tomorrowPreview
             )
-
-            // Metrics
             briefing.meetingCount = calendarItems.count
 
-            // AI narrative (best-effort)
+            // Stage 3: AI narrative (0.3 → 0.7) — the slow part
             let narrativeEnabled = UserDefaults.standard.object(forKey: "briefingNarrativeEnabled") == nil
                 ? true
                 : UserDefaults.standard.bool(forKey: "briefingNarrativeEnabled")
 
             if narrativeEnabled {
+                generationStageLabel = "Writing your briefing..."
+                generationProgress = 0.35
                 let narrative = await DailyBriefingService.shared.generateMorningNarrative(
                     calendarItems: calendarItems,
                     priorityActions: priorityActions,
                     followUps: followUps,
                     lifeEvents: lifeEvents,
-                    tomorrowPreview: tomorrowPreview
+                    tomorrowPreview: tomorrowPreview,
+                    goalProgress: goalProgress
                 )
                 briefing.narrativeSummary = narrative.visual.isEmpty ? nil : narrative.visual
                 briefing.ttsNarrative = narrative.tts.isEmpty ? nil : narrative.tts
             }
+            generationProgress = 0.7
 
-            // Strategic highlights (Phase V)
+            // Stage 4: Strategic highlights (0.7 → 0.9)
+            generationStageLabel = "Analyzing strategy..."
             let strategicEnabled = UserDefaults.standard.object(forKey: "strategicBriefingIntegration") == nil
                 ? true
                 : UserDefaults.standard.bool(forKey: "strategicBriefingIntegration")
@@ -238,9 +320,9 @@ final class DailyBriefingCoordinator {
                     )
                 }
             }
+            generationProgress = 0.85
 
-            // Goal pacing alerts (Phase X)
-            let goalProgress = GoalProgressEngine.shared.computeAllProgress()
+            // Goal pacing alerts
             let atRiskGoals = goalProgress.filter { $0.pace == .atRisk || $0.pace == .behind }
             for gp in atRiskGoals {
                 let paceLabel = gp.pace.displayName
@@ -254,8 +336,10 @@ final class DailyBriefingCoordinator {
                     sourceKind: "goal_pacing"
                 ))
             }
+            generationProgress = 0.9
 
-            // Persist
+            // Stage 5: Persist (0.9 → 1.0)
+            generationStageLabel = "Finishing up..."
             context?.insert(briefing)
             try context?.save()
 
@@ -263,6 +347,8 @@ final class DailyBriefingCoordinator {
             morningBriefing = briefing
             showMorningBriefing = true
             generationStatus = .success
+            generationProgress = 1.0
+            generationStageLabel = ""
 
             // Record today's date
             let formatter = ISO8601DateFormatter()
@@ -546,11 +632,12 @@ final class DailyBriefingCoordinator {
             return  // Same day
         }
 
-        // New day — reset evening state and check first open
+        // New day — reset evening state, checked items, and check first open
         eveningState = .idle
         showEveningPrompt = false
         showEveningBriefing = false
         eveningBriefing = nil
+        checkedItemIDs = []
         scheduleEveningCheck()
 
         Task {

@@ -201,6 +201,13 @@ struct SAMApp: App {
                     await checkPermissionsAndSetup()
                     hasCheckedPermissions = true
 
+                    // Ensure briefing generation runs regardless of onboarding/import state.
+                    // checkPermissionsAndSetup may skip triggerImports (e.g. test data, pending
+                    // onboarding, lost permissions), but the briefing only reads existing data.
+                    if DailyBriefingCoordinator.shared.morningBriefing == nil {
+                        await DailyBriefingCoordinator.shared.checkFirstOpenOfDay()
+                    }
+
                     // Tell the system about our App Shortcuts so Siri/Spotlight can surface them
                     SAMShortcutsProvider.updateAppShortcutParameters()
                 }
@@ -458,9 +465,21 @@ struct SAMApp: App {
     private func triggerImportsForEnabledSources() async {
         // Never run real imports while Harvey Snodgrass test data is active —
         // real contacts would overwrite the seed dataset.
+        // Briefing + outcome generation still run (they only read existing data).
         #if DEBUG
         if UserDefaults.standard.isTestDataLoaded || UserDefaults.standard.isTestDataActive {
-            logger.notice("triggerImportsForEnabledSources: skipping — test data is active")
+            logger.notice("triggerImportsForEnabledSources: skipping imports — test data is active")
+
+            // Prune + generate outcomes and briefing even with test data
+            try? OutcomeRepository.shared.pruneExpired()
+            try? OutcomeRepository.shared.purgeOld()
+
+            let autoGenerateOutcomes = UserDefaults.standard.bool(forKey: "outcomeAutoGenerate")
+            if autoGenerateOutcomes {
+                OutcomeEngine.shared.startGeneration()
+            }
+
+            await DailyBriefingCoordinator.shared.checkFirstOpenOfDay()
             return
         }
         #endif

@@ -6,6 +6,7 @@
 //  Phase I: Insights & Awareness
 //
 //  Dashboard showing prioritized AI-generated insights from all data sources.
+//  Redesigned Phase 1 (3/4/26): 3 zones — Briefing, Outcomes, More.
 //
 
 import SwiftUI
@@ -33,8 +34,7 @@ struct AwarenessView: View {
     @State private var selectedFilter: InsightFilter = .all
     @State private var searchText = ""
     @State private var isGenerating = false
-    @State private var reorderTick: Int = 0
-    @State private var showReview = false
+    @State private var showMore = false
 
     // MARK: - Briefing State
 
@@ -46,45 +46,23 @@ struct AwarenessView: View {
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 0) {
-                // Subtle last-updated timestamp
-                headerSection
+                // Zone 1 — Persistent Briefing
+                PersistentBriefingSection()
 
                 // Evening recap banner (if prompted)
                 if briefingCoordinator.showEveningPrompt {
                     EveningPromptBanner()
                 }
 
-                // Zone 1 — Hero Card: top coaching recommendation
-                TipView(heroCardTip)
-                    .tipViewStyle(SAMTipViewStyle())
-                    .padding(.horizontal)
+                Divider()
 
-                heroCardSection
-                    .padding(.horizontal)
-                    .padding(.bottom, 8)
+                // Zone 2 — Top Outcome Cards (capped at 5)
+                OutcomeQueueView(maxVisible: 5)
 
                 Divider()
 
-                // Zone 2 — Today's Actions: merged actionQueue + todaysFocus sections
-                todayActionsSection
-
-                Divider()
-
-                // Zone 3 — Review & Analytics (collapsed by default)
-                reviewAnalyticsSection
-
-                Divider()
-
-                // Filter Bar + Insights (below review)
-                filterBar
-
-                Divider()
-
-                if filteredInsights.isEmpty {
-                    emptyState
-                } else {
-                    insightsSection
-                }
+                // Zone 3 — Everything else, collapsed by default
+                moreSection
             }
         }
         .navigationTitle("Today")
@@ -129,9 +107,6 @@ struct AwarenessView: View {
             await loadInsights()
             await meetingPrepCoordinator.refresh()
         }
-        .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
-            reorderTick += 1
-        }
         .onChange(of: calendarCoordinator.importStatus) {
             if calendarCoordinator.importStatus == .success {
                 Task {
@@ -141,123 +116,120 @@ struct AwarenessView: View {
         }
     }
 
-    // MARK: - Header Section
-
-    private var headerSection: some View {
-        HStack {
-            Text(timeOfDayGreeting)
-                .font(.largeTitle)
-                .fontWeight(.bold)
-
-            Spacer()
-
-            if let lastGenerated = generator.lastGeneratedAt {
-                Text("Updated \(lastGenerated, style: .relative) ago")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-            }
-        }
-        .padding()
-    }
-
-    private var timeOfDayGreeting: String {
-        let hour = Calendar.current.component(.hour, from: Date())
-        switch hour {
-        case ..<12:  return "Good morning"
-        case 12..<17: return "Good afternoon"
-        default:     return "Good evening"
-        }
-    }
-
-    private let heroCardTip = TodayHeroCardTip()
     private let briefingTip = BriefingButtonTip()
 
-    // MARK: - Hero Card Section
+    // MARK: - More Section (collapsed)
 
-    private var heroCardSection: some View {
-        Group {
-            if let topOutcome = heroOutcome {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Top Priority")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
-
-                    OutcomeCardView(
-                        outcome: topOutcome,
-                        onAct: nil,
-                        onDone: {},
-                        onSkip: {}
-                    )
-                }
-                .padding()
-                .background(Color.blue.opacity(0.06))
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color.blue.opacity(0.2), lineWidth: 1)
-                )
-            } else {
-                VStack(spacing: 8) {
-                    Image(systemName: "checkmark.circle")
-                        .font(.title)
-                        .foregroundStyle(.green)
-                    Text("You're on track")
-                        .font(.headline)
-                    Text("No urgent coaching recommendations right now.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity)
-                .padding()
-                .background(Color.green.opacity(0.04))
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-            }
-        }
-    }
-
-    private var heroOutcome: SamOutcome? {
-        try? OutcomeRepository.shared.fetchActive().first
-    }
-
-    // MARK: - Today's Actions Section
-
-    private var todayActionsSection: some View {
-        let actionSections = sectionsForGroup(.actionQueue).filter { $0 != .outcomes }
-        let focusSections = sectionsForGroup(.todaysFocus)
-        let allSections = actionSections + focusSections
-
-        return VStack(spacing: 0) {
-            if !allSections.isEmpty {
-                ForEach(Array(allSections.enumerated()), id: \.element) { index, section in
-                    sectionView(for: section)
-                    if index < allSections.count - 1 {
-                        Divider()
-                            .padding(.horizontal)
-                    }
-                }
-            }
-        }
-    }
-
-    // MARK: - Review & Analytics Section
-
-    private var reviewAnalyticsSection: some View {
-        DisclosureGroup("Review & Analytics", isExpanded: $showReview) {
+    private var moreSection: some View {
+        DisclosureGroup("More", isExpanded: $showMore) {
             VStack(spacing: 0) {
-                let sections = AwarenessSectionGroup.reviewAnalytics.sections
-                ForEach(Array(sections.enumerated()), id: \.element) { index, section in
-                    sectionView(for: section)
-                    if index < sections.count - 1 {
-                        Divider()
-                            .padding(.horizontal)
-                    }
+                // Completed outcomes today
+                completedTodaySection
+
+                // All individual sections
+                FollowUpCoachSection()
+                Divider().padding(.horizontal)
+                UnknownSenderTriageSection()
+                Divider().padding(.horizontal)
+                GoalPacingSection()
+                Divider().padding(.horizontal)
+                MeetingPrepSection()
+                Divider().padding(.horizontal)
+                PipelineStageSection()
+                Divider().padding(.horizontal)
+                LifeEventsSection()
+                Divider().padding(.horizontal)
+                EngagementVelocitySection()
+                Divider().padding(.horizontal)
+                ProfileAnalysisReadySection()
+                Divider().padding(.horizontal)
+                StreakTrackingSection()
+                Divider().padding(.horizontal)
+                ContentCadenceSection()
+                Divider().padding(.horizontal)
+                MeetingQualitySection()
+                Divider().padding(.horizontal)
+                CalendarPatternsSection()
+                Divider().padding(.horizontal)
+                TimeAllocationSection()
+                Divider().padding(.horizontal)
+                ReferralTrackingSection()
+                Divider().padding(.horizontal)
+                NetworkGrowthSection()
+
+                Divider()
+
+                // Filter Bar + Insights
+                filterBar
+
+                Divider()
+
+                if filteredInsights.isEmpty {
+                    emptyState
+                } else {
+                    insightsSection
                 }
             }
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
+    }
+
+    // MARK: - Completed Today (moved from OutcomeQueueView)
+
+    @Query(sort: \SamOutcome.completedAt, order: .reverse)
+    private var allOutcomesForCompleted: [SamOutcome]
+
+    private var completedToday: [SamOutcome] {
+        let startOfDay = Calendar.current.startOfDay(for: .now)
+        return allOutcomesForCompleted.filter {
+            $0.status == .completed
+            && $0.completedAt != nil
+            && $0.completedAt! >= startOfDay
+        }
+    }
+
+    @State private var showCompleted = false
+
+    @ViewBuilder
+    private var completedTodaySection: some View {
+        if !completedToday.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                Button(action: { withAnimation { showCompleted.toggle() } }) {
+                    HStack {
+                        Image(systemName: showCompleted ? "chevron.down" : "chevron.right")
+                            .font(.caption2)
+                        Text("Completed Today (\(completedToday.count))")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                        Spacer()
+                    }
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal)
+                    .padding(.vertical, 8)
+                }
+                .buttonStyle(.plain)
+
+                if showCompleted {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(completedToday) { outcome in
+                            HStack(spacing: 8) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.caption)
+                                    .foregroundStyle(.green)
+                                Text(outcome.title)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                        }
+                    }
+                    .padding(.horizontal)
+                    .padding(.bottom, 8)
+                }
+            }
+            Divider().padding(.horizontal)
+        }
     }
 
     // MARK: - Filter Bar
@@ -331,150 +303,6 @@ struct AwarenessView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
-    }
-
-    // MARK: - Section Grouping & Time-of-Day Ordering
-
-    /// Sections in the awareness dashboard, dynamically reordered.
-    enum AwarenessSection: String, CaseIterable {
-        case outcomes
-        case unknownSenders
-        case followUpCoach
-        case lifeEvents
-        case meetingPrep
-        case pipeline
-        case engagementVelocity
-        case meetingQuality
-        case streaks
-        case contentCadence
-        case calendarPatterns
-        case timeAllocation
-        case referralTracking
-        case goalPacing
-        case networkGrowth
-        case profileAnalysisReady
-    }
-
-    /// Collapsible section groups with time-based ordering.
-    enum AwarenessSectionGroup: String, CaseIterable, Hashable {
-        case actionQueue
-        case todaysFocus
-        case reviewAnalytics
-
-        var title: String {
-            switch self {
-            case .actionQueue:     return "Action Queue"
-            case .todaysFocus:     return "Today's Focus"
-            case .reviewAnalytics: return "Review & Analytics"
-            }
-        }
-
-        var icon: String {
-            switch self {
-            case .actionQueue:     return "bolt.fill"
-            case .todaysFocus:     return "calendar.badge.clock"
-            case .reviewAnalytics: return "chart.bar.fill"
-            }
-        }
-
-        var sections: [AwarenessSection] {
-            switch self {
-            case .actionQueue:     return [.outcomes, .followUpCoach, .unknownSenders]
-            case .todaysFocus:     return [.goalPacing, .meetingPrep, .pipeline, .lifeEvents, .engagementVelocity, .profileAnalysisReady]
-            case .reviewAnalytics: return [.streaks, .contentCadence, .meetingQuality, .calendarPatterns, .timeAllocation, .referralTracking, .networkGrowth]
-            }
-        }
-    }
-
-    /// Current time period for contextual ordering.
-    enum TimePeriod {
-        case morning, afternoon, evening
-
-        var label: String {
-            switch self {
-            case .morning:   return "Morning Focus"
-            case .afternoon: return "Afternoon"
-            case .evening:   return "Evening Review"
-            }
-        }
-
-        var icon: String {
-            switch self {
-            case .morning:   return "sunrise"
-            case .afternoon: return "sun.max"
-            case .evening:   return "sunset"
-            }
-        }
-
-        static func current(hour: Int) -> TimePeriod {
-            switch hour {
-            case ..<12:   return .morning
-            case 12..<17: return .afternoon
-            default:      return .evening
-            }
-        }
-    }
-
-    /// Current time period, refreshed via reorderTick.
-    private var currentTimePeriod: TimePeriod {
-        _ = reorderTick
-        let hour = Calendar.current.component(.hour, from: Date())
-        return TimePeriod.current(hour: hour)
-    }
-
-    /// Sections within a group, with float-to-top rules applied.
-    private func sectionsForGroup(_ group: AwarenessSectionGroup) -> [AwarenessSection] {
-        _ = reorderTick
-        var sections = group.sections
-        let now = Date()
-
-        if group == .todaysFocus {
-            // Float MeetingPrep to top if a meeting starts within 30 min
-            let thirtyMinFromNow = Calendar.current.date(byAdding: .minute, value: 30, to: now)!
-            let hasSoonMeeting = meetingPrepCoordinator.briefings.contains { briefing in
-                briefing.startsAt > now && briefing.startsAt <= thirtyMinFromNow
-            }
-            if hasSoonMeeting {
-                sections.removeAll { $0 == .meetingPrep }
-                sections.insert(.meetingPrep, at: 0)
-            }
-        }
-
-        if group == .actionQueue {
-            // Float FollowUpCoach to top if a meeting ended within 1 hour
-            let oneHourAgo = Calendar.current.date(byAdding: .hour, value: -1, to: now)!
-            let hasRecentMeeting = meetingPrepCoordinator.followUpPrompts.contains { prompt in
-                prompt.endedAt >= oneHourAgo && prompt.endedAt <= now
-            }
-            if hasRecentMeeting {
-                sections.removeAll { $0 == .followUpCoach }
-                sections.insert(.followUpCoach, at: 0)
-            }
-        }
-
-        return sections
-    }
-
-    @ViewBuilder
-    private func sectionView(for section: AwarenessSection) -> some View {
-        switch section {
-        case .outcomes:           OutcomeQueueView()
-        case .unknownSenders:     UnknownSenderTriageSection()
-        case .followUpCoach:      FollowUpCoachSection()
-        case .lifeEvents:         LifeEventsSection()
-        case .meetingPrep:        MeetingPrepSection()
-        case .pipeline:           PipelineStageSection()
-        case .engagementVelocity: EngagementVelocitySection()
-        case .meetingQuality:     MeetingQualitySection()
-        case .streaks:            StreakTrackingSection()
-        case .contentCadence:     ContentCadenceSection()
-        case .calendarPatterns:   CalendarPatternsSection()
-        case .timeAllocation:     TimeAllocationSection()
-        case .referralTracking:   ReferralTrackingSection()
-        case .goalPacing:         GoalPacingSection()
-        case .networkGrowth:      NetworkGrowthSection()
-        case .profileAnalysisReady: ProfileAnalysisReadySection()
-        }
     }
 
     // MARK: - Computed Properties

@@ -31,7 +31,8 @@ actor DailyBriefingService {
         priorityActions: [BriefingAction],
         followUps: [BriefingFollowUp],
         lifeEvents: [BriefingLifeEvent],
-        tomorrowPreview: [BriefingCalendarItem]
+        tomorrowPreview: [BriefingCalendarItem],
+        goalProgress: [GoalProgress] = []
     ) async -> (visual: String, tts: String) {
         let availability = await AIService.shared.checkAvailability()
         guard case .available = availability else {
@@ -44,13 +45,28 @@ actor DailyBriefingService {
             priorityActions: priorityActions,
             followUps: followUps,
             lifeEvents: lifeEvents,
-            tomorrowPreview: tomorrowPreview
+            tomorrowPreview: tomorrowPreview,
+            goalProgress: goalProgress
         )
+
+        let now = Date()
+        let currentTime = now.formatted(date: .omitted, time: .shortened)
+        let fourHoursLater = Calendar.current.date(byAdding: .hour, value: 4, to: now)!
+        let endTime = fourHoursLater.formatted(date: .omitted, time: .shortened)
 
         // Visual narrative
         let visualPrompt = """
             You are a warm, professional executive assistant for a financial strategist.
-            Write a concise morning briefing summary (3-5 sentences) based on the data below.
+            Write a concise morning briefing (4-6 sentences) based on the data below.
+
+            Structure:
+            1. First 1-2 sentences: overview of the day (meetings, key people, energy of the day).
+            2. Next 2-3 sentences: a suggested plan for the next 4 hours (\(currentTime)–\(endTime)).
+               Reference specific calendar blocks and gaps. Suggest what to tackle in the open time
+               between meetings — e.g. "Between your 10:00 and 11:30, you could knock out the
+               follow-up call to [Name]." Be specific about people and tasks.
+            3. If there are business goals, mention the most relevant one and what would move it forward today.
+
             Include exact times, full names, and specific details. Be data-dense but readable.
             Use a confident, forward-looking tone. No greetings or sign-offs.
 
@@ -63,6 +79,7 @@ actor DailyBriefingService {
         let ttsPrompt = """
             You are a warm, professional executive assistant briefing your boss verbally.
             Write a short spoken briefing (2-3 sentences) based on the data below.
+            Include what's coming up first and the most important action for the next few hours.
             Use conversational transitions ("First up...", "Also worth noting...").
             Round numbers ("about a dozen" instead of "12"), use relative times ("in a couple hours").
             Keep sentences short and clear for audio delivery.
@@ -149,21 +166,31 @@ actor DailyBriefingService {
         priorityActions: [BriefingAction],
         followUps: [BriefingFollowUp],
         lifeEvents: [BriefingLifeEvent],
-        tomorrowPreview: [BriefingCalendarItem]
+        tomorrowPreview: [BriefingCalendarItem],
+        goalProgress: [GoalProgress] = []
     ) -> String {
         var parts: [String] = []
 
+        let now = Date()
+        let currentTime = now.formatted(date: .omitted, time: .shortened)
+        parts.append("CURRENT TIME: \(currentTime)")
+
         if !calendarItems.isEmpty {
             let items = calendarItems.map { item in
-                let time = item.startsAt.formatted(date: .omitted, time: .shortened)
+                let start = item.startsAt.formatted(date: .omitted, time: .shortened)
+                let end = item.endsAt.map { $0.formatted(date: .omitted, time: .shortened) } ?? ""
+                let timeRange = end.isEmpty ? start : "\(start)–\(end)"
                 let attendees = item.attendeeNames.isEmpty ? "" : " with \(item.attendeeNames.joined(separator: ", "))"
-                return "- \(time): \(item.eventTitle)\(attendees)"
+                return "- \(timeRange): \(item.eventTitle)\(attendees)"
             }.joined(separator: "\n")
-            parts.append("TODAY'S SCHEDULE (\(calendarItems.count) meetings):\n\(items)")
+            parts.append("TODAY'S SCHEDULE (\(calendarItems.count) events):\n\(items)")
         }
 
         if !priorityActions.isEmpty {
-            let items = priorityActions.prefix(5).map { "- \($0.title)" }.joined(separator: "\n")
+            let items = priorityActions.prefix(5).map { action in
+                let person = action.personName.map { " (\($0))" } ?? ""
+                return "- [\(action.urgency)] \(action.title)\(person)"
+            }.joined(separator: "\n")
             parts.append("PRIORITY ACTIONS:\n\(items)")
         }
 
@@ -177,6 +204,14 @@ actor DailyBriefingService {
         if !lifeEvents.isEmpty {
             let items = lifeEvents.map { "- \($0.personName): \($0.eventDescription)" }.joined(separator: "\n")
             parts.append("LIFE EVENTS:\n\(items)")
+        }
+
+        if !goalProgress.isEmpty {
+            let items = goalProgress.map { gp in
+                let pctStr = String(format: "%.0f", gp.percentComplete * 100)
+                return "- \(gp.goalType.displayName): \(Int(gp.currentValue))/\(Int(gp.targetValue)) (\(pctStr)%, \(gp.pace.displayName), \(gp.daysRemaining)d left, need \(String(format: "%.1f", gp.dailyNeeded))/day)"
+            }.joined(separator: "\n")
+            parts.append("BUSINESS GOALS:\n\(items)")
         }
 
         if !tomorrowPreview.isEmpty {

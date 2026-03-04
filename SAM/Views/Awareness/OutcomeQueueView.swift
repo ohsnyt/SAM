@@ -5,8 +5,8 @@
 //  Created by Assistant on 2/22/26.
 //  Phase N: Outcome-Focused Coaching Engine
 //
-//  Outcome-focused coaching queue shown at the top of the Awareness dashboard.
-//  Displays prioritized outcomes with Done/Skip actions and a completed-today section.
+//  Outcome-focused coaching queue shown in the Awareness dashboard.
+//  Displays prioritized outcomes with Done/Skip actions.
 //
 
 import SwiftUI
@@ -14,6 +14,11 @@ import SwiftData
 import TipKit
 
 struct OutcomeQueueView: View {
+
+    // MARK: - Parameters
+
+    /// Maximum number of outcome cards to show before "Show all" link.
+    var maxVisible: Int = 5
 
     // MARK: - Dependencies
 
@@ -31,7 +36,7 @@ struct OutcomeQueueView: View {
 
     @State private var showRatingFor: SamOutcome?
     @State private var ratingValue: Int = 3
-    @State private var showCompleted = false
+    @State private var showAllOutcomes = false
     @State private var showDeepWorkSheet = false
     @State private var deepWorkOutcome: SamOutcome?
     @State private var showContentDraftSheet = false
@@ -47,64 +52,61 @@ struct OutcomeQueueView: View {
         }
     }
 
-    private var completedToday: [SamOutcome] {
-        let startOfDay = Calendar.current.startOfDay(for: .now)
-        return allOutcomes.filter {
-            $0.status == .completed
-            && $0.completedAt != nil
-            && $0.completedAt! >= startOfDay
+    private var visibleOutcomes: [SamOutcome] {
+        if showAllOutcomes {
+            return activeOutcomes
         }
+        return Array(activeOutcomes.prefix(maxVisible))
+    }
+
+    private var hasMore: Bool {
+        activeOutcomes.count > maxVisible
     }
 
     // MARK: - Body
 
     var body: some View {
-        if activeOutcomes.isEmpty && completedToday.isEmpty {
-            // Don't show anything when there are no outcomes at all
+        if activeOutcomes.isEmpty {
             EmptyView()
         } else {
             VStack(alignment: .leading, spacing: 0) {
-                // Header
-                header
-                    .padding()
-
                 TipView(OutcomeQueueTip())
                     .tipViewStyle(SAMTipViewStyle())
                     .padding(.horizontal)
                     .padding(.bottom, 8)
 
-                Divider()
-
-                if activeOutcomes.isEmpty {
-                    emptyActiveState
-                        .padding()
-                } else {
-                    // Active outcome cards
-                    VStack(spacing: 12) {
-                        ForEach(activeOutcomes) { outcome in
-                            OutcomeCardView(
-                                outcome: outcome,
-                                onAct: actClosure(for: outcome),
-                                onDone: { markDone(outcome) },
-                                onSkip: { markSkipped(outcome) },
-                                onMuteKind: {
-                                    Task { await CalibrationService.shared.setMuted(kind: outcome.outcomeKindRawValue, muted: true) }
-                                },
-                                sequenceStepCount: sequenceStepCount(for: outcome),
-                                nextAwaitingStep: nextAwaitingStep(for: outcome)
-                            )
-                        }
+                // Active outcome cards
+                VStack(spacing: 12) {
+                    ForEach(visibleOutcomes) { outcome in
+                        OutcomeCardView(
+                            outcome: outcome,
+                            onAct: actClosure(for: outcome),
+                            onDone: { markDone(outcome) },
+                            onSkip: { markSkipped(outcome) },
+                            onMuteKind: {
+                                Task { await CalibrationService.shared.setMuted(kind: outcome.outcomeKindRawValue, muted: true) }
+                            },
+                            sequenceStepCount: sequenceStepCount(for: outcome),
+                            nextAwaitingStep: nextAwaitingStep(for: outcome)
+                        )
                     }
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 12)
+
+                // Show all / collapse link
+                if hasMore {
+                    Button(action: {
+                        withAnimation { showAllOutcomes.toggle() }
+                    }) {
+                        Text(showAllOutcomes ? "Show fewer" : "Show all \(activeOutcomes.count) outcomes")
+                            .font(.subheadline)
+                            .foregroundStyle(.blue)
+                    }
+                    .buttonStyle(.plain)
                     .padding(.horizontal)
-                    .padding(.vertical, 12)
+                    .padding(.bottom, 12)
                 }
-
-                // Completed today section
-                if !completedToday.isEmpty {
-                    completedSection
-                }
-
-                Divider()
             }
             .sheet(item: $showRatingFor) { outcome in
                 ratingSheet(for: outcome)
@@ -167,122 +169,6 @@ struct OutcomeQueueView: View {
                         }
                     )
                 }
-            }
-        }
-    }
-
-    // MARK: - Header
-
-    private var header: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text("SAM Coach")
-                        .font(.title3)
-                        .fontWeight(.semibold)
-
-                    if CalibrationService.cachedLedger.totalInteractions >= 20 {
-                        HStack(spacing: 3) {
-                            Image(systemName: "brain")
-                                .font(.caption2)
-                            Text("Personalized")
-                                .font(.caption2)
-                        }
-                        .foregroundStyle(.purple)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(.purple.opacity(0.1))
-                        .clipShape(Capsule())
-                        .help("SAM has learned from \(CalibrationService.cachedLedger.totalInteractions) interactions to personalize your coaching")
-                    }
-                }
-
-                let count = activeOutcomes.count
-                if count > 0 {
-                    Text("\(count) outcome\(count == 1 ? "" : "s") need\(count == 1 ? "s" : "") your attention")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text("All caught up")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            Spacer()
-
-            // Status indicator
-            if engine.generationStatus == .generating {
-                ProgressView()
-                    .controlSize(.small)
-                    .padding(.trailing, 8)
-            }
-
-            Button(action: {
-                Task { await engine.generateOutcomes() }
-            }) {
-                Image(systemName: "arrow.clockwise")
-            }
-            .buttonStyle(.borderless)
-            .disabled(engine.generationStatus == .generating)
-            .help("Refresh outcomes")
-        }
-    }
-
-    // MARK: - Empty Active State
-
-    private var emptyActiveState: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "checkmark.seal.fill")
-                .font(.title)
-                .foregroundStyle(.green)
-            Text("You're on track")
-                .font(.subheadline)
-                .fontWeight(.medium)
-            Text("No outcomes need attention right now. Keep up the momentum.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
-    }
-
-    // MARK: - Completed Section
-
-    private var completedSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Button(action: { withAnimation { showCompleted.toggle() } }) {
-                HStack {
-                    Image(systemName: showCompleted ? "chevron.down" : "chevron.right")
-                        .font(.caption2)
-                    Text("Completed Today (\(completedToday.count))")
-                        .font(.caption)
-                        .fontWeight(.medium)
-                    Spacer()
-                }
-                .foregroundStyle(.secondary)
-                .padding(.horizontal)
-                .padding(.vertical, 8)
-            }
-            .buttonStyle(.plain)
-
-            if showCompleted {
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(completedToday) { outcome in
-                        HStack(spacing: 8) {
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(.caption)
-                                .foregroundStyle(.green)
-                            Text(outcome.title)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
-                    }
-                }
-                .padding(.horizontal)
-                .padding(.bottom, 8)
             }
         }
     }
