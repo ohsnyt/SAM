@@ -372,24 +372,50 @@ struct RelationshipGraphView: View {
 
     @ViewBuilder
     private var edgeTooltipOverlay: some View {
-        if let edge = hoveredEdge, edge.edgeType == .deducedFamily,
-           hoveredNodeID == nil {
+        if let edge = hoveredEdge, hoveredNodeID == nil {
             let sourceName = coordinator.nodes.first(where: { $0.id == edge.sourceID })?.displayName ?? "?"
             let targetName = coordinator.nodes.first(where: { $0.id == edge.targetID })?.displayName ?? "?"
-            let status = edge.isConfirmedDeduction ? "confirmed" : "unconfirmed"
-            let hint = edge.isConfirmedDeduction ? "" : "\nDouble-click to confirm"
             VStack(alignment: .leading, spacing: 2) {
-                Text("\(sourceName) — \(edge.label ?? "related") — \(targetName)")
-                    .font(.caption.bold())
-                Text("(\(status))\(hint)")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                // Title line: names + label
+                if let label = edge.label, !label.isEmpty {
+                    Text("\(sourceName) — \(label) — \(targetName)")
+                        .font(.caption.bold())
+                } else {
+                    Text("\(sourceName) — \(targetName)")
+                        .font(.caption.bold())
+                }
+                // Edge type + status
+                let typeName = edgeTypeDisplayName(edge.edgeType)
+                if edge.edgeType == .deducedFamily {
+                    let status = edge.isConfirmedDeduction ? "confirmed" : "unconfirmed"
+                    let hint = edge.isConfirmedDeduction ? "" : "\nDouble-click or right-click to confirm"
+                    Text("\(typeName) (\(status))\(hint)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text(typeName)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
             }
             .padding(8)
             .background(.regularMaterial)
             .clipShape(RoundedRectangle(cornerRadius: 6))
             .position(tooltipPosition(for: hoverScreenPosition))
             .allowsHitTesting(false)
+        }
+    }
+
+    private func edgeTypeDisplayName(_ type: EdgeType) -> String {
+        switch type {
+        case .business:          return "Shared context"
+        case .referral:          return "Referral"
+        case .recruitingTree:    return "Recruiting"
+        case .coAttendee:        return "Co-attendee"
+        case .communicationLink: return "Communication"
+        case .mentionedTogether: return "Co-mentioned"
+        case .deducedFamily:     return "Family"
+        case .roleRelationship:  return "Role relationship"
         }
     }
 

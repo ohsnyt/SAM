@@ -114,7 +114,7 @@ actor GraphBuilderService {
                 targetID: link.personB,
                 edgeType: .communicationLink,
                 weight: w,
-                label: nil,
+                label: link.evidenceCount == 1 ? "1 interaction" : "\(link.evidenceCount) interactions",
                 isReciprocal: link.dominantDirection == .balanced,
                 communicationDirection: link.dominantDirection
             ))
@@ -129,7 +129,7 @@ actor GraphBuilderService {
                 targetID: pair.personB,
                 edgeType: .mentionedTogether,
                 weight: w,
-                label: nil,
+                label: pair.coMentionCount == 1 ? "1 co-mention" : "\(pair.coMentionCount) co-mentions",
                 isReciprocal: true,
                 communicationDirection: nil
             ))
