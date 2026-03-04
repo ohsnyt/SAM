@@ -88,13 +88,20 @@ final class StrategicCoordinator {
         guard generationStatus != .generating else { return }
 
         generationStatus = .generating
-        logger.info("Generating strategic digest (type: \(type.rawValue))")
+        let backend = UserDefaults.standard.string(forKey: "aiBackend") ?? "foundationModels"
+        let modelID = UserDefaults.standard.string(forKey: "mlxSelectedModelID") ?? "none"
+        let modelLabel = backend == "foundationModels" ? "Apple Intelligence" : "\(backend)/\(modelID)"
+        logger.info("⏱ Strategic digest starting — backend: \(modelLabel)")
+        let digestClock = ContinuousClock()
+        let digestStart = digestClock.now
 
         // Gather data (all deterministic Swift)
         let pipelineData = gatherPipelineData()
         let timeData = gatherTimeData()
         let patternData = gatherPatternData()
         let contentData = gatherContentData()
+        // Log context sizes — chars ÷ 4 ≈ tokens; helps identify which specialist has the largest input
+        logger.info("📏 Context sizes — pipeline: \(pipelineData.count)ch (~\(pipelineData.count/4)t), time: \(timeData.count)ch (~\(timeData.count/4)t), pattern: \(patternData.count)ch (~\(patternData.count/4)t), content: \(contentData.count)ch (~\(contentData.count/4)t)")
 
         // Dispatch 4 specialists in parallel at background priority
         let now = Date.now
@@ -146,7 +153,8 @@ final class StrategicCoordinator {
         lastGeneratedAt = now
         generationStatus = .success
 
-        logger.info("Strategic digest generated: \(topRecs.count) recommendations")
+        let totalElapsed = digestClock.now - digestStart
+        logger.info("⏱ Strategic digest complete — \(topRecs.count) recommendations — total: \(totalElapsed.formatted(.units(allowed: [.seconds, .milliseconds], width: .abbreviated))) — backend: \(modelLabel)")
     }
 
     /// Check if a fresh digest exists (< maxAge old).
@@ -436,8 +444,12 @@ final class StrategicCoordinator {
     // MARK: - Specialist Dispatch
 
     private func runPipelineAnalyst(data: String) async -> PipelineAnalysis {
+        let clock = ContinuousClock()
+        let start = clock.now
         do {
-            return try await PipelineAnalystService.shared.analyze(data: data)
+            let result = try await PipelineAnalystService.shared.analyze(data: data)
+            logger.info("⏱ Pipeline Health: \((clock.now - start).formatted(.units(allowed: [.seconds, .milliseconds], width: .abbreviated)))")
+            return result
         } catch {
             logger.error("Pipeline analyst failed: \(error.localizedDescription)")
             return PipelineAnalysis()
@@ -445,8 +457,12 @@ final class StrategicCoordinator {
     }
 
     private func runTimeAnalyst(data: String) async -> TimeAnalysis {
+        let clock = ContinuousClock()
+        let start = clock.now
         do {
-            return try await TimeAnalystService.shared.analyze(data: data)
+            let result = try await TimeAnalystService.shared.analyze(data: data)
+            logger.info("⏱ Time Balance: \((clock.now - start).formatted(.units(allowed: [.seconds, .milliseconds], width: .abbreviated)))")
+            return result
         } catch {
             logger.error("Time analyst failed: \(error.localizedDescription)")
             return TimeAnalysis()
@@ -454,8 +470,12 @@ final class StrategicCoordinator {
     }
 
     private func runPatternDetector(data: String) async -> PatternAnalysis {
+        let clock = ContinuousClock()
+        let start = clock.now
         do {
-            return try await PatternDetectorService.shared.analyze(data: data)
+            let result = try await PatternDetectorService.shared.analyze(data: data)
+            logger.info("⏱ Patterns: \((clock.now - start).formatted(.units(allowed: [.seconds, .milliseconds], width: .abbreviated)))")
+            return result
         } catch {
             logger.error("Pattern detector failed: \(error.localizedDescription)")
             return PatternAnalysis()
@@ -463,8 +483,12 @@ final class StrategicCoordinator {
     }
 
     private func runContentAdvisor(data: String) async -> ContentAnalysis {
+        let clock = ContinuousClock()
+        let start = clock.now
         do {
-            return try await ContentAdvisorService.shared.analyze(data: data)
+            let result = try await ContentAdvisorService.shared.analyze(data: data)
+            logger.info("⏱ Content Ideas: \((clock.now - start).formatted(.units(allowed: [.seconds, .milliseconds], width: .abbreviated)))")
+            return result
         } catch {
             logger.error("Content advisor failed: \(error.localizedDescription)")
             return ContentAnalysis()

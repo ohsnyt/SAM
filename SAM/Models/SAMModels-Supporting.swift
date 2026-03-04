@@ -53,6 +53,7 @@ public enum EvidenceSource: String, Codable, Sendable {
     case phoneCall = "PhoneCall"
     case faceTime = "FaceTime"
     case linkedIn = "LinkedIn"
+    case facebook = "Facebook"
 }
 
 extension EvidenceSource {
@@ -65,6 +66,7 @@ extension EvidenceSource {
         case .mail:      return 1.5
         case .iMessage:  return 1.0
         case .linkedIn:  return 1.0
+        case .facebook:  return 1.0
         case .note:      return 0.5   // Passive (user notes about person)
         case .contacts:  return 0.0   // Not an interaction
         case .manual:    return 1.0
@@ -78,6 +80,25 @@ extension EvidenceSource {
         default:               return true
         }
     }
+
+    /// SF Symbol name for use in UI.
+    public var iconName: String {
+        switch self {
+        case .calendar:  return "calendar"
+        case .mail:      return "envelope"
+        case .contacts:  return "person.crop.circle"
+        case .note:      return "square.and.pencil"
+        case .manual:    return "pencil"
+        case .iMessage:  return "message"
+        case .phoneCall: return "phone"
+        case .faceTime:  return "video"
+        case .linkedIn:  return "network"
+        case .facebook:  return "person.2.fill"
+        }
+    }
+
+    /// Display label for use in UI.
+    public var displayName: String { rawValue }
 }
 
 public enum EvidenceTriageState: String, Codable, Sendable {
@@ -578,6 +599,7 @@ public enum ActionLane: String, Codable, Sendable {
     case call           // Initiate call, offer post-call note
     case schedule       // Create calendar event with attendees
     case reviewGraph    // Navigate to Relationship Graph in focus mode
+    case openURL        // Open an external URL + show step-by-step instructions (Phase 6)
 }
 
 extension ActionLane {
@@ -589,6 +611,7 @@ extension ActionLane {
         case .call:        return "Call"
         case .schedule:    return "Schedule"
         case .reviewGraph: return "Review in Graph"
+        case .openURL:     return "Open Settings"
         }
     }
 
@@ -600,6 +623,7 @@ extension ActionLane {
         case .call:        return "phone.arrow.up.right"
         case .schedule:    return "calendar.badge.plus"
         case .reviewGraph: return "circle.grid.cross"
+        case .openURL:     return "safari"
         }
     }
 
@@ -611,6 +635,7 @@ extension ActionLane {
         case .call:        return "Call"
         case .schedule:    return "Schedule"
         case .reviewGraph: return "Review Graph"
+        case .openURL:     return "Open URL"
         }
     }
 }
@@ -737,6 +762,7 @@ public enum OutcomeKind: String, Codable, Sendable, CaseIterable {
     case training          // Learning/development activity
     case compliance        // Regulatory or compliance action
     case contentCreation   // Social media / educational content
+    case setup             // Platform notification setup guidance (Phase 6)
 }
 
 public enum OutcomeStatus: String, Codable, Sendable {
@@ -758,7 +784,7 @@ extension OutcomeKind {
     var defaultAction: OutcomeAction {
         switch self {
         case .followUp, .preparation: return .captureNote
-        case .proposal, .outreach, .growth, .training, .compliance, .contentCreation: return .openPerson
+        case .proposal, .outreach, .growth, .training, .compliance, .contentCreation, .setup: return .openPerson
         }
     }
 
@@ -766,6 +792,7 @@ extension OutcomeKind {
         switch self {
         case .followUp, .preparation: return "Write Note"
         case .contentCreation: return "Draft"
+        case .setup: return "Open Settings"
         case .proposal, .outreach, .growth, .training, .compliance: return "View"
         }
     }
@@ -774,6 +801,7 @@ extension OutcomeKind {
         switch self {
         case .followUp, .preparation: return "square.and.pencil"
         case .contentCreation: return "text.badge.star"
+        case .setup: return "safari"
         case .proposal, .outreach, .growth, .training, .compliance: return "arrow.right.circle"
         }
     }

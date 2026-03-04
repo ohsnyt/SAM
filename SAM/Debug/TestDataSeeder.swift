@@ -211,7 +211,7 @@ final class TestDataSeeder {
 
         do {
             try context.save()
-            logger.notice("TestDataSeeder: committed — \(clients.count) clients, \(activeLeads.count) active leads, \(agents.count) agents")
+            logger.notice("TestDataSeeder: committed — \(clients.count) clients, \(activeLeads.count) active leads, \(agents.count) agents (104 total people including referral partners, external agents, vendors, and dropped leads)")
         } catch {
             logger.error("TestDataSeeder: save failed — \(error)")
         }

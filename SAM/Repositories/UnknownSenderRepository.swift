@@ -33,15 +33,19 @@ final class UnknownSenderRepository {
 
     // MARK: - Fetch
 
-    /// Fetch all pending unknown senders, sorted by email count descending.
+    /// Fetch all pending unknown senders, sorted by last name then first name.
     func fetchPending() throws -> [UnknownSender] {
         guard let modelContext else { throw RepositoryError.notConfigured }
 
-        let descriptor = FetchDescriptor<UnknownSender>(
-            sortBy: [SortDescriptor(\.emailCount, order: .reverse)]
-        )
+        let descriptor = FetchDescriptor<UnknownSender>()
         let all = try modelContext.fetch(descriptor)
-        return all.filter { $0.status == .pending }
+        return all
+            .filter { $0.status == .pending }
+            .sorted { lhs, rhs in
+                let lhsLast = lhs.displayName.flatMap { $0.split(separator: " ").last.map(String.init) } ?? lhs.email
+                let rhsLast = rhs.displayName.flatMap { $0.split(separator: " ").last.map(String.init) } ?? rhs.email
+                return lhsLast.localizedCaseInsensitiveCompare(rhsLast) == .orderedAscending
+            }
     }
 
     /// Returns the set of emails marked as neverInclude for fast import-time lookup.
@@ -147,6 +151,112 @@ final class UnknownSenderRepository {
         guard let modelContext else { throw RepositoryError.notConfigured }
         sender.status = .added
         sender.lastTriagedAt = Date()
+        try modelContext.save()
+    }
+
+    // MARK: - LinkedIn Metadata
+
+    /// Update or create an UnknownSender record for a LinkedIn "Later" contact,
+    /// stamping it with touch score, company, position, and connection date.
+    /// Uses the same synthetic key format as LinkedInImportCoordinator.
+    func upsertLinkedInLater(
+        uniqueKey: String,
+        displayName: String?,
+        touchScore: Int,
+        company: String?,
+        position: String?,
+        connectedOn: Date?
+    ) throws {
+        guard let modelContext else { throw RepositoryError.notConfigured }
+
+        let descriptor = FetchDescriptor<UnknownSender>()
+        let all = try modelContext.fetch(descriptor)
+        let existing = all.first { $0.email == uniqueKey }
+
+        if let record = existing {
+            record.intentionalTouchScore = touchScore
+            record.linkedInCompany = company
+            record.linkedInPosition = position
+            record.linkedInConnectedOn = connectedOn
+            if let name = displayName, record.displayName == nil {
+                record.displayName = name
+            }
+            // Re-surface if previously dismissed
+            if record.status == .dismissed {
+                record.status = .pending
+            }
+        } else {
+            let record = UnknownSender(
+                email: uniqueKey,
+                displayName: displayName,
+                status: .pending,
+                firstSeenAt: connectedOn ?? Date(),
+                emailCount: 1,
+                latestSubject: uniqueKey,
+                latestEmailDate: connectedOn ?? Date(),
+                source: .linkedIn,
+                isLikelyMarketing: false,
+                intentionalTouchScore: touchScore,
+                linkedInCompany: company,
+                linkedInPosition: position,
+                linkedInConnectedOn: connectedOn
+            )
+            modelContext.insert(record)
+        }
+
+        try modelContext.save()
+    }
+
+    // MARK: - Facebook Metadata
+
+    /// Update or create an UnknownSender record for a Facebook "Later" contact,
+    /// stamping it with touch score, friendship date, and message metadata.
+    /// Uses synthetic key format: "facebook:{normalized-name}-{timestamp}".
+    func upsertFacebookLater(
+        uniqueKey: String,
+        displayName: String?,
+        touchScore: Int,
+        friendedOn: Date?,
+        messageCount: Int,
+        lastMessageDate: Date?
+    ) throws {
+        guard let modelContext else { throw RepositoryError.notConfigured }
+
+        let descriptor = FetchDescriptor<UnknownSender>()
+        let all = try modelContext.fetch(descriptor)
+        let existing = all.first { $0.email == uniqueKey }
+
+        if let record = existing {
+            record.intentionalTouchScore = touchScore
+            record.facebookFriendedOn = friendedOn
+            record.facebookMessageCount = messageCount
+            record.facebookLastMessageDate = lastMessageDate
+            if let name = displayName, record.displayName == nil {
+                record.displayName = name
+            }
+            // Re-surface if previously dismissed
+            if record.status == .dismissed {
+                record.status = .pending
+            }
+        } else {
+            let record = UnknownSender(
+                email: uniqueKey,
+                displayName: displayName,
+                status: .pending,
+                firstSeenAt: friendedOn ?? Date(),
+                emailCount: 1,
+                latestSubject: uniqueKey,
+                latestEmailDate: friendedOn ?? Date(),
+                source: .facebook,
+                isLikelyMarketing: false,
+                intentionalTouchScore: touchScore,
+                facebookFriendedOn: friendedOn,
+                facebookMessageCount: messageCount,
+                facebookLastMessageDate: lastMessageDate
+            )
+            modelContext.insert(record)
+        }
+
         try modelContext.save()
     }
 }

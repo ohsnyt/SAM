@@ -87,22 +87,6 @@ struct MailSettingsContent: View {
                     Text("1 hour").tag(3600.0)
                 }
 
-                Picker("Look back", selection: Binding(
-                    get: { coordinator.lookbackDays },
-                    set: { coordinator.setLookbackDays($0) }
-                )) {
-                    Text("7 days").tag(7)
-                    Text("14 days").tag(14)
-                    Text("30 days").tag(30)
-                    Text("90 days").tag(90)
-                    Text("All").tag(0)
-                }
-
-                if coordinator.lookbackDays == 0 {
-                    Text("First import will scan all available email history. Subsequent imports use incremental sync.")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                }
             }
 
             Divider()

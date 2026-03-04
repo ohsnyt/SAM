@@ -3,7 +3,7 @@
 **Language**: Swift 6  
 **Architecture**: Clean layered architecture with strict separation of concerns  
 **Framework**: SwiftUI + SwiftData  
-**Last Updated**: March 2, 2026 (Phases A–Z + Advanced Search + Export/Import + Phase AA complete + Strategic Action Coaching Flow + Life Event Coaching + Interactive Content Ideas + ⌘K Command Palette + Coaching Calibration Phases 1–4 + Phase AB Polish + Bug fixes: intro timing, tips state, JSON null, Contacts container, task priorities, schema SAM_v27 + LinkedIn/WhatsApp integration plan + permissions audit deferred)
+**Last Updated**: March 3, 2026 (Phases A–Z + Advanced Search + Export/Import + Phase AA complete + Strategic Action Coaching Flow + Life Event Coaching + Interactive Content Ideas + ⌘K Command Palette + Coaching Calibration Phases 1–4 + Phase AB Polish + Bug fixes: intro timing, tips state, JSON null, Contacts container, task priorities, schema SAM_v27 + Phase S+: LinkedIn archive import, Unknown Senders triage, Interaction History in PersonDetailView + Contact Enrichment & User Profile Intelligence, schema SAM_v28 + LinkedIn Integration Rebuild: Intentional Touch Scoring, Add/Later review sheet, enhanced triage, schema SAM_v29 + Phase 8: Permissions & Onboarding Audit, Notifications permission step, AI Setup step, step counter, Notifications in Settings + LinkedIn §13 Apple Contacts Batch Sync + §14 SwiftData models, schema SAM_v30)
 
 **Related Docs**:
 - See `agent.md` for product philosophy, AI architecture, and UX principles
@@ -152,7 +152,7 @@ SAM/SAM/
 │   ├── GraphBuilderService.swift      ✅ Actor — Force-directed graph layout + edge assembly + edge bundling
 │   ├── CoachingPlannerService.swift   ✅ Actor — AI coaching chat for strategic action planning
 │   ├── BestPracticesService.swift     ✅ Actor — Best practices knowledge base (bundled + user)
-│   ├── BusinessProfileService.swift  ✅ Actor — Business context profile persistence + AI blocklist + calibration injection
+│   ├── BusinessProfileService.swift  ✅ Actor — Business context profile persistence + AI blocklist + calibration injection + LinkedIn profile storage/injection
 │   ├── CalibrationService.swift     ✅ Actor — Calibration ledger persistence (UserDefaults), signal recording, AI fragment generation
 │   ├── SystemNotificationService.swift ✅ @MainActor — macOS system notifications (UNUserNotificationCenter)
 │   ├── LifeEventCoachingService.swift ✅ Actor — Event-type-calibrated AI coaching for life events
@@ -177,7 +177,8 @@ SAM/SAM/
 │   ├── BackupCoordinator.swift        ✅ Export/import .sambackup files (full replace)
 │   ├── SearchCoordinator.swift        ✅ Unified search across people, contexts, evidence, notes, outcomes
 │   ├── RelationshipGraphCoordinator.swift ✅ Graph data gathering, filtering, layout orchestration
-│   └── IntroSequenceCoordinator.swift ✅ First-launch intro slide machine + narration sync
+│   ├── IntroSequenceCoordinator.swift ✅ First-launch intro slide machine + narration sync
+│   └── ContactEnrichmentCoordinator.swift ✅ Review-and-apply workflow for pending contact enrichments
 │
 ├── Repositories/
 │   ├── PeopleRepository.swift          ✅ CRUD for SamPerson
@@ -192,7 +193,8 @@ SAM/SAM/
 │   ├── ContentPostRepository.swift    ✅ CRUD for ContentPost + cadence + streak queries
 │   ├── GoalRepository.swift           ✅ CRUD for BusinessGoal + archive
 │   ├── ComplianceAuditRepository.swift ✅ CRUD for ComplianceAuditEntry + prune
-│   └── DeducedRelationRepository.swift ✅ CRUD for DeducedRelation + confirm
+│   ├── DeducedRelationRepository.swift ✅ CRUD for DeducedRelation + confirm
+│   └── EnrichmentRepository.swift      ✅ CRUD for PendingEnrichment; dedup by (personID, field, proposedValue); peopleWithEnrichment cache
 │
 ├── Models/
 │   ├── SAMModels.swift                 ✅ Core models (SamPerson, SamContext, etc.)
@@ -205,6 +207,8 @@ SAM/SAM/
 │   ├── SAMModels-ContentPost.swift   ✅ ContentPost, ContentPlatform
 │   ├── SAMModels-Goal.swift          ✅ BusinessGoal, GoalType, GoalPace
 │   ├── SAMModels-Compliance.swift    ✅ ComplianceAuditEntry
+│   ├── SAMModels-Enrichment.swift    ✅ PendingEnrichment @Model; EnrichmentField/Source/Status enums
+│   ├── SAMModels-Social.swift        ✅ NotificationTypeTracker, ProfileAnalysisRecord, EngagementSnapshot, SocialProfileSnapshot (schema SAM_v30)
 │   ├── BackupDocument.swift          ✅ Backup DTOs (21 Codable structs) + AnyCodableValue
 │   └── DTOs/
 │       ├── ContactDTO.swift            ✅
@@ -221,11 +225,12 @@ SAM/SAM/
 │       ├── CoachingSessionDTO.swift   ✅ CoachingMessage, CoachingAction (7 types), CoachingSessionContext, LifeEventCoachingContext
 │       ├── BestPracticeDTO.swift      ✅ BestPractice knowledge base entry
 │       ├── BusinessProfileDTO.swift   ✅ Business context profile (practice structure, market focus, tools, blocklist)
-│       └── CalibrationDTO.swift      ✅ CalibrationLedger (per-kind stats, timing patterns, strategic weights, muted kinds)
+│       ├── CalibrationDTO.swift      ✅ CalibrationLedger (per-kind stats, timing patterns, strategic weights, muted kinds)
+│       └── UserLinkedInProfileDTO.swift ✅ UserLinkedInProfileDTO + LinkedInPositionDTO/EducationDTO/CertificationDTO; coachingContextFragment
 │
 ├── Views/
 │   ├── AppShellView.swift              ✅ Navigation shell (4 sidebar items: Today, People, Business, Search)
-│   ├── People/                         ✅ People list + detail (initials fallback, coaching preview, urgency strips)
+│   ├── People/                         ✅ People list + detail (initials fallback, coaching preview, urgency strips, enrichment badge + review sheet)
 │   ├── Inbox/                          ✅ Evidence triage (accessible via search/contexts)
 │   ├── Contexts/                       ✅ Context management (accessible via People → More Details)
 │   ├── Awareness/                      ✅ "Today" view — Hero card + Today's Actions + collapsed Review & Analytics + Life Event coaching + IntroSequenceOverlay
@@ -268,7 +273,7 @@ SAM/SAM/
 
 ## 4. Data Models
 
-### 4.1 Existing Models (Phases A–Z + Deduced Relationships, schema v26)
+### 4.1 Existing Models (Phases A–Z + Deduced Relationships + Contact Enrichment + LinkedIn Integration Rebuild, schema v29)
 
 (All existing models unchanged — see `changelog.md` for full schema. Summary below.)
 
@@ -290,6 +295,17 @@ SAM/SAM/
 - **BusinessGoal** — User-defined targets (goalType, title, targetValue, startDate, endDate, isActive, notes); progress computed live from existing repos
 - **ComplianceAuditEntry** — Draft audit trail (channel, recipient, original/final draft, compliance flags JSON, sent timestamp)
 - **DeducedRelation** — Family/household relationships deduced from Apple Contacts related names (personAID, personBID, relationType, sourceLabel, isConfirmed, confirmedAt)
+- **PendingEnrichment** — Per-field contact update candidate (personID soft ref, EnrichmentField, proposedValue, currentValue?, EnrichmentSource, sourceDetail?, EnrichmentStatus: pending/approved/dismissed, createdAt, resolvedAt?). Dedup key: (personID, field, proposedValue). Source can be LinkedIn connection, endorsement, recommendation, or invitation — designed to accept future sources.
+- **IntentionalTouch** — A single recorded social touch event (platform, touchType, direction, contactProfileUrl, samPersonID?, date, snippet, weight, source, sourceImportID?, sourceEmailID?). Dedup key: `"platform:touchType:profileURL:minuteEpoch"`. Covers messages, invitations (personalized vs generic), endorsements (given/received), recommendations (given/received), comments, reactions, mentions. Touch scoring uses `TouchScoringEngine.computeScores()` — 1.5× recency bonus for touches within 6 months.
+- **LinkedInImport** — Audit record for each LinkedIn archive import event (importDate, archiveFileName, connectionCount, matchedContactCount, newContactsFound, touchEventsFound, messagesImported, status). Enables per-import touch deduplication and import history.
+- **UnknownSender** (extended) — Added `intentionalTouchScore: Int`, `linkedInCompany: String?`, `linkedInPosition: String?`, `linkedInConnectedOn: Date?` for LinkedIn-sourced triage contacts.
+- **NotificationTypeTracker** (schema SAM_v30) — Tracks which LinkedIn notification types SAM has seen per platform. One record per `(platform, notificationType)` pair. Fields: `firstSeenDate`, `lastSeenDate`, `totalCount`, `setupTaskDismissCount`.
+- **ProfileAnalysisRecord** (schema SAM_v30) — Persists profile analysis results in SwiftData (replacing UserDefaults). Fields: `platform`, `analysisDate`, `overallScore`, `resultJson`.
+- **EngagementSnapshot** (schema SAM_v30) — Engagement metrics snapshot per platform per period. Prerequisite for §12 EngagementBenchmarker. Fields: `platform`, `periodStart`, `periodEnd`, `metricsJson`, `benchmarkResultJson`.
+- **SocialProfileSnapshot** (schema SAM_v30) — Platform-agnostic social profile storage. Prerequisite for §11 CrossPlatformConsistencyChecker. `samContactId` is nil for the user's own profile. Normalized identity + JSON blobs for platform-specific data.
+
+**Non-SwiftData user data (UserDefaults JSON):**
+- **UserLinkedInProfileDTO** — User's own LinkedIn profile (headline, current position, education, skills, certifications). Stored as JSON under `sam.userLinkedInProfile`. Accessed via `BusinessProfileService.linkedInProfile()`. Injected into all AI specialist system prompts via `contextFragment()`.
 
 ---
 
@@ -340,56 +356,159 @@ SAM/SAM/
 - ✅ **Coaching Calibration Phase 1**: Business context profile (BusinessProfile DTO + BusinessProfileService) injected into all 6 AI specialist system instructions. Universal blocklist prevents irrelevant suggestions (CRM tools, team references for solo agents, software purchases). Settings > AI > Business Profile section for user configuration. (no schema change)
 - ✅ **Coaching Calibration Phases 2–4**: Full feedback system — CalibrationLedger (UserDefaults JSON) tracks per-kind act/dismiss/rating stats, timing patterns, strategic weights, muted kinds, session feedback. CalibrationService actor with cached synchronous accessor. Fixed broken wiring: `shouldRequestRating()` now controls rating frequency, `adjustedWeights()` used in OutcomeEngine. Muted-kind filtering, soft suppress (<15% act rate → 0.3x), per-kind engagement scoring. StrategicCoordinator reads wider calibration weights (0.5–2.0x). `calibrationFragment()` injected into all 6 AI agents via BusinessProfileService. Settings "What SAM Has Learned" section with per-kind progress bars, timing data, strategic weights, mute management, and per-dimension resets. Context menu "Stop suggesting this type" on outcome cards. "Personalized" indicator in queue header after 20+ interactions. Coaching session thumbs up/down feedback. 90-day counter pruning. (no schema change)
 - ✅ **Phase AB: In-App Guidance System**: First-launch narrated intro sequence (6 slides, AVSpeechSynthesizer auto-advance with fallback timers) + 12 TipKit contextual coach marks across all major views. NarrationService, IntroSequenceCoordinator, IntroSequenceOverlay, SAMTips with `@Parameter`-based global toggle. "?" toolbar button toggles tips on/off. Settings > General > Guidance section with toggle, Reset All Tips, Replay Intro. BackupCoordinator: added calendarLookbackDays to backup keys. (no schema change)
+- ✅ **Contact Enrichment & User Profile Intelligence** (schema SAM_v28):
+  - **Contact Enrichment (Track 1)**: New `PendingEnrichment` SwiftData model + `EnrichmentRepository`. Parse Endorsement_Received/Given, Recommendations_Given, Invitations CSVs. Generate per-field Apple Contacts update candidates from LinkedIn import. `ContactEnrichmentCoordinator` orchestrates review-and-apply workflow. `ContactsService.updateContact()` writes enrichment back to Apple Contacts with SAM note block (`--- SAM ---` delimiter). `PeopleListView` gains "Needs Contact Update" and "Not in Contacts" special filters. `PersonDetailView` shows enrichment banner + `EnrichmentReviewSheet` for per-field approve/dismiss.
+  - **User Profile Intelligence (Track 2)**: `UserLinkedInProfileDTO` assembled from Profile.csv, Positions.csv, Education.csv, Skills.csv, Certifications.csv. Stored as JSON in `BusinessProfileService` (UserDefaults). `contextFragment()` now injects `## LinkedIn Profile` section into all 6 AI specialist system prompts.
+  - **Pattern**: LinkedIn (and all future social media archives) split into two data tracks: (1) data *about the user* → feeds AI coaching context; (2) data *about contacts* → feeds contact enrichment pipeline. See §13 for the full Social Media Data Extraction Playbook.
+- ✅ **LinkedIn Integration Rebuild — Intentional Touch Scoring** (schema SAM_v29):
+  - **New models**: `IntentionalTouch` (touch event log with dedup key), `LinkedInImport` (import audit record). `UnknownSender` extended with `intentionalTouchScore`, `linkedInCompany`, `linkedInPosition`, `linkedInConnectedOn`.
+  - **New repository**: `IntentionalTouchRepository` — bulk insert with in-memory dedup (`platform:touchType:profileURL:minuteEpoch`), per-profile and per-person fetch, score computation from persisted records, touch attribution backfill when Later contact is promoted.
+  - **Extended service**: `LinkedInService` gains parsers for `Recommendations_Received.csv`, `Reactions.csv`, `Comments.csv`; updated endorsement/invitation DTOs with dates; fixed endorsement date formatter (`yyyy/MM/dd HH:mm:ss zzz`) and invitation date formatter (`M/d/yy, h:mm a`).
+  - **Coordinator rebuild**: `LinkedInImportCoordinator` now parses all 8 touch CSVs in `loadFolder`, runs `TouchScoringEngine.computeScores()` to score every profile URL, builds `importCandidates: [LinkedInImportCandidate]` sorted by score, exposes `.awaitingReview` status. `confirmImport(classifications:)` takes `[UUID: LinkedInClassification]` map, persists `IntentionalTouch` records, routes "Later" contacts via `UnknownSenderRepository.upsertLinkedInLater()`.
+  - **New DTO**: `LinkedInImportCandidateDTO.swift` — `LinkedInImportCandidate` (firstName, lastName, profileURL, email, company, position, connectedOn, touchScore, matchStatus, defaultClassification), `LinkedInMatchStatus` enum, `LinkedInClassification` enum.
+  - **New UI**: `LinkedInImportReviewSheet` — two-section sheet (Recommended to Add / No Recent Interaction), per-contact toggles with touch score badge and summary, batch "Add All" button, ⌘↩ to import.
+  - **Enhanced triage**: `UnknownSenderTriageSection` shows LinkedIn contacts in a dedicated subsection above regular senders, sorted by touch score, with company/position display and no "Never" option.
+  - **Settings**: `LinkedInImportSettingsView` now shows "Review & Import" button (opens sheet) instead of inline confirm; status `.awaitingReview` suppresses the progress indicator.
+- ✅ **LinkedIn §13 + §14 — Apple Contacts Batch Sync + Social SwiftData Models** (schema SAM_v30):
+  - §13.1: `AppleContactsSyncConfirmationSheet` — post-import batch dialog ("Add LinkedIn URLs to X Apple Contacts?"), single-confirmation batch write via `ContactsService.updateContact`. Only contacts marked "Add" and lacking LinkedIn URL.
+  - §13.2: Auto-sync toggle in `LinkedInImportSettingsContent` (UserDefaults `sam.linkedin.autoSyncAppleContactURLs`). When enabled, writes silently in `confirmImport` step 10 without dialog.
+  - §14: Four new SwiftData models in `SAMModels-Social.swift`: `NotificationTypeTracker` (replaces IntentionalTouchRepository proxy for setup guidance), `ProfileAnalysisRecord` (SwiftData-backed profile analysis history), `EngagementSnapshot` (§12 prerequisite), `SocialProfileSnapshot` (§11 prerequisite). All additive. Schema SAM_v29 → SAM_v30.
+  - `AppleContactsSyncCandidate` DTO added to `LinkedInImportCandidateDTO.swift`.
+  - Coordinator: `prepareSyncCandidates`, `performAppleContactsSync`, `dismissAppleContactsSync` methods; `appleContactsSyncCandidates` observable state; `autoSyncLinkedInURLs` UserDefaults property.
+- ✅ **Phase 8 — Permissions & Onboarding Audit** (no schema change):
+  - Onboarding extended from 8 → 10 steps with step counter ("Step X of 10") in header.
+  - **Step 9 — Notifications**: `UNUserNotificationCenter` permission request with explanation of what's missed without it. Skip allowed. "Enable Notifications" / "Skip" footer pair. `checkStatuses()` detects pre-existing grant.
+  - **Step 10 — AI Setup**: Mistral 7B download UI (GroupBox with Download/Cancel/Ready states + ProgressView). Polls `MLXModelManager.shared.downloadProgress` every 250ms. If model downloaded before "Start Using SAM", `saveSelections()` writes `aiBackend = "hybrid"` to UserDefaults.
+  - **Complete step**: StatusRow/SkippedRow added for Notifications and Enhanced AI.
+  - **Settings > Permissions**: Notifications row added to `PermissionsSettingsView` (bell.circle.fill/red, status check on `.task`, Request Access button).
+  - **Accessibility permission not added**: No feature requiring it (Priority 2 global hotkey) has been built yet.
 
-### Future Phases (Unscheduled)
+### LinkedIn Integration Spec — Coverage Status
 
-- **iOS Companion**: Read-only iOS app
-- **Custom Activity Types**: User-defined time tracking categories
-- **API Integration**: Connect to financial planning software
-- **Team Collaboration**: Shared contexts and evidence (multi-user support)
+Tracking against `SAM-LinkedIn-Integration-Spec.md` (verified by code audit 2026-03-03):
 
-### Planned — LinkedIn & Third-Party Channel Integration
+| Section | Title | Status |
+|---------|-------|--------|
+| §1 | Architecture Overview | Reference only |
+| §2 | File Inventory & Schema | Reference only |
+| §3 | Data Categories & Classification | Reference only |
+| §4 | Contact Import Pipeline | ✅ Complete |
+| §5 | Intentional Touch Detection & Scoring | ✅ Complete |
+| §6 | Unknown Contact Triage (Add vs Later) | ✅ Complete |
+| §7 | De-duplication & Merge Logic | ✅ Complete |
+| §8 | LinkedIn Email Notification Monitor | ✅ Complete — `LinkedInEmailParser.swift` (490 lines), `LinkedInImportCoordinator.handleNotificationEvent()` |
+| §9 | Notification Setup Guidance System | ✅ Complete — `LinkedInNotificationSetupGuide.swift` (195 lines), 5 monitored types, step-by-step instructions |
+| §10 | Profile Analysis Agent | ✅ Complete — `ProfileAnalystService`, `BusinessProfileService`, `ProfileAnalysisDTO` |
+| §11 | Cross-Platform Profile Consistency | ⏸ Deferred — **unblocked by Facebook integration** (Priority 2, Phase FB-4). See `SAM-Facebook-Integration-Spec.md` |
+| §12 | Engagement Benchmarking & Suggestions | ⏸ Deferred — requires `EngagementSnapshot` model and benchmarking agent. **Facebook data enables cross-platform benchmarking.** |
+| §13 | Apple Contacts Sync (LinkedIn URL write-back) | ✅ Complete — batch confirmation dialog (`AppleContactsSyncConfirmationSheet`), auto-sync toggle in Settings, `prepareSyncCandidates`/`performAppleContactsSync` in coordinator |
+| §14 | Data Model (SwiftData) | ✅ Complete — all 4 models added in SAM_v30: `NotificationTypeTracker`, `ProfileAnalysisRecord`, `EngagementSnapshot`, `SocialProfileSnapshot` |
+| §15 | Agent Definitions | ⚠️ Partial — `LinkedInProfileAnalyzer`, `MessageReplyAdvisor`, `NotificationSetupAdvisor` built; `CrossPlatformConsistencyChecker` and `EngagementBenchmarker` deferred with §11/§12 |
 
-Three interlocking pieces designed together to avoid duplicate evidence:
+**Overall LinkedIn spec: ~92% complete.** All core user-facing features plus §13 batch sync and §14 data models are complete. Remaining work is §11/§12 (deferred, multi-platform dependency).
 
-**1. LinkedIn Data Archive Import** (periodic, watermark-based)
-- User requests export at https://www.linkedin.com/mypreferences/d/download-my-data (can take up to 24 hours — SAM should remind the user the next day)
-- Settings > Data Sources: "Request LinkedIn Data" button that opens the URL + sets a reminder
-- Import from LinkedIn's `messages.csv` (documented format: FROM, TO, DATE, SUBJECT, CONTENT columns)
-- Watermark stored in UserDefaults (`sam.linkedin.lastImportDate`) — only messages newer than this are processed on subsequent imports
-- Dedup key: `linkedin:<sendername>:<ISO8601timestamp>:<first50charshash>` stored as `sourceUID` on `SamEvidenceItem`
-- Contact matching: LinkedIn profile URL on `SamPerson` for exact match; fuzzy display name match with user confirmation fallback
+### Planned — Priority Order
 
-**2. Global Clipboard Capture Hotkey** (channel-agnostic)
-- Requires Accessibility permission (`AXIsProcessTrusted()`) — global `CGEventTap`
-- Works for LinkedIn, WhatsApp web, any platform Sarah copies from
-- Detects conversation structure in clipboard (multi-line, name/timestamp patterns)
-- Parses into individual messages and offers "Capture to SAM" sheet
-- Uses same `sourceUID` dedup scheme — if archive import later finds same message, existing record wins silently
-- One habit covers all channels Sarah uses
+The following are ordered by recommended implementation priority. Items marked **[Deferred]** require investigation or have a dependency before they can be started.
 
-**3. LinkedIn as Reply Channel**
-- Surfaces in channel recommendation logic alongside iMessage/email
-- Draft reply UI: "LinkedIn" option with copy button (same pattern as existing channels)
-- LinkedIn profile URL stored on `SamPerson` for deep-link open
+---
 
-**4. WhatsApp Direct Database Integration** *(pending feasibility confirmation — see Deferred Investigation below)*
-- If feasible: user selects `ChatStorage.sqlite` once via `NSOpenPanel`, SAM stores security-scoped bookmark
-- Watermark on `ZMESSAGEDATE` (Apple Epoch, convert: `ZMESSAGEDATE + 978307200`)
-- Schema: `ZWAMESSAGE` table, `ZTEXT` body, `ZFROMJID` sender, `ZMESSAGEDATE` timestamp
-- Dedup key: `whatsapp:<jid>:<unix_timestamp>:<first50charshash>`
+#### ~~Priority 1 — Permissions & Onboarding Audit~~ *(Completed 2026-03-03)*
+- ✅ Onboarding extended to 10 steps (Notifications + AI Setup), step counter added, Settings Permissions tab updated. See completed phases above and changelog.
 
-### Deferred — Requires Investigation Before Implementation
+---
 
-**WhatsApp database access on macOS 15 (Sequoia)**
-- Researched 2026-03-02. Finding: database at `~/Library/Group Containers/group.net.whatsapp.WhatsApp.shared/ChatStorage.sqlite` is unencrypted SQLite.
-- On macOS 15+, Group Containers are TCC-protected. A sandboxed Mac App Store app cannot do background reads. The viable path is user-initiated `NSOpenPanel` file selection + security-scoped bookmark (same pattern as iMessage/CallHistory).
-- Action needed: Verify that `NSOpenPanel` + security-scoped bookmark actually grants persistent read access to this specific path on macOS 15. Test on a real device before building the importer.
-- Schema confirmed: `ZWAMESSAGE` table, `ZISFROMME`, `ZTEXT`, `ZMESSAGEDATE` (Apple Epoch), `ZFROMJID`, `ZTOJID`, `ZPUSHNAME`, `ZCHATSESSION` → `ZWACHATSESSION.ZCONTACTJID`
+#### ~~Priority 1 — LinkedIn §13 Apple Contacts Batch Sync + §14 Missing SwiftData Models~~ *(Completed 2026-03-03)*
+- ✅ §13.1 post-import batch confirmation dialog added to `LinkedInImportReviewSheet`
+- ✅ §13.2 auto-sync toggle added to `LinkedInImportSettingsContent`
+- ✅ §14 four SwiftData models added in `SAMModels-Social.swift`: `NotificationTypeTracker`, `ProfileAnalysisRecord`, `EngagementSnapshot`, `SocialProfileSnapshot` (schema SAM_v30)
 
-**Permissions & Onboarding Audit**
-- Identified 2026-03-02. The current onboarding flow does not have explicit permission prompts or user guidance for: (1) downloading the larger MLX model, (2) the Apple Intelligence / on-device hybrid switch in Settings, and (3) several other permission steps that were identified during first-run testing with a real user.
-- Action needed: Audit every permission that SAM requests (Contacts, Calendar, Mail, Messages/FDA, Accessibility for global hotkey, Notifications) and every one-time setup step (model download, hybrid toggle). Design a cohesive first-run onboarding sheet that covers all of them with clear explanations before the first request dialog appears. This is high priority before wider user testing.
+---
+
+#### Priority 1 — Facebook Integration *(High — unlocks cross-platform intelligence, second social data source)*
+
+Full specification: `SAM-Facebook-Integration-Spec.md`
+
+Facebook is the second social platform for SAM, unlocking LinkedIn §11 (Cross-Platform Profile Consistency) and §12 (Engagement Benchmarking). Unlike LinkedIn (CSV, professional, email-monitorable), Facebook exports are JSON with different challenges: mojibake text encoding, no profile URLs in friends list, personal-first relationship semantics, and per-directory message threads.
+
+**Phased implementation (6 phases):**
+
+| Phase | Title | Scope | Key Files |
+|-------|-------|-------|-----------|
+| **FB-1** ✅ | Core Import Pipeline | Parse friends list, UTF-8 repair, candidate matching, review sheet | `FacebookService.swift`, `FacebookImportCoordinator.swift`, `FacebookImportCandidateDTO.swift`, `UserFacebookProfileDTO.swift` |
+| **FB-2** ✅ | Messenger & Touch Scoring | Parse all message threads (inbox/e2ee/archived/filtered), comments, reactions, friend requests → IntentionalTouch records | Extend `FacebookService`, reuse `IntentionalTouchRepository` + `TouchScoringEngine` |
+| **FB-3** ✅ | User Profile Intelligence & Agent | Parse user's own profile for coaching context, implement Facebook profile analysis agent with personal-tone prompt | `FacebookProfileAnalystService.swift`, `FacebookAnalysisSnapshot.swift`, extend `BusinessProfileService` |
+| **FB-4** ✅ | Cross-Platform Consistency | Compare LinkedIn + Facebook profiles, identify cross-platform contacts, implement §11 agent | `CrossPlatformConsistencyService.swift` |
+| **FB-5** ✅ | Apple Contacts Sync | Write Facebook URLs back to Apple Contacts (same pattern as LinkedIn §13) | Extend `ContactsService`, `EnrichmentField.facebookURL` |
+| **FB-6** ✅ | Polish & Documentation | Settings UI, import history, re-import detection, stale data warning | Settings views, context.md, changelog.md |
+
+**Key technical challenges:**
+- **Mojibake repair:** Facebook JSON uses Latin-1 encoded UTF-8 — all strings require `repairFacebookUTF8()` pass after deserialization
+- **No profile URLs:** Friends list has only name + timestamp (no URLs, no emails, no company) — matching relies heavily on fuzzy name matching against existing SAM contacts and Apple Contacts
+- **Per-directory messages:** Hundreds of `message_1.json` files in nested subdirectories vs LinkedIn's single CSV
+- **Agent tone difference:** Facebook agent must be personal/community-focused, never suggesting promotional activity (see spec §8.3 for full prompt)
+
+**Schema change:** SAM_v31 — adds `FacebookImport` model, extends `UnknownSender` with `facebookFriendedOn`, `facebookMessageCount`, `facebookLastMessageDate`
+
+**No email monitoring channel:** Facebook notification emails are too generic to parse. SAM relies on periodic re-imports only.
+
+---
+
+#### Priority 2 — Global Clipboard Capture Hotkey *(High — high ROI, closes the "other channels" gap)*
+- Channel-agnostic: captures conversations pasted from LinkedIn web, WhatsApp web, or any platform the user copies from.
+- Requires Accessibility permission (`AXIsProcessTrusted()`) — global `CGEventTap`.
+- Detects conversation structure in clipboard (multi-line, name/timestamp patterns), parses into individual messages, offers "Capture to SAM" sheet.
+- Uses same `sourceUID` dedup scheme as archive imports — if a later archive import finds the same message, the existing record wins silently.
+- One user habit covers all channels without dedicated per-platform importers.
+
+---
+
+#### Priority 3 — LinkedIn as Reply Channel *(Medium — completes the LinkedIn integration)*
+- Surfaces LinkedIn alongside iMessage/email in channel recommendation logic.
+- Draft reply UI: "LinkedIn" option with a copy button (same pattern as existing channels).
+- Uses `linkedInProfileURL` already stored on `SamPerson` for deep-link open.
+- Low implementation cost since the profile URL infrastructure is already in place.
+
+---
+
+#### Priority 4 — Social Media Export Reminder Flow *(Medium — reduces friction for periodic re-imports)*
+- LinkedIn, Facebook and possibly other social media platforms allow data exports can take up to 24 hours after requesting them.
+- Establish a low friction way for the User to request data exports from all social media platforms where we need period data updates.
+- Surface an appropriate item in Today (and the day overview) when both the user needs to request an export as well as when SAM finds an email that states that the export is ready to download. ("Your LinkedIn export may be ready — import now?").
+
+---
+
+#### Priority 5 — WhatsApp Direct Database Integration *(Medium — [Deferred: feasibility verification needed])*
+- Database at `~/Library/Group Containers/group.net.whatsapp.WhatsApp.shared/ChatStorage.sqlite` is unencrypted SQLite, schema confirmed (`ZWAMESSAGE` table, `ZISFROMME`, `ZTEXT`, `ZMESSAGEDATE` Apple Epoch, `ZFROMJID`, `ZTOJID`, `ZPUSHNAME`, `ZCHATSESSION → ZWACHATSESSION.ZCONTACTJID`).
+- Viable path: user-initiated `NSOpenPanel` file selection + security-scoped bookmark (same pattern as iMessage/CallHistory).
+- Watermark on `ZMESSAGEDATE`. Dedup key: `whatsapp:<jid>:<unix_timestamp>:<first50charshash>`.
+- **Action needed**: Verify that `NSOpenPanel` + security-scoped bookmark actually grants persistent read access to this specific Group Container path on macOS 15+. Test on a real device before building the importer. Do not start implementation until verified.
+
+---
+
+#### Priority 6 — iOS Companion App *(Low — read-only, adds reach)*
+- Read-only iOS companion for reviewing relationship health, today's briefing, and coaching outcomes while away from the Mac.
+- Shares SwiftData model definitions; no write operations in v1.
+- Requires iCloud sync design decision (CloudKit vs. local-only with handoff).
+
+---
+
+#### Priority 7 — Custom Activity Types *(Low — refinement)*
+- User-defined time tracking categories beyond the built-in WFG-relevant set.
+- Extends `TimeEntry` model; requires UI in Settings > Time Tracking.
+
+---
+
+#### Priority 8 — API Integration *(Low — future growth)*
+- Connect to financial planning or CRM software (e.g. WFG back-office systems).
+- Dependent on available APIs and user demand. No design work started.
+
+---
+
+#### Priority 9 — Team Collaboration *(Low — long-term)*
+- Shared contexts and evidence across multiple SAM users (e.g. agent teams).
+- Requires significant architecture changes: multi-user identity, conflict resolution, permission model.
+- Not viable until the single-user product is stable and widely used.
 
 ---
 
@@ -486,7 +605,11 @@ Each layer tested independently:
 | v23 | W | + ContentPost model |
 | v24 | X | + BusinessGoal model |
 | v25 | Z | + ComplianceAuditEntry model |
-| v26 | Deduced Relationships (current) | + DeducedRelation model, DeducedRelationType enum |
+| v26 | Deduced Relationships | + DeducedRelation model, DeducedRelationType enum |
+| v27 | Household Removal | Removed .household ContextKind; schema cleanup only |
+| v28 | Contact Enrichment | + PendingEnrichment model, EnrichmentField/Source/Status enums |
+| v29 | LinkedIn Integration Rebuild | + IntentionalTouch, LinkedInImport models; UnknownSender extended |
+| v30 | LinkedIn §14 Social Models (current) | + NotificationTypeTracker, ProfileAnalysisRecord, EngagementSnapshot, SocialProfileSnapshot |
 
 Each migration uses SwiftData lightweight migration. New models are additive (no breaking changes to existing models). Backfill logic runs once on first launch after migration.
 
@@ -544,8 +667,235 @@ Each migration uses SwiftData lightweight migration. New models are additive (no
 
 ---
 
-**Document Version**: 26.0 (Phases A–Z + Advanced Search + Export/Import + Phase AA (complete) + Deduced Relationships + Household Removal + Strategic Action Coaching Flow + Life Event Coaching + Interactive Content Ideas + ⌘K Command Palette + Coaching Calibration Phases 1–4, schema SAM_v27)
+## 13. Social Media Data Extraction Playbook
+
+This section captures the conceptual framework established during the LinkedIn integration so that future platform imports (Facebook, X/Twitter, WhatsApp, Instagram, etc.) follow the same pattern and take advantage of existing infrastructure.
+
+---
+
+### 13.1 The Two-Track Model: User Data vs. Contact Data
+
+Every social media archive contains two fundamentally different categories of information. Classify all files before writing any parsing code.
+
+**Track 1 — Data About the User**
+This is the user's own profile, history, and activity on the platform. It enriches SAM's understanding of the user so that AI coaching is better calibrated to their background, expertise, and context.
+
+| What it includes | How SAM uses it |
+|-----------------|-----------------|
+| Profile bio, headline, industry, location | Informs AI specialist system prompts via `BusinessProfileService.contextFragment()` |
+| Career history / work experience | Current role + trajectory → business coaching context |
+| Education | Credential signals for goal-setting and credibility coaching |
+| Skills / certifications | Expertise alignment with client/recruit profiles |
+| Stated goals / interests | Coaching tone calibration |
+
+**Track 2 — Data About Contacts**
+This is information about the people the user knows through the platform — connections, conversation history, endorsements, recommendations. It enriches Apple Contacts records and feeds the relationship intelligence pipeline.
+
+| What it includes | How SAM uses it |
+|-----------------|-----------------|
+| Connection list (name, employer, title, profile URL) | Diff against Apple Contacts → `PendingEnrichment` for company/title updates |
+| Messages / conversations | Evidence items via `EvidenceRepository.bulkUpsertMessages` |
+| Endorsements received | Confirms relationship signal; can surface LinkedIn URL enrichment |
+| Endorsements given | Relationship signal; identifies people the user values |
+| Recommendations given | Strong relationship signal; high-quality context for PersonDetailView |
+| Invitations (sent/received) | Directionality of network expansion; prospecting signal |
+| Reactions / comments (if exported) | Light engagement signal |
+
+---
+
+### 13.2 Platform Archive Inspection Checklist
+
+Before implementing any new platform importer, do this in order:
+
+1. **Request and download a real data export** from the platform using your own account.
+2. **Inventory all files**: List every CSV, JSON, and HTML file. Note file sizes — large files are likely the interesting ones.
+3. **Classify each file** as Track 1 (about user) or Track 2 (about contacts), or discard if irrelevant.
+4. **Inspect the actual column headers** of every CSV — don't guess. Platform exports often have inconsistent casing, spacing, or column ordering across export versions. Always verify with real data before writing DTOs.
+5. **Note date formats**: ISO 8601? Unix timestamp? Apple Epoch (CFAbsoluteTime, used by WhatsApp)? Milliseconds? Document the format for each file.
+6. **Note encoding**: UTF-8? UTF-16? Are there BOM markers? LinkedIn CSVs are UTF-8 with BOM on some exports.
+7. **Note dedup keys**: What combination of fields uniquely identifies a message or connection? This becomes the `sourceUID` in `SamEvidenceItem`. Pattern: `{platform}:{identifier}:{timestamp}`.
+8. **Check for profile URLs**: Does the platform export profile page URLs for contacts? If yes, this is the highest-quality match key — use it for `linkedInProfileURL` / equivalent field on `SamPerson`.
+9. **Check for phone/email in contact export**: If present, these are high-confidence enrichment candidates for Apple Contacts.
+
+---
+
+### 13.3 Parsing Architecture
+
+All new platform importers follow the same layered structure:
+
+```
+{Platform}Service       (actor in Services/)
+    ↓  pure CSV/JSON parsing, returns Sendable DTOs
+{Platform}ImportCoordinator   (@MainActor @Observable in Coordinators/)
+    ↓  matching, dedup, evidence writing, enrichment generation
+EnrichmentRepository / EvidenceRepository   (existing — no changes needed)
+```
+
+**`{Platform}Service` (actor)**
+- One method per CSV/JSON file: `parseConnections(at:)`, `parseMessages(at:)`, etc.
+- Returns arrays of `Sendable` DTOs — no SwiftData models, no Apple framework types
+- Uses `parseCSV(at:)` helper (already in `LinkedInService` — consider extracting to a shared utility)
+- All methods are `async` — file I/O is always async
+
+**`{Platform}ImportCoordinator` (@MainActor @Observable)**
+- Holds the security-scoped bookmark URL for the platform's folder/file
+- `loadFolder(url:)` — parse preview without committing; populates `pending*Count` state
+- `confirmImport()` — commit: write evidence, generate enrichment, save user profile
+- `cancelImport()` — clear all pending state
+- Integrates with existing `UnknownSenderRepository` for unmatched contacts
+- State follows the `ImportStatus` enum pattern (idle/parsing/preview/importing/success/error)
+
+**DTOs**
+- One DTO file per platform in `Models/DTOs/`
+- All DTOs: `Sendable` + `Codable` (Codable enables caching and preview if needed)
+- `nonisolated` on any computed properties to avoid Swift 6 `@MainActor` inference
+
+---
+
+### 13.4 Contact Matching Strategy (in Priority Order)
+
+When mapping platform contacts to existing `SamPerson` records, always try in this order:
+
+1. **Platform profile URL** — `SamPerson.linkedInProfileURL` or equivalent field. Exact match. Highest confidence.
+2. **Email address** — if the platform export includes contact email. Match against Apple Contacts via `ContactsService`.
+3. **Phone number** — if exported. Match against `SamPerson.phoneAliases`.
+4. **Fuzzy display name** — first + last name normalized (lowercased, diacritics stripped). Use only as a last resort; flag low-confidence matches for user review.
+
+Unmatched contacts go to `UnknownSenderRepository` with a synthetic key `{platform}:{profileURL}` (or `{platform}-unknown-{name}` when no URL). The triage UI surfaces these for the user to link or dismiss.
+
+---
+
+### 13.5 Evidence Dedup Keys
+
+Every platform needs a unique, stable, deterministic `sourceUID` for evidence items:
+
+| Platform | Message dedup key pattern |
+|----------|--------------------------|
+| LinkedIn | `linkedin:{senderProfileURL}:{ISO8601date}` |
+| WhatsApp | `whatsapp:{jid}:{unix_timestamp}:{first50charshash}` |
+| Facebook | `facebook:{threadID}:{messageID}` (if exported) or `facebook:{senderID}:{unix_ms}` |
+| X/Twitter | `twitter:{DM_conversationID}:{tweetID}` |
+| Instagram | `instagram:{threadID}:{timestamp}` |
+
+The dedup key is stored in `SamEvidenceItem.sourceUID`. `EvidenceRepository.bulkUpsertMessages` already handles dedup — if a key exists, the existing record wins silently.
+
+---
+
+### 13.6 Enrichment Fields Available Per Platform
+
+Not every platform provides the same contact metadata. Map available fields to `EnrichmentField` cases:
+
+| EnrichmentField | LinkedIn | Facebook | X | WhatsApp | Notes |
+|----------------|----------|----------|---|----------|-------|
+| `.company` | ✅ Connections.csv | ✗ | ✗ | ✗ | LinkedIn is primary source |
+| `.jobTitle` | ✅ Connections.csv | ✗ | ✗ | ✗ | LinkedIn is primary source |
+| `.email` | ✅ Connections.csv | ✅ if exported | ✗ | ✗ | Verify not already in Contacts |
+| `.phone` | ✗ | ✅ if exported | ✗ | ✅ JID encodes phone | WhatsApp JID = phone@s.whatsapp.net |
+| `.linkedInURL` | ✅ Profile URL | ✗ | ✗ | ✗ | |
+
+When a platform provides a phone number or email, always check if it already exists in Apple Contacts before creating a `PendingEnrichment`. Only propose values that are genuinely new.
+
+---
+
+### 13.7 User Profile Data: What to Extract and How to Use It
+
+For Track 1 (user self-description), the goal is to feed `BusinessProfileService.contextFragment()` so that AI specialists understand who the user is. A richer context fragment produces better-calibrated coaching.
+
+**High-value fields to extract:**
+- **Current role and employer** — anchor for all business coaching; makes "grow your practice" advice concrete
+- **Career history** — trajectory context; useful for identifying transferable skills and past-life relationships
+- **Skills** — what the user is confident doing; prevents coaching suggestions that are out of scope
+- **Certifications / credentials** — professional legitimacy signals; useful for content suggestions ("as an SPHR…")
+- **Education** — long-horizon relationships (alumni networks); sometimes relevant for recruiting coaching
+- **Bio/summary** — often the highest-signal single field; captures how the user describes themselves
+
+**Storage pattern:**
+- Serialize to JSON via `Codable`
+- Store in `UserDefaults` under a namespaced key (`sam.{platform}Profile`)
+- Cache in-memory in `BusinessProfileService`
+- `contextFragment()` appends a `## {Platform} Profile` section when the profile is present
+- The DTO's `coachingContextFragment` computed property (marked `nonisolated`) formats the data for LLM consumption — headline + current role + top skills + active certifications
+
+**Do not store:**
+- Raw biography text verbatim if it's very long — summarize to the most relevant fields
+- Historical data the user has edited away (past employers they've removed) — respect their current self-presentation
+
+---
+
+### 13.8 Watermark-Based Incremental Import
+
+All platform importers use a watermark (last import date in UserDefaults) to avoid reprocessing old records on subsequent imports:
+
+```swift
+let lastImport = UserDefaults.standard.object(forKey: "sam.{platform}.lastImportDate") as? Date
+// On first run: lastImport == nil → process all records
+// On subsequent runs: skip records older than lastImport
+```
+
+After a successful `confirmImport()`:
+```swift
+UserDefaults.standard.set(Date(), forKey: "sam.{platform}.lastImportDate")
+```
+
+Caveats:
+- The watermark is set at confirm time, not parse time — a cancelled import does not advance the watermark
+- For platforms where messages may arrive out of order (delayed delivery), consider a small lookback buffer (e.g., watermark minus 7 days) to catch late arrivals
+- User profile data (Track 1) is always replaced wholesale — no watermark needed
+
+---
+
+### 13.9 Platform-Specific Notes
+
+**Facebook**
+- Data export: Settings → Your Facebook Information → Download Your Information
+- Format options: JSON (preferred for parsing) or HTML
+- Key files: `messages/inbox/*/message_1.json` (conversations), `profile_information/profile_information.json` (user profile)
+- Contact matching: Facebook rarely exports email/phone. Display name matching is the primary fallback.
+- Encoding: Facebook JSON uses Latin-1 encoding with unicode escapes for non-ASCII — requires `String(bytes:encoding:.isoLatin1)` or similar decoding step.
+
+**X (Twitter)**
+- Data export: Settings → Your Account → Download an archive of your data
+- Key files: `data/direct-messages.js`, `data/profile.js`, `data/account.js`
+- Format: JavaScript files with a leading variable assignment (`window.YTD.direct_messages.part0 = [...]`) — strip the prefix before JSON parsing
+- Contact matching: X handles are stored in DM threads; cross-reference against any stored `xProfileURL` on `SamPerson`
+
+**WhatsApp**
+- Database: `~/Library/Group Containers/group.net.whatsapp.WhatsApp.shared/ChatStorage.sqlite` (unencrypted SQLite on macOS)
+- Key table: `ZWAMESSAGE` (ZISFROMME, ZTEXT, ZMESSAGEDATE in Apple CFAbsoluteTime, ZFROMJID)
+- Contact matching: JID format is `{phone}@s.whatsapp.net` — strip suffix to get E.164 phone number → match against Apple Contacts
+- **Deferred**: Verify `NSOpenPanel` + security-scoped bookmark grants persistent read access to this Group Container path before implementing (see Priority 5 in §5)
+- Date conversion: `ZMESSAGEDATE` is CFAbsoluteTime (seconds since Jan 1, 2001). Convert: `Date(timeIntervalSinceReferenceDate: zmessagedate)`
+
+**Instagram**
+- Data export: Settings → Account → Data Download
+- Key files: `messages/inbox/*/message_1.json` (same format as Facebook — Meta unified format)
+- Parsing code can likely be shared with the Facebook messages parser
+
+---
+
+### 13.10 Adding a New Platform — Implementation Checklist
+
+Use this checklist when starting a new social media importer:
+
+- [ ] Request a real data export from the platform and inspect all files (§13.2)
+- [ ] Classify every file as Track 1 (user) or Track 2 (contacts) or discard
+- [ ] Define DTOs for each relevant file (`{Platform}ConnectionDTO`, `{Platform}MessageDTO`, `UserXProfileDTO`, etc.)
+- [ ] Create `{Platform}Service` actor with one parse method per file
+- [ ] Verify all CSV/JSON column headers against real export data before finalizing DTOs
+- [ ] Determine dedup key pattern (§13.5)
+- [ ] Create `{Platform}ImportCoordinator` following the standard coordinator pattern
+- [ ] Add `UserDefaults` watermark key
+- [ ] Integrate unmatched contacts with `UnknownSenderRepository` using `{platform}:` key prefix
+- [ ] Add enrichment candidate generation using existing `EnrichmentRepository`
+- [ ] If Track 1 profile data exists: create `User{Platform}ProfileDTO`, add `save/load` methods to `BusinessProfileService`, extend `contextFragment()`
+- [ ] Add settings UI (folder picker or file picker, import status, unmatched count hint)
+- [ ] Update `LinkedInImportSettingsView` as a reference — copy the structure
+- [ ] Verify: import → check evidence counts → check enrichment candidates → check AI context fragment in logs
+
+---
+
+**Document Version**: 29.0 (Phases A–Z + Advanced Search + Export/Import + Phase AA (complete) + Deduced Relationships + Household Removal + Strategic Action Coaching Flow + Life Event Coaching + Interactive Content Ideas + ⌘K Command Palette + Coaching Calibration Phases 1–4 + Phase AB + Contact Enrichment & User Profile Intelligence + LinkedIn Integration Rebuild, schema SAM_v29)
 **Previous Versions**: See `changelog.md` for version history
-**Last Major Update**: February 27, 2026 — Coaching Calibration Phases 2–4: Full feedback system (CalibrationLedger, adaptive weights, muted kinds, soft suppress, "What SAM Has Learned" settings, personalized indicator)
+**Last Major Update**: March 3, 2026 — LinkedIn Integration Rebuild: IntentionalTouch + LinkedInImport models, IntentionalTouchRepository, TouchScoringEngine, LinkedInImportReviewSheet, enhanced UnknownSenderTriageSection, date formatter fixes, schema SAM_v29
 **Clean Rebuild Started**: February 9, 2026
-    
+

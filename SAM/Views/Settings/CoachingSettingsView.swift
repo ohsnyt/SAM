@@ -23,7 +23,11 @@ struct CoachingSettingsContent: View {
     @State private var selectedBackend: String = UserDefaults.standard.string(forKey: "aiBackend") ?? "foundationModels"
     @State private var selectedModelID: String = UserDefaults.standard.string(forKey: "mlxSelectedModelID") ?? ""
     @State private var coachingStyle: String = UserDefaults.standard.string(forKey: "coachingStyle") ?? "auto"
-    @State private var autoGenerate: Bool = UserDefaults.standard.bool(forKey: "outcomeAutoGenerate")
+    @State private var autoGenerate: Bool = {
+        UserDefaults.standard.object(forKey: "outcomeAutoGenerate") == nil
+            ? true
+            : UserDefaults.standard.bool(forKey: "outcomeAutoGenerate")
+    }()
     @State private var advisor = CoachingAdvisor.shared
     @State private var showResetConfirmation = false
     @State private var mlxModels: [MLXModelManager.ModelInfo] = []
@@ -118,6 +122,12 @@ struct CoachingSettingsContent: View {
         }
         .task {
             mlxModels = await MLXModelManager.shared.availableModels
+            // Auto-upgrade to hybrid if a model is already downloaded and backend is still foundationModels
+            let hasDownloadedModel = mlxModels.contains { $0.isDownloaded }
+            if hasDownloadedModel, selectedBackend == "foundationModels" {
+                selectedBackend = "hybrid"
+                UserDefaults.standard.set("hybrid", forKey: "aiBackend")
+            }
         }
     }
 
@@ -692,6 +702,13 @@ struct CoachingSettingsContent: View {
                 selectedModelID = modelID
                 UserDefaults.standard.set(modelID, forKey: "mlxSelectedModelID")
                 downloadingModelID = nil
+
+                // Auto-switch to hybrid if the user hasn't chosen a non-FM backend yet
+                if selectedBackend == "foundationModels" {
+                    selectedBackend = "hybrid"
+                    UserDefaults.standard.set("hybrid", forKey: "aiBackend")
+                    logger.info("Auto-switched backend to hybrid after MLX model download")
+                }
 
                 logger.info("Model downloaded and selected: \(modelID)")
             } catch is CancellationError {

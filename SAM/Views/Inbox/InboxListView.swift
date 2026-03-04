@@ -307,6 +307,7 @@ private struct EvidenceRowView: View {
         case .phoneCall: return "phone"
         case .faceTime: return "video"
         case .linkedIn: return "network"
+        case .facebook: return "person.2.fill"
         }
     }
 
@@ -321,6 +322,7 @@ private struct EvidenceRowView: View {
         case .phoneCall: return .green
         case .faceTime: return .mint
         case .linkedIn: return .blue
+        case .facebook: return .indigo
         }
     }
 

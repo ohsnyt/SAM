@@ -174,6 +174,7 @@ struct SearchEvidenceRow: View {
         case .note: return "note.text"
         case .manual: return "square.and.pencil"
         case .linkedIn: return "network"
+        case .facebook: return "person.2.fill"
         }
     }
 
@@ -187,6 +188,7 @@ struct SearchEvidenceRow: View {
         case .contacts: return .green
         case .note: return .orange
         case .manual: return .purple
+        case .facebook: return .indigo
         case .linkedIn: return .blue
         }
     }

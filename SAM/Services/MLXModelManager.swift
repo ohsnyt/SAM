@@ -54,17 +54,13 @@ actor MLXModelManager {
     // MARK: - State
 
     /// Curated model list.
+    /// Mistral 7B is the only supported model — benchmarking showed Llama 3.2 3B produces
+    /// malformed JSON for Pipeline Health and is slower per-specialist despite its smaller size.
     var availableModels: [ModelInfo] = [
         ModelInfo(
             id: "mlx-community/Mistral-7B-Instruct-v0.3-4bit",
             displayName: "Mistral 7B Instruct (4-bit)",
             sizeGB: 4.0,
-            isDownloaded: false
-        ),
-        ModelInfo(
-            id: "mlx-community/Llama-3.2-3B-Instruct-4bit",
-            displayName: "Llama 3.2 3B Instruct (4-bit)",
-            sizeGB: 2.0,
             isDownloaded: false
         ),
     ]

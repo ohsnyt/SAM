@@ -24,6 +24,11 @@ enum PeopleSortOrder: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+enum PeopleSpecialFilter: String, CaseIterable {
+    case needsContactUpdate = "Needs Contact Update"
+    case notInContacts = "Not in Contacts"
+}
+
 struct PeopleListView: View {
 
     // MARK: - Bindings
@@ -34,12 +39,14 @@ struct PeopleListView: View {
 
     @Query(sort: \SamPerson.displayNameCache) private var allPeople: [SamPerson]
     @State private var importCoordinator = ContactsImportCoordinator.shared
+    @State private var enrichmentCoordinator = ContactEnrichmentCoordinator.shared
 
     // MARK: - State
 
     @State private var searchText = ""
     @State private var sortOrder: PeopleSortOrder = .firstName
     @State private var activeRoleFilters: Set<String> = []
+    @State private var activeSpecialFilters: Set<PeopleSpecialFilter> = []
 
     // MARK: - Computed
 
@@ -79,6 +86,14 @@ struct PeopleListView: View {
             list = list.filter { person in
                 !activeRoleFilters.isDisjoint(with: person.roleBadges)
             }
+        }
+
+        // Special filters
+        if activeSpecialFilters.contains(.needsContactUpdate) {
+            list = list.filter { enrichmentCoordinator.peopleWithEnrichment.contains($0.id) }
+        }
+        if activeSpecialFilters.contains(.notInContacts) {
+            list = list.filter { $0.contactIdentifier == nil && !$0.isMe }
         }
 
         // Sort
@@ -157,7 +172,7 @@ struct PeopleListView: View {
                     }
                 }
         }
-        .navigationTitle("People")
+        .navigationTitle("\(displayedPeople.count) People")
         .searchable(text: $searchText, prompt: "Search people")
         .toolbar {
             ToolbarItemGroup {
@@ -180,11 +195,13 @@ struct PeopleListView: View {
                 }
                 .help("Sort people")
 
-                // Role filter
+                // Role + special filter
                 Menu {
-                    if !activeRoleFilters.isEmpty {
-                        Button("Clear Filters") {
+                    let anyFiltersActive = !activeRoleFilters.isEmpty || !activeSpecialFilters.isEmpty
+                    if anyFiltersActive {
+                        Button("Clear All Filters") {
                             activeRoleFilters.removeAll()
+                            activeSpecialFilters.removeAll()
                         }
                         Divider()
                     }
@@ -212,12 +229,38 @@ struct PeopleListView: View {
                         Text("No roles assigned yet")
                             .foregroundStyle(.secondary)
                     }
+                    Divider()
+                    ForEach(PeopleSpecialFilter.allCases, id: \.self) { filter in
+                        let isSelected = activeSpecialFilters.contains(filter)
+                        Button {
+                            if isSelected {
+                                activeSpecialFilters.remove(filter)
+                            } else {
+                                activeSpecialFilters.insert(filter)
+                            }
+                        } label: {
+                            HStack {
+                                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                                    .foregroundStyle(isSelected ? Color.accentColor : .secondary)
+                                Text(filter.rawValue)
+                            }
+                        }
+                    }
                 } label: {
-                    Label("Filter", systemImage: activeRoleFilters.isEmpty
-                          ? "line.3.horizontal.decrease"
-                          : "line.3.horizontal.decrease.circle.fill")
+                    let anyFiltersActive = !activeRoleFilters.isEmpty || !activeSpecialFilters.isEmpty
+                    Label("Filter", systemImage: anyFiltersActive
+                          ? "line.3.horizontal.decrease.circle.fill"
+                          : "line.3.horizontal.decrease")
                 }
-                .help(activeRoleFilters.isEmpty ? "Filter by role" : "Filtering by \(activeRoleFilters.count) role\(activeRoleFilters.count == 1 ? "" : "s")")
+                .help({
+                    let roleCount = activeRoleFilters.count
+                    let specialCount = activeSpecialFilters.count
+                    if roleCount == 0 && specialCount == 0 { return "Filter by role or contact status" }
+                    var parts: [String] = []
+                    if roleCount > 0 { parts.append("\(roleCount) role\(roleCount == 1 ? "" : "s")") }
+                    if specialCount > 0 { parts.append("\(specialCount) special filter\(specialCount == 1 ? "" : "s")") }
+                    return "Filtering by " + parts.joined(separator: ", ")
+                }())
 
                 importStatusBadge
 
@@ -239,7 +282,8 @@ struct PeopleListView: View {
     private var peopleList: some View {
         List(selection: $selectedPersonID) {
             // Active filter summary
-            if !activeRoleFilters.isEmpty {
+            let anyFiltersActive = !activeRoleFilters.isEmpty || !activeSpecialFilters.isEmpty
+            if anyFiltersActive {
                 HStack(spacing: 6) {
                     ForEach(Array(activeRoleFilters).sorted(), id: \.self) { role in
                         let style = RoleBadgeStyle.forBadge(role)
@@ -250,6 +294,15 @@ struct PeopleListView: View {
                                 .font(.caption2)
                         }
                         .foregroundStyle(style.color)
+                    }
+                    ForEach(Array(activeSpecialFilters).sorted(by: { $0.rawValue < $1.rawValue }), id: \.self) { filter in
+                        HStack(spacing: 3) {
+                            Image(systemName: filter == .needsContactUpdate ? "arrow.up.circle.fill" : "person.crop.circle.badge.exclamationmark")
+                                .font(.system(size: 10))
+                            Text(filter.rawValue)
+                                .font(.caption2)
+                        }
+                        .foregroundStyle(Color.accentColor)
                     }
                     Spacer()
                     Text("\(displayedPeople.count) of \(allPeople.count)")
@@ -264,7 +317,10 @@ struct PeopleListView: View {
                 Button(action: {
                     selectedPersonID = person.id
                 }) {
-                    PersonRowView(person: person)
+                    PersonRowView(
+                        person: person,
+                        hasPendingEnrichment: enrichmentCoordinator.peopleWithEnrichment.contains(person.id)
+                    )
                 }
                 .buttonStyle(.plain)
             }
@@ -275,10 +331,11 @@ struct PeopleListView: View {
     // MARK: - No Match State
 
     private var noMatchView: some View {
-        ContentUnavailableView {
+        let hasFilters = !activeRoleFilters.isEmpty || !activeSpecialFilters.isEmpty
+        return ContentUnavailableView {
             Label("No Matches", systemImage: "person.2.slash")
         } description: {
-            if !searchText.isEmpty && !activeRoleFilters.isEmpty {
+            if !searchText.isEmpty && hasFilters {
                 Text("No people match your search and filters")
             } else if !searchText.isEmpty {
                 Text("No people match \"\(searchText)\"")
@@ -286,9 +343,10 @@ struct PeopleListView: View {
                 Text("No people match the current filters")
             }
         } actions: {
-            if !activeRoleFilters.isEmpty {
+            if hasFilters {
                 Button("Clear Filters") {
                     activeRoleFilters.removeAll()
+                    activeSpecialFilters.removeAll()
                 }
                 .buttonStyle(.borderedProminent)
             }
@@ -338,6 +396,7 @@ struct PeopleListView: View {
 
 private struct PersonRowView: View {
     let person: SamPerson
+    var hasPendingEnrichment: Bool = false
 
     // Cached health computation — avoids redundant calls per render
     private var health: RelationshipHealth? {
@@ -457,6 +516,13 @@ private struct PersonRowView: View {
                 // Trailing badges and alerts
                 HStack(spacing: 8) {
                     NotInContactsCapsule(person: person)
+
+                    if hasPendingEnrichment {
+                        Image(systemName: "arrow.up.circle.fill")
+                            .font(.caption)
+                            .foregroundStyle(.blue)
+                            .help("Contact updates available")
+                    }
 
                     if person.consentAlertsCount > 0 {
                         Label("\(person.consentAlertsCount)", systemImage: "exclamationmark.triangle.fill")

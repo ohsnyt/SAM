@@ -150,27 +150,7 @@ struct CommunicationsSettingsContent: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            HStack {
-                Text("Lookback period:")
-                Picker("", selection: Binding(
-                    get: { coordinator.lookbackDays },
-                    set: { coordinator.setLookbackDays($0) }
-                )) {
-                    Text("30 days").tag(30)
-                    Text("60 days").tag(60)
-                    Text("90 days").tag(90)
-                    Text("180 days").tag(180)
-                    Text("365 days").tag(365)
-                    Text("All").tag(0)
-                }
-                .frame(width: 120)
-            }
 
-            if coordinator.lookbackDays == 0 {
-                Text("First import will scan all available message and call history. Subsequent imports use incremental sync.")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-            }
         }
     }
 

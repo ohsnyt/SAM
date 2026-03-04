@@ -156,7 +156,8 @@ struct CommandPaletteView: View {
         .navigation(id: "nav-today", label: "Go to Today", icon: "sun.max", shortcut: "\u{2318}1", section: "today"),
         .navigation(id: "nav-people", label: "Go to People", icon: "person.2", shortcut: "\u{2318}2", section: "people"),
         .navigation(id: "nav-business", label: "Go to Business", icon: "chart.bar.horizontal.page", shortcut: "\u{2318}3", section: "business"),
-        .navigation(id: "nav-search", label: "Go to Search", icon: "magnifyingglass", shortcut: "\u{2318}4", section: "search"),
+        .navigation(id: "nav-grow", label: "Go to Grow", icon: "arrow.up.right.circle", shortcut: "\u{2318}4", section: "grow"),
+        .navigation(id: "nav-search", label: "Go to Search", icon: "magnifyingglass", shortcut: "\u{2318}5", section: "search"),
         .action(id: "act-note", label: "New Note", icon: "square.and.pencil", shortcut: "\u{2318}N"),
         .action(id: "act-settings", label: "Open Settings", icon: "gearshape", shortcut: "\u{2318},"),
     ]

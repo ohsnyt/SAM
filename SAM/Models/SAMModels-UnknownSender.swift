@@ -22,6 +22,17 @@ public final class UnknownSender {
     var sourceRawValue: String                   // "Mail"|"Calendar"
     var isLikelyMarketing: Bool                  // detected from List-Unsubscribe / List-ID / Precedence headers
 
+    // LinkedIn-specific metadata (only set for source == .linkedIn)
+    var intentionalTouchScore: Int               // computed touch score; 0 = no interactions found
+    var linkedInCompany: String?                 // company from Connections.csv at time of import
+    var linkedInPosition: String?                // job title from Connections.csv at time of import
+    var linkedInConnectedOn: Date?               // connection date from Connections.csv
+
+    // Facebook-specific metadata (only set for source == .facebook)
+    var facebookFriendedOn: Date?                // when friendship was established
+    var facebookMessageCount: Int                // total Messenger messages in export; 0 = none
+    var facebookLastMessageDate: Date?           // most recent Messenger message timestamp
+
     @Transient
     var status: UnknownSenderStatus {
         get { UnknownSenderStatus(rawValue: statusRawValue) ?? .pending }
@@ -44,7 +55,14 @@ public final class UnknownSender {
         latestSubject: String? = nil,
         latestEmailDate: Date? = nil,
         source: EvidenceSource = .mail,
-        isLikelyMarketing: Bool = false
+        isLikelyMarketing: Bool = false,
+        intentionalTouchScore: Int = 0,
+        linkedInCompany: String? = nil,
+        linkedInPosition: String? = nil,
+        linkedInConnectedOn: Date? = nil,
+        facebookFriendedOn: Date? = nil,
+        facebookMessageCount: Int = 0,
+        facebookLastMessageDate: Date? = nil
     ) {
         self.id = id
         self.email = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -56,6 +74,13 @@ public final class UnknownSender {
         self.latestEmailDate = latestEmailDate
         self.sourceRawValue = source.rawValue
         self.isLikelyMarketing = isLikelyMarketing
+        self.intentionalTouchScore = intentionalTouchScore
+        self.linkedInCompany = linkedInCompany
+        self.linkedInPosition = linkedInPosition
+        self.linkedInConnectedOn = linkedInConnectedOn
+        self.facebookFriendedOn = facebookFriendedOn
+        self.facebookMessageCount = facebookMessageCount
+        self.facebookLastMessageDate = facebookLastMessageDate
     }
 }
 

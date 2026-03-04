@@ -29,21 +29,25 @@ final class BookmarkManager {
     var hasMessagesAccess: Bool { messagesBookmarkData != nil }
     var hasCallHistoryAccess: Bool { callHistoryBookmarkData != nil }
     var hasLinkedInFolderAccess: Bool { linkedInFolderBookmarkData != nil }
+    var hasFacebookFolderAccess: Bool { facebookFolderBookmarkData != nil }
 
     // MARK: - Private
 
     private var messagesBookmarkData: Data?
     private var callHistoryBookmarkData: Data?
     private var linkedInFolderBookmarkData: Data?
+    private var facebookFolderBookmarkData: Data?
 
     private let messagesKey = "messagesDirBookmark"
     private let callHistoryKey = "callHistoryDirBookmark"
     private let linkedInFolderKey = "linkedInFolderBookmark"
+    private let facebookFolderKey = "facebookFolderBookmark"
 
     private init() {
         messagesBookmarkData = UserDefaults.standard.data(forKey: messagesKey)
         callHistoryBookmarkData = UserDefaults.standard.data(forKey: callHistoryKey)
         linkedInFolderBookmarkData = UserDefaults.standard.data(forKey: linkedInFolderKey)
+        facebookFolderBookmarkData = UserDefaults.standard.data(forKey: facebookFolderKey)
 
         // Migrate from old file-level bookmark keys if present
         if messagesBookmarkData == nil, UserDefaults.standard.data(forKey: "messagesDBBookmark") != nil {
@@ -160,6 +164,23 @@ final class BookmarkManager {
             logger.info("LinkedIn folder bookmark saved for: \(url.path, privacy: .public)")
         } catch {
             logger.error("Failed to create LinkedIn folder bookmark: \(error)")
+        }
+    }
+
+    /// Save a security-scoped bookmark for a Facebook export folder.
+    /// Called by FacebookImportSettingsView immediately after the user picks the folder.
+    func saveFacebookFolderBookmark(_ url: URL) {
+        do {
+            let bookmarkData = try url.bookmarkData(
+                options: .withSecurityScope,
+                includingResourceValuesForKeys: nil,
+                relativeTo: nil
+            )
+            facebookFolderBookmarkData = bookmarkData
+            UserDefaults.standard.set(bookmarkData, forKey: facebookFolderKey)
+            logger.info("Facebook folder bookmark saved for: \(url.path, privacy: .public)")
+        } catch {
+            logger.error("Failed to create Facebook folder bookmark: \(error)")
         }
     }
 

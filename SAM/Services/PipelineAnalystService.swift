@@ -79,7 +79,11 @@ actor PipelineAnalystService {
             \(data)
             """
 
+        let systemSize = instructions.count
+        let promptSize = prompt.count
+        logger.info("📏 Pipeline prompt — system: \(systemSize)ch (~\(systemSize/4)t), user: \(promptSize)ch (~\(promptSize/4)t), total: \((systemSize+promptSize)/4)t")
         let responseText = try await AIService.shared.generate(prompt: prompt, systemInstruction: instructions)
+        logger.info("📏 Pipeline response — \(responseText.count)ch (~\(responseText.count/4)t)")
         return try parseResponse(responseText)
     }
 

@@ -280,6 +280,7 @@ extension OutcomeKind {
         case .training:        return "Training"
         case .compliance:      return "Compliance"
         case .contentCreation: return "Content"
+        case .setup:           return "Setup"
         }
     }
 
@@ -293,6 +294,7 @@ extension OutcomeKind {
         case .training:        return .indigo
         case .compliance:      return .red
         case .contentCreation: return .mint
+        case .setup:           return .cyan
         }
     }
 
@@ -306,6 +308,7 @@ extension OutcomeKind {
         case .training:        return "book"
         case .compliance:      return "checkmark.shield"
         case .contentCreation: return "text.badge.star"
+        case .setup:           return "gearshape.2"
         }
     }
 }

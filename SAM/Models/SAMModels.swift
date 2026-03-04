@@ -96,6 +96,15 @@ public final class SamPerson {
     /// Date this person connected with the user on LinkedIn (from Connections.csv).
     public var linkedInConnectedOn: Date?
 
+    // ── Facebook ─────────────────────────────────────────────────────
+
+    /// Facebook profile URL (e.g. "https://www.facebook.com/jane.smith").
+    /// Set by FacebookImportCoordinator when a friend is matched.
+    public var facebookProfileURL: String?
+
+    /// Date this person became a Facebook friend (from your_friends.json).
+    public var facebookFriendedOn: Date?
+
     /// Returns explicit preference if set, else inferred preference.
     @Transient
     public var effectiveChannel: CommunicationChannel? {
@@ -1047,6 +1056,9 @@ extension Notification.Name {
     /// Posted to navigate to the Strategic Insights tab in the Business dashboard.
     /// userInfo: ["recommendationID": String] (optional — UUID string of specific plan)
     static let samNavigateToStrategicInsights = Notification.Name("samNavigateToStrategicInsights")
+
+    /// Posted to navigate to the Grow section.
+    static let samNavigateToGrow = Notification.Name("samNavigateToGrow")
 
     /// Posted to toggle the ⌘K command palette.
     static let samToggleCommandPalette = Notification.Name("samToggleCommandPalette")

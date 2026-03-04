@@ -31,6 +31,8 @@ final class MailImportCoordinator {
     var lastError: String?
     var unknownSenderCount: Int = 0
     var knownSenderCount: Int = 0
+    /// Number of LinkedIn notification emails processed during the last import run.
+    private(set) var linkedInNotificationCount: Int = 0
 
     /// Available Mail.app accounts (loaded from service, not persisted)
     var availableAccounts: [MailAccountDTO] = []
@@ -54,8 +56,11 @@ final class MailImportCoordinator {
         let interval = UserDefaults.standard.double(forKey: "mailImportInterval")
         importIntervalSeconds = interval > 0 ? interval : 600
         let days = UserDefaults.standard.integer(forKey: "mailLookbackDays")
-        // 0 means "All" (no limit), negative means unset → default 30
-        lookbackDays = days >= 0 && UserDefaults.standard.object(forKey: "mailLookbackDays") != nil ? days : 30
+        // 0 means "All" (no limit); unset → fall back to globalLookbackDays (default 30)
+        let globalDays = UserDefaults.standard.object(forKey: "globalLookbackDays") != nil
+            ? UserDefaults.standard.integer(forKey: "globalLookbackDays")
+            : 30
+        lookbackDays = days >= 0 && UserDefaults.standard.object(forKey: "mailLookbackDays") != nil ? days : globalDays
         if let data = UserDefaults.standard.data(forKey: "mailFilterRules"),
            let rules = try? JSONDecoder().decode([MailFilterRule].self, from: data) {
             filterRules = rules
@@ -70,6 +75,11 @@ final class MailImportCoordinator {
     func setMailEnabled(_ value: Bool) {
         mailEnabled = value
         UserDefaults.standard.set(value, forKey: "mailImportEnabled")
+
+        // Record the first time mail monitoring is enabled (Phase 6: notification setup guidance)
+        if value && UserDefaults.standard.object(forKey: "sam.linkedin.monitoringSince") == nil {
+            UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "sam.linkedin.monitoringSince")
+        }
     }
 
     func setSelectedAccountIDs(_ value: [String]) {
@@ -127,7 +137,7 @@ final class MailImportCoordinator {
 
     func startAutoImport() {
         #if DEBUG
-        guard !UserDefaults.standard.isTestDataActive else { return }
+        if UserDefaults.standard.isTestDataLoaded || UserDefaults.standard.isTestDataActive { return }
         #endif
         guard mailEnabled, isConfigured else { return }
         Task { await importNow() }
@@ -136,7 +146,7 @@ final class MailImportCoordinator {
     /// Fire-and-forget import — does not block the caller.
     func startImport() {
         #if DEBUG
-        guard !UserDefaults.standard.isTestDataActive else { return }
+        if UserDefaults.standard.isTestDataLoaded || UserDefaults.standard.isTestDataActive { return }
         #endif
         guard importStatus != .importing, isConfigured else { return }
         importTask?.cancel()
@@ -145,7 +155,7 @@ final class MailImportCoordinator {
 
     func importNow() async {
         #if DEBUG
-        guard !UserDefaults.standard.isTestDataActive else { return }
+        if UserDefaults.standard.isTestDataLoaded || UserDefaults.standard.isTestDataActive { return }
         #endif
         guard importStatus != .importing else {
             logger.debug("Import already in progress, skipping")
@@ -192,15 +202,28 @@ final class MailImportCoordinator {
                 lastError = warning
             }
 
+            // 1b. Intercept LinkedIn notification emails before partitioning.
+            // LinkedIn notification addresses (e.g. notifications-noreply@linkedin.com) are
+            // never in contacts, so they always fall into the "unknown" bucket and would
+            // pollute the Unknown Senders triage queue. We remove them from the main flow
+            // here and route them to the LinkedIn notification pipeline instead.
+            let linkedInMetas = allMetas.filter { $0.senderEmail.hasSuffix("@linkedin.com") }
+            let regularMetas  = allMetas.filter { !$0.senderEmail.hasSuffix("@linkedin.com") }
+
+            if !linkedInMetas.isEmpty {
+                linkedInNotificationCount = 0
+                await processLinkedInNotifications(linkedInMetas)
+            }
+
             // 2. Build known emails set from PeopleRepository
             let knownEmails = try peopleRepository.allKnownEmails()
 
             // 3. Also exclude neverInclude senders
             let neverInclude = try UnknownSenderRepository.shared.neverIncludeEmails()
 
-            // 4. Partition metas → known vs unknown
+            // 4. Partition metas → known vs unknown (using regularMetas, LinkedIn excluded)
             let (knownMetas, unknownMetas) = partitionBySenderKnown(
-                metas: allMetas,
+                metas: regularMetas,
                 knownEmails: knownEmails,
                 neverIncludeEmails: neverInclude
             )
@@ -251,7 +274,8 @@ final class MailImportCoordinator {
             try evidenceRepository.bulkUpsertEmails(analyzedEmails)
 
             // Update watermark to newest email date (from all metas, not just bodies)
-            let allDates = knownMetas.map(\.date) + unknownMetas.map(\.date)
+            // Include LinkedIn notification dates so they advance the watermark too
+            let allDates = knownMetas.map(\.date) + unknownMetas.map(\.date) + linkedInMetas.map(\.date)
             if let newest = allDates.max() {
                 lastMailWatermark = newest
                 UserDefaults.standard.set(newest.timeIntervalSinceReferenceDate, forKey: "mailLastWatermark")
@@ -336,6 +360,59 @@ final class MailImportCoordinator {
 
         } catch {
             logger.error("Reprocess failed for \(senderEmail, privacy: .public): \(error)")
+        }
+    }
+
+    // MARK: - LinkedIn Notification Processing
+
+    /// Process a batch of LinkedIn notification emails (sender @linkedin.com).
+    ///
+    /// For each message:
+    /// 1. Skip known non-actionable senders (jobs-noreply, news, etc.)
+    /// 2. Fetch the MIME source to get the HTML body
+    /// 3. Parse the HTML into a LinkedInNotificationEvent
+    /// 4. Route the event through LinkedInImportCoordinator.handleNotificationEvent()
+    private func processLinkedInNotifications(_ metas: [MessageMeta]) async {
+        // Non-actionable LinkedIn sender local-parts — skip without fetching
+        let skipLocalParts: Set<String> = [
+            "jobs-noreply", "news", "marketing", "promotions",
+            "invitations", "notifications-digest", "weekly-digest",
+        ]
+
+        var processed = 0
+
+        for meta in metas {
+            // Check sender local-part (before the @)
+            let localPart = meta.senderEmail.components(separatedBy: "@").first ?? ""
+            if skipLocalParts.contains(localPart) { continue }
+
+            // Fetch MIME source for HTML extraction
+            guard let mimeSource = await mailService.fetchMIMESource(for: meta) else {
+                logger.debug("Skipping LinkedIn notification \(meta.mailID) — no MIME source")
+                continue
+            }
+
+            let html = MailService.extractHTMLFromMIMESource(mimeSource)
+
+            // Parse the notification event
+            guard let event = LinkedInEmailParser.parse(
+                htmlBody: html,
+                subject: meta.subject,
+                date: meta.date,
+                sourceEmailId: String(meta.mailID)
+            ) else {
+                // Non-actionable noise (digest, jobs listing, etc.) — skip silently
+                continue
+            }
+
+            // Route through the LinkedIn coordinator
+            await LinkedInImportCoordinator.shared.handleNotificationEvent(event)
+            processed += 1
+        }
+
+        linkedInNotificationCount += processed
+        if processed > 0 {
+            logger.info("Processed \(processed) LinkedIn notification emails")
         }
     }
 

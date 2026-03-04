@@ -352,6 +352,7 @@ struct AwarenessView: View {
         case referralTracking
         case goalPacing
         case networkGrowth
+        case profileAnalysisReady
     }
 
     /// Collapsible section groups with time-based ordering.
@@ -379,7 +380,7 @@ struct AwarenessView: View {
         var sections: [AwarenessSection] {
             switch self {
             case .actionQueue:     return [.outcomes, .followUpCoach, .unknownSenders]
-            case .todaysFocus:     return [.goalPacing, .meetingPrep, .pipeline, .lifeEvents, .engagementVelocity]
+            case .todaysFocus:     return [.goalPacing, .meetingPrep, .pipeline, .lifeEvents, .engagementVelocity, .profileAnalysisReady]
             case .reviewAnalytics: return [.streaks, .contentCadence, .meetingQuality, .calendarPatterns, .timeAllocation, .referralTracking, .networkGrowth]
             }
         }
@@ -472,6 +473,7 @@ struct AwarenessView: View {
         case .referralTracking:   ReferralTrackingSection()
         case .goalPacing:         GoalPacingSection()
         case .networkGrowth:      NetworkGrowthSection()
+        case .profileAnalysisReady: ProfileAnalysisReadySection()
         }
     }
 
@@ -741,6 +743,103 @@ extension InsightKind {
         case .informational:
             return .gray
         }
+    }
+}
+
+// MARK: - Profile Analysis Ready Section
+
+/// A compact card shown in Today's Focus when any profile analysis is fresh (< 7 days old).
+/// Shows the most recently analyzed platform. Tapping "View in Grow" navigates there.
+struct ProfileAnalysisReadySection: View {
+
+    @State private var analyses: [ProfileAnalysisDTO] = []
+    @AppStorage("sam.grow.lastViewedAnalysisDate") private var lastViewedRaw: Double = 0
+
+    private var lastViewed: Date? {
+        lastViewedRaw > 0 ? Date(timeIntervalSince1970: lastViewedRaw) : nil
+    }
+
+    /// The freshest analysis that is < 7 days old and newer than the last view of Grow.
+    private var freshAnalysis: ProfileAnalysisDTO? {
+        let cutoff = Date().addingTimeInterval(-7 * 24 * 3600)
+        return analyses
+            .filter { $0.analysisDate > cutoff }
+            .filter { a in
+                if let viewed = lastViewed { return a.analysisDate > viewed }
+                return true
+            }
+            .sorted { $0.analysisDate > $1.analysisDate }
+            .first
+    }
+
+    private func scoreColor(_ score: Int) -> Color {
+        switch score {
+        case 76...100: return .green
+        case 61...75:  return .yellow
+        case 41...60:  return .orange
+        default:       return .red
+        }
+    }
+
+    var body: some View {
+        Group {
+            if let a = freshAnalysis {
+                let meta = SocialPlatformMeta.from(a.platform)
+                let color = scoreColor(a.overallScore)
+
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 12) {
+                        // Platform icon
+                        Image(systemName: meta.icon)
+                            .font(.title3)
+                            .foregroundStyle(meta.iconColor)
+                            .frame(width: 28)
+
+                        // Mini score ring
+                        ZStack {
+                            Circle()
+                                .stroke(color.opacity(0.2), lineWidth: 5)
+                                .frame(width: 40, height: 40)
+                            Circle()
+                                .trim(from: 0, to: CGFloat(a.overallScore) / 100)
+                                .stroke(color, style: StrokeStyle(lineWidth: 5, lineCap: .round))
+                                .frame(width: 40, height: 40)
+                                .rotationEffect(.degrees(-90))
+                            Text("\(a.overallScore)")
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                                .foregroundStyle(color)
+                        }
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(meta.displayName) Profile Analysis Ready")
+                                .font(.subheadline.weight(.semibold))
+                            Text("Score: \(a.overallScore)/100 \u{2022} \(a.improvements.count) improvement\(a.improvements.count == 1 ? "" : "s") suggested")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Spacer()
+
+                        Button("View in Grow") {
+                            lastViewedRaw = Date().timeIntervalSince1970
+                            NotificationCenter.default.post(name: .samNavigateToGrow, object: nil)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                }
+                .padding()
+                .background(.fill.quaternary, in: RoundedRectangle(cornerRadius: 10))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(color.opacity(0.2), lineWidth: 1)
+                )
+                .padding(.horizontal)
+                .padding(.vertical, 8)
+            }
+            // No fresh analysis — render nothing (section is invisible)
+        }
+        .task { analyses = await BusinessProfileService.shared.profileAnalyses() }
     }
 }
 

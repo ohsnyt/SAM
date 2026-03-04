@@ -463,7 +463,7 @@ actor ContactsService {
     /// Create a new contact with minimal fields (name, email, optional LinkedIn URL).
     /// The LinkedIn URL is stored as a social profile on the contact (visible in Contacts.app).
     /// Returns the created ContactDTO on success, or nil on failure.
-    func createContact(fullName: String, email: String?, note: String?, linkedInProfileURL: String? = nil) async -> ContactDTO? {
+    func createContact(fullName: String, email: String?, note: String?, linkedInProfileURL: String? = nil, facebookProfileURL: String? = nil) async -> ContactDTO? {
         guard authorizationStatus() == .authorized else {
             logger.warning("Attempted to create contact without authorization")
             return nil
@@ -486,6 +486,8 @@ actor ContactsService {
                 mutable.emailAddresses = [labeled]
             }
 
+            var socialProfiles: [CNLabeledValue<CNSocialProfile>] = []
+
             if let linkedInURL = linkedInProfileURL, !linkedInURL.isEmpty {
                 let profile = CNSocialProfile(
                     urlString: linkedInURL.hasPrefix("http") ? linkedInURL : "https://\(linkedInURL)",
@@ -493,7 +495,21 @@ actor ContactsService {
                     userIdentifier: nil,
                     service: CNSocialProfileServiceLinkedIn
                 )
-                mutable.socialProfiles = [CNLabeledValue(label: CNLabelWork, value: profile)]
+                socialProfiles.append(CNLabeledValue(label: CNLabelWork, value: profile))
+            }
+
+            if let facebookURL = facebookProfileURL, !facebookURL.isEmpty {
+                let profile = CNSocialProfile(
+                    urlString: facebookURL.hasPrefix("http") ? facebookURL : "https://\(facebookURL)",
+                    username: nil,
+                    userIdentifier: nil,
+                    service: CNSocialProfileServiceFacebook
+                )
+                socialProfiles.append(CNLabeledValue(label: CNLabelHome, value: profile))
+            }
+
+            if !socialProfiles.isEmpty {
+                mutable.socialProfiles = socialProfiles
             }
 
             // Notes field requires special entitlement; store placeholder comment in future
@@ -526,6 +542,151 @@ actor ContactsService {
             logger.error("Failed to create contact: \(error.localizedDescription, privacy: .public)")
             return nil
         }
+    }
+
+    // MARK: - Contact Update (Enrichment Write-Back)
+
+    /// Update an existing Apple Contact with approved enrichment fields.
+    ///
+    /// Field mapping:
+    /// - `.company`    → organizationName
+    /// - `.jobTitle`   → jobTitle
+    /// - `.email`      → appended to emailAddresses (if not already present)
+    /// - `.phone`      → appended to phoneNumbers (if not already present)
+    /// - `.linkedInURL` → upsert CNSocialProfile for LinkedIn
+    ///
+    /// The SAM-managed note block (below `--- SAM ---`) is updated if `samNoteBlock` is provided
+    /// and the Contacts Notes entitlement has been granted. All content above the delimiter is preserved.
+    ///
+    /// Returns true on success.
+    func updateContact(
+        identifier: String,
+        updates: [EnrichmentField: String],
+        samNoteBlock: String?
+    ) async -> Bool {
+        guard authorizationStatus() == .authorized else {
+            logger.warning("updateContact: not authorized")
+            return false
+        }
+
+        do {
+            // Try with note key first (requires com.apple.developer.contacts.notes entitlement).
+            // Fall back to without note key if the entitlement is not available.
+            let baseKeys: [CNKeyDescriptor] = [
+                CNContactOrganizationNameKey as CNKeyDescriptor,
+                CNContactJobTitleKey as CNKeyDescriptor,
+                CNContactEmailAddressesKey as CNKeyDescriptor,
+                CNContactPhoneNumbersKey as CNKeyDescriptor,
+                CNContactSocialProfilesKey as CNKeyDescriptor,
+            ]
+            let keysWithNote: [CNKeyDescriptor] = baseKeys + [CNContactNoteKey as CNKeyDescriptor]
+
+            let contact: CNContact
+            let fetchedWithNote: Bool
+            do {
+                contact = try store.unifiedContact(withIdentifier: identifier, keysToFetch: keysWithNote)
+                fetchedWithNote = true
+            } catch {
+                // Note entitlement may not be granted — fall back to base keys
+                contact = try store.unifiedContact(withIdentifier: identifier, keysToFetch: baseKeys)
+                fetchedWithNote = false
+                logger.warning("updateContact: note key unavailable, skipping note update: \(error.localizedDescription)")
+            }
+            let mutable = contact.mutableCopy() as! CNMutableContact
+
+            // Apply field updates
+            for (field, value) in updates {
+                switch field {
+                case .company:
+                    mutable.organizationName = value
+
+                case .jobTitle:
+                    mutable.jobTitle = value
+
+                case .email:
+                    let existing = mutable.emailAddresses.map { ($0.value as String).lowercased() }
+                    if !existing.contains(value.lowercased()) {
+                        let labeled = CNLabeledValue(label: CNLabelWork, value: NSString(string: value))
+                        mutable.emailAddresses.append(labeled)
+                    }
+
+                case .phone:
+                    let normalizedNew = value.filter(\.isNumber)
+                    let existingNormalized = mutable.phoneNumbers.map {
+                        $0.value.stringValue.filter(\.isNumber)
+                    }
+                    if !existingNormalized.contains(normalizedNew) {
+                        let phone = CNPhoneNumber(stringValue: value)
+                        let labeled = CNLabeledValue(label: CNLabelPhoneNumberMobile, value: phone)
+                        mutable.phoneNumbers.append(labeled)
+                    }
+
+                case .linkedInURL:
+                    let fullURL = value.hasPrefix("http") ? value : "https://\(value)"
+                    // Remove existing LinkedIn social profiles, then add the updated one
+                    mutable.socialProfiles = mutable.socialProfiles.filter {
+                        $0.value.service != CNSocialProfileServiceLinkedIn
+                    }
+                    let profile = CNSocialProfile(
+                        urlString: fullURL,
+                        username: nil,
+                        userIdentifier: nil,
+                        service: CNSocialProfileServiceLinkedIn
+                    )
+                    mutable.socialProfiles.append(CNLabeledValue(label: CNLabelWork, value: profile))
+
+                case .facebookURL:
+                    let fullURL = value.hasPrefix("http") ? value : "https://\(value)"
+                    // Remove existing Facebook social profiles, then add the updated one
+                    mutable.socialProfiles = mutable.socialProfiles.filter {
+                        $0.value.service != CNSocialProfileServiceFacebook
+                    }
+                    let fbProfile = CNSocialProfile(
+                        urlString: fullURL,
+                        username: nil,
+                        userIdentifier: nil,
+                        service: CNSocialProfileServiceFacebook
+                    )
+                    mutable.socialProfiles.append(CNLabeledValue(label: CNLabelHome, value: fbProfile))
+                }
+            }
+
+            // Update SAM note block if note key was fetched and block content provided
+            if fetchedWithNote, let block = samNoteBlock {
+                updateSAMNoteBlock(on: mutable, samBlock: block)
+            }
+
+            let saveRequest = CNSaveRequest()
+            saveRequest.update(mutable)
+            try store.execute(saveRequest)
+
+            logger.info("Updated contact \(identifier, privacy: .public): \(updates.keys.map(\.rawValue).joined(separator: ", "), privacy: .public)")
+            return true
+
+        } catch {
+            logger.error("updateContact failed for \(identifier, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            return false
+        }
+    }
+
+    // MARK: - SAM Note Block
+
+    /// The delimiter that marks the start of SAM's managed section in a contact's note.
+    /// Everything before this delimiter is the user's own content (preserved verbatim).
+    /// Everything after is owned by SAM and regenerated on each write-back.
+    static let samNoteDelimiter = "--- SAM ---"
+
+    /// Updates the SAM-managed block in a mutable contact's note field.
+    /// User content above the delimiter is never modified.
+    private func updateSAMNoteBlock(on contact: CNMutableContact, samBlock: String) {
+        let existing = contact.note
+        let parts = existing.components(separatedBy: Self.samNoteDelimiter)
+        let userNotes = (parts.first ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+
+        var combined = userNotes
+        if !combined.isEmpty { combined += "\n\n" }
+        combined += Self.samNoteDelimiter + "\n" + samBlock
+        contact.note = combined
     }
 
     /// Add a contact to the configured SAM group in Apple Contacts.

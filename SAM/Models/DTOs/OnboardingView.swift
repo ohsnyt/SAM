@@ -13,6 +13,7 @@ import Contacts
 import EventKit
 import AVFoundation
 import Speech
+import UserNotifications
 
 struct OnboardingView: View {
 
@@ -38,10 +39,22 @@ struct OnboardingView: View {
     @State private var meEmailAddresses: [String] = []
     @State private var hasNoMeContact = false
     @State private var selectedMailAddresses: Set<String> = []
-    @State private var onboardingLookbackDays: Int = 14
+    @State private var onboardingLookbackDays: Int = 30
     @State private var micPermissionGranted = false
     @State private var speechPermissionGranted = false
     @State private var skippedMicrophone = false
+
+    // Notifications
+    @State private var notificationsGranted = false
+    @State private var notificationsDenied = false
+    @State private var skippedNotifications = false
+
+    // AI Setup (MLX)
+    @State private var isMlxDownloading = false
+    @State private var mlxDownloadProgress: Double = 0
+    @State private var mlxDownloadError: String?
+    @State private var mlxModelReady = false
+    @State private var skippedAISetup = false
 
     enum OnboardingStep {
         case welcome
@@ -52,6 +65,8 @@ struct OnboardingView: View {
         case mailPermission
         case mailAddressSelection
         case microphonePermission
+        case notificationsPermission
+        case aiSetup
         case complete
     }
 
@@ -82,6 +97,10 @@ struct OnboardingView: View {
                         mailAddressSelectionStep
                     case .microphonePermission:
                         microphonePermissionStep
+                    case .notificationsPermission:
+                        notificationsPermissionStep
+                    case .aiSetup:
+                        aiSetupStep
                     case .complete:
                         completeStep
                     }
@@ -108,9 +127,17 @@ struct OnboardingView: View {
                 .font(.system(size: 32))
                 .foregroundStyle(.blue)
 
-            Text("Welcome to SAM")
-                .font(.title2)
-                .bold()
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Welcome to SAM")
+                    .font(.title2)
+                    .bold()
+
+                if currentStep != .welcome {
+                    Text("Step \(currentStepNumber) of \(totalSteps)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
 
             Spacer()
 
@@ -127,6 +154,20 @@ struct OnboardingView: View {
         .padding()
         .background(.ultraThinMaterial)
     }
+
+    private var currentStepNumber: Int {
+        let ordered: [OnboardingStep] = [
+            .contactsPermission, .contactsGroupSelection,
+            .calendarPermission, .calendarSelection,
+            .mailPermission, .mailAddressSelection,
+            .microphonePermission, .notificationsPermission,
+            .aiSetup, .complete
+        ]
+        guard let idx = ordered.firstIndex(of: currentStep) else { return 0 }
+        return idx + 1
+    }
+
+    private var totalSteps: Int { 10 }
 
     // MARK: - Steps
 
@@ -587,6 +628,155 @@ struct OnboardingView: View {
         }
     }
 
+    private var notificationsPermissionStep: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Image(systemName: "bell.circle.fill")
+                .font(.system(size: 64))
+                .foregroundStyle(.red)
+                .frame(maxWidth: .infinity)
+
+            Text("Notifications")
+                .font(.title)
+                .bold()
+
+            Text("SAM uses macOS notifications to keep you informed:")
+                .font(.body)
+                .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 12) {
+                BulletPoint("Alert you when a coaching plan is ready to review")
+                BulletPoint("Notify you when background analysis completes")
+                BulletPoint("Remind you about time-sensitive follow-ups")
+            }
+            .padding(.leading, 8)
+
+            Text("Notifications are optional — SAM works fully without them. You just won't get background alerts.")
+                .font(.callout)
+                .foregroundStyle(.orange)
+                .padding()
+                .background(Color.orange.opacity(0.1))
+                .cornerRadius(8)
+
+            if notificationsGranted {
+                HStack {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                    Text("Notifications enabled")
+                        .foregroundStyle(.green)
+                }
+            } else if notificationsDenied {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.red)
+                        Text("Notifications denied")
+                            .foregroundStyle(.red)
+                    }
+
+                    Text("To enable later, go to System Settings → Notifications → SAM")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Button("Open System Settings") {
+                        openSystemSettings()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.red)
+                }
+            }
+        }
+    }
+
+    private var aiSetupStep: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Image(systemName: "cpu.fill")
+                .font(.system(size: 64))
+                .foregroundStyle(.indigo)
+                .frame(maxWidth: .infinity)
+
+            Text("Enhanced AI")
+                .font(.title)
+                .bold()
+
+            Text("SAM includes Apple Intelligence for on-device coaching. For deeper reasoning, download the Mistral 7B model:")
+                .font(.body)
+                .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 12) {
+                BulletPoint("Richer meeting summaries and note analysis")
+                BulletPoint("More nuanced coaching recommendations")
+                BulletPoint("Better strategic business insights")
+            }
+            .padding(.leading, 8)
+
+            Text("The download is approximately 4 GB. All processing stays on your device — nothing is sent to the cloud.")
+                .font(.callout)
+                .foregroundStyle(.orange)
+                .padding()
+                .background(Color.orange.opacity(0.1))
+                .cornerRadius(8)
+
+            GroupBox {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Mistral 7B Instruct (4-bit)")
+                                .font(.subheadline)
+                            Text("~4 GB download")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Spacer()
+
+                        if mlxModelReady {
+                            Label("Ready", systemImage: "checkmark.circle.fill")
+                                .font(.caption)
+                                .foregroundStyle(.green)
+                                .fontWeight(.medium)
+                        } else if isMlxDownloading {
+                            Button("Cancel") {
+                                cancelMlxDownload()
+                            }
+                            .controlSize(.small)
+                        } else {
+                            Button("Download") {
+                                startMlxDownload()
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.indigo)
+                            .controlSize(.small)
+                        }
+                    }
+
+                    if isMlxDownloading {
+                        ProgressView(value: mlxDownloadProgress)
+                            .progressViewStyle(.linear)
+                        Text("Downloading… \(Int(mlxDownloadProgress * 100))%")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if let error = mlxDownloadError {
+                        Text(error)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+
+                    if mlxModelReady {
+                        Text("Hybrid AI backend will be activated when you complete setup.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        .task {
+            let models = await MLXModelManager.shared.availableModels
+            mlxModelReady = models.contains { $0.isDownloaded }
+        }
+    }
+
     private var completeStep: some View {
         VStack(alignment: .leading, spacing: 20) {
             Image(systemName: "checkmark.circle.fill")
@@ -653,13 +843,37 @@ struct OnboardingView: View {
                               title: "Dictation",
                               subtitle: "Skipped - you can enable this later")
                 }
+
+                if notificationsGranted {
+                    StatusRow(icon: "bell.circle.fill",
+                             color: .red,
+                             title: "Notifications",
+                             subtitle: "Enabled for coaching alerts")
+                } else if skippedNotifications || notificationsDenied {
+                    SkippedRow(icon: "bell.circle.fill",
+                              color: .red,
+                              title: "Notifications",
+                              subtitle: "Skipped — enable in System Settings → Notifications → SAM")
+                }
+
+                if mlxModelReady {
+                    StatusRow(icon: "cpu.fill",
+                             color: .indigo,
+                             title: "Enhanced AI",
+                             subtitle: "Mistral 7B downloaded · Hybrid backend will be activated")
+                } else if skippedAISetup {
+                    SkippedRow(icon: "cpu.fill",
+                              color: .indigo,
+                              title: "Enhanced AI",
+                              subtitle: "Skipped — download in Settings → AI → Coaching later")
+                }
             }
             .padding(.vertical)
         }
     }
 
     private var completionTitle: String {
-        let skippedAny = skippedContacts || skippedCalendar || skippedMail || skippedMicrophone
+        let skippedAny = skippedContacts || skippedCalendar || skippedMail || skippedMicrophone || skippedNotifications || skippedAISetup
         let skippedAll = skippedContacts && skippedCalendar && skippedMail && skippedMicrophone
         if skippedAll {
             return "Ready to Start"
@@ -671,7 +885,7 @@ struct OnboardingView: View {
     }
 
     private var completionMessage: String {
-        let skippedAny = skippedContacts || skippedCalendar || skippedMail || skippedMicrophone
+        let skippedAny = skippedContacts || skippedCalendar || skippedMail || skippedMicrophone || skippedNotifications || skippedAISetup
         let skippedAll = skippedContacts && skippedCalendar && skippedMail && skippedMicrophone
         if skippedAll {
             return "You can configure permissions anytime in Settings. SAM will be ready when you are."
@@ -712,7 +926,7 @@ struct OnboardingView: View {
                 // Mic step uses Skip / Enable Dictation pair
                 Button("Skip") {
                     skippedMicrophone = true
-                    currentStep = .complete
+                    currentStep = .notificationsPermission
                 }
                 .foregroundStyle(.secondary)
 
@@ -721,6 +935,20 @@ struct OnboardingView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(micPermissionGranted && speechPermissionGranted)
+            } else if currentStep == .notificationsPermission {
+                // Notifications step uses Skip / Enable Notifications pair
+                Button("Skip") {
+                    skippedNotifications = true
+                    currentStep = .aiSetup
+                }
+                .foregroundStyle(.secondary)
+
+                Button("Enable Notifications") {
+                    Task { await requestNotificationsPermission() }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.red)
+                .disabled(notificationsGranted)
             } else {
                 // Show skip option for other permission steps
                 if shouldShowSkip {
@@ -746,14 +974,14 @@ struct OnboardingView: View {
 
     private var shouldShowSkip: Bool {
         switch currentStep {
-        case .contactsPermission, .contactsGroupSelection, .calendarPermission, .calendarSelection, .mailAddressSelection:
+        case .contactsPermission, .contactsGroupSelection, .calendarPermission, .calendarSelection, .mailAddressSelection, .aiSetup:
             return true
         default:
             return false
         }
     }
 
-    // Note: microphonePermission and mailPermission have their own skip buttons in footer
+    // Note: microphonePermission, mailPermission, and notificationsPermission have their own skip buttons in footer
 
     private var nextButtonTitle: String {
         switch currentStep {
@@ -773,6 +1001,10 @@ struct OnboardingView: View {
             return "Next"
         case .microphonePermission:
             return "Next" // not used; footer overrides
+        case .notificationsPermission:
+            return "Next" // not used; footer overrides
+        case .aiSetup:
+            return mlxModelReady ? "Finish Setup" : "Skip for Now"
         case .complete:
             return "Start Using SAM"
         }
@@ -798,6 +1030,10 @@ struct OnboardingView: View {
             return true
         case .microphonePermission:
             return true
+        case .notificationsPermission:
+            return true // footer handles skip/enable; this is unused
+        case .aiSetup:
+            return true
         case .complete:
             return true
         }
@@ -821,6 +1057,9 @@ struct OnboardingView: View {
             currentStep = .mailPermission
         case .mailAddressSelection:
             // Skip means keep all selected (default)
+            currentStep = .microphonePermission
+        case .aiSetup:
+            skippedAISetup = true
             currentStep = .complete
         default:
             break
@@ -865,6 +1104,12 @@ struct OnboardingView: View {
             currentStep = .microphonePermission
 
         case .microphonePermission:
+            currentStep = .notificationsPermission
+
+        case .notificationsPermission:
+            currentStep = .aiSetup
+
+        case .aiSetup:
             currentStep = .complete
 
         case .complete:
@@ -897,8 +1142,12 @@ struct OnboardingView: View {
             } else {
                 currentStep = .mailPermission
             }
-        case .complete:
+        case .notificationsPermission:
             currentStep = .microphonePermission
+        case .aiSetup:
+            currentStep = .notificationsPermission
+        case .complete:
+            currentStep = .aiSetup
         }
     }
 
@@ -907,6 +1156,18 @@ struct OnboardingView: View {
     private func checkStatuses() async {
         contactsStatus = await ContactsService.shared.authorizationStatus()
         calendarStatus = await CalendarService.shared.authorizationStatus()
+
+        let notificationSettings = await UNUserNotificationCenter.current().notificationSettings()
+        switch notificationSettings.authorizationStatus {
+        case .authorized, .provisional, .ephemeral:
+            notificationsGranted = true
+        case .denied:
+            notificationsDenied = true
+        case .notDetermined:
+            break
+        @unknown default:
+            break
+        }
     }
 
     private func requestContactsPermission() async {
@@ -965,7 +1226,7 @@ struct OnboardingView: View {
         micPermissionGranted = micGranted
 
         if micGranted && speechGranted {
-            currentStep = .complete
+            currentStep = .notificationsPermission
         }
     }
 
@@ -1077,6 +1338,10 @@ struct OnboardingView: View {
             MailImportCoordinator.shared.setMailEnabled(true)
         }
 
+        if mlxModelReady {
+            UserDefaults.standard.set("hybrid", forKey: "aiBackend")
+        }
+
         // Always mark onboarding complete, even if permissions were skipped
         UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
     }
@@ -1101,6 +1366,80 @@ struct OnboardingView: View {
     private func openSystemSettings() {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy") {
             NSWorkspace.shared.open(url)
+        }
+    }
+
+    // MARK: - Notifications
+
+    private func requestNotificationsPermission() async {
+        do {
+            let granted = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])
+            if granted {
+                notificationsGranted = true
+                notificationsDenied = false
+                currentStep = .aiSetup
+            } else {
+                notificationsDenied = true
+                notificationsGranted = false
+            }
+        } catch {
+            notificationsDenied = true
+        }
+    }
+
+    // MARK: - MLX Download
+
+    private func startMlxDownload() {
+        isMlxDownloading = true
+        mlxDownloadError = nil
+
+        Task {
+            do {
+                // Find the model to download (Mistral 7B)
+                let models = await MLXModelManager.shared.availableModels
+                guard let model = models.first else {
+                    await MainActor.run {
+                        mlxDownloadError = "No model available to download."
+                        isMlxDownloading = false
+                    }
+                    return
+                }
+
+                // Start download
+                try await MLXModelManager.shared.downloadModel(id: model.id)
+
+                // Poll progress
+                while await MLXModelManager.shared.isDownloading {
+                    let progress = await MLXModelManager.shared.downloadProgress ?? 0
+                    await MainActor.run {
+                        mlxDownloadProgress = progress
+                    }
+                    try? await Task.sleep(nanoseconds: 250_000_000) // 250ms
+                }
+
+                // Check completion
+                let updatedModels = await MLXModelManager.shared.availableModels
+                let isReady = updatedModels.contains { $0.isDownloaded }
+                await MainActor.run {
+                    mlxModelReady = isReady
+                    isMlxDownloading = false
+                    mlxDownloadProgress = isReady ? 1.0 : mlxDownloadProgress
+                }
+            } catch {
+                await MainActor.run {
+                    mlxDownloadError = error.localizedDescription
+                    isMlxDownloading = false
+                }
+            }
+        }
+    }
+
+    private func cancelMlxDownload() {
+        Task {
+            await MLXModelManager.shared.cancelDownload()
+            await MainActor.run {
+                isMlxDownloading = false
+            }
         }
     }
 }

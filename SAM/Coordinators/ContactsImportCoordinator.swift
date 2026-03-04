@@ -116,8 +116,8 @@ final class ContactsImportCoordinator {
     /// Use this for user-initiated actions like tapping "Import Now" button
     func importNow() async {
         #if DEBUG
-        guard !UserDefaults.standard.isTestDataActive else {
-            logger.info("Test data mode active — contacts import suppressed")
+        if UserDefaults.standard.isTestDataLoaded || UserDefaults.standard.isTestDataActive {
+            logger.notice("ContactsImportCoordinator.importNow: skipping — test data is active")
             return
         }
         #endif
@@ -134,7 +134,7 @@ final class ContactsImportCoordinator {
     /// Attempt import when both permission is granted and a group is selected
     func attemptImportAfterConfigChange(reason: String) {
         #if DEBUG
-        guard !UserDefaults.standard.isTestDataActive else { return }
+        if UserDefaults.standard.isTestDataLoaded || UserDefaults.standard.isTestDataActive { return }
         #endif
         debounceTask?.cancel()
         debounceTask = Task {
@@ -191,6 +191,12 @@ final class ContactsImportCoordinator {
     
     /// Perform the actual import operation
     private func performImport() async {
+        #if DEBUG
+        if UserDefaults.standard.isTestDataLoaded || UserDefaults.standard.isTestDataActive {
+            logger.notice("ContactsImportCoordinator.performImport: skipping — test data is active")
+            return
+        }
+        #endif
         guard importStatus != .importing else {
             logger.warning("Import already in progress")
             return

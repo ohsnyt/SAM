@@ -49,6 +49,14 @@ enum SAMSchema {
         BusinessGoal.self,         // Phase X: Goal setting & decomposition
         ComplianceAuditEntry.self, // Phase Z: Compliance audit trail
         DeducedRelation.self,      // Deduced family relationships from contacts
+        PendingEnrichment.self,    // Contact enrichment queue (schema SAM_v28)
+        IntentionalTouch.self,          // LinkedIn/social touch scoring (schema SAM_v29)
+        LinkedInImport.self,            // LinkedIn archive import history (schema SAM_v29)
+        NotificationTypeTracker.self,   // LinkedIn notification type tracking (schema SAM_v31)
+        ProfileAnalysisRecord.self,     // LinkedIn profile analysis history (schema SAM_v31)
+        EngagementSnapshot.self,        // Social engagement metrics snapshots (schema SAM_v31)
+        SocialProfileSnapshot.self,     // Platform-agnostic social profile storage (schema SAM_v31)
+        FacebookImport.self,            // Facebook archive import history (schema SAM_v31)
     ]
 }
 
@@ -65,7 +73,7 @@ enum SAMModelContainer {
     nonisolated(unsafe) private static var _shared: ModelContainer = {
         let schema     = Schema(SAMSchema.allModels)
         let config     = ModelConfiguration(
-            "SAM_v27", // Remove household context from ConsentRequirement
+            "SAM_v31", // Facebook import + LinkedIn social models
             schema: schema,
             isStoredInMemoryOnly: false   // persistent on disk
         )
@@ -80,12 +88,12 @@ enum SAMModelContainer {
     /// DEBUG-only mutable shared container for reset flows.
     nonisolated static var shared: ModelContainer { _shared }
 
-    /// The default on-disk URL that ModelConfiguration("SAM_v27") uses.
+    /// The default on-disk URL that ModelConfiguration("SAM_v31") uses.
     /// Computed without touching _shared so it is safe to call before the
     /// container is ever initialized (e.g. during a launch-time wipe).
     nonisolated static var defaultStoreURL: URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        return appSupport.appendingPathComponent("SAM_v27.store")
+        return appSupport.appendingPathComponent("SAM_v31.store")
     }
 
     /// Delete the on-disk SQLite store files (main + -shm + -wal).
@@ -104,7 +112,7 @@ enum SAMModelContainer {
     nonisolated static func makeFreshContainer() -> ModelContainer {
         let schema = Schema(SAMSchema.allModels)
         let config = ModelConfiguration(
-            "SAM_v27", // Remove household context from ConsentRequirement
+            "SAM_v31", // Facebook import + LinkedIn social models
             schema: schema,
             isStoredInMemoryOnly: false
         )
@@ -124,7 +132,7 @@ enum SAMModelContainer {
     nonisolated static let shared: ModelContainer = {
         let schema     = Schema(SAMSchema.allModels)
         let config     = ModelConfiguration(
-            "SAM_v27", // Remove household context from ConsentRequirement
+            "SAM_v31", // Facebook import + LinkedIn social models
             schema: schema,
             isStoredInMemoryOnly: false   // persistent on disk
         )

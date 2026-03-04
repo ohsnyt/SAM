@@ -50,11 +50,19 @@ final class CommunicationsImportCoordinator {
     private var importTask: Task<Void, Never>?
 
     private init() {
-        messagesEnabled = UserDefaults.standard.bool(forKey: "commsMessagesEnabled")
-        callsEnabled = UserDefaults.standard.bool(forKey: "commsCallsEnabled")
+        // Default both to true — user has already granted DB access as the gating step
+        messagesEnabled = UserDefaults.standard.object(forKey: "commsMessagesEnabled") == nil
+            ? true
+            : UserDefaults.standard.bool(forKey: "commsMessagesEnabled")
+        callsEnabled = UserDefaults.standard.object(forKey: "commsCallsEnabled") == nil
+            ? true
+            : UserDefaults.standard.bool(forKey: "commsCallsEnabled")
         let days = UserDefaults.standard.integer(forKey: "commsLookbackDays")
-        // 0 means "All" (no limit), negative means unset → default 90
-        lookbackDays = days >= 0 && UserDefaults.standard.object(forKey: "commsLookbackDays") != nil ? days : 90
+        // 0 means "All" (no limit), negative means unset → default to globalLookbackDays (30)
+        let globalDays = UserDefaults.standard.object(forKey: "globalLookbackDays") != nil
+            ? UserDefaults.standard.integer(forKey: "globalLookbackDays")
+            : 30
+        lookbackDays = days >= 0 && UserDefaults.standard.object(forKey: "commsLookbackDays") != nil ? days : globalDays
         if UserDefaults.standard.object(forKey: "commsAnalyzeMessages") != nil {
             analyzeMessages = UserDefaults.standard.bool(forKey: "commsAnalyzeMessages")
         }
@@ -119,7 +127,7 @@ final class CommunicationsImportCoordinator {
     /// Fire-and-forget import — does not block the caller.
     func startImport() {
         #if DEBUG
-        guard !UserDefaults.standard.isTestDataActive else { return }
+        if UserDefaults.standard.isTestDataLoaded || UserDefaults.standard.isTestDataActive { return }
         #endif
         guard importStatus != .importing else { return }
         importTask?.cancel()
@@ -128,7 +136,7 @@ final class CommunicationsImportCoordinator {
 
     func importNow() async {
         #if DEBUG
-        guard !UserDefaults.standard.isTestDataActive else { return }
+        if UserDefaults.standard.isTestDataLoaded || UserDefaults.standard.isTestDataActive { return }
         #endif
         guard importStatus != .importing else {
             logger.debug("Import already in progress, skipping")

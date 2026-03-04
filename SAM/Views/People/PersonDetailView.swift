@@ -28,6 +28,7 @@ struct PersonDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var contactsService = ContactsService.shared
     @State private var notesRepository = NotesRepository.shared
+    @State private var enrichmentCoordinator = ContactEnrichmentCoordinator.shared
     
     // MARK: - State
     
@@ -45,6 +46,8 @@ struct PersonDetailView: View {
     @State private var recruitingStage: RecruitingStage?
     @State private var productionRecords: [ProductionRecord] = []
     @State private var showingProductionForm = false
+    @State private var pendingEnrichments: [PendingEnrichment] = []
+    @State private var showingEnrichmentSheet = false
 
     @Query(filter: #Predicate<SamPerson> { !$0.isArchived })
     private var allPeople: [SamPerson]
@@ -60,6 +63,13 @@ struct PersonDetailView: View {
                 headerSection
                     .padding(.horizontal)
                     .padding(.top)
+
+                // Enrichment banner
+                if !pendingEnrichments.isEmpty {
+                    enrichmentBanner
+                        .padding(.horizontal)
+                        .padding(.bottom, 4)
+                }
 
                 // Loading state
                 if isLoadingContact {
@@ -133,9 +143,16 @@ struct PersonDetailView: View {
             loadNotes()
             recruitingStage = try? PipelineRepository.shared.fetchRecruitingStage(forPerson: person.id)
             productionRecords = (try? ProductionRepository.shared.fetchRecords(forPerson: person.id)) ?? []
+            visibleInteractionCount = 3
+            pendingEnrichments = enrichmentCoordinator.pendingEnrichments(for: person.id)
         }
         .onReceive(NotificationCenter.default.publisher(for: .samUndoDidRestore)) { _ in
             loadNotes()
+        }
+        .sheet(isPresented: $showingEnrichmentSheet, onDismiss: {
+            pendingEnrichments = enrichmentCoordinator.pendingEnrichments(for: person.id)
+        }) {
+            EnrichmentReviewSheet(person: person, enrichments: pendingEnrichments)
         }
         .sheet(isPresented: $showingContextPicker) {
             ContextPickerSheet(person: person)
@@ -171,6 +188,35 @@ struct PersonDetailView: View {
     }
     
     private let personCoachingTip = PersonCoachingTip()
+
+    // MARK: - Enrichment Banner
+
+    private var enrichmentBanner: some View {
+        Button {
+            showingEnrichmentSheet = true
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.up.circle.fill")
+                    .foregroundStyle(.blue)
+                let count = pendingEnrichments.count
+                Text("\(count) contact update\(count == 1 ? "" : "s") available")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(10)
+            .background(Color.blue.opacity(0.06))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.blue.opacity(0.2), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
 
     // MARK: - Header Section (Above the Fold)
 
@@ -879,7 +925,15 @@ struct PersonDetailView: View {
             }
             
             // Online Presence Section
-            if !contact.urlAddresses.isEmpty || !contact.socialProfiles.isEmpty {
+            // Include person.linkedInProfileURL even if not yet synced to Apple Contacts social profiles
+            let samLinkedInURL = person.linkedInProfileURL
+            let linkedInAlreadyInContacts = contact.socialProfiles.contains(where: {
+                $0.service.lowercased() == "linkedin" ||
+                ($0.urlString ?? "").lowercased().contains("linkedin.com/in/")
+            })
+            let showSAMLinkedIn = samLinkedInURL != nil && !linkedInAlreadyInContacts
+
+            if !contact.urlAddresses.isEmpty || !contact.socialProfiles.isEmpty || showSAMLinkedIn {
                 contactSection(title: "Online Presence") {
                     // Websites
                     ForEach(Array(contact.urlAddresses.enumerated()), id: \.offset) { _, url in
@@ -893,14 +947,28 @@ struct PersonDetailView: View {
                             }
                         )
                     }
-                    
-                    // Social profiles
+
+                    // Social profiles from Apple Contacts
                     ForEach(contact.socialProfiles) { profile in
                         contactRow(
                             value: profile.username,
                             label: profile.service.lowercased(),
                             action: {
                                 if let urlString = profile.urlString, let url = URL(string: urlString) {
+                                    NSWorkspace.shared.open(url)
+                                }
+                            }
+                        )
+                    }
+
+                    // LinkedIn URL from SAM (not yet written back to Contacts)
+                    if showSAMLinkedIn, let linkedInURL = samLinkedInURL {
+                        let fullURL = linkedInURL.hasPrefix("http") ? linkedInURL : "https://\(linkedInURL)"
+                        contactRow(
+                            value: linkedInURL,
+                            label: "linkedin",
+                            action: {
+                                if let url = URL(string: fullURL) {
                                     NSWorkspace.shared.open(url)
                                 }
                             }
@@ -1065,6 +1133,11 @@ struct PersonDetailView: View {
             // Notes — most used section, shown first
             notesSection
 
+            // Interaction History — all linked evidence interactions
+            if !person.isMe {
+                interactionHistorySection
+            }
+
             // Recruiting Pipeline (Agent badge)
             if person.roleBadges.contains("Agent") {
                 recruitingStageSection
@@ -1080,6 +1153,99 @@ struct PersonDetailView: View {
                 relationshipSummarySection
             }
         }
+    }
+
+    // MARK: - Interaction History
+
+    @State private var visibleInteractionCount = 3
+
+    private var interactionHistorySection: some View {
+        let interactions = person.linkedEvidence
+            .filter { $0.source.isInteraction }
+            .sorted { $0.occurredAt > $1.occurredAt }
+
+        guard !interactions.isEmpty else { return AnyView(EmptyView()) }
+
+        let visibleItems = Array(interactions.prefix(visibleInteractionCount))
+        let remaining = interactions.count - visibleInteractionCount
+
+        return AnyView(samSection(title: "Interaction History") {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(visibleItems, id: \.id) { item in
+                    interactionRow(item)
+                    if item.id != visibleItems.last?.id {
+                        Divider()
+                            .padding(.leading, 36)
+                    }
+                }
+
+                if remaining > 0 {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            visibleInteractionCount += 10
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.down")
+                                .font(.caption2)
+                            Text("\(min(remaining, 10)) more…")
+                                .font(.caption)
+                        }
+                        .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 6)
+                } else if visibleInteractionCount > 3 {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            visibleInteractionCount = 3
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.up")
+                                .font(.caption2)
+                            Text("Show fewer")
+                                .font(.caption)
+                        }
+                        .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 6)
+                }
+            }
+        })
+    }
+
+    private func interactionRow(_ item: SamEvidenceItem) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            // Source icon
+            Image(systemName: item.source.iconName)
+                .font(.caption)
+                .foregroundStyle(item.source.iconColor)
+                .frame(width: 16, alignment: .center)
+                .padding(.top, 2)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.title)
+                    .font(.subheadline)
+                    .lineLimit(2)
+
+                if !item.snippet.isEmpty {
+                    Text(item.snippet)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer(minLength: 0)
+
+            Text(item.occurredAt.formatted(date: .abbreviated, time: .omitted))
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .padding(.top, 2)
+        }
+        .padding(.vertical, 6)
     }
 
     // MARK: - More Details (collapsed by default)
@@ -2022,5 +2188,24 @@ struct RelationshipHealthView: View {
         .padding(.vertical, 4)
         .background(Color.secondary.opacity(0.1))
         .clipShape(RoundedRectangle(cornerRadius: 4))
+    }
+}
+
+// MARK: - EvidenceSource UI helpers (SwiftUI)
+
+private extension EvidenceSource {
+    var iconColor: Color {
+        switch self {
+        case .calendar:  return .blue
+        case .mail:      return .orange
+        case .contacts:  return .gray
+        case .note:      return .yellow
+        case .manual:    return .gray
+        case .iMessage:  return .green
+        case .phoneCall: return .green
+        case .faceTime:  return .teal
+        case .linkedIn:  return .blue
+        case .facebook:  return .indigo
+        }
     }
 }

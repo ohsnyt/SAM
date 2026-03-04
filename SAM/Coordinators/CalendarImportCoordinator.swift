@@ -71,16 +71,19 @@ final class CalendarImportCoordinator {
         set { UserDefaults.standard.set(newValue, forKey: "calendarImportIntervalSeconds") }
     }
 
-    /// Lookback days for calendar import. 0 means "All" (no limit). Default: 30.
+    /// Lookback days for calendar import. 0 means "All" (no limit). Default: globalLookbackDays (30).
     @ObservationIgnored
     var lookbackDays: Int {
         get {
             let days = UserDefaults.standard.integer(forKey: "calendarLookbackDays")
-            // 0 means "All" (no limit), negative means unset → default 30
+            // 0 means "All" (no limit); unset → fall back to globalLookbackDays (default 30)
             if UserDefaults.standard.object(forKey: "calendarLookbackDays") != nil {
                 return days >= 0 ? days : 30
             }
-            return 30
+            let globalDays = UserDefaults.standard.object(forKey: "globalLookbackDays") != nil
+                ? UserDefaults.standard.integer(forKey: "globalLookbackDays")
+                : 30
+            return globalDays
         }
         set {
             UserDefaults.standard.set(newValue, forKey: "calendarLookbackDays")
@@ -121,7 +124,7 @@ final class CalendarImportCoordinator {
     /// Start auto-import if enabled and authorized.
     func startAutoImport() {
         #if DEBUG
-        guard !UserDefaults.standard.isTestDataActive else { return }
+        if UserDefaults.standard.isTestDataLoaded || UserDefaults.standard.isTestDataActive { return }
         #endif
         guard autoImportEnabled else { return }
 
@@ -141,7 +144,7 @@ final class CalendarImportCoordinator {
     /// The import Task is stored so it can be cancelled on app termination.
     func startImport() {
         #if DEBUG
-        guard !UserDefaults.standard.isTestDataActive else { return }
+        if UserDefaults.standard.isTestDataLoaded || UserDefaults.standard.isTestDataActive { return }
         #endif
         guard importStatus != .importing else { return }
         importTask?.cancel()

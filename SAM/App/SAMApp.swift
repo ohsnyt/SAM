@@ -88,7 +88,13 @@ struct SAMApp: App {
         // so the lazy _shared initializer creates a completely fresh store.
         // This must run before configureDataLayer() (which touches _shared).
         if UserDefaults.standard.bool(forKey: "sam.seed.pending") {
+            let storeURL = SAMModelContainer.defaultStoreURL
+            let fm = FileManager.default
+            let existsBefore = fm.fileExists(atPath: storeURL.path)
+            logger.notice("SAMApp: store file exists before wipe: \(existsBefore, privacy: .public) — \(storeURL.path(percentEncoded: false), privacy: .public)")
             SAMModelContainer.deleteStoreFiles()
+            let existsAfter = fm.fileExists(atPath: storeURL.path)
+            logger.notice("SAMApp: store file exists after wipe: \(existsAfter, privacy: .public)")
             UserDefaults.standard.removeObject(forKey: "sam.seed.pending")
             logger.notice("SAMApp: store files wiped for pending seed — fresh container will be created")
         }
@@ -104,16 +110,29 @@ struct SAMApp: App {
 
         #if DEBUG
         // Seed Harvey Snodgrass test data if test mode is active and store is empty.
-        // This runs synchronously at launch because we need the data present before
-        // any views render. The seeder inserts directly into a fresh ModelContext.
+        // isTestDataLoaded is set TRUE here synchronously — before any Task or .task fires —
+        // so all import coordinators see the flag immediately and skip real imports.
+        //
+        // Also re-assert isTestDataLoaded on every subsequent Harvey launch:
+        // isTestDataActive is cleared after the first seed, but isTestDataLoaded persists
+        // across launches in UserDefaults — so if it's already true we just ensure it stays
+        // set before any coordinator init tasks can race against it.
+        let testLoaded = UserDefaults.standard.isTestDataLoaded
+        let testActive = UserDefaults.standard.isTestDataActive
+        logger.notice("DEBUG launch flags — isTestDataLoaded: \(testLoaded, privacy: .public), isTestDataActive: \(testActive, privacy: .public)")
+        if testLoaded || testActive {
+            UserDefaults.standard.isTestDataLoaded = true   // block imports immediately (re-assert on every Harvey launch)
+            logger.notice("SAMApp: Harvey session active — imports blocked for this launch")
+        }
         if UserDefaults.standard.isTestDataActive && preImportCount == 0 {
             let seedContext = ModelContext(SAMModelContainer.shared)
             Task { @MainActor in
                 await TestDataSeeder.shared.insertData(into: seedContext)
-                // Clear the one-shot trigger; set the persistent "loaded" marker
+                // Clear the one-shot trigger (loaded flag stays true for the lifetime of the Harvey session)
                 UserDefaults.standard.isTestDataActive = false
-                UserDefaults.standard.isTestDataLoaded = true
-                logger.notice("TestDataSeeder: Harvey Snodgrass dataset inserted — isTestDataActive cleared, isTestDataLoaded set")
+                logger.notice("TestDataSeeder: Harvey Snodgrass dataset inserted — isTestDataActive cleared")
+                let postSeedCount = (try? PeopleRepository.shared.count()) ?? -1
+                logger.notice("SAMApp: post-seed SamPerson count: \(postSeedCount, privacy: .public)")
             }
         }
         #endif
@@ -212,10 +231,15 @@ struct SAMApp: App {
                 }
                 .keyboardShortcut("3", modifiers: .command)
 
+                Button("Go to Grow") {
+                    NotificationCenter.default.post(name: .samNavigateToSection, object: nil, userInfo: ["section": "grow"])
+                }
+                .keyboardShortcut("4", modifiers: .command)
+
                 Button("Go to Search") {
                     NotificationCenter.default.post(name: .samNavigateToSection, object: nil, userInfo: ["section": "search"])
                 }
-                .keyboardShortcut("4", modifiers: .command)
+                .keyboardShortcut("5", modifiers: .command)
             }
 
             #if DEBUG
@@ -332,6 +356,8 @@ struct SAMApp: App {
         GoalRepository.shared.configure(container: c)
         ComplianceAuditRepository.shared.configure(container: c)
         DeducedRelationRepository.shared.configure(container: c)
+        ContactEnrichmentCoordinator.shared.configure(container: c)
+        IntentionalTouchRepository.shared.configure(container: c)
 
         // Prune expired compliance audit entries on launch
         let retentionDays = UserDefaults.standard.object(forKey: "complianceAuditRetentionDays") as? Int ?? 90
@@ -430,6 +456,15 @@ struct SAMApp: App {
     /// then remaining imports fire concurrently and are non-blocking — the
     /// app can terminate at any time without waiting for them to finish.
     private func triggerImportsForEnabledSources() async {
+        // Never run real imports while Harvey Snodgrass test data is active —
+        // real contacts would overwrite the seed dataset.
+        #if DEBUG
+        if UserDefaults.standard.isTestDataLoaded || UserDefaults.standard.isTestDataActive {
+            logger.notice("triggerImportsForEnabledSources: skipping — test data is active")
+            return
+        }
+        #endif
+
         let contactsEnabled = UserDefaults.standard.bool(forKey: "sam.contacts.enabled")
         let calendarEnabled = UserDefaults.standard.bool(forKey: "calendarAutoImportEnabled")
         let mailEnabled = UserDefaults.standard.bool(forKey: "mailImportEnabled")

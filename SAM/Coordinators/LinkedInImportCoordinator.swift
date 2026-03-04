@@ -2,17 +2,17 @@
 //  LinkedInImportCoordinator.swift
 //  SAM
 //
-//  Phase S+: LinkedIn Archive Import
+//  Phase S+: LinkedIn Archive Import (rebuilt with intentional touch scoring)
 //
-//  Orchestrates importing LinkedIn data export CSV files into SwiftData.
-//  - Messages from messages.csv → SamEvidenceItem (source: .linkedIn)
-//  - Connections from Connections.csv → enriches SamPerson.linkedInProfileURL
-//  - Watermark: stores last-import date so re-imports only process new records
-//  - Contact matching: exact profile URL match, then email match, then fuzzy name
+//  Flow:
+//   1. loadFolder  — parse all CSVs, compute touch scores, build importCandidates list
+//   2. (UI)        — user sees LinkedInImportReviewSheet; toggles Add/Later per contact
+//   3. confirmImport(classifications:) — persist records, store IntentionalTouch events
 //
 
 import Foundation
 import SwiftUI
+import SwiftData
 import os.log
 
 private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "LinkedInImportCoordinator")
@@ -31,6 +31,9 @@ final class LinkedInImportCoordinator {
     private let evidenceRepo       = EvidenceRepository.shared
     private let peopleRepo         = PeopleRepository.shared
     private let unknownSenderRepo  = UnknownSenderRepository.shared
+    private let enrichmentRepo     = EnrichmentRepository.shared
+    private let contactsService    = ContactsService.shared
+    private let touchRepo          = IntentionalTouchRepository.shared
 
     // MARK: - Settings (UserDefaults)
 
@@ -41,7 +44,6 @@ final class LinkedInImportCoordinator {
     }
 
     /// Watermark: only messages newer than this date are imported on subsequent runs.
-    /// When nil, all available messages are imported.
     @ObservationIgnored
     var lastMessageImportAt: Date? {
         get {
@@ -70,17 +72,22 @@ final class LinkedInImportCoordinator {
     // MARK: - State
 
     enum ImportStatus: Equatable {
-        case idle, parsing, importing, success, failed
+        case idle, parsing, awaitingReview, importing, success, failed
         var displayText: String {
             switch self {
-            case .idle:      "Ready"
-            case .parsing:   "Reading file..."
-            case .importing: "Importing..."
-            case .success:   "Done"
-            case .failed:    "Failed"
+            case .idle:           "Ready"
+            case .parsing:        "Reading files..."
+            case .awaitingReview: "Ready to review"
+            case .importing:      "Importing..."
+            case .success:        "Done"
+            case .failed:         "Failed"
             }
         }
         var isActive: Bool { self == .parsing || self == .importing }
+    }
+
+    enum ProfileAnalysisStatus: String {
+        case idle, analyzing, complete, failed
     }
 
     private(set) var importStatus: ImportStatus = .idle
@@ -94,36 +101,123 @@ final class LinkedInImportCoordinator {
     private(set) var duplicateMessageCount: Int = 0
     private(set) var matchedConnectionCount: Int = 0
     private(set) var unmatchedConnectionCount: Int = 0
+    private(set) var enrichmentCandidateCount: Int = 0
+    /// True if a user LinkedIn profile was found and parsed in the current import session.
+    private(set) var userProfileParsed: Bool = false
 
-    // MARK: - Parsed state (held between preview and confirm)
+    // Phase 4: Enhanced de-duplication state
+    /// Number of connections that exactly matched an existing SamPerson (auto-enriched).
+    private(set) var exactMatchCount: Int = 0
+    /// Number of connections that probably matched (requiring user confirmation).
+    private(set) var probableMatchCount: Int = 0
+    /// Number of connections with no match (shown as Add/Later in review sheet).
+    private(set) var noMatchCount: Int = 0
+    /// Non-nil when last import was more than 90 days ago.
+    private(set) var staleImportWarning: String? = nil
+
+    // MARK: - §13 Apple Contacts LinkedIn URL Sync state
+
+    /// Candidates for which SAM can write LinkedIn URLs to Apple Contacts.
+    /// Populated after confirmImport() completes. Only "Add" candidates whose
+    /// Apple Contact did NOT already have the LinkedIn URL are included.
+    /// Cleared after the user responds to the batch sync confirmation.
+    private(set) var appleContactsSyncCandidates: [AppleContactsSyncCandidate] = []
+
+    /// Auto-sync preference: when true, SAM writes LinkedIn URLs to Apple Contacts
+    /// automatically for new "Add" contacts without asking each time.
+    @ObservationIgnored
+    var autoSyncLinkedInURLs: Bool {
+        get { UserDefaults.standard.bool(forKey: "sam.linkedin.autoSyncAppleContactURLs") }
+        set { UserDefaults.standard.set(newValue, forKey: "sam.linkedin.autoSyncAppleContactURLs") }
+    }
+
+    // MARK: - Profile Analysis State (Phase 7)
+
+    private(set) var profileAnalysisStatus: ProfileAnalysisStatus = .idle
+    private(set) var latestProfileAnalysis: ProfileAnalysisDTO? = nil
+
+    // MARK: - Parsed state (held between loadFolder and confirmImport)
 
     private var pendingMessages: [LinkedInMessageDTO] = []
     private var pendingConnections: [LinkedInConnectionDTO] = []
+    private var pendingEndorsementsReceived: [LinkedInEndorsementReceivedDTO] = []
+    private var pendingEndorsementsGiven: [LinkedInEndorsementGivenDTO] = []
+    private var pendingRecommendationsGiven: [LinkedInRecommendationGivenDTO] = []
+    private var pendingRecommendationsReceived: [LinkedInRecommendationReceivedDTO] = []
+    private var pendingReactionsGiven: [LinkedInReactionDTO] = []
+    private var pendingCommentsGiven: [LinkedInCommentDTO] = []
+    private var pendingInvitations: [LinkedInInvitationDTO] = []
+    private var pendingShares: [LinkedInShareDTO] = []
+    private var pendingUserProfile: UserLinkedInProfileDTO? = nil
 
-    /// Exposed for the settings preview UI.
+    /// Computed touch scores keyed by normalized profile URL.
+    private var touchScores: [String: IntentionalTouchScore] = [:]
+
+    /// Import candidates built from unmatched connections, ready for the review sheet.
+    /// Only populated after loadFolder completes successfully.
+    private(set) var importCandidates: [LinkedInImportCandidate] = []
+
+    // MARK: - Convenience counts (exposed for preview / settings UI)
+
     var pendingConnectionCount: Int { pendingConnections.count }
+    var pendingEndorsementsReceivedCount: Int { pendingEndorsementsReceived.count }
+    var pendingEndorsementsGivenCount: Int { pendingEndorsementsGiven.count }
+    var pendingRecommendationsGivenCount: Int { pendingRecommendationsGiven.count }
+    var pendingInvitationsCount: Int { pendingInvitations.count }
+    var recommendedToAddCount: Int { importCandidates.filter { $0.defaultClassification == .add }.count }
+    var noInteractionCount: Int { importCandidates.filter { $0.defaultClassification == .later }.count }
 
     // MARK: - Initialization
 
-    private init() {}
+    private init() {
+        // Load cached profile analysis from prior import session
+        Task { @MainActor in
+            self.latestProfileAnalysis = await BusinessProfileService.shared.profileAnalysis(for: "linkedIn")
+        }
+    }
 
     // MARK: - Public API
 
     /// Parse a LinkedIn data export folder. Call from Settings UI after user selects folder.
-    /// Populates pending counts for preview before the user confirms import.
+    /// Populates importCandidates for the review sheet.
     func loadFolder(url: URL) async {
         guard importStatus != .parsing && importStatus != .importing else { return }
 
         importStatus = .parsing
+        progressMessage = "Reading CSV files…"
         lastError = nil
         parsedMessageCount = 0
         newMessageCount = 0
         duplicateMessageCount = 0
         pendingMessages = []
         pendingConnections = []
+        pendingEndorsementsReceived = []
+        pendingEndorsementsGiven = []
+        pendingRecommendationsGiven = []
+        pendingRecommendationsReceived = []
+        pendingReactionsGiven = []
+        pendingCommentsGiven = []
+        pendingInvitations = []
+        pendingUserProfile = nil
+        touchScores = [:]
+        importCandidates = []
+        enrichmentCandidateCount = 0
+        userProfileParsed = false
+        exactMatchCount = 0
+        probableMatchCount = 0
+        noMatchCount = 0
+        staleImportWarning = nil
 
-        let messagesURL     = url.appendingPathComponent("messages.csv")
-        let connectionsURL  = url.appendingPathComponent("Connections.csv")
+        let messagesURL                = url.appendingPathComponent("messages.csv")
+        let connectionsURL             = url.appendingPathComponent("Connections.csv")
+        let endorsementsReceivedURL    = url.appendingPathComponent("Endorsement_Received_Info.csv")
+        let endorsementsGivenURL       = url.appendingPathComponent("Endorsement_Given_Info.csv")
+        let recommendationsGivenURL    = url.appendingPathComponent("Recommendations_Given.csv")
+        let recommendationsReceivedURL = url.appendingPathComponent("Recommendations_Received.csv")
+        let reactionsGivenURL          = url.appendingPathComponent("Reactions.csv")
+        let commentsGivenURL           = url.appendingPathComponent("Comments.csv")
+        let invitationsURL             = url.appendingPathComponent("Invitations.csv")
+        let sharesURL                  = url.appendingPathComponent("Shares.csv")
 
         // Parse messages (applying watermark for incremental import)
         let allMessages = await linkedInService.parseMessages(
@@ -142,28 +236,86 @@ final class LinkedInImportCoordinator {
             }
         }
 
-        // Parse connections (always full re-parse — just updates existing records)
-        let connections: [LinkedInConnectionDTO]
+        // Parse connections (always full re-parse)
         if FileManager.default.fileExists(atPath: connectionsURL.path) {
-            connections = await linkedInService.parseConnections(at: connectionsURL)
+            pendingConnections = await linkedInService.parseConnections(at: connectionsURL)
         } else {
-            connections = []
             logger.info("No Connections.csv found in folder")
         }
+
+        // Parse touch-related CSVs (silently skip if not present)
+        if FileManager.default.fileExists(atPath: endorsementsReceivedURL.path) {
+            pendingEndorsementsReceived = await linkedInService.parseEndorsementsReceived(at: endorsementsReceivedURL)
+        }
+        if FileManager.default.fileExists(atPath: endorsementsGivenURL.path) {
+            pendingEndorsementsGiven = await linkedInService.parseEndorsementsGiven(at: endorsementsGivenURL)
+        }
+        if FileManager.default.fileExists(atPath: recommendationsGivenURL.path) {
+            pendingRecommendationsGiven = await linkedInService.parseRecommendationsGiven(at: recommendationsGivenURL)
+        }
+        if FileManager.default.fileExists(atPath: recommendationsReceivedURL.path) {
+            pendingRecommendationsReceived = await linkedInService.parseRecommendationsReceived(at: recommendationsReceivedURL)
+        }
+        if FileManager.default.fileExists(atPath: reactionsGivenURL.path) {
+            pendingReactionsGiven = await linkedInService.parseReactionsGiven(at: reactionsGivenURL)
+        }
+        if FileManager.default.fileExists(atPath: commentsGivenURL.path) {
+            pendingCommentsGiven = await linkedInService.parseCommentsGiven(at: commentsGivenURL)
+        }
+        if FileManager.default.fileExists(atPath: invitationsURL.path) {
+            pendingInvitations = await linkedInService.parseInvitations(at: invitationsURL)
+        }
+        if FileManager.default.fileExists(atPath: sharesURL.path) {
+            pendingShares = await linkedInService.parseShares(at: sharesURL)
+        }
+
+        // Parse user profile
+        pendingUserProfile = await linkedInService.parseUserProfile(folder: url)
+        userProfileParsed = pendingUserProfile != nil
 
         parsedMessageCount    = allMessages.count
         newMessageCount       = newMessages.count
         duplicateMessageCount = duplicateCount
         pendingMessages       = newMessages
-        pendingConnections    = connections
-        importStatus          = .idle  // Ready for user to confirm
 
-        logger.info("Folder parsed: \(allMessages.count) messages (\(newMessages.count) new), \(connections.count) connections")
+        // Compute touch scores from all parsed data
+        progressMessage = "Scoring contacts…"
+        await Task.yield()
+        touchScores = computeTouchScores()
+
+        // Build import candidates from unmatched connections (async — checks Apple Contacts for Priority 2)
+        progressMessage = "Building review list…"
+        await Task.yield()
+        importCandidates = await buildImportCandidates()
+
+        // Check for stale import warning (>90 days since last connection import)
+        if let lastImport = lastConnectionImportAt {
+            let daysSince = Calendar.current.dateComponents([.day], from: lastImport, to: Date()).day ?? 0
+            if daysSince > 90 {
+                staleImportWarning = "Your LinkedIn data was last imported \(daysSince) days ago. Consider downloading a fresh export for the most accurate contact information."
+            }
+        }
+
+        importStatus = .awaitingReview
+        progressMessage = nil
+
+        let erCount   = pendingEndorsementsReceived.count
+        let egCount   = pendingEndorsementsGiven.count
+        let recCount  = pendingRecommendationsGiven.count
+        let rrCount   = pendingRecommendationsReceived.count
+        let rxCount   = pendingReactionsGiven.count
+        let cmCount   = pendingCommentsGiven.count
+        let invCount  = pendingInvitations.count
+        let shrCount  = pendingShares.count
+        let connCount = pendingConnections.count
+        logger.info("Folder parsed: \(allMessages.count) msgs (\(newMessages.count) new), \(connCount) connections, \(erCount) endorse rcvd, \(egCount) endorse given, \(recCount) rec given, \(rrCount) rec rcvd, \(rxCount) reactions, \(cmCount) comments, \(invCount) invitations, \(shrCount) shares")
+        logger.info("Import candidates: \(self.importCandidates.count) (\(self.recommendedToAddCount) to add, \(self.noInteractionCount) later)")
     }
 
-    /// Confirm and execute the import. Called after user reviews preview counts.
-    func confirmImport() async {
-        guard !pendingMessages.isEmpty || !pendingConnections.isEmpty else {
+    /// Confirm and execute the import with user-selected classifications.
+    /// - Parameter classifications: maps candidate.id → .add or .later
+    func confirmImport(classifications: [UUID: LinkedInClassification]) async {
+        guard importStatus == .awaitingReview || !pendingConnections.isEmpty || !pendingMessages.isEmpty else {
             importStatus = .idle
             return
         }
@@ -172,27 +324,23 @@ final class LinkedInImportCoordinator {
         progressMessage = "Preparing…"
         lastError = nil
 
-        // Snapshot pending data so we can hand it to a background task
         let connectionsToImport = pendingConnections
         let messagesToImport = pendingMessages
-
-        // Phase labels published back to @MainActor between steps
         var importedCount = 0
         var matched = 0
 
         do {
-            // 1. Enrich SamPerson records from connections (always, even without messages)
+            // 1. Enrich matched SamPerson records from connections
             var unmatchedConnections: [LinkedInConnectionDTO] = []
             if !connectionsToImport.isEmpty {
                 progressMessage = "Matching \(connectionsToImport.count) connection\(connectionsToImport.count == 1 ? "" : "s")…"
-                // Yield to let the UI update before the blocking work begins
                 await Task.yield()
                 let result = try enrichPeopleFromConnections(connectionsToImport)
                 matched = result.matched
                 unmatchedConnections = result.unmatched
                 lastConnectionImportAt = Date()
                 if !unmatchedConnections.isEmpty {
-                    logger.info("\(unmatchedConnections.count) LinkedIn connection(s) unmatched — queuing for triage")
+                    logger.info("\(unmatchedConnections.count) LinkedIn connection(s) unmatched — building candidates")
                 }
             }
 
@@ -201,19 +349,17 @@ final class LinkedInImportCoordinator {
             if !messagesToImport.isEmpty {
                 progressMessage = "Importing \(messagesToImport.count) message\(messagesToImport.count == 1 ? "" : "s")…"
                 await Task.yield()
-                // Build lookup tables once for all messages
                 let allPeople = try peopleRepo.fetchAll()
-                var byLinkedInURL  = Dictionary(uniqueKeysWithValues: allPeople.compactMap { p -> (String, SamPerson)? in
-                    guard let url = p.linkedInProfileURL else { return nil }
-                    return (url.lowercased(), p)
-                })
-                let byEmail: [String: SamPerson] = allPeople.reduce(into: [:]) { dict, p in
-                    if let e = p.emailCache?.lowercased() { dict[e] = p }
-                    for alias in p.emailAliases { dict[alias.lowercased()] = p }
+                var byLinkedInURL: [String: SamPerson] = allPeople.reduce(into: [:]) { dict, p in
+                    if let url = p.linkedInProfileURL { dict[url.lowercased()] = p }
                 }
                 let byFullName: [String: SamPerson] = allPeople.reduce(into: [:]) { dict, p in
                     let name = (p.displayNameCache ?? p.displayName).lowercased()
                     dict[name] = p
+                }
+                let byEmail: [String: SamPerson] = allPeople.reduce(into: [:]) { dict, p in
+                    if let email = p.emailCache?.lowercased(), !email.isEmpty { dict[email] = p }
+                    for alias in p.emailAliases { dict[alias.lowercased()] = p }
                 }
 
                 for msg in messagesToImport {
@@ -221,22 +367,18 @@ final class LinkedInImportCoordinator {
                         profileURL: msg.senderProfileURL,
                         name: msg.senderName,
                         byLinkedInURL: byLinkedInURL,
-                        byEmail: [:],
+                        byEmail: byEmail,
                         byFullName: byFullName
                     )
 
-                    // If matched by name (not URL), back-fill their LinkedIn profile URL
-                    // so future lookups use the faster URL path and evidence stays linked.
                     if let matched = person,
                        !msg.senderProfileURL.isEmpty,
                        (matched.linkedInProfileURL ?? "").lowercased() != msg.senderProfileURL.lowercased() {
                         matched.linkedInProfileURL = msg.senderProfileURL
-                        // Update the lookup table so subsequent messages in this batch hit the URL path
                         byLinkedInURL[msg.senderProfileURL.lowercased()] = matched
                     }
 
                     if person == nil && !msg.senderName.isEmpty {
-                        // Track unmatched message senders for triage
                         unmatchedMessageSenders.append((
                             profileURL: msg.senderProfileURL,
                             name: msg.senderName,
@@ -247,12 +389,9 @@ final class LinkedInImportCoordinator {
                     let linkedPeople: [SamPerson] = person.map { [$0] } ?? []
                     let peopleIDs = linkedPeople.map(\.id)
 
-                    // Title: prefer conversation title, fall back to sender name
                     let title = msg.conversationTitle.isEmpty
                         ? "LinkedIn message from \(msg.senderName)"
                         : msg.conversationTitle
-
-                    // Snippet: first 200 chars of plain text
                     let snippet = String(msg.plainTextContent.prefix(200))
 
                     try evidenceRepo.createByIDs(
@@ -268,18 +407,79 @@ final class LinkedInImportCoordinator {
                     importedCount += 1
                 }
 
-                // Save any linkedInProfileURL back-fills written during the loop
                 try peopleRepo.save()
                 lastMessageImportAt = Date()
             }
 
-            // 3. Queue unmatched connections and message senders for user triage
+            // 3. Persist IntentionalTouch records for ALL contacts (both add and later)
+            progressMessage = "Recording touch history…"
+            await Task.yield()
+            let touchCandidates = buildTouchCandidates()
+            if !touchCandidates.isEmpty {
+                let inserted = try touchRepo.bulkInsert(touchCandidates)
+                logger.info("Persisted \(inserted) IntentionalTouch records")
+            }
+
+            // 4. Generate enrichment candidates for matched connections
+            progressMessage = "Scanning for contact updates…"
+            await Task.yield()
+            let enrichmentCount = await generateEnrichmentCandidates(
+                connections: connectionsToImport,
+                endorsementsReceived: pendingEndorsementsReceived,
+                endorsementsGiven: pendingEndorsementsGiven,
+                recommendationsGiven: pendingRecommendationsGiven
+            )
+            enrichmentCandidateCount = enrichmentCount
+
+            // 5a. Create contacts for "Add" candidates
+            // Also treat "skip" as "add" — user rejected the probable match, so we create a new contact.
+            let addCandidates = importCandidates.filter {
+                let classification = classifications[$0.id] ?? $0.defaultClassification
+                return classification == .add || classification == .skip
+            }
+            if !addCandidates.isEmpty {
+                progressMessage = "Creating \(addCandidates.count) contact\(addCandidates.count == 1 ? "" : "s")…"
+                await Task.yield()
+                await createContactsForAddCandidates(addCandidates)
+            }
+
+            // 5a'. Merge confirmed probable matches into existing SamPerson records
+            let mergeCandidates = importCandidates.filter {
+                (classifications[$0.id] ?? $0.defaultClassification) == .merge
+            }
+            if !mergeCandidates.isEmpty {
+                progressMessage = "Merging \(mergeCandidates.count) matched contact\(mergeCandidates.count == 1 ? "" : "s")…"
+                await Task.yield()
+                await mergeConfirmedCandidates(mergeCandidates)
+            }
+
+            // 5b. Route "Later" candidates to the triage queue
             progressMessage = "Finalizing…"
             await Task.yield()
-            recordUnmatchedForTriage(
-                connections: unmatchedConnections,
+            routeUnmatchedContacts(
+                candidates: importCandidates,
+                classifications: classifications,
+                unmatchedConnections: unmatchedConnections,
                 messageSenders: unmatchedMessageSenders
             )
+
+            // 6. Create a LinkedInImport audit record
+            let addCount = importCandidates.filter {
+                let c = classifications[$0.id] ?? $0.defaultClassification
+                return c == .add || c == .skip
+            }.count
+            let mergeCount = mergeCandidates.count
+            let importRecord = LinkedInImport(
+                importDate: Date(),
+                archiveFileName: "",
+                connectionCount: pendingConnections.count,
+                matchedContactCount: matched + exactMatchCount + mergeCount,
+                newContactsFound: addCount,
+                touchEventsFound: touchCandidates.count,
+                messagesImported: importedCount,
+                status: .complete
+            )
+            try touchRepo.insertLinkedInImport(importRecord)
 
             matchedConnectionCount   = matched
             unmatchedConnectionCount = unmatchedConnections.count
@@ -288,11 +488,31 @@ final class LinkedInImportCoordinator {
             importStatus             = .success
             progressMessage          = nil
 
-            // Clear pending state
-            pendingMessages    = []
-            pendingConnections = []
+            // 7. Save user profile if parsed
+            if let profile = pendingUserProfile {
+                await BusinessProfileService.shared.saveLinkedInProfile(profile)
+                logger.info("LinkedIn user profile saved: \(profile.firstName) \(profile.lastName), \(profile.positions.count) positions")
+            }
 
+            // 8. Build and cache profile analysis snapshot (before clearing pending state)
+            let snapshot = buildAnalysisSnapshot()
+            await BusinessProfileService.shared.saveAnalysisSnapshot(snapshot)
+            logger.info("Profile analysis snapshot cached: \(snapshot.endorsementsReceivedCount) endorsements, \(snapshot.shareCount) shares, \(snapshot.connectionCount) connections")
+
+            clearPendingState()
             logger.info("LinkedIn import complete: \(importedCount) messages, \(matched) connections matched")
+
+            // 9. Run profile analysis in background (non-blocking)
+            Task(priority: .utility) { [weak self] in
+                await self?.runProfileAnalysis()
+            }
+
+            // 10. §13 Apple Contacts sync — if auto-sync is enabled, write immediately.
+            // If not, prepareSyncCandidates will be triggered by the sheet after it
+            // observes importStatus == .success.
+            if autoSyncLinkedInURLs {
+                await prepareSyncCandidates(classifications: classifications)
+            }
 
         } catch {
             logger.error("LinkedIn import failed: \(error.localizedDescription)")
@@ -311,7 +531,6 @@ final class LinkedInImportCoordinator {
     /// Re-read messages.csv from the last-imported folder and import any messages
     /// whose sender profile URL matches the given URL.
     /// Called after a user promotes an unknown LinkedIn contact from the triage screen.
-    /// No-op if no folder bookmark exists.
     func reprocessForSender(profileURL: String) async {
         let bookmarkManager = BookmarkManager.shared
         guard let folderURL = bookmarkManager.resolveLinkedInFolderURL() else {
@@ -334,7 +553,6 @@ final class LinkedInImportCoordinator {
             return
         }
 
-        // Parse ALL messages (no watermark filter — we want full history for this sender)
         let allMessages = await linkedInService.parseMessages(at: messagesURL, since: nil)
         let matching = allMessages.filter { $0.senderProfileURL.lowercased() == normalizedTarget }
 
@@ -343,7 +561,6 @@ final class LinkedInImportCoordinator {
             return
         }
 
-        // Find the newly-created SamPerson so we can link evidence to them
         let allPeople: [SamPerson]
         do {
             allPeople = try peopleRepo.fetchAll()
@@ -357,7 +574,6 @@ final class LinkedInImportCoordinator {
         var imported = 0
         var skipped = 0
         for msg in matching {
-            // Skip if already imported
             if (try? evidenceRepo.fetch(sourceUID: msg.sourceUID)) != nil {
                 skipped += 1
                 continue
@@ -386,23 +602,723 @@ final class LinkedInImportCoordinator {
             }
         }
 
+        // Back-fill IntentionalTouch attribution if we now have a SamPerson
+        if let personID = person?.id {
+            try? touchRepo.attributeTouches(forProfileURL: normalizedTarget, to: personID)
+        }
+
         logger.info("reprocessForSender: \(imported) message(s) imported, \(skipped) already present for \(normalizedTarget, privacy: .public)")
     }
 
     /// Cancel a pending import (when user dismisses before confirming).
     func cancelImport() {
-        pendingMessages    = []
-        pendingConnections = []
-        importStatus       = .idle
-        parsedMessageCount = 0
-        newMessageCount    = 0
+        clearPendingState()
+        importStatus          = .idle
+        parsedMessageCount    = 0
+        newMessageCount       = 0
         duplicateMessageCount = 0
+        userProfileParsed     = false
+    }
+
+    // MARK: - §13 Apple Contacts LinkedIn URL Sync
+
+    /// Called by `LinkedInImportReviewSheet` after `confirmImport` completes
+    /// (or from `confirmImport` directly when `autoSyncLinkedInURLs` is true).
+    ///
+    /// Scans every "Add" candidate (including merged) and, for those whose Apple
+    /// Contact does NOT yet have the LinkedIn URL, assembles `AppleContactsSyncCandidate`
+    /// records. When `autoSync` is true the write-back is performed immediately and
+    /// silently; when false the result is stored in `appleContactsSyncCandidates` so
+    /// the UI can show a single confirmation dialog.
+    func prepareSyncCandidates(classifications: [UUID: LinkedInClassification]) async {
+        // Candidates the user wants to "add" (or merge)
+        let addCandidates = importCandidates.filter {
+            let c = classifications[$0.id] ?? $0.defaultClassification
+            return c == .add || c == .skip || c == .merge
+        }
+
+        guard !addCandidates.isEmpty else { return }
+
+        // For each add candidate with a profile URL, check whether its Apple
+        // Contact already has the LinkedIn social profile URL.
+        var syncCandidates: [AppleContactsSyncCandidate] = []
+
+        for candidate in addCandidates {
+            let profileURL = candidate.profileURL
+            guard !profileURL.isEmpty else { continue }
+
+            // Search Apple Contacts for this person
+            let displayName = candidate.fullName.isEmpty ? "LinkedIn Contact" : candidate.fullName
+            let results = await contactsService.searchContacts(query: displayName, keys: .detail)
+
+            // Find the best match: by LinkedIn URL first, then email, then name
+            let match = results.first { contact in
+                let urlMatch = contact.socialProfiles.contains {
+                    ($0.urlString ?? "").lowercased().contains(profileURL.lowercased())
+                }
+                let emailMatch = candidate.email.map { email in
+                    contact.emailAddresses.contains { $0.lowercased() == email.lowercased() }
+                } ?? false
+                let nameMatch = contact.displayName.lowercased() == displayName.lowercased()
+                return urlMatch || emailMatch || nameMatch
+            }
+
+            guard let contactDTO = match else { continue }
+
+            // Check if the LinkedIn URL is already present
+            let alreadyHasURL = contactDTO.socialProfiles.contains {
+                ($0.urlString ?? "").lowercased().contains(profileURL.lowercased())
+            }
+
+            guard !alreadyHasURL else { continue }
+
+            syncCandidates.append(AppleContactsSyncCandidate(
+                displayName: displayName,
+                appleContactIdentifier: contactDTO.id,
+                linkedInProfileURL: profileURL
+            ))
+        }
+
+        guard !syncCandidates.isEmpty else { return }
+
+        if autoSyncLinkedInURLs {
+            // Silent batch write — user has already opted in
+            await performAppleContactsSync(candidates: syncCandidates)
+        } else {
+            // Store for UI confirmation
+            appleContactsSyncCandidates = syncCandidates
+        }
+    }
+
+    /// Performs the batch LinkedIn URL write to Apple Contacts for the given candidates.
+    /// Should be called either from the UI confirmation handler or directly when
+    /// `autoSyncLinkedInURLs` is true.
+    func performAppleContactsSync(candidates: [AppleContactsSyncCandidate]) async {
+        for candidate in candidates {
+            _ = await contactsService.updateContact(
+                identifier: candidate.appleContactIdentifier,
+                updates: [.linkedInURL: candidate.linkedInProfileURL],
+                samNoteBlock: nil
+            )
+        }
+        appleContactsSyncCandidates = []
+        logger.info("§13 Apple Contacts sync: wrote LinkedIn URLs to \(candidates.count) contact(s)")
+    }
+
+    /// Clears the pending sync candidates without writing (user chose "Not Now").
+    func dismissAppleContactsSync() {
+        appleContactsSyncCandidates = []
+    }
+
+    // MARK: - Private: Touch Score Computation
+
+    /// Compute IntentionalTouchScore for every profile URL found across all parsed CSVs.
+    private func computeTouchScores() -> [String: IntentionalTouchScore] {
+        // Messages → (profileURL, direction, date, snippet)
+        var messageTouches: [(profileURL: String, direction: TouchDirection, date: Date, snippet: String?)] = []
+        for msg in pendingMessages {
+            let url = msg.senderProfileURL.lowercased()
+            guard !url.isEmpty else { continue }
+            messageTouches.append((url, .inbound, msg.occurredAt, String(msg.plainTextContent.prefix(200))))
+        }
+
+        // Invitations → (profileURL, isPersonalized, date)
+        var invitationTouches: [(profileURL: String, isPersonalized: Bool, date: Date)] = []
+        for inv in pendingInvitations {
+            let url = inv.contactProfileURL.lowercased()
+            guard !url.isEmpty else { continue }
+            let isPersonalized = !(inv.message?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+            let date = inv.sentAt ?? Date()
+            invitationTouches.append((url, isPersonalized, date))
+        }
+
+        // Endorsements received → (profileURL, date, skillName)
+        let endorsementsRcvd: [(profileURL: String, date: Date?, skillName: String?)] =
+            pendingEndorsementsReceived.compactMap { e in
+                let url = e.profileURL.lowercased()
+                guard !url.isEmpty else { return nil }
+                return (url, e.endorsementDate, e.skillName)
+            }
+
+        // Endorsements given → (profileURL, date, skillName)
+        let endorsementsGiven: [(profileURL: String, date: Date?, skillName: String?)] =
+            pendingEndorsementsGiven.compactMap { e in
+                let url = e.profileURL.lowercased()
+                guard !url.isEmpty else { return nil }
+                return (url, e.endorsementDate, e.skillName)
+            }
+
+        // Recommendations received → (profileURL, date)
+        let recommendationsRcvd: [(profileURL: String, date: Date?)] =
+            pendingRecommendationsReceived.compactMap { r in
+                guard let url = r.recommenderProfileURL?.lowercased(), !url.isEmpty else { return nil }
+                return (url, r.sentAt)
+            }
+
+        // Recommendations given — we don't have a profile URL; skip for scoring
+        // (they contribute to evidence but not profile-keyed touch scoring)
+        let recommendationsGiven: [(profileURL: String, date: Date?)] = []
+
+        // Reactions → (profileURL?, date) — LinkedIn reactions don't include the target's profileURL
+        let reactions: [(profileURL: String?, date: Date)] = pendingReactionsGiven.map { (nil, $0.date) }
+
+        // Comments → (profileURL?, date) — same limitation
+        let comments: [(profileURL: String?, date: Date)] = pendingCommentsGiven.map { (nil, $0.date) }
+
+        return TouchScoringEngine.computeScores(
+            messages: messageTouches,
+            invitations: invitationTouches,
+            endorsementsReceived: endorsementsRcvd,
+            endorsementsGiven: endorsementsGiven,
+            recommendationsReceived: recommendationsRcvd,
+            recommendationsGiven: recommendationsGiven,
+            reactions: reactions,
+            comments: comments
+        )
+    }
+
+    /// Build a flat list of IntentionalTouchCandidate structs from all parsed touch events.
+    private func buildTouchCandidates() -> [IntentionalTouchCandidate] {
+        var candidates: [IntentionalTouchCandidate] = []
+
+        // Messages
+        for msg in pendingMessages {
+            let url = msg.senderProfileURL.lowercased()
+            guard !url.isEmpty else { continue }
+            candidates.append(IntentionalTouchCandidate(
+                platform: .linkedIn,
+                touchType: .message,
+                direction: .inbound,
+                contactProfileUrl: url,
+                date: msg.occurredAt,
+                snippet: String(msg.plainTextContent.prefix(200)),
+                source: .bulkImport
+            ))
+        }
+
+        // Invitations
+        for inv in pendingInvitations {
+            let url = inv.contactProfileURL.lowercased()
+            guard !url.isEmpty else { continue }
+            let isPersonalized = !(inv.message?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+            let touchType: TouchType = isPersonalized ? .invitationPersonalized : .invitationGeneric
+            let date = inv.sentAt ?? Date()
+            candidates.append(IntentionalTouchCandidate(
+                platform: .linkedIn,
+                touchType: touchType,
+                direction: .outbound,
+                contactProfileUrl: url,
+                date: date,
+                snippet: inv.message.flatMap { $0.isEmpty ? nil : String($0.prefix(200)) },
+                source: .bulkImport
+            ))
+        }
+
+        // Endorsements received
+        for e in pendingEndorsementsReceived {
+            let url = e.profileURL.lowercased()
+            guard !url.isEmpty else { continue }
+            candidates.append(IntentionalTouchCandidate(
+                platform: .linkedIn,
+                touchType: .endorsementReceived,
+                direction: .inbound,
+                contactProfileUrl: url,
+                date: e.endorsementDate ?? Date(),
+                snippet: e.skillName.map { "Endorsed for: \($0)" },
+                source: .bulkImport
+            ))
+        }
+
+        // Endorsements given
+        for e in pendingEndorsementsGiven {
+            let url = e.profileURL.lowercased()
+            guard !url.isEmpty else { continue }
+            candidates.append(IntentionalTouchCandidate(
+                platform: .linkedIn,
+                touchType: .endorsementGiven,
+                direction: .outbound,
+                contactProfileUrl: url,
+                date: e.endorsementDate ?? Date(),
+                snippet: e.skillName.map { "Endorsed: \($0)" },
+                source: .bulkImport
+            ))
+        }
+
+        // Recommendations received
+        for r in pendingRecommendationsReceived {
+            guard let url = r.recommenderProfileURL?.lowercased(), !url.isEmpty else { continue }
+            candidates.append(IntentionalTouchCandidate(
+                platform: .linkedIn,
+                touchType: .recommendationReceived,
+                direction: .inbound,
+                contactProfileUrl: url,
+                date: r.sentAt ?? Date(),
+                snippet: r.recommendationText.flatMap { $0.isEmpty ? nil : String($0.prefix(200)) },
+                source: .bulkImport
+            ))
+        }
+
+        return candidates
+    }
+
+    // MARK: - Private: Import Candidate Building
+
+    /// Build LinkedInImportCandidate list using a 4-priority matching cascade.
+    ///
+    /// Priority 1: SAM has a SamPerson with matching LinkedIn URL → exactMatchURL (silently enriched)
+    /// Priority 2: Apple Contacts has a contact with matching LinkedIn social profile URL → exactMatchAppleContact (enriched)
+    /// Priority 3: Email address match against SamPerson records → probableMatchEmail (shown to user)
+    /// Priority 4: Accent-normalized name + fuzzy company match → probableMatchNameCompany (shown to user)
+    /// No match → shown in review sheet as Add/Later based on touch score
+    private func buildImportCandidates() async -> [LinkedInImportCandidate] {
+        var candidates: [LinkedInImportCandidate] = []
+        var localExactCount = 0
+        var localProbableCount = 0
+        var localNoMatchCount = 0
+
+        // Fetch all SamPerson records
+        let allPeople: [SamPerson]
+        do { allPeople = try peopleRepo.fetchAll() } catch { return [] }
+
+        // --- Priority 1: LinkedIn URL → SamPerson ---
+        let byLinkedInURL: [String: SamPerson] = allPeople.reduce(into: [:]) { dict, p in
+            if let url = p.linkedInProfileURL, !url.isEmpty {
+                dict[normalizeLinkedInURL(url)] = p
+            }
+        }
+
+        // --- Priority 2: Apple Contacts LinkedIn URL index ---
+        // Single batch fetch from the SAM contact group so we can check social profiles / URL addresses.
+        let groupID = UserDefaults.standard.string(forKey: "selectedContactGroupIdentifier") ?? ""
+        var appleContactLinkedInIndex: [String: String] = [:]  // normalizedURL → contactIdentifier
+        var companyCache: [String: String] = [:]               // contactIdentifier → organizationName
+
+        if !groupID.isEmpty {
+            let groupContacts = await contactsService.fetchContacts(inGroupWithIdentifier: groupID, keys: .detail)
+            for contact in groupContacts {
+                // Cache company name for Priority 4 comparison
+                if !contact.organizationName.isEmpty {
+                    companyCache[contact.id] = contact.organizationName
+                }
+                // Index LinkedIn URLs from social profiles
+                for profile in contact.socialProfiles {
+                    let isLinkedIn = profile.service.lowercased().contains("linkedin") ||
+                        (profile.urlString ?? "").lowercased().contains("linkedin.com/in/")
+                    if isLinkedIn, let urlStr = profile.urlString, !urlStr.isEmpty {
+                        appleContactLinkedInIndex[normalizeLinkedInURL(urlStr)] = contact.id
+                    }
+                }
+                // Also check URL addresses for linkedin.com/in/ patterns
+                for urlStr in contact.urlAddresses {
+                    if urlStr.lowercased().contains("linkedin.com/in/") {
+                        appleContactLinkedInIndex[normalizeLinkedInURL(urlStr)] = contact.id
+                    }
+                }
+            }
+        }
+
+        // --- Priority 3: Email → SamPerson ---
+        let byEmail: [String: SamPerson] = allPeople.reduce(into: [:]) { dict, p in
+            if let email = p.emailCache?.lowercased(), !email.isEmpty { dict[email] = p }
+            for alias in p.emailAliases { dict[alias.lowercased()] = p }
+        }
+
+        // --- Priority 4: Accent-normalized name → [SamPerson] ---
+        // Array because names can collide; company comparison is used as tie-breaker.
+        var byNormalizedName: [String: [SamPerson]] = [:]
+        for p in allPeople {
+            let name = normalizeForComparison(p.displayNameCache ?? p.displayName)
+            if !name.isEmpty {
+                byNormalizedName[name, default: []].append(p)
+            }
+        }
+
+        // Helper: get company for a SamPerson (from companyCache via contactIdentifier)
+        func companyForPerson(_ person: SamPerson) -> String? {
+            guard let cid = person.contactIdentifier else { return nil }
+            return companyCache[cid]
+        }
+
+        // Helper: build a MatchedPersonInfo snapshot from a SamPerson
+        func matchedInfo(from person: SamPerson, matchedByEmail: String? = nil) -> MatchedPersonInfo {
+            MatchedPersonInfo(
+                personID: person.id,
+                displayName: person.displayNameCache ?? person.displayName,
+                email: matchedByEmail ?? person.emailCache,
+                company: companyForPerson(person),
+                position: nil,
+                linkedInURL: person.linkedInProfileURL
+            )
+        }
+
+        // --- Cascade loop ---
+        for conn in pendingConnections {
+            let normalizedURL = normalizeLinkedInURL(conn.profileURL)
+            let fullName = "\(conn.firstName) \(conn.lastName)".trimmingCharacters(in: .whitespaces)
+            let normalizedName = normalizeForComparison(fullName)
+
+            // Priority 1: SAM LinkedIn URL match
+            if !normalizedURL.isEmpty, byLinkedInURL[normalizedURL] != nil {
+                // Enrich existing SamPerson with any new LinkedIn data silently
+                if let connectedOn = conn.connectedOn {
+                    _ = try? peopleRepo.updateLinkedInData(
+                        profileURL: conn.profileURL,
+                        connectedOn: connectedOn,
+                        email: conn.email,
+                        fullName: fullName
+                    )
+                }
+                localExactCount += 1
+                continue
+            }
+
+            // Priority 2: Apple Contacts LinkedIn URL match
+            if !normalizedURL.isEmpty, let contactID = appleContactLinkedInIndex[normalizedURL] {
+                // Enrich via upsert — contact already exists in Apple Contacts
+                if let existing = allPeople.first(where: { $0.contactIdentifier == contactID }) {
+                    if let connectedOn = conn.connectedOn {
+                        _ = try? peopleRepo.updateLinkedInData(
+                            profileURL: conn.profileURL,
+                            connectedOn: connectedOn,
+                            email: conn.email,
+                            fullName: fullName
+                        )
+                    }
+                    if existing.linkedInProfileURL == nil {
+                        try? peopleRepo.setLinkedInProfileURL(contactIdentifier: contactID, profileURL: conn.profileURL)
+                    }
+                }
+                localExactCount += 1
+                continue
+            }
+
+            // Priority 3: Email match
+            if let email = conn.email?.lowercased(), !email.isEmpty, let person = byEmail[email] {
+                let info = matchedInfo(from: person, matchedByEmail: conn.email)
+                candidates.append(LinkedInImportCandidate(
+                    firstName: conn.firstName,
+                    lastName: conn.lastName,
+                    profileURL: conn.profileURL,
+                    email: conn.email,
+                    company: conn.company,
+                    position: conn.position,
+                    connectedOn: conn.connectedOn,
+                    touchScore: touchScores[normalizedURL],
+                    matchStatus: .probableMatchEmail,
+                    defaultClassification: .merge,
+                    matchedPersonInfo: info
+                ))
+                localProbableCount += 1
+                continue
+            }
+
+            // Priority 4: Accent-normalized name + fuzzy company
+            if !normalizedName.isEmpty, let nameCandidates = byNormalizedName[normalizedName] {
+                // If exactly one person with that name, or if company also matches → probable match
+                let companyMatch = nameCandidates.first { person in
+                    guard let personCompany = companyForPerson(person), !personCompany.isEmpty,
+                          let connCompany = conn.company, !connCompany.isEmpty else { return false }
+                    return fuzzyCompanyMatch(personCompany, connCompany)
+                }
+                let matchedPerson = companyMatch ?? (nameCandidates.count == 1 ? nameCandidates[0] : nil)
+
+                if let person = matchedPerson {
+                    let info = matchedInfo(from: person)
+                    candidates.append(LinkedInImportCandidate(
+                        firstName: conn.firstName,
+                        lastName: conn.lastName,
+                        profileURL: conn.profileURL,
+                        email: conn.email,
+                        company: conn.company,
+                        position: conn.position,
+                        connectedOn: conn.connectedOn,
+                        touchScore: touchScores[normalizedURL],
+                        matchStatus: .probableMatchNameCompany,
+                        defaultClassification: .merge,
+                        matchedPersonInfo: info
+                    ))
+                    localProbableCount += 1
+                    continue
+                }
+            }
+
+            // No match — show in Add/Later review
+            let score = touchScores[normalizedURL]
+            let defaultClassification: LinkedInClassification = (score?.totalScore ?? 0) > 0 ? .add : .later
+            candidates.append(LinkedInImportCandidate(
+                firstName: conn.firstName,
+                lastName: conn.lastName,
+                profileURL: conn.profileURL,
+                email: conn.email,
+                company: conn.company,
+                position: conn.position,
+                connectedOn: conn.connectedOn,
+                touchScore: score,
+                matchStatus: .noMatch,
+                defaultClassification: defaultClassification,
+                matchedPersonInfo: nil
+            ))
+            localNoMatchCount += 1
+        }
+
+        exactMatchCount = localExactCount
+        probableMatchCount = localProbableCount
+        noMatchCount = localNoMatchCount
+
+        // Sort: probable matches first (user must decide), then "add" by score desc, then "later" by date desc
+        return candidates.sorted { lhs, rhs in
+            let lIsProbable = lhs.matchStatus.isProbable
+            let rIsProbable = rhs.matchStatus.isProbable
+            if lIsProbable != rIsProbable { return lIsProbable }
+            if lhs.defaultClassification != rhs.defaultClassification {
+                return lhs.defaultClassification == .add || lhs.defaultClassification == .merge
+            }
+            let lScore = lhs.touchScore?.totalScore ?? 0
+            let rScore = rhs.touchScore?.totalScore ?? 0
+            if lScore != rScore { return lScore > rScore }
+            let lDate = lhs.connectedOn ?? .distantPast
+            let rDate = rhs.connectedOn ?? .distantPast
+            return lDate > rDate
+        }
+    }
+
+    // MARK: - Private: Matching Helpers
+
+    /// Normalize a string for accent-insensitive, case-insensitive comparison.
+    private func normalizeForComparison(_ string: String) -> String {
+        string.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+              .trimmingCharacters(in: .whitespaces)
+    }
+
+    /// Normalize a LinkedIn profile URL for comparison:
+    /// lowercase, strip query params, strip trailing slash, normalize http→https.
+    private func normalizeLinkedInURL(_ urlString: String) -> String {
+        var s = urlString.lowercased().trimmingCharacters(in: .whitespaces)
+        s = s.replacingOccurrences(of: "http://", with: "https://")
+        // Strip query string
+        if let qIdx = s.range(of: "?") { s = String(s[..<qIdx.lowerBound]) }
+        // Strip trailing slash
+        if s.hasSuffix("/") { s = String(s.dropLast()) }
+        return s
+    }
+
+    /// Normalize a company name for fuzzy comparison:
+    /// strip common legal suffixes, accent-fold, lowercase.
+    private func normalizeCompanyName(_ name: String) -> String {
+        var s = normalizeForComparison(name)
+        // Strip trailing punctuation and common legal suffixes
+        let suffixes = [", inc", ", llc", ", ltd", ", corp", ", co", ", gmbh",
+                        " inc.", " llc.", " ltd.", " corp.", " co.", " gmbh",
+                        " inc", " llc", " ltd", " corp", " co", " gmbh",
+                        " incorporated", " limited", " corporation", " company"]
+        for suffix in suffixes {
+            if s.hasSuffix(suffix) {
+                s = String(s.dropLast(suffix.count)).trimmingCharacters(in: .whitespaces)
+            }
+        }
+        return s
+    }
+
+    /// Returns true if two company name strings are close enough to be considered the same company.
+    private func fuzzyCompanyMatch(_ a: String, _ b: String) -> Bool {
+        let na = normalizeCompanyName(a)
+        let nb = normalizeCompanyName(b)
+        return !na.isEmpty && na == nb
+    }
+
+    // MARK: - Private: Create Contacts for "Add" Candidates
+
+    /// Create Apple Contacts and SamPerson records for candidates the user chose to Add.
+    /// Checks for existing contacts before creating to avoid duplicates.
+    private func createContactsForAddCandidates(_ candidates: [LinkedInImportCandidate]) async {
+        for candidate in candidates {
+            let displayName = candidate.fullName.isEmpty ? "LinkedIn Contact" : candidate.fullName
+            let profileURL = candidate.profileURL.isEmpty ? nil : candidate.profileURL
+
+            // Check for existing Apple Contact with same name or LinkedIn URL
+            let searchResults = await contactsService.searchContacts(query: displayName, keys: .detail)
+            let existingContact: ContactDTO? = searchResults.first { match in
+                let nameMatch = match.displayName.lowercased() == displayName.lowercased()
+                let urlMatch = profileURL.map { url in
+                    match.socialProfiles.contains {
+                        ($0.urlString ?? "").lowercased().contains(url.lowercased())
+                    }
+                } ?? false
+                let emailMatch = candidate.email.map { email in
+                    match.emailAddresses.contains { $0.lowercased() == email.lowercased() }
+                } ?? false
+                return nameMatch || urlMatch || emailMatch
+            }
+
+            let contactDTO: ContactDTO
+            if let existing = existingContact {
+                logger.info("Add candidate '\(displayName, privacy: .public)': linking to existing contact")
+                contactDTO = existing
+            } else {
+                guard let created = await contactsService.createContact(
+                    fullName: displayName,
+                    email: candidate.email,
+                    note: nil,
+                    linkedInProfileURL: profileURL
+                ) else {
+                    logger.error("Failed to create contact for '\(displayName, privacy: .public)'")
+                    continue
+                }
+                contactDTO = created
+                logger.info("Add candidate '\(displayName, privacy: .public)': created new Apple Contact")
+            }
+
+            do {
+                try peopleRepo.upsert(contact: contactDTO)
+
+                // Stamp the LinkedIn profile URL and connection date onto the new SamPerson
+                if let url = profileURL, !url.isEmpty {
+                    try peopleRepo.setLinkedInProfileURL(contactIdentifier: contactDTO.id, profileURL: url)
+                }
+                if let connectedOn = candidate.connectedOn, let url = profileURL {
+                    // Update connectedOn via the same LinkedIn data path
+                    _ = try peopleRepo.updateLinkedInData(
+                        profileURL: url,
+                        connectedOn: connectedOn,
+                        email: candidate.email,
+                        fullName: candidate.fullName
+                    )
+                }
+
+                // Attribute any existing IntentionalTouch records to this new SamPerson
+                if let url = profileURL, !url.isEmpty {
+                    // Fetch the freshly-created SamPerson's ID
+                    let allPeople = try peopleRepo.fetchAll()
+                    if let person = allPeople.first(where: {
+                        ($0.contactIdentifier ?? "") == contactDTO.id
+                    }) {
+                        try? touchRepo.attributeTouches(forProfileURL: url, to: person.id)
+                    }
+                }
+
+            } catch {
+                logger.error("Failed to upsert SamPerson for '\(displayName, privacy: .public)': \(error)")
+            }
+        }
+
+        // Refresh participant resolution so any new LinkedIn messages link to new people
+        try? EvidenceRepository.shared.refreshParticipantResolution()
+        // Also trigger reprocessing for each added sender's LinkedIn messages
+        for candidate in candidates {
+            if let url = candidate.profileURL.isEmpty ? nil : candidate.profileURL {
+                await reprocessForSender(profileURL: url)
+            }
+        }
+    }
+
+    // MARK: - Private: Merge Confirmed Probable Matches
+
+    /// Merge probable-match candidates into their existing SamPerson records.
+    /// Called for candidates where the user confirmed the match (classification == .merge).
+    private func mergeConfirmedCandidates(_ candidates: [LinkedInImportCandidate]) async {
+        for candidate in candidates {
+            guard let info = candidate.matchedPersonInfo else { continue }
+            let profileURL = candidate.profileURL.isEmpty ? nil : candidate.profileURL
+
+            do {
+                // Stamp LinkedIn URL and connectedOn onto existing SamPerson
+                if let url = profileURL, !url.isEmpty {
+                    _ = try peopleRepo.updateLinkedInData(
+                        profileURL: url,
+                        connectedOn: candidate.connectedOn,
+                        email: candidate.email,
+                        fullName: candidate.fullName
+                    )
+
+                    // Attribute any IntentionalTouch records to the existing SamPerson
+                    try? touchRepo.attributeTouches(forProfileURL: url, to: info.personID)
+
+                    // Reprocess LinkedIn messages so they link to this person
+                    await reprocessForSender(profileURL: url)
+                }
+                logger.info("Merged LinkedIn candidate '\(candidate.fullName, privacy: .public)' into existing person '\(info.displayName, privacy: .public)'")
+            } catch {
+                logger.error("Failed to merge candidate '\(candidate.fullName, privacy: .public)': \(error)")
+            }
+        }
+    }
+
+    // MARK: - Private: Route Unmatched Contacts
+
+    /// Route unmatched contacts to triage based on user classifications.
+    /// "Later" contacts go to UnknownSender with LinkedIn metadata.
+    private func routeUnmatchedContacts(
+        candidates: [LinkedInImportCandidate],
+        classifications: [UUID: LinkedInClassification],
+        unmatchedConnections: [LinkedInConnectionDTO],
+        messageSenders: [(profileURL: String, name: String, date: Date)]
+    ) {
+        // Collect all candidate profile URLs for de-dup below
+        let candidateURLs = Set(candidates.map { $0.profileURL.lowercased() })
+
+        // Process review sheet candidates
+        for candidate in candidates {
+            let classification = classifications[candidate.id] ?? candidate.defaultClassification
+            guard classification == .later else { continue }
+
+            let uniqueKey = candidate.profileURL.isEmpty
+                ? "linkedin-unknown-\(candidate.fullName.lowercased().replacingOccurrences(of: " ", with: "-"))"
+                : "linkedin:\(candidate.profileURL.lowercased())"
+
+            do {
+                try unknownSenderRepo.upsertLinkedInLater(
+                    uniqueKey: uniqueKey,
+                    displayName: candidate.fullName.isEmpty ? nil : candidate.fullName,
+                    touchScore: candidate.touchScore?.totalScore ?? 0,
+                    company: candidate.company,
+                    position: candidate.position,
+                    connectedOn: candidate.connectedOn
+                )
+            } catch {
+                logger.error("Failed to upsert Later contact \(candidate.fullName): \(error)")
+            }
+        }
+
+        // Also record any unmatched message senders not already in the candidate list
+        // (these have no connection record — just messages from unknown senders)
+        var sendersByURL: [String: (profileURL: String, name: String, date: Date)] = [:]
+        for s in messageSenders {
+            let key = s.profileURL.lowercased()
+            if let existing = sendersByURL[key] {
+                if s.date > existing.date { sendersByURL[key] = s }
+            } else {
+                sendersByURL[key] = s
+            }
+        }
+
+        var legacySenders: [(email: String, displayName: String?, subject: String, date: Date, source: EvidenceSource, isLikelyMarketing: Bool)] = []
+        for s in sendersByURL.values {
+            let urlKey = s.profileURL.lowercased()
+            guard !candidateURLs.contains(urlKey) else { continue }
+            let uniqueKey = s.profileURL.isEmpty
+                ? "linkedin-unknown-\(s.name.lowercased().replacingOccurrences(of: " ", with: "-"))"
+                : "linkedin:\(s.profileURL.lowercased())"
+            legacySenders.append((
+                email: uniqueKey,
+                displayName: s.name,
+                subject: s.profileURL.isEmpty ? "LinkedIn message" : s.profileURL,
+                date: s.date,
+                source: .linkedIn,
+                isLikelyMarketing: false
+            ))
+        }
+
+        if !legacySenders.isEmpty {
+            do {
+                try unknownSenderRepo.bulkRecordUnknownSenders(legacySenders)
+            } catch {
+                logger.error("Failed to record unmatched message senders: \(error)")
+            }
+        }
     }
 
     // MARK: - Private: Connection Enrichment
 
-    /// Write LinkedIn profile URLs and connection dates onto matching SamPerson records.
-    /// Returns a tuple: (matchedCount, unmatchedConnections).
     private func enrichPeopleFromConnections(
         _ connections: [LinkedInConnectionDTO]
     ) throws -> (matched: Int, unmatched: [LinkedInConnectionDTO]) {
@@ -424,84 +1340,171 @@ final class LinkedInImportCoordinator {
         return (enrichedCount, unmatched)
     }
 
-    // MARK: - Private: Triage Queue
+    // MARK: - Private: Enrichment Candidate Generation
 
-    /// Record unmatched LinkedIn connections and message senders in the UnknownSender triage system.
-    /// Uses "linkedin:<profileURL>" as the unique key so they surface in the Awareness triage section.
-    /// Connections with an email address use the email as key (consistent with mail-sourced unknowns).
-    private func recordUnmatchedForTriage(
+    private func generateEnrichmentCandidates(
         connections: [LinkedInConnectionDTO],
-        messageSenders: [(profileURL: String, name: String, date: Date)]
-    ) {
-        // Build deduped input — prefer email key when available, otherwise linkedin: URL prefix
-        var senders: [(email: String, displayName: String?, subject: String, date: Date, source: EvidenceSource, isLikelyMarketing: Bool)] = []
+        endorsementsReceived: [LinkedInEndorsementReceivedDTO],
+        endorsementsGiven: [LinkedInEndorsementGivenDTO],
+        recommendationsGiven: [LinkedInRecommendationGivenDTO]
+    ) async -> Int {
+        var candidates: [EnrichmentCandidate] = []
 
-        // Deduplicate message senders by profileURL first, keeping the most recent message date
-        var sendersByURL: [String: (profileURL: String, name: String, date: Date)] = [:]
-        for s in messageSenders {
-            let key = s.profileURL.lowercased()
-            if let existing = sendersByURL[key] {
-                if s.date > existing.date { sendersByURL[key] = s }
-            } else {
-                sendersByURL[key] = s
-            }
+        let allPeople: [SamPerson]
+        do { allPeople = try peopleRepo.fetchAll() } catch { return 0 }
+
+        let byLinkedInURL: [String: SamPerson] = allPeople.reduce(into: [:]) { dict, p in
+            if let url = p.linkedInProfileURL { dict[url.lowercased()] = p }
+        }
+        let byFullName: [String: SamPerson] = allPeople.reduce(into: [:]) { dict, p in
+            let name = (p.displayNameCache ?? p.displayName).lowercased()
+            dict[name] = p
         }
 
-        for s in sendersByURL.values {
-            let uniqueKey = s.profileURL.isEmpty
-                ? "linkedin-unknown-\(s.name.lowercased().replacingOccurrences(of: " ", with: "-"))"
-                : "linkedin:\(s.profileURL.lowercased())"
-            senders.append((
-                email: uniqueKey,
-                displayName: s.name,
-                subject: s.profileURL.isEmpty ? "LinkedIn message" : s.profileURL,
-                date: s.date,
-                source: .linkedIn,
-                isLikelyMarketing: false
-            ))
+        func findPerson(profileURL: String?, name: String?) -> SamPerson? {
+            if let url = profileURL, !url.isEmpty,
+               let match = byLinkedInURL[url.lowercased()] { return match }
+            if let n = name, !n.isEmpty,
+               let match = byFullName[n.lowercased()] { return match }
+            return nil
         }
 
-        // Deduplicate connections by profileURL, then add if not already captured from messages
-        let messageURLs = Set(sendersByURL.keys)
+        // Connections: company + job title
         for conn in connections {
-            let urlKey = conn.profileURL.lowercased()
-            if messageURLs.contains(urlKey) { continue }  // already added via messages
+            guard let person = findPerson(
+                profileURL: conn.profileURL.isEmpty ? nil : conn.profileURL,
+                name: { let n = "\(conn.firstName) \(conn.lastName)".trimmingCharacters(in: .whitespaces); return n.isEmpty ? nil : n }()
+            ) else { continue }
+            guard let contactID = person.contactIdentifier else { continue }
+            let contact = await contactsService.fetchContact(identifier: contactID, keys: .detail)
 
-            let uniqueKey: String
-            if let email = conn.email, !email.isEmpty {
-                uniqueKey = email.lowercased()
-            } else {
-                uniqueKey = conn.profileURL.isEmpty
-                    ? "linkedin-unknown-\(conn.firstName.lowercased())-\(conn.lastName.lowercased())"
-                    : "linkedin:\(conn.profileURL.lowercased())"
+            if let company = conn.company, !company.isEmpty {
+                let current = contact?.organizationName ?? ""
+                if current.lowercased() != company.lowercased() {
+                    candidates.append(EnrichmentCandidate(
+                        personID: person.id, field: .company,
+                        proposedValue: company, currentValue: current.isEmpty ? nil : current,
+                        source: .linkedInConnections, sourceDetail: nil
+                    ))
+                }
             }
-
-            let displayName = "\(conn.firstName) \(conn.lastName)".trimmingCharacters(in: .whitespaces)
-            let subject = conn.profileURL.isEmpty ? "LinkedIn connection" : conn.profileURL
-            senders.append((
-                email: uniqueKey,
-                displayName: displayName.isEmpty ? nil : displayName,
-                subject: subject,
-                date: conn.connectedOn ?? Date(),
-                source: .linkedIn,
-                isLikelyMarketing: false
-            ))
+            if let position = conn.position, !position.isEmpty {
+                let current = contact?.jobTitle ?? ""
+                if current.lowercased() != position.lowercased() {
+                    candidates.append(EnrichmentCandidate(
+                        personID: person.id, field: .jobTitle,
+                        proposedValue: position, currentValue: current.isEmpty ? nil : current,
+                        source: .linkedInConnections, sourceDetail: nil
+                    ))
+                }
+            }
+            if !conn.profileURL.isEmpty {
+                let alreadyInContacts = contact?.socialProfiles.contains(where: {
+                    $0.service.lowercased() == "linkedin" ||
+                    ($0.urlString ?? "").lowercased().contains("linkedin.com/in/")
+                }) ?? false
+                if !alreadyInContacts {
+                    candidates.append(EnrichmentCandidate(
+                        personID: person.id, field: .linkedInURL,
+                        proposedValue: conn.profileURL, currentValue: nil,
+                        source: .linkedInConnections, sourceDetail: nil
+                    ))
+                }
+            }
         }
 
-        guard !senders.isEmpty else { return }
+        // Endorsements received: LinkedIn URL discovery
+        for endorsement in endorsementsReceived {
+            guard let person = findPerson(profileURL: endorsement.profileURL, name: endorsement.fullName)
+            else { continue }
+            if person.linkedInProfileURL == nil || person.linkedInProfileURL?.isEmpty == true {
+                candidates.append(EnrichmentCandidate(
+                    personID: person.id, field: .linkedInURL,
+                    proposedValue: endorsement.profileURL, currentValue: nil,
+                    source: .linkedInEndorsementsReceived,
+                    sourceDetail: endorsement.skillName.map { "Endorsed you for: \($0)" }
+                ))
+            }
+        }
+
+        // Endorsements given: LinkedIn URL discovery
+        for endorsement in endorsementsGiven {
+            guard let person = findPerson(profileURL: endorsement.profileURL, name: endorsement.fullName)
+            else { continue }
+            if person.linkedInProfileURL == nil || person.linkedInProfileURL?.isEmpty == true {
+                candidates.append(EnrichmentCandidate(
+                    personID: person.id, field: .linkedInURL,
+                    proposedValue: endorsement.profileURL, currentValue: nil,
+                    source: .linkedInEndorsementsGiven,
+                    sourceDetail: endorsement.skillName.map { "You endorsed: \($0)" }
+                ))
+            }
+        }
+
+        // Recommendations given: company + job title
+        for rec in recommendationsGiven {
+            guard let person = findPerson(profileURL: nil, name: rec.fullName.isEmpty ? nil : rec.fullName)
+            else { continue }
+            guard let contactID = person.contactIdentifier else { continue }
+            let contact = await contactsService.fetchContact(identifier: contactID, keys: .detail)
+            if let company = rec.company, !company.isEmpty {
+                let current = contact?.organizationName ?? ""
+                if current.lowercased() != company.lowercased() {
+                    candidates.append(EnrichmentCandidate(
+                        personID: person.id, field: .company,
+                        proposedValue: company, currentValue: current.isEmpty ? nil : current,
+                        source: .linkedInRecommendationsGiven, sourceDetail: "At time of recommendation"
+                    ))
+                }
+            }
+            if let title = rec.jobTitle, !title.isEmpty {
+                let current = contact?.jobTitle ?? ""
+                if current.lowercased() != title.lowercased() {
+                    candidates.append(EnrichmentCandidate(
+                        personID: person.id, field: .jobTitle,
+                        proposedValue: title, currentValue: current.isEmpty ? nil : current,
+                        source: .linkedInRecommendationsGiven, sourceDetail: "At time of recommendation"
+                    ))
+                }
+            }
+        }
+
+        // Sweep: any SamPerson with a linkedInProfileURL not yet in Apple Contacts
+        let alreadyProposedForURL = Set(candidates.filter { $0.field == .linkedInURL }.map { $0.personID })
+        for person in allPeople {
+            guard let linkedInURL = person.linkedInProfileURL, !linkedInURL.isEmpty else { continue }
+            guard let contactID = person.contactIdentifier else { continue }
+            guard !alreadyProposedForURL.contains(person.id) else { continue }
+            let contact = await contactsService.fetchContact(identifier: contactID, keys: .detail)
+            let alreadyInContacts = contact?.socialProfiles.contains(where: {
+                $0.service.lowercased() == "linkedin" ||
+                ($0.urlString ?? "").lowercased().contains("linkedin.com/in/")
+            }) ?? false
+            if !alreadyInContacts {
+                candidates.append(EnrichmentCandidate(
+                    personID: person.id, field: .linkedInURL,
+                    proposedValue: linkedInURL, currentValue: nil,
+                    source: .linkedInConnections, sourceDetail: "From LinkedIn messages"
+                ))
+            }
+        }
+
+        guard !candidates.isEmpty else { return 0 }
 
         do {
-            try unknownSenderRepo.bulkRecordUnknownSenders(senders)
-            logger.info("Queued \(senders.count) unmatched LinkedIn contact(s) for triage")
+            let inserted = try enrichmentRepo.bulkRecord(candidates)
+            if inserted > 0 {
+                await ContactEnrichmentCoordinator.shared.refresh()
+            }
+            return inserted
         } catch {
-            logger.error("Failed to record unmatched LinkedIn senders: \(error.localizedDescription)")
+            logger.error("Failed to record enrichment candidates: \(error.localizedDescription)")
+            return 0
         }
     }
 
-    // MARK: - Private: Contact Matching (for messages)
+    // MARK: - Private: Contact Matching
 
-    /// Match a LinkedIn message sender to an existing SamPerson.
-    /// Priority: 1) exact LinkedIn profile URL, 2) full name.
     private func matchPerson(
         profileURL: String,
         name: String,
@@ -509,15 +1512,373 @@ final class LinkedInImportCoordinator {
         byEmail: [String: SamPerson],
         byFullName: [String: SamPerson]
     ) -> SamPerson? {
-        // 1. Exact LinkedIn profile URL match
+        // Priority 1: LinkedIn profile URL
         if !profileURL.isEmpty, let match = byLinkedInURL[profileURL.lowercased()] {
             return match
         }
-        // 2. Full name match
+        // Priority 2: Email address
+        // (LinkedIn messages don't carry email, but future callers may pass one)
+        // Priority 3: Full name exact match
         let nameLower = name.lowercased().trimmingCharacters(in: .whitespaces)
         if !nameLower.isEmpty, let match = byFullName[nameLower] {
             return match
         }
         return nil
+    }
+
+    // MARK: - LinkedIn Email Notification Handling (Phase 5)
+
+    /// Recent notification events processed during the current mail import session.
+    /// Reset at the start of each mail import run.
+    private(set) var recentNotificationEvents: [LinkedInNotificationEvent] = []
+
+    /// When the most recent notification batch was processed.
+    private(set) var lastNotificationCheckAt: Date? = nil
+
+    /// Process a single LinkedIn notification event extracted from a Mail.app notification email.
+    ///
+    /// Routing:
+    /// 1. Match contact by LinkedIn profile URL, then by name.
+    /// 2. Insert an IntentionalTouch record if the event type has a touch type.
+    /// 3. For `.directMessage` events from matched contacts, create a SamEvidenceItem.
+    /// 4. For `.jobChange` events, create EnrichmentCandidate records for review.
+    /// 5. For unmatched events, record to UnknownSenderRepository with the profile URL.
+    func handleNotificationEvent(_ event: LinkedInNotificationEvent) async {
+        recentNotificationEvents.append(event)
+        lastNotificationCheckAt = Date()
+
+        // Build lookup tables for contact matching
+        let allPeople = (try? peopleRepo.fetchAll()) ?? []
+        let byLinkedInURL = Dictionary(
+            allPeople
+                .compactMap { person -> (String, SamPerson)? in
+                    guard let url = person.linkedInProfileURL, !url.isEmpty else { return nil }
+                    return (url.lowercased(), person)
+                },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let byFullName = Dictionary(
+            allPeople
+                .compactMap { person -> (String, SamPerson)? in
+                    let name = person.displayName.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !name.isEmpty else { return nil }
+                    return (name, person)
+                },
+            uniquingKeysWith: { first, _ in first }
+        )
+
+        // Attempt to match the contact
+        let matchedPerson = matchPerson(
+            profileURL: event.contactProfileUrl ?? "",
+            name: event.contactName,
+            byLinkedInURL: byLinkedInURL,
+            byEmail: [:],
+            byFullName: byFullName
+        )
+
+        // Insert IntentionalTouch if this event type generates one
+        if let touchType = event.eventType.touchType {
+            let candidate = IntentionalTouchCandidate(
+                platform: .linkedIn,
+                touchType: touchType,
+                direction: event.eventType.touchDirection,
+                contactProfileUrl: event.contactProfileUrl,
+                samPersonID: matchedPerson?.id,
+                date: event.date,
+                snippet: event.snippet,
+                source: .emailNotification,
+                sourceEmailID: event.sourceEmailId
+            )
+            do {
+                try touchRepo.bulkInsert([candidate])
+            } catch {
+                logger.error("Failed to insert touch from notification \(event.sourceEmailId): \(error.localizedDescription)")
+            }
+        }
+
+        // Special routing: direct messages → create SamEvidenceItem for Today view visibility
+        if event.eventType == .directMessage, let person = matchedPerson {
+            do {
+                try evidenceRepo.createByIDs(
+                    sourceUID: "linkedin-dm-\(event.sourceEmailId)",
+                    source: .linkedIn,
+                    occurredAt: event.date,
+                    title: "LinkedIn message from \(event.contactName)",
+                    snippet: event.snippet ?? "LinkedIn message",
+                    linkedPeopleIDs: [person.id]
+                )
+            } catch {
+                logger.warning("Failed to create evidence for LinkedIn DM \(event.sourceEmailId): \(error.localizedDescription)")
+            }
+        }
+
+        // Special routing: job changes → create enrichment candidates for user review
+        if event.eventType == .jobChange, let person = matchedPerson {
+            generateJobChangeEnrichment(for: person, snippet: event.snippet, subject: event.rawSubject)
+        }
+
+        // Unmatched events: record to Unknown Senders with the LinkedIn profile URL
+        // so future bulk imports can retroactively match and attribute the touch
+        if matchedPerson == nil, let profileUrl = event.contactProfileUrl {
+            let key = "linkedin:\(profileUrl)"
+            do {
+                try unknownSenderRepo.upsertLinkedInLater(
+                    uniqueKey: key,
+                    displayName: event.contactName.isEmpty ? nil : event.contactName,
+                    touchScore: event.eventType.touchType?.baseWeight ?? 0,
+                    company: nil,
+                    position: nil,
+                    connectedOn: event.date
+                )
+            } catch {
+                logger.warning("Failed to record unmatched notification sender \(key): \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// Parse a job title and company from a notification snippet like "VP Engineering at Acme Corp".
+    /// Splits on " at " (case-insensitive), taking the last occurrence to handle "Director at X at Y".
+    private func parseJobChangeSnippet(_ snippet: String) -> (title: String?, company: String?) {
+        let lower = snippet.lowercased()
+        guard let atRange = lower.range(of: " at ", options: .backwards) else {
+            return (nil, snippet.isEmpty ? nil : snippet)
+        }
+        let titlePart = String(snippet[snippet.startIndex..<atRange.lowerBound])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let companyPart = String(snippet[atRange.upperBound...])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return (
+            titlePart.isEmpty ? nil : titlePart,
+            companyPart.isEmpty ? nil : companyPart
+        )
+    }
+
+    /// Generate enrichment candidates for a detected job change.
+    /// Extracts title and company from the notification snippet or subject,
+    /// then queues them for user review via the EnrichmentRepository.
+    @discardableResult
+    private func generateJobChangeEnrichment(for person: SamPerson, snippet: String?, subject: String) -> Int {
+        // Try to parse "Title at Company" from snippet, falling back to subject
+        let sourceText = snippet ?? subject
+        let (title, company) = parseJobChangeSnippet(sourceText)
+
+        var candidates: [EnrichmentCandidate] = []
+
+        if let company, !company.isEmpty {
+            candidates.append(EnrichmentCandidate(
+                personID: person.id,
+                field: .company,
+                proposedValue: company,
+                currentValue: nil,
+                source: .linkedInNotification,
+                sourceDetail: "LinkedIn job change notification"
+            ))
+        }
+
+        if let title, !title.isEmpty {
+            candidates.append(EnrichmentCandidate(
+                personID: person.id,
+                field: .jobTitle,
+                proposedValue: title,
+                currentValue: nil,
+                source: .linkedInNotification,
+                sourceDetail: "LinkedIn job change notification"
+            ))
+        }
+
+        guard !candidates.isEmpty else { return 0 }
+
+        do {
+            let inserted = try enrichmentRepo.bulkRecord(candidates)
+            if inserted > 0 {
+                enrichmentCandidateCount += inserted
+                ContactEnrichmentCoordinator.shared.refresh()
+            }
+            return inserted
+        } catch {
+            logger.error("Failed to record job change enrichment for \(person.id): \(error.localizedDescription)")
+            return 0
+        }
+    }
+
+    // MARK: - Phase 7: Profile Analysis
+
+    /// Builds a snapshot of import-time data for caching.
+    /// Must be called before `clearPendingState()` while pending arrays are still populated.
+    private func buildAnalysisSnapshot() -> ProfileAnalysisSnapshot {
+        // Aggregate endorsement skill counts
+        var skillCounts: [String: Int] = [:]
+        for e in pendingEndorsementsReceived {
+            if let skill = e.skillName { skillCounts[skill, default: 0] += 1 }
+        }
+        let topSkills = skillCounts.sorted { $0.value > $1.value }.prefix(5).map(\.key)
+        let uniqueEndorsers = Set(pendingEndorsementsReceived.map(\.profileURL).filter { !$0.isEmpty }).count
+
+        // Connection growth by year
+        var byYear: [String: Int] = [:]
+        for c in pendingConnections {
+            if let date = c.connectedOn {
+                let year = String(Calendar.current.component(.year, from: date))
+                byYear[year, default: 0] += 1
+            }
+        }
+
+        // Recommendation samples (first ~200 chars of up to 3 received)
+        let recSamples = pendingRecommendationsReceived.prefix(3).compactMap {
+            $0.recommendationText.map { String($0.prefix(200)) }
+        }
+
+        // Share snippets (most recent 10, truncated to 100 chars)
+        let shareSnippets = pendingShares
+            .sorted { $0.shareDate > $1.shareDate }
+            .prefix(10)
+            .compactMap { $0.shareComment.map { String($0.prefix(100)) } }
+
+        return ProfileAnalysisSnapshot(
+            endorsementsReceivedCount: pendingEndorsementsReceived.count,
+            topEndorsedSkills: Array(topSkills),
+            uniqueEndorsers: uniqueEndorsers,
+            recommendationsReceivedCount: pendingRecommendationsReceived.count,
+            recommendationsGivenCount: pendingRecommendationsGiven.count,
+            recommendationSamples: Array(recSamples),
+            shareCount: pendingShares.count,
+            recentShareSnippets: Array(shareSnippets),
+            reactionsGivenCount: pendingReactionsGiven.count,
+            commentsGivenCount: pendingCommentsGiven.count,
+            connectionCount: pendingConnections.count,
+            connectionsByYear: byYear,
+            snapshotDate: Date()
+        )
+    }
+
+    /// Runs the profile analysis AI agent. Safe to call multiple times; guards against concurrent runs.
+    func runProfileAnalysis() async {
+        guard profileAnalysisStatus != .analyzing else { return }
+        guard let profile = await BusinessProfileService.shared.linkedInProfile() else {
+            logger.info("Profile analysis skipped: no LinkedIn profile available")
+            return
+        }
+        guard let snapshot = await BusinessProfileService.shared.analysisSnapshot() else {
+            logger.info("Profile analysis skipped: no analysis snapshot available")
+            return
+        }
+
+        profileAnalysisStatus = .analyzing
+
+        do {
+            let data = buildProfileAnalysisInput(profile: profile, snapshot: snapshot)
+            let previousAnalysis = await BusinessProfileService.shared.profileAnalysis(for: "linkedIn")
+            let previousJSON: String? = {
+                guard let prev = previousAnalysis,
+                      let encoded = try? JSONEncoder().encode(prev) else { return nil }
+                return String(data: encoded, encoding: .utf8)
+            }()
+
+            let result = try await ProfileAnalystService.shared.analyze(
+                data: data,
+                previousAnalysisJSON: previousJSON
+            )
+            await BusinessProfileService.shared.saveProfileAnalysis(result)
+            latestProfileAnalysis = result
+            profileAnalysisStatus = .complete
+            logger.info("Profile analysis complete: score \(result.overallScore), \(result.praise.count) praise, \(result.improvements.count) improvements")
+        } catch {
+            logger.error("Profile analysis failed: \(error.localizedDescription)")
+            profileAnalysisStatus = .failed
+        }
+    }
+
+    /// Assembles the text block sent to the AI for profile analysis.
+    private func buildProfileAnalysisInput(
+        profile: UserLinkedInProfileDTO,
+        snapshot: ProfileAnalysisSnapshot
+    ) -> String {
+        var lines: [String] = []
+
+        // Identity
+        lines.append("LinkedIn Profile for \(profile.firstName) \(profile.lastName)")
+        if !profile.headline.isEmpty { lines.append("Headline: \(profile.headline)") }
+        if !profile.summary.isEmpty { lines.append("Summary: \(String(profile.summary.prefix(500)))") }
+        if !profile.industry.isEmpty { lines.append("Industry: \(profile.industry)") }
+        if !profile.geoLocation.isEmpty { lines.append("Location: \(profile.geoLocation)") }
+
+        // Positions
+        if !profile.positions.isEmpty {
+            lines.append("\nPositions:")
+            for p in profile.positions {
+                let end = p.isCurrent ? "Present" : (p.finishedOn ?? "")
+                lines.append("- \(p.title) at \(p.companyName) (\(p.startedOn ?? "") – \(end))")
+            }
+        }
+
+        // Education
+        if !profile.education.isEmpty {
+            lines.append("\nEducation:")
+            for e in profile.education {
+                lines.append("- \(e.degreeName) at \(e.schoolName)")
+            }
+        }
+
+        // Skills & certifications
+        if !profile.skills.isEmpty {
+            lines.append("\nSkills: \(profile.skills.joined(separator: ", "))")
+        }
+        if !profile.certifications.isEmpty {
+            lines.append("Certifications: \(profile.certifications.map(\.name).joined(separator: ", "))")
+        }
+
+        // Endorsements & recommendations (from snapshot)
+        lines.append("\nEndorsements: \(snapshot.endorsementsReceivedCount) received from \(snapshot.uniqueEndorsers) people")
+        if !snapshot.topEndorsedSkills.isEmpty {
+            lines.append("Top endorsed skills: \(snapshot.topEndorsedSkills.joined(separator: ", "))")
+        }
+        lines.append("Recommendations: \(snapshot.recommendationsReceivedCount) received, \(snapshot.recommendationsGivenCount) given")
+        for (i, sample) in snapshot.recommendationSamples.enumerated() {
+            lines.append("  Sample \(i + 1): \"\(sample)\"")
+        }
+
+        // Content activity
+        lines.append("\nContent Activity: \(snapshot.shareCount) posts published")
+        if !snapshot.recentShareSnippets.isEmpty {
+            lines.append("Recent posts:")
+            for s in snapshot.recentShareSnippets { lines.append("  - \(s)") }
+        }
+        lines.append("Reactions given: \(snapshot.reactionsGivenCount) | Comments written: \(snapshot.commentsGivenCount)")
+
+        // Email notification engagement (last 90 days)
+        let since90 = Calendar.current.date(byAdding: .day, value: -90, to: .now) ?? .now
+        let seenTypes = (try? IntentionalTouchRepository.shared.emailNotificationTypesSeenSince(since90)) ?? []
+        let hasCommentNotifs = seenTypes.contains(TouchType.comment.rawValue)
+        let hasReactionNotifs = seenTypes.contains(TouchType.reaction.rawValue)
+        lines.append("\nEmail Notification Engagement (last 90 days):")
+        lines.append("Comments on your posts: \(hasCommentNotifs ? "detected" : "none")")
+        lines.append("Reactions to your posts: \(hasReactionNotifs ? "detected" : "none")")
+
+        // Network
+        lines.append("\nNetwork: \(snapshot.connectionCount) connections")
+        let sortedYears = snapshot.connectionsByYear.sorted { $0.key < $1.key }
+        if !sortedYears.isEmpty {
+            lines.append("Growth by year: \(sortedYears.map { "\($0.key): \($0.value)" }.joined(separator: ", "))")
+        }
+
+        return lines.joined(separator: "\n")
+    }
+
+    // MARK: - Private: Helpers
+
+    private func clearPendingState() {
+        pendingMessages             = []
+        pendingConnections          = []
+        pendingEndorsementsReceived = []
+        pendingEndorsementsGiven    = []
+        pendingRecommendationsGiven = []
+        pendingRecommendationsReceived = []
+        pendingReactionsGiven       = []
+        pendingCommentsGiven        = []
+        pendingInvitations          = []
+        pendingShares               = []
+        pendingUserProfile          = nil
+        touchScores                 = [:]
+        importCandidates            = []
     }
 }

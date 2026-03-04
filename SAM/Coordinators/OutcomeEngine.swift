@@ -43,6 +43,7 @@ final class OutcomeEngine {
     private let peopleRepo = PeopleRepository.shared
     private let notesRepo = NotesRepository.shared
     private let meetingPrep = MeetingPrepCoordinator.shared
+    private let touchRepo = IntentionalTouchRepository.shared
 
     private init() {}
 
@@ -112,6 +113,9 @@ final class OutcomeEngine {
 
             // 10. Deduced relationships review
             newOutcomes.append(contentsOf: scanDeducedRelationships())
+
+            // 11. LinkedIn notification setup guidance (Phase 6)
+            newOutcomes.append(contentsOf: try scanNotificationSetupGuidance())
 
             // Classify action lanes and suggest channels
             for outcome in newOutcomes {
@@ -630,6 +634,122 @@ final class OutcomeEngine {
         return [outcome]
     }
 
+    // MARK: - LinkedIn Notification Setup Guidance (Phase 6)
+
+    /// Scan for missing LinkedIn notification types and surface setup guidance outcomes.
+    private func scanNotificationSetupGuidance() throws -> [SamOutcome] {
+        guard MailImportCoordinator.shared.mailEnabled else { return [] }
+        guard let startDate = Self.linkedInMonitoringStartDate else { return [] }
+
+        let daysSinceStart = Calendar.current.dateComponents([.day], from: startDate, to: .now).day ?? 0
+        var outcomes: [SamOutcome] = []
+
+        let hasAny = (try? touchRepo.hasAnyEmailNotificationTouches()) ?? false
+
+        // Global check: if no LinkedIn emails at all have been received
+        if !hasAny && daysSinceStart >= LinkedInNotificationSetupGuide.noEmailsGuidance.suggestionThresholdDays {
+            if let outcome = makeSetupOutcome(
+                guide: LinkedInNotificationSetupGuide.noEmailsGuidance,
+                userDefaultsKey: LinkedInNotificationSetupGuide.noEmailsUserDefaultsKey
+            ) {
+                outcomes.append(outcome)
+            }
+            return outcomes   // Don't check per-type until we've seen at least one email
+        }
+
+        guard hasAny else { return [] }
+
+        // Per-type check: look for notification types missing from the rolling 30-day window
+        let rollingWindowStart = Calendar.current.date(byAdding: .day, value: -30, to: .now) ?? .now
+        let seenTypes = (try? touchRepo.emailNotificationTypesSeenSince(rollingWindowStart)) ?? []
+
+        // Suppress post-dependent types if user has never posted on LinkedIn
+        let hasPostedContent = (try? ContentPostRepository.shared.daysSinceLastPost(platform: .linkedin)) != nil
+
+        for monitored in LinkedInNotificationSetupGuide.monitoredTypes {
+            if monitored.requiresUserPosts && !hasPostedContent { continue }
+            if seenTypes.contains(monitored.touchType.rawValue) { continue }
+            if daysSinceStart < monitored.suggestionThresholdDays { continue }
+
+            if let outcome = makeSetupOutcome(guide: monitored, userDefaultsKey: monitored.userDefaultsKey) {
+                outcomes.append(outcome)
+            }
+        }
+        return outcomes
+    }
+
+    /// Build a SamOutcome for a single setup guidance type, applying dismiss/acknowledge logic.
+    /// Returns nil if the outcome should be suppressed (too soon after dismiss/ack, already active, or verified).
+    private func makeSetupOutcome(
+        guide: LinkedInNotificationSetupGuide.MonitoredType,
+        userDefaultsKey key: String
+    ) -> SamOutcome? {
+        let defaults = UserDefaults.standard
+
+        // Acknowledgement check: user said "Already Done"
+        if defaults.bool(forKey: "\(key).acknowledged") {
+            let ackTime = defaults.double(forKey: "\(key).acknowledgedAt")
+            if ackTime > 0 {
+                let ackDate = Date(timeIntervalSince1970: ackTime)
+                // If we've seen this notification type since acknowledgement, verified — suppress permanently
+                let seenSinceAck = (try? touchRepo.emailNotificationTypesSeenSince(ackDate)) ?? []
+                if seenSinceAck.contains(guide.touchType.rawValue) { return nil }
+                // Give the setup 14 days to take effect before resurface
+                let daysSinceAck = Calendar.current.dateComponents([.day], from: ackDate, to: .now).day ?? 0
+                if daysSinceAck < 14 { return nil }
+                // 14+ days with no verification — reset acknowledgement and resurface
+                defaults.set(false, forKey: "\(key).acknowledged")
+            }
+        }
+
+        // Dismiss timing check: resurface after 7 days (or 30 days after 3+ dismissals)
+        let dismissCount = defaults.integer(forKey: "\(key).dismissCount")
+        let lastDismissedTime = defaults.double(forKey: "\(key).lastDismissedAt")
+        if lastDismissedTime > 0 {
+            let lastDismissed = Date(timeIntervalSince1970: lastDismissedTime)
+            let daysSinceDismiss = Calendar.current.dateComponents([.day], from: lastDismissed, to: .now).day ?? 0
+            let resurfaceDays = dismissCount >= 3 ? 30 : 7
+            if daysSinceDismiss < resurfaceDays { return nil }
+        }
+
+        // Title-based dedup: don't create a second active outcome with the same title
+        let active = (try? outcomeRepo.fetchActive()) ?? []
+        if active.contains(where: { $0.outcomeKind == .setup && $0.title == guide.title }) { return nil }
+
+        // Build the JSON payload stored in sourceInsightSummary
+        let payload = SetupGuidePayload(
+            touchTypeRawValue: guide.touchType.rawValue,
+            userDefaultsKey: key,
+            instructions: guide.instructions,
+            whyItMatters: guide.whyItMatters,
+            settingsURL: LinkedInNotificationSetupGuide.settingsURL.absoluteString
+        )
+        let payloadJSON = (try? String(data: JSONEncoder().encode(payload), encoding: .utf8)) ?? ""
+
+        let outcome = SamOutcome(
+            title: guide.title,
+            rationale: guide.whyItMatters,
+            outcomeKind: .setup,
+            priorityScore: guide.priority,
+            sourceInsightSummary: payloadJSON,
+            suggestedNextStep: "Open LinkedIn notification settings and follow the steps"
+        )
+        outcome.actionLane = .openURL
+        outcome.draftMessageText = LinkedInNotificationSetupGuide.settingsURL.absoluteString
+        return outcome
+    }
+
+    /// The date SAM began monitoring LinkedIn email notifications.
+    /// Uses the UserDefaults timestamp written by MailImportCoordinator; falls back to the mail watermark.
+    private static var linkedInMonitoringStartDate: Date? {
+        let ts = UserDefaults.standard.double(forKey: "sam.linkedin.monitoringSince")
+        if ts > 0 { return Date(timeIntervalSince1970: ts) }
+        if let watermark = MailImportCoordinator.shared.lastMailWatermark {
+            return watermark
+        }
+        return nil
+    }
+
     /// Map GoalType to the most appropriate OutcomeKind.
     private func goalOutcomeKind(for goalType: GoalType) -> OutcomeKind {
         switch goalType {
@@ -970,6 +1090,8 @@ final class OutcomeEngine {
             outcome.actionLane = .deepWork
         case .followUp, .preparation, .compliance:
             outcome.actionLane = .record
+        case .setup:
+            outcome.actionLane = .openURL
         }
     }
 

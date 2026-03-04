@@ -16,6 +16,7 @@ import Contacts
 import TipKit
 import UniformTypeIdentifiers
 import TipKit
+import UserNotifications
 import os.log
 
 private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "SettingsView")
@@ -75,9 +76,51 @@ struct SettingsView: View {
 // MARK: - Data Sources Settings (consolidated tab)
 
 struct DataSourcesSettingsView: View {
+
+    @State private var globalLookbackDays: Int = {
+        UserDefaults.standard.object(forKey: "globalLookbackDays") == nil
+            ? 30
+            : UserDefaults.standard.integer(forKey: "globalLookbackDays")
+    }()
+
     var body: some View {
         Form {
             Section {
+                // ── Global Lookback Period ──────────────────────────────
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("History Lookback Period")
+                        .font(.headline)
+
+                    Text("How far back SAM scans when importing from Calendar, Mail, and Communications. Applies to all sources.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Picker("Look back", selection: $globalLookbackDays) {
+                        Text("14 days").tag(14)
+                        Text("30 days").tag(30)
+                        Text("60 days").tag(60)
+                        Text("90 days").tag(90)
+                        Text("180 days").tag(180)
+                        Text("All").tag(0)
+                    }
+                    .onChange(of: globalLookbackDays) { _, newValue in
+                        UserDefaults.standard.set(newValue, forKey: "globalLookbackDays")
+                        // Push to each coordinator so they re-read correctly
+                        CalendarImportCoordinator.shared.lookbackDays = newValue
+                        MailImportCoordinator.shared.setLookbackDays(newValue)
+                        CommunicationsImportCoordinator.shared.setLookbackDays(newValue)
+                    }
+
+                    if globalLookbackDays == 0 {
+                        Text("First import will scan all available history. Subsequent imports use incremental sync.")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+                }
+                .padding(.vertical, 6)
+
+                Divider()
+
                 DisclosureGroup {
                     ContactsSettingsContent()
                         .padding(.top, 8)
@@ -118,6 +161,13 @@ struct DataSourcesSettingsView: View {
                         .padding(.top, 8)
                 } label: {
                     Label("LinkedIn Import", systemImage: "network")
+                }
+
+                DisclosureGroup {
+                    FacebookImportSettingsContent()
+                        .padding(.top, 8)
+                } label: {
+                    Label("Facebook Import", systemImage: "person.2.fill")
                 }
             }
         }
@@ -177,8 +227,10 @@ struct PermissionsSettingsView: View {
 
     @State private var contactsStatus: String = "Checking..."
     @State private var calendarStatus: String = "Checking..."
+    @State private var notificationsStatus: String = "Checking..."
     @State private var isRequestingContacts = false
     @State private var isRequestingCalendar = false
+    @State private var isRequestingNotifications = false
 
     var body: some View {
         Form {
@@ -268,6 +320,41 @@ struct PermissionsSettingsView: View {
 
                     Divider()
 
+                    // Notifications Permission
+                    HStack(spacing: 16) {
+                        Image(systemName: "bell.circle.fill")
+                            .font(.system(size: 32))
+                            .foregroundStyle(.red)
+                            .frame(width: 40)
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Notifications")
+                                .font(.headline)
+
+                            Text("Coaching alerts and follow-up reminders (optional)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Spacer()
+
+                        VStack(alignment: .trailing, spacing: 4) {
+                            Text(notificationsStatus)
+                                .font(.caption)
+                                .foregroundStyle(notificationsStatusColor)
+
+                            if notificationsStatus == "Not Requested" {
+                                Button(isRequestingNotifications ? "Requesting..." : "Request Access") {
+                                    requestNotificationsPermission()
+                                }
+                                .disabled(isRequestingNotifications)
+                            }
+                        }
+                    }
+                    .padding(.vertical, 8)
+
+                    Divider()
+
                     // Help Text
                     VStack(alignment: .leading, spacing: 8) {
                         Text("About Permissions")
@@ -278,6 +365,11 @@ struct PermissionsSettingsView: View {
                             .foregroundStyle(.secondary)
 
                         Text("System Settings → Privacy & Security → Contacts/Calendar → SAM")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.leading, 8)
+
+                        Text("For Notifications: System Settings → Notifications → SAM")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .padding(.leading, 8)
@@ -314,12 +406,32 @@ struct PermissionsSettingsView: View {
         }
     }
 
+    private var notificationsStatusColor: Color {
+        switch notificationsStatus {
+        case "Authorized": return .green
+        case "Denied": return .red
+        default: return .secondary
+        }
+    }
+
     private func checkPermissions() async {
         let contactsAuth = CNContactStore.authorizationStatus(for: .contacts)
         contactsStatus = authStatusString(contactsAuth)
 
         let calendarAuth = await CalendarService.shared.authorizationStatus()
         calendarStatus = authStatusString(calendarAuth)
+
+        let notifSettings = await UNUserNotificationCenter.current().notificationSettings()
+        switch notifSettings.authorizationStatus {
+        case .authorized, .provisional, .ephemeral:
+            notificationsStatus = "Authorized"
+        case .denied:
+            notificationsStatus = "Denied"
+        case .notDetermined:
+            notificationsStatus = "Not Requested"
+        @unknown default:
+            notificationsStatus = "Unknown"
+        }
     }
 
     private func authStatusString(_ status: CNAuthorizationStatus) -> String {
@@ -379,6 +491,25 @@ struct PermissionsSettingsView: View {
                         try? await Task.sleep(for: .milliseconds(500))
                         await CalendarImportCoordinator.shared.importNow()
                     }
+                }
+            }
+        }
+    }
+
+    private func requestNotificationsPermission() {
+        isRequestingNotifications = true
+
+        Task {
+            do {
+                let granted = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])
+                await MainActor.run {
+                    notificationsStatus = granted ? "Authorized" : "Denied"
+                    isRequestingNotifications = false
+                }
+            } catch {
+                await MainActor.run {
+                    notificationsStatus = "Denied"
+                    isRequestingNotifications = false
                 }
             }
         }
@@ -746,30 +877,6 @@ struct CalendarSettingsContent: View {
             Text("When enabled, SAM will automatically sync with Calendar when changes are detected.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-
-            Divider()
-
-            // Lookback period
-            Picker("Look back", selection: Binding(
-                get: { coordinator.lookbackDays },
-                set: { coordinator.lookbackDays = $0 }
-            )) {
-                Text("7 days").tag(7)
-                Text("14 days").tag(14)
-                Text("30 days").tag(30)
-                Text("90 days").tag(90)
-                Text("All").tag(0)
-            }
-
-            if coordinator.lookbackDays == 0 {
-                Text("First import will scan all available calendar history. Subsequent imports use incremental sync.")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-            } else {
-                Text("How far back to look for calendar events.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
 
             Divider()
 
@@ -1189,7 +1296,7 @@ struct IntelligenceSettingsContent: View {
                     .foregroundStyle(.secondary)
 
                 HStack {
-                    Text("Relationship alert threshold:")
+                    Text("Alert threshold for untagged contacts:")
                     Picker("", selection: Binding(
                         get: { insightGenerator.daysSinceContactThreshold > 0 ? insightGenerator.daysSinceContactThreshold : 60 },
                         set: { insightGenerator.daysSinceContactThreshold = $0 }
@@ -1202,7 +1309,7 @@ struct IntelligenceSettingsContent: View {
                     .frame(width: 120)
                 }
 
-                Text("Alert when a contact hasn't been reached within this period.")
+                Text("Alert when an untagged contact (no role badge) hasn't been reached within this period. Contacts with role badges use adaptive role-based thresholds.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

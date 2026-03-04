@@ -508,6 +508,266 @@ actor MailService {
         return allEmails
     }
 
+    // MARK: - Fetch MIME Source (for LinkedIn HTML parsing)
+
+    /// Fetch the raw MIME source of a single message via AppleScript (`source of m`).
+    ///
+    /// Unlike `content of m` (plain text only), `source of m` returns the full RFC 2822
+    /// MIME source, including the `text/html` part with all `<a href>` tags intact.
+    /// Used by MailImportCoordinator to extract LinkedIn profile URLs from notification emails.
+    ///
+    /// - Returns: The raw MIME source string, or nil if the message cannot be located.
+    func fetchMIMESource(for meta: MessageMeta) async -> String? {
+        let escapedAcctName = meta.accountName.replacingOccurrences(of: "\"", with: "\\\"")
+        let script = """
+        tell application "Mail"
+            set acct to first account whose name is "\(escapedAcctName)"
+            set mbx to missing value
+            try
+                set mbx to inbox of acct
+            end try
+            if mbx is missing value then
+                try
+                    set mbx to mailbox "INBOX" of acct
+                end try
+            end if
+            if mbx is missing value then
+                try
+                    set mbx to mailbox "Inbox" of acct
+                end try
+            end if
+            if mbx is missing value then
+                repeat with m in every mailbox of acct
+                    try
+                        set mName to name of m
+                        if mName is "INBOX" or mName is "Inbox" or mName is "inbox" then
+                            set mbx to m
+                            exit repeat
+                        end if
+                    end try
+                end repeat
+            end if
+            if mbx is missing value then error "No inbox found"
+            set m to (first message of mbx whose id is \(meta.mailID))
+            return source of m
+        end tell
+        """
+
+        let (result, error) = executeAppleScript(script)
+        if let error {
+            logger.warning("MIME source fetch failed for message \(meta.mailID): \(error, privacy: .public)")
+            return nil
+        }
+        return result?.stringValue
+    }
+
+    /// Extract the decoded HTML body from a raw RFC 2822 MIME source string.
+    ///
+    /// Handles:
+    /// - Single-part `Content-Type: text/html` messages
+    /// - Multipart `Content-Type: multipart/alternative` (extracts the `text/html` part)
+    /// - `Content-Transfer-Encoding: quoted-printable` decoding
+    /// - `Content-Transfer-Encoding: base64` decoding
+    ///
+    /// - Returns: The decoded HTML string, or nil if no HTML part is found.
+    static func extractHTMLFromMIMESource(_ source: String) -> String? {
+        let lines = source.components(separatedBy: "\r\n").isEmpty
+            ? source.components(separatedBy: "\n")
+            : source.components(separatedBy: "\r\n")
+
+        // Parse top-level headers to determine content type
+        let topHeaders = parseHeaders(from: lines)
+        let topContentType = topHeaders["content-type"] ?? ""
+
+        if topContentType.lowercased().contains("text/html") {
+            // Single-part HTML message — body starts after blank line
+            return decodeBody(lines: lines, headers: topHeaders)
+        }
+
+        if topContentType.lowercased().contains("multipart") {
+            // Extract boundary from Content-Type header
+            // E.g.: Content-Type: multipart/alternative; boundary="----boundary123"
+            guard let boundary = extractBoundary(from: topContentType) else { return nil }
+            return extractHTMLPart(from: lines, boundary: boundary)
+        }
+
+        return nil
+    }
+
+    // MARK: - MIME Parsing Helpers
+
+    /// Parse MIME headers from the beginning of a message (or part), up to the blank line separator.
+    /// Returns a dictionary with lowercased header names as keys.
+    private static func parseHeaders(from lines: [String]) -> [String: String] {
+        var headers: [String: String] = [:]
+        var currentName: String?
+        var currentValue: String = ""
+
+        for line in lines {
+            if line.isEmpty { break }  // Blank line = end of headers
+
+            // Folded header continuation (starts with whitespace)
+            if let first = line.first, (first == " " || first == "\t"), let name = currentName {
+                currentValue += " " + line.trimmingCharacters(in: .whitespaces)
+                headers[name] = currentValue
+                continue
+            }
+
+            // New header: "Name: value"
+            if let colonIdx = line.firstIndex(of: ":") {
+                // Save previous header
+                if let name = currentName {
+                    headers[name] = currentValue
+                }
+                currentName = String(line[line.startIndex..<colonIdx]).lowercased()
+                currentValue = String(line[line.index(after: colonIdx)...])
+                    .trimmingCharacters(in: .whitespaces)
+            }
+        }
+        // Save last header
+        if let name = currentName {
+            headers[name] = currentValue
+        }
+        return headers
+    }
+
+    /// Extract the `boundary` parameter from a Content-Type header value.
+    /// E.g.: `multipart/alternative; boundary="abc123"` → `"abc123"`
+    private static func extractBoundary(from contentType: String) -> String? {
+        let pattern = #"boundary="?([^";]+)"?"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else { return nil }
+        let range = NSRange(contentType.startIndex..., in: contentType)
+        if let match = regex.firstMatch(in: contentType, range: range),
+           let boundaryRange = Range(match.range(at: 1), in: contentType) {
+            return String(contentType[boundaryRange]).trimmingCharacters(in: .init(charactersIn: "\""))
+        }
+        return nil
+    }
+
+    /// Extract and decode the `text/html` MIME part from a multipart message.
+    private static func extractHTMLPart(from lines: [String], boundary: String) -> String? {
+        let delimiter = "--" + boundary
+        var inHTMLPart = false
+        var partLines: [String] = []
+        var partHeaders: [String: String] = [:]
+
+        var i = 0
+        while i < lines.count {
+            let line = lines[i]
+
+            // Boundary line: start of a new part
+            if line.trimmingCharacters(in: .whitespaces) == delimiter
+                || line.trimmingCharacters(in: .whitespaces) == delimiter + "--" {
+                // If we were collecting an HTML part, we're done
+                if inHTMLPart && !partLines.isEmpty {
+                    return decodeBody(lines: partLines, headers: partHeaders)
+                }
+                inHTMLPart = false
+                partLines = []
+                partHeaders = [:]
+                i += 1
+
+                // Parse headers for this new part
+                var partHeaderLines: [String] = []
+                while i < lines.count && !lines[i].isEmpty {
+                    partHeaderLines.append(lines[i])
+                    i += 1
+                }
+                partHeaders = parseHeaders(from: partHeaderLines)
+                let ct = partHeaders["content-type"] ?? ""
+                inHTMLPart = ct.lowercased().contains("text/html")
+                i += 1  // Skip the blank line separator
+                continue
+            }
+
+            if inHTMLPart {
+                partLines.append(line)
+            }
+            i += 1
+        }
+
+        // Handle case where HTML part extends to end of document
+        if inHTMLPart && !partLines.isEmpty {
+            return decodeBody(lines: partLines, headers: partHeaders)
+        }
+        return nil
+    }
+
+    /// Decode a MIME body using the Content-Transfer-Encoding from its headers.
+    private static func decodeBody(lines: [String], headers: [String: String]) -> String? {
+        // Find the blank line that separates headers from body
+        let allLines = lines
+        var bodyStartIndex = 0
+        for (idx, line) in allLines.enumerated() {
+            if line.isEmpty {
+                bodyStartIndex = idx + 1
+                break
+            }
+        }
+
+        let bodyLines = Array(allLines[bodyStartIndex...])
+        let encoding = (headers["content-transfer-encoding"] ?? "").lowercased()
+
+        if encoding == "base64" {
+            let joined = bodyLines.joined().replacingOccurrences(of: " ", with: "")
+            if let data = Data(base64Encoded: joined, options: []),
+               let decoded = String(data: data, encoding: .utf8) {
+                return decoded
+            }
+            return nil
+        }
+
+        if encoding == "quoted-printable" {
+            let raw = bodyLines.joined(separator: "\r\n")
+            return decodeQuotedPrintable(raw)
+        }
+
+        // 7bit / 8bit / no encoding — return as-is
+        return bodyLines.joined(separator: "\n")
+    }
+
+    /// Decode a quoted-printable encoded string.
+    ///
+    /// Rules:
+    /// - `=XX` → the byte with hex value XX
+    /// - `=\r\n` or `=\n` (soft line break) → removed (line continuation)
+    private static func decodeQuotedPrintable(_ input: String) -> String {
+        var result = ""
+        var i = input.startIndex
+
+        while i < input.endIndex {
+            let c = input[i]
+            if c == "=" {
+                let next1 = input.index(after: i)
+                guard next1 < input.endIndex else { break }
+
+                // Soft line break: =\r\n or =\n
+                if input[next1] == "\r" || input[next1] == "\n" {
+                    // Skip the soft line break
+                    i = input.index(after: next1)
+                    if i < input.endIndex && input[i] == "\n" {
+                        i = input.index(after: i)
+                    }
+                    continue
+                }
+
+                // Hex escape: =XX
+                let next2 = input.index(after: next1)
+                if next2 < input.endIndex {
+                    let hex = String(input[next1...next2])
+                    if let value = UInt8(hex, radix: 16) {
+                        result.append(Character(UnicodeScalar(value)))
+                        i = input.index(after: next2)
+                        continue
+                    }
+                }
+            }
+            result.append(c)
+            i = input.index(after: i)
+        }
+        return result
+    }
+
     // MARK: - AppleScript Execution
 
     private func executeAppleScript(_ source: String) -> (NSAppleEventDescriptor?, String?) {

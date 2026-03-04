@@ -36,6 +36,8 @@ struct OutcomeQueueView: View {
     @State private var deepWorkOutcome: SamOutcome?
     @State private var showContentDraftSheet = false
     @State private var contentDraftOutcome: SamOutcome?
+    @State private var showSetupGuideSheet = false
+    @State private var setupGuideOutcome: SamOutcome?
 
     // MARK: - Computed
 
@@ -142,6 +144,26 @@ struct OutcomeQueueView: View {
                         },
                         onCancel: {
                             showContentDraftSheet = false
+                        }
+                    )
+                }
+            }
+            .sheet(isPresented: $showSetupGuideSheet) {
+                if let outcome = setupGuideOutcome {
+                    LinkedInSetupGuideSheet(
+                        outcome: outcome,
+                        onDone: {
+                            showSetupGuideSheet = false
+                        },
+                        onAlreadyDone: {
+                            recordSetupAcknowledgement(outcome)
+                            try? outcomeRepo.markCompleted(id: outcome.id)
+                            showSetupGuideSheet = false
+                        },
+                        onDismiss: {
+                            recordSetupDismissal(outcome)
+                            markSkipped(outcome)
+                            showSetupGuideSheet = false
                         }
                     )
                 }
@@ -321,6 +343,17 @@ struct OutcomeQueueView: View {
             }
         }
 
+        // Setup guidance outcomes open the LinkedIn settings URL + show the guide sheet
+        if outcome.outcomeKind == .setup {
+            return {
+                if let urlString = outcome.draftMessageText, let url = URL(string: urlString) {
+                    NSWorkspace.shared.open(url)
+                }
+                setupGuideOutcome = outcome
+                showSetupGuideSheet = true
+            }
+        }
+
         switch outcome.actionLane {
         case .record:
             return {
@@ -394,6 +427,10 @@ struct OutcomeQueueView: View {
                     userInfo: ["focusMode": "deducedRelationships"]
                 )
             }
+
+        case .openURL:
+            // Handled above by the .setup kind check; fall through to nil for any other outcome
+            return nil
         }
     }
 
@@ -420,10 +457,41 @@ struct OutcomeQueueView: View {
     }
 
     private func markSkipped(_ outcome: SamOutcome) {
+        // For setup outcomes, record the dismissal in UserDefaults for resurface timing
+        if outcome.outcomeKind == .setup {
+            recordSetupDismissal(outcome)
+        }
+
         try? outcomeRepo.markDismissed(id: outcome.id)
 
         // Record calibration dismissal signal
         Task { await CalibrationService.shared.recordDismissal(kind: outcome.outcomeKindRawValue) }
+    }
+
+    // MARK: - Setup Guidance UserDefaults Helpers (Phase 6)
+
+    /// Records that the user said "Already Done" for a setup guidance outcome.
+    private func recordSetupAcknowledgement(_ outcome: SamOutcome) {
+        guard let payload = parseSetupPayload(outcome) else { return }
+        let key = payload.userDefaultsKey
+        UserDefaults.standard.set(true, forKey: "\(key).acknowledged")
+        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "\(key).acknowledgedAt")
+    }
+
+    /// Records a dismissal for a setup guidance outcome, incrementing the dismiss count.
+    private func recordSetupDismissal(_ outcome: SamOutcome) {
+        guard let payload = parseSetupPayload(outcome) else { return }
+        let key = payload.userDefaultsKey
+        let count = UserDefaults.standard.integer(forKey: "\(key).dismissCount")
+        UserDefaults.standard.set(count + 1, forKey: "\(key).dismissCount")
+        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "\(key).lastDismissedAt")
+    }
+
+    /// Decodes a SetupGuidePayload from a setup guidance outcome's sourceInsightSummary.
+    private func parseSetupPayload(_ outcome: SamOutcome) -> SetupGuidePayload? {
+        let json = outcome.sourceInsightSummary
+        guard !json.isEmpty, let data = json.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(SetupGuidePayload.self, from: data)
     }
 
     // MARK: - Sequence Helpers

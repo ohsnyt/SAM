@@ -128,6 +128,10 @@ struct AppShellView: View {
                 Label("Business", systemImage: "chart.bar.horizontal.page")
             }
 
+            NavigationLink(value: "grow") {
+                Label("Grow", systemImage: "arrow.up.right.circle")
+            }
+
             NavigationLink(value: "search") {
                 Label("Search", systemImage: "magnifyingglass")
             }
@@ -135,7 +139,7 @@ struct AppShellView: View {
         .navigationTitle("SAM")
         .safeAreaInset(edge: .top) {
             if tipsEnabled {
-                Text("Use ⌘K for quick navigation, ⌘1–4 to jump between sections.")
+                Text("Use ⌘K for quick navigation, ⌘1–5 to jump between sections.")
                     .font(.caption)
                     .foregroundStyle(.white)
                     .multilineTextAlignment(.center)
@@ -211,6 +215,9 @@ struct AppShellView: View {
         case "business":
             BusinessDashboardView()
 
+        case "grow":
+            GrowDashboardView()
+
         case "search":
             SearchView()
 
@@ -276,6 +283,9 @@ private struct AppShellNotificationHandlers: ViewModifier {
             }
             .onReceive(NotificationCenter.default.publisher(for: .samNavigateToStrategicInsights)) { _ in
                 sidebarSelection = "business"
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .samNavigateToGrow)) { _ in
+                sidebarSelection = "grow"
             }
     }
 }

@@ -20,8 +20,21 @@ actor BusinessProfileService {
 
     private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "BusinessProfileService")
     private let profileKey = "sam.businessProfile"
+    private let linkedInProfileKey = "sam.userLinkedInProfile"
+    private let facebookProfileKey = "sam.userFacebookProfile"
+    /// Legacy single-item key — migrated to `profileAnalysesKey` on first access.
+    private let profileAnalysisKey = "sam.profileAnalysis"
+    /// Array of per-platform analyses (one entry per platform).
+    private let profileAnalysesKey = "sam.profileAnalyses"
+    private let profileSnapshotKey = "sam.profileAnalysisSnapshot"
+    private let facebookSnapshotKey = "sam.facebookAnalysisSnapshot"
 
     private var cachedProfile: BusinessProfile?
+    private var cachedLinkedInProfile: UserLinkedInProfileDTO?
+    private var cachedFacebookProfile: UserFacebookProfileDTO?
+    private var cachedAnalyses: [ProfileAnalysisDTO]?
+    private var cachedSnapshot: ProfileAnalysisSnapshot?
+    private var cachedFacebookSnapshot: FacebookAnalysisSnapshot?
 
     private init() {}
 
@@ -55,12 +68,150 @@ actor BusinessProfileService {
         }
     }
 
+    // MARK: - LinkedIn Profile Storage
+
+    /// Save the user's parsed LinkedIn profile.
+    func saveLinkedInProfile(_ profile: UserLinkedInProfileDTO) {
+        cachedLinkedInProfile = profile
+        if let data = try? JSONEncoder().encode(profile) {
+            UserDefaults.standard.set(data, forKey: linkedInProfileKey)
+            logger.info("Saved user LinkedIn profile to UserDefaults")
+        }
+    }
+
+    /// Load the user's LinkedIn profile (cached after first load). Returns nil if not yet imported.
+    func linkedInProfile() -> UserLinkedInProfileDTO? {
+        if let cached = cachedLinkedInProfile { return cached }
+        guard let data = UserDefaults.standard.data(forKey: linkedInProfileKey),
+              let decoded = try? JSONDecoder().decode(UserLinkedInProfileDTO.self, from: data) else { return nil }
+        cachedLinkedInProfile = decoded
+        return decoded
+    }
+
+    // MARK: - Facebook Profile Storage
+
+    /// Save the user's parsed Facebook profile.
+    func saveFacebookProfile(_ profile: UserFacebookProfileDTO) {
+        cachedFacebookProfile = profile
+        // Encode as JSON for UserDefaults — UserFacebookProfileDTO needs Codable conformance
+        // Store the coaching context fragment as a simple string
+        UserDefaults.standard.set(profile.coachingContextFragment, forKey: facebookProfileKey)
+        logger.info("Saved user Facebook profile to UserDefaults")
+    }
+
+    /// Load the user's Facebook profile coaching fragment. Returns nil if not yet imported.
+    func facebookProfileFragment() -> String? {
+        if let cached = cachedFacebookProfile { return cached.coachingContextFragment }
+        guard let fragment = UserDefaults.standard.string(forKey: facebookProfileKey),
+              !fragment.isEmpty else { return nil }
+        return fragment
+    }
+
+    // MARK: - Facebook Analysis Snapshot
+
+    /// Save the Facebook analysis snapshot (import-time activity data for on-demand re-analysis).
+    func saveFacebookSnapshot(_ snapshot: FacebookAnalysisSnapshot) {
+        cachedFacebookSnapshot = snapshot
+        if let data = try? JSONEncoder().encode(snapshot) {
+            UserDefaults.standard.set(data, forKey: facebookSnapshotKey)
+            logger.info("Saved Facebook analysis snapshot to UserDefaults")
+        }
+    }
+
+    /// Load the Facebook analysis snapshot. Returns nil if no import has been processed yet.
+    func facebookSnapshot() -> FacebookAnalysisSnapshot? {
+        if let cached = cachedFacebookSnapshot { return cached }
+        guard let data = UserDefaults.standard.data(forKey: facebookSnapshotKey),
+              let decoded = try? JSONDecoder().decode(FacebookAnalysisSnapshot.self, from: data) else { return nil }
+        cachedFacebookSnapshot = decoded
+        return decoded
+    }
+
+    // MARK: - Profile Analysis Storage (multi-platform)
+
+    /// Save or update a profile analysis for its platform.
+    /// Replaces any existing entry for the same platform; adds a new entry otherwise.
+    func saveProfileAnalysis(_ analysis: ProfileAnalysisDTO) {
+        var analyses = loadProfileAnalyses()
+        if let idx = analyses.firstIndex(where: { $0.platform == analysis.platform }) {
+            analyses[idx] = analysis
+        } else {
+            analyses.append(analysis)
+        }
+        cachedAnalyses = analyses
+        if let data = try? JSONEncoder().encode(analyses) {
+            UserDefaults.standard.set(data, forKey: profileAnalysesKey)
+            // Remove legacy single-item key once migrated
+            UserDefaults.standard.removeObject(forKey: profileAnalysisKey)
+            logger.info("Saved profile analyses (\(analyses.count) platforms) to UserDefaults")
+        }
+    }
+
+    /// All stored platform analyses, sorted by most recently analyzed.
+    func profileAnalyses() -> [ProfileAnalysisDTO] {
+        if let cached = cachedAnalyses { return cached }
+        let analyses = loadProfileAnalyses()
+        cachedAnalyses = analyses
+        return analyses
+    }
+
+    /// Convenience — returns the analysis for a specific platform, or nil.
+    func profileAnalysis(for platform: String = "linkedIn") -> ProfileAnalysisDTO? {
+        profileAnalyses().first(where: { $0.platform == platform })
+    }
+
+    /// Internal loader — reads from the array key, migrating from the legacy single-item key if needed.
+    private func loadProfileAnalyses() -> [ProfileAnalysisDTO] {
+        // Prefer the new array key
+        if let data = UserDefaults.standard.data(forKey: profileAnalysesKey),
+           let decoded = try? JSONDecoder().decode([ProfileAnalysisDTO].self, from: data) {
+            return decoded.sorted { $0.analysisDate > $1.analysisDate }
+        }
+        // Migrate legacy single-item entry
+        if let data = UserDefaults.standard.data(forKey: profileAnalysisKey),
+           let legacy = try? JSONDecoder().decode(ProfileAnalysisDTO.self, from: data) {
+            logger.info("Migrating legacy profileAnalysis to array store")
+            return [legacy]
+        }
+        return []
+    }
+
+    /// Save the profile analysis snapshot (import-time endorsement/recommendation/share data).
+    func saveAnalysisSnapshot(_ snapshot: ProfileAnalysisSnapshot) {
+        cachedSnapshot = snapshot
+        if let data = try? JSONEncoder().encode(snapshot) {
+            UserDefaults.standard.set(data, forKey: profileSnapshotKey)
+            logger.info("Saved profile analysis snapshot to UserDefaults")
+        }
+    }
+
+    /// Load the profile analysis snapshot. Returns nil if no import has been processed yet.
+    func analysisSnapshot() -> ProfileAnalysisSnapshot? {
+        if let cached = cachedSnapshot { return cached }
+        guard let data = UserDefaults.standard.data(forKey: profileSnapshotKey),
+              let decoded = try? JSONDecoder().decode(ProfileAnalysisSnapshot.self, from: data) else { return nil }
+        cachedSnapshot = decoded
+        return decoded
+    }
+
     // MARK: - System Instruction Helpers
 
     /// Returns the business context fragment for injection into AI system instructions.
     func contextFragment() -> String {
         let p = profile()
-        return p.systemInstructionFragment()
+        var fragment = p.systemInstructionFragment()
+
+        // Append LinkedIn profile context if available
+        if let li = linkedInProfile(), !li.coachingContextFragment.isEmpty {
+            fragment += "\n\n## LinkedIn Profile\n" + li.coachingContextFragment
+        }
+
+        // Append Facebook profile context if available
+        if let fbFragment = facebookProfileFragment() {
+            fragment += "\n\n" + fbFragment
+        }
+
+        return fragment
     }
 
     /// Returns the universal blocklist as a system instruction fragment.

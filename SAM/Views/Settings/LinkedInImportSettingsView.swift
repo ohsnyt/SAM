@@ -20,6 +20,9 @@ struct LinkedInImportSettingsContent: View {
 
     @State private var coordinator = LinkedInImportCoordinator.shared
     @Environment(\.openURL) private var openURL
+    @State private var showReviewSheet = false
+    @State private var showProfileAnalysis = false
+    @State private var autoSyncLinkedInURLs: Bool = UserDefaults.standard.bool(forKey: "sam.linkedin.autoSyncAppleContactURLs")
 
     private var isActive: Bool { coordinator.importStatus.isActive }
 
@@ -33,6 +36,21 @@ struct LinkedInImportSettingsContent: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
+            // Stale import warning (>90 days since last import)
+            if let warning = coordinator.staleImportWarning {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                        .font(.caption)
+                    Text(warning)
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+                .padding(8)
+                .background(Color.orange.opacity(0.1))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+            }
+
             Divider()
 
             // Request archive section
@@ -44,7 +62,7 @@ struct LinkedInImportSettingsContent: View {
             importSection
 
             // Status display
-            if coordinator.importStatus != .idle {
+            if coordinator.importStatus != .idle && coordinator.importStatus != .awaitingReview {
                 Divider()
                 statusSection
             }
@@ -87,6 +105,16 @@ struct LinkedInImportSettingsContent: View {
                 }
             }
 
+            // §13.2 — Auto-sync preference
+            Divider()
+            autoSyncSection
+
+            // Profile Analysis section
+            if coordinator.latestProfileAnalysis != nil {
+                Divider()
+                profileAnalysisSection
+            }
+
             if let error = coordinator.lastError {
                 Text(error)
                     .font(.caption)
@@ -94,6 +122,18 @@ struct LinkedInImportSettingsContent: View {
             }
         }
         .padding(.vertical, 4)
+        .sheet(isPresented: $showReviewSheet) {
+            LinkedInImportReviewSheet(coordinator: coordinator) {
+                showReviewSheet = false
+            }
+        }
+        .sheet(isPresented: $showProfileAnalysis) {
+            if let analysis = coordinator.latestProfileAnalysis {
+                ProfileAnalysisSheet(analysis: analysis) {
+                    await coordinator.runProfileAnalysis()
+                }
+            }
+        }
     }
 
     // MARK: - Sub-sections
@@ -126,8 +166,8 @@ struct LinkedInImportSettingsContent: View {
                 .font(.caption)
                 .fontWeight(.semibold)
 
-            // Preview state — show counts and confirm/cancel
-            if coordinator.parsedMessageCount > 0 || coordinator.pendingConnectionCount > 0 {
+            // Preview state — show counts and Review button when ready
+            if coordinator.importStatus == .awaitingReview || coordinator.parsedMessageCount > 0 || coordinator.pendingConnectionCount > 0 {
                 previewSection
             } else {
                 // Folder picker
@@ -169,17 +209,27 @@ struct LinkedInImportSettingsContent: View {
                 if coordinator.pendingConnectionCount > 0 {
                     summaryRow("Connections to match:", value: coordinator.pendingConnectionCount)
                 }
+                if coordinator.pendingEndorsementsReceivedCount > 0 {
+                    summaryRow("Endorsements received:", value: coordinator.pendingEndorsementsReceivedCount)
+                }
+                if coordinator.pendingEndorsementsGivenCount > 0 {
+                    summaryRow("Endorsements given:", value: coordinator.pendingEndorsementsGivenCount)
+                }
+                if coordinator.pendingRecommendationsGivenCount > 0 {
+                    summaryRow("Recommendations given:", value: coordinator.pendingRecommendationsGivenCount)
+                }
+                if coordinator.pendingInvitationsCount > 0 {
+                    summaryRow("Invitations:", value: coordinator.pendingInvitationsCount)
+                }
             }
             .padding(.leading, 8)
 
             HStack(spacing: 12) {
-                Button("Import") {
-                    Task {
-                        await coordinator.confirmImport()
-                    }
+                Button("Review & Import") {
+                    showReviewSheet = true
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(coordinator.newMessageCount == 0 && coordinator.pendingConnectionCount == 0)
+                .disabled(coordinator.importStatus != .awaitingReview)
 
                 Button("Cancel") {
                     coordinator.cancelImport()
@@ -216,15 +266,88 @@ struct LinkedInImportSettingsContent: View {
                     .foregroundStyle(coordinator.importStatus == .failed ? .red : .secondary)
             }
 
-            if coordinator.importStatus == .success && coordinator.matchedConnectionCount > 0 {
-                Text("· \(coordinator.matchedConnectionCount) connection(s) matched")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            if coordinator.importStatus == .success {
+                if coordinator.exactMatchCount > 0 {
+                    Text("· \(coordinator.exactMatchCount) auto-matched")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                if coordinator.matchedConnectionCount > 0 {
+                    Text("· \(coordinator.matchedConnectionCount) connection(s) matched")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                if coordinator.unmatchedConnectionCount > 0 {
+                    Text("· \(coordinator.unmatchedConnectionCount) unmatched — see Today → Unknown Senders")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+                if coordinator.enrichmentCandidateCount > 0 {
+                    Text("· \(coordinator.enrichmentCandidateCount) contact update(s) queued — see People list")
+                        .font(.caption)
+                        .foregroundStyle(.blue)
+                }
             }
-            if coordinator.importStatus == .success && coordinator.unmatchedConnectionCount > 0 {
-                Text("· \(coordinator.unmatchedConnectionCount) unmatched — see Today → Unknown Senders")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
+        }
+    }
+
+    // MARK: - Auto-Sync (§13.2)
+
+    private var autoSyncSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Toggle(isOn: $autoSyncLinkedInURLs) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Automatically add LinkedIn URLs to Apple Contacts")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                    Text("When contacts are marked Add, SAM writes their LinkedIn profile URL to your Apple Contacts without asking each time.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .onChange(of: autoSyncLinkedInURLs) { _, newValue in
+                coordinator.autoSyncLinkedInURLs = newValue
+            }
+        }
+    }
+
+    // MARK: - Profile Analysis
+
+    @ViewBuilder
+    private var profileAnalysisSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("LinkedIn Profile Analysis")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                    if let date = coordinator.latestProfileAnalysis?.analysisDate {
+                        Text("Last analyzed: \(date, style: .relative) ago")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+                if coordinator.profileAnalysisStatus == .analyzing {
+                    ProgressView().controlSize(.small)
+                }
+                Button("Re-Analyze") {
+                    Task { await coordinator.runProfileAnalysis() }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(coordinator.profileAnalysisStatus == .analyzing)
+            }
+
+            // Analysis-ready banner (shown after a fresh import)
+            if coordinator.importStatus == .success && coordinator.profileAnalysisStatus == .complete {
+                Button("Profile analysis ready — View in Grow \u{2192}") {
+                    NotificationCenter.default.post(name: .samNavigateToGrow, object: nil)
+                    NSApp.keyWindow?.close()
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.cyan)
+                .font(.caption)
             }
         }
     }
