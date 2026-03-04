@@ -73,6 +73,10 @@ actor TimeAnalystService {
             - If data is sparse, note that and keep recommendations conservative
             - Each recommendation should include 2-3 approaches (alternative ways to implement it)
             - effort is "quick" (< 30 min), "moderate" (1-2 hours), or "substantial" (half-day+)
+            - Steps must suggest specific time blocks (e.g., "Block Tuesday 9–11 AM for prospecting calls")
+            - Connect recommendations to the contact distribution data — name which role group benefits (e.g., "Your 12 Leads need more prospecting time")
+            - Compare 7-day vs 30-day data to surface week-over-week trends (e.g., "Client Meeting time dropped from 35% to 18% this week")
+            - Flag categories at 0% this week but non-zero for the month — these are dropped habits that need attention
             """
 
         let prompt = """

@@ -4,6 +4,39 @@
 
 ---
 
+## March 4, 2026 — Suggestion Quality Overhaul: Remaining Items
+
+### Overview
+Completed the two remaining items from the Suggestion Quality Overhaul. No schema change, no DTO changes.
+
+### Item 1: Specialist Prompt Upgrades
+All 4 StrategicCoordinator specialist LLM prompts now require people-specific, named, concrete output:
+- **PipelineAnalystService** — +5 rules: name stuck people with action plans, name pending production person+product+step, risk alerts must name people, top 3 stuck prospects get individual plans
+- **TimeAnalystService** — +4 rules: suggest specific time blocks (day+hour), connect to role groups by name, compare 7-day vs 30-day trends, flag dropped habits
+- **PatternDetectorService** — +5 rules: reference role groups with numbers, name cold people and roles, concrete next steps naming role groups, reference actual referral partner counts, explain causal relationships
+- **ContentAdvisorService** — +4 rules: cite specific meeting/discussion that inspired topic, include copy-paste opening sentence, suggest best platform+day, at least 2 topics must connect to named meetings
+
+### Item 2: Cross-Platform Profile Copy-Paste Text
+- **CrossPlatformConsistencyService** — IMPROVEMENTS instruction now requires platform-specific copy-paste text in `example_or_prompt` for every inconsistency
+- **ProfileAnalystService** — PROFILE IMPROVEMENTS instruction now requires ready-to-paste LinkedIn text (not instructions on what to write)
+- **FacebookProfileAnalystService** — +1 rule: Profile Completeness improvements must contain ready-to-paste Facebook text
+- **ProfileAnalysisSheet** — Added `CopyButton` overlay (top-right) and `.textSelection(.enabled)` on improvement `example_or_prompt` blocks
+
+### Files Summary
+
+| File | Action |
+|------|--------|
+| `Services/PipelineAnalystService.swift` | MODIFY |
+| `Services/TimeAnalystService.swift` | MODIFY |
+| `Services/PatternDetectorService.swift` | MODIFY |
+| `Services/ContentAdvisorService.swift` | MODIFY |
+| `Services/CrossPlatformConsistencyService.swift` | MODIFY |
+| `Services/ProfileAnalystService.swift` | MODIFY |
+| `Services/FacebookProfileAnalystService.swift` | MODIFY |
+| `Views/Settings/ProfileAnalysisSheet.swift` | MODIFY |
+
+---
+
 ## March 4, 2026 — Phase 4: Today View Polish
 
 ### Overview

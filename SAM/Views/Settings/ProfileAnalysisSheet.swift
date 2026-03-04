@@ -256,9 +256,14 @@ struct ProfileAnalysisSheet: View {
                         Text(example)
                             .font(.caption)
                             .foregroundStyle(.primary.opacity(0.75))
+                            .textSelection(.enabled)
                             .padding(8)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(.quaternary.opacity(0.6), in: RoundedRectangle(cornerRadius: 6))
+                            .overlay(alignment: .topTrailing) {
+                                CopyButton(text: example)
+                                    .padding(6)
+                            }
                     }
                 }
                 if item.id != sortedImprovements.last?.id {

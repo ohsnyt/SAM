@@ -77,6 +77,11 @@ actor PatternDetectorService {
             - Do not fabricate patterns — if data is sparse, report fewer patterns
             - Each recommendation should include 2-3 approaches (alternative ways to implement it)
             - effort is "quick" (< 30 min), "moderate" (1-2 hours), or "substantial" (half-day+)
+            - Each pattern must reference the specific role group driving it with numbers (e.g., "7 of 10 Clients were contacted within 48h of their meeting")
+            - Name the count of cold/inactive people and their primary roles (e.g., "5 cold contacts: 3 Leads, 2 Clients")
+            - Recommendations must include concrete next steps naming role groups (e.g., "Re-engage the 3 cold Leads with a check-in call this week")
+            - Reference the actual referral partner count and interaction rate from the data (e.g., "2 of 4 Referral Partners had zero interactions this month")
+            - Explain causal relationships, not just correlations (e.g., "Leads contacted within 24h convert 2× faster because urgency signals commitment")
             """
 
         let prompt = """

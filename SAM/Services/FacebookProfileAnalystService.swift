@@ -168,6 +168,7 @@ actor FacebookProfileAnalystService {
             - Keep each praise message to 1–2 sentences; each improvement rationale to 2–3 sentences
             - Do NOT include generic Facebook advice — be specific to this person's actual data
             - Frame all suggestions through a personal/community lens, not a professional marketing lens
+            - For Profile Completeness improvements, every example_or_prompt MUST contain ready-to-paste Facebook text (e.g., "Paste this as your Facebook bio: '[exact text]'")
             """
 
         // Step 4: Build user prompt

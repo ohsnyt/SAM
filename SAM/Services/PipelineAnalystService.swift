@@ -71,6 +71,11 @@ actor PipelineAnalystService {
             - If data is sparse, keep recommendations brief rather than speculating
             - Each recommendation should include 2-3 approaches (alternative ways to implement it)
             - effort is "quick" (< 30 min), "moderate" (1-2 hours), or "substantial" (half-day+)
+            - Name specific stuck people and explain what to do for each (e.g., "John Smith has been a Lead for 45 days — schedule a needs analysis")
+            - Each rationale must include 2-3 concrete next steps that reference people by name
+            - For pending production, name the person + product type + specific next step (e.g., "Jane Doe's IUL application — call carrier for status update")
+            - risk_alerts must name the people involved (e.g., "3 Applicants stalled: Tom Lee, Sarah Kim, Mike Chen")
+            - The top 3 stuck prospects each get an individual action plan in the approaches
             """
 
         let prompt = """

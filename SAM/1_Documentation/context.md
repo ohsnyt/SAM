@@ -304,7 +304,8 @@ The current UI has accumulated complexity across 30+ phases. It needs a focused 
 - ✅ Rich context builder (`buildEnrichmentContext`) feeds AI with last 3 interactions, notes, pipeline, production
 - ✅ Goal rate guardrails prevent absurd daily rates (e.g., >5 policies/day → shows weekly/monthly)
 - ✅ Inline gap-filling prompts via `InlineGapPromptView` + `KnowledgeGap`
-- Remaining: Audit StrategicCoordinator output; cross-platform profile copy-paste text
+- ✅ StrategicCoordinator specialist prompts upgraded: all 4 analysts require people-specific, named, concrete output
+- ✅ Cross-platform profile copy-paste text: all 3 profile analysts require ready-to-paste text in example_or_prompt; CopyButton + textSelection on ProfileAnalysisSheet
 
 ### Priority 2 — Substack Integration
 

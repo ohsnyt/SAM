@@ -215,7 +215,9 @@ actor CrossPlatformConsistencyService {
 
             Analyze the cross-platform data and provide:
             1. PRAISE — What's consistent and well-maintained across platforms
-            2. IMPROVEMENTS — Specific inconsistencies to fix, with concrete actions
+            2. IMPROVEMENTS — For EVERY inconsistency, provide platform-specific copy-paste text in example_or_prompt. \
+            Format: "Paste this on LinkedIn: '[exact text]'. Paste this on Facebook: '[exact text]'." \
+            Every improvement MUST include example_or_prompt with ready-to-paste text for the relevant platform(s).
             3. CONTENT STRATEGY — How the two platforms should complement each other
             4. NETWORK HEALTH — Cross-platform contact overlap assessment
             5. EXTERNAL PROMPT — A prompt for deeper cross-platform optimization

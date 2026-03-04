@@ -68,8 +68,10 @@ actor ProfileAnalystService {
             Include a metric where possible (e.g. "15 recommendations received").
 
             2. PROFILE IMPROVEMENTS — What specific changes would most improve discoverability, \
-            credibility, and engagement? Prioritize high-impact items. Provide an example or prompt \
-            for each suggestion where helpful.
+            credibility, and engagement? Prioritize high-impact items. For EVERY improvement, \
+            provide ready-to-paste LinkedIn text in example_or_prompt — complete text the user can \
+            copy and paste directly, not instructions on what to write (e.g., for a headline suggestion, \
+            write the actual headline text).
 
             3. CONTENT STRATEGY — Assess the user's publishing activity. If they post regularly, \
             evaluate themes and engagement. If they don't post, suggest a starting strategy specific \

@@ -60,6 +60,10 @@ actor ContentAdvisorService {
             - Topics should connect to recent client conversations when possible
             - Seasonal context matters (tax season, open enrollment, year-end planning, etc.)
             - Never suggest specific product recommendations or guarantees
+            - Each topic must cite the specific recent meeting or discussion topic that inspired it (e.g., "Inspired by your meeting with John about retirement planning")
+            - Include one copy-paste-ready opening sentence as a key_point (e.g., "Ever wonder how much you actually need to retire comfortably?")
+            - Suggest the best platform + posting day for each topic (e.g., "Best on LinkedIn, post Tuesday morning")
+            - At least 2 topics must connect to named meeting topics from the data — do not invent meetings that aren't in the data
             """
 
         let prompt = """
