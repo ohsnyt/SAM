@@ -14,7 +14,6 @@ import SwiftUI
 struct GraphMiniPreviewView: View {
 
     @State private var coordinator = RelationshipGraphCoordinator.shared
-    @AppStorage("sam.sidebar.selection") private var sidebarSelection: String = "awareness"
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -34,7 +33,7 @@ struct GraphMiniPreviewView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .contentShape(Rectangle())
                 .onTapGesture {
-                    sidebarSelection = "graph"
+                    NotificationCenter.default.post(name: .samNavigateToGraph, object: nil)
                 }
 
             if coordinator.graphStatus != .ready {

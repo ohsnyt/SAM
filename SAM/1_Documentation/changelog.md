@@ -4,6 +4,38 @@
 
 ---
 
+## March 4, 2026 — Phase 3: Sidebar Reorganization + Business Tab Consolidation
+
+### Overview
+Moved Relationship Graph from Business (tab 6 of 6) into People as a toolbar-toggled mode. Consolidated Business from 6 tabs to 4 by merging Client Pipeline and Recruiting into a single Pipeline tab with a sub-picker. No schema change.
+
+### Changes
+
+**AppShellView** — `PeopleMode` enum (`.contacts` / `.graph`), segmented toolbar picker on People section, graph mode shows `RelationshipGraphView` in two-column layout, contacts mode unchanged three-column. Notification handler updated: `.samNavigateToGraph` routes to People + graph mode (was Business). Sidebar migration: `"graph"` → People + graph mode.
+
+**PipelineDashboardView** (new) — Wrapper view with Client/Recruiting sub-segmented control, purely compositional over existing `ClientPipelineDashboardView` and `RecruitingPipelineDashboardView`.
+
+**BusinessDashboardView** — Tabs reduced from 6 to 4: Strategic (0), Pipeline (1), Production (2), Goals (3). Graph tab and `.onReceive(.samNavigateToGraph)` removed.
+
+**PersonDetailView** — `viewInGraph()` simplified: removed `UserDefaults.standard.set("business", ...)` line since notification handler now routes to People.
+
+**GraphMiniPreviewView** — Tap gesture changed from `sidebarSelection = "graph"` to posting `.samNavigateToGraph` notification. Removed unused `@AppStorage` property.
+
+**CommandPaletteView** — Added "Go to Relationship Graph" command (posts `.samNavigateToGraph` notification).
+
+### Files Summary
+
+| File | Action |
+|------|--------|
+| `Views/AppShellView.swift` | Edit — PeopleMode enum, layout branching, toolbar, notifications, migration |
+| `Views/People/PersonDetailView.swift` | Edit — simplified viewInGraph() |
+| `Views/Business/PipelineDashboardView.swift` | New — Client+Recruiting wrapper |
+| `Views/Business/BusinessDashboardView.swift` | Edit — 6 tabs → 4, removed Graph |
+| `Views/Business/GraphMiniPreviewView.swift` | Edit — notification tap, removed @AppStorage |
+| `Views/Shared/CommandPaletteView.swift` | Edit — added Graph command |
+
+---
+
 ## March 4, 2026 — Phase 2: Suggestion Quality Overhaul
 
 ### Overview

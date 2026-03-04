@@ -284,11 +284,13 @@ The current UI has accumulated complexity across 30+ phases. It needs a focused 
 - Below it: 3-5 ranked action cards, top one visually prominent
 - Everything else collapsed or removed — the user should know what to do within 5 seconds
 
-**Sidebar Reorganization**:
-- **Today** — Briefing + ranked actions
-- **People** — Contact list + detail + relationship graph (graph moved from Business — it's about relationships, not operations)
+**Sidebar Reorganization** *(Completed — Phase 3, March 4, 2026)*:
+- ✅ **People** — Contacts/Graph toolbar toggle (graph moved from Business — it's about relationships, not operations)
+- ✅ **Business** — Consolidated from 6 tabs to 4 (Strategic, Pipeline, Production, Goals); Client+Recruiting merged into Pipeline sub-picker
+- ✅ Command palette "Go to Relationship Graph" command
+- ✅ `.samNavigateToGraph` routes to People > Graph mode; PersonDetailView "View in Graph" stays in People
+- **Today** — Briefing + ranked actions (unchanged)
 - **Grow** — Lead acquisition workflow (currently rudimentary — needs depth: lead sources, referral tracking, prospecting scripts, interview process for discovering opportunities)
-- **Business** — Goals, pipelines, production, strategic insights (operational focus)
 - **Search** — Unchanged
 
 **Contact Lifecycle** (see §4):

@@ -33,11 +33,9 @@ struct BusinessDashboardView: View {
 
                 Picker("Section", selection: $selectedTab) {
                     Text("Strategic").tag(0)
-                    Text("Client Pipeline").tag(1)
-                    Text("Recruiting").tag(2)
-                    Text("Production").tag(3)
-                    Text("Goals").tag(4)
-                    Text("Graph").tag(5)
+                    Text("Pipeline").tag(1)
+                    Text("Production").tag(2)
+                    Text("Goals").tag(3)
                 }
                 .pickerStyle(.segmented)
                 .padding()
@@ -45,25 +43,19 @@ struct BusinessDashboardView: View {
                 Divider()
             }
 
-            // Tab content — Graph fills remaining space; others scroll
-            if selectedTab == 5 {
-                RelationshipGraphView()
-            } else {
-                ScrollView {
-                    switch selectedTab {
-                    case 0:
-                        StrategicInsightsView(coordinator: strategic)
-                    case 1:
-                        ClientPipelineDashboardView(tracker: tracker)
-                    case 2:
-                        RecruitingPipelineDashboardView(tracker: tracker)
-                    case 3:
-                        ProductionDashboardView(tracker: tracker)
-                    case 4:
-                        GoalProgressView()
-                    default:
-                        EmptyView()
-                    }
+            // Tab content
+            ScrollView {
+                switch selectedTab {
+                case 0:
+                    StrategicInsightsView(coordinator: strategic)
+                case 1:
+                    PipelineDashboardView(tracker: tracker)
+                case 2:
+                    ProductionDashboardView(tracker: tracker)
+                case 3:
+                    GoalProgressView()
+                default:
+                    EmptyView()
                 }
             }
         }
@@ -84,9 +76,6 @@ struct BusinessDashboardView: View {
         }
         .onAppear {
             tracker.refresh()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .samNavigateToGraph)) { _ in
-            selectedTab = 5
         }
         .onReceive(NotificationCenter.default.publisher(for: .samNavigateToStrategicInsights)) { _ in
             selectedTab = 0

@@ -158,6 +158,7 @@ struct CommandPaletteView: View {
         .navigation(id: "nav-business", label: "Go to Business", icon: "chart.bar.horizontal.page", shortcut: "\u{2318}3", section: "business"),
         .navigation(id: "nav-grow", label: "Go to Grow", icon: "arrow.up.right.circle", shortcut: "\u{2318}4", section: "grow"),
         .navigation(id: "nav-search", label: "Go to Search", icon: "magnifyingglass", shortcut: "\u{2318}5", section: "search"),
+        .navigation(id: "nav-graph", label: "Go to Relationship Graph", icon: "circle.grid.cross", shortcut: nil, section: "graph"),
         .action(id: "act-note", label: "New Note", icon: "square.and.pencil", shortcut: "\u{2318}N"),
         .action(id: "act-settings", label: "Open Settings", icon: "gearshape", shortcut: "\u{2318},"),
     ]
@@ -259,7 +260,11 @@ struct CommandPaletteView: View {
         let item = items[selectedIndex]
         switch item {
         case .navigation(_, _, _, _, let section):
-            onNavigate(section)
+            if section == "graph" {
+                NotificationCenter.default.post(name: .samNavigateToGraph, object: nil)
+            } else {
+                onNavigate(section)
+            }
             onDismiss()
 
         case .action(let id, _, _, _):

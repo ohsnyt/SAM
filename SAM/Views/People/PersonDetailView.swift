@@ -1890,7 +1890,6 @@ struct PersonDetailView: View {
         if let node = coordinator.nodes.first(where: { $0.id == person.id }) {
             coordinator.viewportCenter = node.position
         }
-        UserDefaults.standard.set("business", forKey: "sam.sidebar.selection")
         NotificationCenter.default.post(name: .samNavigateToGraph, object: nil)
     }
 

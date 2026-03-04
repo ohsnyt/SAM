@@ -16,13 +16,16 @@ import TipKit
 struct AppShellView: View {
     
     // MARK: - Navigation State
-    
+
+    fileprivate enum PeopleMode: String { case contacts, graph }
+
     @AppStorage("sam.sidebar.selection") private var sidebarSelection: String = "today"
     @State private var selectedPersonID: UUID?
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var postMeetingPayload: PostMeetingPayload?
     @State private var showCommandPalette = false
     @State private var introCoordinator = IntroSequenceCoordinator.shared
+    @State private var peopleMode: PeopleMode = .contacts
     @AppStorage("sam.tips.guidanceEnabled") private var tipsEnabled: Bool = true
     @Environment(\.openWindow) private var openWindow
 
@@ -31,8 +34,8 @@ struct AppShellView: View {
     
     var body: some View {
         Group {
-            if sidebarSelection == "people" {
-                // Three-column layout for People section
+            if sidebarSelection == "people" && peopleMode == .contacts {
+                // Three-column layout for People > Contacts
                 NavigationSplitView(columnVisibility: $columnVisibility) {
                     sidebar
                         .navigationSplitViewColumnWidth(min: 120, ideal: 130, max: 200)
@@ -43,8 +46,27 @@ struct AppShellView: View {
                     peopleDetailView
                 }
                 .navigationTitle("SAM")
+                .toolbar {
+                    ToolbarItem(placement: .principal) {
+                        peopleModeToolbar
+                    }
+                }
+            } else if sidebarSelection == "people" && peopleMode == .graph {
+                // Two-column layout for People > Graph
+                NavigationSplitView {
+                    sidebar
+                        .navigationSplitViewColumnWidth(min: 120, ideal: 130, max: 200)
+                } detail: {
+                    RelationshipGraphView()
+                }
+                .navigationTitle("SAM")
+                .toolbar {
+                    ToolbarItem(placement: .principal) {
+                        peopleModeToolbar
+                    }
+                }
             } else {
-                // Two-column layout for Today, Business, Search
+                // Two-column layout for Today, Business, Grow, Search
                 NavigationSplitView {
                     sidebar
                         .navigationSplitViewColumnWidth(min: 120, ideal: 130, max: 200)
@@ -59,6 +81,7 @@ struct AppShellView: View {
             sidebarSelection: $sidebarSelection,
             selectedPersonID: $selectedPersonID,
             postMeetingPayload: $postMeetingPayload,
+            peopleMode: $peopleMode,
             openWindow: openWindow
         ))
         .sheet(item: $postMeetingPayload) { payload in
@@ -110,6 +133,17 @@ struct AppShellView: View {
                 sidebarSelection = section
             }
         }
+    }
+
+    // MARK: - People Mode Toolbar
+
+    private var peopleModeToolbar: some View {
+        Picker("", selection: $peopleMode) {
+            Text("Contacts").tag(PeopleMode.contacts)
+            Text("Graph").tag(PeopleMode.graph)
+        }
+        .pickerStyle(.segmented)
+        .frame(width: 180)
     }
 
     // MARK: - Sidebar
@@ -197,7 +231,8 @@ struct AppShellView: View {
             case "contexts":
                 sidebarSelection = "people"
             case "graph":
-                sidebarSelection = "business"
+                sidebarSelection = "people"
+                peopleMode = .graph
             default:
                 break
             }
@@ -254,6 +289,7 @@ private struct AppShellNotificationHandlers: ViewModifier {
     @Binding var sidebarSelection: String
     @Binding var selectedPersonID: UUID?
     @Binding var postMeetingPayload: PostMeetingPayload?
+    @Binding var peopleMode: AppShellView.PeopleMode
     let openWindow: OpenWindowAction
 
     func body(content: Content) -> some View {
@@ -261,6 +297,7 @@ private struct AppShellNotificationHandlers: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: .samNavigateToPerson)) { notification in
                 if let personID = notification.userInfo?["personID"] as? UUID {
                     sidebarSelection = "people"
+                    peopleMode = .contacts
                     selectedPersonID = personID
                 }
             }
@@ -276,7 +313,8 @@ private struct AppShellNotificationHandlers: ViewModifier {
                 postMeetingPayload = PostMeetingPayload(eventTitle: title, eventDate: date, attendeeIDs: ids)
             }
             .onReceive(NotificationCenter.default.publisher(for: .samNavigateToGraph)) { notification in
-                sidebarSelection = "business"
+                sidebarSelection = "people"
+                peopleMode = .graph
                 if let focusMode = notification.userInfo?["focusMode"] as? String {
                     RelationshipGraphCoordinator.shared.activateFocusMode(focusMode)
                 }
