@@ -55,7 +55,7 @@ No schema change. Gap answers stored in UserDefaults (`sam.gap.*` keys).
 
 ### Decisions
 - Gap answers in UserDefaults (not SwiftData) because they're lightweight strings, not relational data
-- Rich context capped at ~800 tokens to stay within on-device LLM limits
+- Rich context capped at ~800 tokens to keep prompts focused and inference fast
 - Max 1 gap prompt visible at a time to avoid overwhelming the user
 - Rate guardrails use per-goal-type thresholds rather than a universal cap
 
