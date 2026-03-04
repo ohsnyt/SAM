@@ -115,7 +115,7 @@ public enum FacebookMatchStatus: String, Sendable, Codable {
 
 /// User's intent for a Facebook friend in the import review.
 public enum FacebookClassification: String, Sendable, Codable {
-    /// Create an Apple Contact and SamPerson record for this friend.
+    /// Create a standalone SamPerson record for this friend.
     case add
     /// Store in the UnknownSender triage queue for later review.
     case later

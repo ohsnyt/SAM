@@ -28,7 +28,7 @@ final class FacebookImportCoordinator {
     private let facebookService    = FacebookService.shared
     private let peopleRepo         = PeopleRepository.shared
     private let unknownSenderRepo  = UnknownSenderRepository.shared
-    private let contactsService    = ContactsService.shared
+    // contactsService removed — Facebook import creates standalone SamPerson records, not Apple Contacts
     private let touchRepo          = IntentionalTouchRepository.shared
 
     private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "FacebookImportCoordinator")
@@ -241,14 +241,24 @@ final class FacebookImportCoordinator {
             )
             importRecord.touchEventsFound = touchCount
 
-            // Step 3: Create Apple Contacts for "Add" candidates
+            // Step 3: Create SamPerson records for "Add" candidates (no Apple Contact)
             progressMessage = "Creating new contacts…"
             var newContactCount = 0
             for candidate in importCandidates {
                 let classification = classifications[candidate.id] ?? candidate.defaultClassification
                 if classification == .add {
-                    await createAppleContact(for: candidate)
-                    newContactCount += 1
+                    do {
+                        try peopleRepo.upsertFromSocialImport(
+                            displayName: candidate.displayName,
+                            facebookFriendedOn: candidate.friendedOn,
+                            facebookMessageCount: candidate.messageCount,
+                            facebookLastMessageDate: candidate.lastMessageDate,
+                            facebookTouchScore: candidate.touchScore?.totalScore ?? 0
+                        )
+                        newContactCount += 1
+                    } catch {
+                        logger.error("Failed to create SamPerson for '\(candidate.displayName, privacy: .public)': \(error)")
+                    }
                 }
             }
             importRecord.newContactsFound = newContactCount
@@ -692,20 +702,9 @@ final class FacebookImportCoordinator {
         return count
     }
 
-    // MARK: - Private: Create Apple Contact
-
-    /// Create an Apple Contact and corresponding SamPerson for an "Add" candidate.
-    private func createAppleContact(for candidate: FacebookImportCandidate) async {
-        let _ = await contactsService.createContact(
-            fullName: candidate.displayName,
-            email: nil,
-            note: nil
-        )
-    }
-
     // MARK: - Private: Enrich Matched Person
 
-    /// Update an existing SamPerson with Facebook data (friendship date, etc.).
+    /// Update an existing SamPerson with Facebook data (friendship date, messaging stats, etc.).
     private func enrichMatchedPerson(personID: UUID, candidate: FacebookImportCandidate, context: ModelContext) {
         let descriptor = FetchDescriptor<SamPerson>(predicate: #Predicate { $0.id == personID })
         guard let person = try? context.fetch(descriptor).first else { return }
@@ -713,6 +712,16 @@ final class FacebookImportCoordinator {
         // Set Facebook friendship date if we have one
         if let friendedOn = candidate.friendedOn {
             person.facebookFriendedOn = friendedOn
+        }
+        // Store messaging stats
+        if candidate.messageCount > 0 {
+            person.facebookMessageCount = candidate.messageCount
+        }
+        if let lastMsg = candidate.lastMessageDate {
+            person.facebookLastMessageDate = lastMsg
+        }
+        if let score = candidate.touchScore?.totalScore, score > 0 {
+            person.facebookTouchScore = score
         }
     }
 

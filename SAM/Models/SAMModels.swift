@@ -105,6 +105,15 @@ public final class SamPerson {
     /// Date this person became a Facebook friend (from your_friends.json).
     public var facebookFriendedOn: Date?
 
+    /// Total Messenger messages exchanged (from Facebook data export).
+    public var facebookMessageCount: Int = 0
+
+    /// Most recent Messenger message timestamp.
+    public var facebookLastMessageDate: Date?
+
+    /// Intentional touch score computed during Facebook import (composite of messaging, reactions, comments).
+    public var facebookTouchScore: Int = 0
+
     /// Returns explicit preference if set, else inferred preference.
     @Transient
     public var effectiveChannel: CommunicationChannel? {

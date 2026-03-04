@@ -1135,69 +1135,23 @@ final class LinkedInImportCoordinator {
             let displayName = candidate.fullName.isEmpty ? "LinkedIn Contact" : candidate.fullName
             let profileURL = candidate.profileURL.isEmpty ? nil : candidate.profileURL
 
-            // Check for existing Apple Contact with same name or LinkedIn URL
-            let searchResults = await contactsService.searchContacts(query: displayName, keys: .detail)
-            let existingContact: ContactDTO? = searchResults.first { match in
-                let nameMatch = match.displayName.lowercased() == displayName.lowercased()
-                let urlMatch = profileURL.map { url in
-                    match.socialProfiles.contains {
-                        ($0.urlString ?? "").lowercased().contains(url.lowercased())
-                    }
-                } ?? false
-                let emailMatch = candidate.email.map { email in
-                    match.emailAddresses.contains { $0.lowercased() == email.lowercased() }
-                } ?? false
-                return nameMatch || urlMatch || emailMatch
-            }
-
-            let contactDTO: ContactDTO
-            if let existing = existingContact {
-                logger.info("Add candidate '\(displayName, privacy: .public)': linking to existing contact")
-                contactDTO = existing
-            } else {
-                guard let created = await contactsService.createContact(
-                    fullName: displayName,
-                    email: candidate.email,
-                    note: nil,
-                    linkedInProfileURL: profileURL
-                ) else {
-                    logger.error("Failed to create contact for '\(displayName, privacy: .public)'")
-                    continue
-                }
-                contactDTO = created
-                logger.info("Add candidate '\(displayName, privacy: .public)': created new Apple Contact")
-            }
-
             do {
-                try peopleRepo.upsert(contact: contactDTO)
-
-                // Stamp the LinkedIn profile URL and connection date onto the new SamPerson
-                if let url = profileURL, !url.isEmpty {
-                    try peopleRepo.setLinkedInProfileURL(contactIdentifier: contactDTO.id, profileURL: url)
-                }
-                if let connectedOn = candidate.connectedOn, let url = profileURL {
-                    // Update connectedOn via the same LinkedIn data path
-                    _ = try peopleRepo.updateLinkedInData(
-                        profileURL: url,
-                        connectedOn: connectedOn,
-                        email: candidate.email,
-                        fullName: candidate.fullName
-                    )
-                }
+                // Create standalone SamPerson — no Apple Contact written
+                let personID = try peopleRepo.upsertFromSocialImport(
+                    displayName: displayName,
+                    linkedInProfileURL: profileURL,
+                    linkedInConnectedOn: candidate.connectedOn,
+                    linkedInEmail: candidate.email
+                )
 
                 // Attribute any existing IntentionalTouch records to this new SamPerson
                 if let url = profileURL, !url.isEmpty {
-                    // Fetch the freshly-created SamPerson's ID
-                    let allPeople = try peopleRepo.fetchAll()
-                    if let person = allPeople.first(where: {
-                        ($0.contactIdentifier ?? "") == contactDTO.id
-                    }) {
-                        try? touchRepo.attributeTouches(forProfileURL: url, to: person.id)
-                    }
+                    try? touchRepo.attributeTouches(forProfileURL: url, to: personID)
                 }
 
+                logger.info("Add candidate '\(displayName, privacy: .public)': created standalone SamPerson")
             } catch {
-                logger.error("Failed to upsert SamPerson for '\(displayName, privacy: .public)': \(error)")
+                logger.error("Failed to create SamPerson for '\(displayName, privacy: .public)': \(error)")
             }
         }
 

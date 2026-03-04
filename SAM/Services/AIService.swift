@@ -242,6 +242,10 @@ actor AIService {
     /// Cached MLX model container for inference.
     private var mlxModelContainer: ModelContainer?
     private var loadedModelID: String?
+    /// Continuation-based lock: if non-nil, a load is already in progress and
+    /// additional callers should wait on this continuation list rather than
+    /// starting a second load.
+    private var mlxLoadWaiters: [CheckedContinuation<Void, any Error>]?
 
     /// Hub API for loading models from local cache — same base as MLXModelManager.
     private lazy var hubApi: HubApi = {
@@ -249,6 +253,7 @@ actor AIService {
     }()
 
     /// Ensure the selected MLX model is loaded into memory.
+    /// Prevents duplicate loads when multiple callers race during actor suspension.
     private func ensureMLXModelLoaded() async throws {
         guard let selectedID = await MLXModelManager.shared.selectedModelID else {
             throw AIError.modelUnavailable("No MLX model selected")
@@ -259,18 +264,46 @@ actor AIService {
             return
         }
 
-        logger.info("Loading MLX model: \(selectedID)")
-        MLX.Memory.cacheLimit = 20 * 1024 * 1024
+        // Another caller is already loading — wait for it to finish
+        if mlxLoadWaiters != nil {
+            try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, any Error>) in
+                mlxLoadWaiters?.append(cont)
+            }
+            return
+        }
 
-        let configuration = await MLXModelManager.shared.modelConfiguration(for: selectedID)
-        let container = try await LLMModelFactory.shared.loadContainer(
-            hub: hubApi,
-            configuration: configuration
-        ) { _ in }
+        // We are the first caller — start loading
+        mlxLoadWaiters = []
 
-        mlxModelContainer = container
-        loadedModelID = selectedID
-        logger.info("MLX model loaded: \(selectedID)")
+        do {
+            logger.info("Loading MLX model: \(selectedID)")
+            MLX.Memory.cacheLimit = 20 * 1024 * 1024
+
+            let configuration = await MLXModelManager.shared.modelConfiguration(for: selectedID)
+            let container = try await LLMModelFactory.shared.loadContainer(
+                hub: hubApi,
+                configuration: configuration
+            ) { _ in }
+
+            mlxModelContainer = container
+            loadedModelID = selectedID
+            logger.info("MLX model loaded: \(selectedID)")
+
+            // Resume all waiters successfully
+            let waiters = mlxLoadWaiters ?? []
+            mlxLoadWaiters = nil
+            for waiter in waiters {
+                waiter.resume()
+            }
+        } catch {
+            // Resume all waiters with the error
+            let waiters = mlxLoadWaiters ?? []
+            mlxLoadWaiters = nil
+            for waiter in waiters {
+                waiter.resume(throwing: error)
+            }
+            throw error
+        }
     }
 
     /// Generate text using the MLX backend.

@@ -150,6 +150,106 @@ final class PeopleRepository {
         try modelContext.save()
     }
 
+    /// Create or update a standalone SamPerson from a social platform import (Facebook, LinkedIn).
+    /// Unlike `upsert(contact:)`, this does NOT require or create an Apple Contact.
+    /// Returns the SamPerson ID for further enrichment.
+    @discardableResult
+    func upsertFromSocialImport(
+        displayName: String,
+        linkedInProfileURL: String? = nil,
+        linkedInConnectedOn: Date? = nil,
+        linkedInEmail: String? = nil,
+        facebookFriendedOn: Date? = nil,
+        facebookMessageCount: Int = 0,
+        facebookLastMessageDate: Date? = nil,
+        facebookTouchScore: Int = 0
+    ) throws -> UUID {
+        guard let modelContext else { throw RepositoryError.notConfigured }
+
+        // Search for existing SamPerson by name (case-insensitive), LinkedIn URL, or email
+        let allPeople = try modelContext.fetch(FetchDescriptor<SamPerson>())
+        let normalizedName = displayName.lowercased().trimmingCharacters(in: .whitespaces)
+
+        let existing = allPeople.first { person in
+            // Match by LinkedIn profile URL
+            if let url = linkedInProfileURL, !url.isEmpty,
+               let existingURL = person.linkedInProfileURL, !existingURL.isEmpty {
+                if existingURL.lowercased().contains(url.lowercased()) ||
+                   url.lowercased().contains(existingURL.lowercased()) {
+                    return true
+                }
+            }
+            // Match by email
+            if let email = linkedInEmail, !email.isEmpty {
+                if person.emailAliases.contains(where: { $0.lowercased() == email.lowercased() }) {
+                    return true
+                }
+            }
+            // Match by exact display name
+            let personName = (person.displayNameCache ?? person.displayName).lowercased()
+                .trimmingCharacters(in: .whitespaces)
+            return personName == normalizedName
+        }
+
+        if let person = existing {
+            // Enrich existing person
+            if let url = linkedInProfileURL, !url.isEmpty, person.linkedInProfileURL == nil {
+                person.linkedInProfileURL = url
+            }
+            if let date = linkedInConnectedOn, person.linkedInConnectedOn == nil {
+                person.linkedInConnectedOn = date
+            }
+            if let date = facebookFriendedOn, person.facebookFriendedOn == nil {
+                person.facebookFriendedOn = date
+            }
+            if facebookMessageCount > 0 {
+                person.facebookMessageCount = facebookMessageCount
+            }
+            if let date = facebookLastMessageDate {
+                person.facebookLastMessageDate = date
+            }
+            if facebookTouchScore > 0 {
+                person.facebookTouchScore = facebookTouchScore
+            }
+            if let email = linkedInEmail, !email.isEmpty, person.emailCache == nil {
+                person.emailCache = canonicalizeEmail(email)
+                person.email = canonicalizeEmail(email)
+                if !person.emailAliases.contains(where: { $0.lowercased() == email.lowercased() }) {
+                    person.emailAliases.append(canonicalizeEmail(email) ?? email.lowercased())
+                }
+            }
+            person.lastSyncedAt = Date()
+            try modelContext.save()
+            return person.id
+        } else {
+            // Create new standalone SamPerson (no Apple Contact link)
+            let person = SamPerson(
+                id: UUID(),
+                displayName: displayName,
+                roleBadges: [],
+                contactIdentifier: nil,
+                email: linkedInEmail.flatMap { canonicalizeEmail($0) }
+            )
+            person.displayNameCache = displayName
+            person.emailCache = linkedInEmail.flatMap { canonicalizeEmail($0) }
+            if let email = linkedInEmail {
+                person.emailAliases = [canonicalizeEmail(email) ?? email.lowercased()]
+            }
+            person.linkedInProfileURL = linkedInProfileURL
+            person.linkedInConnectedOn = linkedInConnectedOn
+            person.facebookFriendedOn = facebookFriendedOn
+            person.facebookMessageCount = facebookMessageCount
+            person.facebookLastMessageDate = facebookLastMessageDate
+            person.facebookTouchScore = facebookTouchScore
+            person.lastSyncedAt = Date()
+            person.isArchived = false
+
+            modelContext.insert(person)
+            try modelContext.save()
+            return person.id
+        }
+    }
+
     /// Bulk upsert contacts (more efficient for importing many contacts)
     func bulkUpsert(contacts: [ContactDTO]) throws -> (created: Int, updated: Int) {
         guard let modelContext = modelContext else {

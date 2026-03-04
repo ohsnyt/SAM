@@ -3,7 +3,7 @@
 **Language**: Swift 6  
 **Architecture**: Clean layered architecture with strict separation of concerns  
 **Framework**: SwiftUI + SwiftData  
-**Last Updated**: March 3, 2026 (Phases A–Z + Advanced Search + Export/Import + Phase AA complete + Strategic Action Coaching Flow + Life Event Coaching + Interactive Content Ideas + ⌘K Command Palette + Coaching Calibration Phases 1–4 + Phase AB Polish + Bug fixes: intro timing, tips state, JSON null, Contacts container, task priorities, schema SAM_v27 + Phase S+: LinkedIn archive import, Unknown Senders triage, Interaction History in PersonDetailView + Contact Enrichment & User Profile Intelligence, schema SAM_v28 + LinkedIn Integration Rebuild: Intentional Touch Scoring, Add/Later review sheet, enhanced triage, schema SAM_v29 + Phase 8: Permissions & Onboarding Audit, Notifications permission step, AI Setup step, step counter, Notifications in Settings + LinkedIn §13 Apple Contacts Batch Sync + §14 SwiftData models, schema SAM_v30)
+**Last Updated**: March 4, 2026 (Phases A–Z + Advanced Search + Export/Import + Phase AA complete + Strategic Action Coaching Flow + Life Event Coaching + Interactive Content Ideas + ⌘K Command Palette + Coaching Calibration Phases 1–4 + Phase AB Polish + Bug fixes: intro timing, tips state, JSON null, Contacts container, task priorities, schema SAM_v27 + Phase S+: LinkedIn archive import, Unknown Senders triage, Interaction History in PersonDetailView + Contact Enrichment & User Profile Intelligence, schema SAM_v28 + LinkedIn Integration Rebuild: Intentional Touch Scoring, Add/Later review sheet, enhanced triage, schema SAM_v29 + Phase 8: Permissions & Onboarding Audit, Notifications permission step, AI Setup step, step counter, Notifications in Settings + LinkedIn §13 Apple Contacts Batch Sync + §14 SwiftData models, schema SAM_v30 + Social import architecture fix: standalone SamPerson, Facebook metadata in detail view, onboarding fixes, MLX race fix)
 
 **Related Docs**:
 - See `agent.md` for product philosophy, AI architecture, and UX principles
@@ -20,6 +20,7 @@ SAM is a **native macOS business coaching and relationship management applicatio
 **Core Philosophy**:
 - Apple Contacts and Calendar are the **systems of record** for identity and events
 - SAM is an **overlay CRM + business coach** that enhances but never replaces Apple's data
+- **Social platform imports (LinkedIn, Facebook) create standalone SamPerson records** — they never write to Apple Contacts without explicit user action (e.g., LinkedIn §13 batch sync)
 - AI assists but **never acts autonomously** — all actions require user review
 - **Two-layer AI**: foreground relationship intelligence + background business strategy
 - **Clean architecture** with explicit boundaries between layers
@@ -181,7 +182,7 @@ SAM/SAM/
 │   └── ContactEnrichmentCoordinator.swift ✅ Review-and-apply workflow for pending contact enrichments
 │
 ├── Repositories/
-│   ├── PeopleRepository.swift          ✅ CRUD for SamPerson
+│   ├── PeopleRepository.swift          ✅ CRUD for SamPerson + upsertFromSocialImport (standalone, no Apple Contact)
 │   ├── EvidenceRepository.swift        ✅ CRUD for SamEvidenceItem
 │   ├── ContextsRepository.swift        ✅ CRUD for SamContext
 │   ├── NotesRepository.swift           ✅ CRUD for SamNote
@@ -277,7 +278,7 @@ SAM/SAM/
 
 (All existing models unchanged — see `changelog.md` for full schema. Summary below.)
 
-- **SamPerson** — Contact anchor + CRM enrichment (roles, referrals, channel preferences, phone aliases, preferredCadenceDays, stageTransitions, recruitingStages, productionRecords)
+- **SamPerson** — Contact anchor + CRM enrichment (roles, referrals, channel preferences, phone aliases, preferredCadenceDays, stageTransitions, recruitingStages, productionRecords). Social platform fields: `linkedInProfileURL`, `linkedInConnectedOn`, `facebookProfileURL`, `facebookFriendedOn`, `facebookMessageCount`, `facebookLastMessageDate`, `facebookTouchScore`. Social imports create standalone SamPerson records (no Apple Contact required).
 - **SamContext** — Households, businesses, groups
 - **SamEvidenceItem** — Observations from Calendar/Mail/iMessage/Phone/FaceTime/Notes
 - **SamNote** — User notes with LLM analysis (action items, topics, life events, follow-up drafts)
@@ -609,7 +610,8 @@ Each layer tested independently:
 | v27 | Household Removal | Removed .household ContextKind; schema cleanup only |
 | v28 | Contact Enrichment | + PendingEnrichment model, EnrichmentField/Source/Status enums |
 | v29 | LinkedIn Integration Rebuild | + IntentionalTouch, LinkedInImport models; UnknownSender extended |
-| v30 | LinkedIn §14 Social Models (current) | + NotificationTypeTracker, ProfileAnalysisRecord, EngagementSnapshot, SocialProfileSnapshot |
+| v30 | LinkedIn §14 Social Models | + NotificationTypeTracker, ProfileAnalysisRecord, EngagementSnapshot, SocialProfileSnapshot |
+| v31 | Facebook Integration (current) | + FacebookImport model; UnknownSender extended with facebookFriendedOn/MessageCount/LastMessageDate; SamPerson extended with facebookMessageCount/LastMessageDate/TouchScore |
 
 Each migration uses SwiftData lightweight migration. New models are additive (no breaking changes to existing models). Backfill logic runs once on first launch after migration.
 
@@ -894,8 +896,8 @@ Use this checklist when starting a new social media importer:
 
 ---
 
-**Document Version**: 29.0 (Phases A–Z + Advanced Search + Export/Import + Phase AA (complete) + Deduced Relationships + Household Removal + Strategic Action Coaching Flow + Life Event Coaching + Interactive Content Ideas + ⌘K Command Palette + Coaching Calibration Phases 1–4 + Phase AB + Contact Enrichment & User Profile Intelligence + LinkedIn Integration Rebuild, schema SAM_v29)
+**Document Version**: 31.0 (Phases A–Z + Advanced Search + Export/Import + Phase AA (complete) + Deduced Relationships + Household Removal + Strategic Action Coaching Flow + Life Event Coaching + Interactive Content Ideas + ⌘K Command Palette + Coaching Calibration Phases 1–4 + Phase AB + Contact Enrichment & User Profile Intelligence + LinkedIn Integration Rebuild + LinkedIn §13/§14 + Phase 8 Onboarding + Facebook Integration FB-1–6 + Social import architecture fix, schema SAM_v31)
 **Previous Versions**: See `changelog.md` for version history
-**Last Major Update**: March 3, 2026 — LinkedIn Integration Rebuild: IntentionalTouch + LinkedInImport models, IntentionalTouchRepository, TouchScoringEngine, LinkedInImportReviewSheet, enhanced UnknownSenderTriageSection, date formatter fixes, schema SAM_v29
+**Last Major Update**: March 4, 2026 — Social import architecture fix: standalone SamPerson creation (no Apple Contacts), Facebook metadata fields on SamPerson + PersonDetailView, onboarding permission button fixes, MLX actor reentrancy race fix, schema SAM_v31
 **Clean Rebuild Started**: February 9, 2026
 

@@ -1138,6 +1138,11 @@ struct PersonDetailView: View {
                 interactionHistorySection
             }
 
+            // Social Platforms — LinkedIn & Facebook connection metadata
+            if !person.isMe && hasSocialPlatformData {
+                socialPlatformSection
+            }
+
             // Recruiting Pipeline (Agent badge)
             if person.roleBadges.contains("Agent") {
                 recruitingStageSection
@@ -1246,6 +1251,125 @@ struct PersonDetailView: View {
                 .padding(.top, 2)
         }
         .padding(.vertical, 6)
+    }
+
+    // MARK: - Social Platforms
+
+    /// Whether the person has any LinkedIn or Facebook data worth displaying.
+    private var hasSocialPlatformData: Bool {
+        person.linkedInProfileURL != nil ||
+        person.linkedInConnectedOn != nil ||
+        person.facebookFriendedOn != nil ||
+        person.facebookMessageCount > 0
+    }
+
+    private var socialPlatformSection: some View {
+        samSection(title: "Social Platforms") {
+            VStack(alignment: .leading, spacing: 10) {
+                // LinkedIn
+                if person.linkedInProfileURL != nil || person.linkedInConnectedOn != nil {
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: "network")
+                            .font(.caption)
+                            .foregroundStyle(.blue)
+                            .frame(width: 16, alignment: .center)
+                            .padding(.top, 2)
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("LinkedIn")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+
+                            if let connectedOn = person.linkedInConnectedOn {
+                                Text("Connected \(connectedOn.formatted(date: .abbreviated, time: .omitted))")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            if let url = person.linkedInProfileURL {
+                                let fullURL = url.hasPrefix("http") ? url : "https://\(url)"
+                                Button {
+                                    if let nsURL = URL(string: fullURL) {
+                                        NSWorkspace.shared.open(nsURL)
+                                    }
+                                } label: {
+                                    Text(url)
+                                        .font(.caption)
+                                        .foregroundStyle(.blue)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+
+                // Facebook
+                if person.facebookFriendedOn != nil || person.facebookMessageCount > 0 {
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: "person.2.fill")
+                            .font(.caption)
+                            .foregroundStyle(.indigo)
+                            .frame(width: 16, alignment: .center)
+                            .padding(.top, 2)
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Facebook")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+
+                            if let friendedOn = person.facebookFriendedOn {
+                                Text("Friends since \(friendedOn.formatted(date: .abbreviated, time: .omitted))")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            if person.facebookMessageCount > 0 {
+                                HStack(spacing: 12) {
+                                    Label("\(person.facebookMessageCount) messages", systemImage: "message.fill")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+
+                                    if let lastMsg = person.facebookLastMessageDate {
+                                        Text("Last: \(lastMsg.formatted(date: .abbreviated, time: .omitted))")
+                                            .font(.caption)
+                                            .foregroundStyle(.tertiary)
+                                    }
+                                }
+                            }
+
+                            if person.facebookTouchScore > 0 {
+                                Text("Interaction score: \(person.facebookTouchScore)")
+                                    .font(.caption2)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color.indigo.opacity(0.12))
+                                    .foregroundStyle(.indigo)
+                                    .clipShape(Capsule())
+                            }
+
+                            if let url = person.facebookProfileURL {
+                                let fullURL = url.hasPrefix("http") ? url : "https://\(url)"
+                                Button {
+                                    if let nsURL = URL(string: fullURL) {
+                                        NSWorkspace.shared.open(nsURL)
+                                    }
+                                } label: {
+                                    Text(url)
+                                        .font(.caption)
+                                        .foregroundStyle(.indigo)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(.vertical, 4)
+        }
     }
 
     // MARK: - More Details (collapsed by default)

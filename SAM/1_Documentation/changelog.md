@@ -4,6 +4,79 @@
 
 ---
 
+## March 4, 2026 — Social Import Architecture Fix, Facebook Metadata Display, Onboarding Fixes, MLX Race Fix
+
+### Overview
+Corrected the social import pipeline so LinkedIn and Facebook imports create standalone SamPerson records without writing to Apple Contacts. Added Facebook metadata fields to SamPerson and displayed them in PersonDetailView. Fixed onboarding permission button states and the MLX model double-load race condition.
+
+### Social Import Architecture Fix (Critical)
+
+**Problem**: Both LinkedIn and Facebook imports were silently creating Apple Contacts via `ContactsService.createContact()`. The design intent is that social platform imports only create SamPerson records — Apple Contacts should never be written without explicit user action.
+
+**New method: `PeopleRepository.upsertFromSocialImport()`**
+- Creates SamPerson with `contactIdentifier: nil` (no Apple Contact link)
+- Deduplicates by LinkedIn URL, email, or exact display name
+- If an existing SamPerson matches, enriches it with new social data
+- Parameters: displayName, linkedInProfileURL?, linkedInConnectedOn?, linkedInEmail?, facebookFriendedOn?, facebookMessageCount, facebookLastMessageDate?, facebookTouchScore
+
+**Files modified:**
+- **`PeopleRepository.swift`** — Added `upsertFromSocialImport()` method (~95 lines)
+- **`FacebookImportCoordinator.swift`** — Replaced `createAppleContact()` with `upsertFromSocialImport()` in `confirmImport()` Step 3. Removed `createAppleContact()` method and unused `contactsService` reference. Updated `enrichMatchedPerson()` to store messageCount, lastMessageDate, touchScore.
+- **`LinkedInImportCoordinator.swift`** — Replaced `createContactsForAddCandidates()` Apple Contact creation with `upsertFromSocialImport()`.
+- **`FacebookImportCandidateDTO.swift`** — Updated doc comment: `.add` case now says "Create a standalone SamPerson record".
+- **`UnknownSenderTriageSection.swift`** — Split `saveChoices()` into two paths: social platform senders use `upsertFromSocialImport()`, email/calendar senders still create Apple Contacts via existing `ContactsService.createContact()` path.
+
+### Facebook Metadata on SamPerson + PersonDetailView
+
+**New SamPerson fields** (added to `SAMModels.swift`):
+```swift
+public var facebookMessageCount: Int = 0
+public var facebookLastMessageDate: Date?
+public var facebookTouchScore: Int = 0
+```
+
+**PersonDetailView "Social Platforms" section** (added after Interaction History):
+- LinkedIn subsection: blue network icon, connection date, clickable profile URL
+- Facebook subsection: indigo person.2.fill icon, friends since date, message count + last message date, touch score badge, clickable profile URL
+- Section only appears when social platform data exists
+
+### Facebook Unknown Sender Triage UI
+
+**`UnknownSenderTriageSection.swift`** additions:
+- `facebookSenders` computed property filtering by `.facebook` source
+- Facebook section grouping with indigo `person.2.fill` icon header
+- `FacebookTriageRow` view: indigo badge, message count, friended date, touch score capsule badge
+- Updated generic `TriageRow` to show Facebook badge and hide synthetic keys in `latestSubject`
+- Added `facebookCoordinator` onChange handler for auto-refresh after import
+
+### Onboarding Permission Button Fixes
+
+**`OnboardingView.swift`** changes:
+- Removed `.tint(.red)` from notifications button (was showing red instead of default blue)
+- All three permission buttons (Email, Dictation, Notifications): when permission already granted, button shows "Continue" in green and advances to next step instead of being disabled
+- Added `alreadyEnabledBadge` helper view with green checkmark + "Permission granted" text
+- **Fixed blocking bug**: when Microphone/Speech permission was already enabled, the green button was disabled (`.disabled(micGranted)`) — users could not proceed past this step. Fixed by changing button action to advance when granted and removing `.disabled()` for the granted state.
+
+### MLX Actor Reentrancy Race Fix
+
+**Problem**: `AIService.ensureMLXModelLoaded()` had a race condition — two concurrent callers (morning briefing + outcome engine) both passed the `loadedModelID` guard before either finished loading, causing the model to load twice.
+
+**Root cause**: Swift actors allow interleaving at `await` suspension points. Both callers entered the method, both saw `loadedModelID == nil`, both started loading.
+
+**Fix** (`AIService.swift`): Added continuation-based actor lock:
+```swift
+private var mlxLoadWaiters: [CheckedContinuation<Void, any Error>]?
+```
+- First caller sets `mlxLoadWaiters = []` and proceeds with loading
+- Subsequent callers detect non-nil `mlxLoadWaiters` and park via `withCheckedThrowingContinuation`
+- On completion (success or error), all parked waiters are resumed
+- After resume, `mlxLoadWaiters` is set back to `nil`
+
+### Schema Impact
+Schema remains at SAM_v31. The three new SamPerson fields (`facebookMessageCount`, `facebookLastMessageDate`, `facebookTouchScore`) are additive with defaults — lightweight migration handles them automatically.
+
+---
+
 ## March 3, 2026 — Phase FB-3/4/5: Facebook Profile Intelligence, Cross-Platform Consistency & Apple Contacts Sync
 
 ### Overview

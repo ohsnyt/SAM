@@ -432,69 +432,61 @@ struct UnknownSenderTriageSection: View {
             var addedEmails: [String] = []
 
             for sender in toAdd {
-                // LinkedIn entries use a "linkedin:<url>" synthetic key — not a real email.
-                // Facebook entries use a "facebook:<name>-<timestamp>" synthetic key — not a real email.
-                // Create these contacts without an email address and skip mail reprocessing.
                 let isLinkedIn = sender.email.hasPrefix("linkedin:") || sender.email.hasPrefix("linkedin-unknown-")
                 let isFacebook = sender.source == .facebook || sender.email.hasPrefix("facebook:")
                 let isSocialPlatform = isLinkedIn || isFacebook
-                let contactEmail: String? = isSocialPlatform ? nil : sender.email
-
-                // Extract LinkedIn profile URL from the subject field (stored there during import)
-                let linkedInURL: String? = isLinkedIn ? sender.latestSubject : nil
 
                 let displayName = sender.displayName ?? (isLinkedIn ? "LinkedIn Contact" : (isFacebook ? "Facebook Friend" : sender.email))
 
-                // Before creating a new contact, check if one already exists in Apple Contacts
-                // with the same name or email to avoid creating duplicates.
-                let existingMatches = await contactsService.searchContacts(
-                    query: displayName,
-                    keys: .detail
-                )
-                let existingContact: ContactDTO? = existingMatches.first { match in
-                    // Exact name match
-                    let nameMatch = match.displayName.lowercased() == displayName.lowercased()
-                    // Or email match (for non-LinkedIn senders)
-                    let emailMatch = contactEmail.map { e in
-                        match.emailAddresses.contains { $0.lowercased() == e.lowercased() }
-                    } ?? false
-                    // Or LinkedIn URL match
-                    let urlMatch = linkedInURL.map { url in
-                        match.socialProfiles.contains { ($0.urlString ?? "").lowercased().contains(url.lowercased()) }
-                    } ?? false
-                    return nameMatch || emailMatch || urlMatch
-                }
-
-                let contactDTO: ContactDTO
-                if let existing = existingContact {
-                    // Link to the existing Apple Contact — don't create a duplicate
-                    logger.info("Triage: linking '\(displayName, privacy: .public)' to existing contact (skipping create)")
-                    contactDTO = existing
+                if isSocialPlatform {
+                    // Social platform senders → create standalone SamPerson (no Apple Contact)
+                    let linkedInURL: String? = isLinkedIn ? sender.latestSubject : nil
+                    do {
+                        try peopleRepository.upsertFromSocialImport(
+                            displayName: displayName,
+                            linkedInProfileURL: linkedInURL,
+                            facebookFriendedOn: sender.facebookFriendedOn,
+                            facebookMessageCount: sender.facebookMessageCount,
+                            facebookLastMessageDate: sender.facebookLastMessageDate,
+                            facebookTouchScore: sender.intentionalTouchScore
+                        )
+                    } catch {
+                        logger.error("Failed to create SamPerson for \(sender.email, privacy: .public): \(error)")
+                    }
                 } else {
-                    // No existing contact found — create a new one
-                    guard let created = await contactsService.createContact(
-                        fullName: displayName,
-                        email: contactEmail,
-                        note: nil,
-                        linkedInProfileURL: linkedInURL
-                    ) else {
-                        logger.error("Failed to create contact for \(sender.email, privacy: .public)")
-                        continue
+                    // Email/calendar senders → create Apple Contact + SamPerson (existing behavior)
+                    let existingMatches = await contactsService.searchContacts(
+                        query: displayName,
+                        keys: .detail
+                    )
+                    let existingContact: ContactDTO? = existingMatches.first { match in
+                        let nameMatch = match.displayName.lowercased() == displayName.lowercased()
+                        let emailMatch = match.emailAddresses.contains { $0.lowercased() == sender.email.lowercased() }
+                        return nameMatch || emailMatch
                     }
-                    contactDTO = created
-                }
 
-                do {
-                    try peopleRepository.upsert(contact: contactDTO)
-                    if let email = contactEmail {
-                        addedEmails.append(email)
+                    let contactDTO: ContactDTO
+                    if let existing = existingContact {
+                        logger.info("Triage: linking '\(displayName, privacy: .public)' to existing contact (skipping create)")
+                        contactDTO = existing
+                    } else {
+                        guard let created = await contactsService.createContact(
+                            fullName: displayName,
+                            email: sender.email,
+                            note: nil
+                        ) else {
+                            logger.error("Failed to create contact for \(sender.email, privacy: .public)")
+                            continue
+                        }
+                        contactDTO = created
                     }
-                    if let url = linkedInURL, !url.isEmpty {
-                        // Set the LinkedIn profile URL on the newly-created SamPerson
-                        try peopleRepository.setLinkedInProfileURL(contactIdentifier: contactDTO.id, profileURL: url)
+
+                    do {
+                        try peopleRepository.upsert(contact: contactDTO)
+                        addedEmails.append(sender.email)
+                    } catch {
+                        logger.error("Failed to upsert contact for \(sender.email, privacy: .public): \(error)")
                     }
-                } catch {
-                    logger.error("Failed to upsert contact for \(sender.email, privacy: .public): \(error)")
                 }
             }
 
@@ -516,7 +508,6 @@ struct UnknownSenderTriageSection: View {
                 await mailCoordinator.reprocessForSender(email: email)
             }
             for sender in toAdd where sender.source == .linkedIn {
-                // latestSubject holds the LinkedIn profile URL for linkedin:-keyed entries
                 if let profileURL = sender.latestSubject, !profileURL.isEmpty {
                     await linkedInCoordinator.reprocessForSender(profileURL: profileURL)
                 }

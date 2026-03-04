@@ -911,44 +911,69 @@ struct OnboardingView: View {
 
             if currentStep == .mailPermission {
                 // Mail step uses Skip / Enable Email pair
-                Button("Skip") {
-                    skippedMail = true
-                    currentStep = .microphonePermission
+                if mailAccessGranted {
+                    alreadyEnabledBadge
+                } else {
+                    Button("Skip") {
+                        skippedMail = true
+                        currentStep = .microphonePermission
+                    }
+                    .foregroundStyle(.secondary)
                 }
-                .foregroundStyle(.secondary)
 
-                Button("Enable Email") {
-                    Task { await checkMailPermission() }
+                Button(mailAccessGranted ? "Continue" : "Enable Email") {
+                    if mailAccessGranted {
+                        currentStep = .microphonePermission
+                    } else {
+                        Task { await checkMailPermission() }
+                    }
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(hasNoMeContact || isCheckingMail || mailAccessGranted)
+                .tint(mailAccessGranted ? .green : nil)
+                .disabled(!mailAccessGranted && (hasNoMeContact || isCheckingMail))
             } else if currentStep == .microphonePermission {
+                let micGranted = micPermissionGranted && speechPermissionGranted
                 // Mic step uses Skip / Enable Dictation pair
-                Button("Skip") {
-                    skippedMicrophone = true
-                    currentStep = .notificationsPermission
+                if micGranted {
+                    alreadyEnabledBadge
+                } else {
+                    Button("Skip") {
+                        skippedMicrophone = true
+                        currentStep = .notificationsPermission
+                    }
+                    .foregroundStyle(.secondary)
                 }
-                .foregroundStyle(.secondary)
 
-                Button("Enable Dictation") {
-                    Task { await requestMicrophonePermission() }
+                Button(micGranted ? "Continue" : "Enable Dictation") {
+                    if micGranted {
+                        currentStep = .notificationsPermission
+                    } else {
+                        Task { await requestMicrophonePermission() }
+                    }
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(micPermissionGranted && speechPermissionGranted)
+                .tint(micGranted ? .green : nil)
             } else if currentStep == .notificationsPermission {
                 // Notifications step uses Skip / Enable Notifications pair
-                Button("Skip") {
-                    skippedNotifications = true
-                    currentStep = .aiSetup
+                if notificationsGranted {
+                    alreadyEnabledBadge
+                } else {
+                    Button("Skip") {
+                        skippedNotifications = true
+                        currentStep = .aiSetup
+                    }
+                    .foregroundStyle(.secondary)
                 }
-                .foregroundStyle(.secondary)
 
-                Button("Enable Notifications") {
-                    Task { await requestNotificationsPermission() }
+                Button(notificationsGranted ? "Continue" : "Enable Notifications") {
+                    if notificationsGranted {
+                        currentStep = .aiSetup
+                    } else {
+                        Task { await requestNotificationsPermission() }
+                    }
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(.red)
-                .disabled(notificationsGranted)
+                .tint(notificationsGranted ? .green : nil)
             } else {
                 // Show skip option for other permission steps
                 if shouldShowSkip {
@@ -970,6 +995,17 @@ struct OnboardingView: View {
         }
         .padding()
         .background(.ultraThinMaterial)
+    }
+
+    /// Green checkmark shown in footer when a permission is already granted.
+    private var alreadyEnabledBadge: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+            Text("Permission granted")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
     }
 
     private var shouldShowSkip: Bool {
