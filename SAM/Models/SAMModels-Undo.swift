@@ -85,6 +85,7 @@ public final class SamUndoEntry {
 public enum UndoOperation: String, Codable, Sendable {
     case deleted
     case statusChanged
+    case merged
 }
 
 public enum UndoEntityType: String, Codable, Sendable {
@@ -93,6 +94,7 @@ public enum UndoEntityType: String, Codable, Sendable {
     case context
     case participation
     case insight
+    case person
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -162,4 +164,52 @@ public struct ParticipationSnapshot: Codable, Sendable {
 public struct InsightSnapshot: Codable, Sendable {
     public let id: UUID
     public let title: String
+}
+
+/// Snapshot of a person merge — captures source person's state for full reversal.
+public struct PersonMergeSnapshot: Codable, Sendable {
+    public let sourcePersonID: UUID
+    public let targetPersonID: UUID
+    public let sourceDisplayName: String
+
+    // Scalar fields from source (for re-creation)
+    public let displayName: String
+    public let email: String?
+    public let displayNameCache: String?
+    public let emailCache: String?
+    public let emailAliases: [String]
+    public let phoneAliases: [String]
+    public let roleBadges: [String]
+    public let contactIdentifier: String?
+    public let isMe: Bool
+    public let isArchived: Bool
+    public let relationshipSummary: String?
+    public let relationshipKeyThemes: [String]
+    public let relationshipNextSteps: [String]
+    public let preferredCadenceDays: Int?
+    public let preferredChannelRawValue: String?
+    public let inferredChannelRawValue: String?
+    public let linkedInProfileURL: String?
+    public let linkedInConnectedOn: Date?
+    public let facebookProfileURL: String?
+    public let facebookFriendedOn: Date?
+    public let facebookMessageCount: Int
+    public let facebookLastMessageDate: Date?
+    public let facebookTouchScore: Int
+
+    // Relationship IDs that were transferred (for re-pointing on undo)
+    public let evidenceIDs: [UUID]
+    public let noteIDs: [UUID]
+    public let participationIDs: [UUID]
+    public let outcomeIDs: [UUID]
+    public let insightIDs: [UUID]
+    public let transitionIDs: [UUID]
+    public let recruitingStageIDs: [UUID]
+    public let productionRecordIDs: [UUID]
+    public let deducedRelationIDs: [UUID]
+
+    // Scalars that were unioned into target (for removal on undo)
+    public let unionedEmails: [String]
+    public let unionedPhones: [String]
+    public let unionedRoleBadges: [String]
 }

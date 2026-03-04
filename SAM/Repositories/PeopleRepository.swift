@@ -625,6 +625,247 @@ final class PeopleRepository {
         }
     }
 
+    // MARK: - Person Merge
+
+    /// Merge source person into target person: transfer all relationships,
+    /// merge scalar fields (target wins), update external references, delete source.
+    /// Returns a snapshot for undo support.
+    func mergePerson(sourceID: UUID, targetID: UUID) throws -> PersonMergeSnapshot {
+        guard let modelContext else { throw RepositoryError.notConfigured }
+
+        let allPeople = try modelContext.fetch(FetchDescriptor<SamPerson>())
+        guard let source = allPeople.first(where: { $0.id == sourceID }) else {
+            throw RepositoryError.personNotFound
+        }
+        guard let target = allPeople.first(where: { $0.id == targetID }) else {
+            throw RepositoryError.personNotFound
+        }
+
+        // ── Capture IDs for undo before transfer ─────────────────────
+        let evidenceIDs = source.linkedEvidence.map(\.id)
+        let noteIDs = source.linkedNotes.map(\.id)
+        let participationIDs = source.participations.map(\.id)
+        let insightIDs = source.insights.map(\.id)
+        let transitionIDs = source.stageTransitions.map(\.id)
+        let recruitingStageIDs = source.recruitingStages.map(\.id)
+        let productionRecordIDs = source.productionRecords.map(\.id)
+
+        // ── Transfer linkedEvidence (skip duplicates) ────────────────
+        let targetEvidenceIDs = Set(target.linkedEvidence.map(\.id))
+        for item in source.linkedEvidence where !targetEvidenceIDs.contains(item.id) {
+            target.linkedEvidence.append(item)
+        }
+
+        // ── Transfer linkedNotes (skip duplicates) ───────────────────
+        let targetNoteIDs = Set(target.linkedNotes.map(\.id))
+        for note in source.linkedNotes where !targetNoteIDs.contains(note.id) {
+            target.linkedNotes.append(note)
+        }
+
+        // ── Transfer participations (skip if target already in same context)
+        let targetContextIDs = Set(target.participations.compactMap { $0.context?.id })
+        for participation in source.participations {
+            if let ctxID = participation.context?.id, !targetContextIDs.contains(ctxID) {
+                participation.person = target
+            }
+        }
+
+        // ── Re-point responsibilities ────────────────────────────────
+        for resp in source.responsibilitiesAsGuardian {
+            resp.guardian = target
+        }
+        for resp in source.responsibilitiesAsDependent {
+            resp.dependent = target
+        }
+
+        // ── Transfer jointInterests ──────────────────────────────────
+        for interest in source.jointInterests {
+            if !target.jointInterests.contains(where: { $0.id == interest.id }) {
+                // Replace source with target in the parties
+                target.jointInterests.append(interest)
+            }
+        }
+
+        // ── Re-point coverages ───────────────────────────────────────
+        for coverage in source.coverages {
+            coverage.person = target
+        }
+
+        // ── Re-point consentRequirements ─────────────────────────────
+        for consent in source.consentRequirements {
+            consent.person = target
+        }
+
+        // ── Re-point stageTransitions ────────────────────────────────
+        for transition in source.stageTransitions {
+            transition.person = target
+        }
+
+        // ── Re-point recruitingStages ────────────────────────────────
+        for stage in source.recruitingStages {
+            stage.person = target
+        }
+
+        // ── Re-point productionRecords ───────────────────────────────
+        for record in source.productionRecords {
+            record.person = target
+        }
+
+        // ── Re-point insights ────────────────────────────────────────
+        for insight in source.insights {
+            insight.samPerson = target
+        }
+
+        // ── Transfer referrals ───────────────────────────────────────
+        for referral in source.referrals {
+            referral.referredBy = target
+        }
+        if target.referredBy == nil, let sourceReferrer = source.referredBy {
+            target.referredBy = sourceReferrer
+        }
+
+        // ── Update SamOutcome.linkedPerson ───────────────────────────
+        let allOutcomes = try modelContext.fetch(FetchDescriptor<SamOutcome>())
+        var outcomeIDs: [UUID] = []
+        for outcome in allOutcomes where outcome.linkedPerson?.id == sourceID {
+            outcome.linkedPerson = target
+            outcomeIDs.append(outcome.id)
+        }
+
+        // ── Update DeducedRelation ───────────────────────────────────
+        let allDeduced = try modelContext.fetch(FetchDescriptor<DeducedRelation>())
+        var deducedRelationIDs: [UUID] = []
+        for relation in allDeduced {
+            var changed = false
+            if relation.personAID == sourceID {
+                relation.personAID = targetID
+                changed = true
+            }
+            if relation.personBID == sourceID {
+                relation.personBID = targetID
+                changed = true
+            }
+            // If both sides now point to same person, delete the relation
+            if relation.personAID == relation.personBID {
+                modelContext.delete(relation)
+            } else if changed {
+                deducedRelationIDs.append(relation.id)
+            }
+        }
+
+        // ── Update SamNote.extractedMentions ─────────────────────────
+        let allNotes = try modelContext.fetch(FetchDescriptor<SamNote>())
+        for note in allNotes {
+            var updated = false
+            var mentions = note.extractedMentions
+            for i in mentions.indices {
+                if mentions[i].matchedPersonID == sourceID {
+                    mentions[i].matchedPersonID = targetID
+                    updated = true
+                }
+            }
+            if updated {
+                note.extractedMentions = mentions
+            }
+        }
+
+        // ── Merge scalar fields (fill-gaps: target wins) ─────────────
+        let unionedEmails = source.emailAliases.filter { !target.emailAliases.contains($0) }
+        target.emailAliases.append(contentsOf: unionedEmails)
+
+        let unionedPhones = source.phoneAliases.filter { !target.phoneAliases.contains($0) }
+        target.phoneAliases.append(contentsOf: unionedPhones)
+
+        let unionedRoleBadges = source.roleBadges.filter { !target.roleBadges.contains($0) }
+        target.roleBadges.append(contentsOf: unionedRoleBadges)
+
+        if target.contactIdentifier == nil {
+            target.contactIdentifier = source.contactIdentifier
+        }
+        if target.linkedInProfileURL == nil {
+            target.linkedInProfileURL = source.linkedInProfileURL
+        }
+        if target.linkedInConnectedOn == nil {
+            target.linkedInConnectedOn = source.linkedInConnectedOn
+        }
+        if target.facebookProfileURL == nil {
+            target.facebookProfileURL = source.facebookProfileURL
+        }
+        if target.facebookFriendedOn == nil {
+            target.facebookFriendedOn = source.facebookFriendedOn
+        }
+        target.facebookMessageCount = max(target.facebookMessageCount, source.facebookMessageCount)
+        if target.facebookLastMessageDate == nil {
+            target.facebookLastMessageDate = source.facebookLastMessageDate
+        }
+        target.facebookTouchScore = max(target.facebookTouchScore, source.facebookTouchScore)
+
+        if (target.relationshipSummary ?? "").isEmpty {
+            target.relationshipSummary = source.relationshipSummary
+        }
+        if target.relationshipKeyThemes.isEmpty {
+            target.relationshipKeyThemes = source.relationshipKeyThemes
+        }
+        if target.relationshipNextSteps.isEmpty {
+            target.relationshipNextSteps = source.relationshipNextSteps
+        }
+        if target.preferredCadenceDays == nil {
+            target.preferredCadenceDays = source.preferredCadenceDays
+        }
+        if target.preferredChannelRawValue == nil {
+            target.preferredChannelRawValue = source.preferredChannelRawValue
+        }
+
+        // ── Build snapshot before deleting source ────────────────────
+        let snapshot = PersonMergeSnapshot(
+            sourcePersonID: source.id,
+            targetPersonID: target.id,
+            sourceDisplayName: source.displayNameCache ?? source.displayName,
+            displayName: source.displayName,
+            email: source.email,
+            displayNameCache: source.displayNameCache,
+            emailCache: source.emailCache,
+            emailAliases: source.emailAliases,
+            phoneAliases: source.phoneAliases,
+            roleBadges: source.roleBadges,
+            contactIdentifier: source.contactIdentifier,
+            isMe: source.isMe,
+            isArchived: source.isArchived,
+            relationshipSummary: source.relationshipSummary,
+            relationshipKeyThemes: source.relationshipKeyThemes,
+            relationshipNextSteps: source.relationshipNextSteps,
+            preferredCadenceDays: source.preferredCadenceDays,
+            preferredChannelRawValue: source.preferredChannelRawValue,
+            inferredChannelRawValue: source.inferredChannelRawValue,
+            linkedInProfileURL: source.linkedInProfileURL,
+            linkedInConnectedOn: source.linkedInConnectedOn,
+            facebookProfileURL: source.facebookProfileURL,
+            facebookFriendedOn: source.facebookFriendedOn,
+            facebookMessageCount: source.facebookMessageCount,
+            facebookLastMessageDate: source.facebookLastMessageDate,
+            facebookTouchScore: source.facebookTouchScore,
+            evidenceIDs: evidenceIDs,
+            noteIDs: noteIDs,
+            participationIDs: participationIDs,
+            outcomeIDs: outcomeIDs,
+            insightIDs: insightIDs,
+            transitionIDs: transitionIDs,
+            recruitingStageIDs: recruitingStageIDs,
+            productionRecordIDs: productionRecordIDs,
+            deducedRelationIDs: deducedRelationIDs,
+            unionedEmails: unionedEmails,
+            unionedPhones: unionedPhones,
+            unionedRoleBadges: unionedRoleBadges
+        )
+
+        // ── Delete source ────────────────────────────────────────────
+        modelContext.delete(source)
+        try modelContext.save()
+
+        logger.info("Merged person '\(snapshot.sourceDisplayName)' → '\(target.displayNameCache ?? target.displayName)'")
+        return snapshot
+    }
+
     /// Get count of all people
     func count() throws -> Int {
         guard let modelContext = modelContext else {

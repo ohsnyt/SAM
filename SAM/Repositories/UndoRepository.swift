@@ -79,6 +79,8 @@ final class UndoRepository {
             try restoreParticipation(entry.snapshotData)
         case .insight:
             try restoreInsight(entry.snapshotData)
+        case .person:
+            try restorePersonMerge(entry.snapshotData)
         }
 
         entry.isRestored = true
@@ -276,6 +278,137 @@ final class UndoRepository {
         try modelContext.save()
 
         logger.info("Restored insight: '\(snapshot.title)'")
+    }
+
+    private func restorePersonMerge(_ data: Data) throws {
+        guard let modelContext else { throw UndoError.notConfigured }
+
+        let snapshot = try JSONDecoder().decode(PersonMergeSnapshot.self, from: data)
+        let targetID = snapshot.targetPersonID
+
+        // Find the target person (the one that absorbed the source)
+        let allPeople = try modelContext.fetch(FetchDescriptor<SamPerson>())
+        guard let target = allPeople.first(where: { $0.id == targetID }) else {
+            logger.warning("Cannot restore person merge — target not found: \(targetID)")
+            return
+        }
+
+        // Re-create source person with original scalar fields
+        let source = SamPerson(
+            id: snapshot.sourcePersonID,
+            displayName: snapshot.displayName,
+            roleBadges: snapshot.roleBadges,
+            contactIdentifier: snapshot.contactIdentifier,
+            email: snapshot.email,
+            isMe: snapshot.isMe
+        )
+        source.displayNameCache = snapshot.displayNameCache
+        source.emailCache = snapshot.emailCache
+        source.emailAliases = snapshot.emailAliases
+        source.phoneAliases = snapshot.phoneAliases
+        source.isArchived = snapshot.isArchived
+        source.relationshipSummary = snapshot.relationshipSummary
+        source.relationshipKeyThemes = snapshot.relationshipKeyThemes
+        source.relationshipNextSteps = snapshot.relationshipNextSteps
+        source.preferredCadenceDays = snapshot.preferredCadenceDays
+        source.preferredChannelRawValue = snapshot.preferredChannelRawValue
+        source.inferredChannelRawValue = snapshot.inferredChannelRawValue
+        source.linkedInProfileURL = snapshot.linkedInProfileURL
+        source.linkedInConnectedOn = snapshot.linkedInConnectedOn
+        source.facebookProfileURL = snapshot.facebookProfileURL
+        source.facebookFriendedOn = snapshot.facebookFriendedOn
+        source.facebookMessageCount = snapshot.facebookMessageCount
+        source.facebookLastMessageDate = snapshot.facebookLastMessageDate
+        source.facebookTouchScore = snapshot.facebookTouchScore
+
+        modelContext.insert(source)
+
+        // Re-point transferred evidence back to source
+        let evidenceIDs = Set(snapshot.evidenceIDs)
+        for item in target.linkedEvidence where evidenceIDs.contains(item.id) {
+            source.linkedEvidence.append(item)
+        }
+
+        // Re-point transferred notes back to source
+        let noteIDs = Set(snapshot.noteIDs)
+        for note in target.linkedNotes where noteIDs.contains(note.id) {
+            source.linkedNotes.append(note)
+        }
+
+        // Re-point participations back to source
+        let participationIDs = Set(snapshot.participationIDs)
+        for p in target.participations where participationIDs.contains(p.id) {
+            p.person = source
+        }
+
+        // Re-point insights back to source
+        let insightIDs = Set(snapshot.insightIDs)
+        for insight in target.insights where insightIDs.contains(insight.id) {
+            insight.samPerson = source
+        }
+
+        // Re-point stage transitions back to source
+        let transitionIDs = Set(snapshot.transitionIDs)
+        for t in target.stageTransitions where transitionIDs.contains(t.id) {
+            t.person = source
+        }
+
+        // Re-point recruiting stages back to source
+        let recruitingStageIDs = Set(snapshot.recruitingStageIDs)
+        for rs in target.recruitingStages where recruitingStageIDs.contains(rs.id) {
+            rs.person = source
+        }
+
+        // Re-point production records back to source
+        let productionRecordIDs = Set(snapshot.productionRecordIDs)
+        for pr in target.productionRecords where productionRecordIDs.contains(pr.id) {
+            pr.person = source
+        }
+
+        // Re-point outcomes back to source
+        let outcomeIDs = Set(snapshot.outcomeIDs)
+        let allOutcomes = try modelContext.fetch(FetchDescriptor<SamOutcome>())
+        for outcome in allOutcomes where outcomeIDs.contains(outcome.id) {
+            outcome.linkedPerson = source
+        }
+
+        // Re-point deduced relations back to source
+        let deducedIDs = Set(snapshot.deducedRelationIDs)
+        let allDeduced = try modelContext.fetch(FetchDescriptor<DeducedRelation>())
+        for relation in allDeduced where deducedIDs.contains(relation.id) {
+            if relation.personAID == targetID {
+                relation.personAID = snapshot.sourcePersonID
+            }
+            if relation.personBID == targetID {
+                relation.personBID = snapshot.sourcePersonID
+            }
+        }
+
+        // Re-point extracted mentions back to source
+        let allNotes = try modelContext.fetch(FetchDescriptor<SamNote>())
+        for note in allNotes {
+            var updated = false
+            var mentions = note.extractedMentions
+            for i in mentions.indices {
+                if mentions[i].matchedPersonID == targetID {
+                    // Only revert if this was originally the source's ID
+                    // (we can't perfectly distinguish, but best effort)
+                    mentions[i].matchedPersonID = snapshot.sourcePersonID
+                    updated = true
+                }
+            }
+            if updated {
+                note.extractedMentions = mentions
+            }
+        }
+
+        // Remove unioned scalars from target
+        target.emailAliases.removeAll { snapshot.unionedEmails.contains($0) }
+        target.phoneAliases.removeAll { snapshot.unionedPhones.contains($0) }
+        target.roleBadges.removeAll { snapshot.unionedRoleBadges.contains($0) }
+
+        try modelContext.save()
+        logger.info("Restored person merge: re-created '\(snapshot.sourceDisplayName)'")
     }
 
     // MARK: - Errors

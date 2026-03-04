@@ -33,6 +33,7 @@ final class RelationshipGraphCoordinator {
     var selectionAnchorID: UUID?
     var hoveredNodeID: UUID?
     var progress: String = ""
+    var meNodeID: UUID?
 
     /// Convenience for single-selection contexts (e.g. tooltip, navigation).
     var selectedNodeID: UUID? {
@@ -242,6 +243,7 @@ final class RelationshipGraphCoordinator {
                 }
 
                 // --- Finalize ---
+                meNodeID = (try? peopleRepository.fetchMe())?.id
                 let nodeCount = allNodes.count
                 let edgeCount = allEdges.count
                 lastComputedAt = Date()
@@ -278,6 +280,27 @@ final class RelationshipGraphCoordinator {
         await buildGraph()
     }
 
+    /// Merge two real people: source absorbed into target, with undo support.
+    func mergePeople(sourceID: UUID, targetID: UUID) async {
+        do {
+            let snapshot = try peopleRepository.mergePerson(sourceID: sourceID, targetID: targetID)
+            let entry = try UndoRepository.shared.capture(
+                operation: .merged,
+                entityType: .person,
+                entityID: snapshot.sourcePersonID,
+                entityDisplayName: snapshot.sourceDisplayName,
+                snapshot: snapshot
+            )
+            UndoCoordinator.shared.showToast(for: entry)
+            logger.info("Person merge complete: '\(snapshot.sourceDisplayName)' → target \(snapshot.targetPersonID)")
+        } catch {
+            logger.error("Person merge failed: \(error)")
+        }
+
+        invalidateLayoutCache()
+        await buildGraph()
+    }
+
     /// Rebuild if data changed since lastComputedAt.
     func rebuildIfStale(bounds: CGSize = CGSize(width: 1200, height: 800)) async {
         guard graphStatus != .computing else { return }
@@ -301,6 +324,14 @@ final class RelationshipGraphCoordinator {
                 if deducedNodeIDs.contains(edge.targetID) { neighborIDs.insert(edge.sourceID) }
             }
             focusNodeIDs = neighborIDs
+        } else if focusMode == "roleConfirmation" {
+            // GraphNode.id == SamPerson.id
+            var ids = Set(RoleDeductionEngine.shared.currentBatch.map(\.personID))
+            // Always include Me node for context
+            if let meID = (try? peopleRepository.fetchMe())?.id {
+                ids.insert(meID)
+            }
+            focusNodeIDs = ids
         }
 
         var visibleNodeIDs = Set<UUID>()

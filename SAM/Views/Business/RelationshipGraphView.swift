@@ -56,6 +56,11 @@ struct RelationshipGraphView: View {
     @State private var clusterDragOffsets: [UUID: CGPoint] = [:]  // nodeID → offset from dragged node
     @State private var isDraggingCluster: Bool = false
 
+    // Person merge state (real person → real person)
+    @State private var pendingPersonMergeSourceID: UUID?
+    @State private var pendingPersonMergeTargetID: UUID?
+    @State private var showPersonMergeConfirmation: Bool = false
+
     // Ghost merge compatibility state
     @State private var compatibleNodeIDs: Set<UUID> = []  // Nodes compatible with dragged ghost
     @State private var magneticSnapTargetID: UUID?  // Node within 40pt snap range
@@ -85,6 +90,10 @@ struct RelationshipGraphView: View {
 
     // Edge hover state
     @State private var hoveredEdge: GraphEdge?
+
+    // Role confirmation state
+    @State private var roleDeductionEngine = RoleDeductionEngine.shared
+    @State private var rolePickerNodeID: UUID?
 
     // MARK: - Navigation
 
@@ -190,6 +199,25 @@ struct RelationshipGraphView: View {
                     Text("Link all \"\(ghostMergeSourceName)\" mentions to \(targetNode.displayName)?")
                 }
             }
+            .alert("Merge People?", isPresented: $showPersonMergeConfirmation) {
+                Button("Merge", role: .destructive) {
+                    guard let sourceID = pendingPersonMergeSourceID,
+                          let targetID = pendingPersonMergeTargetID else { return }
+                    Task {
+                        await coordinator.mergePeople(sourceID: sourceID, targetID: targetID)
+                        fitToView()
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                let sourceName = pendingPersonMergeSourceID.flatMap { sid in
+                    coordinator.nodes.first(where: { $0.id == sid })?.displayName
+                } ?? "selected person"
+                let targetName = pendingPersonMergeTargetID.flatMap { tid in
+                    coordinator.nodes.first(where: { $0.id == tid })?.displayName
+                } ?? "target person"
+                Text("Merge \"\(sourceName)\" into \"\(targetName)\"? All evidence, notes, and relationships will be transferred to \(targetName). This can be undone.")
+            }
             .alert("Confirm Relationship?", isPresented: $showEdgeConfirmAlert) {
                 Button("Confirm") {
                     if let edge = pendingEdgeConfirmation,
@@ -207,6 +235,12 @@ struct RelationshipGraphView: View {
                     let targetName = coordinator.nodes.first(where: { $0.id == edge.targetID })?.displayName ?? "?"
                     Text("\(sourceName) is \(edge.label ?? "related to") \(targetName)")
                 }
+            }
+            .popover(isPresented: Binding(
+                get: { rolePickerNodeID != nil },
+                set: { if !$0 { rolePickerNodeID = nil } }
+            )) {
+                rolePickerContent
             }
     }
 
@@ -312,7 +346,35 @@ struct RelationshipGraphView: View {
 
     @ViewBuilder
     private var focusModeOverlay: some View {
-        if coordinator.focusMode != nil {
+        if coordinator.focusMode == "roleConfirmation" {
+            RoleConfirmationBannerView(
+                engine: roleDeductionEngine,
+                onConfirm: {
+                    let batchIDs = Set(roleDeductionEngine.currentBatch.map(\.personID))
+                    roleDeductionEngine.confirmBatch(personIDs: batchIDs)
+                    if roleDeductionEngine.pendingSuggestions.isEmpty {
+                        coordinator.clearFocusMode()
+                        fitToView()
+                    } else {
+                        coordinator.applyFilters()
+                    }
+                },
+                onSkip: {
+                    let batchIDs = Set(roleDeductionEngine.currentBatch.map(\.personID))
+                    roleDeductionEngine.dismissBatch(personIDs: batchIDs)
+                    if roleDeductionEngine.pendingSuggestions.isEmpty {
+                        coordinator.clearFocusMode()
+                        fitToView()
+                    } else {
+                        coordinator.applyFilters()
+                    }
+                },
+                onExit: {
+                    coordinator.clearFocusMode()
+                    fitToView()
+                }
+            )
+        } else if coordinator.focusMode != nil {
             VStack {
                 HStack {
                     Image(systemName: "scope")
@@ -332,6 +394,74 @@ struct RelationshipGraphView: View {
                 .padding(.top, 8)
                 Spacer()
             }
+        }
+    }
+
+    // MARK: - Role Picker
+
+    @ViewBuilder
+    private var rolePickerContent: some View {
+        if let nodeID = rolePickerNodeID,
+           let suggestion = roleDeductionEngine.currentBatch.first(where: { $0.personID == nodeID }) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(suggestion.displayName)
+                    .font(.headline)
+                    .padding(.bottom, 2)
+
+                let roles = ["Client", "Applicant", "Lead", "Agent", "External Agent", "Vendor", "Referral Partner"]
+                ForEach(roles, id: \.self) { role in
+                    Button {
+                        if role != suggestion.suggestedRole {
+                            roleDeductionEngine.changeSuggestedRole(personID: nodeID, newRole: role)
+                        }
+                        roleDeductionEngine.confirmRole(personID: nodeID, role: role)
+                        rolePickerNodeID = nil
+                        if roleDeductionEngine.pendingSuggestions.isEmpty {
+                            coordinator.clearFocusMode()
+                            fitToView()
+                        } else {
+                            coordinator.applyFilters()
+                        }
+                    } label: {
+                        HStack {
+                            let style = RoleBadgeStyle.forBadge(role)
+                            Image(systemName: style.icon)
+                                .foregroundStyle(style.color)
+                                .frame(width: 20)
+                            Text(role)
+                            Spacer()
+                            if role == suggestion.suggestedRole {
+                                Text("Suggested")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Divider()
+
+                Button(role: .destructive) {
+                    roleDeductionEngine.dismissSuggestion(personID: nodeID)
+                    rolePickerNodeID = nil
+                    if roleDeductionEngine.pendingSuggestions.isEmpty {
+                        coordinator.clearFocusMode()
+                        fitToView()
+                    } else {
+                        coordinator.applyFilters()
+                    }
+                } label: {
+                    HStack {
+                        Image(systemName: "xmark.circle")
+                            .frame(width: 20)
+                        Text("Dismiss")
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(12)
+            .frame(width: 200)
         }
     }
 
@@ -1087,6 +1217,11 @@ struct RelationshipGraphView: View {
 
             // Ghost → real node drop target detection with fuzzy matching
             handleGhostDragDetection(dragID: dragID, idx: idx, gp: gp)
+
+            // Real person → real person drop target detection
+            if !coordinator.nodes[idx].isGhost {
+                handlePersonDragDetection(dragID: dragID, gp: gp)
+            }
         } else if !isMarqueeActive && !isLassoActive {
             // Pan viewport
             offset = CGPoint(
@@ -1144,6 +1279,28 @@ struct RelationshipGraphView: View {
         }
     }
 
+    private func handlePersonDragDetection(dragID: UUID, gp: CGPoint) {
+        // hitTestNode would return the dragged node itself (it sits at gp),
+        // so we scan for the closest non-self, non-ghost, non-Me node that overlaps.
+        guard let draggedNode = coordinator.nodes.first(where: { $0.id == dragID }) else { return }
+        let dragRadius = nodeRadius(for: draggedNode)
+        var closestID: UUID?
+        var closestDist: CGFloat = .greatestFiniteMagnitude
+        for candidate in coordinator.nodes {
+            guard candidate.id != dragID,
+                  !candidate.isGhost,
+                  candidate.id != coordinator.meNodeID else { continue }
+            let d = hypot(gp.x - candidate.position.x, gp.y - candidate.position.y)
+            // Only trigger when dragged node is well within the target (60% of target radius)
+            let overlapThreshold = nodeRadius(for: candidate) * 0.6
+            if d < overlapThreshold && d < closestDist {
+                closestDist = d
+                closestID = candidate.id
+            }
+        }
+        dropTargetNodeID = closestID
+    }
+
     private func handleDragEnded(center: CGPoint) {
         // Lasso selection completion
         if isLassoActive {
@@ -1167,6 +1324,16 @@ struct RelationshipGraphView: View {
             ghostMergeSourceName = draggedNode.displayName
             pendingDropMergePersonID = targetID
             showDropMergeConfirmation = true
+        }
+        // Person-to-person merge
+        else if let dragID = draggedNodeID,
+                let targetID = dropTargetNodeID,
+                let draggedNode = coordinator.nodes.first(where: { $0.id == dragID }),
+                let targetNode = coordinator.nodes.first(where: { $0.id == targetID }),
+                !draggedNode.isGhost && !targetNode.isGhost && targetNode.id != coordinator.meNodeID {
+            pendingPersonMergeSourceID = dragID
+            pendingPersonMergeTargetID = targetID
+            showPersonMergeConfirmation = true
         }
 
         if draggedNodeID != nil {
@@ -1310,6 +1477,15 @@ struct RelationshipGraphView: View {
     private func handleTap(at location: CGPoint, center: CGPoint) {
         let gp = graphPoint(location, center: center)
         if let node = hitTestNode(at: gp) {
+            // In role confirmation mode, tapping a suggested node opens the role picker
+            if coordinator.focusMode == "roleConfirmation",
+               roleDeductionEngine.currentBatch.contains(where: { $0.personID == node.id }) {
+                rolePickerNodeID = node.id
+                coordinator.selectedNodeIDs = [node.id]
+                coordinator.selectionAnchorID = node.id
+                return
+            }
+
             if NSEvent.modifierFlags.contains(.shift) {
                 // Shift+click toggles multi-select
                 if coordinator.selectedNodeIDs.contains(node.id) {
@@ -2121,6 +2297,25 @@ struct RelationshipGraphView: View {
                 let resolved = context.resolve(pinText)
                 context.draw(resolved, in: pinRect)
             }
+
+            // Role confirmation: dashed ring in role color for suggested nodes
+            if coordinator.focusMode == "roleConfirmation", !node.isGhost {
+                if let suggestion = roleDeductionEngine.currentBatch.first(where: { $0.personID == node.id }) {
+                    let ringColor = RoleBadgeStyle.forBadge(suggestion.suggestedRole).color
+                    let ringRadius = radius + 5
+                    let ringRect = CGRect(
+                        x: sp.x - ringRadius,
+                        y: sp.y - ringRadius,
+                        width: ringRadius * 2,
+                        height: ringRadius * 2
+                    )
+                    context.stroke(
+                        Path(ellipseIn: ringRect),
+                        with: .color(ringColor.opacity(0.8 * opacity)),
+                        style: StrokeStyle(lineWidth: 2.5, dash: [6, 3])
+                    )
+                }
+            }
         }
     }
 
@@ -2283,11 +2478,17 @@ struct RelationshipGraphView: View {
             context.draw(resolved, at: CGPoint(x: badgeRect.midX, y: badgeRect.midY), anchor: .center)
         }
 
-        // Drop target highlight (green ring when dragging ghost onto real node)
+        // Drop target highlight (green for ghost merge, orange for person merge)
         if let dropID = dropTargetNodeID,
            let targetNode = coordinator.nodes.first(where: { $0.id == dropID }) {
             let sp = screenPoint(targetNode.position, center: center)
             let radius = nodeRadius(for: targetNode) * scale + 6
+
+            // Determine ring color: ghost→green, person→orange
+            let isGhostDrag = draggedNodeID.flatMap { id in
+                coordinator.nodes.first(where: { $0.id == id })?.isGhost
+            } ?? false
+            let ringColor: Color = isGhostDrag ? .green : .orange
 
             let rect = CGRect(
                 x: sp.x - radius,
@@ -2298,10 +2499,10 @@ struct RelationshipGraphView: View {
 
             let glowRect = rect.insetBy(dx: -4, dy: -4)
             let glowPath = Path(ellipseIn: glowRect)
-            context.stroke(glowPath, with: .color(.green.opacity(0.3)), lineWidth: 5)
+            context.stroke(glowPath, with: .color(ringColor.opacity(0.3)), lineWidth: 5)
 
             let path = Path(ellipseIn: rect)
-            context.stroke(path, with: .color(.green), lineWidth: 2.5)
+            context.stroke(path, with: .color(ringColor), lineWidth: 2.5)
         }
     }
 
