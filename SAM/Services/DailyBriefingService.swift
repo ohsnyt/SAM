@@ -209,9 +209,16 @@ actor DailyBriefingService {
         if !goalProgress.isEmpty {
             let items = goalProgress.map { gp in
                 let pctStr = String(format: "%.0f", gp.percentComplete * 100)
-                return "- \(gp.goalType.displayName): \(Int(gp.currentValue))/\(Int(gp.targetValue)) (\(pctStr)%, \(gp.pace.displayName), \(gp.daysRemaining)d left, need \(String(format: "%.1f", gp.dailyNeeded))/day)"
+                let rateStr = briefingGoalRateText(gp)
+                return "- \(gp.goalType.displayName): \(Int(gp.currentValue))/\(Int(gp.targetValue)) (\(pctStr)%, \(gp.pace.displayName), \(gp.daysRemaining)d left, \(rateStr))"
             }.joined(separator: "\n")
             parts.append("BUSINESS GOALS:\n\(items)")
+        }
+
+        // Gap answers context (user-provided knowledge) — read directly from UserDefaults
+        let gapContext = Self.readGapAnswers()
+        if !gapContext.isEmpty {
+            parts.append("USER CONTEXT:\n\(gapContext)")
         }
 
         if !tomorrowPreview.isEmpty {
@@ -257,5 +264,70 @@ actor DailyBriefingService {
         }
 
         return parts.joined(separator: "\n\n")
+    }
+
+    // MARK: - Gap Answers
+
+    /// Read user-provided knowledge gap answers from UserDefaults.
+    /// Matches the same keys used by OutcomeEngine.gapAnswersContext().
+    private static func readGapAnswers() -> String {
+        let defaults = UserDefaults.standard
+        let gapKeys = [
+            ("sam.gap.referralSources", "Known referral sources"),
+            ("sam.gap.contentTopics", "Audience topics of interest"),
+            ("sam.gap.associations", "Professional groups/associations"),
+        ]
+
+        var parts: [String] = []
+        for (key, label) in gapKeys {
+            if let answer = defaults.string(forKey: key), !answer.isEmpty {
+                parts.append("\(label): \(answer)")
+            }
+        }
+
+        return parts.isEmpty ? "" : parts.joined(separator: "\n")
+    }
+
+    // MARK: - Goal Rate Guardrails
+
+    /// Format goal rate for briefing with guardrails against absurd daily numbers.
+    private func briefingGoalRateText(_ gp: GoalProgress) -> String {
+        let remaining = max(gp.targetValue - gp.currentValue, 0)
+        let days = Double(max(gp.daysRemaining, 1))
+        let perDay = remaining / days
+        let perWeek = remaining / (days / 7.0)
+        let perMonth = remaining / (days / 30.0)
+
+        let format: (Double) -> String = { val in
+            val == val.rounded() ? String(format: "%.0f", val) : String(format: "%.1f", val)
+        }
+
+        // Per-type reasonable daily maximums
+        let reasonableDailyMax: Double
+        let reasonableWeeklyMax: Double
+        switch gp.goalType {
+        case .policiesSubmitted: reasonableDailyMax = 5;  reasonableWeeklyMax = 25
+        case .newClients:        reasonableDailyMax = 3;  reasonableWeeklyMax = 15
+        case .meetingsHeld:      reasonableDailyMax = 5;  reasonableWeeklyMax = 25
+        case .productionVolume:  reasonableDailyMax = 50_000; reasonableWeeklyMax = 250_000
+        case .recruiting:        reasonableDailyMax = 3;  reasonableWeeklyMax = 15
+        case .contentPosts:      reasonableDailyMax = 3;  reasonableWeeklyMax = 15
+        case .deepWorkHours:     reasonableDailyMax = 8;  reasonableWeeklyMax = 40
+        }
+
+        if perDay > reasonableDailyMax {
+            if perWeek > reasonableWeeklyMax {
+                return "need ~\(format(perMonth))/month — significant catch-up needed"
+            }
+            return "need ~\(format(perWeek))/week"
+        }
+
+        if perDay >= 1 {
+            return "need \(format(perDay))/day"
+        } else if perWeek >= 1 {
+            return "need \(format(perWeek))/week"
+        } else {
+            return "need \(format(perMonth))/month"
+        }
     }
 }

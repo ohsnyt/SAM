@@ -43,6 +43,7 @@ struct OutcomeQueueView: View {
     @State private var contentDraftOutcome: SamOutcome?
     @State private var showSetupGuideSheet = false
     @State private var setupGuideOutcome: SamOutcome?
+    @State private var gapRefreshToken = UUID()
 
     // MARK: - Computed
 
@@ -74,6 +75,18 @@ struct OutcomeQueueView: View {
                     .tipViewStyle(SAMTipViewStyle())
                     .padding(.horizontal)
                     .padding(.bottom, 8)
+
+                // Knowledge gap prompt (max 1 at a time)
+                if let gap = engine.activeGaps.first {
+                    InlineGapPromptView(gap: gap) {
+                        // Refresh gaps after answer
+                        engine.activeGaps = engine.detectKnowledgeGaps()
+                        gapRefreshToken = UUID()
+                    }
+                    .padding(.horizontal)
+                    .padding(.bottom, 8)
+                    .id(gapRefreshToken)
+                }
 
                 // Active outcome cards
                 VStack(spacing: 12) {

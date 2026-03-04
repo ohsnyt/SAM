@@ -15,6 +15,17 @@ import os.log
 
 private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "OutcomeEngine")
 
+// MARK: - Knowledge Gap
+
+/// Represents a gap in SAM's knowledge that can be filled by user input.
+struct KnowledgeGap: Identifiable, Sendable {
+    let id: String           // e.g., "referralSources"
+    let question: String
+    let placeholder: String
+    let icon: String         // SF Symbol
+    let storageKey: String   // UserDefaults key prefix "sam.gap."
+}
+
 @MainActor
 @Observable
 final class OutcomeEngine {
@@ -35,6 +46,9 @@ final class OutcomeEngine {
     var generationStatus: GenerationStatus = .idle
     var lastGeneratedAt: Date?
     var lastError: String?
+
+    /// Active knowledge gaps detected during outcome generation.
+    var activeGaps: [KnowledgeGap] = []
 
     // MARK: - Dependencies
 
@@ -177,6 +191,9 @@ final class OutcomeEngine {
                 }
             }
 
+            // Detect knowledge gaps
+            activeGaps = detectKnowledgeGaps()
+
             // AI enrichment (best-effort, non-blocking)
             await enrichWithAI()
 
@@ -257,12 +274,26 @@ final class OutcomeEngine {
             }
             guard !hasNote else { return nil }
 
-            let primary = event.linkedPeople.first { !$0.isMe } ?? event.linkedPeople.first
+            let attendees = event.linkedPeople.filter { !$0.isMe }
+            let primary = attendees.first ?? event.linkedPeople.first
             let eventEnd = event.endedAt ?? Calendar.current.date(byAdding: .hour, value: 1, to: event.occurredAt)!
             let hoursSince = max(1, Int(now.timeIntervalSince(eventEnd) / 3600))
 
+            // Build attendee names and meeting time for specificity
+            let attendeeNames = attendees.map { $0.displayNameCache ?? $0.displayName }
+            let nameStr = attendeeNames.isEmpty ? "" : " with \(attendeeNames.joined(separator: ", "))"
+            let timeStr = eventEnd.formatted(date: .omitted, time: .shortened)
+            let dayLabel: String
+            if Calendar.current.isDateInYesterday(eventEnd) {
+                dayLabel = "yesterday's"
+            } else if Calendar.current.isDateInToday(eventEnd) {
+                dayLabel = "today's"
+            } else {
+                dayLabel = eventEnd.formatted(date: .abbreviated, time: .omitted)
+            }
+
             return SamOutcome(
-                title: "Document takeaways from \(event.title)",
+                title: "Document takeaways from \(dayLabel) \(event.title)\(nameStr) (\(timeStr))",
                 rationale: "\(hoursSince) hour\(hoursSince == 1 ? "" : "s") since it ended. Capture key points while fresh.",
                 outcomeKind: .followUp,
                 deadlineDate: Calendar.current.date(byAdding: .hour, value: 72, to: eventEnd),
@@ -317,12 +348,39 @@ final class OutcomeEngine {
             let name = person.displayNameCache ?? person.displayName
             let role = person.roleBadges.first ?? "Contact"
 
+            // Build last interaction context
+            let lastInteraction = person.linkedEvidence
+                .filter { $0.source.isInteraction }
+                .sorted { $0.occurredAt > $1.occurredAt }
+                .first
+            let lastInteractionContext: String
+            if let ev = lastInteraction {
+                let dateStr = ev.occurredAt.formatted(date: .abbreviated, time: .omitted)
+                let snippetPreview = String(ev.snippet.prefix(80))
+                lastInteractionContext = " (\(ev.source.displayName.lowercased()) about \(snippetPreview) on \(dateStr))"
+            } else {
+                lastInteractionContext = ""
+            }
+
             // 1. Static threshold: existing behavior
             let threshold = roleThreshold(for: person.roleBadges.first)
             if days >= threshold {
+                // Add role-specific insight
+                let roleInsight: String
+                switch role.lowercased() {
+                case "client":
+                    roleInsight = " — a policy review may be overdue."
+                case "applicant":
+                    roleInsight = " — application may stall without follow-up."
+                case "lead":
+                    roleInsight = " — lead may go cold without re-engagement."
+                default:
+                    roleInsight = "."
+                }
+
                 outcomes.append(SamOutcome(
                     title: "Reconnect with \(name)",
-                    rationale: "\(days) days since last interaction. \(role) relationship.",
+                    rationale: "\(days) days since last interaction\(lastInteractionContext). \(role) relationship\(roleInsight)",
                     outcomeKind: .outreach,
                     priorityScore: 0.7,
                     sourceInsightSummary: "No interaction in \(days) days (threshold: \(threshold) for \(role))",
@@ -337,7 +395,7 @@ final class OutcomeEngine {
                predicted <= health.predictiveLeadDays {
                 outcomes.append(SamOutcome(
                     title: "Reach out to \(name) soon",
-                    rationale: "Engagement declining — predicted overdue in \(predicted) day\(predicted == 1 ? "" : "s"). \(role) relationship.",
+                    rationale: "Engagement declining — predicted overdue in \(predicted) day\(predicted == 1 ? "" : "s")\(lastInteractionContext). \(role) relationship.",
                     outcomeKind: .outreach,
                     priorityScore: 0.4,
                     sourceInsightSummary: "Engagement velocity declining (predicted overdue in \(predicted)d)",
@@ -350,23 +408,55 @@ final class OutcomeEngine {
     }
 
     /// Suggest growth activities when the active outcome queue is thin.
+    /// Creates one outcome per stale lead (capped at 3) instead of a generic "review pipeline".
     private func scanGrowthOpportunities(people: [SamPerson]) throws -> [SamOutcome] {
         var outcomes: [SamOutcome] = []
 
-        // Find leads not contacted recently
+        // Find leads not contacted recently, sorted by staleness
         let leads = people.filter { $0.roleBadges.contains("Lead") }
-        let staleLeads = leads.filter { person in
+        let staleLeads = leads.compactMap { person -> (SamPerson, Int, SamEvidenceItem?)? in
             let health = meetingPrep.computeHealth(for: person)
-            return (health.daysSinceLastInteraction ?? 999) > 14
-        }
+            let days = health.daysSinceLastInteraction ?? 999
+            guard days > 14 else { return nil }
+            let lastEvidence = person.linkedEvidence
+                .filter { $0.source.isInteraction }
+                .sorted { $0.occurredAt > $1.occurredAt }
+                .first
+            return (person, days, lastEvidence)
+        }.sorted { $0.1 > $1.1 } // Most stale first
 
-        if !staleLeads.isEmpty {
+        // One outcome per stale lead, capped at 3
+        for (person, days, lastEvidence) in staleLeads.prefix(3) {
+            let name = person.displayNameCache ?? person.displayName
+
+            let lastContactStr: String
+            if let ev = lastEvidence {
+                let dateStr = ev.occurredAt.formatted(date: .abbreviated, time: .omitted)
+                let snippet = String(ev.snippet.prefix(60))
+                lastContactStr = "Last interaction was \(ev.source.displayName.lowercased()) on \(dateStr): \(snippet)."
+            } else {
+                lastContactStr = "No prior interactions on record."
+            }
+
+            let leadSince = person.stageTransitions
+                .filter { $0.toStage == "Lead" }
+                .sorted { $0.transitionDate > $1.transitionDate }
+                .first?.transitionDate
+
+            let sinceStr: String
+            if let date = leadSince {
+                sinceStr = " Lead since \(date.formatted(date: .abbreviated, time: .omitted))."
+            } else {
+                sinceStr = ""
+            }
+
             outcomes.append(SamOutcome(
-                title: "Review leads pipeline",
-                rationale: "\(staleLeads.count) lead\(staleLeads.count == 1 ? "" : "s") haven't been contacted recently.",
+                title: "Reach out to \(name) — last contact \(days) days ago",
+                rationale: "\(lastContactStr)\(sinceStr) Lead relationship.",
                 outcomeKind: .growth,
-                sourceInsightSummary: "\(staleLeads.count) stale leads detected",
-                suggestedNextStep: "Pick one lead to reach out to today"
+                sourceInsightSummary: "Stale lead: \(name), \(days) days since last contact",
+                suggestedNextStep: "Send a quick check-in to re-engage",
+                linkedPerson: person
             ))
         }
 
@@ -434,9 +524,28 @@ final class OutcomeEngine {
             let gapList = gaps.joined(separator: " and ")
             let existingList = existingTypes.map(\.displayName).joined(separator: ", ")
 
+            // Look for conversation opener from recent notes/evidence
+            let recentTopics = client.linkedNotes
+                .sorted { $0.updatedAt > $1.updatedAt }
+                .prefix(3)
+                .flatMap { $0.extractedTopics }
+            let openerContext: String
+            if let relevantTopic = recentTopics.first(where: {
+                $0.lowercased().contains("kid") || $0.lowercased().contains("education")
+                || $0.lowercased().contains("retire") || $0.lowercased().contains("college")
+                || $0.lowercased().contains("family") || $0.lowercased().contains("future")
+            }) {
+                openerContext = " In a recent conversation, \(name) mentioned \"\(relevantTopic)\" — a natural opener for discussing \(gapList)."
+            } else if let lastNote = client.linkedNotes.sorted(by: { $0.updatedAt > $1.updatedAt }).first {
+                let dateStr = lastNote.updatedAt.formatted(date: .abbreviated, time: .omitted)
+                openerContext = " Your last note (\(dateStr)) could inform the conversation."
+            } else {
+                openerContext = ""
+            }
+
             outcomes.append(SamOutcome(
                 title: "Consider \(gapList) for \(name)",
-                rationale: "Has \(existingList) but no \(gapList). A complete financial strategy covers life, retirement, and education.",
+                rationale: "\(name) has \(existingList) but no \(gapList).\(openerContext)",
                 outcomeKind: .growth,
                 sourceInsightSummary: "Coverage gap detected for \(name): missing \(gapList)",
                 suggestedNextStep: "Schedule a review meeting to discuss \(gapList) options",
@@ -764,6 +873,7 @@ final class OutcomeEngine {
     }
 
     /// Generate title, rationale, next step, and kind for a behind/at-risk goal.
+    /// Includes people-specific context where applicable (e.g., pending applicants for submissions goal).
     private func goalOutcomeDetails(
         goalType: GoalType,
         paceLabel: String,
@@ -775,45 +885,61 @@ final class OutcomeEngine {
 
         switch goalType {
         case .newClients:
+            // Find warmest leads
+            let leadNames = (try? peopleRepo.fetchAll()
+                .filter { $0.roleBadges.contains("Lead") && !$0.isArchived }
+                .sorted {
+                    (meetingPrep.computeHealth(for: $0).daysSinceLastInteraction ?? 999)
+                    < (meetingPrep.computeHealth(for: $1).daysSinceLastInteraction ?? 999)
+                }
+                .prefix(3)
+                .compactMap { $0.displayNameCache ?? $0.displayName }) ?? []
+            let leadStr = leadNames.isEmpty ? "" : " Warmest leads: \(leadNames.joined(separator: ", "))."
             return (
                 "Review pipeline for client conversions",
-                "\(paceLabel) on new clients goal — \(Int(remaining)) more needed. \(rateText).",
-                "Identify your warmest leads and schedule next-step meetings",
+                "\(paceLabel) on new clients — \(Int(remaining)) remaining over \(daysRemaining) days (\(rateText)).\(leadStr)",
+                leadNames.isEmpty ? "Identify leads ready for next-step meetings" : "Schedule a next-step meeting with \(leadNames.first ?? "a lead")",
                 kind
             )
         case .policiesSubmitted:
+            // Find applicants with pending paperwork
+            let applicantNames = (try? peopleRepo.fetchAll()
+                .filter { $0.roleBadges.contains("Applicant") && !$0.isArchived }
+                .prefix(3)
+                .compactMap { $0.displayNameCache ?? $0.displayName }) ?? []
+            let appStr = applicantNames.isEmpty ? "" : " You have \(applicantNames.count) applicant\(applicantNames.count == 1 ? "" : "s") with pending paperwork: \(applicantNames.joined(separator: ", "))."
             return (
                 "Push pending applications forward",
-                "\(paceLabel) on submissions goal — \(Int(remaining)) more needed. \(rateText).",
-                "Review in-progress applications and gather missing documents",
+                "\(paceLabel) on submissions — \(Int(remaining)) remaining over \(daysRemaining) days (\(rateText)).\(appStr)",
+                applicantNames.isEmpty ? "Review in-progress applications" : "Follow up with \(applicantNames.first ?? "an applicant") on missing documents",
                 kind
             )
         case .productionVolume:
             let volStr = remaining >= 1_000 ? String(format: "$%.0fK", remaining / 1_000) : String(format: "$%.0f", remaining)
             return (
                 "Focus on premium volume opportunities",
-                "\(paceLabel) on production goal — \(volStr) more needed. \(rateText).",
+                "\(paceLabel) on production — \(volStr) remaining over \(daysRemaining) days (\(rateText)).",
                 "Review clients who may benefit from higher-coverage or additional products",
                 kind
             )
         case .recruiting:
             return (
                 "Schedule recruiting conversations",
-                "\(paceLabel) on recruiting goal — \(Int(remaining)) more needed. \(rateText).",
+                "\(paceLabel) on recruiting — \(Int(remaining)) remaining over \(daysRemaining) days (\(rateText)).",
                 "Reach out to warm prospects or ask top agents for referrals",
                 kind
             )
         case .meetingsHeld:
             return (
                 "Book more meetings this period",
-                "\(paceLabel) on meetings goal — \(Int(remaining)) more needed. \(rateText).",
+                "\(paceLabel) on meetings — \(Int(remaining)) remaining over \(daysRemaining) days (\(rateText)).",
                 "Check your contact list for overdue check-ins to schedule",
                 kind
             )
         case .contentPosts:
             return (
                 "Create and publish content",
-                "\(paceLabel) on content goal — \(Int(remaining)) more posts needed. \(rateText).",
+                "\(paceLabel) on content — \(Int(remaining)) posts remaining over \(daysRemaining) days (\(rateText)).",
                 "Draft a quick educational post or client success story",
                 kind
             )
@@ -821,14 +947,15 @@ final class OutcomeEngine {
             let hoursStr = String(format: "%.1f", remaining)
             return (
                 "Block focused work time",
-                "\(paceLabel) on deep work goal — \(hoursStr) more hours needed. \(rateText).",
+                "\(paceLabel) on deep work — \(hoursStr) hours remaining over \(daysRemaining) days (\(rateText)).",
                 "Schedule a 2-hour focus block on your calendar for tomorrow",
                 kind
             )
         }
     }
 
-    /// Rate text for goal pacing (day/week/month, picking the first unit >= 1).
+    /// Rate text for goal pacing with guardrails against absurd daily rates.
+    /// When dailyNeeded exceeds a reasonable max for the goal type, reframes as weekly or monthly.
     private func goalRateText(_ gp: GoalProgress) -> String {
         let remaining = max(gp.targetValue - gp.currentValue, 0)
         let days = Double(max(gp.daysRemaining, 1))
@@ -838,6 +965,28 @@ final class OutcomeEngine {
 
         let format: (Double) -> String = { val in
             val == val.rounded() ? String(format: "%.0f", val) : String(format: "%.1f", val)
+        }
+
+        // Per-type reasonable daily maximums
+        let reasonableDailyMax: Double
+        let reasonableWeeklyMax: Double
+        switch gp.goalType {
+        case .policiesSubmitted: reasonableDailyMax = 5;  reasonableWeeklyMax = 25
+        case .newClients:        reasonableDailyMax = 3;  reasonableWeeklyMax = 15
+        case .meetingsHeld:      reasonableDailyMax = 5;  reasonableWeeklyMax = 25
+        case .productionVolume:  reasonableDailyMax = 50_000; reasonableWeeklyMax = 250_000
+        case .recruiting:        reasonableDailyMax = 3;  reasonableWeeklyMax = 15
+        case .contentPosts:      reasonableDailyMax = 3;  reasonableWeeklyMax = 15
+        case .deepWorkHours:     reasonableDailyMax = 8;  reasonableWeeklyMax = 40
+        }
+
+        // If daily rate is unreasonable, skip to weekly
+        if perDay > reasonableDailyMax {
+            // If weekly rate is also unreasonable, show monthly with a note
+            if perWeek > reasonableWeeklyMax {
+                return "Need ~\(format(perMonth))/month — significant catch-up needed"
+            }
+            return "Need ~\(format(perWeek)) per week"
         }
 
         if perDay >= 1 {
@@ -1195,6 +1344,187 @@ final class OutcomeEngine {
         }
     }
 
+    // MARK: - Rich Context Builder
+
+    /// Assemble a focused context block for an outcome's linked person, suitable for AI enrichment.
+    /// Caps output at ~800 tokens to stay within on-device LLM limits.
+    private func buildEnrichmentContext(for outcome: SamOutcome) -> String {
+        guard let person = outcome.linkedPerson else {
+            return gapAnswersContext()
+        }
+
+        var parts: [String] = []
+        let name = person.displayNameCache ?? person.displayName
+        let role = person.roleBadges.first ?? "Contact"
+
+        // Person & role
+        parts.append("Person: \(name) (\(role))")
+
+        // Relationship summary
+        if let summary = person.relationshipSummary, !summary.isEmpty {
+            parts.append("Relationship summary: \(summary)")
+        }
+
+        // Key themes
+        if !person.relationshipKeyThemes.isEmpty {
+            parts.append("Key themes: \(person.relationshipKeyThemes.joined(separator: ", "))")
+        }
+
+        // Recent evidence (last 3 interactions)
+        let recentEvidence = person.linkedEvidence
+            .filter { $0.source.isInteraction }
+            .sorted { $0.occurredAt > $1.occurredAt }
+            .prefix(3)
+        if !recentEvidence.isEmpty {
+            let items = recentEvidence.map { ev in
+                let dateStr = ev.occurredAt.formatted(date: .abbreviated, time: .omitted)
+                let snippet = ev.snippet.prefix(120)
+                return "- \(ev.source.displayName) on \(dateStr): \(snippet)"
+            }.joined(separator: "\n")
+            parts.append("Recent interactions:\n\(items)")
+        }
+
+        // Last note date + topics
+        let recentNote = person.linkedNotes
+            .sorted { $0.updatedAt > $1.updatedAt }
+            .first
+        if let note = recentNote {
+            let dateStr = note.updatedAt.formatted(date: .abbreviated, time: .omitted)
+            let topics = note.extractedTopics.prefix(3).joined(separator: ", ")
+            let topicStr = topics.isEmpty ? "" : " — topics: \(topics)"
+            parts.append("Last note: \(dateStr)\(topicStr)")
+        }
+
+        // Pending action items from notes
+        let pendingActions = person.linkedNotes
+            .flatMap { $0.extractedActionItems }
+            .filter { $0.status == .pending }
+            .prefix(3)
+        if !pendingActions.isEmpty {
+            let items = pendingActions.map { "- \($0.description)" }.joined(separator: "\n")
+            parts.append("Pending action items:\n\(items)")
+        }
+
+        // Pipeline stage
+        if let stage = person.recruitingStages.sorted(by: { $0.enteredDate > $1.enteredDate }).first {
+            parts.append("Pipeline: \(stage.stageRawValue)")
+        }
+
+        // Production holdings
+        let records = (try? ProductionRepository.shared.fetchRecords(forPerson: person.id)) ?? []
+        if !records.isEmpty {
+            let holdings = records.map { "\($0.productType.displayName) (\($0.status.displayName))" }.joined(separator: ", ")
+            parts.append("Current products: \(holdings)")
+        }
+
+        // Communication channel preference
+        if let channel = person.effectiveChannel {
+            parts.append("Preferred channel: \(channel.displayName)")
+        }
+
+        // Gap answers
+        let gapCtx = gapAnswersContext()
+        if !gapCtx.isEmpty {
+            parts.append(gapCtx)
+        }
+
+        // Cap at ~800 tokens (~3200 chars)
+        var result = parts.joined(separator: "\n")
+        if result.count > 3200 {
+            result = String(result.prefix(3200)) + "..."
+        }
+        return result
+    }
+
+    // MARK: - Knowledge Gap Detection
+
+    /// Detect gaps in SAM's knowledge that the user could fill via inline prompts.
+    func detectKnowledgeGaps() -> [KnowledgeGap] {
+        var gaps: [KnowledgeGap] = []
+        let defaults = UserDefaults.standard
+
+        // No leads and no known referral sources
+        let hasLeads = (try? peopleRepo.fetchAll().contains { $0.roleBadges.contains("Lead") }) ?? false
+        if !hasLeads && defaults.string(forKey: "sam.gap.referralSources") == nil {
+            gaps.append(KnowledgeGap(
+                id: "referralSources",
+                question: "Who are your best referral sources? (Name people or groups)",
+                placeholder: "e.g., John Smith, Elev8tors group, BNI chapter...",
+                icon: "person.2.badge.plus",
+                storageKey: "sam.gap.referralSources"
+            ))
+        }
+
+        // No content posts and content suggestions enabled
+        let contentEnabled = defaults.object(forKey: "contentSuggestionsEnabled") == nil
+            ? true
+            : defaults.bool(forKey: "contentSuggestionsEnabled")
+        let hasContentPosts = (try? ContentPostRepository.shared.daysSinceLastPost(platform: .linkedin)) != nil
+        if contentEnabled && !hasContentPosts && defaults.string(forKey: "sam.gap.contentTopics") == nil {
+            gaps.append(KnowledgeGap(
+                id: "contentTopics",
+                question: "What topics does your audience care about?",
+                placeholder: "e.g., retirement planning, life insurance basics, tax strategies...",
+                icon: "text.bubble",
+                storageKey: "sam.gap.contentTopics"
+            ))
+        }
+
+        // Stale leads but no associations/groups recorded
+        let staleLeads = (try? peopleRepo.fetchAll().filter {
+            $0.roleBadges.contains("Lead")
+            && (meetingPrep.computeHealth(for: $0).daysSinceLastInteraction ?? 999) > 14
+        }) ?? []
+        if !staleLeads.isEmpty && defaults.string(forKey: "sam.gap.associations") == nil {
+            gaps.append(KnowledgeGap(
+                id: "associations",
+                question: "What professional groups or associations are you part of?",
+                placeholder: "e.g., BNI, local chamber of commerce, Elev8tors...",
+                icon: "building.2",
+                storageKey: "sam.gap.associations"
+            ))
+        }
+
+        // Goal with no progress data and <30 days old
+        let allProgress = GoalProgressEngine.shared.computeAllProgress()
+        for gp in allProgress {
+            if gp.currentValue == 0 && gp.daysRemaining > (gp.daysRemaining + 30) - 30 {
+                let key = "sam.gap.goalProgress.\(gp.goalType.rawValue)"
+                if defaults.string(forKey: key) == nil {
+                    gaps.append(KnowledgeGap(
+                        id: "goalProgress.\(gp.goalType.rawValue)",
+                        question: "Have you made progress on \"\(gp.title)\" that SAM hasn't tracked?",
+                        placeholder: "e.g., 3 meetings held, 2 applications submitted...",
+                        icon: "chart.bar",
+                        storageKey: key
+                    ))
+                    break // Only one goal gap at a time
+                }
+            }
+        }
+
+        return gaps
+    }
+
+    /// Format all answered knowledge gaps as context for AI prompts.
+    func gapAnswersContext() -> String {
+        let defaults = UserDefaults.standard
+        let gapKeys = [
+            ("sam.gap.referralSources", "Known referral sources"),
+            ("sam.gap.contentTopics", "Audience topics of interest"),
+            ("sam.gap.associations", "Professional groups/associations"),
+        ]
+
+        var parts: [String] = []
+        for (key, label) in gapKeys {
+            if let answer = defaults.string(forKey: key), !answer.isEmpty {
+                parts.append("\(label): \(answer)")
+            }
+        }
+
+        return parts.isEmpty ? "" : "User-provided context:\n" + parts.joined(separator: "\n")
+    }
+
     // MARK: - AI Enrichment
 
     /// Best-effort: enhance rationale, suggestedNextStep, and draft messages with AI for top outcomes.
@@ -1214,13 +1544,19 @@ final class OutcomeEngine {
             for outcome in topOutcomes {
                 // Generate suggested next step if missing
                 if outcome.suggestedNextStep == nil {
+                    let context = buildEnrichmentContext(for: outcome)
                     let prompt = """
                         You are a coaching assistant for a financial strategist.
-                        Given this outcome, suggest a concrete next step (1 sentence).
+                        Given this outcome and relationship context, suggest a concrete next step.
 
                         Outcome: \(outcome.title)
                         Context: \(outcome.rationale)
-                        Person role: \(outcome.linkedPerson?.roleBadges.first ?? "unknown")
+
+                        \(context)
+
+                        The next step must be specific: name the person, reference recent interactions, \
+                        and describe exactly what to do (not "follow up" but "send a text asking about \
+                        the IUL quote from your Feb 15 meeting").
                         """
 
                     let systemInstruction = """
@@ -1269,14 +1605,18 @@ final class OutcomeEngine {
         case .linkedIn: channelNote = "a brief, professional LinkedIn message"
         }
 
+        let richContext = buildEnrichmentContext(for: outcome)
+
         let prompt = """
             Draft \(channelNote) from a financial strategist to \(personName).
 
             Purpose: \(outcome.title)
             Context: \(outcome.rationale)
-            Person's role: \(role)
-            \(summary.isEmpty ? "" : "Relationship context: \(summary)")
 
+            \(richContext)
+
+            Reference specific recent interactions or topics you discussed.
+            The message should feel personal, not templated.
             The sender's name is not needed — the message will be sent from their account.
             Keep the tone warm but professional.
             """

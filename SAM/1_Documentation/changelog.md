@@ -4,6 +4,63 @@
 
 ---
 
+## March 4, 2026 — Phase 2: Suggestion Quality Overhaul
+
+### Overview
+Upgraded all OutcomeEngine scanners to produce people-specific, evidence-rich suggestions instead of generic advice. Added rich AI context builder, inline knowledge gap prompts, and goal rate guardrails. No schema change.
+
+### OutcomeEngine Changes (`Coordinators/OutcomeEngine.swift`)
+
+**New: Rich Context Builder**
+- `buildEnrichmentContext(for:)` — assembles focused context for AI enrichment: last 3 interactions (source, date, snippet), relationship summary, key themes, pending action items, pipeline stage, production holdings, last note + topics, channel preference, user-provided gap answers. Capped at ~3200 chars (~800 tokens).
+
+**Scanner Upgrades — People-Specific Output**
+- **`scanGrowthOpportunities`**: Creates one outcome per stale lead (max 3) with name, days since contact, last interaction snippet, and lead-since date. Replaces generic "Review leads pipeline".
+- **`scanRelationshipHealth`**: Adds last interaction context (source, date, snippet) and role-specific insight ("policy review may be overdue" for clients, "application may stall" for applicants).
+- **`scanCoverageGaps`**: Includes existing products and searches notes for conversation openers (mentions of education, retirement, family).
+- **`scanPastMeetingsWithoutNotes`**: Adds attendee names, meeting time, "yesterday's"/"today's" label to title.
+- **`goalOutcomeDetails`**: Includes warmest leads for newClients goal, applicants with pending paperwork for submissions goal.
+
+**Goal Rate Guardrails**
+- `goalRateText()` now applies per-type daily maximums (policies: 5/day, clients: 3/day, meetings: 5/day, etc.)
+- When daily rate exceeds max, shows weekly rate; when weekly also unreasonable, shows monthly with "significant catch-up needed"
+- Same guardrails applied in `DailyBriefingService.briefingGoalRateText()`
+
+**AI Enrichment Upgrades**
+- `enrichWithAI()` uses `buildEnrichmentContext()` — prompts AI to name people and reference specific interactions instead of bare role string
+- `generateDraftMessage()` uses rich context — instructs AI to reference recent interactions and be personal
+
+**Knowledge Gap Detection**
+- `KnowledgeGap` struct — value type with id, question, placeholder, icon, storageKey
+- `detectKnowledgeGaps()` — checks for missing referral sources, content topics, associations, untracked goal progress
+- `gapAnswersContext()` — formats UserDefaults gap answers as AI context string
+- `activeGaps` observable property populated during `generateOutcomes()`
+
+### New View (`Views/Shared/InlineGapPromptView.swift`)
+- Compact card: SF Symbol icon + question text + TextField + Save button
+- Saves answers to UserDefaults by gap's `storageKey`
+- Calls `onAnswered` closure to refresh gap list
+
+### OutcomeQueueView Changes (`Views/Awareness/OutcomeQueueView.swift`)
+- Shows max 1 `InlineGapPromptView` above outcome cards when gaps exist
+- Refreshes gap list on answer via `gapRefreshToken` state
+
+### DailyBriefingService Changes (`Services/DailyBriefingService.swift`)
+- BUSINESS GOALS section uses `briefingGoalRateText()` with same rate guardrails
+- USER CONTEXT section injects gap answers into morning narrative data block
+- `readGapAnswers()` static helper reads gap answers directly from UserDefaults
+
+### Schema Impact
+No schema change. Gap answers stored in UserDefaults (`sam.gap.*` keys).
+
+### Decisions
+- Gap answers in UserDefaults (not SwiftData) because they're lightweight strings, not relational data
+- Rich context capped at ~800 tokens to stay within on-device LLM limits
+- Max 1 gap prompt visible at a time to avoid overwhelming the user
+- Rate guardrails use per-goal-type thresholds rather than a universal cap
+
+---
+
 ## March 4, 2026 — Social Import Architecture Fix, Facebook Metadata Display, Onboarding Fixes, MLX Race Fix
 
 ### Overview

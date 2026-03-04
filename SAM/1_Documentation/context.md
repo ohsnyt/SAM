@@ -88,12 +88,14 @@ All drafts, profile text suggestions, and scripts should be complete and ready t
 
 Business observations must always connect to named individuals. "Pipeline is slow" becomes "These 3 applicants have stalled: [names], here's why and what to do about each."
 
-### 3.4 Ask When You Don't Know
+### 3.4 Ask When You Don't Know *(Implemented — Phase 2)*
 
-When SAM lacks information to be specific, show an **inline prompt** in the relevant view rather than giving vague advice:
-- "SAM needs to know: What groups or associations are you part of?" → quick-answer field
-- "Who referred your last 3 clients?" → answer feeds targeted referral outreach
-- Answers persist and feed future suggestions
+When SAM lacks information to be specific, it shows an **inline prompt** (`InlineGapPromptView`) above outcome cards:
+- `KnowledgeGap` value type (id, question, placeholder, icon, storageKey)
+- `OutcomeEngine.detectKnowledgeGaps()` checks for: missing referral sources, content topics, associations, untracked goal progress
+- Answers stored in UserDefaults (`sam.gap.*` keys), fed into AI context via `gapAnswersContext()`
+- Injected into: `buildEnrichmentContext()`, `generateDraftMessage()`, `DailyBriefingService.buildMorningDataBlock()`
+- Max 1 gap prompt shown at a time; disappears after answer
 
 ### 3.5 Noise Prevention
 
@@ -295,11 +297,12 @@ The current UI has accumulated complexity across 30+ phases. It needs a focused 
 - Proactive archiving suggestions for stale contacts
 - Broader Apple Contacts matching during social imports
 
-**Suggestion Quality Overhaul** (see §3):
-- Audit all OutcomeEngine scanners — every outcome must name people and include scripts
-- Audit StrategicCoordinator output — business observations must connect to concrete next steps
-- Cross-platform profile suggestions must include exact copy-paste text per platform
-- Inline gap-filling prompts where SAM lacks information
+**Suggestion Quality Overhaul** *(Completed — Phase 2, March 4, 2026)*:
+- ✅ OutcomeEngine scanners upgraded: every outcome names people, references evidence, includes artifacts
+- ✅ Rich context builder (`buildEnrichmentContext`) feeds AI with last 3 interactions, notes, pipeline, production
+- ✅ Goal rate guardrails prevent absurd daily rates (e.g., >5 policies/day → shows weekly/monthly)
+- ✅ Inline gap-filling prompts via `InlineGapPromptView` + `KnowledgeGap`
+- Remaining: Audit StrategicCoordinator output; cross-platform profile copy-paste text
 
 ### Priority 2 — Substack Integration
 
@@ -337,6 +340,7 @@ Create a process to allow the user to migrate data from older versions of SAM Sw
 
 ### Priority 7+ — Future
 
+- Review and update tooltips
 - iOS companion app (read-only)
 - Custom activity types
 - API integrations (WFG back-office)
