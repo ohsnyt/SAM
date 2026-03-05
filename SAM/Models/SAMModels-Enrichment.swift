@@ -44,6 +44,7 @@ public enum EnrichmentSource: String, Codable, Sendable {
     case mailHeaders                   = "mailHeaders"
     case calendarAttendees             = "calendarAttendees"
     case linkedInNotification          = "linkedInNotification"
+    case whatsAppMessages              = "whatsAppMessages"
 
     public var displayName: String {
         switch self {
@@ -56,6 +57,7 @@ public enum EnrichmentSource: String, Codable, Sendable {
         case .mailHeaders:                  return "Mail"
         case .calendarAttendees:            return "Calendar"
         case .linkedInNotification:         return "LinkedIn Notification"
+        case .whatsAppMessages:             return "WhatsApp"
         }
     }
 }

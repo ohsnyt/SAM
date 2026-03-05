@@ -22,7 +22,7 @@ struct CommunicationsSettingsContent: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            Text("Import iMessage conversations, phone calls, and FaceTime history as relationship evidence.")
+            Text("Import iMessage conversations, phone calls, FaceTime, and WhatsApp history as relationship evidence.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
@@ -37,6 +37,10 @@ struct CommunicationsSettingsContent: View {
             Divider()
 
             callsSection
+
+            Divider()
+
+            whatsAppSection
 
             Divider()
 
@@ -118,6 +122,38 @@ struct CommunicationsSettingsContent: View {
                 }
             }
             .padding(.vertical, 4)
+
+            // WhatsApp DB
+            HStack(spacing: 12) {
+                Image(systemName: bookmarkManager.hasWhatsAppAccess ? "checkmark.circle.fill" : "xmark.circle")
+                    .foregroundStyle(bookmarkManager.hasWhatsAppAccess ? .green : .secondary)
+                    .font(.title3)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("WhatsApp Database")
+                        .font(.body)
+                    Text("~/Library/Group Containers/group.net.whatsapp.WhatsApp.shared/")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                if bookmarkManager.hasWhatsAppAccess {
+                    Button("Revoke") {
+                        bookmarkManager.revokeWhatsAppAccess()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                } else {
+                    Button("Grant Access") {
+                        bookmarkManager.requestWhatsAppAccess()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                }
+            }
+            .padding(.vertical, 4)
         }
     }
 
@@ -179,6 +215,43 @@ struct CommunicationsSettingsContent: View {
         }
     }
 
+    // MARK: - WhatsApp Section
+
+    private var whatsAppSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("WhatsApp")
+                .font(.headline)
+
+            Toggle("Import WhatsApp messages", isOn: Binding(
+                get: { coordinator.whatsAppMessagesEnabled },
+                set: { coordinator.setWhatsAppMessagesEnabled($0) }
+            ))
+            .disabled(!bookmarkManager.hasWhatsAppAccess)
+
+            if !bookmarkManager.hasWhatsAppAccess {
+                Text("Grant WhatsApp database access above to enable.")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+
+            Toggle("Analyze WhatsApp threads with AI", isOn: Binding(
+                get: { coordinator.analyzeWhatsAppMessages },
+                set: { coordinator.setAnalyzeWhatsAppMessages($0) }
+            ))
+            .disabled(!coordinator.whatsAppMessagesEnabled)
+
+            Toggle("Import WhatsApp calls", isOn: Binding(
+                get: { coordinator.whatsAppCallsEnabled },
+                set: { coordinator.setWhatsAppCallsEnabled($0) }
+            ))
+            .disabled(!bookmarkManager.hasWhatsAppAccess)
+
+            Text("Message text is analyzed on-device then discarded. Only AI summaries are stored. Call metadata only (duration, direction).")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
     // MARK: - Import Section
 
     private var importSection: some View {
@@ -220,6 +293,18 @@ struct CommunicationsSettingsContent: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+
+                if coordinator.lastWhatsAppMessageCount > 0 || coordinator.lastWhatsAppCallCount > 0 {
+                    HStack(spacing: 16) {
+                        Label("\(coordinator.lastWhatsAppMessageCount) WhatsApp messages", systemImage: "text.bubble")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        Label("\(coordinator.lastWhatsAppCallCount) WhatsApp calls", systemImage: "phone.bubble")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
 
             if let error = coordinator.lastError {
@@ -239,7 +324,8 @@ struct CommunicationsSettingsContent: View {
                 }
             }
             .disabled(coordinator.importStatus == .importing
-                      || (!coordinator.messagesEnabled && !coordinator.callsEnabled))
+                      || (!coordinator.messagesEnabled && !coordinator.callsEnabled
+                          && !coordinator.whatsAppMessagesEnabled && !coordinator.whatsAppCallsEnabled))
         }
     }
 }

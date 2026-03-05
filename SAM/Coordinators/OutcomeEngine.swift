@@ -1816,6 +1816,12 @@ final class OutcomeEngine {
                 Write ONLY the message text — keep it under 3 sentences.
                 Professional but warm. No emojis. No signature. No connection requests phrasing.
                 """
+        case (_, .whatsApp):
+            systemInstruction = """
+                Write ONLY the message text — no greeting line unless it fits naturally.
+                Keep it under 3 sentences. Casual but professional, like a text message.
+                No emojis. No signature.
+                """
         }
 
         do {

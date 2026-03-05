@@ -230,7 +230,7 @@ struct ComposeWindowView: View {
                     .help("Open in \(channel == .email ? "Mail" : "Messages")")
                 } else {
                     // Standard: system handoff
-                    Button(channel == .linkedIn ? "Copy & Open LinkedIn" : "Send") {
+                    Button(channel == .linkedIn ? "Copy & Open LinkedIn" : channel == .whatsApp ? "Open WhatsApp" : "Send") {
                         sendViaSystemApp()
                     }
                     .buttonStyle(.borderedProminent)
@@ -396,6 +396,15 @@ struct ComposeWindowView: View {
                 composeService.openLinkedInMessaging(profileURL: profileURL)
             }
             completeAndDismiss()
+
+        case .whatsApp:
+            let success = composeService.composeWhatsApp(phone: recipient, body: body)
+            if success {
+                completeAndDismiss()
+            } else {
+                errorMessage = "Draft copied to clipboard — paste into WhatsApp"
+                isSending = false
+            }
         }
     }
 

@@ -579,7 +579,8 @@ final class EvidenceRepository {
         for item in all {
             guard item.source == .calendar || item.source == .mail
                     || item.source == .iMessage || item.source == .phoneCall
-                    || item.source == .faceTime else { continue }
+                    || item.source == .faceTime || item.source == .whatsApp
+                    || item.source == .whatsAppCall else { continue }
 
             // Collect all emails from participant hints
             let emails = item.participantHints.compactMap { hint in
@@ -703,6 +704,8 @@ final class EvidenceRepository {
                     || item.source == .mail
                     || item.source == .phoneCall
                     || item.source == .faceTime
+                    || item.source == .whatsApp
+                    || item.source == .whatsAppCall
                 guard isCommunication else { return false }
                 guard item.occurredAt > date else { return false }
                 return item.linkedPeople.contains { $0.id == personID }
@@ -962,6 +965,171 @@ final class EvidenceRepository {
 
         try context.save()
         logger.info("Call record bulk upsert: \(created) created, \(updated) updated")
+    }
+
+    // MARK: - WhatsApp Bulk Upsert
+
+    /// Bulk upsert WhatsApp message evidence items with optional analysis data.
+    /// Privacy: bodyText is NEVER stored — only the AI summary goes into snippet.
+    func bulkUpsertWhatsAppMessages(_ messages: [(WhatsAppMessageDTO, MessageAnalysisDTO?)]) throws {
+        guard let context = context else { throw RepositoryError.notConfigured }
+
+        var created = 0, updated = 0
+
+        for (message, analysis) in messages {
+            let sourceUID = "whatsapp:\(message.stanzaID)"
+
+            // Resolve people by phone extracted from JID
+            let phone = whatsAppJIDToPhone(message.contactJID)
+            let resolved = resolvePeople(byPhones: [phone])
+
+            // Build snippet: use analysis summary if available, otherwise truncated text
+            let snippet: String
+            if let summary = analysis?.summary {
+                snippet = summary
+            } else if let text = message.text {
+                snippet = String(text.prefix(200))
+            } else {
+                snippet = messageTypeLabel(message.messageType)
+            }
+
+            // Build signals from analysis
+            var signals: [EvidenceSignal] = []
+            if let analysis = analysis {
+                for event in analysis.temporalEvents {
+                    signals.append(EvidenceSignal(
+                        type: .lifeEvent,
+                        message: "\(event.description): \(event.dateString)",
+                        confidence: event.confidence
+                    ))
+                }
+            }
+
+            if let existing = try fetch(sourceUID: sourceUID) {
+                existing.snippet = snippet
+                existing.bodyText = nil
+                existing.occurredAt = message.date
+                setLinkedPeople(resolved, on: existing)
+                existing.signals = signals
+                updated += 1
+            } else {
+                let title: String
+                if let name = resolved.first?.displayNameCache ?? resolved.first?.displayName {
+                    title = message.isFromMe ? "WhatsApp to \(name)" : "WhatsApp from \(name)"
+                } else if let partnerName = message.partnerName {
+                    title = message.isFromMe ? "WhatsApp to \(partnerName)" : "WhatsApp from \(partnerName)"
+                } else {
+                    title = message.isFromMe ? "WhatsApp sent" : "WhatsApp received"
+                }
+
+                let evidence = SamEvidenceItem(
+                    id: UUID(),
+                    state: .needsReview,
+                    sourceUID: sourceUID,
+                    source: .whatsApp,
+                    occurredAt: message.date,
+                    title: title,
+                    snippet: snippet,
+                    signals: signals
+                )
+                setLinkedPeople(resolved, on: evidence)
+                context.insert(evidence)
+                created += 1
+            }
+        }
+
+        try context.save()
+        logger.info("WhatsApp message bulk upsert: \(created) created, \(updated) updated")
+    }
+
+    /// Bulk upsert WhatsApp call evidence items (metadata only, no LLM analysis).
+    func bulkUpsertWhatsAppCalls(_ calls: [WhatsAppCallDTO]) throws {
+        guard let context = context else { throw RepositoryError.notConfigured }
+
+        var created = 0, updated = 0
+
+        for call in calls {
+            let sourceUID = "whatsappcall:\(call.callIDString)"
+
+            // Resolve people by phone from participant JIDs
+            let phones = call.participantJIDs.map { whatsAppJIDToPhone($0) }
+            let resolved = resolvePeople(byPhones: phones)
+            let personName = resolved.first?.displayNameCache ?? resolved.first?.displayName
+
+            let wasAnswered = call.outcome == 0
+
+            // Build title
+            let title: String
+            if !wasAnswered {
+                title = personName.map { "Missed WhatsApp call from \($0)" } ?? "Missed WhatsApp call"
+            } else {
+                title = personName.map { "WhatsApp call with \($0)" } ?? "WhatsApp call"
+            }
+
+            // Build snippet
+            let snippet: String
+            if !wasAnswered {
+                snippet = "Missed"
+            } else {
+                let minutes = Int(call.duration) / 60
+                let seconds = Int(call.duration) % 60
+                if minutes > 0 {
+                    snippet = "\(minutes)m \(seconds)s"
+                } else {
+                    snippet = "\(seconds)s"
+                }
+            }
+
+            let endedAt = wasAnswered ? call.date.addingTimeInterval(call.duration) : nil
+
+            if let existing = try fetch(sourceUID: sourceUID) {
+                existing.title = title
+                existing.snippet = snippet
+                existing.occurredAt = call.date
+                existing.endedAt = endedAt
+                setLinkedPeople(resolved, on: existing)
+                updated += 1
+            } else {
+                let evidence = SamEvidenceItem(
+                    id: UUID(),
+                    state: .needsReview,
+                    sourceUID: sourceUID,
+                    source: .whatsAppCall,
+                    occurredAt: call.date,
+                    endedAt: endedAt,
+                    title: title,
+                    snippet: snippet
+                )
+                setLinkedPeople(resolved, on: evidence)
+                context.insert(evidence)
+                created += 1
+            }
+        }
+
+        try context.save()
+        logger.info("WhatsApp call bulk upsert: \(created) created, \(updated) updated")
+    }
+
+    /// Convert a WhatsApp JID to canonicalized phone (last 10 digits).
+    private func whatsAppJIDToPhone(_ jid: String) -> String {
+        let local = jid.split(separator: "@").first.map(String.init) ?? jid
+        let digits = local.filter(\.isNumber)
+        guard digits.count >= 7 else { return jid.lowercased() }
+        return String(digits.suffix(10))
+    }
+
+    /// Human-readable label for WhatsApp message types when text is nil.
+    private func messageTypeLabel(_ type: Int) -> String {
+        switch type {
+        case 1: return "[Image]"
+        case 2: return "[Video]"
+        case 3: return "[Voice message]"
+        case 4: return "[Contact]"
+        case 5: return "[Location]"
+        case 8: return "[Document]"
+        case 15: return "[Sticker]"
+        default: return "[Media]"
+        }
     }
 
     /// Prune mail evidence items whose sourceUID is no longer in the valid set.

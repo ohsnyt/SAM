@@ -273,7 +273,7 @@ final class NoteAnalysisCoordinator {
 
     /// Gather recent communications evidence snippets for a person to include in relationship summary.
     private func gatherCommunicationsSummaries(for person: SamPerson) -> [String] {
-        let commsSources: Set<EvidenceSource> = [.iMessage, .phoneCall, .faceTime]
+        let commsSources: Set<EvidenceSource> = [.iMessage, .phoneCall, .faceTime, .whatsApp, .whatsAppCall]
         let personID = person.id
 
         guard let allEvidence = try? evidenceRepository.fetchAll() else { return [] }

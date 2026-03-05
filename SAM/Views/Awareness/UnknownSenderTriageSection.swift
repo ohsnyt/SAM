@@ -700,15 +700,9 @@ private struct TriageRow: View {
 
             // Sender name + source icon
             HStack(spacing: 4) {
-                if sender.source == .linkedIn {
-                    Image(systemName: "network")
-                        .font(.caption2)
-                        .foregroundStyle(.blue)
-                } else if sender.source == .facebook {
-                    Image(systemName: "person.2.fill")
-                        .font(.caption2)
-                        .foregroundStyle(.indigo)
-                }
+                Image(systemName: sourceIcon(for: sender.source))
+                    .font(.caption2)
+                    .foregroundStyle(sourceColor(for: sender.source))
                 Text(sender.displayName ?? sender.email)
                     .font(.body)
                     .lineLimit(1)
@@ -717,9 +711,10 @@ private struct TriageRow: View {
             .frame(minWidth: 180, alignment: .leading)
             .padding(.leading, 8)
 
-            // Subject — hide synthetic keys for social platform entries
+            // Subject — hide synthetic keys for social/messaging platform entries
             if sender.source != .facebook, let subject = sender.latestSubject,
-               !subject.hasPrefix("linkedin:"), !subject.hasPrefix("facebook:") {
+               !subject.hasPrefix("linkedin:"), !subject.hasPrefix("facebook:"),
+               !subject.hasPrefix("WhatsApp") {
                 Text(subject)
                     .font(.body)
                     .foregroundStyle(.secondary)
@@ -759,5 +754,37 @@ private struct TriageRow: View {
                 .foregroundStyle(choice == value ? color : .secondary.opacity(0.4))
         }
         .buttonStyle(.plain)
+    }
+
+    private func sourceIcon(for source: EvidenceSource) -> String {
+        switch source {
+        case .mail:             return "envelope"
+        case .calendar:         return "calendar"
+        case .linkedIn:         return "network"
+        case .facebook:         return "person.2.fill"
+        case .substack:         return "newspaper.fill"
+        case .whatsApp:         return "text.bubble"
+        case .whatsAppCall:     return "phone.bubble"
+        case .iMessage:         return "message"
+        case .phoneCall:        return "phone"
+        case .faceTime:         return "video"
+        default:                return "person.crop.circle"
+        }
+    }
+
+    private func sourceColor(for source: EvidenceSource) -> Color {
+        switch source {
+        case .mail:             return .blue
+        case .calendar:         return .red
+        case .linkedIn:         return .blue
+        case .facebook:         return .indigo
+        case .substack:         return .orange
+        case .whatsApp:         return .green
+        case .whatsAppCall:     return .green
+        case .iMessage:         return .teal
+        case .phoneCall:        return .green
+        case .faceTime:         return .mint
+        default:                return .secondary
+        }
     }
 }

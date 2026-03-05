@@ -30,6 +30,7 @@ final class BookmarkManager {
     var hasCallHistoryAccess: Bool { callHistoryBookmarkData != nil }
     var hasLinkedInFolderAccess: Bool { linkedInFolderBookmarkData != nil }
     var hasFacebookFolderAccess: Bool { facebookFolderBookmarkData != nil }
+    var hasWhatsAppAccess: Bool { whatsAppDirBookmarkData != nil }
 
     // MARK: - Private
 
@@ -37,17 +38,20 @@ final class BookmarkManager {
     private var callHistoryBookmarkData: Data?
     private var linkedInFolderBookmarkData: Data?
     private var facebookFolderBookmarkData: Data?
+    private var whatsAppDirBookmarkData: Data?
 
     private let messagesKey = "messagesDirBookmark"
     private let callHistoryKey = "callHistoryDirBookmark"
     private let linkedInFolderKey = "linkedInFolderBookmark"
     private let facebookFolderKey = "facebookFolderBookmark"
+    private let whatsAppDirKey = "whatsAppDirBookmark"
 
     private init() {
         messagesBookmarkData = UserDefaults.standard.data(forKey: messagesKey)
         callHistoryBookmarkData = UserDefaults.standard.data(forKey: callHistoryKey)
         linkedInFolderBookmarkData = UserDefaults.standard.data(forKey: linkedInFolderKey)
         facebookFolderBookmarkData = UserDefaults.standard.data(forKey: facebookFolderKey)
+        whatsAppDirBookmarkData = UserDefaults.standard.data(forKey: whatsAppDirKey)
 
         // Migrate from old file-level bookmark keys if present
         if messagesBookmarkData == nil, UserDefaults.standard.data(forKey: "messagesDBBookmark") != nil {
@@ -184,6 +188,49 @@ final class BookmarkManager {
         }
     }
 
+    /// Present NSOpenPanel pre-navigated to WhatsApp shared folder for user to select.
+    @discardableResult
+    func requestWhatsAppAccess() -> URL? {
+        let panel = NSOpenPanel()
+        panel.title = "Select WhatsApp Data Folder"
+        panel.message = "Select the WhatsApp shared folder to allow SAM to read your WhatsApp history.\nNavigate to: ~/Library/Group Containers/group.net.whatsapp.WhatsApp.shared"
+        panel.prompt = "Grant Access"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+
+        let whatsAppDir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Group Containers/group.net.whatsapp.WhatsApp.shared")
+        panel.directoryURL = whatsAppDir
+
+        guard panel.runModal() == .OK, let url = panel.url else {
+            logger.info("User cancelled WhatsApp directory selection")
+            return nil
+        }
+
+        // Verify ChatStorage.sqlite exists in the selected directory
+        let chatDB = url.appendingPathComponent("ChatStorage.sqlite")
+        guard FileManager.default.fileExists(atPath: chatDB.path) else {
+            logger.error("Selected directory does not contain ChatStorage.sqlite: \(url.path, privacy: .public)")
+            return nil
+        }
+
+        do {
+            let bookmarkData = try url.bookmarkData(
+                options: .withSecurityScope,
+                includingResourceValuesForKeys: nil,
+                relativeTo: nil
+            )
+            whatsAppDirBookmarkData = bookmarkData
+            UserDefaults.standard.set(bookmarkData, forKey: whatsAppDirKey)
+            logger.info("WhatsApp directory bookmark saved for: \(url.path, privacy: .public)")
+            return url
+        } catch {
+            logger.error("Failed to create WhatsApp bookmark: \(error)")
+            return nil
+        }
+    }
+
     // MARK: - Resolve Bookmarks
 
     /// Resolve saved messages directory bookmark and return the chat.db URL within it.
@@ -214,6 +261,17 @@ final class BookmarkManager {
         resolveDirectory(bookmarkData: linkedInFolderBookmarkData, key: linkedInFolderKey, label: "LinkedIn folder")
     }
 
+    /// Resolve saved WhatsApp directory bookmark and return both database URLs.
+    /// Single bookmark covers ChatStorage.sqlite (messages) and CallHistory.sqlite (calls).
+    func resolveWhatsAppURL() -> (directory: URL, messagesDB: URL, callsDB: URL)? {
+        guard let dirURL = resolveDirectory(bookmarkData: whatsAppDirBookmarkData, key: whatsAppDirKey, label: "WhatsApp") else {
+            return nil
+        }
+        let messagesDB = dirURL.appendingPathComponent("ChatStorage.sqlite")
+        let callsDB = dirURL.appendingPathComponent("ChatStorage.sqlite")  // Same DB for calls
+        return (directory: dirURL, messagesDB: messagesDB, callsDB: callsDB)
+    }
+
     /// Stop accessing a security-scoped resource.
     func stopAccessing(_ url: URL) {
         url.stopAccessingSecurityScopedResource()
@@ -231,6 +289,13 @@ final class BookmarkManager {
         callHistoryBookmarkData = nil
         UserDefaults.standard.removeObject(forKey: callHistoryKey)
         logger.info("Call history bookmark revoked")
+    }
+
+    /// Revoke saved WhatsApp access.
+    func revokeWhatsAppAccess() {
+        whatsAppDirBookmarkData = nil
+        UserDefaults.standard.removeObject(forKey: whatsAppDirKey)
+        logger.info("WhatsApp bookmark revoked")
     }
 
     /// Revoke saved LinkedIn folder access.
@@ -266,6 +331,8 @@ final class BookmarkManager {
                         messagesBookmarkData = newData
                     } else if key == callHistoryKey {
                         callHistoryBookmarkData = newData
+                    } else if key == whatsAppDirKey {
+                        whatsAppDirBookmarkData = newData
                     } else {
                         linkedInFolderBookmarkData = newData
                     }

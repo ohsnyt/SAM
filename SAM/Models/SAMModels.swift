@@ -179,10 +179,12 @@ public final class SamPerson {
     /// All known contact addresses for channel switching in compose flows.
     @Transient
     public var contactAddresses: ContactAddresses {
-        ContactAddresses(
+        let hasWA = linkedEvidence.contains(where: { $0.source == .whatsApp || $0.source == .whatsAppCall })
+        return ContactAddresses(
             email: emailCache,
             phone: phoneAliases.first,
-            linkedInProfileURL: linkedInProfileURL
+            linkedInProfileURL: linkedInProfileURL,
+            hasWhatsApp: hasWA
         )
     }
 

@@ -11,7 +11,7 @@
 
 ## 1. What SAM Is
 
-SAM is a **native macOS coaching assistant** for independent financial strategists at WFG. It observes interactions (Calendar, Contacts, Mail, iMessage, Phone, FaceTime, LinkedIn, Facebook), transforms them into evidence, generates AI-backed insights, and provides outcome-focused coaching at both the relationship and business level.
+SAM is a **native macOS coaching assistant** for independent financial strategists at WFG. It observes interactions (Calendar, Contacts, Mail, iMessage, Phone, FaceTime, WhatsApp, LinkedIn, Facebook), transforms them into evidence, generates AI-backed insights, and provides outcome-focused coaching at both the relationship and business level.
 
 **Core invariants**:
 - Apple Contacts and Calendar are the **systems of record** — SAM enriches but never replaces
@@ -297,34 +297,27 @@ Bookmark the **directory** (not file) for SQLite to cover WAL/SHM companions. `.
 
 ### ~~Priority 3 — Global Clipboard Capture Hotkey~~ ✅ Completed (Mar 5, 2026)
 
-`EvidenceSource.clipboardCapture`, `GlobalHotkeyService` (⌃⇧V via NSEvent global monitor + AXIsProcessTrusted), `ClipboardParsingService` (AI conversation parsing), `ClipboardCaptureWindowView` (4-phase: parse → review → save → error, inline person picker autocomplete), menu command, Settings toggle + Accessibility status. See `changelog.md` for full details. No schema change.
-
 ### ~~Priority 4 — LinkedIn as Reply Channel~~ ✅ Completed (Mar 5, 2026)
-
-LinkedIn upgraded from clipboard-only fallback to first-class reply channel. `ComposePayload.linkedInProfileURL` field, `ComposeService.openLinkedInMessaging()` (profile URL + `/overlay/new-message/` deep-link), LinkedIn appears in channel picker only when profile URL exists, "Copy & Open LinkedIn" button label, address routing in OutcomeQueueView for `.linkedIn` channel. No schema change.
 
 ### ~~Message-Category-Aware Channel Prefs~~ ✅ Completed (Mar 5, 2026)
 
-Per-category channel preferences (quick/detailed/social), companion outcomes for alternate-channel heads-ups, ContactAddresses routing, 3-picker UI on PersonDetailView. Schema SAM_v34.
-
 ### ~~Evidence-Gated Social Profile Buttons~~ ✅ Completed (Mar 5, 2026)
 
-Social buttons in quickActionsRow only appear when `person.linkedEvidence` contains evidence for that channel (`.linkedIn`, `.facebook`). URLs resolved from SAM fields or Apple Contacts `socialProfiles`. `ComposeService.openSocialProfile(url:)` for generic social URLs. No schema change.
+### ~~Priority 5 — WhatsApp Direct Database Integration~~ ✅ Completed (Mar 5, 2026)
 
-### Priority 5 — WhatsApp Direct Database Integration *(Deferred: feasibility verification needed)*
+### Priority 6 — Data migration
 
-Unencrypted SQLite at `~/Library/Group Containers/group.net.whatsapp.WhatsApp.shared/ChatStorage.sqlite`. Verify `NSOpenPanel` + security-scoped bookmark grants persistent read access before building.
-
-### Priority 6 — Data migration and backup*
-
-Create a process to allow the user to backup data.
-Create a process to allow the user to migrate data from older versions of SAM SwiftData stores to the current version.
+Verify / Create a process to allow the user to migrate data from older versions of SAM SwiftData stores to the current version. What problems might exist and how can they be best mitigated? If there are problems, does the User need to be informed/coached on how to enrich data?
 
 ### Priority 7 - Update onboarding, helps, tooltips
-- In light of the many changes to the UI, we need to carefully examine the onboarding process. Before even starting, the user must have one calendar for appointments. What minimal permissions and/or settings are required at startup? (I think a request to download and install the MLX is required.) What
+- In light of the many changes to the UI, we need to carefully examine the onboarding process. Before even starting, the user must have one calendar for appointments. What minimal permissions and/or settings are required at startup? (I think a request to download and install the MLX is required.) What permission settings or UI settings can we defer to coaching instructions in the course of the first hours of operation of SAM?
 
+### Priority 8 - Security review
+- Can we use TouchID, FaceID, Apple Watch, password to enforce secure access to SAM? Would this be a good thing?
+- Is the SAM data (SwiftData, other app data) stored securely? Do we need to consider database encryption?
+- Can we encrypt backups using the same TouchID, FaceID, Apple Watch, password used to unlock SAM?
 
-### Priority 7+ — Future
+### Priority 9+ — Future
 
 - Review and update tooltips
 - iOS companion app (read-only)
@@ -334,5 +327,5 @@ Create a process to allow the user to migrate data from older versions of SAM Sw
 
 ---
 
-**Document Version**: 34.1
-**Last Updated**: March 5, 2026 — Message-category-aware channel prefs (SAM_v34), LinkedIn as reply channel, evidence-gated social profile buttons, global clipboard capture hotkey.
+**Document Version**: 34.2
+**Last Updated**: March 5, 2026 — WhatsApp direct database integration (messages, calls, unknown sender triage, enrichment suggestions, `.whatsApp` communication channel).

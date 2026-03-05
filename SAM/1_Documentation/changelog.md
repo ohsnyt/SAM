@@ -4484,6 +4484,63 @@ SAM now understands that different *types* of messages should go through differe
 
 ---
 
+## WhatsApp Direct Database Integration (March 5, 2026)
+
+**What**: Full WhatsApp integration — reads messages and call history from the local ChatStorage.sqlite database, generates evidence, supports WhatsApp as a communication channel, and suggests Apple Contact enrichment from WhatsApp phone numbers.
+
+**Why**: WhatsApp is a primary communication channel for many WFG contacts. Reading the local database (unencrypted SQLite via security-scoped bookmarks) follows the same architecture as the iMessage/Phone/FaceTime integration (Phase M), providing complete communication history for relationship intelligence.
+
+### New Files (3)
+
+- `Models/DTOs/WhatsAppMessageDTO.swift` — Sendable DTO for WhatsApp messages (stanzaID, text, date, isFromMe, contactJID, partnerName, messageType, isStarred)
+- `Models/DTOs/WhatsAppCallDTO.swift` — Sendable DTO for WhatsApp call events (callIDString, date, duration, outcome, participantJIDs)
+- `Services/WhatsAppService.swift` — Actor-isolated SQLite3 reader: `fetchMessages()`, `fetchCalls()`, `fetchAllJIDs()`; Core Data epoch timestamps; JID canonicalization; graceful `tableExists()` check for call history table
+
+### Modified Files (21)
+
+#### Core Integration
+
+- `Models/SAMModels-Supporting.swift` — Added `.whatsApp`/`.whatsAppCall` to `EvidenceSource` (qualityWeight, iconName, displayName); added `.whatsApp` to `CommunicationChannel` (displayName, icon); `ContactAddresses` gains `hasWhatsApp: Bool` for channel routing
+- `Models/SAMModels.swift` — `SamPerson.contactAddresses` derives `hasWhatsApp` from linked evidence
+- `Models/SAMModels-Enrichment.swift` — Added `.whatsAppMessages` to `EnrichmentSource`
+- `Utilities/BookmarkManager.swift` — WhatsApp bookmark: `hasWhatsAppAccess`, `requestWhatsAppAccess()` (NSOpenPanel validates ChatStorage.sqlite), `resolveWhatsAppURL()`, `revokeWhatsAppAccess()`
+- `Repositories/EvidenceRepository.swift` — `bulkUpsertWhatsAppMessages()` (sourceUID `whatsapp:{stanzaID}`), `bulkUpsertWhatsAppCalls()` (sourceUID `whatsappcall:{callIDString}`); updated `refreshParticipantResolution()` and `hasRecentCommunication()` filters
+
+#### Import Pipeline
+
+- `Coordinators/CommunicationsImportCoordinator.swift` — WhatsApp messages import (group by JID+day, LLM analysis, upsert), WhatsApp calls import, unknown sender discovery (`fetchAllJIDs` → `UnknownSenderRepository`), enrichment generation (`generateWhatsAppEnrichments()` → `EnrichmentRepository`); new state/settings/watermarks/setter methods
+
+#### Communication Channel
+
+- `Services/ComposeService.swift` — `composeWhatsApp(phone:body:)` via `wa.me` deep link with `whatsapp://` fallback
+- `Views/Communication/ComposeWindowView.swift` — `.whatsApp` case in `sendViaSystemApp()`, "Open WhatsApp" button label
+- `Coordinators/OutcomeEngine.swift` — WhatsApp-specific draft instructions (casual, text-message tone)
+- `Coordinators/MeetingPrepCoordinator.swift` — `.whatsApp`/`.whatsAppCall` evidence maps to `.whatsApp` channel (not iMessage bucket) for channel inference
+
+#### Switch Sites (exhaustive enum cases)
+
+- `Views/Search/SearchResultRow.swift`, `Views/Inbox/InboxListView.swift`, `Views/Inbox/InboxDetailView.swift`, `Views/Awareness/MeetingPrepSection.swift`, `Views/People/PersonDetailView.swift` — Added `.whatsApp`/`.whatsAppCall` icon (`text.bubble`/`phone.bubble`) and color (`.green`)
+
+#### commsSources Sets
+
+- `Coordinators/NoteAnalysisCoordinator.swift`, `Views/Awareness/MeetingQualitySection.swift`, `Coordinators/RelationshipGraphCoordinator.swift` — Added `.whatsApp`, `.whatsAppCall` to communication source filters
+
+#### Triage & Settings
+
+- `Views/Awareness/UnknownSenderTriageSection.swift` — Generic `TriageRow` now shows source-specific icons for ALL sources (not just LinkedIn/Facebook); hides WhatsApp synthetic subjects
+- `Views/Settings/CommunicationsSettingsView.swift` — WhatsApp DB access row (grant/revoke), WhatsApp section (messages/calls/AI analysis toggles), WhatsApp counts in import section
+
+### Architecture Notes
+
+- **No schema version bump** — `EvidenceSource` stored as raw strings; new values are forward-compatible
+- **Privacy**: message text analyzed by on-device LLM then discarded; only AI summary stored in snippet; `bodyText` always nil
+- **JID canonicalization**: `14075800106@s.whatsapp.net` → strip `@s.whatsapp.net`, take last 10 digits to match `SamPerson.phoneAliases`
+- **Timestamps**: WhatsApp uses Core Data epoch (`Date(timeIntervalSinceReferenceDate:)`)
+- **Call history table**: gracefully handled when missing (`tableExists()` check)
+- **Group chats excluded**: `ZSESSIONTYPE = 0` filter (private chats only)
+
+---
+
 **Changelog Started**: February 10, 2026
 **Maintained By**: Project team
 **Related Docs**: See `context.md` for current state and roadmap

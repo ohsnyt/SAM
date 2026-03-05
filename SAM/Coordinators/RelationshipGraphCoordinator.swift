@@ -531,7 +531,7 @@ final class RelationshipGraphCoordinator {
     private func gatherCommunicationLinks() throws -> [CommLink] {
         let allEvidence = try evidenceRepository.fetchAll()
         let commEvidence = allEvidence.filter {
-            $0.source == .mail || $0.source == .iMessage || $0.source == .phoneCall || $0.source == .faceTime
+            $0.source == .mail || $0.source == .iMessage || $0.source == .phoneCall || $0.source == .faceTime || $0.source == .whatsApp || $0.source == .whatsAppCall
         }
 
         // Group by person pairs

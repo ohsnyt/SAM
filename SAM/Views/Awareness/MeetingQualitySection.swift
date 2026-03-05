@@ -189,7 +189,7 @@ struct MeetingQualitySection: View {
     /// Check if outgoing communication was sent to any attendee within 48h after meeting end.
     private func checkFollowUpSent(attendeeIDs: Set<UUID>, after meetingEnd: Date) -> Bool {
         let fortyEightHoursLater = Calendar.current.date(byAdding: .hour, value: 48, to: meetingEnd)!
-        let commsSources: Set<EvidenceSource> = [.iMessage, .mail, .phoneCall, .faceTime]
+        let commsSources: Set<EvidenceSource> = [.iMessage, .mail, .phoneCall, .faceTime, .whatsApp, .whatsAppCall]
 
         return allEvidence.contains { item in
             commsSources.contains(item.source)

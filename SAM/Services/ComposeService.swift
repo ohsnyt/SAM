@@ -158,6 +158,38 @@ final class ComposeService {
         return await runAppleScript(script, label: "Email to \(recipient)")
     }
 
+    // MARK: - WhatsApp
+
+    /// Open WhatsApp via the wa.me deep link with an optional pre-filled message.
+    /// The phone number should contain only digits (no +, dashes, or spaces).
+    @discardableResult
+    func composeWhatsApp(phone: String, body: String) -> Bool {
+        let digits = phone.filter(\.isNumber)
+        guard !digits.isEmpty else {
+            logger.error("Empty phone number for WhatsApp compose")
+            return false
+        }
+
+        let encoded = body.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        let urlString = "https://wa.me/\(digits)?text=\(encoded)"
+
+        if let url = URL(string: urlString), NSWorkspace.shared.open(url) {
+            logger.info("Opened WhatsApp for \(digits, privacy: .public)")
+            return true
+        }
+
+        // Fallback: try whatsapp:// scheme (desktop app)
+        let appURLString = "whatsapp://send?phone=\(digits)&text=\(encoded)"
+        if let url = URL(string: appURLString), NSWorkspace.shared.open(url) {
+            logger.info("Opened WhatsApp desktop app for \(digits, privacy: .public)")
+            return true
+        }
+
+        logger.warning("WhatsApp URL schemes failed — copying draft to clipboard")
+        copyToClipboard(body)
+        return false
+    }
+
     // MARK: - LinkedIn
 
     /// Open the person's LinkedIn messaging overlay in the default browser.

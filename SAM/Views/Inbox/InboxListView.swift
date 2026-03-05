@@ -310,6 +310,8 @@ private struct EvidenceRowView: View {
         case .facebook: return "person.2.fill"
         case .substack: return "newspaper.fill"
         case .clipboardCapture: return "doc.on.clipboard"
+        case .whatsApp: return "text.bubble"
+        case .whatsAppCall: return "phone.bubble"
         }
     }
 
@@ -327,6 +329,8 @@ private struct EvidenceRowView: View {
         case .facebook: return .indigo
         case .substack: return .orange
         case .clipboardCapture: return .purple
+        case .whatsApp: return .green
+        case .whatsAppCall: return .green
         }
     }
 

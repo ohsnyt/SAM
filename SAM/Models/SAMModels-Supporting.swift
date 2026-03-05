@@ -96,6 +96,8 @@ public enum EvidenceSource: String, Codable, Sendable {
     case facebook = "Facebook"
     case substack = "Substack"
     case clipboardCapture = "ClipboardCapture"
+    case whatsApp = "WhatsApp"
+    case whatsAppCall = "WhatsAppCall"
 }
 
 extension EvidenceSource {
@@ -114,6 +116,8 @@ extension EvidenceSource {
         case .contacts:  return 0.0   // Not an interaction
         case .manual:    return 1.0
         case .clipboardCapture: return 1.5  // Direct conversation evidence
+        case .whatsApp:  return 1.0   // Same as iMessage
+        case .whatsAppCall: return 2.5 // Same as phoneCall
         }
     }
 
@@ -140,11 +144,18 @@ extension EvidenceSource {
         case .facebook:  return "person.2.fill"
         case .substack:  return "newspaper.fill"
         case .clipboardCapture: return "doc.on.clipboard"
+        case .whatsApp:  return "text.bubble"
+        case .whatsAppCall: return "phone.bubble"
         }
     }
 
     /// Display label for use in UI.
-    public var displayName: String { rawValue }
+    public var displayName: String {
+        switch self {
+        case .whatsAppCall: return "WhatsApp Call"
+        default: return rawValue
+        }
+    }
 }
 
 public enum EvidenceTriageState: String, Codable, Sendable {
@@ -688,7 +699,7 @@ extension ActionLane {
 
 /// Communication channel for sending messages.
 public enum CommunicationChannel: String, Codable, Sendable, CaseIterable {
-    case iMessage, email, phone, faceTime, linkedIn
+    case iMessage, email, phone, faceTime, linkedIn, whatsApp
 
     public var displayName: String {
         switch self {
@@ -697,6 +708,7 @@ public enum CommunicationChannel: String, Codable, Sendable, CaseIterable {
         case .phone:    return "Phone"
         case .faceTime: return "FaceTime"
         case .linkedIn: return "LinkedIn"
+        case .whatsApp: return "WhatsApp"
         }
     }
 
@@ -707,6 +719,7 @@ public enum CommunicationChannel: String, Codable, Sendable, CaseIterable {
         case .phone:    return "phone"
         case .faceTime: return "video"
         case .linkedIn: return "network"
+        case .whatsApp: return "text.bubble"
         }
     }
 }
@@ -743,11 +756,13 @@ public struct ContactAddresses: Codable, Hashable, Sendable {
     public let email: String?
     public let phone: String?
     public let linkedInProfileURL: String?
+    public let hasWhatsApp: Bool
 
-    public init(email: String? = nil, phone: String? = nil, linkedInProfileURL: String? = nil) {
+    public init(email: String? = nil, phone: String? = nil, linkedInProfileURL: String? = nil, hasWhatsApp: Bool = false) {
         self.email = email
         self.phone = phone
         self.linkedInProfileURL = linkedInProfileURL
+        self.hasWhatsApp = hasWhatsApp
     }
 
     /// Resolve the best address for a given channel.
@@ -758,6 +773,7 @@ public struct ContactAddresses: Codable, Hashable, Sendable {
         case .phone:     return phone
         case .faceTime:  return phone
         case .linkedIn:  return linkedInProfileURL
+        case .whatsApp:  return phone
         }
     }
 
@@ -768,6 +784,7 @@ public struct ContactAddresses: Codable, Hashable, Sendable {
         if email != nil { channels.append(.email) }
         if phone != nil { channels.append(.phone); channels.append(.faceTime) }
         if linkedInProfileURL != nil { channels.append(.linkedIn) }
+        if hasWhatsApp && phone != nil { channels.append(.whatsApp) }
         return channels
     }
 }

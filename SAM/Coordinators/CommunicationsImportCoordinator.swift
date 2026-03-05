@@ -4,7 +4,7 @@
 //
 //  Phase M: Communications Evidence
 //
-//  Orchestrates iMessage + Call History import pipeline.
+//  Orchestrates iMessage + Call History + WhatsApp import pipeline.
 //  Reads from security-scoped bookmarks, filters to known contacts,
 //  optionally analyzes message threads via on-device LLM, and upserts evidence.
 //
@@ -24,6 +24,7 @@ final class CommunicationsImportCoordinator {
 
     private let messageService = iMessageService.shared
     private let callHistoryService = CallHistoryService.shared
+    private let whatsAppService = WhatsAppService.shared
     private let messageAnalysisService = MessageAnalysisService.shared
     private let evidenceRepository = EvidenceRepository.shared
     private let peopleRepository = PeopleRepository.shared
@@ -35,17 +36,24 @@ final class CommunicationsImportCoordinator {
     var lastImportedAt: Date?
     var lastMessageCount: Int = 0
     var lastCallCount: Int = 0
+    var lastWhatsAppMessageCount: Int = 0
+    var lastWhatsAppCallCount: Int = 0
     var lastError: String?
 
     // MARK: - Settings (stored properties synced to UserDefaults)
 
     private(set) var messagesEnabled: Bool = false
     private(set) var callsEnabled: Bool = false
+    private(set) var whatsAppMessagesEnabled: Bool = false
+    private(set) var whatsAppCallsEnabled: Bool = false
+    private(set) var analyzeWhatsAppMessages: Bool = true
     /// Lookback days for initial import. 0 means "All" (no limit).
     private(set) var lookbackDays: Int = 90
     private(set) var analyzeMessages: Bool = true
     private(set) var lastMessageWatermark: Date?
     private(set) var lastCallWatermark: Date?
+    private(set) var lastWhatsAppMessageWatermark: Date?
+    private(set) var lastWhatsAppCallWatermark: Date?
 
     private var importTask: Task<Void, Never>?
 
@@ -72,6 +80,22 @@ final class CommunicationsImportCoordinator {
         if let ts = UserDefaults.standard.object(forKey: "commsLastCallWatermark") as? Double {
             lastCallWatermark = Date(timeIntervalSinceReferenceDate: ts)
         }
+        // WhatsApp settings
+        whatsAppMessagesEnabled = UserDefaults.standard.object(forKey: "commsWhatsAppMessagesEnabled") == nil
+            ? true
+            : UserDefaults.standard.bool(forKey: "commsWhatsAppMessagesEnabled")
+        whatsAppCallsEnabled = UserDefaults.standard.object(forKey: "commsWhatsAppCallsEnabled") == nil
+            ? true
+            : UserDefaults.standard.bool(forKey: "commsWhatsAppCallsEnabled")
+        if UserDefaults.standard.object(forKey: "commsAnalyzeWhatsAppMessages") != nil {
+            analyzeWhatsAppMessages = UserDefaults.standard.bool(forKey: "commsAnalyzeWhatsAppMessages")
+        }
+        if let ts = UserDefaults.standard.object(forKey: "commsLastWhatsAppMessageWatermark") as? Double {
+            lastWhatsAppMessageWatermark = Date(timeIntervalSinceReferenceDate: ts)
+        }
+        if let ts = UserDefaults.standard.object(forKey: "commsLastWhatsAppCallWatermark") as? Double {
+            lastWhatsAppCallWatermark = Date(timeIntervalSinceReferenceDate: ts)
+        }
     }
 
     func setMessagesEnabled(_ value: Bool) {
@@ -94,14 +118,33 @@ final class CommunicationsImportCoordinator {
     func resetWatermarks() {
         lastMessageWatermark = nil
         lastCallWatermark = nil
+        lastWhatsAppMessageWatermark = nil
+        lastWhatsAppCallWatermark = nil
         UserDefaults.standard.removeObject(forKey: "commsLastMessageWatermark")
         UserDefaults.standard.removeObject(forKey: "commsLastCallWatermark")
+        UserDefaults.standard.removeObject(forKey: "commsLastWhatsAppMessageWatermark")
+        UserDefaults.standard.removeObject(forKey: "commsLastWhatsAppCallWatermark")
         logger.info("Watermarks reset — next import will scan full lookback window")
     }
 
     func setAnalyzeMessages(_ value: Bool) {
         analyzeMessages = value
         UserDefaults.standard.set(value, forKey: "commsAnalyzeMessages")
+    }
+
+    func setWhatsAppMessagesEnabled(_ value: Bool) {
+        whatsAppMessagesEnabled = value
+        UserDefaults.standard.set(value, forKey: "commsWhatsAppMessagesEnabled")
+    }
+
+    func setWhatsAppCallsEnabled(_ value: Bool) {
+        whatsAppCallsEnabled = value
+        UserDefaults.standard.set(value, forKey: "commsWhatsAppCallsEnabled")
+    }
+
+    func setAnalyzeWhatsAppMessages(_ value: Bool) {
+        analyzeWhatsAppMessages = value
+        UserDefaults.standard.set(value, forKey: "commsAnalyzeWhatsAppMessages")
     }
 
     // MARK: - Import Status
@@ -158,14 +201,21 @@ final class CommunicationsImportCoordinator {
             : (Calendar.current.date(byAdding: .day, value: -lookbackDays, to: Date()) ?? Date())
         let messageSince = lastMessageWatermark ?? lookbackDate
         let callSince = lastCallWatermark ?? lookbackDate
+        let waMessageSince = lastWhatsAppMessageWatermark ?? lookbackDate
+        let waCallSince = lastWhatsAppCallWatermark ?? lookbackDate
         var totalMessages = 0
         var totalCalls = 0
+        var totalWAMessages = 0
+        var totalWACalls = 0
 
         do {
             // Build known identifier sets
             let knownEmails = try peopleRepository.allKnownEmails()
             let knownPhones = try peopleRepository.allKnownPhones()
             let knownIdentifiers = knownEmails.union(knownPhones)
+            // DEBUG: log known contact counts
+            logger.info("[DEBUG] Known emails: \(knownEmails.count), known phones: \(knownPhones.count)")
+            logger.info("[DEBUG] Lookback: \(self.lookbackDays) days, waMessageSince: \(waMessageSince, privacy: .public), waCallSince: \(waCallSince, privacy: .public)")
 
             // --- iMessage ---
             if messagesEnabled, bookmarkManager.hasMessagesAccess {
@@ -177,18 +227,43 @@ final class CommunicationsImportCoordinator {
                 totalCalls = try await importCallHistory(since: callSince, knownPhones: knownPhones)
             }
 
+            // --- WhatsApp Messages ---
+            logger.info("[DEBUG] WhatsApp gate check: messagesEnabled=\(self.whatsAppMessagesEnabled), hasAccess=\(self.bookmarkManager.hasWhatsAppAccess)")
+            if whatsAppMessagesEnabled, bookmarkManager.hasWhatsAppAccess {
+                totalWAMessages = try await importWhatsAppMessages(since: waMessageSince, knownPhones: knownPhones)
+            } else {
+                logger.info("[DEBUG] WhatsApp messages SKIPPED (enabled=\(self.whatsAppMessagesEnabled), access=\(self.bookmarkManager.hasWhatsAppAccess))")
+            }
+
+            // --- WhatsApp Calls ---
+            logger.info("[DEBUG] WhatsApp calls gate check: callsEnabled=\(self.whatsAppCallsEnabled), hasAccess=\(self.bookmarkManager.hasWhatsAppAccess)")
+            if whatsAppCallsEnabled, bookmarkManager.hasWhatsAppAccess {
+                totalWACalls = try await importWhatsAppCalls(since: waCallSince, knownPhones: knownPhones)
+            } else {
+                logger.info("[DEBUG] WhatsApp calls SKIPPED (enabled=\(self.whatsAppCallsEnabled), access=\(self.bookmarkManager.hasWhatsAppAccess))")
+            }
+
+            // --- WhatsApp Unknown Sender Discovery ---
+            if (whatsAppMessagesEnabled || whatsAppCallsEnabled), bookmarkManager.hasWhatsAppAccess {
+                await discoverWhatsAppUnknownSenders(knownPhones: knownPhones)
+                await generateWhatsAppEnrichments(knownPhones: knownPhones)
+            }
+
             // Trigger insight generation
             InsightGenerator.shared.startAutoGeneration()
 
             lastImportedAt = Date()
             lastMessageCount = totalMessages
             lastCallCount = totalCalls
+            lastWhatsAppMessageCount = totalWAMessages
+            lastWhatsAppCallCount = totalWACalls
             importStatus = .success
 
-            logger.info("Communications import complete: \(totalMessages) messages, \(totalCalls) calls")
+            let total = totalMessages + totalCalls + totalWAMessages + totalWACalls
+            logger.info("Communications import complete: \(totalMessages) iMessages, \(totalCalls) calls, \(totalWAMessages) WhatsApp messages, \(totalWACalls) WhatsApp calls")
 
             // Refresh relationship summaries for people with new evidence
-            if totalMessages + totalCalls > 0 {
+            if total > 0 {
                 await refreshAffectedSummaries()
             }
 
@@ -337,7 +412,7 @@ final class CommunicationsImportCoordinator {
 
     /// Refresh relationship summaries for people who have communications evidence.
     private func refreshAffectedSummaries() async {
-        let commsSources: Set<EvidenceSource> = [.iMessage, .phoneCall, .faceTime]
+        let commsSources: Set<EvidenceSource> = [.iMessage, .phoneCall, .faceTime, .whatsApp, .whatsAppCall]
 
         guard let allEvidence = try? evidenceRepository.fetchAll() else { return }
 
@@ -363,6 +438,277 @@ final class CommunicationsImportCoordinator {
             }
             await NoteAnalysisCoordinator.shared.refreshRelationshipSummary(for: person)
         }
+    }
+
+    // MARK: - WhatsApp Messages Import
+
+    private func importWhatsAppMessages(since: Date, knownPhones: Set<String>) async throws -> Int {
+        logger.info("[DEBUG] importWhatsAppMessages called, since=\(since, privacy: .public), knownPhones=\(knownPhones.count)")
+        guard let resolved = bookmarkManager.resolveWhatsAppURL() else {
+            logger.warning("[DEBUG] Could not resolve WhatsApp bookmark — resolveWhatsAppURL() returned nil")
+            return 0
+        }
+        logger.info("[DEBUG] WhatsApp resolved: dir=\(resolved.directory.path, privacy: .public), messagesDB=\(resolved.messagesDB.path, privacy: .public)")
+        let dbExists = FileManager.default.fileExists(atPath: resolved.messagesDB.path)
+        logger.info("[DEBUG] ChatStorage.sqlite exists at path: \(dbExists)")
+        guard resolved.directory.startAccessingSecurityScopedResource() else {
+            logger.warning("[DEBUG] Could not access security-scoped WhatsApp directory")
+            return 0
+        }
+        logger.info("[DEBUG] Security-scoped access granted for WhatsApp directory")
+        defer { bookmarkManager.stopAccessing(resolved.directory) }
+
+        let messages = try await whatsAppService.fetchMessages(
+            since: since,
+            dbURL: resolved.messagesDB,
+            knownPhones: knownPhones
+        )
+        logger.info("[DEBUG] WhatsApp fetchMessages returned \(messages.count) messages")
+
+        guard !messages.isEmpty else {
+            logger.info("[DEBUG] No new WhatsApp messages from known contacts (0 after known-phone filter)")
+            return 0
+        }
+
+        // Group messages by (JID, day) for analysis
+        let grouped = groupWhatsAppMessagesByJIDAndDay(messages)
+        logger.info("[DEBUG] WhatsApp grouped into \(grouped.count) thread-days for analysis")
+
+        // Analyze and upsert
+        var analyzedMessages: [(WhatsAppMessageDTO, MessageAnalysisDTO?)] = []
+
+        for (_, threadMessages) in grouped {
+            guard !Task.isCancelled else {
+                logger.info("WhatsApp message import cancelled during analysis")
+                break
+            }
+            if analyzeWhatsAppMessages {
+                let jid = threadMessages.first?.contactJID ?? ""
+                let contactName = resolveContactNameByPhone(jid: jid)
+                let contactRole = resolveContactRoleByPhone(jid: jid)
+
+                let analysisInput: [(text: String, date: Date, isFromMe: Bool)] = threadMessages.compactMap { msg in
+                    guard let text = msg.text, !text.isEmpty else { return nil }
+                    return (text: text, date: msg.date, isFromMe: msg.isFromMe)
+                }
+
+                if analysisInput.count >= 2 {
+                    do {
+                        let analysis = try await messageAnalysisService.analyzeConversation(
+                            messages: analysisInput,
+                            contactName: contactName,
+                            contactRole: contactRole
+                        )
+                        if let lastMsg = threadMessages.last {
+                            analyzedMessages.append((lastMsg, analysis))
+                        }
+                        for msg in threadMessages.dropLast() {
+                            analyzedMessages.append((msg, nil))
+                        }
+                    } catch {
+                        logger.warning("WhatsApp message analysis failed for thread: \(error)")
+                        for msg in threadMessages {
+                            analyzedMessages.append((msg, nil))
+                        }
+                    }
+                } else {
+                    for msg in threadMessages {
+                        analyzedMessages.append((msg, nil))
+                    }
+                }
+            } else {
+                for msg in threadMessages {
+                    analyzedMessages.append((msg, nil))
+                }
+            }
+        }
+
+        try evidenceRepository.bulkUpsertWhatsAppMessages(analyzedMessages)
+
+        if let newest = messages.max(by: { $0.date < $1.date })?.date {
+            lastWhatsAppMessageWatermark = newest
+            UserDefaults.standard.set(newest.timeIntervalSinceReferenceDate, forKey: "commsLastWhatsAppMessageWatermark")
+        }
+
+        return messages.count
+    }
+
+    // MARK: - WhatsApp Calls Import
+
+    private func importWhatsAppCalls(since: Date, knownPhones: Set<String>) async throws -> Int {
+        logger.info("[DEBUG] importWhatsAppCalls called, since=\(since, privacy: .public)")
+        guard let resolved = bookmarkManager.resolveWhatsAppURL() else {
+            logger.warning("[DEBUG] Could not resolve WhatsApp bookmark for calls")
+            return 0
+        }
+        guard resolved.directory.startAccessingSecurityScopedResource() else {
+            logger.warning("[DEBUG] Could not access security-scoped WhatsApp directory for calls")
+            return 0
+        }
+        defer { bookmarkManager.stopAccessing(resolved.directory) }
+
+        let calls = try await whatsAppService.fetchCalls(
+            since: since,
+            dbURL: resolved.callsDB,
+            knownPhones: knownPhones
+        )
+        logger.info("[DEBUG] WhatsApp fetchCalls returned \(calls.count) calls")
+
+        guard !calls.isEmpty else {
+            logger.info("[DEBUG] No new WhatsApp call records from known contacts")
+            return 0
+        }
+
+        try evidenceRepository.bulkUpsertWhatsAppCalls(calls)
+
+        if let newest = calls.max(by: { $0.date < $1.date })?.date {
+            lastWhatsAppCallWatermark = newest
+            UserDefaults.standard.set(newest.timeIntervalSinceReferenceDate, forKey: "commsLastWhatsAppCallWatermark")
+        }
+
+        return calls.count
+    }
+
+    // MARK: - WhatsApp Unknown Sender Discovery
+
+    private func discoverWhatsAppUnknownSenders(knownPhones: Set<String>) async {
+        guard let resolved = bookmarkManager.resolveWhatsAppURL() else { return }
+        guard resolved.directory.startAccessingSecurityScopedResource() else { return }
+        defer { bookmarkManager.stopAccessing(resolved.directory) }
+
+        do {
+            let allJIDs = try await whatsAppService.fetchAllJIDs(dbURL: resolved.messagesDB)
+
+            var unknownSenders: [(email: String, displayName: String?, subject: String, date: Date, source: EvidenceSource, isLikelyMarketing: Bool)] = []
+
+            for jid in allJIDs {
+                let phone = whatsAppJIDToPhone(jid.jid)
+                guard !knownPhones.contains(phone) else { continue }
+                let displayName = jid.partnerName ?? phone
+                unknownSenders.append((
+                    email: phone,
+                    displayName: displayName,
+                    subject: "WhatsApp (\(jid.messageCount) messages)",
+                    date: Date(),
+                    source: .whatsApp,
+                    isLikelyMarketing: false
+                ))
+            }
+
+            if !unknownSenders.isEmpty {
+                try UnknownSenderRepository.shared.bulkRecordUnknownSenders(unknownSenders)
+                logger.info("Recorded \(unknownSenders.count) unknown WhatsApp senders for triage")
+            }
+        } catch {
+            logger.warning("WhatsApp unknown sender discovery failed: \(error)")
+        }
+    }
+
+    // MARK: - WhatsApp Enrichment
+
+    /// Generate enrichment candidates for Apple Contacts from WhatsApp JID phone numbers.
+    /// When a WhatsApp JID matches a SamPerson by canonicalized phone, but the full
+    /// international number isn't in their phoneAliases, suggest adding it.
+    private func generateWhatsAppEnrichments(knownPhones: Set<String>) async {
+        guard let resolved = bookmarkManager.resolveWhatsAppURL() else { return }
+        guard resolved.directory.startAccessingSecurityScopedResource() else { return }
+        defer { bookmarkManager.stopAccessing(resolved.directory) }
+
+        do {
+            let allJIDs = try await whatsAppService.fetchAllJIDs(dbURL: resolved.messagesDB)
+            guard let people = try? peopleRepository.fetchAll() else { return }
+
+            var candidates: [EnrichmentCandidate] = []
+
+            for jid in allJIDs {
+                let canonPhone = whatsAppJIDToPhone(jid.jid)
+                guard knownPhones.contains(canonPhone) else { continue }
+
+                // Find the matching person
+                guard let person = people.first(where: { p in
+                    p.phoneAliases.contains(where: { canonicalizePhone($0) == canonPhone })
+                }) else { continue }
+
+                // Extract the full international number from the JID (before @)
+                let fullNumber = jid.jid.split(separator: "@").first.map(String.init) ?? ""
+                guard !fullNumber.isEmpty else { continue }
+
+                // Format as +{number} for display
+                let formattedNumber = fullNumber.hasPrefix("+") ? fullNumber : "+\(fullNumber)"
+
+                // Check if this full number is already in the person's phoneAliases
+                let alreadyHas = person.phoneAliases.contains(where: { alias in
+                    alias.filter(\.isNumber) == fullNumber.filter(\.isNumber)
+                })
+                guard !alreadyHas else { continue }
+
+                candidates.append(EnrichmentCandidate(
+                    personID: person.id,
+                    field: .phone,
+                    proposedValue: formattedNumber,
+                    currentValue: person.phoneAliases.first,
+                    source: .whatsAppMessages,
+                    sourceDetail: "WhatsApp contact: \(jid.partnerName ?? canonPhone)"
+                ))
+            }
+
+            if !candidates.isEmpty {
+                let inserted = try EnrichmentRepository.shared.bulkRecord(candidates)
+                logger.info("Generated \(inserted) WhatsApp phone enrichment candidates")
+            }
+        } catch {
+            logger.warning("WhatsApp enrichment generation failed: \(error)")
+        }
+    }
+
+    // MARK: - WhatsApp Helpers
+
+    /// Group WhatsApp messages by (JID, day) for conversation-level analysis.
+    private func groupWhatsAppMessagesByJIDAndDay(_ messages: [WhatsAppMessageDTO]) -> [String: [WhatsAppMessageDTO]] {
+        let calendar = Calendar.current
+        var groups: [String: [WhatsAppMessageDTO]] = [:]
+
+        for message in messages {
+            let dayString = calendar.startOfDay(for: message.date).timeIntervalSinceReferenceDate
+            let key = "\(message.contactJID)_\(Int(dayString))"
+            groups[key, default: []].append(message)
+        }
+
+        return groups
+    }
+
+    /// Resolve contact name for a WhatsApp JID (phone-based).
+    private func resolveContactNameByPhone(jid: String) -> String? {
+        guard let people = try? peopleRepository.fetchAll() else { return nil }
+        let phone = whatsAppJIDToPhone(jid)
+
+        for person in people {
+            if person.phoneAliases.contains(where: { canonicalizePhone($0) == phone }) {
+                return person.displayNameCache ?? person.displayName
+            }
+        }
+        return nil
+    }
+
+    /// Resolve contact role for a WhatsApp JID (phone-based).
+    private func resolveContactRoleByPhone(jid: String) -> String? {
+        guard let people = try? peopleRepository.fetchAll() else { return nil }
+        let phone = whatsAppJIDToPhone(jid)
+
+        for person in people {
+            if person.phoneAliases.contains(where: { canonicalizePhone($0) == phone }) {
+                return person.roleBadges.first
+            }
+        }
+        return nil
+    }
+
+    /// Convert a WhatsApp JID to canonicalized phone (last 10 digits).
+    private func whatsAppJIDToPhone(_ jid: String) -> String {
+        let local = jid.split(separator: "@").first.map(String.init) ?? jid
+        let digits = local.filter(\.isNumber)
+        guard digits.count >= 7 else { return jid.lowercased() }
+        return String(digits.suffix(10))
     }
 
     // MARK: - Helpers
