@@ -198,10 +198,12 @@ actor ContentAdvisorService {
             \(keyPointsText)
             \(complianceSection)
 
-            CRITICAL: Respond with ONLY valid JSON (no markdown code blocks):
+            CRITICAL: Respond with ONLY valid JSON (no markdown code blocks).
+            The draft_text field must contain YOUR COMPLETE ORIGINAL DRAFT about the requested topic.
+            Do NOT echo these instructions or example values — write real content.
             {
-              "draft_text": "The full post text ready to copy-paste",
-              "compliance_flags": ["Any compliance concerns about this specific post"]
+              "draft_text": "Your complete draft goes here. Write the actual article or post content about the topic.",
+              "compliance_flags": ["List any compliance concerns, or leave as empty array"]
             }
 
             If there are no compliance concerns, return an empty array for compliance_flags.
