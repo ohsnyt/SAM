@@ -217,26 +217,109 @@ actor ContentAdvisorService {
 
     private func parseDraftResponse(_ jsonString: String) throws -> ContentDraft {
         let cleaned = JSONExtraction.extractJSON(from: jsonString)
-        guard let data = cleaned.data(using: .utf8) else {
-            throw AnalysisError.invalidResponse
+
+        // Attempt 1: direct JSON decode
+        if let data = cleaned.data(using: .utf8),
+           let llm = try? JSONDecoder().decode(LLMContentDraft.self, from: data),
+           let text = llm.draftText, !text.isEmpty {
+            return ContentDraft(draftText: text, complianceFlags: llm.complianceFlags ?? [])
         }
 
-        do {
-            let llm = try JSONDecoder().decode(LLMContentDraft.self, from: data)
-            return ContentDraft(
-                draftText: llm.draftText ?? "",
-                complianceFlags: llm.complianceFlags ?? []
-            )
-        } catch {
-            // If JSON parsing fails, treat the entire response as the draft text
-            let plainText = jsonString.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !plainText.isEmpty {
-                logger.info("Draft generation returned plain text, using as draft body")
-                return ContentDraft(draftText: String(plainText.prefix(2000)))
-            }
-            logger.error("Draft generation JSON parsing failed: \(error.localizedDescription)")
-            throw error
+        // Attempt 2: sanitize literal newlines inside JSON string values and retry
+        let sanitized = Self.sanitizeJSONNewlines(cleaned)
+        if let data = sanitized.data(using: .utf8),
+           let llm = try? JSONDecoder().decode(LLMContentDraft.self, from: data),
+           let text = llm.draftText, !text.isEmpty {
+            logger.info("Draft parsed after newline sanitization")
+            return ContentDraft(draftText: text, complianceFlags: llm.complianceFlags ?? [])
         }
+
+        // Attempt 3: regex extract draft_text value between quotes
+        if let extracted = Self.extractDraftText(from: cleaned) {
+            logger.info("Draft extracted via regex fallback")
+            return ContentDraft(draftText: extracted)
+        }
+
+        // Attempt 4: plain text fallback (strip JSON/markdown artifacts)
+        let plainText = cleaned
+            .replacingOccurrences(of: "\"draft_text\"", with: "")
+            .replacingOccurrences(of: "\"compliance_flags\"", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if !plainText.isEmpty {
+            logger.info("Draft generation returned plain text, using as draft body")
+            return ContentDraft(draftText: String(plainText.prefix(5000)))
+        }
+
+        logger.error("Draft generation parsing failed completely")
+        throw AnalysisError.invalidResponse
+    }
+
+    /// Escape literal newlines inside JSON string values so JSONDecoder can parse them.
+    /// Walks the string tracking quote boundaries to only escape newlines within strings.
+    private static func sanitizeJSONNewlines(_ json: String) -> String {
+        var result = ""
+        result.reserveCapacity(json.count)
+        var inString = false
+        var escaped = false
+        for char in json {
+            if escaped {
+                result.append(char)
+                escaped = false
+                continue
+            }
+            if char == "\\" {
+                escaped = true
+                result.append(char)
+                continue
+            }
+            if char == "\"" {
+                inString.toggle()
+                result.append(char)
+                continue
+            }
+            if inString && char == "\n" {
+                result.append("\\")
+                result.append("n")
+            } else {
+                result.append(char)
+            }
+        }
+        return result
+    }
+
+    /// Regex fallback: extract the value of "draft_text" from a JSON-like string.
+    private static func extractDraftText(from text: String) -> String? {
+        // Find "draft_text" : "..." — greedy match up to the last plausible closing pattern
+        guard let keyRange = text.range(of: "\"draft_text\"", options: .caseInsensitive) else { return nil }
+        let afterKey = text[keyRange.upperBound...]
+        // Skip whitespace, colon, whitespace, opening quote
+        guard let colonIdx = afterKey.firstIndex(of: ":") else { return nil }
+        let afterColon = afterKey[afterKey.index(after: colonIdx)...].drop(while: { $0.isWhitespace })
+        guard afterColon.first == "\"" else { return nil }
+        let contentStart = afterColon.index(after: afterColon.startIndex)
+
+        // Walk forward to find the closing quote (not preceded by backslash)
+        // But also handle the common case where the AI uses literal newlines
+        // Look for `", ` or `"\n` followed by `"compliance` as end markers
+        if let endPattern = text.range(of: "\",\\s*\"compliance_flags\"", options: .regularExpression, range: contentStart..<text.endIndex) {
+            let draft = String(text[contentStart..<endPattern.lowerBound])
+            return draft.isEmpty ? nil : draft
+        }
+
+        // Simpler: find last `"` before `compliance_flags` or end of object
+        if let endPattern = text.range(of: "\"compliance_flags\"", range: contentStart..<text.endIndex) {
+            // Walk backward from the match to find the preceding quote
+            var idx = endPattern.lowerBound
+            while idx > contentStart {
+                idx = text.index(before: idx)
+                if text[idx] == "\"" {
+                    let draft = String(text[contentStart..<idx])
+                    return draft.isEmpty ? nil : draft
+                }
+            }
+        }
+
+        return nil
     }
 
     // MARK: - Parsing
