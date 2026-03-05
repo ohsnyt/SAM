@@ -292,7 +292,7 @@ final class OutcomeEngine {
             let attendees = event.linkedPeople.filter { !$0.isMe }
             let primary = attendees.first ?? event.linkedPeople.first
             let eventEnd = event.endedAt ?? Calendar.current.date(byAdding: .hour, value: 1, to: event.occurredAt)!
-            let hoursSince = max(1, Int(now.timeIntervalSince(eventEnd) / 3600))
+            let minutesSince = Int(now.timeIntervalSince(eventEnd) / 60)
 
             // Build attendee names and meeting time for specificity
             let attendeeNames = attendees.map { $0.displayNameCache ?? $0.displayName }
@@ -307,13 +307,23 @@ final class OutcomeEngine {
                 dayLabel = eventEnd.formatted(date: .abbreviated, time: .omitted)
             }
 
+            let timeAgoStr: String
+            if minutesSince < 1 {
+                timeAgoStr = "Just ended"
+            } else if minutesSince < 60 {
+                timeAgoStr = "\(minutesSince) minute\(minutesSince == 1 ? "" : "s") since it ended"
+            } else {
+                let hours = minutesSince / 60
+                timeAgoStr = "\(hours) hour\(hours == 1 ? "" : "s") since it ended"
+            }
+
             return SamOutcome(
-                title: "Document takeaways from \(dayLabel) \(event.title)\(nameStr) (\(timeStr))",
-                rationale: "\(hoursSince) hour\(hoursSince == 1 ? "" : "s") since it ended. Capture key points while fresh.",
+                title: "Capture notes from \(dayLabel) \(event.title)\(nameStr) (\(timeStr))",
+                rationale: "\(timeAgoStr). Record key points while they're fresh.",
                 outcomeKind: .followUp,
                 deadlineDate: Calendar.current.date(byAdding: .hour, value: 72, to: eventEnd),
                 sourceInsightSummary: "Past meeting without notes: \(event.title)",
-                suggestedNextStep: "Open a note and record what was discussed",
+                suggestedNextStep: "Open the meeting capture sheet to record discussion, action items, and follow-ups",
                 linkedPerson: primary
             )
         }

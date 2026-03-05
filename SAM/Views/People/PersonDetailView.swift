@@ -2121,24 +2121,44 @@ struct PersonDetailView: View {
             let displayName = person.displayNameCache ?? person.displayName
             let email = person.emailCache ?? person.email
 
-            guard let contactDTO = await contactsService.createContact(
-                fullName: displayName,
-                email: email,
-                note: nil
-            ) else {
-                errorMessage = "Failed to create contact in Apple Contacts"
-                showingError = true
-                return
+            // Search for an existing Apple Contact before creating a new one
+            let existingMatches = await contactsService.searchContacts(query: displayName, keys: .detail)
+            let existingContact: ContactDTO? = existingMatches.first { match in
+                let nameMatch = match.displayName.lowercased() == displayName.lowercased()
+                let emailMatch: Bool = {
+                    guard let email else { return false }
+                    return match.emailAddresses.contains { $0.lowercased() == email.lowercased() }
+                }()
+                return nameMatch || emailMatch
             }
 
-            // Link the person to the new contact
+            let contactDTO: ContactDTO
+            if let existing = existingContact {
+                // Use existing Apple Contact — add to SAM group if needed
+                contactDTO = existing
+                await contactsService.addContactToSAMGroup(identifier: existing.identifier)
+                logger.info("Linked to existing Apple Contact for \(displayName, privacy: .public)")
+            } else {
+                // No match — create new Apple Contact (auto-adds to SAM group)
+                guard let created = await contactsService.createContact(
+                    fullName: displayName,
+                    email: email,
+                    note: nil
+                ) else {
+                    errorMessage = "Failed to create contact in Apple Contacts"
+                    showingError = true
+                    return
+                }
+                contactDTO = created
+                logger.info("Created new Apple Contact for \(displayName, privacy: .public)")
+            }
+
+            // Link existing SamPerson to the contact (avoids creating a duplicate)
             do {
-                try PeopleRepository.shared.upsert(contact: contactDTO)
-                // Reload contact details
+                try PeopleRepository.shared.linkPerson(person, toContact: contactDTO)
                 await loadFullContact()
-                logger.info("Created contact for \(displayName, privacy: .public)")
             } catch {
-                errorMessage = "Contact created but failed to link: \(error.localizedDescription)"
+                errorMessage = "Failed to link contact: \(error.localizedDescription)"
                 showingError = true
             }
         }

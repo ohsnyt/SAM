@@ -24,6 +24,8 @@ final class SystemNotificationService: NSObject, UNUserNotificationCenterDelegat
     // Notification category identifiers
     private static let planReadyCategory = "PLAN_READY"
     private static let viewPlanAction = "VIEW_PLAN"
+    private static let meetingPrepCategory = "MEETING_PREP"
+    private static let viewMeetingPrepAction = "VIEW_MEETING_PREP"
 
     private override init() {
         super.init()
@@ -50,7 +52,21 @@ final class SystemNotificationService: NSObject, UNUserNotificationCenterDelegat
             options: []
         )
 
-        center.setNotificationCategories([planCategory])
+        // Meeting Prep category
+        let viewMeetingAction = UNNotificationAction(
+            identifier: Self.viewMeetingPrepAction,
+            title: "View Briefing",
+            options: [.foreground]
+        )
+
+        let meetingCategory = UNNotificationCategory(
+            identifier: Self.meetingPrepCategory,
+            actions: [viewMeetingAction],
+            intentIdentifiers: [],
+            options: []
+        )
+
+        center.setNotificationCategories([planCategory, meetingCategory])
         logger.info("System notification categories configured")
     }
 
@@ -108,6 +124,45 @@ final class SystemNotificationService: NSObject, UNUserNotificationCenterDelegat
         }
     }
 
+    /// Post a system notification for an upcoming meeting briefing.
+    func postMeetingReminder(briefing: MeetingBriefing) async {
+        let granted = await requestPermissionIfNeeded()
+        guard granted else { return }
+
+        let minutesUntil = max(1, Int(briefing.startsAt.timeIntervalSinceNow / 60))
+
+        let content = UNMutableNotificationContent()
+        content.title = "Meeting in \(minutesUntil) min"
+        content.subtitle = briefing.title
+        content.sound = .default
+        content.categoryIdentifier = Self.meetingPrepCategory
+        content.userInfo = ["eventID": briefing.eventID.uuidString]
+
+        // Body: attendee names + first talking point
+        var bodyParts: [String] = []
+        let attendeeNames = briefing.attendees.prefix(3).map(\.displayName)
+        if !attendeeNames.isEmpty {
+            bodyParts.append("With: \(attendeeNames.joined(separator: ", "))")
+        }
+        if let firstPoint = briefing.talkingPoints.first {
+            bodyParts.append(firstPoint)
+        }
+        content.body = bodyParts.joined(separator: "\n")
+
+        let request = UNNotificationRequest(
+            identifier: "meeting-prep-\(briefing.eventID.uuidString)",
+            content: content,
+            trigger: nil
+        )
+
+        do {
+            try await UNUserNotificationCenter.current().add(request)
+            logger.info("Meeting prep notification posted for: \(briefing.title)")
+        } catch {
+            logger.error("Failed to post meeting prep notification: \(error.localizedDescription)")
+        }
+    }
+
     // MARK: - UNUserNotificationCenterDelegate
 
     /// Show notification banner even when app is in foreground.
@@ -132,18 +187,34 @@ final class SystemNotificationService: NSObject, UNUserNotificationCenterDelegat
             }
         }
 
-        guard categoryID == "PLAN_READY" else { return }
-
         await MainActor.run {
             // Bring app to foreground
             NSApplication.shared.activate(ignoringOtherApps: true)
 
-            // Post in-app notification to navigate to Business > Strategic tab
-            NotificationCenter.default.post(
-                name: .samNavigateToStrategicInsights,
-                object: nil,
-                userInfo: sendableUserInfo
-            )
+            switch categoryID {
+            case Self.planReadyCategory:
+                NotificationCenter.default.post(
+                    name: .samNavigateToStrategicInsights,
+                    object: nil,
+                    userInfo: sendableUserInfo
+                )
+            case Self.meetingPrepCategory:
+                // Navigate to Today view and expand meeting prep section
+                NotificationCenter.default.post(
+                    name: .samNavigateToSection,
+                    object: nil,
+                    userInfo: ["section": "today"]
+                )
+                // Small delay so sidebar navigates before expanding
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    NotificationCenter.default.post(
+                        name: .samExpandMeetingPrep,
+                        object: nil
+                    )
+                }
+            default:
+                break
+            }
         }
     }
 }

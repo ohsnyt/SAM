@@ -55,6 +55,9 @@ final class DailyBriefingCoordinator {
     var eveningState: EveningState = .idle
     var isRecompilingEvening = false
 
+    /// Event IDs already notified this session (prevents duplicate notifications).
+    private var notifiedMeetingIDs: Set<UUID> = []
+
     // MARK: - Briefing Check Tracking
 
     /// IDs of briefing items the user has checked off today.
@@ -150,6 +153,7 @@ final class DailyBriefingCoordinator {
                 self.checkRecentlyEndedMeetings()
                 self.checkRecentlyEndedCalls()
                 self.checkSequenceTriggers()
+                await self.checkUpcomingMeetings()
             }
         }
 
@@ -693,6 +697,28 @@ final class DailyBriefingCoordinator {
         logger.info("Evening check scheduled in \(Int(interval / 60)) minutes")
     }
 
+    // MARK: - Pre-Meeting Notifications
+
+    /// Check for upcoming meetings and post macOS system notifications ~15 min before.
+    /// Called from the 5-minute day-rollover timer.
+    private func checkUpcomingMeetings() async {
+        let enabled = UserDefaults.standard.object(forKey: "meetingPrepNotificationsEnabled") == nil
+            ? true
+            : UserDefaults.standard.bool(forKey: "meetingPrepNotificationsEnabled")
+        guard enabled else { return }
+
+        let now = Date.now
+        let horizon = now.addingTimeInterval(15 * 60) // 15 minutes ahead
+
+        for briefing in meetingPrep.briefings {
+            guard briefing.startsAt > now, briefing.startsAt <= horizon else { continue }
+            guard !notifiedMeetingIDs.contains(briefing.eventID) else { continue }
+
+            notifiedMeetingIDs.insert(briefing.eventID)
+            await SystemNotificationService.shared.postMeetingReminder(briefing: briefing)
+        }
+    }
+
     // MARK: - Auto Meeting Note Templates
 
     /// Check for recently ended meetings and create note templates.
@@ -746,19 +772,44 @@ final class DailyBriefingCoordinator {
     }
 
     /// Post notification to open the structured post-meeting capture sheet.
+    /// Builds a CapturePayload enriched with briefing data (talking points, pending actions).
     /// Also creates a follow-up outcome so the Action Queue tracks it.
     private func createMeetingNoteTemplate(event: SamEvidenceItem, attendees: [SamPerson]) {
-        let attendeeIDs = attendees.map(\.id)
+        // Look up existing briefing for this event to get talking points and open actions
+        let matchingBriefing = MeetingPrepCoordinator.shared.briefings.first { briefing in
+            briefing.title == event.title
+                && Calendar.current.isDate(briefing.startsAt, inSameDayAs: event.occurredAt)
+        }
 
-        // Post notification for the structured capture sheet
+        // Build CaptureAttendeeInfo from attendees + briefing profiles
+        let attendeeInfos: [CaptureAttendeeInfo] = attendees.map { person in
+            let profile = matchingBriefing?.attendees.first(where: { $0.personID == person.id })
+            return CaptureAttendeeInfo(
+                personID: person.id,
+                displayName: person.displayNameCache ?? person.displayName,
+                roleBadges: person.roleBadges,
+                pendingActionItems: profile?.pendingActionItems ?? [],
+                recentLifeEvents: profile?.recentLifeEvents ?? []
+            )
+        }
+
+        let talkingPoints = matchingBriefing?.talkingPoints ?? []
+        let openActions = matchingBriefing?.openActionItems.map(\.description) ?? []
+
+        let payload = CapturePayload(
+            captureKind: .meeting,
+            eventTitle: event.title,
+            eventDate: event.occurredAt,
+            attendees: attendeeInfos,
+            talkingPoints: talkingPoints,
+            openActionItems: openActions,
+            evidenceID: event.id
+        )
+
         NotificationCenter.default.post(
             name: .samOpenPostMeetingCapture,
             object: nil,
-            userInfo: [
-                "eventTitle": event.title,
-                "eventDate": event.occurredAt,
-                "attendeeIDs": attendeeIDs
-            ]
+            userInfo: ["payload": payload]
         )
 
         // Create a follow-up outcome so it appears in the Action Queue
@@ -778,7 +829,7 @@ final class DailyBriefingCoordinator {
             logger.error("Failed to create follow-up outcome: \(error.localizedDescription)")
         }
 
-        logger.info("Posted post-meeting capture notification for '\(event.title)' with \(attendees.count) attendees")
+        logger.info("Posted post-meeting capture for '\(event.title)' with \(attendees.count) attendees, \(talkingPoints.count) talking points")
     }
 
     // MARK: - Multi-Step Sequence Trigger Evaluation
@@ -894,24 +945,35 @@ final class DailyBriefingCoordinator {
             // Mark as prompted before opening window
             promptedCallIDs.insert(call.id)
 
-            // Open a quick note window for post-call capture
+            // Open the capture sheet for post-call capture
             let personName = primary.displayNameCache ?? primary.displayName
-            let callType = call.source == .faceTime ? "FaceTime" : "call"
-            let payload = QuickNotePayload(
-                outcomeID: UUID(), // No associated outcome — standalone prompt
+            let callSource = call.source == .faceTime ? "FaceTime" : "phone"
+
+            let attendeeInfo = CaptureAttendeeInfo(
                 personID: primary.id,
-                personName: personName,
-                contextTitle: "Post-\(callType) note: \(personName)",
-                prefillText: ""
+                displayName: personName,
+                roleBadges: primary.roleBadges,
+                pendingActionItems: [],
+                recentLifeEvents: []
+            )
+
+            let capturePayload = CapturePayload(
+                captureKind: .call(source: callSource),
+                eventTitle: "\(personName) (\(callSource))",
+                eventDate: call.occurredAt,
+                attendees: [attendeeInfo],
+                talkingPoints: [],
+                openActionItems: [],
+                evidenceID: call.id
             )
 
             NotificationCenter.default.post(
-                name: .samOpenQuickNote,
+                name: .samOpenPostMeetingCapture,
                 object: nil,
-                userInfo: ["payload": payload]
+                userInfo: ["payload": capturePayload]
             )
 
-            logger.info("Prompted post-call note for \(personName, privacy: .public) (\(callType))")
+            logger.info("Prompted post-call capture for \(personName, privacy: .public) (\(callSource))")
 
             // Only prompt for one call at a time to avoid window spam
             break

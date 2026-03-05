@@ -87,6 +87,9 @@ struct AwarenessView: View {
         )) {
             EveningRecapOverlay()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .samExpandMeetingPrep)) { _ in
+            withAnimation { showMore = true }
+        }
         .task {
             await loadInsights()
             await meetingPrepCoordinator.refresh()

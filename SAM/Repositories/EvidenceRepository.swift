@@ -889,6 +889,65 @@ final class EvidenceRepository {
         logger.info("iMessage bulk upsert: \(created) created, \(updated) updated")
     }
 
+    // MARK: - Post-Hoc Analysis Patching
+
+    /// Update an already-persisted email evidence item with LLM analysis results.
+    /// Used by the background analysis task after `.success` is set.
+    func updateEmailAnalysis(sourceUID: String, analysis: EmailAnalysisDTO) throws {
+        guard let context = context else { throw RepositoryError.notConfigured }
+
+        guard let existing = try fetch(sourceUID: sourceUID) else {
+            logger.debug("updateEmailAnalysis: no evidence found for \(sourceUID)")
+            return
+        }
+
+        existing.snippet = analysis.summary
+
+        var signals: [EvidenceSignal] = []
+        for event in analysis.temporalEvents {
+            signals.append(EvidenceSignal(
+                type: .lifeEvent,
+                message: "\(event.description): \(event.dateString)",
+                confidence: event.confidence
+            ))
+        }
+        for entity in analysis.namedEntities where entity.kind == .financialInstrument {
+            signals.append(EvidenceSignal(
+                type: .financialEvent,
+                message: "Product mentioned: \(entity.name)",
+                confidence: entity.confidence
+            ))
+        }
+        existing.signals = signals
+
+        try context.save()
+    }
+
+    /// Update an already-persisted iMessage/WhatsApp evidence item with LLM analysis results.
+    /// Used by the background analysis task after `.success` is set.
+    func updateMessageAnalysis(sourceUID: String, analysis: MessageAnalysisDTO) throws {
+        guard let context = context else { throw RepositoryError.notConfigured }
+
+        guard let existing = try fetch(sourceUID: sourceUID) else {
+            logger.debug("updateMessageAnalysis: no evidence found for \(sourceUID)")
+            return
+        }
+
+        existing.snippet = analysis.summary
+
+        var signals: [EvidenceSignal] = []
+        for event in analysis.temporalEvents {
+            signals.append(EvidenceSignal(
+                type: .lifeEvent,
+                message: "\(event.description): \(event.dateString)",
+                confidence: event.confidence
+            ))
+        }
+        existing.signals = signals
+
+        try context.save()
+    }
+
     // MARK: - Call Record Bulk Upsert
 
     /// Bulk upsert call/FaceTime evidence items (metadata only, no LLM analysis).

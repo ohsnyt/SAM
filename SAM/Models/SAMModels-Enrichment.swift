@@ -20,6 +20,7 @@ public enum EnrichmentField: String, Codable, Sendable, CaseIterable {
     case phone        = "phone"
     case linkedInURL  = "linkedInURL"
     case facebookURL  = "facebookURL"
+    case whatsApp     = "whatsApp"
 
     public var displayName: String {
         switch self {
@@ -29,6 +30,7 @@ public enum EnrichmentField: String, Codable, Sendable, CaseIterable {
         case .phone:       return "Phone Number"
         case .linkedInURL: return "LinkedIn Profile"
         case .facebookURL: return "Facebook Profile"
+        case .whatsApp:    return "WhatsApp"
         }
     }
 }

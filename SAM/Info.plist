@@ -13,7 +13,7 @@
 	<key>NSCalendarsFullAccessUsageDescription</key>
 	<string>SAM needs access to your Calendar to track meetings and interactions with your clients, and to help you with time management. SAM will only use the calendar you specify.</string>
 	<key>NSContactsUsageDescription</key>
-	<string>SAM needs access to your Contacts to import and sync client information for relationship management. SAM will only use the Contact Group you specify, and will only update contacts with your permission.</string>
+	<string>SAM needs access to your Contacts to import and manage client relationships. SAM reads all contacts to help identify matches and avoid duplicates, but only imports and updates contacts in the group you choose.</string>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>SAM needs to read your Mail to track email interactions with your clients. SAM only stores summaries — never raw email content.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>

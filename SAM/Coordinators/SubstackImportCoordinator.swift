@@ -108,7 +108,7 @@ final class SubstackImportCoordinator {
             }
             let topics = extractTopics(from: posts)
 
-            var profileDTO = UserSubstackProfileDTO(
+            let profileDTO = UserSubstackProfileDTO(
                 publicationName: profile.publicationName,
                 publicationDescription: profile.publicationDescription,
                 authorName: profile.authorName,
@@ -119,13 +119,7 @@ final class SubstackImportCoordinator {
                 recentPostTitles: Array(recentPosts)
             )
 
-            // Run voice analysis if we have posts
-            if !posts.isEmpty {
-                statusMessage = "Analyzing writing voice..."
-                let voiceSummary = await analyzeWritingVoice(posts: posts)
-                profileDTO.writingVoiceSummary = voiceSummary
-            }
-
+            // Save profile without voice analysis first
             await BusinessProfileService.shared.saveSubstackProfile(profileDTO)
 
             // Create import record
@@ -144,9 +138,19 @@ final class SubstackImportCoordinator {
             statusMessage = "Fetched \(posts.count) posts (\(newPosts) new)"
             logger.info("Feed fetch complete: \(posts.count) posts (\(newPosts) new)")
 
-            // Auto-run profile analysis for Grow section
+            // Background: voice analysis + profile update + profile analysis
+            let postsForAnalysis = posts
             Task(priority: .utility) { [weak self] in
-                await self?.runProfileAnalysis()
+                guard let self else { return }
+                if !postsForAnalysis.isEmpty {
+                    let voiceSummary = await self.analyzeWritingVoice(posts: postsForAnalysis)
+                    if !voiceSummary.isEmpty {
+                        var updatedProfile = profileDTO
+                        updatedProfile.writingVoiceSummary = voiceSummary
+                        await BusinessProfileService.shared.saveSubstackProfile(updatedProfile)
+                    }
+                }
+                await self.runProfileAnalysis()
             }
 
         } catch {

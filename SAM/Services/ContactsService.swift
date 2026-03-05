@@ -578,6 +578,7 @@ actor ContactsService {
                 CNContactEmailAddressesKey as CNKeyDescriptor,
                 CNContactPhoneNumbersKey as CNKeyDescriptor,
                 CNContactSocialProfilesKey as CNKeyDescriptor,
+                CNContactInstantMessageAddressesKey as CNKeyDescriptor,
             ]
             let keysWithNote: [CNKeyDescriptor] = baseKeys + [CNContactNoteKey as CNKeyDescriptor]
 
@@ -659,6 +660,18 @@ actor ContactsService {
                         service: CNSocialProfileServiceFacebook
                     )
                     mutable.socialProfiles.append(CNLabeledValue(label: CNLabelHome, value: fbProfile))
+
+                case .whatsApp:
+                    let normalizedNew = value.filter(\.isNumber)
+                    let existingNormalized = mutable.instantMessageAddresses.compactMap { labeled -> String? in
+                        guard labeled.value.service == "WhatsApp" else { return nil }
+                        return labeled.value.username.filter(\.isNumber)
+                    }
+                    if !existingNormalized.contains(normalizedNew) {
+                        let im = CNInstantMessageAddress(username: value, service: "WhatsApp")
+                        let labeled = CNLabeledValue(label: nil, value: im)
+                        mutable.instantMessageAddresses.append(labeled)
+                    }
                 }
             }
 
@@ -700,9 +713,26 @@ actor ContactsService {
         contact.note = combined
     }
 
+    /// Check whether a contact is a member of the configured SAM group.
+    /// Returns false if no SAM group is configured or on error.
+    func isContactInSAMGroup(identifier: String) -> Bool {
+        let groupID = UserDefaults.standard.string(forKey: "selectedContactGroupIdentifier") ?? ""
+        guard !groupID.isEmpty else { return false }
+
+        do {
+            let predicate = CNContact.predicateForContactsInGroup(withIdentifier: groupID)
+            let keys: [CNKeyDescriptor] = [CNContactIdentifierKey as CNKeyDescriptor]
+            let members = try store.unifiedContacts(matching: predicate, keysToFetch: keys)
+            return members.contains { $0.identifier == identifier }
+        } catch {
+            logger.error("isContactInSAMGroup failed: \(error.localizedDescription)")
+            return false
+        }
+    }
+
     /// Add a contact to the configured SAM group in Apple Contacts.
     /// Called automatically when SAM creates a contact so it appears in future imports.
-    private func addContactToSAMGroup(identifier: String) {
+    func addContactToSAMGroup(identifier: String) {
         let groupID = UserDefaults.standard.string(forKey: "selectedContactGroupIdentifier") ?? ""
         guard !groupID.isEmpty else {
             logger.debug("No SAM group configured, skipping group assignment")

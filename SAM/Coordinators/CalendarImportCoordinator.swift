@@ -270,16 +270,10 @@ final class CalendarImportCoordinator {
             // Upsert into EvidenceRepository (only known-participant events)
             try evidenceRepository.bulkUpsert(events: eventsToProcess)
 
-            // Trigger insights auto-generation after import
-            InsightGenerator.shared.startAutoGeneration()
-
             // Prune orphaned evidence (events deleted from calendar)
             // Use ALL event sourceUIDs to avoid pruning events we still see
             let validSourceUIDs = Set(events.map { $0.sourceUID })
             try evidenceRepository.pruneOrphans(validSourceUIDs: validSourceUIDs)
-
-            // Auto-categorize calendar events into time entries
-            try? TimeCategorizationEngine.shared.categorizeNewCalendarEvents()
 
             // Update state
             lastImportedAt = Date()
@@ -289,8 +283,10 @@ final class CalendarImportCoordinator {
 
             logger.info("Import complete: \(events.count) events")
 
-            // Re-run role deduction — calendar evidence now linked to people
+            // Background: insights, time categorization, role deduction
             Task(priority: .utility) {
+                InsightGenerator.shared.startAutoGeneration()
+                try? TimeCategorizationEngine.shared.categorizeNewCalendarEvents()
                 await RoleDeductionEngine.shared.deduceRoles()
             }
 

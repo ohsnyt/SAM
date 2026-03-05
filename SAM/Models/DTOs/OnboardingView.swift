@@ -219,7 +219,7 @@ struct OnboardingView: View {
             }
             .padding(.leading, 8)
 
-            Text("SAM only accesses contacts you choose. You'll select a specific group in the next step.")
+            Text("SAM reads your full Contacts list to identify matches and avoid duplicates, but only imports and updates contacts in the group you choose in the next step.")
                 .font(.callout)
                 .foregroundStyle(.orange)
                 .padding()
@@ -271,7 +271,7 @@ struct OnboardingView: View {
                 .font(.body)
                 .foregroundStyle(.secondary)
 
-            Text("This ensures SAM only accesses relevant professional relationships, not personal contacts.")
+            Text("SAM reads all contacts to find matches and prevent duplicates, but only imports and updates contacts in this group.")
                 .font(.callout)
                 .foregroundStyle(.orange)
                 .padding()

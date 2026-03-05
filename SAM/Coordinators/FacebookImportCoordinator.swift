@@ -294,46 +294,41 @@ final class FacebookImportCoordinator {
             context.insert(importRecord)
             try context.save()
 
-            // Step 7: Update state
+            // Step 7: Update state + set success immediately
             lastImportedAt = Date()
             lastFacebookImportAt = Date()
             lastImportCount = parsedFriendCount
             unmatchedFriendCount = noMatchCount - newContactCount
             staleImportWarning = nil
-
-            // Step 8: Build and cache Facebook analysis snapshot
-            let snapshot = buildFacebookAnalysisSnapshot()
-            await BusinessProfileService.shared.saveFacebookSnapshot(snapshot)
-            logger.info("Facebook analysis snapshot cached: \(snapshot.friendCount) friends, \(snapshot.messageThreadCount) threads")
-
-            // Step 9: Run voice analysis on posts and store Facebook profile
-            if var fbProfile = pendingUserProfile {
-                if !pendingPosts.isEmpty {
-                    let voiceSummary = await analyzeWritingVoice(posts: pendingPosts)
-                    fbProfile.writingVoiceSummary = voiceSummary
-                    fbProfile.recentPostSnippets = pendingPosts.prefix(5).map {
-                        $0.text.count > 500 ? String($0.text.prefix(500)) + "…" : $0.text
-                    }
-                }
-                await BusinessProfileService.shared.saveFacebookProfile(fbProfile)
-            }
-
             importStatus = .success
             progressMessage = nil
             logger.info("Facebook import complete: \(self.matchedFriendCount) matched, \(newContactCount) new, \(touchCount) touches")
 
-            // Step 10: Run profile analysis in background (non-blocking)
+            // Step 8: Background — snapshot, voice analysis, profile analysis, role deduction
+            let postsForAnalysis = pendingPosts
+            let profileForAnalysis = pendingUserProfile
             Task(priority: .utility) { [weak self] in
-                await self?.runProfileAnalysis()
-            }
+                guard let self else { return }
 
-            // Step 11: Run cross-platform consistency analysis if LinkedIn data available
-            Task(priority: .background) { [weak self] in
-                await self?.runCrossPlatformAnalysis()
-            }
+                // Build and cache Facebook analysis snapshot
+                let snapshot = self.buildFacebookAnalysisSnapshot()
+                await BusinessProfileService.shared.saveFacebookSnapshot(snapshot)
+                logger.info("Facebook analysis snapshot cached: \(snapshot.friendCount) friends, \(snapshot.messageThreadCount) threads")
 
-            // Step 12: Re-run role deduction for newly imported people
-            Task(priority: .utility) {
+                // Run voice analysis on posts and store Facebook profile
+                if var fbProfile = profileForAnalysis {
+                    if !postsForAnalysis.isEmpty {
+                        let voiceSummary = await self.analyzeWritingVoice(posts: postsForAnalysis)
+                        fbProfile.writingVoiceSummary = voiceSummary
+                        fbProfile.recentPostSnippets = postsForAnalysis.prefix(5).map {
+                            $0.text.count > 500 ? String($0.text.prefix(500)) + "…" : $0.text
+                        }
+                    }
+                    await BusinessProfileService.shared.saveFacebookProfile(fbProfile)
+                }
+
+                await self.runProfileAnalysis()
+                await self.runCrossPlatformAnalysis()
                 await RoleDeductionEngine.shared.deduceRoles()
             }
 

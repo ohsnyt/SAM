@@ -22,7 +22,7 @@ struct AppShellView: View {
     @AppStorage("sam.sidebar.selection") private var sidebarSelection: String = "today"
     @State private var selectedPersonID: UUID?
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
-    @State private var postMeetingPayload: PostMeetingPayload?
+    @State private var capturePayload: CapturePayload?
     @State private var showCommandPalette = false
     @State private var introCoordinator = IntroSequenceCoordinator.shared
     @State private var peopleMode: PeopleMode = .contacts
@@ -80,15 +80,13 @@ struct AppShellView: View {
         .modifier(AppShellNotificationHandlers(
             sidebarSelection: $sidebarSelection,
             selectedPersonID: $selectedPersonID,
-            postMeetingPayload: $postMeetingPayload,
+            capturePayload: $capturePayload,
             peopleMode: $peopleMode,
             openWindow: openWindow
         ))
-        .sheet(item: $postMeetingPayload) { payload in
+        .sheet(item: $capturePayload) { payload in
             PostMeetingCaptureView(
-                eventTitle: payload.eventTitle,
-                eventDate: payload.eventDate,
-                attendeeIDs: payload.attendeeIDs,
+                payload: payload,
                 onSave: {}
             )
         }
@@ -288,7 +286,7 @@ struct AppShellView: View {
 private struct AppShellNotificationHandlers: ViewModifier {
     @Binding var sidebarSelection: String
     @Binding var selectedPersonID: UUID?
-    @Binding var postMeetingPayload: PostMeetingPayload?
+    @Binding var capturePayload: CapturePayload?
     @Binding var peopleMode: AppShellView.PeopleMode
     let openWindow: OpenWindowAction
 
@@ -307,10 +305,9 @@ private struct AppShellNotificationHandlers: ViewModifier {
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .samOpenPostMeetingCapture)) { notification in
-                guard let title = notification.userInfo?["eventTitle"] as? String,
-                      let date = notification.userInfo?["eventDate"] as? Date,
-                      let ids = notification.userInfo?["attendeeIDs"] as? [UUID] else { return }
-                postMeetingPayload = PostMeetingPayload(eventTitle: title, eventDate: date, attendeeIDs: ids)
+                if let payload = notification.userInfo?["payload"] as? CapturePayload {
+                    capturePayload = payload
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .samNavigateToGraph)) { notification in
                 sidebarSelection = "people"

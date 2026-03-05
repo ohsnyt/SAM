@@ -131,23 +131,53 @@ struct NotInContactsCapsule: View {
         isCreating = true
         errorMessage = nil
 
-        guard let contactDTO = await ContactsService.shared.createContact(
-            fullName: displayName,
-            email: email,
-            note: nil
-        ) else {
-            errorMessage = "Failed to create contact"
-            isCreating = false
-            return
+        let contactsService = ContactsService.shared
+        let peopleRepo = PeopleRepository.shared
+
+        // Search for an existing Apple Contact before creating a new one
+        let existingMatches = await contactsService.searchContacts(query: displayName, keys: .detail)
+        let existingContact: ContactDTO? = existingMatches.first { match in
+            let nameMatch = match.displayName.lowercased() == displayName.lowercased()
+            let emailMatch: Bool = {
+                guard let email else { return false }
+                return match.emailAddresses.contains { $0.lowercased() == email.lowercased() }
+            }()
+            return nameMatch || emailMatch
+        }
+
+        let contactDTO: ContactDTO
+        if let existing = existingContact {
+            // Use existing Apple Contact — add to SAM group if needed
+            contactDTO = existing
+            await contactsService.addContactToSAMGroup(identifier: existing.identifier)
+            logger.info("Linked to existing Apple Contact for \(displayName, privacy: .public)")
+        } else {
+            // No match — create new Apple Contact (auto-adds to SAM group)
+            guard let created = await contactsService.createContact(
+                fullName: displayName,
+                email: email,
+                note: nil
+            ) else {
+                errorMessage = "Failed to create contact"
+                isCreating = false
+                return
+            }
+            contactDTO = created
+            logger.info("Created new Apple Contact for \(displayName, privacy: .public)")
         }
 
         do {
-            try PeopleRepository.shared.upsert(contact: contactDTO)
-            logger.info("Created Apple Contact for \(displayName, privacy: .public)")
+            if let person {
+                // SamPerson already exists — link it to the contact (avoids duplicate)
+                try peopleRepo.linkPerson(person, toContact: contactDTO)
+            } else {
+                // No SamPerson yet — upsert will create one
+                try peopleRepo.upsert(contact: contactDTO)
+            }
             didCreate = true
             showingConfirmation = false
         } catch {
-            errorMessage = "Created but failed to link: \(error.localizedDescription)"
+            errorMessage = "Failed to link: \(error.localizedDescription)"
         }
 
         isCreating = false

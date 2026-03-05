@@ -18,12 +18,31 @@ private enum TriageChoice: String, CaseIterable {
     case never     // permanently block
 }
 
+/// Holds a pending match between an unknown sender and an existing Apple Contact
+/// that is NOT yet in the SAM group, so the user can confirm or reject the link.
+private struct TriageMatchCandidate: Identifiable {
+    let id = UUID()
+    let sender: UnknownSender
+    let matchedContact: ContactDTO
+    var resolution: Resolution = .pending
+
+    enum Resolution {
+        case pending
+        case samePerson   // link to existing contact + add to SAM group
+        case differentPerson  // create a new contact
+    }
+
+    var isResolved: Bool { resolution != .pending }
+}
+
 struct UnknownSenderTriageSection: View {
 
     @State private var pendingSenders: [UnknownSender] = []
     @State private var choices: [UUID: TriageChoice] = [:]  // staged choices
     @State private var isSaving = false
     @State private var isExpanded = false
+    @State private var pendingMatches: [TriageMatchCandidate] = []
+    @State private var showMatchConfirmation = false
 
     /// Number of rows to show when collapsed.
     private let collapsedRowCount = 3
@@ -66,6 +85,14 @@ struct UnknownSenderTriageSection: View {
             if newStatus == .success {
                 loadPendingSenders()
             }
+        }
+        .sheet(isPresented: $showMatchConfirmation) {
+            TriageMatchConfirmationView(
+                pendingMatches: $pendingMatches,
+                onDone: { resolvedMatches in
+                    commitResolvedMatches(resolvedMatches)
+                }
+            )
         }
     }
 
@@ -430,6 +457,7 @@ struct UnknownSenderTriageSection: View {
         // Create contacts + reprocess in background
         Task {
             var addedEmails: [String] = []
+            var matchesNeedingConfirmation: [TriageMatchCandidate] = []
 
             for sender in toAdd {
                 let isLinkedIn = sender.email.hasPrefix("linkedin:") || sender.email.hasPrefix("linkedin-unknown-")
@@ -454,7 +482,7 @@ struct UnknownSenderTriageSection: View {
                         logger.error("Failed to create SamPerson for \(sender.email, privacy: .public): \(error)")
                     }
                 } else {
-                    // Email/calendar senders → create Apple Contact + SamPerson (existing behavior)
+                    // Email/calendar senders → search ALL Apple Contacts for a match
                     let existingMatches = await contactsService.searchContacts(
                         query: displayName,
                         keys: .detail
@@ -465,11 +493,26 @@ struct UnknownSenderTriageSection: View {
                         return nameMatch || emailMatch
                     }
 
-                    let contactDTO: ContactDTO
                     if let existing = existingContact {
-                        logger.info("Triage: linking '\(displayName, privacy: .public)' to existing contact (skipping create)")
-                        contactDTO = existing
+                        // Check if already in SAM group → auto-link directly
+                        let inSAMGroup = await contactsService.isContactInSAMGroup(identifier: existing.identifier)
+                        if inSAMGroup {
+                            logger.info("Triage: auto-linking '\(displayName, privacy: .public)' (already in SAM group)")
+                            do {
+                                try peopleRepository.upsert(contact: existing)
+                                addedEmails.append(sender.email)
+                            } catch {
+                                logger.error("Failed to upsert contact for \(sender.email, privacy: .public): \(error)")
+                            }
+                        } else {
+                            // Match found but NOT in SAM group → needs user confirmation
+                            logger.info("Triage: match found for '\(displayName, privacy: .public)' outside SAM group — queuing for confirmation")
+                            matchesNeedingConfirmation.append(
+                                TriageMatchCandidate(sender: sender, matchedContact: existing)
+                            )
+                        }
                     } else {
+                        // No match → create new contact (existing behavior)
                         guard let created = await contactsService.createContact(
                             fullName: displayName,
                             email: sender.email,
@@ -478,14 +521,13 @@ struct UnknownSenderTriageSection: View {
                             logger.error("Failed to create contact for \(sender.email, privacy: .public)")
                             continue
                         }
-                        contactDTO = created
-                    }
 
-                    do {
-                        try peopleRepository.upsert(contact: contactDTO)
-                        addedEmails.append(sender.email)
-                    } catch {
-                        logger.error("Failed to upsert contact for \(sender.email, privacy: .public): \(error)")
+                        do {
+                            try peopleRepository.upsert(contact: created)
+                            addedEmails.append(sender.email)
+                        } catch {
+                            logger.error("Failed to upsert contact for \(sender.email, privacy: .public): \(error)")
+                        }
                     }
                 }
             }
@@ -499,10 +541,6 @@ struct UnknownSenderTriageSection: View {
                 }
             }
 
-            isSaving = false
-
-            logger.info("Triage complete: \(toAdd.count) contacts created, \(toNever.count) blocked, \(notNowCount) deferred")
-
             // Reprocess added senders' interaction history in background
             for email in addedEmails {
                 await mailCoordinator.reprocessForSender(email: email)
@@ -512,6 +550,76 @@ struct UnknownSenderTriageSection: View {
                     await linkedInCoordinator.reprocessForSender(profileURL: profileURL)
                 }
             }
+
+            // If there are matches needing confirmation, show the sheet; otherwise we're done
+            if !matchesNeedingConfirmation.isEmpty {
+                pendingMatches = matchesNeedingConfirmation
+                showMatchConfirmation = true
+            }
+
+            isSaving = false
+
+            logger.info("Triage complete: \(toAdd.count) processed, \(toNever.count) blocked, \(notNowCount) deferred, \(matchesNeedingConfirmation.count) pending confirmation")
+        }
+    }
+
+    /// Process resolved matches after the user confirms/rejects each one in the sheet.
+    private func commitResolvedMatches(_ resolved: [TriageMatchCandidate]) {
+        Task {
+            var addedEmails: [String] = []
+
+            for match in resolved {
+                let sender = match.sender
+                let displayName = sender.displayName ?? sender.email
+
+                switch match.resolution {
+                case .samePerson:
+                    // Link to existing contact + add to SAM group
+                    logger.info("Triage confirm: linking '\(displayName, privacy: .public)' to existing contact \(match.matchedContact.identifier, privacy: .public)")
+                    do {
+                        try peopleRepository.upsert(contact: match.matchedContact)
+                        addedEmails.append(sender.email)
+                    } catch {
+                        logger.error("Failed to upsert matched contact for \(sender.email, privacy: .public): \(error)")
+                    }
+                    await contactsService.addContactToSAMGroup(identifier: match.matchedContact.identifier)
+
+                case .differentPerson:
+                    // Create a brand-new Apple Contact + add to SAM group
+                    logger.info("Triage confirm: creating new contact for '\(displayName, privacy: .public)' (rejected match)")
+                    guard let created = await contactsService.createContact(
+                        fullName: displayName,
+                        email: sender.email,
+                        note: nil
+                    ) else {
+                        logger.error("Failed to create contact for \(sender.email, privacy: .public)")
+                        continue
+                    }
+                    do {
+                        try peopleRepository.upsert(contact: created)
+                        addedEmails.append(sender.email)
+                    } catch {
+                        logger.error("Failed to upsert new contact for \(sender.email, privacy: .public): \(error)")
+                    }
+
+                case .pending:
+                    // Should not happen — log and skip
+                    logger.warning("Triage confirm: unresolved match for '\(displayName, privacy: .public)' — skipping")
+                }
+            }
+
+            if !addedEmails.isEmpty {
+                do {
+                    try EvidenceRepository.shared.refreshParticipantResolution()
+                } catch {
+                    logger.error("Failed to refresh participant resolution after match confirmation: \(error)")
+                }
+                for email in addedEmails {
+                    await mailCoordinator.reprocessForSender(email: email)
+                }
+            }
+
+            logger.info("Match confirmation complete: \(addedEmails.count) contacts processed")
         }
     }
 }
@@ -786,5 +894,143 @@ private struct TriageRow: View {
         case .faceTime:         return .mint
         default:                return .secondary
         }
+    }
+}
+
+// MARK: - Match Confirmation Sheet
+
+/// Sheet presented when triage "Add" matches existing Apple Contacts outside the SAM group.
+/// User confirms each: "Same Person" (link + add to SAM group) or "Different Person" (create new).
+private struct TriageMatchConfirmationView: View {
+    @Binding var pendingMatches: [TriageMatchCandidate]
+    let onDone: ([TriageMatchCandidate]) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    private var allResolved: Bool {
+        pendingMatches.allSatisfy(\.isResolved)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Header
+            HStack {
+                Label("SAM found existing contacts that may match", systemImage: "person.2.badge.gearshape")
+                    .font(.headline)
+                Spacer()
+            }
+            .padding()
+
+            Divider()
+
+            // Match list
+            ScrollView {
+                VStack(spacing: 0) {
+                    ForEach($pendingMatches) { $match in
+                        MatchRow(match: $match)
+                        Divider().padding(.horizontal)
+                    }
+                }
+            }
+
+            Divider()
+
+            // Footer
+            HStack {
+                Text("\(pendingMatches.filter(\.isResolved).count) of \(pendingMatches.count) resolved")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Spacer()
+
+                Button("Done") {
+                    let resolved = pendingMatches
+                    dismiss()
+                    onDone(resolved)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.regular)
+                .disabled(!allResolved)
+            }
+            .padding()
+        }
+        .frame(minWidth: 520, idealWidth: 580, minHeight: 300, idealHeight: 420)
+    }
+}
+
+/// A single match row inside the confirmation sheet.
+private struct MatchRow: View {
+    @Binding var match: TriageMatchCandidate
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Unknown sender info
+            HStack(spacing: 6) {
+                Image(systemName: "person.fill.questionmark")
+                    .foregroundStyle(.orange)
+                    .font(.title3)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Unknown sender")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(match.sender.displayName ?? match.sender.email)
+                        .font(.body)
+                        .fontWeight(.medium)
+                    Text(match.sender.email)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            // Matched contact info
+            HStack(spacing: 6) {
+                Image(systemName: "person.crop.circle.fill")
+                    .foregroundStyle(.blue)
+                    .font(.title3)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Existing Apple Contact")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(match.matchedContact.displayName)
+                        .font(.body)
+                        .fontWeight(.medium)
+                    if !match.matchedContact.emailAddresses.isEmpty {
+                        Text(match.matchedContact.emailAddresses.joined(separator: ", "))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    if !match.matchedContact.phoneNumbers.isEmpty {
+                        Text(match.matchedContact.phoneNumbers.map(\.number).joined(separator: ", "))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            // Action buttons
+            HStack(spacing: 12) {
+                Button {
+                    match.resolution = .samePerson
+                } label: {
+                    Label("Same Person — Link", systemImage: "link")
+                        .font(.callout)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(match.resolution == .samePerson ? .blue : .gray.opacity(0.4))
+                .controlSize(.small)
+
+                Button {
+                    match.resolution = .differentPerson
+                } label: {
+                    Label("Different — Create New", systemImage: "person.badge.plus")
+                        .font(.callout)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(match.resolution == .differentPerson ? .orange : .gray.opacity(0.4))
+                .controlSize(.small)
+            }
+        }
+        .padding()
+        .background(match.isResolved ? Color.accentColor.opacity(0.03) : Color.clear)
     }
 }

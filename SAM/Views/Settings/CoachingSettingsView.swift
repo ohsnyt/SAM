@@ -76,6 +76,11 @@ struct CoachingSettingsContent: View {
             ? true
             : UserDefaults.standard.bool(forKey: "weeklyDigestEnabled")
     }()
+    @State private var meetingPrepNotifications: Bool = {
+        UserDefaults.standard.object(forKey: "meetingPrepNotificationsEnabled") == nil
+            ? true
+            : UserDefaults.standard.bool(forKey: "meetingPrepNotificationsEnabled")
+    }()
 
     // MARK: - Body
 
@@ -620,6 +625,16 @@ struct CoachingSettingsContent: View {
                 }
 
             Text("On Monday mornings, your briefing includes a \"This Week's Priorities\" section.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.bottom, 4)
+
+            Toggle("Meeting prep notifications", isOn: $meetingPrepNotifications)
+                .onChange(of: meetingPrepNotifications) { _, newValue in
+                    UserDefaults.standard.set(newValue, forKey: "meetingPrepNotificationsEnabled")
+                }
+
+            Text("SAM sends a notification ~15 minutes before meetings with a briefing summary.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.bottom, 4)

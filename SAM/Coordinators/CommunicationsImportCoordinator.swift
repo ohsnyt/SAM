@@ -207,6 +207,8 @@ final class CommunicationsImportCoordinator {
         var totalCalls = 0
         var totalWAMessages = 0
         var totalWACalls = 0
+        var deferredIMThreads: [DeferredThreadAnalysis] = []
+        var deferredWAThreads: [DeferredWAThreadAnalysis] = []
 
         do {
             // Build known identifier sets
@@ -216,7 +218,9 @@ final class CommunicationsImportCoordinator {
 
             // --- iMessage ---
             if messagesEnabled, bookmarkManager.hasMessagesAccess {
-                totalMessages = try await importMessages(since: messageSince, knownIdentifiers: knownIdentifiers)
+                let result = try await importMessages(since: messageSince, knownIdentifiers: knownIdentifiers)
+                totalMessages = result.count
+                deferredIMThreads = result.deferred
             }
 
             // --- Call History ---
@@ -226,7 +230,9 @@ final class CommunicationsImportCoordinator {
 
             // --- WhatsApp Messages ---
             if whatsAppMessagesEnabled, bookmarkManager.hasWhatsAppAccess {
-                totalWAMessages = try await importWhatsAppMessages(since: waMessageSince, knownPhones: knownPhones)
+                let result = try await importWhatsAppMessages(since: waMessageSince, knownPhones: knownPhones)
+                totalWAMessages = result.count
+                deferredWAThreads = result.deferred
             }
 
             // --- WhatsApp Calls ---
@@ -240,9 +246,6 @@ final class CommunicationsImportCoordinator {
                 await generateWhatsAppEnrichments(knownPhones: knownPhones)
             }
 
-            // Trigger insight generation
-            InsightGenerator.shared.startAutoGeneration()
-
             lastImportedAt = Date()
             lastMessageCount = totalMessages
             lastCallCount = totalCalls
@@ -253,13 +256,48 @@ final class CommunicationsImportCoordinator {
             let total = totalMessages + totalCalls + totalWAMessages + totalWACalls
             logger.info("Communications import complete: \(totalMessages) iMessages, \(totalCalls) calls, \(totalWAMessages) WhatsApp messages, \(totalWACalls) WhatsApp calls")
 
-            // Refresh relationship summaries for people with new evidence
-            if total > 0 {
-                await refreshAffectedSummaries()
-            }
+            // Background: analyze deferred threads, then trigger insights + summaries + role deduction
+            Task(priority: .utility) { [weak self] in
+                guard let self else { return }
 
-            // Re-run role deduction — communications evidence now available
-            Task(priority: .utility) {
+                // Analyze iMessage threads
+                for thread in deferredIMThreads {
+                    guard !Task.isCancelled else { break }
+                    do {
+                        let analysis = try await self.messageAnalysisService.analyzeConversation(
+                            messages: thread.messages,
+                            contactName: thread.contactName,
+                            contactRole: thread.contactRole
+                        )
+                        let sourceUID = "imessage:\(thread.lastMessageGUID)"
+                        try self.evidenceRepository.updateMessageAnalysis(sourceUID: sourceUID, analysis: analysis)
+                    } catch {
+                        logger.warning("Background iMessage analysis failed: \(error)")
+                    }
+                }
+
+                // Analyze WhatsApp threads
+                for thread in deferredWAThreads {
+                    guard !Task.isCancelled else { break }
+                    do {
+                        let analysis = try await self.messageAnalysisService.analyzeConversation(
+                            messages: thread.messages,
+                            contactName: thread.contactName,
+                            contactRole: thread.contactRole
+                        )
+                        let sourceUID = "whatsapp:\(thread.lastMessageStanzaID)"
+                        try self.evidenceRepository.updateMessageAnalysis(sourceUID: sourceUID, analysis: analysis)
+                    } catch {
+                        logger.warning("Background WhatsApp analysis failed: \(error)")
+                    }
+                }
+
+                InsightGenerator.shared.startAutoGeneration()
+
+                if total > 0 {
+                    await self.refreshAffectedSummaries()
+                }
+
                 await RoleDeductionEngine.shared.deduceRoles()
             }
 
@@ -272,14 +310,23 @@ final class CommunicationsImportCoordinator {
 
     // MARK: - iMessage Import
 
-    private func importMessages(since: Date, knownIdentifiers: Set<String>) async throws -> Int {
+    /// Thread data for deferred background analysis.
+    private struct DeferredThreadAnalysis: Sendable {
+        let lastMessageGUID: String
+        let messages: [(text: String, date: Date, isFromMe: Bool)]
+        let handle: String
+        let contactName: String?
+        let contactRole: String?
+    }
+
+    private func importMessages(since: Date, knownIdentifiers: Set<String>) async throws -> (count: Int, deferred: [DeferredThreadAnalysis]) {
         guard let resolved = bookmarkManager.resolveMessagesURL() else {
             logger.warning("Could not resolve messages bookmark")
-            return 0
+            return (0, [])
         }
         guard resolved.directory.startAccessingSecurityScopedResource() else {
             logger.warning("Could not access security-scoped messages directory")
-            return 0
+            return (0, [])
         }
         defer { bookmarkManager.stopAccessing(resolved.directory) }
 
@@ -292,68 +339,15 @@ final class CommunicationsImportCoordinator {
 
         guard !messages.isEmpty else {
             logger.info("No new messages from known contacts")
-            return 0
+            return (0, [])
         }
 
         // Group messages by (handle, day) for analysis
         let grouped = groupMessagesByHandleAndDay(messages)
 
-        // Analyze and upsert
-        var analyzedMessages: [(MessageDTO, MessageAnalysisDTO?)] = []
-
-        for (_, threadMessages) in grouped {
-            guard !Task.isCancelled else {
-                logger.info("Message import cancelled during analysis")
-                break
-            }
-            if analyzeMessages {
-                // Get contact info for role context
-                let handle = threadMessages.first?.handleID ?? ""
-                let contactName = resolveContactName(for: handle)
-                let contactRole = resolveContactRole(for: handle)
-
-                // Build analysis input
-                let analysisInput: [(text: String, date: Date, isFromMe: Bool)] = threadMessages.compactMap { msg in
-                    guard let text = msg.text, !text.isEmpty else { return nil }
-                    return (text: text, date: msg.date, isFromMe: msg.isFromMe)
-                }
-
-                if analysisInput.count >= 2 {
-                    // Only analyze threads with at least 2 messages with text
-                    do {
-                        let analysis = try await messageAnalysisService.analyzeConversation(
-                            messages: analysisInput,
-                            contactName: contactName,
-                            contactRole: contactRole
-                        )
-                        // Apply analysis to the last message in the thread (represents the conversation)
-                        if let lastMsg = threadMessages.last {
-                            analyzedMessages.append((lastMsg, analysis))
-                        }
-                        // Also add remaining messages without analysis
-                        for msg in threadMessages.dropLast() {
-                            analyzedMessages.append((msg, nil))
-                        }
-                    } catch {
-                        logger.warning("Message analysis failed for thread: \(error)")
-                        for msg in threadMessages {
-                            analyzedMessages.append((msg, nil))
-                        }
-                    }
-                } else {
-                    for msg in threadMessages {
-                        analyzedMessages.append((msg, nil))
-                    }
-                }
-            } else {
-                for msg in threadMessages {
-                    analyzedMessages.append((msg, nil))
-                }
-            }
-        }
-
-        // Bulk upsert
-        try evidenceRepository.bulkUpsertMessages(analyzedMessages)
+        // Upsert all messages WITHOUT analysis (fast persist)
+        let upsertData: [(MessageDTO, MessageAnalysisDTO?)] = messages.map { ($0, nil) }
+        try evidenceRepository.bulkUpsertMessages(upsertData)
 
         // Update watermark to newest message date
         if let newest = messages.max(by: { $0.date < $1.date })?.date {
@@ -361,7 +355,32 @@ final class CommunicationsImportCoordinator {
             UserDefaults.standard.set(newest.timeIntervalSinceReferenceDate, forKey: "commsLastMessageWatermark")
         }
 
-        return messages.count
+        // Collect thread data for deferred background analysis
+        var deferred: [DeferredThreadAnalysis] = []
+        if analyzeMessages {
+            for (_, threadMessages) in grouped {
+                let handle = threadMessages.first?.handleID ?? ""
+                let contactName = resolveContactName(for: handle)
+                let contactRole = resolveContactRole(for: handle)
+
+                let analysisInput: [(text: String, date: Date, isFromMe: Bool)] = threadMessages.compactMap { msg in
+                    guard let text = msg.text, !text.isEmpty else { return nil }
+                    return (text: text, date: msg.date, isFromMe: msg.isFromMe)
+                }
+
+                if analysisInput.count >= 2, let lastMsg = threadMessages.last {
+                    deferred.append(DeferredThreadAnalysis(
+                        lastMessageGUID: lastMsg.guid,
+                        messages: analysisInput,
+                        handle: handle,
+                        contactName: contactName,
+                        contactRole: contactRole
+                    ))
+                }
+            }
+        }
+
+        return (messages.count, deferred)
     }
 
     // MARK: - Call History Import
@@ -433,14 +452,23 @@ final class CommunicationsImportCoordinator {
 
     // MARK: - WhatsApp Messages Import
 
-    private func importWhatsAppMessages(since: Date, knownPhones: Set<String>) async throws -> Int {
+    /// Thread data for deferred WhatsApp background analysis.
+    private struct DeferredWAThreadAnalysis: Sendable {
+        let lastMessageStanzaID: String
+        let messages: [(text: String, date: Date, isFromMe: Bool)]
+        let jid: String
+        let contactName: String?
+        let contactRole: String?
+    }
+
+    private func importWhatsAppMessages(since: Date, knownPhones: Set<String>) async throws -> (count: Int, deferred: [DeferredWAThreadAnalysis]) {
         guard let resolved = bookmarkManager.resolveWhatsAppURL() else {
             logger.warning("Could not resolve WhatsApp bookmark")
-            return 0
+            return (0, [])
         }
         guard resolved.directory.startAccessingSecurityScopedResource() else {
             logger.warning("Could not access security-scoped WhatsApp directory")
-            return 0
+            return (0, [])
         }
         defer { bookmarkManager.stopAccessing(resolved.directory) }
 
@@ -450,20 +478,24 @@ final class CommunicationsImportCoordinator {
             knownPhones: knownPhones
         )
 
-        guard !messages.isEmpty else { return 0 }
+        guard !messages.isEmpty else { return (0, []) }
 
         // Group messages by (JID, day) for analysis
         let grouped = groupWhatsAppMessagesByJIDAndDay(messages)
 
-        // Analyze and upsert
-        var analyzedMessages: [(WhatsAppMessageDTO, MessageAnalysisDTO?)] = []
+        // Upsert all messages WITHOUT analysis (fast persist)
+        let upsertData: [(WhatsAppMessageDTO, MessageAnalysisDTO?)] = messages.map { ($0, nil) }
+        try evidenceRepository.bulkUpsertWhatsAppMessages(upsertData)
 
-        for (_, threadMessages) in grouped {
-            guard !Task.isCancelled else {
-                logger.info("WhatsApp message import cancelled during analysis")
-                break
-            }
-            if analyzeWhatsAppMessages {
+        if let newest = messages.max(by: { $0.date < $1.date })?.date {
+            lastWhatsAppMessageWatermark = newest
+            UserDefaults.standard.set(newest.timeIntervalSinceReferenceDate, forKey: "commsLastWhatsAppMessageWatermark")
+        }
+
+        // Collect thread data for deferred background analysis
+        var deferred: [DeferredWAThreadAnalysis] = []
+        if analyzeWhatsAppMessages {
+            for (_, threadMessages) in grouped {
                 let jid = threadMessages.first?.contactJID ?? ""
                 let contactName = resolveContactNameByPhone(jid: jid)
                 let contactRole = resolveContactRoleByPhone(jid: jid)
@@ -473,45 +505,19 @@ final class CommunicationsImportCoordinator {
                     return (text: text, date: msg.date, isFromMe: msg.isFromMe)
                 }
 
-                if analysisInput.count >= 2 {
-                    do {
-                        let analysis = try await messageAnalysisService.analyzeConversation(
-                            messages: analysisInput,
-                            contactName: contactName,
-                            contactRole: contactRole
-                        )
-                        if let lastMsg = threadMessages.last {
-                            analyzedMessages.append((lastMsg, analysis))
-                        }
-                        for msg in threadMessages.dropLast() {
-                            analyzedMessages.append((msg, nil))
-                        }
-                    } catch {
-                        logger.warning("WhatsApp message analysis failed for thread: \(error)")
-                        for msg in threadMessages {
-                            analyzedMessages.append((msg, nil))
-                        }
-                    }
-                } else {
-                    for msg in threadMessages {
-                        analyzedMessages.append((msg, nil))
-                    }
-                }
-            } else {
-                for msg in threadMessages {
-                    analyzedMessages.append((msg, nil))
+                if analysisInput.count >= 2, let lastMsg = threadMessages.last {
+                    deferred.append(DeferredWAThreadAnalysis(
+                        lastMessageStanzaID: lastMsg.stanzaID,
+                        messages: analysisInput,
+                        jid: jid,
+                        contactName: contactName,
+                        contactRole: contactRole
+                    ))
                 }
             }
         }
 
-        try evidenceRepository.bulkUpsertWhatsAppMessages(analyzedMessages)
-
-        if let newest = messages.max(by: { $0.date < $1.date })?.date {
-            lastWhatsAppMessageWatermark = newest
-            UserDefaults.standard.set(newest.timeIntervalSinceReferenceDate, forKey: "commsLastWhatsAppMessageWatermark")
-        }
-
-        return messages.count
+        return (messages.count, deferred)
     }
 
     // MARK: - WhatsApp Calls Import
@@ -620,7 +626,7 @@ final class CommunicationsImportCoordinator {
 
                 candidates.append(EnrichmentCandidate(
                     personID: person.id,
-                    field: .phone,
+                    field: .whatsApp,
                     proposedValue: formattedNumber,
                     currentValue: person.phoneAliases.first,
                     source: .whatsAppMessages,

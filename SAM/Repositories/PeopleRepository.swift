@@ -92,6 +92,33 @@ final class PeopleRepository {
         return allPeople.first { $0.contactIdentifier == contactIdentifier }
     }
 
+    /// Link an existing SamPerson to an Apple Contact (by contactIdentifier) and update cache fields.
+    /// Use this when a SamPerson already exists (e.g. from social import or triage) and the user
+    /// confirms which Apple Contact it should be linked to — avoids creating a duplicate SamPerson.
+    func linkPerson(_ person: SamPerson, toContact contact: ContactDTO) throws {
+        guard let modelContext = modelContext else {
+            throw RepositoryError.notConfigured
+        }
+
+        let canonicalEmails = contact.emailAddresses.compactMap { canonicalizeEmail($0) }
+        let primaryEmail = canonicalEmails.first
+        let canonicalPhones = contact.phoneNumbers.compactMap { canonicalizePhone($0.number) }
+
+        person.contactIdentifier = contact.identifier
+        person.displayNameCache = contact.displayName
+        person.emailCache = primaryEmail
+        person.emailAliases = canonicalEmails
+        person.phoneAliases = canonicalPhones
+        person.photoThumbnailCache = contact.thumbnailImageData
+        person.lastSyncedAt = Date()
+
+        // Update deprecated fields for backward compatibility
+        person.displayName = contact.displayName
+        person.email = primaryEmail
+
+        try modelContext.save()
+    }
+
     /// Upsert a person from a ContactDTO
     /// If person exists (by contactIdentifier), updates cache fields
     /// If person doesn't exist, creates new SamPerson

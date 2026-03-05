@@ -250,28 +250,9 @@ final class MailImportCoordinator {
             // 6. Fetch bodies only for known senders (the expensive part)
             let emails = await mailService.fetchBodies(for: knownMetas, filterRules: filterRules)
 
-            // 7. Analyze each email with on-device LLM
-            var analyzedEmails: [(EmailDTO, EmailAnalysisDTO?)] = []
-            for email in emails {
-                guard !Task.isCancelled else {
-                    logger.info("Mail import cancelled during analysis")
-                    break
-                }
-                do {
-                    let analysis = try await analysisService.analyzeEmail(
-                        subject: email.subject,
-                        body: email.bodyPlainText,
-                        senderName: email.senderName
-                    )
-                    analyzedEmails.append((email, analysis))
-                } catch {
-                    logger.warning("Analysis failed for email \(email.messageID): \(error)")
-                    analyzedEmails.append((email, nil))
-                }
-            }
-
-            // 8. Upsert into EvidenceRepository
-            try evidenceRepository.bulkUpsertEmails(analyzedEmails)
+            // 7. Upsert into EvidenceRepository WITHOUT analysis (fast persist)
+            let upsertData: [(EmailDTO, EmailAnalysisDTO?)] = emails.map { ($0, nil) }
+            try evidenceRepository.bulkUpsertEmails(upsertData)
 
             // Update watermark to newest email date (from all metas, not just bodies)
             // Include LinkedIn notification dates so they advance the watermark too
@@ -281,10 +262,7 @@ final class MailImportCoordinator {
                 UserDefaults.standard.set(newest.timeIntervalSinceReferenceDate, forKey: "mailLastWatermark")
             }
 
-            // 9. Trigger insights
-            InsightGenerator.shared.startAutoGeneration()
-
-            // 10. Prune orphaned mail evidence — only for known senders
+            // 8. Prune orphaned mail evidence — only for known senders
             // We must NOT prune evidence for emails we intentionally skipped
             if !emails.isEmpty {
                 let validUIDs = Set(emails.map { $0.sourceUID })
@@ -301,8 +279,27 @@ final class MailImportCoordinator {
 
             logger.info("Mail import complete: \(emails.count) emails from known senders")
 
-            // Re-run role deduction — mail evidence now linked to people
-            Task(priority: .utility) {
+            // 9. Background: analyze each email with LLM, then trigger insights + role deduction
+            let emailsToAnalyze = emails
+            Task(priority: .utility) { [weak self] in
+                guard let self else { return }
+                for email in emailsToAnalyze {
+                    guard !Task.isCancelled else { break }
+                    do {
+                        let analysis = try await self.analysisService.analyzeEmail(
+                            subject: email.subject,
+                            body: email.bodyPlainText,
+                            senderName: email.senderName
+                        )
+                        try self.evidenceRepository.updateEmailAnalysis(
+                            sourceUID: email.sourceUID,
+                            analysis: analysis
+                        )
+                    } catch {
+                        logger.warning("Background analysis failed for email \(email.messageID): \(error)")
+                    }
+                }
+                InsightGenerator.shared.startAutoGeneration()
                 await RoleDeductionEngine.shared.deduceRoles()
             }
 

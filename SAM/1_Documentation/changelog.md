@@ -4,6 +4,77 @@
 
 ---
 
+## March 5, 2026 — Enhanced Post-Meeting/Call Capture with Guided Q&A
+
+### Overview
+Rewrote the post-meeting/call note capture experience with a dual-mode guided+freeform interface. Meetings and calls now use the same structured capture sheet with attendee identification (names + role badges), attendance confirmation, step-by-step guided Q&A drawing on briefing data (talking points, pending actions, life events), and automatic dictation polish via on-device LLM. Fixed time calculation bug ("1 hour since it ended" for meetings that ended minutes ago) and connected FollowUpCoachSection to the new capture sheet. No schema change.
+
+### What Changed
+- **CapturePayload + CaptureAttendeeInfo** (new DTOs, replacing `PostMeetingPayload`) — Rich payload with captureKind (meeting/call), attendee info (name, role badges, pending actions, recent life events), talking points, open action items, evidence ID
+- **PostMeetingCaptureView** — Complete rewrite: dual-mode Guided/Freeform picker in header; attendee badges shown for both modes; Guided mode: 7-step Q&A (attendance → main outcome → talking points → pending actions → action items → follow-up → life events) with progress bar, Back/Next/Skip navigation, contextual reminders from briefing data; Freeform mode: enhanced 4-section layout with contextual placeholders; mode switching maps guided answers into freeform fields; unified for meetings and calls; auto-polish after dictation stops
+- **DailyBriefingCoordinator** — `createMeetingNoteTemplate()` now looks up `MeetingBriefing` from `MeetingPrepCoordinator.shared.briefings` to build `CapturePayload` with talking points and attendee profiles; `checkRecentlyEndedCalls()` switched from `QuickNotePayload`/`.samOpenQuickNote` to `CapturePayload(.call)`/`.samOpenPostMeetingCapture`
+- **AppShellView** — `postMeetingPayload: PostMeetingPayload?` → `capturePayload: CapturePayload?`; notification handler extracts `CapturePayload` from `userInfo["payload"]`; sheet passes `payload:` to `PostMeetingCaptureView`
+- **OutcomeEngine** — Fixed `scanPastMeetingsWithoutNotes()` time calculation: replaced `max(1, Int(hours))` with minute-granularity ("Just ended" / "X minutes" / "X hours"); improved title, rationale, and suggestedNextStep text
+- **FollowUpCoachSection** — "Capture Notes" button now opens the structured capture sheet (builds `CapturePayload` from `FollowUpPrompt` and posts `.samOpenPostMeetingCapture`) instead of showing inline `InlineNoteCaptureView`
+- **NoteAnalysisService** — `polishDictation()` prompt enhanced with misheard number/dollar correction (e.g. "the hundred adn twenty thousand dollar option" → "the $120,000 option"); applies globally to all dictation polish
+
+### Files
+| File | Action |
+|------|--------|
+| `Views/Awareness/PostMeetingCaptureView.swift` | Rewritten — CapturePayload DTOs, dual-mode guided+freeform, attendance confirmation, contextual prompts, auto-polish |
+| `Coordinators/DailyBriefingCoordinator.swift` | Modified — briefing-enriched CapturePayload for meetings, CapturePayload for calls |
+| `Views/AppShellView.swift` | Modified — CapturePayload type, notification handler |
+| `Coordinators/OutcomeEngine.swift` | Modified — fixed time calculation, improved outcome text |
+| `Views/Awareness/FollowUpCoachSection.swift` | Modified — opens capture sheet instead of inline note |
+| `Services/NoteAnalysisService.swift` | Modified — number correction in polish prompt |
+| `1_Documentation/changelog.md` | Modified — this entry |
+
+---
+
+## March 5, 2026 — Unknown Sender Auto-Match & Meeting Prep Notifications
+
+### Overview
+Unknown senders whose Apple Contacts are already in the SAM group are now auto-linked without user intervention. External contacts (in Apple Contacts but not SAM group) surface a confirmation sheet. Meeting briefing notifications now include a "View Briefing" action that expands the meeting prep section in the Today view. Import coordinators refactored for unified contact-matching patterns.
+
+### What Changed
+- **UnknownSenderTriageSection** — `TriageMatchCandidate` confirmation flow: auto-links senders whose contacts are already in SAM group, queues external contacts for user confirmation via new sheet
+- **SystemNotificationService** — `MEETING_PREP` notification category with "View Briefing" action posting `samExpandMeetingPrep`
+- **AwarenessView** — Listener for `samExpandMeetingPrep` to expand "More" section and reveal MeetingPrepSection
+- **SAMModels** — `samExpandMeetingPrep` notification name
+- **ContactsService** — `isContactInSAMGroup()` method for unknown sender triage
+- **EvidenceRepository** — Bulk-link matched contacts to messages/calls by person identifier
+- **PeopleRepository** — Lookup and filtering methods for deduplication/matching workflows
+- **NotInContactsCapsule** — Match status badge, "Add to SAM" / "Create Contact" action buttons
+- **PersonDetailView** — Contact match status display, conditional contact creation buttons, role deduction UI
+- **Import coordinators** (Calendar, Communications, Facebook, Mail, Substack) — Refactored to unified contact-matching and SAM group checking patterns
+- **CoachingSettingsView** — Settings for notification preferences
+
+### Files
+| File | Action |
+|------|--------|
+| `Views/Awareness/UnknownSenderTriageSection.swift` | Modified — auto-match + confirmation flow |
+| `Services/SystemNotificationService.swift` | Modified — meeting prep notification category |
+| `Views/Awareness/AwarenessView.swift` | Modified — meeting prep expand listener |
+| `Models/SAMModels.swift` | Modified — notification name |
+| `Models/SAMModels-Enrichment.swift` | Modified — match resolution types |
+| `Services/ContactsService.swift` | Modified — SAM group membership check |
+| `Repositories/EvidenceRepository.swift` | Modified — bulk contact linking |
+| `Repositories/PeopleRepository.swift` | Modified — matching helpers |
+| `Views/Shared/NotInContactsCapsule.swift` | Modified — match status UI |
+| `Views/People/PersonDetailView.swift` | Modified — contact status + role deduction |
+| `Coordinators/CalendarImportCoordinator.swift` | Modified — unified matching |
+| `Coordinators/CommunicationsImportCoordinator.swift` | Modified — unified matching |
+| `Coordinators/FacebookImportCoordinator.swift` | Modified — unified matching |
+| `Coordinators/MailImportCoordinator.swift` | Modified — unified matching |
+| `Coordinators/SubstackImportCoordinator.swift` | Modified — unified matching |
+| `Views/Settings/CoachingSettingsView.swift` | Modified — notification settings |
+| `Views/Settings/SettingsView.swift` | Modified — settings layout |
+| `Models/DTOs/OnboardingView.swift` | Modified — onboarding updates |
+| `Info.plist` | Modified — notification configuration |
+| `1_Documentation/context.md` | Modified — onboarding guidance |
+
+---
+
 ## March 5, 2026 — Evidence-Gated Social Profile Buttons
 
 ### Overview

@@ -70,13 +70,6 @@ private struct FollowUpCard: View {
 
     let prompt: FollowUpPrompt
     let onDismiss: () -> Void
-    @State private var showingCapture = false
-
-    private var attendeeIDs: [UUID] {
-        prompt.attendees.compactMap { attendee in
-            (try? PeopleRepository.shared.fetch(id: attendee.personID)) != nil ? attendee.personID : nil
-        }
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -116,33 +109,22 @@ private struct FollowUpCard: View {
                 Spacer()
             }
 
-            if showingCapture {
-                // Inline note capture with dictation
-                InlineNoteCaptureView(
-                    linkedPerson: nil,
-                    linkedContext: nil,
-                    onSaved: { onDismiss() },
-                    linkedPeopleIDs: attendeeIDs,
-                    initiallyExpanded: true
-                )
-            } else {
-                // Actions
-                HStack(spacing: 10) {
-                    Button {
-                        withAnimation { showingCapture = true }
-                    } label: {
-                        Label("Add Notes", systemImage: "note.text.badge.plus")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-
-                    Button(action: onDismiss) {
-                        Label("Dismiss", systemImage: "xmark")
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .foregroundStyle(.secondary)
+            // Actions
+            HStack(spacing: 10) {
+                Button {
+                    openCaptureSheet()
+                } label: {
+                    Label("Capture Notes", systemImage: "note.text.badge.plus")
                 }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+
+                Button(action: onDismiss) {
+                    Label("Dismiss", systemImage: "xmark")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .foregroundStyle(.secondary)
             }
         }
         .padding(12)
@@ -151,6 +133,37 @@ private struct FollowUpCard: View {
         .overlay(
             RoundedRectangle(cornerRadius: 10)
                 .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+        )
+    }
+
+    private func openCaptureSheet() {
+        let attendeeInfos = prompt.attendees.map { attendee in
+            let person = try? PeopleRepository.shared.fetch(id: attendee.personID)
+            return CaptureAttendeeInfo(
+                personID: attendee.personID,
+                displayName: attendee.displayName,
+                roleBadges: person?.roleBadges ?? [],
+                pendingActionItems: prompt.pendingActionItems
+                    .filter { $0.linkedPersonID == attendee.personID }
+                    .map(\.description),
+                recentLifeEvents: []
+            )
+        }
+
+        let payload = CapturePayload(
+            captureKind: .meeting,
+            eventTitle: prompt.title,
+            eventDate: prompt.endedAt,
+            attendees: attendeeInfos,
+            talkingPoints: [],
+            openActionItems: prompt.pendingActionItems.map(\.description),
+            evidenceID: prompt.eventID
+        )
+
+        NotificationCenter.default.post(
+            name: .samOpenPostMeetingCapture,
+            object: nil,
+            userInfo: ["payload": payload]
         )
     }
 

@@ -307,10 +307,14 @@ Bookmark the **directory** (not file) for SQLite to cover WAL/SHM companions. `.
 
 ### ~~Priority 6 — Data Migration & Schema Version Hygiene~~ ✅ Completed (Mar 5, 2026)
 
-Centralized `schemaVersion` as single source of truth in `SAMModelContainer`. Fixed stale `"SAM_v26"` in BackupCoordinator. Added `LegacyStoreMigrationService` to discover, migrate (via backup round-trip with temp-copy protection), and clean up orphaned `SAM_v*.store` files. Settings → General shows "Legacy Data" section when orphaned stores exist. Startup detection shows migration notice on Today view when current store is empty. Limitation: stores too old for SwiftData lightweight migration (mandatory attribute gaps) cannot be auto-migrated — cleanup is still available.
-
 ### Priority 7 - Update onboarding, helps, tooltips
-- In light of the many changes to the UI, we need to carefully examine the onboarding process. Before even starting, the user must have one calendar for appointments. What minimal permissions and/or settings are required at startup? (I think a request to download and install the MLX is required.) What permission settings or UI settings can we defer to coaching instructions in the course of the first hours of operation of SAM? Does this make sense? What would you recommend in terms of the organization of the settings, the onboarding process, and the coaching process (both at startup and whenever the users incorporates a new social media platform or communication platform)?
+- In light of the many changes to the UI, we need to carefully examine the onboarding process. For example, when onboarding we permission from the user to add contacts (primarily through Contacts, iMessage and phone imports, and calendar imports).  Once we have that, we can deduce identify roles on all those people and then walk the user through confirming those roles via the relationship graph tool. 
+- What minimal permissions and/or settings are required at startup? (should include: download and install the MLX, macOS notifications, contacts, calendar, message & phone logs) 
+- What settings can we defer to coaching instructions in the course of the first hours of operation of SAM (such as social media platform imports)? 
+- It would be good to have a menu item (or a settings tab, whichever is best practice according to the Apple human interface guidlines for 2026) where all the import calls live (import calls, import mail, import Facebook, etc.) This would both make it easier for the users to find, but also bring consistency and a "one glance" view of how the user can enrich their contact and relationship data.
+- Is it possible for SAM to notice features that the User is not utilizing well, and coach the user on how to use those effectively - not all at once, but over days or weeks?
+- What would you recommend in terms of the organization of the settings, the onboarding process, and the coaching process (both at startup and whenever the users incorporates a new social media platform or communication platform)?
+- Does all this make sense? 
 
 ### Priority 8 - Security review
 - Can we use TouchID, FaceID, Apple Watch, password to enforce secure access to SAM? Would this be a good thing?

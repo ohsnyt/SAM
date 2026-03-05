@@ -666,7 +666,7 @@ struct ContactsSettingsContent: View {
                     Text("Contact Group")
                         .font(.headline)
 
-                    Text("Select which Contacts group SAM should access. Only contacts in this group will be imported.")
+                    Text("SAM reads all contacts to identify matches and avoid duplicates, but only imports and updates contacts in this group.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
