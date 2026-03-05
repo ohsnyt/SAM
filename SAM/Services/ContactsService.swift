@@ -584,8 +584,19 @@ actor ContactsService {
             let contact: CNContact
             let fetchedWithNote: Bool
             do {
-                contact = try store.unifiedContact(withIdentifier: identifier, keysToFetch: keysWithNote)
-                fetchedWithNote = true
+                let fetched = try store.unifiedContact(withIdentifier: identifier, keysToFetch: keysWithNote)
+                // The fetch can succeed even without the notes entitlement —
+                // CNPropertyNotFetchedException (ObjC) is thrown at property
+                // access time, not caught by Swift do/catch. Use isKeyAvailable
+                // to verify the note is actually readable.
+                if fetched.isKeyAvailable(CNContactNoteKey) {
+                    contact = fetched
+                    fetchedWithNote = true
+                } else {
+                    contact = fetched
+                    fetchedWithNote = false
+                    logger.warning("updateContact: note key fetched but not available (missing entitlement?)")
+                }
             } catch {
                 // Note entitlement may not be granted — fall back to base keys
                 contact = try store.unifiedContact(withIdentifier: identifier, keysToFetch: baseKeys)
