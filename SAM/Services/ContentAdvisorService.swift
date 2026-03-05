@@ -124,13 +124,16 @@ actor ContentAdvisorService {
                 """
         case .substack:
             platformGuidelines = """
-                Platform: Substack (long-form newsletter)
+                Platform: Substack (long-form newsletter article)
+                THIS IS A NEWSLETTER ARTICLE, NOT A SOCIAL MEDIA POST. It must be substantially longer than other platforms.
+                - MINIMUM 600 words, TARGET 800-1000 words. This is critical — short posts are unacceptable for Substack.
                 - Educational, in-depth tone matching the author's established voice
-                - 500-1000 words
-                - Open with a compelling hook or personal anecdote
-                - Include subheadings for readability
-                - End with a clear takeaway or call-to-action
+                - Structure with an introduction (2-3 paragraphs), 2-4 sections with subheadings (## format), and a conclusion
+                - Open with a compelling hook, personal anecdote, or relatable scenario
+                - Each section should develop a distinct point with examples, stories, or practical advice
+                - End with a clear takeaway, reflection, or call-to-action
                 - Reference previous articles when building on past topics
+                - Do NOT include hashtags — this is a newsletter, not social media
                 """
         case .other:
             platformGuidelines = """
@@ -145,11 +148,41 @@ actor ContentAdvisorService {
         let keyPointsText = keyPoints.isEmpty ? "" : "Key points to cover: \(keyPoints.joined(separator: "; "))"
         let businessContext = await BusinessProfileService.shared.contextFragment()
 
+        // For Substack, inject prominent voice/publication context
+        let substackVoiceBlock: String
+        if platform == .substack, let profile = await BusinessProfileService.shared.substackProfile() {
+            var voiceLines: [String] = []
+            voiceLines.append("WRITING VOICE — Match this style closely:")
+            if !profile.writingVoiceSummary.isEmpty {
+                voiceLines.append("Voice analysis: \(profile.writingVoiceSummary)")
+            }
+            if !profile.publicationName.isEmpty {
+                voiceLines.append("Publication: \"\(profile.publicationName)\"")
+            }
+            if !profile.publicationDescription.isEmpty {
+                voiceLines.append("Publication focus: \(profile.publicationDescription)")
+            }
+            if !profile.topicSummary.isEmpty {
+                voiceLines.append("Core topics: \(profile.topicSummary.joined(separator: ", "))")
+            }
+            if !profile.recentPostTitles.isEmpty {
+                let titles = profile.recentPostTitles.prefix(5).map { "\"\($0.title)\"" }
+                voiceLines.append("Recent articles for style reference: \(titles.joined(separator: "; "))")
+            }
+            voiceLines.append("Write as if you ARE this author continuing their publication. The reader should not notice a change in voice.")
+            substackVoiceBlock = voiceLines.joined(separator: "\n")
+        } else {
+            substackVoiceBlock = ""
+        }
+
+        let contentType = platform == .substack ? "newsletter articles" : "social media posts"
         let instructions = """
-            You write social media posts for an independent financial strategist. \
+            You write \(contentType) for an independent financial strategist. \
             The content must be educational and compliant with financial services regulations.
 
             \(businessContext)
+
+            \(substackVoiceBlock)
 
             STRICT COMPLIANCE RULES:
             - NEVER mention specific product names, company names, or fund names
@@ -174,7 +207,8 @@ actor ContentAdvisorService {
             If there are no compliance concerns, return an empty array for compliance_flags.
             """
 
-        let prompt = "Write a social media post about: \(topic)"
+        let formatLabel = platform == .substack ? "a Substack newsletter article (800-1000 words)" : "a social media post"
+        let prompt = "Write \(formatLabel) about: \(topic)"
         let responseText = try await AIService.shared.generate(prompt: prompt, systemInstruction: instructions)
         return try parseDraftResponse(responseText)
     }
