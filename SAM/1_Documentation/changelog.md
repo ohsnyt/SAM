@@ -4,6 +4,79 @@
 
 ---
 
+## March 4, 2026 — Top Action Card Prominence (Priority 1: Today View Redesign)
+
+### Overview
+Made the top-ranked outcome card in the Action Queue visually prominent so the user can identify their #1 action within 5 seconds. The hero card gets larger typography, more visible rationale, bigger action buttons, and a leading accent bar in the outcome's kind color. All other cards render identically to before. No schema change.
+
+### Changes
+
+**OutcomeCardView** — Added `isHero: Bool = false` parameter (all existing call sites unaffected). When `isHero == true`: title uses `.title3.bold()` (vs `.headline`), rationale uses `.body` with 5-line limit (vs `.subheadline` / 3), next step allows 3 lines (vs 2), action buttons use `.controlSize(.regular)` (vs `.small`), and a 4pt-wide leading accent bar in `kindColor` appears via overlay.
+
+**OutcomeQueueView** — `ForEach` now enumerates `visibleOutcomes` and passes `isHero: index == 0` so only the top-priority card gets hero treatment.
+
+### Priority 1 Completed Items
+This completes the second of three Today View Redesign items:
+- ✅ Morning briefing as persistent narrative (Phase 4, March 4)
+- ✅ Top action card visually prominent (this change)
+- Remaining: "Everything else collapsed or removed"
+
+Sidebar Reorganization, Contact Lifecycle, and Suggestion Quality Overhaul were already completed (see entries below).
+
+### Files Summary
+
+| File | Action |
+|------|--------|
+| `Views/Shared/OutcomeCardView.swift` | MODIFY (isHero param, conditional styling, accent bar) |
+| `Views/Awareness/OutcomeQueueView.swift` | MODIFY (enumerated ForEach, isHero pass-through) |
+
+---
+
+## March 4, 2026 — Contact Lifecycle Management
+
+### Overview
+Replaced the boolean `isArchived` flag on `SamPerson` with a full `ContactLifecycleStatus` enum supporting four states: active, archived, DNC (do not contact), and deceased. This enables SAM to suppress outreach for contacts that should never be contacted while preserving relationship history for audit purposes. Backward compatibility maintained via a computed `isArchived` property so all 13+ existing filter sites continue working unchanged. Schema: SAM_v32.
+
+### Model & Schema
+- **`ContactLifecycleStatus`** enum (active/archived/dnc/deceased) with `rawValue` string storage
+- **`SamPerson.lifecycleStatusRawValue`** stored property + `@Transient lifecycleStatus` computed property
+- **`SamPerson.isArchivedLegacy`** stored with `@Attribute(originalName: "isArchived")` for schema column continuity
+- **`SamPerson.isArchived`** preserved as `@Transient` computed property mapping to `lifecycleStatus != .active`
+- One-time v32 migration copies `isArchived=true` to `lifecycleStatusRawValue="archived"`
+
+### Repository & Undo
+- **`PeopleRepository.setLifecycleStatus(_:for:)`** — sets status with save
+- **Upsert guards** — `upsertContact` and `upsertMe` skip overriding DNC/deceased on re-import
+- **`LifecycleChangeSnapshot`** — Codable snapshot for undo support
+- **`UndoCoordinator`** extended with `recordLifecycleChange()` and `undoLifecycleChange()`
+
+### UI
+- **PersonDetailView** — Toolbar lifecycle submenu (Archive/DNC/Deceased/Reactivate), color-coded status banner (yellow/red/gray), confirmation alerts for DNC and deceased
+- **PeopleListView** — Default filter shows active contacts only; `.archived`, `.dnc`, `.deceased` special filters; context menu lifecycle actions; row badges (archive.fill/nosign/heart.slash)
+
+### Intelligence
+- **OutcomeEngine scanner #13** — Suggests archiving stale contacts with no evidence in 12+ months and no pipeline-relevant roles (Client/Applicant/Agent)
+
+### Backup
+- **BackupDocument** — `lifecycleStatusRawValue` field with backward-compatible import (defaults to "active" if missing, maps `isArchived: true` to "archived")
+
+### Files Summary
+
+| File | Action |
+|------|--------|
+| `SAMModels-Supporting/ContactLifecycleStatus.swift` | ADD |
+| `SAMModels/SamPerson.swift` | MODIFY |
+| `SAMModels/SAMModelContainer.swift` | MODIFY (v32 migration) |
+| `Repositories/PeopleRepository.swift` | MODIFY |
+| `Coordinators/UndoCoordinator.swift` | MODIFY |
+| `Coordinators/OutcomeEngine.swift` | MODIFY (scanner #13) |
+| `Views/People/PersonDetailView.swift` | MODIFY |
+| `Views/People/PeopleListView.swift` | MODIFY |
+| `Services/BackupDocument.swift` | MODIFY |
+| `Services/BackupCoordinator.swift` | MODIFY |
+
+---
+
 ## March 4, 2026 — Suggestion Quality Overhaul: Remaining Items
 
 ### Overview
@@ -4059,6 +4132,55 @@ Phase Y adds deterministic linear projections based on trailing 90-day velocity 
 | `Views/Business/StrategicInsightsView.swift` | MODIFY |
 | `Views/Business/BusinessDashboardView.swift` | MODIFY |
 | `Coordinators/DailyBriefingCoordinator.swift` | MODIFY |
+
+---
+
+## Role Deduction Engine + Graph Confirmation (March 4, 2026)
+
+**Purpose**: Solve the cold-start problem where roles are 100% manual by auto-deducing roles from imported data and presenting suggestions for batch confirmation in the relationship graph.
+
+**No schema change** — suggestions persisted to UserDefaults as JSON.
+
+### New Files
+
+**`Coordinators/RoleDeductionEngine.swift`** — `@MainActor @Observable` singleton. Deterministic scoring engine with 4 signal categories: calendar title keywords (max 40pts), calendar frequency patterns (max 25pts), communication volume (max 20pts), contact metadata (max 15pts). Threshold ≥40 to suggest. Batches suggestions by role in groups of 12. UserDefaults persistence. Public API: `deduceRoles()`, `confirmRole()`, `confirmBatch()`, `changeSuggestedRole()`, `dismissSuggestion()`, `dismissBatch()`, batch navigation.
+
+**`Views/Business/RoleConfirmationBannerView.swift`** — Top-anchored `.regularMaterial` overlay on graph. Shows current role badge, people count, batch navigation chevrons, Confirm All / Skip Batch / Exit buttons, hint text.
+
+### Modified Files
+
+**`Coordinators/RelationshipGraphCoordinator.swift`** — Added `"roleConfirmation"` branch in `applyFilters()`: restricts visible nodes to current batch person IDs + Me node.
+
+**`Views/Business/RelationshipGraphView.swift`** — `focusModeOverlay` branches on `"roleConfirmation"` vs `"deducedRelationships"`. Dashed ring in role color drawn around suggested nodes in `drawNodes()`. Tap handler intercepts node clicks in confirmation mode to show role picker popover (7 predefined roles + dismiss).
+
+**`Coordinators/OutcomeEngine.swift`** — Scanner #12 `scanRoleSuggestions()`: creates `.outreach` outcome with `.reviewGraph` action lane when pending suggestions exist. Title-based dedup.
+
+**`Views/Awareness/OutcomeQueueView.swift`** — `.reviewGraph` routing detects "suggested role" in title to use `"roleConfirmation"` focus mode instead of `"deducedRelationships"`.
+
+**`Models/DTOs/OnboardingView.swift`** — New FeatureRow: "Identifying your clients, agents, and partners from your data". Post-import `triggerImports()` launches `RoleDeductionEngine.shared.deduceRoles()` after 5s delay.
+
+### Scoring Heuristics Summary
+
+| Category | Max Points | Signals |
+|----------|-----------|---------|
+| Calendar Title Keywords | 40 | Role-specific meeting title patterns |
+| Calendar Frequency | 25 | Meeting cadence patterns (annual → Client, burst → Applicant, weekly → Agent) |
+| Communication Volume | 20 | Interaction count and recency patterns |
+| Contact Metadata | 15 | Job title, organization name, email domain |
+
+Tiebreakers: Agent vs External Agent decided by training cadence (≤14d gap → Agent). Client vs Applicant decided by recency of process-titled meetings (all in last 60d → Applicant).
+
+### Files Summary
+
+| File | Action |
+|------|--------|
+| `Coordinators/RoleDeductionEngine.swift` | NEW |
+| `Views/Business/RoleConfirmationBannerView.swift` | NEW |
+| `Coordinators/RelationshipGraphCoordinator.swift` | MODIFY |
+| `Views/Business/RelationshipGraphView.swift` | MODIFY |
+| `Coordinators/OutcomeEngine.swift` | MODIFY |
+| `Views/Awareness/OutcomeQueueView.swift` | MODIFY |
+| `Models/DTOs/OnboardingView.swift` | MODIFY |
 
 ---
 

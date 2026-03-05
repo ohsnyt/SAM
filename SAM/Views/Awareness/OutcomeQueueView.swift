@@ -90,9 +90,10 @@ struct OutcomeQueueView: View {
 
                 // Active outcome cards
                 VStack(spacing: 12) {
-                    ForEach(visibleOutcomes) { outcome in
+                    ForEach(Array(visibleOutcomes.enumerated()), id: \.element.id) { index, outcome in
                         OutcomeCardView(
                             outcome: outcome,
+                            isHero: index == 0,
                             onAct: actClosure(for: outcome),
                             onDone: { markDone(outcome) },
                             onSkip: { markSkipped(outcome) },
@@ -320,10 +321,13 @@ struct OutcomeQueueView: View {
 
         case .reviewGraph:
             return {
+                let focusMode = outcome.title.contains("suggested role")
+                    ? "roleConfirmation"
+                    : "deducedRelationships"
                 NotificationCenter.default.post(
                     name: .samNavigateToGraph,
                     object: nil,
-                    userInfo: ["focusMode": "deducedRelationships"]
+                    userInfo: ["focusMode": focusMode]
                 )
             }
 

@@ -14,6 +14,7 @@ import AppKit
 struct OutcomeCardView: View {
 
     let outcome: SamOutcome
+    var isHero: Bool = false
     let onAct: (() -> Void)?
     let onDone: () -> Void
     let onSkip: () -> Void
@@ -57,15 +58,15 @@ struct OutcomeCardView: View {
 
             // Title
             Text(outcome.title)
-                .font(.headline)
+                .font(isHero ? .title3.bold() : .headline)
                 .foregroundStyle(.primary)
                 .lineLimit(2)
 
             // Rationale
             Text(outcome.rationale)
-                .font(.subheadline)
+                .font(isHero ? .body : .subheadline)
                 .foregroundStyle(.secondary)
-                .lineLimit(3)
+                .lineLimit(isHero ? 5 : 3)
 
             // Suggested next step
             if let step = outcome.suggestedNextStep, !step.isEmpty {
@@ -77,7 +78,7 @@ struct OutcomeCardView: View {
                         .font(.caption)
                         .foregroundStyle(.blue)
                         .italic()
-                        .lineLimit(2)
+                        .lineLimit(isHero ? 3 : 2)
 
                     Spacer()
 
@@ -117,7 +118,7 @@ struct OutcomeCardView: View {
                             .font(.caption)
                     }
                     .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
+                    .controlSize(isHero ? .regular : .small)
                 }
 
                 if onAct != nil {
@@ -126,14 +127,14 @@ struct OutcomeCardView: View {
                             .font(.caption)
                     }
                     .buttonStyle(.bordered)
-                    .controlSize(.small)
+                    .controlSize(isHero ? .regular : .small)
                 } else {
                     Button(action: onDone) {
                         Label("Done", systemImage: "checkmark.circle")
                             .font(.caption)
                     }
                     .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
+                    .controlSize(isHero ? .regular : .small)
                 }
 
                 Button(action: onSkip) {
@@ -141,7 +142,7 @@ struct OutcomeCardView: View {
                         .font(.caption)
                 }
                 .buttonStyle(.bordered)
-                .controlSize(.small)
+                .controlSize(isHero ? .regular : .small)
                 .contextMenu {
                     Button {
                         onMuteKind?()
@@ -159,6 +160,14 @@ struct OutcomeCardView: View {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(kindColor.opacity(0.3), lineWidth: 1)
         )
+        .overlay(alignment: .leading) {
+            if isHero {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(kindColor)
+                    .frame(width: 4)
+                    .padding(.vertical, 6)
+            }
+        }
     }
 
     // MARK: - Sequence Indicator

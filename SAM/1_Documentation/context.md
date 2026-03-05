@@ -1,6 +1,6 @@
 # SAM — Project Context
 
-**Platform**: macOS 26+ (Tahoe) | **Language**: Swift 6 | **Framework**: SwiftUI + SwiftData | **Schema**: SAM_v31
+**Platform**: macOS 26+ (Tahoe) | **Language**: Swift 6 | **Framework**: SwiftUI + SwiftData | **Schema**: SAM_v32
 
 **Related Docs**:
 - `CLAUDE.md` (repo root) — Product philosophy, AI behavior rules, code standards
@@ -106,19 +106,21 @@ When SAM lacks information to be specific, it shows an **inline prompt** (`Inlin
 
 ---
 
-## 4. Contact Lifecycle Management
+## 4. Contact Lifecycle Management *(Implemented — SAM_v32, March 4, 2026)*
 
-Contacts have a lifecycle beyond active/inactive. SAM must handle the full spectrum:
+Contacts have a lifecycle beyond active/inactive. `ContactLifecycleStatus` enum on `SamPerson` controls visibility, suggestions, and outreach:
 
 ### 4.1 Contact States
 
-| State | Behavior |
-|-------|----------|
-| **Active** | Normal — appears in lists, receives suggestions, contributes to metrics |
-| **Archived** | Hidden from active lists but searchable. Dead leads, former clients who moved on, accidental adds. No suggestions generated. |
-| **DNC (Do Not Contact)** | Flagged — SAM never generates outreach suggestions. Still visible in history for audit. |
-| **Deceased** | Special archived state — prevents all outreach. Life event record preserved. |
-| **Never Added** | Unknown sender marked "Never" — reversible, searchable in a dedicated view |
+| State | Enum Value | Behavior |
+|-------|------------|----------|
+| **Active** | `.active` | Normal — appears in lists, receives suggestions, contributes to metrics |
+| **Archived** | `.archived` | Hidden from active lists but searchable. Dead leads, former clients who moved on, accidental adds. No suggestions generated. |
+| **DNC (Do Not Contact)** | `.dnc` | Flagged — SAM never generates outreach suggestions. Still visible in history for audit. Not overridden on re-import. |
+| **Deceased** | `.deceased` | Special archived state — prevents all outreach. Life event record preserved. Not overridden on re-import. |
+| **Never Added** | N/A | Unknown sender marked "Never" via `UnknownSender` model — reversible, searchable in a dedicated view |
+
+`SamPerson.isArchived` is preserved as a computed `@Transient` property (`lifecycleStatus != .active`) for backward compatibility across 13+ filter sites. `isArchivedLegacy` stored with `@Attribute(originalName: "isArchived")` for schema column continuity.
 
 ### 4.2 Broader Contact Matching
 
@@ -130,7 +132,7 @@ When importing from social platforms, SAM should:
 
 ### 4.3 Noise Reduction
 
-The user's active contact list should only contain people relevant to their current business. Archiving, DNC, and "Never" are all tools for reducing noise. SAM should proactively suggest archiving contacts with no activity in 12+ months and no pipeline relevance.
+The user's active contact list should only contain people relevant to their current business. Archiving, DNC, and "Never" are all tools for reducing noise. OutcomeEngine scanner #13 proactively suggests archiving contacts with no evidence in 12+ months and no pipeline-relevant roles (Client/Applicant/Agent).
 
 ---
 
@@ -279,33 +281,17 @@ Bookmark the **directory** (not file) for SQLite to cover WAL/SHM companions. `.
 
 The current UI has accumulated complexity across 30+ phases. It needs a focused pass to reduce clutter, improve information hierarchy, and make every view immediately actionable.
 
-**Today View Redesign**:
-- Morning briefing as a persistent, checkable narrative (not ephemeral sheet)
-- Below it: 3-5 ranked action cards, top one visually prominent
+**Today View Redesign** *(2 of 3 complete — see changelog)*:
+- ✅ Morning briefing as persistent narrative — Phase 4
+- ✅ Top action card visually prominent — Hero card prominence
 - Everything else collapsed or removed — the user should know what to do within 5 seconds
 
-**Sidebar Reorganization** *(Completed — Phase 3, March 4, 2026)*:
-- ✅ **People** — Contacts/Graph toolbar toggle (graph moved from Business — it's about relationships, not operations)
-- ✅ **Business** — Consolidated from 6 tabs to 4 (Strategic, Pipeline, Production, Goals); Client+Recruiting merged into Pipeline sub-picker
-- ✅ Command palette "Go to Relationship Graph" command
-- ✅ `.samNavigateToGraph` routes to People > Graph mode; PersonDetailView "View in Graph" stays in People
-- **Today** — Briefing + ranked actions (unchanged)
-- **Grow** — Lead acquisition workflow (currently rudimentary — needs depth: lead sources, referral tracking, prospecting scripts, interview process for discovering opportunities)
-- **Search** — Unchanged
+**Sidebar Reorganization** ✅ *(Completed — Phase 3; see changelog)*
 
-**Contact Lifecycle** (see §4):
-- Archive/DNC/Deceased states to remove noise from active lists
-- "Never Added" contacts become searchable and reversible
-- Proactive archiving suggestions for stale contacts
-- Broader Apple Contacts matching during social imports
+**Contact Lifecycle** ✅ *(SAM_v32; see changelog)*
+- Remaining: "Never Added" contacts searchable/reversible via `UnknownSender`; broader Apple Contacts matching during social imports
 
-**Suggestion Quality Overhaul** *(Completed — Phase 2, March 4, 2026)*:
-- ✅ OutcomeEngine scanners upgraded: every outcome names people, references evidence, includes artifacts
-- ✅ Rich context builder (`buildEnrichmentContext`) feeds AI with last 3 interactions, notes, pipeline, production
-- ✅ Goal rate guardrails prevent absurd daily rates (e.g., >5 policies/day → shows weekly/monthly)
-- ✅ Inline gap-filling prompts via `InlineGapPromptView` + `KnowledgeGap`
-- ✅ StrategicCoordinator specialist prompts upgraded: all 4 analysts require people-specific, named, concrete output
-- ✅ Cross-platform profile copy-paste text: all 3 profile analysts require ready-to-paste text in example_or_prompt; CopyButton + textSelection on ProfileAnalysisSheet
+**Suggestion Quality Overhaul** ✅ *(Completed — Phase 2; see changelog)*
 
 ### Priority 2 — Substack Integration
 
@@ -352,4 +338,4 @@ Create a process to allow the user to migrate data from older versions of SAM Sw
 ---
 
 **Document Version**: 32.1
-**Last Updated**: March 4, 2026 — Major cleanup: removed completed phase details (see changelog.md), condensed social import playbook to principles, added AI Output Quality Standards, Contact Lifecycle Management, UI redesign roadmap, Substack integration roadmap item.
+**Last Updated**: March 4, 2026 — Contact Lifecycle Management implemented (SAM_v32): ContactLifecycleStatus enum, PersonDetailView toolbar+banners, PeopleListView filters+badges, OutcomeEngine stale contacts scanner, undo support, backup compatibility.
