@@ -488,10 +488,19 @@ final class LinkedInImportCoordinator {
             importStatus             = .success
             progressMessage          = nil
 
-            // 7. Save user profile if parsed
-            if let profile = pendingUserProfile {
+            // 7. Save user profile if parsed (with voice analysis from shares)
+            if var profile = pendingUserProfile {
+                let voiceSnippets = pendingShares
+                    .sorted { $0.shareDate > $1.shareDate }
+                    .prefix(5)
+                    .compactMap { $0.shareComment.map { $0.count > 500 ? String($0.prefix(500)) + "…" : $0 } }
+                if !voiceSnippets.isEmpty {
+                    profile.recentShareSnippets = Array(voiceSnippets)
+                    let voiceSummary = await analyzeWritingVoice(shares: voiceSnippets)
+                    profile.writingVoiceSummary = voiceSummary
+                }
                 await BusinessProfileService.shared.saveLinkedInProfile(profile)
-                logger.info("LinkedIn user profile saved: \(profile.firstName) \(profile.lastName), \(profile.positions.count) positions")
+                logger.info("LinkedIn user profile saved: \(profile.firstName) \(profile.lastName), \(profile.positions.count) positions, voice: \(!profile.writingVoiceSummary.isEmpty)")
             }
 
             // 8. Build and cache profile analysis snapshot (before clearing pending state)
@@ -1693,6 +1702,12 @@ final class LinkedInImportCoordinator {
             .prefix(10)
             .compactMap { $0.shareComment.map { String($0.prefix(100)) } }
 
+        // Voice share snippets (top 5, up to 500 chars each) for voice re-analysis
+        let voiceSnippets = pendingShares
+            .sorted { $0.shareDate > $1.shareDate }
+            .prefix(5)
+            .compactMap { $0.shareComment.map { $0.count > 500 ? String($0.prefix(500)) + "…" : $0 } }
+
         return ProfileAnalysisSnapshot(
             endorsementsReceivedCount: pendingEndorsementsReceived.count,
             topEndorsedSkills: Array(topSkills),
@@ -1702,6 +1717,7 @@ final class LinkedInImportCoordinator {
             recommendationSamples: Array(recSamples),
             shareCount: pendingShares.count,
             recentShareSnippets: Array(shareSnippets),
+            voiceShareSnippets: Array(voiceSnippets),
             reactionsGivenCount: pendingReactionsGiven.count,
             commentsGivenCount: pendingCommentsGiven.count,
             connectionCount: pendingConnections.count,
@@ -1713,7 +1729,7 @@ final class LinkedInImportCoordinator {
     /// Runs the profile analysis AI agent. Safe to call multiple times; guards against concurrent runs.
     func runProfileAnalysis() async {
         guard profileAnalysisStatus != .analyzing else { return }
-        guard let profile = await BusinessProfileService.shared.linkedInProfile() else {
+        guard var profile = await BusinessProfileService.shared.linkedInProfile() else {
             logger.info("Profile analysis skipped: no LinkedIn profile available")
             return
         }
@@ -1723,6 +1739,31 @@ final class LinkedInImportCoordinator {
         }
 
         profileAnalysisStatus = .analyzing
+
+        // Re-analyze voice from snapshot if profile has no voice data but snapshot has snippets
+        if profile.writingVoiceSummary.isEmpty {
+            var snippets: [String] = {
+                if let voice = snapshot.voiceShareSnippets, !voice.isEmpty { return voice }
+                if !snapshot.recentShareSnippets.isEmpty { return snapshot.recentShareSnippets }
+                return []
+            }()
+
+            // If snapshot has no shares, try re-reading Shares.csv from the bookmarked folder
+            if snippets.isEmpty {
+                if let folderURL = BookmarkManager.shared.resolveLinkedInFolderURL() {
+                    snippets = await findAndParseShares(startingAt: folderURL)
+                    BookmarkManager.shared.stopAccessing(folderURL)
+                }
+            }
+
+            if !snippets.isEmpty {
+                let voiceSummary = await analyzeWritingVoice(shares: snippets)
+                profile.writingVoiceSummary = voiceSummary
+                profile.recentShareSnippets = snippets
+                await BusinessProfileService.shared.saveLinkedInProfile(profile)
+                logger.info("LinkedIn voice analysis completed during re-analysis (\(snippets.count) snippets)")
+            }
+        }
 
         do {
             let data = buildProfileAnalysisInput(profile: profile, snapshot: snapshot)
@@ -1821,6 +1862,112 @@ final class LinkedInImportCoordinator {
         }
 
         return lines.joined(separator: "\n")
+    }
+
+    // MARK: - Voice Analysis
+
+    /// Search for Shares.csv starting at the bookmarked folder, then sibling folders,
+    /// then ~/Downloads. Skips .zip paths (macOS zip transparency fakes fileExists but
+    /// String(contentsOf:) fails). Returns parsed share snippets for voice analysis.
+    private func findAndParseShares(startingAt folderURL: URL) async -> [String] {
+        let fm = FileManager.default
+
+        // Helper: try to parse shares from a real (non-zip) directory
+        func tryParse(in dir: URL) async -> [String]? {
+            guard !dir.path.contains(".zip") else { return nil }
+            var isDir: ObjCBool = false
+            guard fm.fileExists(atPath: dir.path, isDirectory: &isDir), isDir.boolValue else { return nil }
+            let csv = dir.appendingPathComponent("Shares.csv")
+            guard fm.fileExists(atPath: csv.path) else { return nil }
+            let snippets = await parseShareSnippets(at: csv)
+            return snippets.isEmpty ? nil : snippets
+        }
+
+        // 1. Bookmarked folder
+        if let result = await tryParse(in: folderURL) {
+            logger.info(" Found Shares.csv in bookmarked folder")
+            return result
+        }
+
+        // 2. Sibling folders with "linkedin" in the name
+        let parentURL = folderURL.deletingLastPathComponent()
+        if let result = await searchLinkedInFolders(in: parentURL, excluding: folderURL, tryParse: tryParse) {
+            return result
+        }
+
+        // 3. ~/Downloads as a last resort (bookmark may point elsewhere)
+        let downloadsURL = fm.homeDirectoryForCurrentUser.appendingPathComponent("Downloads")
+        if downloadsURL != parentURL {
+            if let result = await searchLinkedInFolders(in: downloadsURL, excluding: folderURL, tryParse: tryParse) {
+                return result
+            }
+        }
+
+        logger.info(" No readable Shares.csv found anywhere")
+        return []
+    }
+
+    /// Scan a directory for LinkedIn export folders containing a readable Shares.csv.
+    private func searchLinkedInFolders(
+        in parent: URL,
+        excluding: URL,
+        tryParse: (URL) async -> [String]?
+    ) async -> [String]? {
+        guard let items = try? FileManager.default.contentsOfDirectory(
+            at: parent, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]
+        ) else { return nil }
+
+        for item in items where item != excluding {
+            let name = item.lastPathComponent.lowercased()
+            guard name.contains("linkedin") else { continue }
+            if let result = await tryParse(item) {
+                logger.info(" Found Shares.csv in: \(item.lastPathComponent)")
+                return result
+            }
+        }
+        return nil
+    }
+
+    /// Parse a Shares.csv file and return up to 5 non-empty comment snippets for voice analysis.
+    private func parseShareSnippets(at url: URL) async -> [String] {
+        let shares = await linkedInService.parseShares(at: url)
+        let snippets = shares
+            .sorted { $0.shareDate > $1.shareDate }
+            .prefix(5)
+            .compactMap { $0.shareComment.map { $0.count > 500 ? String($0.prefix(500)) + "…" : $0 } }
+        logger.info(" Parsed \(shares.count) shares, \(snippets.count) with comments")
+        return Array(snippets)
+    }
+
+    /// Analyze writing voice from share comment snippets using AI.
+    private func analyzeWritingVoice(shares: [String]) async -> String {
+        let combined = shares.joined(separator: "\n---\n")
+
+        let instructions = """
+            You are a writing style analyst. Respond with ONE single sentence. \
+            Never number your response. Never list multiple analyses. \
+            Never quote or summarize post content.
+            """
+
+        let prompt = """
+            Below are several LinkedIn share comments by the same author. Read all of them together, \
+            then write ONE sentence describing the author's overall writing voice and style.
+
+            Focus on: formality level, emotional tone, use of humor or storytelling, \
+            sentence structure, and intended audience. Do NOT describe individual posts.
+
+            ---
+            \(combined)
+            ---
+            """
+
+        do {
+            let result = try await AIService.shared.generate(prompt: prompt, systemInstruction: instructions)
+            return result.trimmingCharacters(in: .whitespacesAndNewlines)
+        } catch {
+            logger.warning("LinkedIn voice analysis failed: \(error.localizedDescription)")
+            return ""
+        }
     }
 
     // MARK: - Private: Helpers

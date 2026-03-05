@@ -115,6 +115,9 @@ struct LinkedInImportSettingsContent: View {
                 profileAnalysisSection
             }
 
+            // Writing Voice section
+            voiceSummarySection
+
             if let error = coordinator.lastError {
                 Text(error)
                     .font(.caption)
@@ -350,6 +353,45 @@ struct LinkedInImportSettingsContent: View {
                 .font(.caption)
             }
         }
+    }
+
+    // MARK: - Writing Voice
+
+    @ViewBuilder
+    private var voiceSummarySection: some View {
+        if let voice = linkedInVoiceSummary, !voice.isEmpty {
+            Divider()
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Writing Voice")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                    Spacer()
+                    Button("Refresh") {
+                        Task { await coordinator.runProfileAnalysis() }
+                    }
+                    .font(.caption)
+                    .buttonStyle(.borderless)
+                    .disabled(coordinator.profileAnalysisStatus == .analyzing)
+                }
+
+                Text(voice)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    /// Fetches the LinkedIn voice summary from the stored profile DTO.
+    private var linkedInVoiceSummary: String? {
+        // Synchronous check — BusinessProfileService caches after first load,
+        // and the coordinator already populated it during import.
+        // We read from UserDefaults directly to avoid async in a computed property.
+        guard let data = UserDefaults.standard.data(forKey: "sam.userLinkedInProfile"),
+              let profile = try? JSONDecoder().decode(UserLinkedInProfileDTO.self, from: data),
+              !profile.writingVoiceSummary.isEmpty else { return nil }
+        return profile.writingVoiceSummary
     }
 
     // MARK: - Helpers

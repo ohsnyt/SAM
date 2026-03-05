@@ -12,46 +12,83 @@ import Foundation
 
 /// The user's own Facebook profile data, extracted from the data export.
 /// Used for the Facebook Profile Analysis Agent and cross-platform consistency checks.
-public struct UserFacebookProfileDTO: Sendable {
+public struct UserFacebookProfileDTO: Codable, Sendable {
 
-    public let fullName: String
-    public let firstName: String
-    public let lastName: String
-    public let currentCity: String?
-    public let hometown: String?
-    public let birthday: Birthday?
-    public let relationship: Relationship?
-    public let familyMembers: [FamilyMember]
-    public let workExperiences: [WorkExperience]
-    public let educationExperiences: [EducationExperience]
-    public let websites: [String]
-    public let profileUri: String?
+    public var fullName: String
+    public var firstName: String
+    public var lastName: String
+    public var currentCity: String?
+    public var hometown: String?
+    public var birthday: Birthday?
+    public var relationship: Relationship?
+    public var familyMembers: [FamilyMember]
+    public var workExperiences: [WorkExperience]
+    public var educationExperiences: [EducationExperience]
+    public var websites: [String]
+    public var profileUri: String?
+
+    /// AI-generated 1-2 sentence writing voice analysis from user posts.
+    public var writingVoiceSummary: String
+    /// Last 5 post texts (up to 500 chars each) for voice re-analysis.
+    public var recentPostSnippets: [String]
+
+    public init(
+        fullName: String,
+        firstName: String,
+        lastName: String,
+        currentCity: String? = nil,
+        hometown: String? = nil,
+        birthday: Birthday? = nil,
+        relationship: Relationship? = nil,
+        familyMembers: [FamilyMember] = [],
+        workExperiences: [WorkExperience] = [],
+        educationExperiences: [EducationExperience] = [],
+        websites: [String] = [],
+        profileUri: String? = nil,
+        writingVoiceSummary: String = "",
+        recentPostSnippets: [String] = []
+    ) {
+        self.fullName = fullName
+        self.firstName = firstName
+        self.lastName = lastName
+        self.currentCity = currentCity
+        self.hometown = hometown
+        self.birthday = birthday
+        self.relationship = relationship
+        self.familyMembers = familyMembers
+        self.workExperiences = workExperiences
+        self.educationExperiences = educationExperiences
+        self.websites = websites
+        self.profileUri = profileUri
+        self.writingVoiceSummary = writingVoiceSummary
+        self.recentPostSnippets = recentPostSnippets
+    }
 
     // MARK: - Nested Types
 
-    public struct Birthday: Sendable {
+    public struct Birthday: Codable, Sendable {
         public let year: Int
         public let month: Int
         public let day: Int
     }
 
-    public struct Relationship: Sendable {
+    public struct Relationship: Codable, Sendable {
         public let status: String
         public let partner: String?
     }
 
-    public struct FamilyMember: Sendable {
+    public struct FamilyMember: Codable, Sendable {
         public let name: String
         public let relation: String
     }
 
-    public struct WorkExperience: Sendable {
+    public struct WorkExperience: Codable, Sendable {
         public let employer: String
         public let title: String?
         public let location: String?
     }
 
-    public struct EducationExperience: Sendable {
+    public struct EducationExperience: Codable, Sendable {
         public let name: String
         public let schoolType: String?
         public let concentrations: [String]
@@ -109,6 +146,12 @@ public struct UserFacebookProfileDTO: Sendable {
 
         if let uri = profileUri {
             lines.append("Profile URL: \(uri)")
+        }
+        if !writingVoiceSummary.isEmpty {
+            let truncated = writingVoiceSummary.count > 200
+                ? String(writingVoiceSummary.prefix(200)) + "…"
+                : writingVoiceSummary
+            lines.append("Writing voice: \(truncated)")
         }
 
         return lines.joined(separator: "\n")

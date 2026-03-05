@@ -68,6 +68,17 @@ public struct FacebookAnalysisSnapshot: Codable, Sendable {
     /// Whether the user's profile has a profile URI.
     public var hasProfileUri: Bool
 
+    // MARK: - User Posts
+
+    /// Total number of text posts parsed from the export.
+    public var postCount: Int = 0
+
+    /// Top 5 post texts (up to 500 chars each) for voice re-analysis.
+    public var recentPostSnippets: [String] = []
+
+    /// Cached voice analysis result from post content.
+    public var writingVoiceSummary: String = ""
+
     // MARK: - Timestamp
 
     /// When this snapshot was captured.

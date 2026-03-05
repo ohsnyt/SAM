@@ -4,6 +4,29 @@
 
 ---
 
+## March 4, 2026 — Voice Analysis Across All Social Platforms
+
+### Overview
+Extended the Substack voice-matching system to LinkedIn and Facebook, and generalized the draft generation voice injection for all platforms. No schema change.
+
+### What Changed
+- **UserLinkedInProfileDTO** — Added `writingVoiceSummary` and `recentShareSnippets` fields; voice summary included in `coachingContextFragment()`
+- **ProfileAnalysisSnapshot** — Added `voiceShareSnippets: [String]?` (full-length share text for voice re-analysis without re-import)
+- **LinkedInImportCoordinator** — Runs `analyzeWritingVoice(shares:)` during import and during re-analysis (using stored snapshot snippets when shares unavailable)
+- **FacebookPostDTO** — New Sendable value type for parsed user posts
+- **FacebookService.parsePosts(in:)** — Parses `your_facebook_activity/posts/your_posts__check_ins__photos_and_videos_1.json`
+- **UserFacebookProfileDTO** — Added `Codable` conformance to all nested types, added `writingVoiceSummary` and `recentPostSnippets` fields
+- **BusinessProfileService** — `saveFacebookProfile()` now stores full JSON (was string-only); new `facebookProfile()` method; legacy string fallback preserved
+- **FacebookImportCoordinator** — Parses posts in `loadFolder` (Step 5b), runs `analyzeWritingVoice(posts:)` before saving profile in `confirmImport` (Step 9)
+- **FacebookAnalysisSnapshot** — Added `postCount`, `recentPostSnippets`, `writingVoiceSummary` for re-analysis support
+- **ContentAdvisorService** — Replaced Substack-specific `substackVoiceBlock` with universal `buildVoiceBlock(for:)` that works across all platforms with cross-platform fallback (Substack > LinkedIn > Facebook)
+- **LinkedInService** — Fixed date parsing in `parseShares`, `parseReactionsGiven`, `parseCommentsGiven`, `parseInvitations`, `parseRecommendationsReceived`: LinkedIn Complete exports use `yyyy-MM-dd HH:mm:ss` format, not ISO 8601 — added fallback `DateFormatter` so rows are no longer silently skipped
+- **LinkedInImportSettingsView** — Added Writing Voice display section with Refresh button
+- **FacebookImportSettingsView** — Added Writing Voice display section with Refresh button and post sample count; added post count row in import preview
+- **context.md** — Added §5.6 Voice Analysis standard, updated §5.5 Adding a New Platform checklist
+
+---
+
 ## March 4, 2026 — Substack Integration (Priority 2)
 
 ### Overview

@@ -177,7 +177,22 @@ Coordinator follows standard `ImportStatus` pattern: idle → parsing → previe
 2. Classify every file as Track 1, Track 2, or discard
 3. Define DTOs, create `{Platform}Service` actor, create coordinator
 4. Integrate with existing `EnrichmentRepository`, `EvidenceRepository`, `UnknownSenderRepository`
+4b. If the platform export includes the user's own posts/articles, implement voice analysis (see §5.6) and store `writingVoiceSummary` in the platform DTO
 5. Add settings UI (folder picker, import status, unmatched count)
+
+### 5.6 Voice Analysis (Standard for All Platforms)
+
+Every social platform import that captures the user's own content (posts, articles, share comments) should include a voice analysis step:
+
+1. Collect 3-5 recent content samples from the user's posts/articles
+2. Run AI voice analysis: "Analyze the writing voice and style..."
+3. Store `writingVoiceSummary` in the platform's profile DTO
+4. Include the voice summary in `coachingContextFragment()`
+5. `ContentAdvisorService.generateDraft()` uses `buildVoiceBlock(for:)` to inject platform-appropriate voice matching into draft generation prompts
+
+Cross-platform fallback: If a platform has no voice data, the draft generator uses voice data from any connected platform (preferring Substack > LinkedIn > Facebook), adapted for the target platform's tone.
+
+Currently implemented for: **Substack** (article excerpts), **LinkedIn** (share comments), **Facebook** (user posts).
 
 ---
 

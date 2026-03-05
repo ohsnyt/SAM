@@ -251,6 +251,36 @@ actor FacebookService {
         }
     }
 
+    /// Parse the user's own posts from `your_facebook_activity/posts/your_posts__check_ins__photos_and_videos_1.json`.
+    func parsePosts(in folder: URL) async -> [FacebookPostDTO] {
+        let url = folder.appending(path: "your_facebook_activity/posts/your_posts__check_ins__photos_and_videos_1.json")
+        guard let data = try? Data(contentsOf: url) else {
+            logger.info("No posts file found at \(url.path)")
+            return []
+        }
+
+        do {
+            let rawPosts = try JSONDecoder().decode([FBPostItem].self, from: data)
+            let posts = rawPosts.compactMap { raw -> FacebookPostDTO? in
+                // Extract text from the first data element's "post" field
+                guard let postText = raw.data?.first?.post, !postText.isEmpty else { return nil }
+                let repairedText = repairFacebookUTF8(postText)
+                let repairedTitle = raw.title.map { repairFacebookUTF8($0) }
+                return FacebookPostDTO(
+                    text: repairedText,
+                    timestamp: Date(timeIntervalSince1970: TimeInterval(raw.timestamp)),
+                    title: repairedTitle
+                )
+            }
+            let sorted = posts.sorted { $0.timestamp > $1.timestamp }
+            logger.info("Parsed \(sorted.count) text posts from Facebook export")
+            return sorted
+        } catch {
+            logger.error("Failed to parse posts JSON: \(error)")
+            return []
+        }
+    }
+
     // MARK: - UTF-8 Repair
 
     /// Repairs Facebook's mojibake encoding. Facebook exports encode UTF-8 as Latin-1,
@@ -525,4 +555,16 @@ private struct FBReceivedRequestsWrapper: Decodable, Sendable {
 private struct FBFriendRequestRaw: Decodable, Sendable {
     let name: String
     let timestamp: Int
+}
+
+// -- Posts --
+
+private struct FBPostItem: Decodable, Sendable {
+    let timestamp: Int
+    let data: [FBPostData]?
+    let title: String?
+}
+
+private struct FBPostData: Decodable, Sendable {
+    let post: String?
 }

@@ -148,32 +148,7 @@ actor ContentAdvisorService {
         let keyPointsText = keyPoints.isEmpty ? "" : "Key points to cover: \(keyPoints.joined(separator: "; "))"
         let businessContext = await BusinessProfileService.shared.contextFragment()
 
-        // For Substack, inject prominent voice/publication context
-        let substackVoiceBlock: String
-        if platform == .substack, let profile = await BusinessProfileService.shared.substackProfile() {
-            var voiceLines: [String] = []
-            voiceLines.append("WRITING VOICE — Match this style closely:")
-            if !profile.writingVoiceSummary.isEmpty {
-                voiceLines.append("Voice analysis: \(profile.writingVoiceSummary)")
-            }
-            if !profile.publicationName.isEmpty {
-                voiceLines.append("Publication: \"\(profile.publicationName)\"")
-            }
-            if !profile.publicationDescription.isEmpty {
-                voiceLines.append("Publication focus: \(profile.publicationDescription)")
-            }
-            if !profile.topicSummary.isEmpty {
-                voiceLines.append("Core topics: \(profile.topicSummary.joined(separator: ", "))")
-            }
-            if !profile.recentPostTitles.isEmpty {
-                let titles = profile.recentPostTitles.prefix(5).map { "\"\($0.title)\"" }
-                voiceLines.append("Recent articles for style reference: \(titles.joined(separator: "; "))")
-            }
-            voiceLines.append("Write as if you ARE this author continuing their publication. The reader should not notice a change in voice.")
-            substackVoiceBlock = voiceLines.joined(separator: "\n")
-        } else {
-            substackVoiceBlock = ""
-        }
+        let voiceBlock = await buildVoiceBlock(for: platform)
 
         let contentType = platform == .substack ? "newsletter articles" : "social media posts"
         let instructions = """
@@ -182,7 +157,7 @@ actor ContentAdvisorService {
 
             \(businessContext)
 
-            \(substackVoiceBlock)
+            \(voiceBlock)
 
             STRICT COMPLIANCE RULES:
             - NEVER mention specific product names, company names, or fund names
@@ -320,6 +295,112 @@ actor ContentAdvisorService {
         }
 
         return nil
+    }
+
+    // MARK: - Voice Block
+
+    /// Build a platform-appropriate writing voice block for draft generation prompts.
+    /// Uses the target platform's voice data when available, falls back to cross-platform data.
+    private func buildVoiceBlock(for platform: ContentPlatform) async -> String {
+        let bps = BusinessProfileService.shared
+        let substackProfile = await bps.substackProfile()
+        let linkedInProfile = await bps.linkedInProfile()
+        let facebookProfile = await bps.facebookProfile()
+
+        var voiceLines: [String] = []
+
+        switch platform {
+        case .substack:
+            guard let profile = substackProfile else { break }
+            voiceLines.append("WRITING VOICE — Match this style closely:")
+            if !profile.writingVoiceSummary.isEmpty {
+                voiceLines.append("Voice analysis: \(profile.writingVoiceSummary)")
+            }
+            if !profile.publicationName.isEmpty {
+                voiceLines.append("Publication: \"\(profile.publicationName)\"")
+            }
+            if !profile.publicationDescription.isEmpty {
+                voiceLines.append("Publication focus: \(profile.publicationDescription)")
+            }
+            if !profile.topicSummary.isEmpty {
+                voiceLines.append("Core topics: \(profile.topicSummary.joined(separator: ", "))")
+            }
+            if !profile.recentPostTitles.isEmpty {
+                let titles = profile.recentPostTitles.prefix(5).map { "\"\($0.title)\"" }
+                voiceLines.append("Recent articles for style reference: \(titles.joined(separator: "; "))")
+            }
+            voiceLines.append("Write as if you ARE this author continuing their publication. The reader should not notice a change in voice.")
+
+        case .linkedin:
+            if let profile = linkedInProfile, !profile.writingVoiceSummary.isEmpty {
+                voiceLines.append("WRITING VOICE — Match this style closely:")
+                voiceLines.append("Voice analysis: \(profile.writingVoiceSummary)")
+                if !profile.headline.isEmpty {
+                    voiceLines.append("Professional headline: \(profile.headline)")
+                }
+                if !profile.recentShareSnippets.isEmpty {
+                    let snippets = profile.recentShareSnippets.prefix(3).map { "\"\($0.prefix(100))\"" }
+                    voiceLines.append("Recent post samples: \(snippets.joined(separator: "; "))")
+                }
+                voiceLines.append("Write as if you ARE this professional on LinkedIn. The reader should not notice a change in voice.")
+            } else {
+                // Cross-platform fallback
+                let fallbackVoice = bestAvailableVoice(substack: substackProfile, facebook: facebookProfile)
+                if !fallbackVoice.isEmpty {
+                    voiceLines.append("WRITING VOICE — Adapt this style for LinkedIn (professional, educational):")
+                    voiceLines.append("Voice analysis (from other platform): \(fallbackVoice)")
+                    voiceLines.append("Adjust tone to be professional and authoritative for a LinkedIn audience.")
+                }
+            }
+
+        case .facebook:
+            if let profile = facebookProfile, !profile.writingVoiceSummary.isEmpty {
+                voiceLines.append("WRITING VOICE — Match this style closely:")
+                voiceLines.append("Voice analysis: \(profile.writingVoiceSummary)")
+                if !profile.recentPostSnippets.isEmpty {
+                    let snippets = profile.recentPostSnippets.prefix(3).map { "\"\($0.prefix(100))\"" }
+                    voiceLines.append("Recent post samples: \(snippets.joined(separator: "; "))")
+                }
+                voiceLines.append("Write as if you ARE this person on Facebook. Keep the tone personal and authentic. The reader should not notice a change in voice.")
+            } else {
+                // Cross-platform fallback
+                let fallbackVoice = bestAvailableVoice(substack: substackProfile, linkedIn: linkedInProfile)
+                if !fallbackVoice.isEmpty {
+                    voiceLines.append("WRITING VOICE — Adapt this style for Facebook (conversational, personal):")
+                    voiceLines.append("Voice analysis (from other platform): \(fallbackVoice)")
+                    voiceLines.append("Adjust tone to be casual, personal, and authentic for a Facebook audience.")
+                }
+            }
+
+        case .instagram, .other:
+            // Cross-reference best available voice data
+            let fallbackVoice = bestAvailableVoice(
+                substack: substackProfile, linkedIn: linkedInProfile, facebook: facebookProfile
+            )
+            if !fallbackVoice.isEmpty {
+                let platformLabel = platform == .instagram ? "Instagram" : "general social media"
+                voiceLines.append("WRITING VOICE — Adapt this style for \(platformLabel):")
+                voiceLines.append("Voice analysis (from other platform): \(fallbackVoice)")
+                if platform == .instagram {
+                    voiceLines.append("Adjust tone to be concise, visual, and hook-focused for Instagram.")
+                }
+            }
+        }
+
+        return voiceLines.joined(separator: "\n")
+    }
+
+    /// Returns the best available voice summary from any connected platform, preferring richer sources.
+    private func bestAvailableVoice(
+        substack: UserSubstackProfileDTO? = nil,
+        linkedIn: UserLinkedInProfileDTO? = nil,
+        facebook: UserFacebookProfileDTO? = nil
+    ) -> String {
+        // Prefer Substack (richest content), then LinkedIn, then Facebook
+        if let voice = substack?.writingVoiceSummary, !voice.isEmpty { return voice }
+        if let voice = linkedIn?.writingVoiceSummary, !voice.isEmpty { return voice }
+        if let voice = facebook?.writingVoiceSummary, !voice.isEmpty { return voice }
+        return ""
     }
 
     // MARK: - Parsing

@@ -95,6 +95,8 @@ final class FacebookImportCoordinator {
     private var pendingReactions: [FacebookReactionDTO] = []
     private var pendingFriendRequests: [FacebookFriendRequestDTO] = []
     private var pendingUserProfile: UserFacebookProfileDTO? = nil
+    private var pendingPosts: [FacebookPostDTO] = []
+    private(set) var parsedPostCount: Int = 0
 
     /// Computed touch scores keyed by normalized display name.
     private var touchScores: [String: IntentionalTouchScore] = [:]
@@ -179,6 +181,12 @@ final class FacebookImportCoordinator {
             let sentRequests = await facebookService.parseSentFriendRequests(in: url)
             let receivedRequests = await facebookService.parseReceivedFriendRequests(in: url)
             pendingFriendRequests = sentRequests + receivedRequests
+
+            // Step 5b: Parse user posts
+            progressMessage = "Parsing posts…"
+            pendingPosts = await facebookService.parsePosts(in: url)
+            parsedPostCount = pendingPosts.count
+            logger.info("Parsed \(self.parsedPostCount) text posts")
 
             // Step 6: Compute touch scores
             progressMessage = "Computing touch scores…"
@@ -298,8 +306,15 @@ final class FacebookImportCoordinator {
             await BusinessProfileService.shared.saveFacebookSnapshot(snapshot)
             logger.info("Facebook analysis snapshot cached: \(snapshot.friendCount) friends, \(snapshot.messageThreadCount) threads")
 
-            // Step 9: Store Facebook profile in BusinessProfileService for coaching context
-            if let fbProfile = pendingUserProfile {
+            // Step 9: Run voice analysis on posts and store Facebook profile
+            if var fbProfile = pendingUserProfile {
+                if !pendingPosts.isEmpty {
+                    let voiceSummary = await analyzeWritingVoice(posts: pendingPosts)
+                    fbProfile.writingVoiceSummary = voiceSummary
+                    fbProfile.recentPostSnippets = pendingPosts.prefix(5).map {
+                        $0.text.count > 500 ? String($0.text.prefix(500)) + "…" : $0.text
+                    }
+                }
                 await BusinessProfileService.shared.saveFacebookProfile(fbProfile)
             }
 
@@ -1025,6 +1040,11 @@ final class FacebookImportCoordinator {
                 )
             }
 
+        // Post voice snippets (top 5, 500 chars each)
+        let postSnippets = pendingPosts.prefix(5).map {
+            $0.text.count > 500 ? String($0.text.prefix(500)) + "…" : $0.text
+        }
+
         return FacebookAnalysisSnapshot(
             friendCount: pendingFriends.count,
             friendsByYear: friendsByYear,
@@ -1042,8 +1062,49 @@ final class FacebookImportCoordinator {
             hasEducation: !(pendingUserProfile?.educationExperiences.isEmpty ?? true),
             hasWebsites: !(pendingUserProfile?.websites.isEmpty ?? true),
             hasProfileUri: pendingUserProfile?.profileUri != nil,
+            postCount: pendingPosts.count,
+            recentPostSnippets: Array(postSnippets),
+            writingVoiceSummary: pendingUserProfile?.writingVoiceSummary ?? "",
             snapshotDate: now
         )
+    }
+
+    // MARK: - Voice Analysis
+
+    /// Analyze writing voice from Facebook post text using AI.
+    /// Uses more samples (up to 10) since Facebook posts tend to be short.
+    private func analyzeWritingVoice(posts: [FacebookPostDTO]) async -> String {
+        // Use up to 10 posts since Facebook posts are often short (~88 chars avg)
+        let samples = posts.prefix(10).map { post in
+            post.text.count > 500 ? String(post.text.prefix(500)) + "…" : post.text
+        }
+        let combined = samples.joined(separator: "\n---\n")
+
+        let instructions = """
+            You are a writing style analyst. Respond with ONE single sentence. \
+            Never number your response. Never list multiple analyses. \
+            Never quote or summarize post content.
+            """
+
+        let prompt = """
+            Below are several Facebook posts by the same author. Read all of them together, \
+            then write ONE sentence describing the author's overall writing voice and style.
+
+            Focus on: formality level, emotional tone, use of humor or storytelling, \
+            sentence structure, and intended audience. Do NOT describe individual posts.
+
+            ---
+            \(combined)
+            ---
+            """
+
+        do {
+            let result = try await AIService.shared.generate(prompt: prompt, systemInstruction: instructions)
+            return result.trimmingCharacters(in: .whitespacesAndNewlines)
+        } catch {
+            logger.warning("Facebook voice analysis failed: \(error.localizedDescription)")
+            return ""
+        }
     }
 
     // MARK: - Private: Reset
@@ -1055,6 +1116,8 @@ final class FacebookImportCoordinator {
         pendingReactions = []
         pendingFriendRequests = []
         pendingUserProfile = nil
+        pendingPosts = []
+        parsedPostCount = 0
         touchScores = [:]
         importCandidates = []
         parsedFriendCount = 0

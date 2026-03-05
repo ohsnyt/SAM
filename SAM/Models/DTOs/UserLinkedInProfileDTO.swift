@@ -25,6 +25,11 @@ public struct UserLinkedInProfileDTO: Codable, Sendable {
     public var skills: [String]
     public var certifications: [LinkedInCertificationDTO]
 
+    /// AI-generated 1-2 sentence writing voice analysis from share comments.
+    public var writingVoiceSummary: String
+    /// Last 5 share comments (up to 500 chars each) for voice re-analysis.
+    public var recentShareSnippets: [String]
+
     public init(
         firstName: String = "",
         lastName: String = "",
@@ -35,7 +40,9 @@ public struct UserLinkedInProfileDTO: Codable, Sendable {
         positions: [LinkedInPositionDTO] = [],
         education: [LinkedInEducationDTO] = [],
         skills: [String] = [],
-        certifications: [LinkedInCertificationDTO] = []
+        certifications: [LinkedInCertificationDTO] = [],
+        writingVoiceSummary: String = "",
+        recentShareSnippets: [String] = []
     ) {
         self.firstName = firstName
         self.lastName = lastName
@@ -47,6 +54,8 @@ public struct UserLinkedInProfileDTO: Codable, Sendable {
         self.education = education
         self.skills = skills
         self.certifications = certifications
+        self.writingVoiceSummary = writingVoiceSummary
+        self.recentShareSnippets = recentShareSnippets
     }
 
     /// The most recent position (started most recently, or no finish date).
@@ -82,6 +91,12 @@ public struct UserLinkedInProfileDTO: Codable, Sendable {
             // Truncate to ~300 chars
             let truncated = summary.count > 300 ? String(summary.prefix(300)) + "…" : summary
             lines.append("LinkedIn summary: \(truncated)")
+        }
+        if !writingVoiceSummary.isEmpty {
+            let truncated = writingVoiceSummary.count > 200
+                ? String(writingVoiceSummary.prefix(200)) + "…"
+                : writingVoiceSummary
+            lines.append("Writing voice: \(truncated)")
         }
 
         return lines.joined(separator: "\n")

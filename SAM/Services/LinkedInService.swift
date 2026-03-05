@@ -555,7 +555,12 @@ actor LinkedInService {
             var sentAt: Date? = nil
             if let sIdx = sentAtIdx, row.count > sIdx {
                 let raw = row[sIdx].trimmingCharacters(in: .whitespaces)
-                sentAt = isoFormatter.date(from: raw) ?? localeFormatter.date(from: raw)
+                sentAt = isoFormatter.date(from: raw) ?? localeFormatter.date(from: raw) ?? {
+                    let f = DateFormatter()
+                    f.dateFormat = "yyyy-MM-dd HH:mm:ss"
+                    f.timeZone = TimeZone(identifier: "UTC")
+                    return f.date(from: raw)
+                }()
             }
 
             results.append(LinkedInInvitationDTO(
@@ -840,7 +845,12 @@ actor LinkedInService {
             var sentAt: Date? = nil
             if let idx = dateIdx, row.count > idx {
                 let ds = row[idx].trimmingCharacters(in: .whitespaces)
-                sentAt = isoFormatter.date(from: ds) ?? dateFormatter.date(from: ds)
+                sentAt = isoFormatter.date(from: ds) ?? dateFormatter.date(from: ds) ?? {
+                    let f = DateFormatter()
+                    f.dateFormat = "yyyy-MM-dd HH:mm:ss"
+                    f.timeZone = TimeZone(identifier: "UTC")
+                    return f.date(from: ds)
+                }()
             }
 
             results.append(LinkedInRecommendationReceivedDTO(
@@ -880,12 +890,15 @@ actor LinkedInService {
         let linkIdx = header.firstIndex(of: "Link") ?? header.firstIndex(of: "Post Link") ?? header.firstIndex(of: "URL")
 
         let isoFormatter = ISO8601DateFormatter()
+        let fallbackFmt = DateFormatter()
+        fallbackFmt.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        fallbackFmt.timeZone = TimeZone(identifier: "UTC")
 
         var results: [LinkedInReactionDTO] = []
         for row in rows.dropFirst() {
             guard row.count > dateIdx else { continue }
             let dateStr = row[dateIdx].trimmingCharacters(in: .whitespaces)
-            guard let date = isoFormatter.date(from: dateStr) else { continue }
+            guard let date = isoFormatter.date(from: dateStr) ?? fallbackFmt.date(from: dateStr) else { continue }
 
             let reactionType: String = {
                 guard let idx = typeIdx, row.count > idx else { return "like" }
@@ -933,12 +946,15 @@ actor LinkedInService {
         let linkIdx    = header.firstIndex(of: "Link") ?? header.firstIndex(of: "Post Link") ?? header.firstIndex(of: "URL")
 
         let isoFormatter = ISO8601DateFormatter()
+        let fallbackFmt = DateFormatter()
+        fallbackFmt.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        fallbackFmt.timeZone = TimeZone(identifier: "UTC")
 
         var results: [LinkedInCommentDTO] = []
         for row in rows.dropFirst() {
             guard row.count > dateIdx else { continue }
             let dateStr = row[dateIdx].trimmingCharacters(in: .whitespaces)
-            guard let date = isoFormatter.date(from: dateStr) else { continue }
+            guard let date = isoFormatter.date(from: dateStr) ?? fallbackFmt.date(from: dateStr) else { continue }
 
             let commentText: String? = {
                 guard let idx = messageIdx, row.count > idx else { return nil }
@@ -987,12 +1003,16 @@ actor LinkedInService {
         let visibilityIdx = header.firstIndex(of: "Visibility")
 
         let isoFormatter = ISO8601DateFormatter()
+        // LinkedIn exports dates as "2026-03-02 17:23:08" (space-separated, no T, no timezone)
+        let fallbackFormatter = DateFormatter()
+        fallbackFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        fallbackFormatter.timeZone = TimeZone(identifier: "UTC")
 
         var results: [LinkedInShareDTO] = []
         for row in rows.dropFirst() {
             guard row.count > dateIdx else { continue }
             let dateStr = row[dateIdx].trimmingCharacters(in: .whitespaces)
-            guard let date = isoFormatter.date(from: dateStr) else { continue }
+            guard let date = isoFormatter.date(from: dateStr) ?? fallbackFormatter.date(from: dateStr) else { continue }
 
             let comment: String? = {
                 guard let idx = commentIdx, row.count > idx else { return nil }

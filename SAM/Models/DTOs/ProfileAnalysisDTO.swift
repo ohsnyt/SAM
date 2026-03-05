@@ -111,6 +111,8 @@ public struct ProfileAnalysisSnapshot: Codable, Sendable {
     public var recommendationSamples: [String]              // first ~200 chars of up to 3 received
     public var shareCount: Int
     public var recentShareSnippets: [String]                // last 10 share comments, ≤100 chars each
+    /// Full-length share snippets (up to 5, 500 chars each) for voice re-analysis.
+    public var voiceShareSnippets: [String]?
     public var reactionsGivenCount: Int
     public var commentsGivenCount: Int
     public var connectionCount: Int

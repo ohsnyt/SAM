@@ -71,6 +71,9 @@ struct FacebookImportSettingsContent: View {
                 profileAnalysisSection
             }
 
+            // Writing Voice section
+            voiceSummarySection
+
             // Last import info
             if let lastImport = coordinator.lastImportedAt {
                 Divider()
@@ -181,6 +184,9 @@ struct FacebookImportSettingsContent: View {
                 }
                 if coordinator.unmatchedFriendCount > 0 {
                     summaryRow("New (unmatched):", value: coordinator.unmatchedFriendCount, color: .blue)
+                }
+                if coordinator.parsedPostCount > 0 {
+                    summaryRow("User posts:", value: coordinator.parsedPostCount)
                 }
                 if coordinator.userProfileParsed {
                     HStack {
@@ -293,6 +299,49 @@ struct FacebookImportSettingsContent: View {
                 .font(.caption)
             }
         }
+    }
+
+    // MARK: - Writing Voice
+
+    @ViewBuilder
+    private var voiceSummarySection: some View {
+        if let voice = facebookVoiceSummary, !voice.isEmpty {
+            Divider()
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Writing Voice")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                    Spacer()
+                    Button("Refresh") {
+                        Task { await coordinator.runProfileAnalysis() }
+                    }
+                    .font(.caption)
+                    .buttonStyle(.borderless)
+                    .disabled(coordinator.profileAnalysisStatus == .analyzing)
+                }
+
+                Text(voice)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                if coordinator.parsedPostCount > 0 {
+                    let sampled = min(coordinator.parsedPostCount, 10)
+                    Text("Analyzed from \(sampled) of \(coordinator.parsedPostCount) posts")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        }
+    }
+
+    /// Fetches the Facebook voice summary from the stored profile DTO.
+    private var facebookVoiceSummary: String? {
+        guard let data = UserDefaults.standard.data(forKey: "sam.userFacebookProfile"),
+              let profile = try? JSONDecoder().decode(UserFacebookProfileDTO.self, from: data),
+              !profile.writingVoiceSummary.isEmpty else { return nil }
+        return profile.writingVoiceSummary
     }
 
     // MARK: - Helpers

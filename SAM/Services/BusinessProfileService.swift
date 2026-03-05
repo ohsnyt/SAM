@@ -92,18 +92,31 @@ actor BusinessProfileService {
 
     // MARK: - Facebook Profile Storage
 
-    /// Save the user's parsed Facebook profile.
+    /// Save the user's parsed Facebook profile (full JSON).
     func saveFacebookProfile(_ profile: UserFacebookProfileDTO) {
         cachedFacebookProfile = profile
-        // Encode as JSON for UserDefaults — UserFacebookProfileDTO needs Codable conformance
-        // Store the coaching context fragment as a simple string
-        UserDefaults.standard.set(profile.coachingContextFragment, forKey: facebookProfileKey)
-        logger.info("Saved user Facebook profile to UserDefaults")
+        if let data = try? JSONEncoder().encode(profile) {
+            UserDefaults.standard.set(data, forKey: facebookProfileKey)
+            logger.info("Saved user Facebook profile to UserDefaults")
+        }
+    }
+
+    /// Load the user's Facebook profile (cached after first load). Returns nil if not yet imported.
+    func facebookProfile() -> UserFacebookProfileDTO? {
+        if let cached = cachedFacebookProfile { return cached }
+        // Try full JSON decode first (new format)
+        if let data = UserDefaults.standard.data(forKey: facebookProfileKey),
+           let decoded = try? JSONDecoder().decode(UserFacebookProfileDTO.self, from: data) {
+            cachedFacebookProfile = decoded
+            return decoded
+        }
+        return nil
     }
 
     /// Load the user's Facebook profile coaching fragment. Returns nil if not yet imported.
     func facebookProfileFragment() -> String? {
-        if let cached = cachedFacebookProfile { return cached.coachingContextFragment }
+        if let profile = facebookProfile() { return profile.coachingContextFragment }
+        // Legacy fallback: stored as plain string before Codable upgrade
         guard let fragment = UserDefaults.standard.string(forKey: facebookProfileKey),
               !fragment.isEmpty else { return nil }
         return fragment
