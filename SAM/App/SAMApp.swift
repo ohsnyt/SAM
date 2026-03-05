@@ -115,6 +115,15 @@ struct SAMApp: App {
         let preImportCount = (try? PeopleRepository.shared.count()) ?? -1
         logger.notice("Pre-import SamPerson count: \(preImportCount, privacy: .public)")
 
+        // Legacy store detection: if current store is empty and legacy stores exist,
+        // set a flag so the Today view can show a migration notice.
+        if preImportCount == 0 && LegacyStoreMigrationService.hasLegacyStores() {
+            UserDefaults.standard.set(true, forKey: "sam.legacyStores.detected")
+            logger.notice("Empty current store + legacy stores detected — migration notice will be shown")
+        } else {
+            UserDefaults.standard.removeObject(forKey: "sam.legacyStores.detected")
+        }
+
         #if DEBUG
         // Seed Harvey Snodgrass test data if test mode is active and store is empty.
         // isTestDataLoaded is set TRUE here synchronously — before any Task or .task fires —

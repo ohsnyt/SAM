@@ -305,17 +305,18 @@ Bookmark the **directory** (not file) for SQLite to cover WAL/SHM companions. `.
 
 ### ~~Priority 5 — WhatsApp Direct Database Integration~~ ✅ Completed (Mar 5, 2026)
 
-### Priority 6 — Data migration
+### ~~Priority 6 — Data Migration & Schema Version Hygiene~~ ✅ Completed (Mar 5, 2026)
 
-Verify / Create a process to allow the user to migrate data from older versions of SAM SwiftData stores to the current version. What problems might exist and how can they be best mitigated? If there are problems, does the User need to be informed/coached on how to enrich data?
+Centralized `schemaVersion` as single source of truth in `SAMModelContainer`. Fixed stale `"SAM_v26"` in BackupCoordinator. Added `LegacyStoreMigrationService` to discover, migrate (via backup round-trip with temp-copy protection), and clean up orphaned `SAM_v*.store` files. Settings → General shows "Legacy Data" section when orphaned stores exist. Startup detection shows migration notice on Today view when current store is empty. Limitation: stores too old for SwiftData lightweight migration (mandatory attribute gaps) cannot be auto-migrated — cleanup is still available.
 
 ### Priority 7 - Update onboarding, helps, tooltips
-- In light of the many changes to the UI, we need to carefully examine the onboarding process. Before even starting, the user must have one calendar for appointments. What minimal permissions and/or settings are required at startup? (I think a request to download and install the MLX is required.) What permission settings or UI settings can we defer to coaching instructions in the course of the first hours of operation of SAM?
+- In light of the many changes to the UI, we need to carefully examine the onboarding process. Before even starting, the user must have one calendar for appointments. What minimal permissions and/or settings are required at startup? (I think a request to download and install the MLX is required.) What permission settings or UI settings can we defer to coaching instructions in the course of the first hours of operation of SAM? Does this make sense? What would you recommend in terms of the organization of the settings, the onboarding process, and the coaching process (both at startup and whenever the users incorporates a new social media platform or communication platform)?
 
 ### Priority 8 - Security review
 - Can we use TouchID, FaceID, Apple Watch, password to enforce secure access to SAM? Would this be a good thing?
-- Is the SAM data (SwiftData, other app data) stored securely? Do we need to consider database encryption?
-- Can we encrypt backups using the same TouchID, FaceID, Apple Watch, password used to unlock SAM?
+- Is the SAM data (SwiftData, other app data) stored securely at present? Do we need to incorporate encryption?
+- Do we need to consider database encryption?
+- Do we need to encrypt backups using the same TouchID, FaceID, Apple Watch, password used to unlock SAM?
 
 ### Priority 9+ — Future
 
@@ -327,5 +328,5 @@ Verify / Create a process to allow the user to migrate data from older versions 
 
 ---
 
-**Document Version**: 34.2
-**Last Updated**: March 5, 2026 — WhatsApp direct database integration (messages, calls, unknown sender triage, enrichment suggestions, `.whatsApp` communication channel).
+**Document Version**: 34.3
+**Last Updated**: March 5, 2026 — Data migration & schema version hygiene (centralized schemaVersion, legacy store discovery/migration/cleanup, backup versioning fix).

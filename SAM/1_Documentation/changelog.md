@@ -4541,6 +4541,44 @@ SAM now understands that different *types* of messages should go through differe
 
 ---
 
+## Data Migration & Schema Version Hygiene (March 5, 2026)
+
+**What**: Centralized schema versioning, fixed stale backup version strings, and added legacy store discovery/migration/cleanup tooling.
+
+**Why**: SAM's 23 schema version bumps (v12→v34) each created a new empty store file by changing the `ModelConfiguration` name, silently abandoning all previous data. BackupCoordinator also had `"SAM_v26"` hardcoded in 3 places, producing backups with the wrong schema version. Users accumulate orphaned store files (~75MB) with no way to recover data or reclaim space.
+
+### New Files (1)
+
+- `Services/LegacyStoreMigrationService.swift` — `@MainActor @Observable` service that discovers orphaned `SAM_v*.store` files, migrates the most recent via backup round-trip (copy to temp → open with current schema → export → import), and cleans up old files. Tries stores newest→oldest; handles lightweight migration failures gracefully.
+
+### Modified Files (5)
+
+#### Schema Centralization
+
+- `App/SAMModelContainer.swift` — Added `static let schemaVersion = "SAM_v34"` as single source of truth. Replaced 5 hardcoded `"SAM_v34"` strings. Added policy comment warning against unnecessary version bumps. `defaultStoreURL` now derives from `schemaVersion`.
+
+#### Backup Fix
+
+- `Coordinators/BackupCoordinator.swift` — Replaced 3 stale `"SAM_v26"` references with `SAMModelContainer.schemaVersion`. Added `exportBackup(to:container:)` overload so the migration service can export from a legacy container.
+
+#### Settings UI
+
+- `Views/Settings/SettingsView.swift` — Added "Legacy Data" section in GeneralSettingsView (only visible when orphaned stores are detected): status line with count/size, "Migrate Data..." and "Clean Up Old Files..." buttons with progress feedback, cleanup confirmation alert. Runs discovery on appear.
+
+#### Startup Detection
+
+- `App/SAMApp.swift` — After `configureDataLayer()`, checks if current store is empty (0 people) AND legacy stores exist. Sets `sam.legacyStores.detected` flag for Today view banner.
+- `Views/Awareness/AwarenessView.swift` — Added `LegacyDataNoticeBanner` at top of Today view when flag is set, with dismissable orange banner directing user to Settings → General.
+
+### Architecture Notes
+
+- Migration copies legacy store files to a temp directory before opening, protecting originals from CoreData's in-place migration attempt
+- Stores too old for SwiftData lightweight migration (mandatory attribute gaps, e.g. v21→v34) fail gracefully — cleanup is still available to reclaim disk space
+- No schema version bump — this is tooling/hygiene only
+- `SAMModelContainer.schemaVersion` is now the only place the version string appears in code
+
+---
+
 **Changelog Started**: February 10, 2026
 **Maintained By**: Project team
 **Related Docs**: See `context.md` for current state and roadmap

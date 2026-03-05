@@ -1467,6 +1467,10 @@ struct GeneralSettingsView: View {
     @State private var pendingImportURL: URL?
     @State private var pendingImportPreview: ImportPreview?
 
+    // Legacy store migration
+    @State private var migrationService = LegacyStoreMigrationService.shared
+    @State private var showCleanupConfirmation = false
+
     private var appVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
     }
@@ -1514,6 +1518,12 @@ struct GeneralSettingsView: View {
 
                     // Data Backup
                     dataBackupSection
+
+                    // Legacy Data Migration (only shown when orphaned stores exist)
+                    if let disc = migrationService.discovery, !disc.isEmpty {
+                        Divider()
+                        legacyDataSection(disc)
+                    }
 
                     Divider()
 
@@ -1609,6 +1619,19 @@ struct GeneralSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .onAppear {
+            migrationService.discoverLegacyStores()
+        }
+        .alert("Remove Legacy Store Files?", isPresented: $showCleanupConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Remove", role: .destructive) {
+                migrationService.cleanupLegacyStores()
+            }
+        } message: {
+            if let disc = migrationService.discovery {
+                Text("This will permanently delete \(disc.count) legacy data store files (\(disc.formattedSize)). This cannot be undone.\n\nMake sure you have migrated any data you need before cleaning up.")
+            }
+        }
         .fileImporter(
             isPresented: $showImportFilePicker,
             allowedContentTypes: [.samBackup, .json],
@@ -1729,6 +1752,86 @@ struct GeneralSettingsView: View {
 
         logger.notice("All SAM data cleared — terminating so fresh state loads on relaunch")
         NSApplication.shared.terminate(nil)
+    }
+
+    // MARK: - Legacy Data Section
+
+    private func legacyDataSection(_ disc: LegacyStoreDiscovery) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Legacy Data")
+                .font(.headline)
+
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .font(.caption)
+                Text("Found \(disc.count) legacy data store\(disc.count == 1 ? "" : "s") (\(disc.formattedSize)) from previous SAM versions.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let mostRecent = disc.mostRecent {
+                Text("Most recent: \(mostRecent.version)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack(spacing: 12) {
+                Button("Migrate Data...") {
+                    Task {
+                        await migrationService.migrate()
+                    }
+                }
+                .buttonStyle(.bordered)
+                .disabled(migrationService.isBusy || disc.mostRecent == nil)
+
+                Button("Clean Up Old Files...") {
+                    showCleanupConfirmation = true
+                }
+                .buttonStyle(.bordered)
+            }
+
+            // Status display
+            switch migrationService.status {
+            case .idle, .discovering:
+                EmptyView()
+            case .migrating(let step):
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text(step)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            case .cleaning:
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Removing legacy files...")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            case .success(let message):
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                        .font(.caption)
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            case .failed(let message):
+                HStack(spacing: 6) {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.red)
+                        .font(.caption)
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .lineLimit(3)
+                }
+            }
+        }
     }
 
     // MARK: - Data Backup Section

@@ -73,12 +73,17 @@ final class BackupCoordinator {
     // ─────────────────────────────────────────────────────────────────
 
     func exportBackup(to url: URL) async {
+        await exportBackup(to: url, container: SAMModelContainer.shared)
+    }
+
+    /// Export backup from a specific container (used by legacy migration).
+    func exportBackup(to url: URL, container: ModelContainer) async {
         status = .exporting
         progress = "Fetching data..."
         logger.info("Export started")
 
         do {
-            let context = ModelContext(SAMModelContainer.shared)
+            let context = ModelContext(container)
 
             // Fetch all 20 model types
             progress = "Reading people..."
@@ -503,7 +508,7 @@ final class BackupCoordinator {
             let document = BackupDocument(
                 metadata: BackupMetadata(
                     exportDate: .now,
-                    schemaVersion: "SAM_v26",
+                    schemaVersion: SAMModelContainer.schemaVersion,
                     appVersion: appVersion,
                     buildNumber: buildNumber,
                     backupFormatVersion: 1,
@@ -580,7 +585,7 @@ final class BackupCoordinator {
             throw BackupError.unsupportedFormat(doc.metadata.backupFormatVersion)
         }
 
-        let schemaMatch = doc.metadata.schemaVersion == "SAM_v26"
+        let schemaMatch = doc.metadata.schemaVersion == SAMModelContainer.schemaVersion
         let preview = ImportPreview(metadata: doc.metadata, schemaMatch: schemaMatch)
 
         status = .idle
@@ -1162,7 +1167,7 @@ final class BackupCoordinator {
             let doc = BackupDocument(
                 metadata: BackupMetadata(
                     exportDate: .now,
-                    schemaVersion: "SAM_v26",
+                    schemaVersion: SAMModelContainer.schemaVersion,
                     appVersion: appVersion,
                     buildNumber: buildNumber,
                     backupFormatVersion: 1,

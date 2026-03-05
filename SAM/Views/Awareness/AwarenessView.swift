@@ -39,9 +39,18 @@ struct AwarenessView: View {
     private var briefingCoordinator: DailyBriefingCoordinator { DailyBriefingCoordinator.shared }
     // MARK: - Body
 
+    @AppStorage("sam.legacyStores.detected") private var legacyStoresDetected = false
+
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 0) {
+                // Legacy data migration notice
+                if legacyStoresDetected {
+                    LegacyDataNoticeBanner {
+                        legacyStoresDetected = false
+                    }
+                }
+
                 // Zone 1 — Persistent Briefing
                 PersistentBriefingSection()
 
@@ -657,6 +666,44 @@ struct ProfileAnalysisReadySection: View {
             // No fresh analysis — render nothing (section is invisible)
         }
         .task { analyses = await BusinessProfileService.shared.profileAnalyses() }
+    }
+}
+
+// MARK: - Legacy Data Notice Banner
+
+/// Informational banner shown on the Today view when the current store is
+/// empty and legacy stores from previous SAM versions are detected.
+private struct LegacyDataNoticeBanner: View {
+    var onDismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Data from a previous SAM version was found")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                Text("Go to Settings \u{2192} General to migrate your data.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Button {
+                onDismiss()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding()
+        .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+        .padding()
     }
 }
 
