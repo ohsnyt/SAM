@@ -2450,6 +2450,7 @@ private extension EvidenceSource {
         case .linkedIn:  return .blue
         case .facebook:  return .indigo
         case .substack:  return .orange
+        case .clipboardCapture: return .purple
         }
     }
 }

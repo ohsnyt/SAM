@@ -1104,5 +1104,8 @@ extension Notification.Name {
     /// Posted when a profile analysis is saved (LinkedIn, Substack, etc.).
     /// Listeners should reload their analyses array.
     static let samProfileAnalysisDidUpdate = Notification.Name("samProfileAnalysisDidUpdate")
+
+    /// Posted to open the Clipboard Capture window (global hotkey or menu command).
+    static let samOpenClipboardCapture = Notification.Name("samOpenClipboardCapture")
 }
 

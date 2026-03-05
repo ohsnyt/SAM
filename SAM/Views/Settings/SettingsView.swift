@@ -222,9 +222,108 @@ struct AISettingsView: View {
                 } label: {
                     Label("Compliance", systemImage: "checkmark.shield")
                 }
+
+                DisclosureGroup {
+                    ClipboardCaptureSettingsContent()
+                        .padding(.top, 8)
+                } label: {
+                    Label("Clipboard Capture", systemImage: "doc.on.clipboard")
+                }
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+// MARK: - Clipboard Capture Settings
+
+struct ClipboardCaptureSettingsContent: View {
+
+    @State private var hotkeyEnabled: Bool = UserDefaults.standard.bool(forKey: GlobalHotkeyService.enabledKey)
+    @State private var hotkeyService = GlobalHotkeyService.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Clipboard Capture")
+                .font(.headline)
+
+            Text("Copy a conversation from any app and press ⌃⇧V to capture it as evidence in SAM.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Toggle("Enable global hotkey (⌃⇧V)", isOn: $hotkeyEnabled)
+                .onChange(of: hotkeyEnabled) { _, newValue in
+                    hotkeyService.isEnabled = newValue
+                    if newValue {
+                        if hotkeyService.checkAccessibilityPermission() {
+                            hotkeyService.registerHotkey()
+                        } else {
+                            hotkeyService.promptForAccessibility()
+                        }
+                    } else {
+                        hotkeyService.unregisterHotkey()
+                    }
+                }
+
+            // Accessibility permission status
+            HStack(spacing: 8) {
+                Text("Accessibility Permission")
+                    .font(.subheadline)
+
+                Spacer()
+
+                if hotkeyService.accessibilityGranted {
+                    HStack(spacing: 4) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                        Text("Granted")
+                            .font(.caption)
+                            .foregroundStyle(.green)
+                    }
+                } else {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "xmark.circle")
+                                .foregroundStyle(.orange)
+                            Text("Not Granted")
+                                .font(.caption)
+                                .foregroundStyle(.orange)
+
+                            Button("Open Accessibility Settings") {
+                                hotkeyService.promptForAccessibility()
+                            }
+                            .controlSize(.small)
+                        }
+
+                        HStack(spacing: 8) {
+                            Button("Reveal App in Finder") {
+                                let appURL = Bundle.main.bundleURL
+                                NSWorkspace.shared.activateFileViewerSelecting([appURL])
+                            }
+                            .controlSize(.small)
+                        }
+
+                        Text("In the Accessibility list, click + and add the app shown in Finder. When running from Xcode, you may also need to add Xcode itself.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            if hotkeyService.isRegistered {
+                Text("Global hotkey is active — press ⌃⇧V from any app to capture a conversation.")
+                    .font(.caption)
+                    .foregroundStyle(.green)
+            } else if hotkeyEnabled && !hotkeyService.accessibilityGranted {
+                Text("Grant Accessibility permission, then restart SAM to activate the global hotkey.")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+
+            Text("The in-app menu command (Edit → Capture Clipboard Conversation) works without Accessibility permission.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
     }
 }
 

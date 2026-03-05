@@ -292,27 +292,9 @@ Bookmark the **directory** (not file) for SQLite to cover WAL/SHM companions. `.
 
 ## 9. Roadmap
 
-### Priority 1 — UI Redesign: Lower Friction, Lower Noise
+### ~~Priority 3 — Global Clipboard Capture Hotkey~~ ✅ Completed (Mar 5, 2026)
 
-The current UI has accumulated complexity across 30+ phases. It needs a focused pass to reduce clutter, improve information hierarchy, and make every view immediately actionable.
-
-**Today View Redesign** *(2 of 3 complete — see changelog)*:
-- ✅ Morning briefing as persistent narrative — Phase 4
-- ✅ Top action card visually prominent — Hero card prominence
-- Everything else collapsed or removed — the user should know what to do within 5 seconds
-
-**Sidebar Reorganization** ✅ *(Completed — Phase 3; see changelog)*
-
-**Contact Lifecycle** ✅ *(SAM_v32; see changelog)*
-- Remaining: "Never Added" contacts searchable/reversible via `UnknownSender`; broader Apple Contacts matching during social imports
-
-**Suggestion Quality Overhaul** ✅ *(Completed — Phase 2; see changelog)*
-
-**Substack Integration** ✅ *(SAM_v33; see changelog)*
-
-### Priority 3 — Global Clipboard Capture Hotkey
-
-Channel-agnostic: captures conversations pasted from LinkedIn web, WhatsApp web, or any platform. Requires Accessibility permission. Detects conversation structure in clipboard, parses into messages, offers "Capture to SAM" sheet.
+`EvidenceSource.clipboardCapture`, `GlobalHotkeyService` (⌃⇧V via NSEvent global monitor + AXIsProcessTrusted), `ClipboardParsingService` (AI conversation parsing), `ClipboardCaptureWindowView` (4-phase: parse → review → save → error, inline person picker autocomplete), menu command, Settings toggle + Accessibility status. See `changelog.md` for full details. No schema change.
 
 ### Priority 4 — LinkedIn as Reply Channel
 
@@ -322,7 +304,7 @@ Surface LinkedIn alongside iMessage/email in channel recommendations. Draft repl
 
 Unencrypted SQLite at `~/Library/Group Containers/group.net.whatsapp.WhatsApp.shared/ChatStorage.sqlite`. Verify `NSOpenPanel` + security-scoped bookmark grants persistent read access before building.
 
-### Priority 56— Data migration and backup*
+### Priority 6— Data migration and backup*
 
 Create a process to allow the user to backup data.
 Create a process to allow the user to migrate data from older versions of SAM SwiftData stores to the current version.

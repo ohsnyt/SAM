@@ -176,6 +176,7 @@ struct SearchEvidenceRow: View {
         case .linkedIn: return "network"
         case .facebook: return "person.2.fill"
         case .substack: return "newspaper.fill"
+        case .clipboardCapture: return "doc.on.clipboard"
         }
     }
 
@@ -192,6 +193,7 @@ struct SearchEvidenceRow: View {
         case .facebook: return .indigo
         case .linkedIn: return .blue
         case .substack: return .orange
+        case .clipboardCapture: return .purple
         }
     }
 }

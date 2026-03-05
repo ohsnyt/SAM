@@ -95,6 +95,7 @@ public enum EvidenceSource: String, Codable, Sendable {
     case linkedIn = "LinkedIn"
     case facebook = "Facebook"
     case substack = "Substack"
+    case clipboardCapture = "ClipboardCapture"
 }
 
 extension EvidenceSource {
@@ -112,14 +113,15 @@ extension EvidenceSource {
         case .substack:  return 0.5   // Passive (subscribing isn't direct interaction)
         case .contacts:  return 0.0   // Not an interaction
         case .manual:    return 1.0
+        case .clipboardCapture: return 1.5  // Direct conversation evidence
         }
     }
 
     /// Whether this source represents a direct interaction (not passive data).
     public var isInteraction: Bool {
         switch self {
-        case .contacts, .note, .substack: return false
-        default:                          return true
+        case .contacts, .note, .substack:   return false
+        default:                            return true
         }
     }
 
@@ -137,6 +139,7 @@ extension EvidenceSource {
         case .linkedIn:  return "network"
         case .facebook:  return "person.2.fill"
         case .substack:  return "newspaper.fill"
+        case .clipboardCapture: return "doc.on.clipboard"
         }
     }
 

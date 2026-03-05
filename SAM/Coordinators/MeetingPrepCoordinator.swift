@@ -494,7 +494,7 @@ final class MeetingPrepCoordinator {
                 channelScores[.faceTime, default: 0] += weight
             case .linkedIn:
                 channelScores[.linkedIn, default: 0] += weight
-            case .facebook, .substack:
+            case .facebook, .substack, .clipboardCapture:
                 break  // No direct communication channel mapping
             case .calendar, .contacts, .note, .manual:
                 break

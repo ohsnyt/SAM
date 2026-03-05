@@ -4,6 +4,43 @@
 
 ---
 
+## March 5, 2026 — Global Clipboard Capture Hotkey (Priority 3)
+
+### Overview
+Copy a conversation from any app (LinkedIn DMs, WhatsApp, Slack, Teams, etc.), press ⌃⇧V, and SAM opens a capture window that uses AI to parse the conversation structure, lets the user match senders to contacts, and saves the result as evidence. No schema change.
+
+### What Changed
+- **EvidenceSource.clipboardCapture** — New case (`qualityWeight: 1.5`, `isInteraction: true`, `iconName: "doc.on.clipboard"`); all exhaustive switches updated (MeetingPrepSection, MeetingPrepCoordinator, SearchResultRow, InboxDetailView, InboxListView, PersonDetailView)
+- **GlobalHotkeyService** — `@MainActor @Observable` singleton; registers global ⌃⇧V via `NSEvent.addGlobalMonitorForEvents`; Accessibility permission via `AXIsProcessTrusted`; UserDefaults toggle `sam.clipboardCapture.enabled`
+- **ClipboardParsingService** — Actor; reads `NSPasteboard.general`; AI prompt extracts conversation structure (platform, senders, timestamps, messages); returns `ClipboardConversationDTO` / `ClipboardMessageDTO`
+- **ClipboardCapturePayload** — Codable/Hashable/Sendable DTO for WindowGroup routing
+- **ClipboardCaptureWindowView** — Four-phase auxiliary window (parsing → review → saving → error); inline person picker with autocomplete via `PeopleRepository.search()`; auto-detects "Me" sender; groups messages by matched person; analyzes via `MessageAnalysisService.analyzeConversation()`; creates evidence via `EvidenceRepository.createByIDs()`; "Save as Note" fallback; raw text discarded after analysis
+- **SAMApp** — New `WindowGroup("Clipboard Capture")`, hotkey registration in `applicationDidFinishLaunching`, unregistration in `applicationShouldTerminate`, menu command `Edit > Capture Clipboard Conversation (⌃⇧V)`
+- **AppShellView** — `.samOpenClipboardCapture` notification handler opens capture window
+- **ClipboardCaptureSettingsContent** — DisclosureGroup in AI Settings tab; enable/disable toggle; Accessibility permission status with "Open System Settings" button
+- **.samOpenClipboardCapture** notification name added to `SAMModels.swift`
+
+### Files
+| File | Action |
+|------|--------|
+| `Models/SAMModels-Supporting.swift` | Modified — `.clipboardCapture` case + all switch arms |
+| `Models/SAMModels.swift` | Modified — `.samOpenClipboardCapture` notification |
+| `Services/GlobalHotkeyService.swift` | New |
+| `Services/ClipboardParsingService.swift` | New |
+| `Models/DTOs/ClipboardCapturePayload.swift` | New |
+| `Views/Communication/ClipboardCaptureWindowView.swift` | New |
+| `App/SAMApp.swift` | Modified — WindowGroup + hotkey + menu |
+| `Views/AppShellView.swift` | Modified — notification handler |
+| `Views/Settings/SettingsView.swift` | Modified — settings section |
+| `Views/Awareness/MeetingPrepSection.swift` | Modified — switch case |
+| `Coordinators/MeetingPrepCoordinator.swift` | Modified — switch case |
+| `Views/Search/SearchResultRow.swift` | Modified — switch cases |
+| `Views/Inbox/InboxDetailView.swift` | Modified — switch cases |
+| `Views/Inbox/InboxListView.swift` | Modified — switch cases |
+| `Views/People/PersonDetailView.swift` | Modified — switch case |
+
+---
+
 ## March 4, 2026 — Voice Analysis Across All Social Platforms
 
 ### Overview

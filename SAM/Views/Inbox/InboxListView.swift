@@ -309,6 +309,7 @@ private struct EvidenceRowView: View {
         case .linkedIn: return "network"
         case .facebook: return "person.2.fill"
         case .substack: return "newspaper.fill"
+        case .clipboardCapture: return "doc.on.clipboard"
         }
     }
 
@@ -325,6 +326,7 @@ private struct EvidenceRowView: View {
         case .linkedIn: return .blue
         case .facebook: return .indigo
         case .substack: return .orange
+        case .clipboardCapture: return .purple
         }
     }
 

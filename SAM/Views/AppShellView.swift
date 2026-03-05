@@ -325,6 +325,10 @@ private struct AppShellNotificationHandlers: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: .samNavigateToGrow)) { _ in
                 sidebarSelection = "grow"
             }
+            .onReceive(NotificationCenter.default.publisher(for: .samOpenClipboardCapture)) { _ in
+                let payload = ClipboardCapturePayload(captureID: UUID())
+                openWindow(id: "clipboard-capture", value: payload)
+            }
     }
 }
 

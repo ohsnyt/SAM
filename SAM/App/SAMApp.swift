@@ -25,6 +25,12 @@ final class SAMAppDelegate: NSObject, NSApplicationDelegate {
     @MainActor
     func applicationDidFinishLaunching(_ notification: Notification) {
         SystemNotificationService.shared.configure()
+
+        // Register global clipboard capture hotkey if enabled + Accessibility granted
+        if UserDefaults.standard.bool(forKey: GlobalHotkeyService.enabledKey),
+           GlobalHotkeyService.shared.checkAccessibilityPermission() {
+            GlobalHotkeyService.shared.registerHotkey()
+        }
     }
 
     @MainActor
@@ -35,6 +41,7 @@ final class SAMAppDelegate: NSObject, NSApplicationDelegate {
         MailImportCoordinator.shared.cancelAll()
         CommunicationsImportCoordinator.shared.cancelAll()
         EvernoteImportCoordinator.shared.cancelAll()
+        GlobalHotkeyService.shared.unregisterHotkey()
         // Open the MLX circuit breaker and drop the model container so any
         // in-flight generation stream exhausts before the process exits.
         Task { await AIService.shared.prepareForTermination() }
@@ -249,6 +256,13 @@ struct SAMApp: App {
                 .keyboardShortcut("5", modifiers: .command)
             }
 
+            CommandGroup(after: .pasteboard) {
+                Button("Capture Clipboard Conversation") {
+                    NotificationCenter.default.post(name: .samOpenClipboardCapture, object: nil)
+                }
+                .keyboardShortcut("v", modifiers: [.control, .shift])
+            }
+
             #if DEBUG
             CommandMenu("Debug") {
                 Button("Reset Onboarding") {
@@ -313,6 +327,16 @@ struct SAMApp: App {
             }
         }
         .defaultSize(width: 500, height: 300)
+        .windowResizability(.contentSize)
+
+        // Clipboard Capture window — opened from ⌃⇧V hotkey or menu command
+        WindowGroup("Clipboard Capture", id: "clipboard-capture", for: ClipboardCapturePayload.self) { $payload in
+            if let payload {
+                ClipboardCaptureWindowView(payload: payload)
+                    .modelContainer(SAMModelContainer.shared)
+            }
+        }
+        .defaultSize(width: 600, height: 500)
         .windowResizability(.contentSize)
 
         // Compose Message window — opened from communicate-lane outcomes
