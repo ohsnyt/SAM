@@ -57,9 +57,14 @@ struct ComposeWindowView: View {
         payload.personName ?? payload.recipientAddress
     }
 
+    /// Resolved recipient address based on contactAddresses + current channel.
+    private var resolvedRecipient: String {
+        payload.contactAddresses?.address(for: channel) ?? payload.recipientAddress
+    }
+
     private var canSend: Bool {
         !draftBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        && !payload.recipientAddress.isEmpty
+        && !resolvedRecipient.isEmpty
         && !isSending
     }
 
@@ -225,7 +230,7 @@ struct ComposeWindowView: View {
                     .help("Open in \(channel == .email ? "Mail" : "Messages")")
                 } else {
                     // Standard: system handoff
-                    Button("Send") {
+                    Button(channel == .linkedIn ? "Copy & Open LinkedIn" : "Send") {
                         sendViaSystemApp()
                     }
                     .buttonStyle(.borderedProminent)
@@ -313,29 +318,33 @@ struct ComposeWindowView: View {
     // MARK: - Available Channels
 
     private var availableChannels: [CommunicationChannel] {
+        // Prefer contactAddresses when available (richer info)
+        if let addresses = payload.contactAddresses {
+            let channels = addresses.availableChannels
+            return channels.isEmpty ? [.iMessage] : channels
+        }
+
+        // Fallback: derive from recipientAddress string
         var channels: [CommunicationChannel] = []
         let address = payload.recipientAddress
 
-        // iMessage available if we have a phone number or email
         if !address.isEmpty {
             channels.append(.iMessage)
         }
-        // Email available if address looks like an email
         if address.contains("@") {
             channels.append(.email)
         }
-        // Phone/FaceTime available if address looks like a phone number
         let digits = address.filter(\.isNumber)
         if digits.count >= 7 {
             channels.append(.phone)
             channels.append(.faceTime)
         }
-
-        // Always include at least iMessage as fallback
+        if payload.linkedInProfileURL != nil || payload.contactAddresses?.linkedInProfileURL != nil {
+            channels.append(.linkedIn)
+        }
         if channels.isEmpty {
             channels.append(.iMessage)
         }
-
         return channels
     }
 
@@ -346,7 +355,7 @@ struct ComposeWindowView: View {
         errorMessage = nil
 
         let body = draftBody.trimmingCharacters(in: .whitespacesAndNewlines)
-        let recipient = payload.recipientAddress
+        let recipient = resolvedRecipient
 
         switch channel {
         case .iMessage:
@@ -381,10 +390,12 @@ struct ComposeWindowView: View {
             completeAndDismiss()
 
         case .linkedIn:
-            // LinkedIn messages can't be sent programmatically — copy to clipboard
             composeService.copyToClipboard(body)
-            errorMessage = "Draft copied to clipboard — paste into LinkedIn"
-            isSending = false
+            let profileURL = payload.contactAddresses?.linkedInProfileURL ?? payload.linkedInProfileURL
+            if let profileURL {
+                composeService.openLinkedInMessaging(profileURL: profileURL)
+            }
+            completeAndDismiss()
         }
     }
 
@@ -393,7 +404,7 @@ struct ComposeWindowView: View {
         errorMessage = nil
 
         let body = draftBody.trimmingCharacters(in: .whitespacesAndNewlines)
-        let recipient = payload.recipientAddress
+        let recipient = resolvedRecipient
 
         Task {
             var success = false

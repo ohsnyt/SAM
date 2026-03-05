@@ -158,6 +158,45 @@ final class ComposeService {
         return await runAppleScript(script, label: "Email to \(recipient)")
     }
 
+    // MARK: - LinkedIn
+
+    /// Open the person's LinkedIn messaging overlay in the default browser.
+    /// Appends `/overlay/new-message/` to the profile URL. Falls back to the profile page.
+    @discardableResult
+    func openLinkedInMessaging(profileURL: String) -> Bool {
+        let normalized = profileURL.hasSuffix("/")
+            ? String(profileURL.dropLast())
+            : profileURL
+        let withScheme = normalized.hasPrefix("http") ? normalized : "https://\(normalized)"
+        let messagingString = "\(withScheme)/overlay/new-message/"
+
+        if let url = URL(string: messagingString), NSWorkspace.shared.open(url) {
+            logger.info("Opened LinkedIn messaging for \(profileURL, privacy: .public)")
+            return true
+        }
+        // Fallback: open profile page directly
+        if let url = URL(string: withScheme), NSWorkspace.shared.open(url) {
+            logger.warning("Messaging overlay URL failed — opened profile page instead")
+            return true
+        }
+        logger.error("Failed to open LinkedIn URL: \(profileURL, privacy: .public)")
+        return false
+    }
+
+    // MARK: - Generic Social Profile
+
+    /// Open any social profile URL in the default browser.
+    @discardableResult
+    func openSocialProfile(url: String) -> Bool {
+        let withScheme = url.hasPrefix("http") ? url : "https://\(url)"
+        if let parsed = URL(string: withScheme), NSWorkspace.shared.open(parsed) {
+            logger.info("Opened social profile: \(url, privacy: .public)")
+            return true
+        }
+        logger.error("Failed to open social profile URL: \(url, privacy: .public)")
+        return false
+    }
+
     // MARK: - Helpers
 
     func copyToClipboard(_ text: String) {

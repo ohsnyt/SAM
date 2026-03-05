@@ -504,6 +504,37 @@ final class MeetingPrepCoordinator {
         if let best = channelScores.max(by: { $0.value < $1.value }) {
             person.inferredChannelRawValue = best.key.rawValue
         }
+
+        // Per-category inference
+        var quickScores: [CommunicationChannel: Double] = [:]
+        var detailedScores: [CommunicationChannel: Double] = [:]
+        var socialScores: [CommunicationChannel: Double] = [:]
+
+        for item in linked {
+            let weight: Double = item.occurredAt >= ninetyDaysAgo ? 2.0 : 1.0
+            switch item.source {
+            case .iMessage, .phoneCall:
+                quickScores[item.source == .iMessage ? .iMessage : .phone, default: 0] += weight
+            case .mail:
+                detailedScores[.email, default: 0] += weight
+            case .faceTime:
+                detailedScores[.faceTime, default: 0] += weight
+            case .linkedIn:
+                socialScores[.linkedIn, default: 0] += weight
+            case .facebook, .substack, .clipboardCapture, .calendar, .contacts, .note, .manual:
+                break
+            }
+        }
+
+        if let best = quickScores.max(by: { $0.value < $1.value }) {
+            person.inferredQuickChannelRawValue = best.key.rawValue
+        }
+        if let best = detailedScores.max(by: { $0.value < $1.value }) {
+            person.inferredDetailedChannelRawValue = best.key.rawValue
+        }
+        if let best = socialScores.max(by: { $0.value < $1.value }) {
+            person.inferredSocialChannelRawValue = best.key.rawValue
+        }
     }
 
     // MARK: - Private: Briefings

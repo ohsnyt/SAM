@@ -129,7 +129,9 @@ struct LifeEventsSection: View {
             channel: .iMessage,
             subject: nil,
             draftBody: draftBody,
-            contextTitle: "\(event.eventTypeLabel) — \(event.personName)"
+            contextTitle: "\(event.eventTypeLabel) — \(event.personName)",
+            linkedInProfileURL: person?.linkedInProfileURL,
+            contactAddresses: person?.contactAddresses
         )
         openWindow(id: "compose-message", value: payload)
     }

@@ -405,9 +405,63 @@ struct PersonDetailView: View {
         .foregroundStyle(.secondary)
     }
 
+    // MARK: - Evidence-Gated Social Actions
+
+    private struct SocialAction: Identifiable {
+        let id = UUID()
+        let label: String
+        let icon: String
+        let url: String
+        let isLinkedIn: Bool
+    }
+
+    private var evidenceBackedSocialActions: [SocialAction] {
+        let evidenceSources = Set(person.linkedEvidence.map(\.source))
+        var actions: [SocialAction] = []
+
+        if evidenceSources.contains(.linkedIn) {
+            if let url = person.linkedInProfileURL.flatMap({ $0.isEmpty ? nil : $0 }) ?? contactLinkedInURL {
+                actions.append(SocialAction(label: "LinkedIn", icon: "network", url: url, isLinkedIn: true))
+            }
+        }
+
+        if evidenceSources.contains(.facebook) {
+            if let url = person.facebookProfileURL.flatMap({ $0.isEmpty ? nil : $0 }) ?? contactFacebookURL {
+                actions.append(SocialAction(label: "Facebook", icon: "person.2.fill", url: url, isLinkedIn: false))
+            }
+        }
+
+        return actions
+    }
+
+    private var contactLinkedInURL: String? {
+        fullContact?.socialProfiles.first(where: {
+            $0.service.lowercased() == "linkedin" ||
+            ($0.urlString ?? "").lowercased().contains("linkedin.com/in/")
+        })?.urlString
+    }
+
+    private var contactFacebookURL: String? {
+        fullContact?.socialProfiles.first(where: {
+            $0.service.lowercased() == "facebook" ||
+            ($0.urlString ?? "").lowercased().contains("facebook.com/")
+        })?.urlString
+    }
+
     private var quickActionsRow: some View {
         HStack(spacing: 8) {
             if let contact = fullContact, let phone = contact.phoneNumbers.first {
+                Button {
+                    let number = phone.number.replacingOccurrences(of: " ", with: "")
+                    if let url = URL(string: "sms:\(number)") {
+                        NSWorkspace.shared.open(url)
+                    }
+                } label: {
+                    Label("Text", systemImage: "message")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
                 Button {
                     if let url = URL(string: "tel:\(phone.number.replacingOccurrences(of: " ", with: ""))") {
                         NSWorkspace.shared.open(url)
@@ -426,6 +480,20 @@ struct PersonDetailView: View {
                     }
                 } label: {
                     Label("Email", systemImage: "envelope")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+
+            ForEach(evidenceBackedSocialActions) { action in
+                Button {
+                    if action.isLinkedIn {
+                        ComposeService.shared.openLinkedInMessaging(profileURL: action.url)
+                    } else {
+                        ComposeService.shared.openSocialProfile(url: action.url)
+                    }
+                } label: {
+                    Label(action.label, systemImage: action.icon)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
@@ -858,13 +926,47 @@ struct PersonDetailView: View {
     }
 
     private var channelPreferenceView: some View {
-        HStack(spacing: 8) {
-            Text("Communication:")
+        VStack(alignment: .leading, spacing: 6) {
+            categoryChannelRow(
+                category: .quick,
+                explicitBinding: channelBinding(
+                    get: { person.preferredQuickChannelRawValue },
+                    set: { person.preferredQuickChannelRawValue = $0 }
+                ),
+                inferred: person.inferredQuickChannelRawValue
+            )
+            categoryChannelRow(
+                category: .detailed,
+                explicitBinding: channelBinding(
+                    get: { person.preferredDetailedChannelRawValue },
+                    set: { person.preferredDetailedChannelRawValue = $0 }
+                ),
+                inferred: person.inferredDetailedChannelRawValue
+            )
+            categoryChannelRow(
+                category: .social,
+                explicitBinding: channelBinding(
+                    get: { person.preferredSocialChannelRawValue },
+                    set: { person.preferredSocialChannelRawValue = $0 }
+                ),
+                inferred: person.inferredSocialChannelRawValue
+            )
+        }
+    }
+
+    private func categoryChannelRow(
+        category: MessageCategory,
+        explicitBinding: Binding<String>,
+        inferred: String?
+    ) -> some View {
+        HStack(spacing: 6) {
+            Label(category.displayName, systemImage: category.icon)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .frame(width: 80, alignment: .leading)
 
-            Picker("Channel", selection: channelPreferenceBinding) {
-                Text("Automatic").tag("")
+            Picker(category.displayName, selection: explicitBinding) {
+                Text("Auto").tag("")
                 ForEach(CommunicationChannel.allCases, id: \.self) { ch in
                     Text(ch.displayName).tag(ch.rawValue)
                 }
@@ -873,9 +975,9 @@ struct PersonDetailView: View {
             .pickerStyle(.menu)
             .controlSize(.small)
 
-            if let inferred = person.inferredChannelRawValue,
-               let ch = CommunicationChannel(rawValue: inferred),
-               person.preferredChannelRawValue == nil {
+            if let raw = inferred,
+               let ch = CommunicationChannel(rawValue: raw),
+               explicitBinding.wrappedValue.isEmpty {
                 Text("(inferred: \(ch.displayName))")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
@@ -883,12 +985,13 @@ struct PersonDetailView: View {
         }
     }
 
-    private var channelPreferenceBinding: Binding<String> {
+    private func channelBinding(
+        get: @escaping () -> String?,
+        set: @escaping (String?) -> Void
+    ) -> Binding<String> {
         Binding(
-            get: { person.preferredChannelRawValue ?? "" },
-            set: { newValue in
-                person.preferredChannelRawValue = newValue.isEmpty ? nil : newValue
-            }
+            get: { get() ?? "" },
+            set: { newValue in set(newValue.isEmpty ? nil : newValue) }
         )
     }
 

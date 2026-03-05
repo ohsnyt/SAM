@@ -711,6 +711,67 @@ public enum CommunicationChannel: String, Codable, Sendable, CaseIterable {
     }
 }
 
+// MARK: - MessageCategory
+
+/// Classifies the intent of a communication for channel routing.
+public enum MessageCategory: String, Codable, Sendable, CaseIterable {
+    case quick      // Short/informal: texts, check-ins, congrats, reminders
+    case detailed   // Complex/formal: proposals, documents, analyses
+    case social     // Professional networking: LinkedIn, growth outreach
+
+    public var displayName: String {
+        switch self {
+        case .quick:    return "Quick"
+        case .detailed: return "Detailed"
+        case .social:   return "Social"
+        }
+    }
+
+    public var icon: String {
+        switch self {
+        case .quick:    return "bolt.message"
+        case .detailed: return "doc.text"
+        case .social:   return "person.2"
+        }
+    }
+}
+
+// MARK: - ContactAddresses
+
+/// Carries all known addresses for a person, enabling channel switching.
+public struct ContactAddresses: Codable, Hashable, Sendable {
+    public let email: String?
+    public let phone: String?
+    public let linkedInProfileURL: String?
+
+    public init(email: String? = nil, phone: String? = nil, linkedInProfileURL: String? = nil) {
+        self.email = email
+        self.phone = phone
+        self.linkedInProfileURL = linkedInProfileURL
+    }
+
+    /// Resolve the best address for a given channel.
+    public func address(for channel: CommunicationChannel) -> String? {
+        switch channel {
+        case .iMessage:  return phone ?? email
+        case .email:     return email
+        case .phone:     return phone
+        case .faceTime:  return phone
+        case .linkedIn:  return linkedInProfileURL
+        }
+    }
+
+    /// Channels for which this person has a usable address.
+    public var availableChannels: [CommunicationChannel] {
+        var channels: [CommunicationChannel] = []
+        if phone != nil || email != nil { channels.append(.iMessage) }
+        if email != nil { channels.append(.email) }
+        if phone != nil { channels.append(.phone); channels.append(.faceTime) }
+        if linkedInProfileURL != nil { channels.append(.linkedIn) }
+        return channels
+    }
+}
+
 /// Payload for opening the compose auxiliary window.
 public struct ComposePayload: Codable, Hashable, Sendable {
     public let outcomeID: UUID
@@ -721,6 +782,8 @@ public struct ComposePayload: Codable, Hashable, Sendable {
     public let subject: String?
     public let draftBody: String
     public let contextTitle: String
+    public let linkedInProfileURL: String?
+    public let contactAddresses: ContactAddresses?
 
     public init(
         outcomeID: UUID,
@@ -730,7 +793,9 @@ public struct ComposePayload: Codable, Hashable, Sendable {
         channel: CommunicationChannel,
         subject: String? = nil,
         draftBody: String,
-        contextTitle: String
+        contextTitle: String,
+        linkedInProfileURL: String? = nil,
+        contactAddresses: ContactAddresses? = nil
     ) {
         self.outcomeID = outcomeID
         self.personID = personID
@@ -740,6 +805,8 @@ public struct ComposePayload: Codable, Hashable, Sendable {
         self.subject = subject
         self.draftBody = draftBody
         self.contextTitle = contextTitle
+        self.linkedInProfileURL = linkedInProfileURL
+        self.contactAddresses = contactAddresses
     }
 }
 
@@ -827,6 +894,15 @@ public enum OutcomeAction: String, Sendable {
 }
 
 extension OutcomeKind {
+    /// Default message category for channel routing.
+    var messageCategory: MessageCategory {
+        switch self {
+        case .followUp, .outreach:        return .quick
+        case .proposal, .preparation, .training, .compliance, .setup: return .detailed
+        case .growth, .contentCreation:   return .social
+        }
+    }
+
     var defaultAction: OutcomeAction {
         switch self {
         case .followUp, .preparation: return .captureNote

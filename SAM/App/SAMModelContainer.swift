@@ -52,12 +52,12 @@ enum SAMSchema {
         PendingEnrichment.self,    // Contact enrichment queue (schema SAM_v28)
         IntentionalTouch.self,          // LinkedIn/social touch scoring (schema SAM_v29)
         LinkedInImport.self,            // LinkedIn archive import history (schema SAM_v29)
-        NotificationTypeTracker.self,   // LinkedIn notification type tracking (schema SAM_v33)
-        ProfileAnalysisRecord.self,     // LinkedIn profile analysis history (schema SAM_v33)
-        EngagementSnapshot.self,        // Social engagement metrics snapshots (schema SAM_v33)
-        SocialProfileSnapshot.self,     // Platform-agnostic social profile storage (schema SAM_v33)
-        FacebookImport.self,            // Facebook archive import history (schema SAM_v33)
-        SubstackImport.self,            // Substack RSS/subscriber import history (schema SAM_v33)
+        NotificationTypeTracker.self,   // LinkedIn notification type tracking (schema SAM_v34)
+        ProfileAnalysisRecord.self,     // LinkedIn profile analysis history (schema SAM_v34)
+        EngagementSnapshot.self,        // Social engagement metrics snapshots (schema SAM_v34)
+        SocialProfileSnapshot.self,     // Platform-agnostic social profile storage (schema SAM_v34)
+        FacebookImport.self,            // Facebook archive import history (schema SAM_v34)
+        SubstackImport.self,            // Substack RSS/subscriber import history (schema SAM_v34)
     ]
 }
 
@@ -74,7 +74,7 @@ enum SAMModelContainer {
     nonisolated(unsafe) private static var _shared: ModelContainer = {
         let schema     = Schema(SAMSchema.allModels)
         let config     = ModelConfiguration(
-            "SAM_v33", // Contact lifecycle management
+            "SAM_v34", // Contact lifecycle management
             schema: schema,
             isStoredInMemoryOnly: false   // persistent on disk
         )
@@ -89,12 +89,12 @@ enum SAMModelContainer {
     /// DEBUG-only mutable shared container for reset flows.
     nonisolated static var shared: ModelContainer { _shared }
 
-    /// The default on-disk URL that ModelConfiguration("SAM_v33") uses.
+    /// The default on-disk URL that ModelConfiguration("SAM_v34") uses.
     /// Computed without touching _shared so it is safe to call before the
     /// container is ever initialized (e.g. during a launch-time wipe).
     nonisolated static var defaultStoreURL: URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        return appSupport.appendingPathComponent("SAM_v33.store")
+        return appSupport.appendingPathComponent("SAM_v34.store")
     }
 
     /// Delete the on-disk SQLite store files (main + -shm + -wal).
@@ -113,7 +113,7 @@ enum SAMModelContainer {
     nonisolated static func makeFreshContainer() -> ModelContainer {
         let schema = Schema(SAMSchema.allModels)
         let config = ModelConfiguration(
-            "SAM_v33", // Contact lifecycle management
+            "SAM_v34", // Contact lifecycle management
             schema: schema,
             isStoredInMemoryOnly: false
         )
@@ -133,7 +133,7 @@ enum SAMModelContainer {
     nonisolated static let shared: ModelContainer = {
         let schema     = Schema(SAMSchema.allModels)
         let config     = ModelConfiguration(
-            "SAM_v33", // Contact lifecycle management
+            "SAM_v34", // Contact lifecycle management
             schema: schema,
             isStoredInMemoryOnly: false   // persistent on disk
         )

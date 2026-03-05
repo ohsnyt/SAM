@@ -56,6 +56,9 @@ struct OutcomeCardView: View {
                 sequenceIndicator
             }
 
+            // Companion indicator
+            companionIndicator
+
             // Title
             Text(outcome.title)
                 .font(isHero ? .title3.bold() : .headline)
@@ -166,6 +169,22 @@ struct OutcomeCardView: View {
                     .fill(kindColor)
                     .frame(width: 4)
                     .padding(.vertical, 6)
+            }
+        }
+    }
+
+    // MARK: - Companion Indicator
+
+    @ViewBuilder
+    private var companionIndicator: some View {
+        if outcome.isCompanionOutcome {
+            HStack(spacing: 4) {
+                Image(systemName: "link")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("Heads-up companion")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
         }
     }

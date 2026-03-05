@@ -164,6 +164,12 @@ struct PersonBackup: Codable {
     var inferredChannelRawValue: String?
     var preferredChannelRawValue: String?
     var preferredCadenceDays: Int?
+    var preferredQuickChannelRawValue: String?
+    var preferredDetailedChannelRawValue: String?
+    var preferredSocialChannelRawValue: String?
+    var inferredQuickChannelRawValue: String?
+    var inferredDetailedChannelRawValue: String?
+    var inferredSocialChannelRawValue: String?
     var displayName: String
     var email: String?
     var roleBadges: [String]

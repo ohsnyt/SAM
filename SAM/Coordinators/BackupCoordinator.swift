@@ -171,6 +171,12 @@ final class BackupCoordinator {
                     inferredChannelRawValue: p.inferredChannelRawValue,
                     preferredChannelRawValue: p.preferredChannelRawValue,
                     preferredCadenceDays: p.preferredCadenceDays,
+                    preferredQuickChannelRawValue: p.preferredQuickChannelRawValue,
+                    preferredDetailedChannelRawValue: p.preferredDetailedChannelRawValue,
+                    preferredSocialChannelRawValue: p.preferredSocialChannelRawValue,
+                    inferredQuickChannelRawValue: p.inferredQuickChannelRawValue,
+                    inferredDetailedChannelRawValue: p.inferredDetailedChannelRawValue,
+                    inferredSocialChannelRawValue: p.inferredSocialChannelRawValue,
                     displayName: p.displayName,
                     email: p.email,
                     roleBadges: p.roleBadges,
@@ -681,6 +687,12 @@ final class BackupCoordinator {
                 person.inferredChannelRawValue = dto.inferredChannelRawValue
                 person.preferredChannelRawValue = dto.preferredChannelRawValue
                 person.preferredCadenceDays = dto.preferredCadenceDays
+                person.preferredQuickChannelRawValue = dto.preferredQuickChannelRawValue
+                person.preferredDetailedChannelRawValue = dto.preferredDetailedChannelRawValue
+                person.preferredSocialChannelRawValue = dto.preferredSocialChannelRawValue
+                person.inferredQuickChannelRawValue = dto.inferredQuickChannelRawValue
+                person.inferredDetailedChannelRawValue = dto.inferredDetailedChannelRawValue
+                person.inferredSocialChannelRawValue = dto.inferredSocialChannelRawValue
                 person.responsibilityNotes = dto.responsibilityNotes
                 person.recentInteractions = dto.recentInteractions
                 person.contextChips = dto.contextChips
@@ -1178,6 +1190,12 @@ final class BackupCoordinator {
                         inferredChannelRawValue: p.inferredChannelRawValue,
                         preferredChannelRawValue: p.preferredChannelRawValue,
                         preferredCadenceDays: p.preferredCadenceDays,
+                        preferredQuickChannelRawValue: p.preferredQuickChannelRawValue,
+                        preferredDetailedChannelRawValue: p.preferredDetailedChannelRawValue,
+                        preferredSocialChannelRawValue: p.preferredSocialChannelRawValue,
+                        inferredQuickChannelRawValue: p.inferredQuickChannelRawValue,
+                        inferredDetailedChannelRawValue: p.inferredDetailedChannelRawValue,
+                        inferredSocialChannelRawValue: p.inferredSocialChannelRawValue,
                         displayName: p.displayName, email: p.email,
                         roleBadges: p.roleBadges, consentAlertsCount: p.consentAlertsCount,
                         reviewAlertsCount: p.reviewAlertsCount,

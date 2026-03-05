@@ -198,6 +198,12 @@ public struct PersonMergeSnapshot: Codable, Sendable {
     public let preferredCadenceDays: Int?
     public let preferredChannelRawValue: String?
     public let inferredChannelRawValue: String?
+    public let preferredQuickChannelRawValue: String?
+    public let preferredDetailedChannelRawValue: String?
+    public let preferredSocialChannelRawValue: String?
+    public let inferredQuickChannelRawValue: String?
+    public let inferredDetailedChannelRawValue: String?
+    public let inferredSocialChannelRawValue: String?
     public let linkedInProfileURL: String?
     public let linkedInConnectedOn: Date?
     public let facebookProfileURL: String?

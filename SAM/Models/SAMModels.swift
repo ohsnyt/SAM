@@ -108,6 +108,22 @@ public final class SamPerson {
     /// Explicit user override for preferred communication channel.
     public var preferredChannelRawValue: String?
 
+    // ── Per-Category Channel Preferences ──────────────────────────────
+
+    /// Explicit preferred channel for quick messages (texts, check-ins).
+    public var preferredQuickChannelRawValue: String?
+    /// Explicit preferred channel for detailed messages (proposals, docs).
+    public var preferredDetailedChannelRawValue: String?
+    /// Explicit preferred channel for social/networking messages.
+    public var preferredSocialChannelRawValue: String?
+
+    /// Inferred channel for quick messages (from evidence patterns).
+    public var inferredQuickChannelRawValue: String?
+    /// Inferred channel for detailed messages (from evidence patterns).
+    public var inferredDetailedChannelRawValue: String?
+    /// Inferred channel for social/networking messages.
+    public var inferredSocialChannelRawValue: String?
+
     /// User-set cadence override in days (nil = use computed median gap).
     public var preferredCadenceDays: Int?
 
@@ -145,6 +161,29 @@ public final class SamPerson {
             return CommunicationChannel(rawValue: explicit)
         }
         return inferredChannelRawValue.flatMap { CommunicationChannel(rawValue: $0) }
+    }
+
+    /// Category-aware channel resolution.
+    /// Priority: explicit per-category → inferred per-category → general effectiveChannel → nil
+    func effectiveChannel(for category: MessageCategory) -> CommunicationChannel? {
+        let (explicitRaw, inferredRaw): (String?, String?) = switch category {
+        case .quick:    (preferredQuickChannelRawValue, inferredQuickChannelRawValue)
+        case .detailed: (preferredDetailedChannelRawValue, inferredDetailedChannelRawValue)
+        case .social:   (preferredSocialChannelRawValue, inferredSocialChannelRawValue)
+        }
+        if let raw = explicitRaw, let ch = CommunicationChannel(rawValue: raw) { return ch }
+        if let raw = inferredRaw, let ch = CommunicationChannel(rawValue: raw) { return ch }
+        return effectiveChannel
+    }
+
+    /// All known contact addresses for channel switching in compose flows.
+    @Transient
+    public var contactAddresses: ContactAddresses {
+        ContactAddresses(
+            email: emailCache,
+            phone: phoneAliases.first,
+            linkedInProfileURL: linkedInProfileURL
+        )
     }
 
     // ── DEPRECATED: Transitional fields (remove in SAM_v7) ─────────
@@ -875,6 +914,15 @@ public final class SamOutcome {
     /// Suggested communication channel for this outcome.
     public var suggestedChannelRawValue: String?
 
+    /// Message category for channel routing (quick/detailed/social).
+    public var messageCategoryRawValue: String?
+
+    /// Links this heads-up companion to its primary outcome.
+    public var companionOfID: UUID?
+
+    /// True when this outcome is a companion heads-up (prevents recursion).
+    public var isCompanionOutcome: Bool = false
+
     // ── Multi-Step Sequences ─────────────────────────────────────────
 
     /// Groups steps in a sequence; nil = standalone outcome.
@@ -916,6 +964,12 @@ public final class SamOutcome {
     public var suggestedChannel: CommunicationChannel? {
         get { suggestedChannelRawValue.flatMap { CommunicationChannel(rawValue: $0) } }
         set { suggestedChannelRawValue = newValue?.rawValue }
+    }
+
+    @Transient
+    public var messageCategory: MessageCategory? {
+        get { messageCategoryRawValue.flatMap { MessageCategory(rawValue: $0) } }
+        set { messageCategoryRawValue = newValue?.rawValue }
     }
 
     @Transient

@@ -162,6 +162,15 @@ final class OutcomeEngine {
             }
             newOutcomes.append(contentsOf: sequenceSteps)
 
+            // Generate companion "heads-up" outcomes for detailed communications
+            var companions: [SamOutcome] = []
+            for outcome in newOutcomes where outcome.messageCategory == .detailed {
+                if let companion = maybeCreateCompanionOutcome(for: outcome) {
+                    companions.append(companion)
+                }
+            }
+            newOutcomes.append(contentsOf: companions)
+
             // Score all new outcomes using calibrated weights
             let weights = CoachingAdvisor.shared.adjustedWeights()
             for outcome in newOutcomes {
@@ -1336,25 +1345,74 @@ final class OutcomeEngine {
         }
     }
 
-    /// Suggest the best communication channel for an outcome targeting a person.
+    /// Suggest the best communication channel for an outcome targeting a person,
+    /// using message-category-aware routing.
     func suggestChannel(for outcome: SamOutcome) -> CommunicationChannel {
         let title = outcome.title.lowercased()
 
-        // Person's explicit or inferred preference
-        let personPref = outcome.linkedPerson?.effectiveChannel
-
-        // Complex outcomes → email
+        // Resolve category: title keyword overrides, then OutcomeKind default
+        let category: MessageCategory
         if title.contains("proposal") || title.contains("analysis") || title.contains("document") {
-            return .email
+            category = .detailed
+        } else if title.contains("linkedin") || title.contains("connect on") {
+            category = .social
+        } else if title.contains("congratulat") || title.contains("thank") || title.contains("check in") || title.contains("heads up") || title.contains("reminder") {
+            category = .quick
+        } else {
+            category = outcome.outcomeKind.messageCategory
         }
 
-        // Acknowledgment/congratulatory → person pref or iMessage
-        if title.contains("congratulat") || title.contains("thank") || title.contains("welcome") {
-            return personPref ?? .iMessage
+        // Store the resolved category on the outcome
+        outcome.messageCategory = category
+
+        // Use person's category-specific channel preference
+        if let person = outcome.linkedPerson,
+           let ch = person.effectiveChannel(for: category) {
+            return ch
         }
 
-        // Default → person preference or iMessage
-        return personPref ?? .iMessage
+        // Category defaults
+        switch category {
+        case .quick:    return .iMessage
+        case .detailed: return .email
+        case .social:   return .linkedIn
+        }
+    }
+
+    /// Create a companion "heads-up" outcome for detailed communications
+    /// when the person's quick channel differs from the detailed channel.
+    func maybeCreateCompanionOutcome(for primary: SamOutcome) -> SamOutcome? {
+        guard primary.messageCategory == .detailed,
+              !primary.isCompanionOutcome,
+              let person = primary.linkedPerson else { return nil }
+
+        let quickChannel = person.effectiveChannel(for: .quick) ?? .iMessage
+        let detailedChannel = primary.suggestedChannel ?? .email
+
+        // Only create companion when channels differ
+        guard quickChannel != detailedChannel else { return nil }
+
+        let personName = person.displayNameCache ?? person.displayName
+        let channelName = detailedChannel.displayName.lowercased()
+
+        let companion = SamOutcome(
+            title: "Heads-up: text \(personName) about your \(channelName)",
+            rationale: "Let \(personName) know to watch for your \(channelName) — increases response rate.",
+            outcomeKind: .followUp,
+            priorityScore: primary.priorityScore * 0.8,
+            deadlineDate: primary.deadlineDate,
+            sourceInsightSummary: "Companion heads-up for: \(primary.title)",
+            suggestedNextStep: "Send a quick text so they know to check their \(channelName)",
+            linkedPerson: person,
+            linkedContext: primary.linkedContext
+        )
+        companion.actionLane = .communicate
+        companion.suggestedChannel = quickChannel
+        companion.messageCategory = .quick
+        companion.companionOfID = primary.id
+        companion.isCompanionOutcome = true
+        companion.draftMessageText = "Hi \(personName), I just sent you something by \(channelName) — check your inbox!"
+        return companion
     }
 
     // MARK: - Priority Computation
@@ -1688,13 +1746,15 @@ final class OutcomeEngine {
         let summary = person?.relationshipSummary ?? ""
 
         let channel = outcome.suggestedChannel ?? .iMessage
+        let category = outcome.messageCategory ?? outcome.outcomeKind.messageCategory
         let channelNote: String
-        switch channel {
-        case .iMessage: channelNote = "a brief, friendly text message"
-        case .email:    channelNote = "a professional email (2-3 short paragraphs)"
-        case .phone:    channelNote = "talking points for a phone call (3-4 bullet points)"
-        case .faceTime: channelNote = "talking points for a video call (3-4 bullet points)"
-        case .linkedIn: channelNote = "a brief, professional LinkedIn message"
+        switch (category, channel) {
+        case (.quick, .iMessage):  channelNote = "a very brief text message, 2-3 sentences max"
+        case (.quick, _):          channelNote = "a very brief, friendly message (2-3 sentences)"
+        case (.detailed, .email):  channelNote = "a professional, thorough email (2-4 paragraphs)"
+        case (.detailed, _):       channelNote = "a detailed, professional message (2-3 paragraphs)"
+        case (.social, .linkedIn): channelNote = "a professional LinkedIn networking message (2-3 sentences)"
+        case (.social, _):         channelNote = "a professional networking message (2-3 sentences)"
         }
 
         let richContext = buildEnrichmentContext(for: outcome)
@@ -1714,26 +1774,44 @@ final class OutcomeEngine {
             """
 
         let systemInstruction: String
-        switch channel {
-        case .iMessage:
+        switch (category, channel) {
+        case (.quick, .iMessage):
+            systemInstruction = """
+                Write ONLY the message text — no greeting line with "Hi [Name]," unless it fits naturally.
+                Keep it under 2-3 sentences. Very brief and casual but professional. No emojis. No signature.
+                """
+        case (.detailed, .email):
+            systemInstruction = """
+                Write the email body only — no subject line.
+                Start with a greeting. Be thorough and professional (2-4 paragraphs).
+                Cover the topic in detail. End with a clear call to action or next step.
+                End with a simple closing. No signature block.
+                """
+        case (.social, .linkedIn):
+            systemInstruction = """
+                Write ONLY the message text — keep it under 3 sentences.
+                Professional networking tone. Reference shared interests or mutual connections.
+                No emojis. No signature. No connection request phrasing.
+                """
+        case (_, .iMessage):
             systemInstruction = """
                 Write ONLY the message text — no greeting line with "Hi [Name]," unless it fits naturally.
                 Keep it under 3 sentences. Casual but professional. No emojis. No signature.
                 """
-        case .email:
+        case (_, .email):
             systemInstruction = """
                 Write the email body only — no subject line.
                 Start with a greeting. Keep it concise (2-3 short paragraphs). Professional tone.
                 End with a simple closing like "Best" or "Looking forward to hearing from you."
                 No signature block.
                 """
-        case .phone, .faceTime:
+        case (_, .phone), (_, .faceTime):
             systemInstruction = """
                 Write 3-4 brief talking points as a simple list, one per line.
                 Each point should be a conversation starter or key topic to cover.
                 No bullet markers, just plain text lines.
                 """
-        case .linkedIn:
+        case (_, .linkedIn):
             systemInstruction = """
                 Write ONLY the message text — keep it under 3 sentences.
                 Professional but warm. No emojis. No signature. No connection requests phrasing.

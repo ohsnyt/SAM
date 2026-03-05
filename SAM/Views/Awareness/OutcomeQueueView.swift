@@ -270,8 +270,13 @@ struct OutcomeQueueView: View {
         case .communicate:
             return {
                 let person = outcome.linkedPerson
-                let address = person?.emailCache ?? person?.phoneAliases.first ?? ""
                 let channel = outcome.suggestedChannel ?? person?.effectiveChannel ?? .iMessage
+                let address: String
+                if channel == .linkedIn, let url = person?.linkedInProfileURL {
+                    address = url
+                } else {
+                    address = person?.emailCache ?? person?.phoneAliases.first ?? ""
+                }
                 let payload = ComposePayload(
                     outcomeID: outcome.id,
                     personID: person?.id,
@@ -279,7 +284,9 @@ struct OutcomeQueueView: View {
                     recipientAddress: address,
                     channel: channel,
                     draftBody: outcome.draftMessageText ?? outcome.suggestedNextStep ?? "",
-                    contextTitle: outcome.title
+                    contextTitle: outcome.title,
+                    linkedInProfileURL: person?.linkedInProfileURL,
+                    contactAddresses: person?.contactAddresses
                 )
                 openWindow(id: "compose-message", value: payload)
             }

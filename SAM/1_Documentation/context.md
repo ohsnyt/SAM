@@ -1,6 +1,6 @@
 # SAM — Project Context
 
-**Platform**: macOS 26+ (Tahoe) | **Language**: Swift 6 | **Framework**: SwiftUI + SwiftData | **Schema**: SAM_v33
+**Platform**: macOS 26+ (Tahoe) | **Language**: Swift 6 | **Framework**: SwiftUI + SwiftData | **Schema**: SAM_v34
 
 **Related Docs**:
 - `CLAUDE.md` (repo root) — Product philosophy, AI behavior rules, code standards
@@ -287,6 +287,9 @@ Bookmark the **directory** (not file) for SQLite to cover WAL/SHM companions. `.
 | v29 | + IntentionalTouch, LinkedInImport; UnknownSender extended |
 | v30 | + NotificationTypeTracker, ProfileAnalysisRecord, EngagementSnapshot, SocialProfileSnapshot |
 | v31 | + FacebookImport; SamPerson + facebook fields; UnknownSender + facebook fields |
+| v32 | + ContactLifecycleStatus on SamPerson |
+| v33 | + SubstackImport |
+| v34 | + Per-category channel prefs (6 fields on SamPerson), companion outcome fields on SamOutcome |
 
 ---
 
@@ -296,18 +299,30 @@ Bookmark the **directory** (not file) for SQLite to cover WAL/SHM companions. `.
 
 `EvidenceSource.clipboardCapture`, `GlobalHotkeyService` (⌃⇧V via NSEvent global monitor + AXIsProcessTrusted), `ClipboardParsingService` (AI conversation parsing), `ClipboardCaptureWindowView` (4-phase: parse → review → save → error, inline person picker autocomplete), menu command, Settings toggle + Accessibility status. See `changelog.md` for full details. No schema change.
 
-### Priority 4 — LinkedIn as Reply Channel
+### ~~Priority 4 — LinkedIn as Reply Channel~~ ✅ Completed (Mar 5, 2026)
 
-Surface LinkedIn alongside iMessage/email in channel recommendations. Draft reply UI with copy button. Uses existing `linkedInProfileURL` for deep-link.
+LinkedIn upgraded from clipboard-only fallback to first-class reply channel. `ComposePayload.linkedInProfileURL` field, `ComposeService.openLinkedInMessaging()` (profile URL + `/overlay/new-message/` deep-link), LinkedIn appears in channel picker only when profile URL exists, "Copy & Open LinkedIn" button label, address routing in OutcomeQueueView for `.linkedIn` channel. No schema change.
+
+### ~~Message-Category-Aware Channel Prefs~~ ✅ Completed (Mar 5, 2026)
+
+Per-category channel preferences (quick/detailed/social), companion outcomes for alternate-channel heads-ups, ContactAddresses routing, 3-picker UI on PersonDetailView. Schema SAM_v34.
+
+### ~~Evidence-Gated Social Profile Buttons~~ ✅ Completed (Mar 5, 2026)
+
+Social buttons in quickActionsRow only appear when `person.linkedEvidence` contains evidence for that channel (`.linkedIn`, `.facebook`). URLs resolved from SAM fields or Apple Contacts `socialProfiles`. `ComposeService.openSocialProfile(url:)` for generic social URLs. No schema change.
 
 ### Priority 5 — WhatsApp Direct Database Integration *(Deferred: feasibility verification needed)*
 
 Unencrypted SQLite at `~/Library/Group Containers/group.net.whatsapp.WhatsApp.shared/ChatStorage.sqlite`. Verify `NSOpenPanel` + security-scoped bookmark grants persistent read access before building.
 
-### Priority 6— Data migration and backup*
+### Priority 6 — Data migration and backup*
 
 Create a process to allow the user to backup data.
 Create a process to allow the user to migrate data from older versions of SAM SwiftData stores to the current version.
+
+### Priority 7 - Update onboarding, helps, tooltips
+- In light of the many changes to the UI, we need to carefully examine the onboarding process. Before even starting, the user must have one calendar for appointments. What minimal permissions and/or settings are required at startup? (I think a request to download and install the MLX is required.) What
+
 
 ### Priority 7+ — Future
 
@@ -319,5 +334,5 @@ Create a process to allow the user to migrate data from older versions of SAM Sw
 
 ---
 
-**Document Version**: 33.1
-**Last Updated**: March 4, 2026 — Substack Integration implemented (SAM_v33): SubstackImport @Model, SubstackService RSS+CSV parsing, SubstackImportCoordinator (Track 1 feed fetch + Track 2 subscriber pipeline), UserSubstackProfileDTO, BusinessProfileService Substack context, ContentAdvisorService Substack voice rules, OutcomeEngine Substack cadence, SubstackImportSettingsView, backup support. Substack added to Grow section as scored platform (SubstackProfileAnalystService, auto-analysis after feed fetch, Audience & Reach section). ContentDraftSheet includes Substack. Grow page auto-refreshes on any profile analysis update (.samProfileAnalysisDidUpdate notification).
+**Document Version**: 34.1
+**Last Updated**: March 5, 2026 — Message-category-aware channel prefs (SAM_v34), LinkedIn as reply channel, evidence-gated social profile buttons, global clipboard capture hotkey.

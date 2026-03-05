@@ -4,6 +4,91 @@
 
 ---
 
+## March 5, 2026 — Evidence-Gated Social Profile Buttons
+
+### Overview
+Social profile buttons in PersonDetailView's quickActionsRow now only appear when there is actual interaction evidence for that channel. Previously, the LinkedIn button checked only for a profile URL; now it requires `.linkedIn` evidence in `person.linkedEvidence`. Facebook button added with the same gate (`.facebook` evidence required). A generic `ComposeService.openSocialProfile(url:)` opens non-LinkedIn social profiles in the browser. No schema change.
+
+### What Changed
+- **PersonDetailView** — Replaced `resolvedLinkedInURL` with `SocialAction` struct + `evidenceBackedSocialActions` computed property; added `contactLinkedInURL`/`contactFacebookURL` helpers (resolve from Apple Contacts `socialProfiles` as fallback); `quickActionsRow` uses `ForEach` over evidence-backed actions between Email and Add Note buttons
+- **ComposeService** — Added `openSocialProfile(url:)` for generic social URL opening; LinkedIn continues to use `openLinkedInMessaging()` (messaging overlay deep-link)
+
+### Files
+| File | Action |
+|------|--------|
+| `Views/People/PersonDetailView.swift` | Modified — evidence-gated social buttons |
+| `Services/ComposeService.swift` | Modified — `openSocialProfile(url:)` |
+| `1_Documentation/changelog.md` | Modified — this entry |
+
+---
+
+## March 5, 2026 — Message-Category-Aware Channel Preferences
+
+### Overview
+Channel preferences are now per-message-category (quick/detailed/social) instead of a single global preference per person. Each outcome carries a message category that drives channel selection. Companion outcomes provide heads-up notifications on alternate channels. Schema SAM_v34.
+
+### What Changed
+- **MessageCategory** enum (quick/detailed/social) with display names, icons
+- **ContactAddresses** struct — carries email/phone/linkedInProfileURL, resolves address per channel, reports available channels
+- **SamPerson** — 6 new fields: `preferred{Quick,Detailed,Social}ChannelRawValue`, `inferred{Quick,Detailed,Social}ChannelRawValue`; `effectiveChannel(for:)` resolves with priority cascade; `contactAddresses` transient property
+- **SamOutcome** — `messageCategoryRawValue`, `companionOfID`, `isCompanionOutcome` fields; `messageCategory` transient
+- **ComposePayload** — `linkedInProfileURL` + `contactAddresses` fields
+- **ComposeWindowView** — Channel switching via ContactAddresses, LinkedIn send action
+- **OutcomeEngine** — Category-aware `suggestChannel()`, companion outcome generation
+- **MeetingPrepCoordinator** — Per-category channel inference from evidence patterns
+- **PersonDetailView** — 3-picker UI for per-category channel preferences, Text button in quickActionsRow
+- **OutcomeCardView** — Companion outcome indicator
+- **Backup** — BackupDocument + BackupCoordinator updated for new fields
+
+### Files
+| File | Action |
+|------|--------|
+| `Models/SAMModels-Supporting.swift` | Modified — MessageCategory, ContactAddresses, ComposePayload |
+| `Models/SAMModels.swift` | Modified — per-category fields on SamPerson + SamOutcome |
+| `Models/SAMModels-Undo.swift` | Modified — undo snapshot for new fields |
+| `Models/BackupDocument.swift` | Modified — backup DTOs |
+| `App/SAMModelContainer.swift` | Modified — schema SAM_v34 |
+| `Coordinators/OutcomeEngine.swift` | Modified — category-aware channel + companions |
+| `Coordinators/MeetingPrepCoordinator.swift` | Modified — per-category inference |
+| `Coordinators/BackupCoordinator.swift` | Modified — backup/restore new fields |
+| `Repositories/PeopleRepository.swift` | Modified — per-category channel helpers |
+| `Repositories/UndoRepository.swift` | Modified — undo for new fields |
+| `Services/ComposeService.swift` | Modified — openLinkedInMessaging |
+| `Views/Communication/ComposeWindowView.swift` | Modified — channel switching, LinkedIn send |
+| `Views/Awareness/OutcomeQueueView.swift` | Modified — LinkedIn routing + payload |
+| `Views/Awareness/LifeEventsSection.swift` | Modified — linkedInProfileURL in payload |
+| `Views/People/PersonDetailView.swift` | Modified — 3-picker UI, Text button |
+| `Views/Shared/OutcomeCardView.swift` | Modified — companion indicator |
+| `1_Documentation/context.md` | Modified — schema v32-v34, priority 4 complete |
+| `1_Documentation/changelog.md` | Modified — this entry |
+
+---
+
+## March 5, 2026 — LinkedIn as Reply Channel (Priority 4)
+
+### Overview
+LinkedIn upgraded from a clipboard-only dead-end to a first-class reply channel in ComposeWindowView. When a person has a `linkedInProfileURL`, LinkedIn appears in the channel picker, the send button reads "Copy & Open LinkedIn", and clicking it copies the draft to clipboard then opens the LinkedIn messaging overlay in the browser. No schema change.
+
+### What Changed
+- **ComposePayload.linkedInProfileURL** — New `String?` field (default `nil`); all existing call sites unchanged
+- **ComposeService.openLinkedInMessaging(profileURL:)** — Normalizes URL, appends `/overlay/new-message/`, opens in default browser; falls back to profile page if overlay URL fails
+- **ComposeWindowView** — LinkedIn in `availableChannels` when `payload.linkedInProfileURL != nil`; LinkedIn send action copies draft + opens messaging; button label "Copy & Open LinkedIn" when LinkedIn selected
+- **OutcomeQueueView** — `.communicate` action lane routes LinkedIn address from `person.linkedInProfileURL` instead of email/phone; passes `linkedInProfileURL` in ComposePayload
+- **LifeEventsSection** — Passes `person?.linkedInProfileURL` in ComposePayload
+
+### Files
+| File | Action |
+|------|--------|
+| `Models/SAMModels-Supporting.swift` | Modified — `linkedInProfileURL` on ComposePayload |
+| `Services/ComposeService.swift` | Modified — `openLinkedInMessaging()` |
+| `Views/Communication/ComposeWindowView.swift` | Modified — channel picker, send action, button label |
+| `Views/Awareness/OutcomeQueueView.swift` | Modified — LinkedIn address routing + payload |
+| `Views/Awareness/LifeEventsSection.swift` | Modified — pass linkedInProfileURL |
+| `1_Documentation/context.md` | Modified — Priority 4 marked complete |
+| `1_Documentation/changelog.md` | Modified — this entry |
+
+---
+
 ## March 5, 2026 — Global Clipboard Capture Hotkey (Priority 3)
 
 ### Overview
@@ -4311,6 +4396,91 @@ Tiebreakers: Agent vs External Agent decided by training cadence (≤14d gap →
 | `Coordinators/OutcomeEngine.swift` | MODIFY |
 | `Views/Awareness/OutcomeQueueView.swift` | MODIFY |
 | `Models/DTOs/OnboardingView.swift` | MODIFY |
+
+---
+
+---
+
+## Message-Category-Aware Channel Preferences + Companion Outcomes (March 5, 2026)
+
+**Schema**: SAM_v33 → SAM_v34
+
+### What Changed
+
+SAM now understands that different *types* of messages should go through different channels. Quick check-ins route to iMessage, formal proposals to email, professional networking to LinkedIn — all configurable per person per category.
+
+### New Types
+
+- **`MessageCategory`** enum (`.quick`, `.detailed`, `.social`) — classifies communication intent for channel routing
+- **`ContactAddresses`** struct — carries all known addresses (email, phone, LinkedIn) for channel switching in compose flows
+- **`OutcomeKind.messageCategory`** computed property — deterministic mapping from outcome kind to message category
+
+### SamPerson Changes (6 new optional fields)
+
+- `preferredQuickChannelRawValue`, `preferredDetailedChannelRawValue`, `preferredSocialChannelRawValue` — explicit per-category preferences
+- `inferredQuickChannelRawValue`, `inferredDetailedChannelRawValue`, `inferredSocialChannelRawValue` — evidence-based inference
+- `effectiveChannel(for: MessageCategory)` method — cascading resolution: explicit per-category → inferred per-category → general preference
+- `contactAddresses` computed property — aggregates email, phone, LinkedIn for compose flows
+
+### SamOutcome Changes (3 new fields)
+
+- `messageCategoryRawValue` — resolved message category stored on outcome
+- `companionOfID: UUID?` — links heads-up companion to primary outcome
+- `isCompanionOutcome: Bool` — prevents companion recursion
+
+### OutcomeEngine Enhancements
+
+- `suggestChannel(for:)` — now resolves MessageCategory from OutcomeKind + title keyword overrides, uses `person.effectiveChannel(for: category)` with category defaults (quick→iMessage, detailed→email, social→LinkedIn)
+- `maybeCreateCompanionOutcome(for:)` — generates "heads-up" text outcomes when a detailed outcome's channel differs from the person's quick channel
+- `generateDraftMessage(for:)` — category-aware tone refinement (quick → 2-3 sentences, detailed → 2-4 paragraphs, social → networking tone)
+
+### MeetingPrepCoordinator
+
+- `inferChannelPreference(for:)` extended with per-category score maps: iMessage/phone evidence → quick, mail/FaceTime → detailed, LinkedIn → social
+
+### PersonDetailView
+
+- **3-picker Communication Preferences**: Quick/Detailed/Social rows with Auto + all channels, inferred hint when no explicit preference
+- **Text button** added to quickActionsRow (before Call) — opens Messages via `sms:` URL scheme
+
+### ComposeWindowView
+
+- `resolvedRecipient` computed property uses `contactAddresses` when available for correct per-channel address resolution
+- `availableChannels` prefers `contactAddresses.availableChannels` over string-parsing fallback
+- `sendViaSystemApp()` and `sendDirectly()` use `resolvedRecipient`
+- LinkedIn resolution uses `contactAddresses?.linkedInProfileURL` with fallback
+
+### ComposePayload Call Sites
+
+- OutcomeQueueView and LifeEventsSection now pass `contactAddresses: person?.contactAddresses`
+
+### OutcomeCardView
+
+- Companion indicator ("Heads-up companion" with link icon) displayed for companion outcomes
+
+### Backup & Undo
+
+- PersonBackup, PersonMergeSnapshot, PeopleRepository merge/snapshot, UndoRepository restore all updated with 6 new fields
+
+### Files Summary
+
+| File | Action |
+|------|--------|
+| `Models/SAMModels-Supporting.swift` | MessageCategory, ContactAddresses, ComposePayload update |
+| `Models/SAMModels.swift` | SamPerson 6 fields + helpers; SamOutcome 3 fields |
+| `Models/SAMModels-Undo.swift` | PersonMergeSnapshot 6 new fields |
+| `Models/BackupDocument.swift` | PersonBackup 6 new fields |
+| `App/SAMModelContainer.swift` | Schema SAM_v33 → SAM_v34 |
+| `Coordinators/OutcomeEngine.swift` | Category-aware suggestChannel, companions, draft tone |
+| `Coordinators/MeetingPrepCoordinator.swift` | Per-category inference |
+| `Coordinators/BackupCoordinator.swift` | Export/import/validate new fields |
+| `Repositories/PeopleRepository.swift` | Snapshot + merge new fields |
+| `Repositories/UndoRepository.swift` | Restore new fields |
+| `Views/People/PersonDetailView.swift` | 3-picker preferences, Text button |
+| `Views/Communication/ComposeWindowView.swift` | Channel switching via ContactAddresses |
+| `Views/Awareness/OutcomeQueueView.swift` | Pass contactAddresses |
+| `Views/Awareness/LifeEventsSection.swift` | Pass contactAddresses |
+| `Views/Shared/OutcomeCardView.swift` | Companion indicator |
 
 ---
 

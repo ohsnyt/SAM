@@ -343,6 +343,12 @@ final class UndoRepository {
         source.preferredCadenceDays = snapshot.preferredCadenceDays
         source.preferredChannelRawValue = snapshot.preferredChannelRawValue
         source.inferredChannelRawValue = snapshot.inferredChannelRawValue
+        source.preferredQuickChannelRawValue = snapshot.preferredQuickChannelRawValue
+        source.preferredDetailedChannelRawValue = snapshot.preferredDetailedChannelRawValue
+        source.preferredSocialChannelRawValue = snapshot.preferredSocialChannelRawValue
+        source.inferredQuickChannelRawValue = snapshot.inferredQuickChannelRawValue
+        source.inferredDetailedChannelRawValue = snapshot.inferredDetailedChannelRawValue
+        source.inferredSocialChannelRawValue = snapshot.inferredSocialChannelRawValue
         source.linkedInProfileURL = snapshot.linkedInProfileURL
         source.linkedInConnectedOn = snapshot.linkedInConnectedOn
         source.facebookProfileURL = snapshot.facebookProfileURL

@@ -841,6 +841,15 @@ final class PeopleRepository {
         if target.preferredChannelRawValue == nil {
             target.preferredChannelRawValue = source.preferredChannelRawValue
         }
+        if target.preferredQuickChannelRawValue == nil {
+            target.preferredQuickChannelRawValue = source.preferredQuickChannelRawValue
+        }
+        if target.preferredDetailedChannelRawValue == nil {
+            target.preferredDetailedChannelRawValue = source.preferredDetailedChannelRawValue
+        }
+        if target.preferredSocialChannelRawValue == nil {
+            target.preferredSocialChannelRawValue = source.preferredSocialChannelRawValue
+        }
 
         // ── Build snapshot before deleting source ────────────────────
         let snapshot = PersonMergeSnapshot(
@@ -864,6 +873,12 @@ final class PeopleRepository {
             preferredCadenceDays: source.preferredCadenceDays,
             preferredChannelRawValue: source.preferredChannelRawValue,
             inferredChannelRawValue: source.inferredChannelRawValue,
+            preferredQuickChannelRawValue: source.preferredQuickChannelRawValue,
+            preferredDetailedChannelRawValue: source.preferredDetailedChannelRawValue,
+            preferredSocialChannelRawValue: source.preferredSocialChannelRawValue,
+            inferredQuickChannelRawValue: source.inferredQuickChannelRawValue,
+            inferredDetailedChannelRawValue: source.inferredDetailedChannelRawValue,
+            inferredSocialChannelRawValue: source.inferredSocialChannelRawValue,
             linkedInProfileURL: source.linkedInProfileURL,
             linkedInConnectedOn: source.linkedInConnectedOn,
             facebookProfileURL: source.facebookProfileURL,
