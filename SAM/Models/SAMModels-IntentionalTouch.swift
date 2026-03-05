@@ -24,7 +24,8 @@ public enum TouchPlatform: String, Codable, Sendable, CaseIterable {
     case facebook = "facebook"
     case twitter  = "twitter"
     case instagram = "instagram"
-    case manual   = "manual"
+    case substack  = "substack"
+    case manual    = "manual"
 
     public var displayName: String {
         switch self {
@@ -32,6 +33,7 @@ public enum TouchPlatform: String, Codable, Sendable, CaseIterable {
         case .facebook:  return "Facebook"
         case .twitter:   return "X / Twitter"
         case .instagram: return "Instagram"
+        case .substack:  return "Substack"
         case .manual:    return "Manual"
         }
     }

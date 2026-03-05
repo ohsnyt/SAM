@@ -301,6 +301,11 @@ final class MailImportCoordinator {
 
             logger.info("Mail import complete: \(emails.count) emails from known senders")
 
+            // Re-run role deduction — mail evidence now linked to people
+            Task(priority: .utility) {
+                await RoleDeductionEngine.shared.deduceRoles()
+            }
+
         } catch {
             lastError = error.localizedDescription
             importStatus = .failed

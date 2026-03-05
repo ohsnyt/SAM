@@ -48,8 +48,10 @@ struct PersonDetailView: View {
     @State private var showingProductionForm = false
     @State private var pendingEnrichments: [PendingEnrichment] = []
     @State private var showingEnrichmentSheet = false
+    @State private var showingLifecycleConfirm = false
+    @State private var pendingLifecycleStatus: ContactLifecycleStatus?
 
-    @Query(filter: #Predicate<SamPerson> { !$0.isArchived })
+    @Query(filter: #Predicate<SamPerson> { $0.lifecycleStatusRawValue == "active" })
     private var allPeople: [SamPerson]
     
     // MARK: - Body
@@ -128,6 +130,30 @@ struct PersonDetailView: View {
 
                     Divider()
 
+                    // Lifecycle submenu
+                    Menu("Lifecycle") {
+                        if person.lifecycleStatus == .active {
+                            Button("Archive", systemImage: "archivebox") {
+                                pendingLifecycleStatus = .archived
+                                showingLifecycleConfirm = true
+                            }
+                            Button("Mark Do Not Contact", systemImage: "hand.raised") {
+                                pendingLifecycleStatus = .dnc
+                                showingLifecycleConfirm = true
+                            }
+                            Button("Mark Deceased", systemImage: "heart.slash") {
+                                pendingLifecycleStatus = .deceased
+                                showingLifecycleConfirm = true
+                            }
+                        } else {
+                            Button("Reactivate", systemImage: "arrow.uturn.backward") {
+                                applyLifecycleChange(.active)
+                            }
+                        }
+                    }
+
+                    Divider()
+
                     Button("Refresh Contact", systemImage: "arrow.clockwise") {
                         Task {
                             await loadFullContact()
@@ -184,6 +210,30 @@ struct PersonDetailView: View {
             Button("OK") { }
         } message: {
             Text(errorMessage)
+        }
+        .alert(
+            "Change Lifecycle Status",
+            isPresented: $showingLifecycleConfirm,
+            presenting: pendingLifecycleStatus
+        ) { status in
+            Button("Cancel", role: .cancel) {
+                pendingLifecycleStatus = nil
+            }
+            Button(status.displayName, role: status == .active ? nil : .destructive) {
+                applyLifecycleChange(status)
+                pendingLifecycleStatus = nil
+            }
+        } message: { status in
+            switch status {
+            case .archived:
+                Text("Archive \(person.displayNameCache ?? person.displayName)? They won't appear in suggestions.")
+            case .dnc:
+                Text("Mark \(person.displayNameCache ?? person.displayName) as Do Not Contact? No outreach will be generated.")
+            case .deceased:
+                Text("Mark \(person.displayNameCache ?? person.displayName) as deceased? Their record will be preserved but excluded from all outreach.")
+            case .active:
+                Text("Reactivate \(person.displayNameCache ?? person.displayName)?")
+            }
         }
     }
     
@@ -1814,21 +1864,91 @@ struct PersonDetailView: View {
                 }
             }
             
-            if person.isArchived {
-                HStack {
-                    Image(systemName: "archivebox")
-                        .foregroundStyle(.orange)
-                    
-                    Text("This contact has been deleted from Apple Contacts")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                }
+            if person.lifecycleStatus != .active {
+                lifecycleBanner
             }
         }
     }
     
+    // MARK: - Lifecycle Banner
+
+    @ViewBuilder
+    private var lifecycleBanner: some View {
+        let status = person.lifecycleStatus
+        HStack {
+            Image(systemName: status.icon)
+            switch status {
+            case .archived:
+                Text("Archived — not receiving suggestions")
+            case .dnc:
+                Text("Do Not Contact — no outreach will be generated")
+            case .deceased:
+                Text("Deceased — record preserved")
+            case .active:
+                EmptyView()
+            }
+            Spacer()
+            Button("Reactivate") {
+                applyLifecycleChange(.active)
+            }
+            .buttonStyle(.borderless)
+            .font(.caption)
+        }
+        .font(.caption)
+        .foregroundStyle({
+            switch status {
+            case .archived: return Color.orange
+            case .dnc:      return Color.red
+            case .deceased: return Color.gray
+            case .active:   return Color.green
+            }
+        }() as Color)
+        .padding(8)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill({
+                    switch status {
+                    case .archived: return Color.orange.opacity(0.1)
+                    case .dnc:      return Color.red.opacity(0.1)
+                    case .deceased: return Color.gray.opacity(0.1)
+                    case .active:   return Color.green.opacity(0.1)
+                    }
+                }() as Color)
+        )
+    }
+
+    // MARK: - Lifecycle Actions
+
+    private func applyLifecycleChange(_ newStatus: ContactLifecycleStatus) {
+        let previousStatus = person.lifecycleStatusRawValue
+        let personName = person.displayNameCache ?? person.displayName
+
+        // Capture undo snapshot
+        let snapshot = LifecycleChangeSnapshot(
+            personID: person.id,
+            personName: personName,
+            previousStatusRawValue: previousStatus,
+            newStatusRawValue: newStatus.rawValue
+        )
+        if let entry = try? UndoRepository.shared.capture(
+            operation: .statusChanged,
+            entityType: .person,
+            entityID: person.id,
+            entityDisplayName: personName,
+            snapshot: snapshot
+        ) {
+            UndoCoordinator.shared.showToast(for: entry)
+        }
+
+        // Apply
+        try? PeopleRepository.shared.setLifecycleStatus(newStatus, for: person)
+
+        // Notify
+        NotificationCenter.default.post(name: .samPersonDidChange, object: nil)
+    }
+
     // MARK: - Data Loading
-    
+
     private func loadNotes() {
         Task {
             do {
@@ -2329,6 +2449,7 @@ private extension EvidenceSource {
         case .faceTime:  return .teal
         case .linkedIn:  return .blue
         case .facebook:  return .indigo
+        case .substack:  return .orange
         }
     }
 }

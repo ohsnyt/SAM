@@ -118,13 +118,13 @@ struct PeopleRepositoryTests {
 
         // Manually archive the person
         let all = try PeopleRepository.shared.fetchAll()
-        all[0].isArchived = true
+        all[0].lifecycleStatus = .archived
 
         // Re-upsert
         try PeopleRepository.shared.upsert(contact: dto)
 
         let refreshed = try PeopleRepository.shared.fetchAll()
-        #expect(refreshed[0].isArchived == false)
+        #expect(refreshed[0].lifecycleStatus == .active)
     }
 
     // MARK: - Bulk Upsert

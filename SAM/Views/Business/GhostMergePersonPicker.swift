@@ -19,7 +19,7 @@ struct GhostMergePersonPicker: View {
     let onCancel: () -> Void
 
     @Query(
-        filter: #Predicate<SamPerson> { !$0.isMe && !$0.isArchived },
+        filter: #Predicate<SamPerson> { !$0.isMe && $0.lifecycleStatusRawValue == "active" },
         sort: \SamPerson.displayNameCache
     )
     private var allPeople: [SamPerson]

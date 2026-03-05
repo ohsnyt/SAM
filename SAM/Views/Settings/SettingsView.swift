@@ -169,6 +169,13 @@ struct DataSourcesSettingsView: View {
                 } label: {
                     Label("Facebook Import", systemImage: "person.2.fill")
                 }
+
+                DisclosureGroup {
+                    SubstackImportSettingsContent()
+                        .padding(.top, 8)
+                } label: {
+                    Label("Substack", systemImage: "newspaper.fill")
+                }
             }
         }
         .formStyle(.grouped)

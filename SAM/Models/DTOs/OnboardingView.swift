@@ -185,6 +185,7 @@ struct OnboardingView: View {
                 FeatureRow(icon: "person.2.fill", text: "Tracking interactions from Contacts and Calendar")
                 FeatureRow(icon: "lightbulb.fill", text: "Generating insights about client needs")
                 FeatureRow(icon: "bell.fill", text: "Reminding you when follow-ups are needed")
+                FeatureRow(icon: "person.text.rectangle", text: "Identifying your clients, agents, and partners from your data")
                 FeatureRow(icon: "lock.shield.fill", text: "Keeping all data private and on your device")
             }
             .padding(.leading, 8)
@@ -1394,6 +1395,12 @@ struct OnboardingView: View {
 
         if !skippedMail && mailAccessGranted {
             MailImportCoordinator.shared.startAutoImport()
+        }
+
+        // Run role deduction after imports settle
+        Task(priority: .utility) {
+            try? await Task.sleep(for: .seconds(5))
+            await RoleDeductionEngine.shared.deduceRoles()
         }
     }
 

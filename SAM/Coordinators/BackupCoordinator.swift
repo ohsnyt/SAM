@@ -144,6 +144,9 @@ final class BackupCoordinator {
             progress = "Reading deduced relations..."
             let deducedRelations = try context.fetch(FetchDescriptor<DeducedRelation>())
 
+            progress = "Reading Substack imports..."
+            let substackImports = try context.fetch(FetchDescriptor<SubstackImport>())
+
             // Map to DTOs
             progress = "Building backup document..."
 
@@ -157,8 +160,10 @@ final class BackupCoordinator {
                     phoneAliases: p.phoneAliases,
                     photoThumbnailBase64: p.photoThumbnailCache.map { $0.base64EncodedString() },
                     lastSyncedAt: p.lastSyncedAt,
-                    isArchived: p.isArchived,
+                    isArchived: p.isArchivedLegacy,
                     isMe: p.isMe,
+                    lifecycleStatusRawValue: p.lifecycleStatusRawValue,
+                    lifecycleChangedAt: p.lifecycleChangedAt,
                     relationshipSummary: p.relationshipSummary,
                     relationshipKeyThemes: p.relationshipKeyThemes,
                     relationshipNextSteps: p.relationshipNextSteps,
@@ -463,6 +468,20 @@ final class BackupCoordinator {
                 )
             }
 
+            let substackImportDTOs = substackImports.map { s in
+                SubstackImportBackup(
+                    id: s.id,
+                    importDate: s.importDate,
+                    archiveFileName: s.archiveFileName,
+                    postCount: s.postCount,
+                    subscriberCount: s.subscriberCount,
+                    matchedSubscriberCount: s.matchedSubscriberCount,
+                    newLeadsFound: s.newLeadsFound,
+                    touchEventsCreated: s.touchEventsCreated,
+                    statusRawValue: s.statusRawValue
+                )
+            }
+
             // Gather preferences
             progress = "Gathering preferences..."
             var prefs: [String: AnyCodableValue] = [:]
@@ -510,7 +529,8 @@ final class BackupCoordinator {
                 contentPosts: postDTOs,
                 businessGoals: goalDTOs,
                 complianceAuditEntries: auditDTOs,
-                deducedRelations: deducedRelationDTOs
+                deducedRelations: deducedRelationDTOs,
+                substackImports: substackImportDTOs
             )
 
             // Encode
@@ -646,7 +666,14 @@ final class BackupCoordinator {
                 person.phoneAliases = dto.phoneAliases
                 person.photoThumbnailCache = dto.photoThumbnailBase64.flatMap { Data(base64Encoded: $0) }
                 person.lastSyncedAt = dto.lastSyncedAt
-                person.isArchived = dto.isArchived
+                person.isArchivedLegacy = dto.isArchived
+                // Import lifecycle status: prefer new field, fall back to isArchived for old backups
+                if let rawValue = dto.lifecycleStatusRawValue {
+                    person.lifecycleStatusRawValue = rawValue
+                } else if dto.isArchived {
+                    person.lifecycleStatusRawValue = ContactLifecycleStatus.archived.rawValue
+                }
+                person.lifecycleChangedAt = dto.lifecycleChangedAt
                 person.relationshipSummary = dto.relationshipSummary
                 person.relationshipKeyThemes = dto.relationshipKeyThemes
                 person.relationshipNextSteps = dto.relationshipNextSteps
@@ -769,6 +796,20 @@ final class BackupCoordinator {
                     confirmedAt: dto.confirmedAt
                 )
                 context.insert(relation)
+            }
+
+            for dto in doc.substackImports ?? [] {
+                let record = SubstackImport(
+                    importDate: dto.importDate,
+                    archiveFileName: dto.archiveFileName,
+                    postCount: dto.postCount,
+                    subscriberCount: dto.subscriberCount,
+                    matchedSubscriberCount: dto.matchedSubscriberCount,
+                    newLeadsFound: dto.newLeadsFound,
+                    touchEventsCreated: dto.touchEventsCreated,
+                    status: SubstackImportStatus(rawValue: dto.statusRawValue) ?? .complete
+                )
+                context.insert(record)
             }
 
             try context.save()
@@ -1094,6 +1135,7 @@ final class BackupCoordinator {
             let goals = try context.fetch(FetchDescriptor<BusinessGoal>())
             let audits = try context.fetch(FetchDescriptor<ComplianceAuditEntry>())
             let deducedRelations = try context.fetch(FetchDescriptor<DeducedRelation>())
+            let substackImports = try context.fetch(FetchDescriptor<SubstackImport>())
 
             let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
             let buildNumber = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
@@ -1126,7 +1168,9 @@ final class BackupCoordinator {
                         displayNameCache: p.displayNameCache, emailCache: p.emailCache,
                         emailAliases: p.emailAliases, phoneAliases: p.phoneAliases,
                         photoThumbnailBase64: p.photoThumbnailCache.map { $0.base64EncodedString() },
-                        lastSyncedAt: p.lastSyncedAt, isArchived: p.isArchived, isMe: p.isMe,
+                        lastSyncedAt: p.lastSyncedAt, isArchived: p.isArchivedLegacy, isMe: p.isMe,
+                        lifecycleStatusRawValue: p.lifecycleStatusRawValue,
+                        lifecycleChangedAt: p.lifecycleChangedAt,
                         relationshipSummary: p.relationshipSummary,
                         relationshipKeyThemes: p.relationshipKeyThemes,
                         relationshipNextSteps: p.relationshipNextSteps,
@@ -1315,6 +1359,15 @@ final class BackupCoordinator {
                         relationTypeRawValue: r.relationTypeRawValue,
                         sourceLabel: r.sourceLabel, isConfirmed: r.isConfirmed,
                         createdAt: r.createdAt, confirmedAt: r.confirmedAt
+                    )
+                },
+                substackImports: substackImports.map { s in
+                    SubstackImportBackup(
+                        id: s.id, importDate: s.importDate,
+                        archiveFileName: s.archiveFileName, postCount: s.postCount,
+                        subscriberCount: s.subscriberCount, matchedSubscriberCount: s.matchedSubscriberCount,
+                        newLeadsFound: s.newLeadsFound, touchEventsCreated: s.touchEventsCreated,
+                        statusRawValue: s.statusRawValue
                     )
                 }
             )

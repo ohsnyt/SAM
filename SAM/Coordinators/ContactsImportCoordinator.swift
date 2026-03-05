@@ -281,6 +281,11 @@ final class ContactsImportCoordinator {
                 logger.debug("TODO: Trigger insight generation")
             }
 
+            // Re-run role deduction with newly imported contacts
+            Task(priority: .utility) {
+                await RoleDeductionEngine.shared.deduceRoles()
+            }
+
         } catch {
             logger.error("Import failed: \(error.localizedDescription)")
             importStatus = .failed

@@ -52,11 +52,12 @@ enum SAMSchema {
         PendingEnrichment.self,    // Contact enrichment queue (schema SAM_v28)
         IntentionalTouch.self,          // LinkedIn/social touch scoring (schema SAM_v29)
         LinkedInImport.self,            // LinkedIn archive import history (schema SAM_v29)
-        NotificationTypeTracker.self,   // LinkedIn notification type tracking (schema SAM_v31)
-        ProfileAnalysisRecord.self,     // LinkedIn profile analysis history (schema SAM_v31)
-        EngagementSnapshot.self,        // Social engagement metrics snapshots (schema SAM_v31)
-        SocialProfileSnapshot.self,     // Platform-agnostic social profile storage (schema SAM_v31)
-        FacebookImport.self,            // Facebook archive import history (schema SAM_v31)
+        NotificationTypeTracker.self,   // LinkedIn notification type tracking (schema SAM_v33)
+        ProfileAnalysisRecord.self,     // LinkedIn profile analysis history (schema SAM_v33)
+        EngagementSnapshot.self,        // Social engagement metrics snapshots (schema SAM_v33)
+        SocialProfileSnapshot.self,     // Platform-agnostic social profile storage (schema SAM_v33)
+        FacebookImport.self,            // Facebook archive import history (schema SAM_v33)
+        SubstackImport.self,            // Substack RSS/subscriber import history (schema SAM_v33)
     ]
 }
 
@@ -73,7 +74,7 @@ enum SAMModelContainer {
     nonisolated(unsafe) private static var _shared: ModelContainer = {
         let schema     = Schema(SAMSchema.allModels)
         let config     = ModelConfiguration(
-            "SAM_v31", // Facebook import + LinkedIn social models
+            "SAM_v33", // Contact lifecycle management
             schema: schema,
             isStoredInMemoryOnly: false   // persistent on disk
         )
@@ -88,12 +89,12 @@ enum SAMModelContainer {
     /// DEBUG-only mutable shared container for reset flows.
     nonisolated static var shared: ModelContainer { _shared }
 
-    /// The default on-disk URL that ModelConfiguration("SAM_v31") uses.
+    /// The default on-disk URL that ModelConfiguration("SAM_v33") uses.
     /// Computed without touching _shared so it is safe to call before the
     /// container is ever initialized (e.g. during a launch-time wipe).
     nonisolated static var defaultStoreURL: URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        return appSupport.appendingPathComponent("SAM_v31.store")
+        return appSupport.appendingPathComponent("SAM_v33.store")
     }
 
     /// Delete the on-disk SQLite store files (main + -shm + -wal).
@@ -112,7 +113,7 @@ enum SAMModelContainer {
     nonisolated static func makeFreshContainer() -> ModelContainer {
         let schema = Schema(SAMSchema.allModels)
         let config = ModelConfiguration(
-            "SAM_v31", // Facebook import + LinkedIn social models
+            "SAM_v33", // Contact lifecycle management
             schema: schema,
             isStoredInMemoryOnly: false
         )
@@ -132,7 +133,7 @@ enum SAMModelContainer {
     nonisolated static let shared: ModelContainer = {
         let schema     = Schema(SAMSchema.allModels)
         let config     = ModelConfiguration(
-            "SAM_v31", // Facebook import + LinkedIn social models
+            "SAM_v33", // Contact lifecycle management
             schema: schema,
             isStoredInMemoryOnly: false   // persistent on disk
         )
@@ -151,6 +152,37 @@ enum SAMModelContainer {
     /// created it.
     nonisolated static func newContext() -> ModelContext {
         ModelContext(shared)
+    }
+
+    // MARK: - One-Time Migrations
+
+    /// Migrate isArchivedLegacy → lifecycleStatusRawValue for v31→v32.
+    /// Safe to call multiple times; uses a UserDefaults flag to run once.
+    @MainActor
+    static func runMigrationV32IfNeeded() {
+        let key = "sam.migration.v32.lifecycleDone"
+        guard !UserDefaults.standard.bool(forKey: key) else { return }
+
+        let context = ModelContext(shared)
+        do {
+            let descriptor = FetchDescriptor<SamPerson>(
+                predicate: #Predicate { $0.isArchivedLegacy == true }
+            )
+            let archived = try context.fetch(descriptor)
+            for person in archived {
+                if person.lifecycleStatusRawValue == ContactLifecycleStatus.active.rawValue {
+                    person.lifecycleStatusRawValue = ContactLifecycleStatus.archived.rawValue
+                    person.lifecycleChangedAt = .now
+                }
+            }
+            if !archived.isEmpty {
+                try context.save()
+            }
+        } catch {
+            // Non-fatal: worst case archived contacts appear as active temporarily
+        }
+
+        UserDefaults.standard.set(true, forKey: key)
     }
 }
 

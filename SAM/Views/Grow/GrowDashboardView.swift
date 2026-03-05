@@ -25,6 +25,8 @@ struct SocialPlatformMeta {
             return SocialPlatformMeta(displayName: "Instagram", icon: "camera.circle",               iconColor: .pink)
         case "x":
             return SocialPlatformMeta(displayName: "X",         icon: "at.circle",                   iconColor: .primary)
+        case "substack":
+            return SocialPlatformMeta(displayName: "Substack",  icon: "newspaper.fill",              iconColor: .orange)
         default:
             return SocialPlatformMeta(displayName: platform.capitalized, icon: "globe.americas",     iconColor: .secondary)
         }
@@ -84,6 +86,9 @@ struct GrowDashboardView: View {
                 expandedPlatforms.insert(first.platform)
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .samProfileAnalysisDidUpdate)) { _ in
+            Task { await loadAnalyses() }
+        }
         .sheet(item: $selectedContentTopic) { topic in
             ContentDraftSheet(
                 topic: topic.topic,
@@ -113,9 +118,9 @@ struct GrowDashboardView: View {
             ContentUnavailableView {
                 Label("No Profile Analysis Yet", systemImage: "person.crop.circle.badge.questionmark")
             } description: {
-                Text("Import your LinkedIn data in Settings to get a personalized profile analysis with improvement suggestions.")
+                Text("Import your LinkedIn data or connect your Substack in Settings to get a personalized profile analysis with improvement suggestions.")
             } actions: {
-                Button("Open LinkedIn Settings") {
+                Button("Open Settings") {
                     NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
                 }
                 .buttonStyle(.borderedProminent)
@@ -237,8 +242,10 @@ struct GrowDashboardView: View {
             }
         }
 
-        // Network Health
-        analysisSection(title: "Network Health", icon: "person.3.fill", color: .blue) {
+        // Network Health / Audience & Reach
+        let networkTitle = a.platform == "substack" ? "Audience & Reach" : "Network Health"
+        let networkIcon = a.platform == "substack" ? "person.wave.2.fill" : "person.3.fill"
+        analysisSection(title: networkTitle, icon: networkIcon, color: .blue) {
             networkHealthSection(a)
         }
 
@@ -608,7 +615,9 @@ struct GrowDashboardView: View {
             Button("Re-Analyze") {
                 Task {
                     isAnalyzing = true
-                    await coordinator.runProfileAnalysis()
+                    async let linkedInTask: () = coordinator.runProfileAnalysis()
+                    async let substackTask: () = SubstackImportCoordinator.shared.runProfileAnalysis()
+                    _ = await (linkedInTask, substackTask)
                     await loadAnalyses()
                     isAnalyzing = false
                 }

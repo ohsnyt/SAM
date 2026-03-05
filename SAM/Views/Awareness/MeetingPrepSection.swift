@@ -522,6 +522,7 @@ private struct BriefingCard: View {
         case .faceTime: return "video"
         case .linkedIn: return "network"
         case .facebook: return "person.2.fill"
+        case .substack: return "newspaper.fill"
         }
     }
 

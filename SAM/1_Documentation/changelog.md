@@ -4,6 +4,76 @@
 
 ---
 
+## March 4, 2026 — Substack Integration (Priority 2)
+
+### Overview
+Integrated Substack as a content intelligence source and lead generation channel. Two tracks: **Track 1** parses the public RSS feed to understand writing voice, log posts as ContentPost records, and generate AI voice analysis. **Track 2** imports subscriber CSVs to match against existing contacts and route unmatched subscribers to the UnknownSender triage pipeline. Schema bumped to SAM_v33.
+
+### What Changed
+- **ContentPlatform.substack** — New case with orange color and `newspaper.fill` icon
+- **TouchPlatform.substack** — New case for Substack subscriber touch events
+- **EvidenceSource.substack** — New case (quality weight 0.5, not an interaction)
+- **UnknownSender** — Added `substackSubscribedAt`, `substackPlanType`, `substackIsActive` fields
+- **SubstackImport @Model** — Tracks import events (post count, subscriber count, match counts)
+- **SubstackService** — Actor: RSS feed XMLParser + subscriber CSV parser + HTML stripping
+- **UserSubstackProfileDTO** — Codable DTO with `coachingContextFragment` for AI context
+- **SubstackImportCoordinator** — Orchestrates both tracks: `fetchFeed()` for Track 1, `loadSubscriberCSV(url:)` + `confirmSubscriberImport()` for Track 2
+- **SubstackSubscriberCandidate** — DTO for subscriber matching/classification
+- **BusinessProfileService** — Substack profile storage + context injection in `contextFragment()`
+- **ContentAdvisorService** — Substack voice consistency rules + Substack platform guidelines for drafts
+- **OutcomeEngine** — Substack cadence scanner (14-day nudge for long-form)
+- **SubstackImportSettingsView** — Settings UI: feed URL, fetch button, subscriber CSV import, voice summary display
+- **BackupDocument + BackupCoordinator** — SubstackImportBackup export/import
+- Fixed EvidenceSource exhaustive switches in 5 view files
+
+### Substack in Grow Section & Content Drafts
+- **ContentDraftSheet** — Added `.substack` to platform picker (was hardcoded to LinkedIn/Facebook/Instagram)
+- **GrowDashboardView** — Added `"substack"` to `SocialPlatformMeta.from()` (orange, newspaper.fill). Substack appears as a scored platform alongside LinkedIn/Facebook. "Network Health" section relabeled to "Audience & Reach" for Substack. Re-Analyze button triggers both LinkedIn and Substack analysis in parallel. Empty state text updated.
+- **SubstackProfileAnalystService** — New specialist analyst actor for Substack publication scoring (content quality, posting cadence, topic coverage, audience reach). Produces `ProfileAnalysisDTO` with platform `"substack"`.
+- **SubstackImportCoordinator.runProfileAnalysis()** — Builds analysis input from Substack profile data and dispatches to SubstackProfileAnalystService. Auto-triggers after feed fetch.
+- **Grow page auto-refresh** — `.samProfileAnalysisDidUpdate` notification posted from `BusinessProfileService.saveProfileAnalysis()`. GrowDashboardView observes and reloads automatically when any platform's analysis completes (LinkedIn, Facebook, Substack).
+
+### Migration Notes
+- Schema SAM_v33 adds SubstackImport table. No data migration required (new table only).
+- UnknownSender gains 3 nullable fields with defaults — backward-compatible.
+- BackupDocument.substackImports is optional — old backups import cleanly.
+
+### Files Summary
+
+| File | Action |
+|------|--------|
+| `Models/SAMModels-ContentPost.swift` | MODIFY (add `.substack`) |
+| `Models/SAMModels-IntentionalTouch.swift` | MODIFY (add `.substack`) |
+| `Models/SAMModels-UnknownSender.swift` | MODIFY (add Substack fields) |
+| `Models/SAMModels-Supporting.swift` | MODIFY (add `.substack` to EvidenceSource) |
+| `Models/SAMModels-SubstackImport.swift` | **NEW** |
+| `Models/SAMModels.swift` | MODIFY (add `.samProfileAnalysisDidUpdate` notification) |
+| `App/SAMModelContainer.swift` | MODIFY (v33, add SubstackImport) |
+| `Services/SubstackService.swift` | **NEW** |
+| `Services/SubstackProfileAnalystService.swift` | **NEW** |
+| `Models/DTOs/UserSubstackProfileDTO.swift` | **NEW** |
+| `Models/DTOs/SubstackImportCandidateDTO.swift` | **NEW** |
+| `Coordinators/SubstackImportCoordinator.swift` | **NEW** (incl. `runProfileAnalysis()`) |
+| `Repositories/UnknownSenderRepository.swift` | MODIFY (upsertSubstackLater) |
+| `App/SAMApp.swift` | MODIFY (coordinator init) |
+| `Services/BusinessProfileService.swift` | MODIFY (Substack profile + context + analysis notification) |
+| `Services/ContentAdvisorService.swift` | MODIFY (Substack voice rules + platform) |
+| `Coordinators/OutcomeEngine.swift` | MODIFY (Substack cadence scanner) |
+| `Views/Settings/SubstackImportSettingsView.swift` | **NEW** |
+| `Views/Settings/SettingsView.swift` | MODIFY (add Substack DisclosureGroup) |
+| `Views/Content/ContentDraftSheet.swift` | MODIFY (add `.substack` to platform picker) |
+| `Views/Grow/GrowDashboardView.swift` | MODIFY (Substack platform meta, auto-refresh, relabeled sections) |
+| `Models/BackupDocument.swift` | MODIFY (SubstackImportBackup) |
+| `Coordinators/BackupCoordinator.swift` | MODIFY (export/import) |
+| `Views/Search/SearchResultRow.swift` | MODIFY (add `.substack` switch case) |
+| `Views/Awareness/MeetingPrepSection.swift` | MODIFY (add `.substack` switch case) |
+| `Coordinators/MeetingPrepCoordinator.swift` | MODIFY (add `.substack` switch case) |
+| `Views/Inbox/InboxListView.swift` | MODIFY (add `.substack` switch case) |
+| `Views/Inbox/InboxDetailView.swift` | MODIFY (add `.substack` switch case) |
+| `Views/People/PersonDetailView.swift` | MODIFY (add `.substack` switch case) |
+
+---
+
 ## March 4, 2026 — Top Action Card Prominence (Priority 1: Today View Redesign)
 
 ### Overview

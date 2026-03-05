@@ -80,7 +80,7 @@ final class UndoRepository {
         case .insight:
             try restoreInsight(entry.snapshotData)
         case .person:
-            try restorePersonMerge(entry.snapshotData)
+            try restorePersonLifecycleOrMerge(entry)
         }
 
         entry.isRestored = true
@@ -280,6 +280,35 @@ final class UndoRepository {
         logger.info("Restored insight: '\(snapshot.title)'")
     }
 
+    /// Dispatch person undo: lifecycle change or merge, based on snapshot type.
+    private func restorePersonLifecycleOrMerge(_ entry: SamUndoEntry) throws {
+        // Try lifecycle change first (smaller, simpler snapshot)
+        if entry.operation == .statusChanged,
+           let snapshot = try? JSONDecoder().decode(LifecycleChangeSnapshot.self, from: entry.snapshotData) {
+            try restoreLifecycleChange(snapshot)
+        } else {
+            try restorePersonMerge(entry.snapshotData)
+        }
+    }
+
+    private func restoreLifecycleChange(_ snapshot: LifecycleChangeSnapshot) throws {
+        guard let modelContext else { throw UndoError.notConfigured }
+
+        let personID = snapshot.personID
+        let descriptor = FetchDescriptor<SamPerson>(
+            predicate: #Predicate { $0.id == personID }
+        )
+        guard let person = try modelContext.fetch(descriptor).first else {
+            logger.warning("Cannot restore lifecycle — person not found: \(personID)")
+            return
+        }
+
+        person.lifecycleStatusRawValue = snapshot.previousStatusRawValue
+        try modelContext.save()
+
+        logger.info("Restored lifecycle status for '\(snapshot.personName)' to \(snapshot.previousStatusRawValue)")
+    }
+
     private func restorePersonMerge(_ data: Data) throws {
         guard let modelContext else { throw UndoError.notConfigured }
 
@@ -306,7 +335,8 @@ final class UndoRepository {
         source.emailCache = snapshot.emailCache
         source.emailAliases = snapshot.emailAliases
         source.phoneAliases = snapshot.phoneAliases
-        source.isArchived = snapshot.isArchived
+        source.isArchivedLegacy = snapshot.isArchived
+        source.lifecycleStatusRawValue = snapshot.lifecycleStatusRawValue
         source.relationshipSummary = snapshot.relationshipSummary
         source.relationshipKeyThemes = snapshot.relationshipKeyThemes
         source.relationshipNextSteps = snapshot.relationshipNextSteps

@@ -27,6 +27,20 @@ enum PeopleSortOrder: String, CaseIterable, Identifiable {
 enum PeopleSpecialFilter: String, CaseIterable {
     case needsContactUpdate = "Needs Contact Update"
     case notInContacts = "Not in Contacts"
+    case archived = "Archived"
+    case dnc = "Do Not Contact"
+    case deceased = "Deceased"
+
+    /// SF Symbol icon for filter summary display.
+    var icon: String {
+        switch self {
+        case .needsContactUpdate: return "arrow.up.circle.fill"
+        case .notInContacts:      return "person.crop.circle.badge.exclamationmark"
+        case .archived:           return "archivebox"
+        case .dnc:                return "hand.raised"
+        case .deceased:           return "heart.slash"
+        }
+    }
 }
 
 struct PeopleListView: View {
@@ -86,6 +100,24 @@ struct PeopleListView: View {
             list = list.filter { person in
                 !activeRoleFilters.isDisjoint(with: person.roleBadges)
             }
+        }
+
+        // Lifecycle special filters — show ONLY people in that state
+        let lifecycleFilters: Set<PeopleSpecialFilter> = [.archived, .dnc, .deceased]
+        let activeLifecycleFilters = activeSpecialFilters.intersection(lifecycleFilters)
+        if !activeLifecycleFilters.isEmpty {
+            let statuses: Set<String> = Set(activeLifecycleFilters.compactMap { filter -> String? in
+                switch filter {
+                case .archived: return ContactLifecycleStatus.archived.rawValue
+                case .dnc:      return ContactLifecycleStatus.dnc.rawValue
+                case .deceased: return ContactLifecycleStatus.deceased.rawValue
+                default:        return nil
+                }
+            })
+            list = list.filter { statuses.contains($0.lifecycleStatusRawValue) }
+        } else {
+            // Default: hide non-active contacts
+            list = list.filter { $0.lifecycleStatus == .active || $0.isMe }
         }
 
         // Special filters
@@ -297,7 +329,7 @@ struct PeopleListView: View {
                     }
                     ForEach(Array(activeSpecialFilters).sorted(by: { $0.rawValue < $1.rawValue }), id: \.self) { filter in
                         HStack(spacing: 3) {
-                            Image(systemName: filter == .needsContactUpdate ? "arrow.up.circle.fill" : "person.crop.circle.badge.exclamationmark")
+                            Image(systemName: filter.icon)
                                 .font(.system(size: 10))
                             Text(filter.rawValue)
                                 .font(.caption2)
@@ -323,6 +355,17 @@ struct PeopleListView: View {
                     )
                 }
                 .buttonStyle(.plain)
+                .contextMenu {
+                    if person.lifecycleStatus == .active {
+                        Button("Archive", systemImage: "archivebox") {
+                            applyLifecycleChange(.archived, for: person)
+                        }
+                    } else {
+                        Button("Reactivate", systemImage: "arrow.uturn.backward") {
+                            applyLifecycleChange(.active, for: person)
+                        }
+                    }
+                }
             }
         }
         .listStyle(.sidebar)
@@ -370,6 +413,32 @@ struct PeopleListView: View {
             }
             .buttonStyle(.borderedProminent)
         }
+    }
+
+    // MARK: - Lifecycle Actions
+
+    private func applyLifecycleChange(_ newStatus: ContactLifecycleStatus, for person: SamPerson) {
+        let previousStatus = person.lifecycleStatusRawValue
+        let personName = person.displayNameCache ?? person.displayName
+
+        let snapshot = LifecycleChangeSnapshot(
+            personID: person.id,
+            personName: personName,
+            previousStatusRawValue: previousStatus,
+            newStatusRawValue: newStatus.rawValue
+        )
+        if let entry = try? UndoRepository.shared.capture(
+            operation: .statusChanged,
+            entityType: .person,
+            entityID: person.id,
+            entityDisplayName: personName,
+            snapshot: snapshot
+        ) {
+            UndoCoordinator.shared.showToast(for: entry)
+        }
+
+        try? PeopleRepository.shared.setLifecycleStatus(newStatus, for: person)
+        NotificationCenter.default.post(name: .samPersonDidChange, object: nil)
     }
 
     // MARK: - Import Status Badge
@@ -515,6 +584,14 @@ private struct PersonRowView: View {
 
                 // Trailing badges and alerts
                 HStack(spacing: 8) {
+                    // Lifecycle badge for non-active contacts
+                    if person.lifecycleStatus != .active {
+                        Image(systemName: person.lifecycleStatus.icon)
+                            .font(.caption)
+                            .foregroundStyle(person.lifecycleStatus == .dnc ? .red : .gray)
+                            .help(person.lifecycleStatus.displayName)
+                    }
+
                     NotInContactsCapsule(person: person)
 
                     if hasPendingEnrichment {

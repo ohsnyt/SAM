@@ -187,7 +187,7 @@ struct AppShellView: View {
         }
         .safeAreaInset(edge: .bottom) {
             VStack(spacing: 0) {
-                ProcessingStatusView()
+                MinionsView()
 
                 Divider()
 

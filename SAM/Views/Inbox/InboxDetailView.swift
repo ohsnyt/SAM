@@ -414,6 +414,7 @@ struct InboxDetailView: View {
         case .faceTime: return "video"
         case .linkedIn: return "network"
         case .facebook: return "person.2.fill"
+        case .substack: return "newspaper.fill"
         }
     }
 
@@ -429,6 +430,7 @@ struct InboxDetailView: View {
         case .faceTime: return .mint
         case .linkedIn: return .blue
         case .facebook: return .indigo
+        case .substack: return .orange
         }
     }
 

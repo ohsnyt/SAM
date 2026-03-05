@@ -192,6 +192,11 @@ final class CommunicationsImportCoordinator {
                 await refreshAffectedSummaries()
             }
 
+            // Re-run role deduction — communications evidence now available
+            Task(priority: .utility) {
+                await RoleDeductionEngine.shared.deduceRoles()
+            }
+
         } catch {
             lastError = error.localizedDescription
             importStatus = .failed

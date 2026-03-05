@@ -131,6 +131,12 @@ final class OutcomeEngine {
             // 11. LinkedIn notification setup guidance (Phase 6)
             newOutcomes.append(contentsOf: try scanNotificationSetupGuidance())
 
+            // 12. Role suggestions review
+            newOutcomes.append(contentsOf: scanRoleSuggestions())
+
+            // 13. Stale contacts → archive suggestions
+            newOutcomes.append(contentsOf: try scanStaleContacts(people: allPeople))
+
             // Classify action lanes and suggest channels
             for outcome in newOutcomes {
                 classifyActionLane(for: outcome)
@@ -661,6 +667,25 @@ final class OutcomeEngine {
             }
         }
 
+        // Substack: nudge after 14 days (bi-weekly cadence for long-form)
+        if let substackDays = try? ContentPostRepository.shared.daysSinceLastPost(platform: .substack),
+           substackDays >= 14 {
+            let hasSimilar = outcomes.isEmpty ? ((try? outcomeRepo.hasSimilarOutcome(
+                kind: .contentCreation,
+                personID: nil,
+                withinHours: 72
+            )) ?? false) : true // Already have a cadence nudge, skip
+            if !hasSimilar {
+                outcomes.append(SamOutcome(
+                    title: "Write a Substack article — \(substackDays) days since last post",
+                    rationale: "Consistent long-form content builds authority and engages your subscriber base. Your readers expect regular insights.",
+                    outcomeKind: .contentCreation,
+                    sourceInsightSummary: "",
+                    suggestedNextStep: "Draft an article extending a recent client conversation or seasonal topic"
+                ))
+            }
+        }
+
         return outcomes
     }
 
@@ -738,6 +763,38 @@ final class OutcomeEngine {
             deadlineDate: Calendar.current.date(byAdding: .day, value: 7, to: .now),
             sourceInsightSummary: "Deduced from Apple Contacts related names",
             suggestedNextStep: "Open the Relationship Map to review and confirm these connections."
+        )
+        outcome.actionLaneRawValue = ActionLane.reviewGraph.rawValue
+        return [outcome]
+    }
+
+    // MARK: - Role Suggestions Review
+
+    private func scanRoleSuggestions() -> [SamOutcome] {
+        let suggestions = RoleDeductionEngine.shared.pendingSuggestions
+        guard !suggestions.isEmpty else { return [] }
+
+        // Title-based dedup
+        let active = (try? outcomeRepo.fetchActive()) ?? []
+        if active.contains(where: { $0.title.contains("suggested role") }) { return [] }
+
+        // Build rationale summarizing role groups
+        var roleCounts: [String: Int] = [:]
+        for s in suggestions {
+            roleCounts[s.suggestedRole, default: 0] += 1
+        }
+        let summary = roleCounts.sorted { $0.value > $1.value }
+            .map { "\($0.value) \($0.key)\($0.value == 1 ? "" : "s")" }
+            .joined(separator: ", ")
+
+        let outcome = SamOutcome(
+            title: "Review \(suggestions.count) suggested role\(suggestions.count == 1 ? "" : "s")",
+            rationale: "SAM analyzed your calendar, communications, and contacts to suggest roles: \(summary).",
+            outcomeKind: .outreach,
+            priorityScore: 0.55,
+            deadlineDate: Calendar.current.date(byAdding: .day, value: 7, to: .now),
+            sourceInsightSummary: "Deduced from calendar titles, communication patterns, and contact metadata",
+            suggestedNextStep: "Open the Relationship Map to review and confirm role assignments."
         )
         outcome.actionLaneRawValue = ActionLane.reviewGraph.rawValue
         return [outcome]
@@ -857,6 +914,41 @@ final class OutcomeEngine {
             return watermark
         }
         return nil
+    }
+
+    // MARK: - Stale Contact Scanner (#13)
+
+    /// Find active contacts with no evidence in 12+ months and no pipeline
+    /// relevance, then suggest archiving. One per scan cycle, lowest priority.
+    private func scanStaleContacts(people: [SamPerson]) throws -> [SamOutcome] {
+        let cutoff = Calendar.current.date(byAdding: .month, value: -12, to: .now) ?? .now
+        let pipelineRoles: Set<String> = ["Lead", "Applicant", "Agent"]
+
+        // Skip if we already have an active "Consider archiving" outcome
+        let active = (try? outcomeRepo.fetchActive()) ?? []
+        if active.contains(where: { $0.title.contains("Consider archiving") }) { return [] }
+
+        for person in people {
+            // Skip people with pipeline-relevant roles
+            if !Set(person.roleBadges).isDisjoint(with: pipelineRoles) { continue }
+
+            // Check for any evidence in the last 12 months
+            let hasRecent = person.linkedEvidence.contains { $0.occurredAt > cutoff }
+            if hasRecent { continue }
+
+            let personName = person.displayNameCache ?? person.displayName
+            let outcome = SamOutcome(
+                title: "Consider archiving \(personName)",
+                rationale: "No interactions in the last 12 months and no active pipeline role.",
+                outcomeKind: .outreach,
+                priorityScore: 0.15,
+                sourceInsightSummary: "Stale contact with no recent evidence",
+                suggestedNextStep: "Open their profile and archive if no longer relevant.",
+                linkedPerson: person
+            )
+            return [outcome]
+        }
+        return []
     }
 
     /// Map GoalType to the most appropriate OutcomeKind.

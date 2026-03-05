@@ -56,8 +56,32 @@ public final class SamPerson {
     /// Timestamp of last successful cache refresh
     public var lastSyncedAt: Date?
     
-    /// True when contact deleted externally; triggers "Unlinked" badge
-    public var isArchived: Bool = false
+    /// @deprecated Kept for v31→v32 migration only. After migration
+    /// runs, this field is ignored; use `lifecycleStatus` instead.
+    @Attribute(originalName: "isArchived")
+    public var isArchivedLegacy: Bool = false
+
+    /// Contact lifecycle status (active, archived, dnc, deceased).
+    public var lifecycleStatusRawValue: String = ContactLifecycleStatus.active.rawValue
+
+    /// When the lifecycle status was last changed.
+    public var lifecycleChangedAt: Date?
+
+    /// Type-safe lifecycle status accessor.
+    @Transient
+    public var lifecycleStatus: ContactLifecycleStatus {
+        get { ContactLifecycleStatus(rawValue: lifecycleStatusRawValue) ?? .active }
+        set {
+            lifecycleStatusRawValue = newValue.rawValue
+            lifecycleChangedAt = .now
+        }
+    }
+
+    /// Backward-compat computed property — all 13+ existing filter sites
+    /// (`!$0.isArchived`) continue working without changes. Now returns
+    /// true for archived, DNC, and deceased contacts.
+    @Transient
+    public var isArchived: Bool { lifecycleStatus != .active }
 
     /// True when this person is the user's own "Me" contact card
     public var isMe: Bool = false
@@ -240,7 +264,8 @@ public final class SamPerson {
         self.emailCache         = email  // Initialize cache with current value
         self.consentAlertsCount = consentAlertsCount
         self.reviewAlertsCount  = reviewAlertsCount
-        self.isArchived         = false
+        self.isArchivedLegacy   = false
+        self.lifecycleStatusRawValue = ContactLifecycleStatus.active.rawValue
         self.isMe               = isMe
         self.lastSyncedAt       = nil
         self.photoThumbnailCache = nil
@@ -1075,5 +1100,9 @@ extension Notification.Name {
     /// Posted to navigate to a sidebar section.
     /// userInfo: ["section": String] — one of "today", "people", "business", "search"
     static let samNavigateToSection = Notification.Name("samNavigateToSection")
+
+    /// Posted when a profile analysis is saved (LinkedIn, Substack, etc.).
+    /// Listeners should reload their analyses array.
+    static let samProfileAnalysisDidUpdate = Notification.Name("samProfileAnalysisDidUpdate")
 }
 

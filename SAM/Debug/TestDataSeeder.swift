@@ -818,7 +818,7 @@ final class TestDataSeeder {
             let p = person(name: spec.name, email: spec.email, phone: spec.phone,
                            badges: ["Lead"], summary: spec.reason,
                            summaryDaysAgo: spec.months * 30, daysAgo: daysAgo)
-            p.isArchived = true
+            p.lifecycleStatus = .archived
             context.insert(p)
         }
     }

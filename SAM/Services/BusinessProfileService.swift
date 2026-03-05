@@ -22,6 +22,7 @@ actor BusinessProfileService {
     private let profileKey = "sam.businessProfile"
     private let linkedInProfileKey = "sam.userLinkedInProfile"
     private let facebookProfileKey = "sam.userFacebookProfile"
+    private let substackProfileKey = "sam.userSubstackProfile"
     /// Legacy single-item key — migrated to `profileAnalysesKey` on first access.
     private let profileAnalysisKey = "sam.profileAnalysis"
     /// Array of per-platform analyses (one entry per platform).
@@ -32,6 +33,7 @@ actor BusinessProfileService {
     private var cachedProfile: BusinessProfile?
     private var cachedLinkedInProfile: UserLinkedInProfileDTO?
     private var cachedFacebookProfile: UserFacebookProfileDTO?
+    private var cachedSubstackProfile: UserSubstackProfileDTO?
     private var cachedAnalyses: [ProfileAnalysisDTO]?
     private var cachedSnapshot: ProfileAnalysisSnapshot?
     private var cachedFacebookSnapshot: FacebookAnalysisSnapshot?
@@ -107,6 +109,26 @@ actor BusinessProfileService {
         return fragment
     }
 
+    // MARK: - Substack Profile Storage
+
+    /// Save the user's parsed Substack publication profile.
+    func saveSubstackProfile(_ profile: UserSubstackProfileDTO) {
+        cachedSubstackProfile = profile
+        if let data = try? JSONEncoder().encode(profile) {
+            UserDefaults.standard.set(data, forKey: substackProfileKey)
+            logger.info("Saved user Substack profile to UserDefaults")
+        }
+    }
+
+    /// Load the user's Substack profile (cached after first load). Returns nil if not yet imported.
+    func substackProfile() -> UserSubstackProfileDTO? {
+        if let cached = cachedSubstackProfile { return cached }
+        guard let data = UserDefaults.standard.data(forKey: substackProfileKey),
+              let decoded = try? JSONDecoder().decode(UserSubstackProfileDTO.self, from: data) else { return nil }
+        cachedSubstackProfile = decoded
+        return decoded
+    }
+
     // MARK: - Facebook Analysis Snapshot
 
     /// Save the Facebook analysis snapshot (import-time activity data for on-demand re-analysis).
@@ -144,6 +166,7 @@ actor BusinessProfileService {
             // Remove legacy single-item key once migrated
             UserDefaults.standard.removeObject(forKey: profileAnalysisKey)
             logger.info("Saved profile analyses (\(analyses.count) platforms) to UserDefaults")
+            NotificationCenter.default.post(name: .samProfileAnalysisDidUpdate, object: nil)
         }
     }
 
@@ -209,6 +232,11 @@ actor BusinessProfileService {
         // Append Facebook profile context if available
         if let fbFragment = facebookProfileFragment() {
             fragment += "\n\n" + fbFragment
+        }
+
+        // Append Substack publication context if available
+        if let substack = substackProfile(), !substack.coachingContextFragment.isEmpty {
+            fragment += "\n\n## Substack Publication\n" + substack.coachingContextFragment
         }
 
         return fragment

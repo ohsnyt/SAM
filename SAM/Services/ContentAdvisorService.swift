@@ -64,6 +64,9 @@ actor ContentAdvisorService {
             - Include one copy-paste-ready opening sentence as a key_point (e.g., "Ever wonder how much you actually need to retire comfortably?")
             - Suggest the best platform + posting day for each topic (e.g., "Best on LinkedIn, post Tuesday morning")
             - At least 2 topics must connect to named meeting topics from the data — do not invent meetings that aren't in the data
+            - If the user has a Substack publication, suggest content that extends existing article themes. \
+            Reference specific past articles when suggesting new topics. \
+            Maintain voice consistency with the user's established writing style.
             """
 
         let prompt = """
@@ -118,6 +121,16 @@ actor ContentAdvisorService {
                 - Start with a strong hook line
                 - Include 5-10 relevant hashtags
                 - Use line breaks for readability
+                """
+        case .substack:
+            platformGuidelines = """
+                Platform: Substack (long-form newsletter)
+                - Educational, in-depth tone matching the author's established voice
+                - 500-1000 words
+                - Open with a compelling hook or personal anecdote
+                - Include subheadings for readability
+                - End with a clear takeaway or call-to-action
+                - Reference previous articles when building on past topics
                 """
         case .other:
             platformGuidelines = """

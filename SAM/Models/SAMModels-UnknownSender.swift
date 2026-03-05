@@ -33,6 +33,11 @@ public final class UnknownSender {
     var facebookMessageCount: Int                // total Messenger messages in export; 0 = none
     var facebookLastMessageDate: Date?           // most recent Messenger message timestamp
 
+    // Substack-specific metadata (only set for source == .substack)
+    var substackSubscribedAt: Date?              // when they subscribed
+    var substackPlanType: String?                // "free" or "paid"
+    var substackIsActive: Bool                   // still subscribed?
+
     @Transient
     var status: UnknownSenderStatus {
         get { UnknownSenderStatus(rawValue: statusRawValue) ?? .pending }
@@ -62,7 +67,10 @@ public final class UnknownSender {
         linkedInConnectedOn: Date? = nil,
         facebookFriendedOn: Date? = nil,
         facebookMessageCount: Int = 0,
-        facebookLastMessageDate: Date? = nil
+        facebookLastMessageDate: Date? = nil,
+        substackSubscribedAt: Date? = nil,
+        substackPlanType: String? = nil,
+        substackIsActive: Bool = true
     ) {
         self.id = id
         self.email = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -81,6 +89,9 @@ public final class UnknownSender {
         self.facebookFriendedOn = facebookFriendedOn
         self.facebookMessageCount = facebookMessageCount
         self.facebookLastMessageDate = facebookLastMessageDate
+        self.substackSubscribedAt = substackSubscribedAt
+        self.substackPlanType = substackPlanType
+        self.substackIsActive = substackIsActive
     }
 }
 

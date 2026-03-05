@@ -166,6 +166,14 @@ public struct InsightSnapshot: Codable, Sendable {
     public let title: String
 }
 
+/// Snapshot of a lifecycle status change — captures previous status for reversal.
+public struct LifecycleChangeSnapshot: Codable, Sendable {
+    public let personID: UUID
+    public let personName: String
+    public let previousStatusRawValue: String
+    public let newStatusRawValue: String
+}
+
 /// Snapshot of a person merge — captures source person's state for full reversal.
 public struct PersonMergeSnapshot: Codable, Sendable {
     public let sourcePersonID: UUID
@@ -182,7 +190,8 @@ public struct PersonMergeSnapshot: Codable, Sendable {
     public let roleBadges: [String]
     public let contactIdentifier: String?
     public let isMe: Bool
-    public let isArchived: Bool
+    public let isArchived: Bool // legacy
+    public let lifecycleStatusRawValue: String
     public let relationshipSummary: String?
     public let relationshipKeyThemes: [String]
     public let relationshipNextSteps: [String]

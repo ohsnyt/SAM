@@ -365,6 +365,10 @@ struct SAMApp: App {
         DeducedRelationRepository.shared.configure(container: c)
         ContactEnrichmentCoordinator.shared.configure(container: c)
         IntentionalTouchRepository.shared.configure(container: c)
+        SubstackImportCoordinator.shared.configure(container: c)
+
+        // One-time migration: isArchived → lifecycleStatusRawValue (v31→v32)
+        SAMModelContainer.runMigrationV32IfNeeded()
 
         // Prune expired compliance audit entries on launch
         let retentionDays = UserDefaults.standard.object(forKey: "complianceAuditRetentionDays") as? Int ?? 90
@@ -474,7 +478,9 @@ struct SAMApp: App {
             try? OutcomeRepository.shared.pruneExpired()
             try? OutcomeRepository.shared.purgeOld()
 
-            let autoGenerateOutcomes = UserDefaults.standard.bool(forKey: "outcomeAutoGenerate")
+            let autoGenerateOutcomes = UserDefaults.standard.object(forKey: "outcomeAutoGenerate") == nil
+                ? true
+                : UserDefaults.standard.bool(forKey: "outcomeAutoGenerate")
             if autoGenerateOutcomes {
                 OutcomeEngine.shared.startGeneration()
             }
@@ -486,9 +492,16 @@ struct SAMApp: App {
 
         let contactsEnabled = UserDefaults.standard.bool(forKey: "sam.contacts.enabled")
         let calendarEnabled = UserDefaults.standard.bool(forKey: "calendarAutoImportEnabled")
-        let mailEnabled = UserDefaults.standard.bool(forKey: "mailImportEnabled")
-        let commsMessagesEnabled = UserDefaults.standard.bool(forKey: "commsMessagesEnabled")
-        let commsCallsEnabled = UserDefaults.standard.bool(forKey: "commsCallsEnabled")
+        let mailEnabled = MailImportCoordinator.shared.mailEnabled
+            && MailImportCoordinator.shared.isConfigured
+        // CommunicationsImportCoordinator defaults both to true when unset —
+        // mirror that logic here so the launch trigger matches the coordinator.
+        let commsMessagesEnabled = UserDefaults.standard.object(forKey: "commsMessagesEnabled") == nil
+            ? true
+            : UserDefaults.standard.bool(forKey: "commsMessagesEnabled")
+        let commsCallsEnabled = UserDefaults.standard.object(forKey: "commsCallsEnabled") == nil
+            ? true
+            : UserDefaults.standard.bool(forKey: "commsCallsEnabled")
 
         // Contacts first — other sources resolve people by known emails/phones
         if contactsEnabled {
@@ -517,9 +530,17 @@ struct SAMApp: App {
         try? OutcomeRepository.shared.purgeOld()
         try? UndoRepository.shared.pruneExpired()
 
-        let autoGenerateOutcomes = UserDefaults.standard.bool(forKey: "outcomeAutoGenerate")
+        let autoGenerateOutcomes = UserDefaults.standard.object(forKey: "outcomeAutoGenerate") == nil
+            ? true
+            : UserDefaults.standard.bool(forKey: "outcomeAutoGenerate")
         if autoGenerateOutcomes {
             OutcomeEngine.shared.startGeneration()
+        }
+
+        // Role deduction — run after imports settle
+        Task(priority: .utility) {
+            try? await Task.sleep(for: .seconds(8))
+            await RoleDeductionEngine.shared.deduceRoles()
         }
 
         // Pipeline backfill — one-time creation of initial transitions from existing role badges

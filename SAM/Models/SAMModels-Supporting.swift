@@ -13,6 +13,46 @@
 import Foundation
 
 // ─────────────────────────────────────────────────────────────────────
+// MARK: - Contact Lifecycle
+// ─────────────────────────────────────────────────────────────────────
+
+public enum ContactLifecycleStatus: String, Codable, Sendable, CaseIterable {
+    case active
+    case archived
+    case dnc          // Do Not Contact
+    case deceased
+}
+
+extension ContactLifecycleStatus {
+    public var displayName: String {
+        switch self {
+        case .active:   return "Active"
+        case .archived: return "Archived"
+        case .dnc:      return "Do Not Contact"
+        case .deceased: return "Deceased"
+        }
+    }
+
+    public var icon: String {
+        switch self {
+        case .active:   return "person.fill"
+        case .archived: return "archivebox"
+        case .dnc:      return "hand.raised"
+        case .deceased: return "heart.slash"
+        }
+    }
+
+    public var bannerColor: (foreground: String, background: String) {
+        switch self {
+        case .active:   return ("green", "green")
+        case .archived: return ("orange", "orange")
+        case .dnc:      return ("red", "red")
+        case .deceased: return ("gray", "gray")
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // MARK: - Context Types
 // ─────────────────────────────────────────────────────────────────────
 
@@ -54,6 +94,7 @@ public enum EvidenceSource: String, Codable, Sendable {
     case faceTime = "FaceTime"
     case linkedIn = "LinkedIn"
     case facebook = "Facebook"
+    case substack = "Substack"
 }
 
 extension EvidenceSource {
@@ -68,6 +109,7 @@ extension EvidenceSource {
         case .linkedIn:  return 1.0
         case .facebook:  return 1.0
         case .note:      return 0.5   // Passive (user notes about person)
+        case .substack:  return 0.5   // Passive (subscribing isn't direct interaction)
         case .contacts:  return 0.0   // Not an interaction
         case .manual:    return 1.0
         }
@@ -76,8 +118,8 @@ extension EvidenceSource {
     /// Whether this source represents a direct interaction (not passive data).
     public var isInteraction: Bool {
         switch self {
-        case .contacts, .note: return false
-        default:               return true
+        case .contacts, .note, .substack: return false
+        default:                          return true
         }
     }
 
@@ -94,6 +136,7 @@ extension EvidenceSource {
         case .faceTime:  return "video"
         case .linkedIn:  return "network"
         case .facebook:  return "person.2.fill"
+        case .substack:  return "newspaper.fill"
         }
     }
 

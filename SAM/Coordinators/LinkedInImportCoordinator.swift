@@ -514,6 +514,11 @@ final class LinkedInImportCoordinator {
                 await prepareSyncCandidates(classifications: classifications)
             }
 
+            // 11. Re-run role deduction for newly imported people
+            Task(priority: .utility) {
+                await RoleDeductionEngine.shared.deduceRoles()
+            }
+
         } catch {
             logger.error("LinkedIn import failed: \(error.localizedDescription)")
             importStatus    = .failed

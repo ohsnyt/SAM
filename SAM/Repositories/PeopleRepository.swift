@@ -120,7 +120,11 @@ final class PeopleRepository {
             existing.phoneAliases = canonicalPhones
             existing.photoThumbnailCache = contact.thumbnailImageData
             existing.lastSyncedAt = Date()
-            existing.isArchived = false  // Un-archive if it was archived
+            // Reactivate only if previously archived (contact reappeared).
+            // Don't override DNC or deceased — those are intentional user choices.
+            if existing.lifecycleStatus == .archived {
+                existing.lifecycleStatus = .active
+            }
 
             // Update deprecated fields for backward compatibility
             existing.displayName = contact.displayName
@@ -142,7 +146,6 @@ final class PeopleRepository {
             person.phoneAliases = canonicalPhones
             person.photoThumbnailCache = contact.thumbnailImageData
             person.lastSyncedAt = Date()
-            person.isArchived = false
 
             modelContext.insert(person)
         }
@@ -242,7 +245,6 @@ final class PeopleRepository {
             person.facebookLastMessageDate = facebookLastMessageDate
             person.facebookTouchScore = facebookTouchScore
             person.lastSyncedAt = Date()
-            person.isArchived = false
 
             modelContext.insert(person)
             try modelContext.save()
@@ -286,7 +288,10 @@ final class PeopleRepository {
                 existing.phoneAliases = canonicalPhones
                 existing.photoThumbnailCache = contact.thumbnailImageData
                 existing.lastSyncedAt = Date()
-                existing.isArchived = false
+                // Reactivate only if archived (contact reappeared)
+                if existing.lifecycleStatus == .archived {
+                    existing.lifecycleStatus = .active
+                }
 
                 // Update deprecated fields
                 existing.displayName = contact.displayName
@@ -309,7 +314,6 @@ final class PeopleRepository {
                 person.phoneAliases = canonicalPhones
                 person.photoThumbnailCache = contact.thumbnailImageData
                 person.lastSyncedAt = Date()
-                person.isArchived = false
 
                 modelContext.insert(person)
                 created += 1
@@ -402,7 +406,9 @@ final class PeopleRepository {
             existing.phoneAliases = canonicalPhones
             existing.photoThumbnailCache = contact.thumbnailImageData
             existing.lastSyncedAt = Date()
-            existing.isArchived = false
+            if existing.lifecycleStatus == .archived {
+                existing.lifecycleStatus = .active
+            }
             existing.isMe = true
 
             existing.displayName = contact.displayName
@@ -423,7 +429,6 @@ final class PeopleRepository {
             newPerson.phoneAliases = canonicalPhones
             newPerson.photoThumbnailCache = contact.thumbnailImageData
             newPerson.lastSyncedAt = Date()
-            newPerson.isArchived = false
 
             modelContext.insert(newPerson)
             person = newPerson
@@ -452,7 +457,6 @@ final class PeopleRepository {
             guard let identifier = person.contactIdentifier else { continue }
             if !validIdentifiers.contains(identifier) {
                 person.contactIdentifier = nil
-                person.isArchived = false  // Not archived, just unlinked
                 clearedCount += 1
                 logger.info("Cleared stale contactIdentifier for \(person.displayNameCache ?? person.displayName, privacy: .public)")
             }
@@ -607,6 +611,15 @@ final class PeopleRepository {
     /// Persist any pending changes to the model context.
     func save() throws {
         guard let modelContext else { throw RepositoryError.notConfigured }
+        try modelContext.save()
+    }
+
+    // MARK: - Lifecycle Management
+
+    /// Set the contact lifecycle status for a person.
+    func setLifecycleStatus(_ status: ContactLifecycleStatus, for person: SamPerson) throws {
+        guard let modelContext else { throw RepositoryError.notConfigured }
+        person.lifecycleStatus = status
         try modelContext.save()
     }
 
@@ -843,7 +856,8 @@ final class PeopleRepository {
             roleBadges: source.roleBadges,
             contactIdentifier: source.contactIdentifier,
             isMe: source.isMe,
-            isArchived: source.isArchived,
+            isArchived: source.isArchivedLegacy,
+            lifecycleStatusRawValue: source.lifecycleStatusRawValue,
             relationshipSummary: source.relationshipSummary,
             relationshipKeyThemes: source.relationshipKeyThemes,
             relationshipNextSteps: source.relationshipNextSteps,

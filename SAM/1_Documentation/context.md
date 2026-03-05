@@ -1,6 +1,6 @@
 # SAM — Project Context
 
-**Platform**: macOS 26+ (Tahoe) | **Language**: Swift 6 | **Framework**: SwiftUI + SwiftData | **Schema**: SAM_v32
+**Platform**: macOS 26+ (Tahoe) | **Language**: Swift 6 | **Framework**: SwiftUI + SwiftData | **Schema**: SAM_v33
 
 **Related Docs**:
 - `CLAUDE.md` (repo root) — Product philosophy, AI behavior rules, code standards
@@ -293,22 +293,7 @@ The current UI has accumulated complexity across 30+ phases. It needs a focused 
 
 **Suggestion Quality Overhaul** ✅ *(Completed — Phase 2; see changelog)*
 
-### Priority 2 — Substack Integration
-
-Sarah uses Substack as a content platform (articles + long-form writing). This is both a content intelligence source and a lead generation channel.
-
-**Track 1 — Content Voice Intelligence**: Parse exported HTML posts to understand Sarah's writing voice, topic history, and expertise areas. Feed into ContentAdvisor so content suggestions reference and extend her existing body of work ("You wrote about retirement planning last month — here's a LinkedIn post that extends that theme"). Publication description/bio feeds cross-platform profile consistency.
-
-**Track 2 — Subscriber-as-Lead Pipeline**: Subscriber CSV contains emails, subscription status (free/paid), and engagement metrics (opens, reads, comments, likes). Match subscriber emails against Apple Contacts and SamPerson records. Paid/highly-engaged subscribers are warm leads — surface them in the Grow section with concrete outreach suggestions. Unmatched subscribers go to UnknownSenderRepository for triage.
-
-**Export format**: Substack Settings → Exports generates a zip containing:
-- Individual HTML files per post (no embedded media — images are CDN-linked)
-- Posts CSV (post IDs, titles, metadata)
-- Subscriber CSV (email, subscribe date, status, plan type, engagement metrics)
-
-**Architecture**: Follows standard social import pattern (§5). `SubstackService` actor for parsing, `SubstackImportCoordinator` for orchestration. Key difference from LinkedIn/Facebook: the primary value is content analysis (Track 1) + subscriber matching (Track 2), not connection imports.
-
-**Also consider**: Substack publications have public RSS feeds (`username.substack.com/feed`) — SAM could optionally monitor the feed for new posts without requiring repeated manual exports.
+**Substack Integration** ✅ *(SAM_v33; see changelog)*
 
 ### Priority 3 — Global Clipboard Capture Hotkey
 
@@ -337,5 +322,5 @@ Create a process to allow the user to migrate data from older versions of SAM Sw
 
 ---
 
-**Document Version**: 32.1
-**Last Updated**: March 4, 2026 — Contact Lifecycle Management implemented (SAM_v32): ContactLifecycleStatus enum, PersonDetailView toolbar+banners, PeopleListView filters+badges, OutcomeEngine stale contacts scanner, undo support, backup compatibility.
+**Document Version**: 33.1
+**Last Updated**: March 4, 2026 — Substack Integration implemented (SAM_v33): SubstackImport @Model, SubstackService RSS+CSV parsing, SubstackImportCoordinator (Track 1 feed fetch + Track 2 subscriber pipeline), UserSubstackProfileDTO, BusinessProfileService Substack context, ContentAdvisorService Substack voice rules, OutcomeEngine Substack cadence, SubstackImportSettingsView, backup support. Substack added to Grow section as scored platform (SubstackProfileAnalystService, auto-analysis after feed fetch, Audience & Reach section). ContentDraftSheet includes Substack. Grow page auto-refreshes on any profile analysis update (.samProfileAnalysisDidUpdate notification).

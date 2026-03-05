@@ -39,6 +39,7 @@ struct BackupDocument: Codable {
     var businessGoals: [BusinessGoalBackup]
     var complianceAuditEntries: [ComplianceAuditBackup]
     var deducedRelations: [DeducedRelationBackup]
+    var substackImports: [SubstackImportBackup]?  // v33+, backward-compatible
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -152,8 +153,10 @@ struct PersonBackup: Codable {
     var phoneAliases: [String]
     var photoThumbnailBase64: String?
     var lastSyncedAt: Date?
-    var isArchived: Bool
+    var isArchived: Bool   // legacy
     var isMe: Bool
+    var lifecycleStatusRawValue: String?
+    var lifecycleChangedAt: Date?
     var relationshipSummary: String?
     var relationshipKeyThemes: [String]
     var relationshipNextSteps: [String]
@@ -495,4 +498,20 @@ struct DeducedRelationBackup: Codable {
     var isConfirmed: Bool
     var createdAt: Date
     var confirmedAt: Date?
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// MARK: - 22. SubstackImportBackup
+// ─────────────────────────────────────────────────────────────────────
+
+struct SubstackImportBackup: Codable {
+    var id: UUID
+    var importDate: Date
+    var archiveFileName: String
+    var postCount: Int
+    var subscriberCount: Int
+    var matchedSubscriberCount: Int
+    var newLeadsFound: Int
+    var touchEventsCreated: Int
+    var statusRawValue: String
 }

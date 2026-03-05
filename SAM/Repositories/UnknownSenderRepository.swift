@@ -259,4 +259,51 @@ final class UnknownSenderRepository {
 
         try modelContext.save()
     }
+
+    // MARK: - Substack Metadata
+
+    /// Update or create an UnknownSender record for a Substack subscriber,
+    /// stamping it with subscription date, plan type, and active status.
+    func upsertSubstackLater(
+        email: String,
+        subscribedAt: Date?,
+        planType: String?,
+        isActive: Bool
+    ) throws {
+        guard let modelContext else { throw RepositoryError.notConfigured }
+
+        let canonicalEmail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+
+        let descriptor = FetchDescriptor<UnknownSender>()
+        let all = try modelContext.fetch(descriptor)
+        let existing = all.first { $0.email == canonicalEmail }
+
+        if let record = existing {
+            record.substackSubscribedAt = subscribedAt
+            record.substackPlanType = planType
+            record.substackIsActive = isActive
+            // Re-surface if previously dismissed
+            if record.status == .dismissed {
+                record.status = .pending
+            }
+        } else {
+            let record = UnknownSender(
+                email: canonicalEmail,
+                displayName: nil,
+                status: .pending,
+                firstSeenAt: subscribedAt ?? Date(),
+                emailCount: 1,
+                latestSubject: "Substack subscriber",
+                latestEmailDate: subscribedAt ?? Date(),
+                source: .substack,
+                isLikelyMarketing: false,
+                substackSubscribedAt: subscribedAt,
+                substackPlanType: planType,
+                substackIsActive: isActive
+            )
+            modelContext.insert(record)
+        }
+
+        try modelContext.save()
+    }
 }

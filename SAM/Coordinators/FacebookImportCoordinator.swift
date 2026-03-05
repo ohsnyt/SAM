@@ -317,6 +317,11 @@ final class FacebookImportCoordinator {
                 await self?.runCrossPlatformAnalysis()
             }
 
+            // Step 12: Re-run role deduction for newly imported people
+            Task(priority: .utility) {
+                await RoleDeductionEngine.shared.deduceRoles()
+            }
+
         } catch {
             importStatus = .failed
             lastError = "Import failed: \(error.localizedDescription)"

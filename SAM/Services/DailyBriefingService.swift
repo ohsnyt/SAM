@@ -34,6 +34,14 @@ actor DailyBriefingService {
         tomorrowPreview: [BriefingCalendarItem],
         goalProgress: [GoalProgress] = []
     ) async -> (visual: String, tts: String) {
+        // Guard: nothing to narrate — skip AI entirely to prevent hallucination
+        let hasData = !calendarItems.isEmpty || !priorityActions.isEmpty
+            || !followUps.isEmpty || !lifeEvents.isEmpty || !goalProgress.isEmpty
+        guard hasData else {
+            logger.info("No briefing data — skipping narrative generation")
+            return ("", "")
+        }
+
         let availability = await AIService.shared.checkAvailability()
         guard case .available = availability else {
             logger.info("AI unavailable — skipping morning narrative")
@@ -57,7 +65,10 @@ actor DailyBriefingService {
         // Visual narrative
         let visualPrompt = """
             You are a warm, professional executive assistant for a financial strategist.
-            Write a concise morning briefing (4-6 sentences) based on the data below.
+            Write a concise morning briefing (4-6 sentences) based ONLY on the data below.
+
+            CRITICAL: Only reference people, meetings, times, and goals that appear in the data.
+            Never invent names, events, or details. If a section is missing, skip it.
 
             Structure:
             1. First 1-2 sentences: overview of the day (meetings, key people, energy of the day).
@@ -67,7 +78,7 @@ actor DailyBriefingService {
                follow-up call to [Name]." Be specific about people and tasks.
             3. If there are business goals, mention the most relevant one and what would move it forward today.
 
-            Include exact times, full names, and specific details. Be data-dense but readable.
+            Include exact times, full names, and specific details from the data. Be data-dense but readable.
             Use a confident, forward-looking tone. No greetings or sign-offs.
 
             \(dataBlock)
@@ -78,7 +89,8 @@ actor DailyBriefingService {
         // TTS narrative
         let ttsPrompt = """
             You are a warm, professional executive assistant briefing your boss verbally.
-            Write a short spoken briefing (2-3 sentences) based on the data below.
+            Write a short spoken briefing (2-3 sentences) based ONLY on the data below.
+            Only reference people, meetings, and details that appear in the data. Never invent anything.
             Include what's coming up first and the most important action for the next few hours.
             Use conversational transitions ("First up...", "Also worth noting...").
             Round numbers ("about a dozen" instead of "12"), use relative times ("in a couple hours").
@@ -112,6 +124,12 @@ actor DailyBriefingService {
         metrics: BriefingMetrics,
         tomorrowHighlights: [BriefingCalendarItem]
     ) async -> (visual: String, tts: String) {
+        // Guard: nothing to recap — skip AI entirely to prevent hallucination
+        guard !accomplishments.isEmpty || !streakUpdates.isEmpty || !tomorrowHighlights.isEmpty else {
+            logger.info("No evening data — skipping narrative generation")
+            return ("", "")
+        }
+
         let availability = await AIService.shared.checkAvailability()
         guard case .available = availability else {
             logger.info("AI unavailable — skipping evening narrative")
@@ -127,7 +145,8 @@ actor DailyBriefingService {
 
         let visualPrompt = """
             You are a warm, professional executive assistant summarizing the day.
-            Write a concise end-of-day summary (3-5 sentences) based on the data below.
+            Write a concise end-of-day summary (3-5 sentences) based ONLY on the data below.
+            Only reference accomplishments, metrics, and events that appear in the data. Never invent anything.
             Celebrate accomplishments, note key metrics, and preview tomorrow.
             Be encouraging but honest. No greetings or sign-offs.
 
@@ -138,7 +157,8 @@ actor DailyBriefingService {
 
         let ttsPrompt = """
             You are a warm, professional executive assistant giving a spoken evening summary.
-            Write a short recap (2-3 sentences) highlighting accomplishments and tomorrow's plan.
+            Write a short recap (2-3 sentences) based ONLY on the data below. Never invent details.
+            Highlight accomplishments and tomorrow's plan.
             Use conversational, encouraging tone with short sentences for audio delivery.
 
             \(dataBlock)

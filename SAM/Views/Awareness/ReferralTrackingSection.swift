@@ -14,7 +14,7 @@ import SwiftData
 
 struct ReferralTrackingSection: View {
 
-    @Query(filter: #Predicate<SamPerson> { !$0.isMe && !$0.isArchived })
+    @Query(filter: #Predicate<SamPerson> { !$0.isMe && $0.lifecycleStatusRawValue == "active" })
     private var people: [SamPerson]
 
     @State private var showTopReferrers = true

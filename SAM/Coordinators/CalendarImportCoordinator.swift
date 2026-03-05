@@ -289,6 +289,11 @@ final class CalendarImportCoordinator {
 
             logger.info("Import complete: \(events.count) events")
 
+            // Re-run role deduction — calendar evidence now linked to people
+            Task(priority: .utility) {
+                await RoleDeductionEngine.shared.deduceRoles()
+            }
+
         } catch {
             lastError = error.localizedDescription
             importStatus = .failed

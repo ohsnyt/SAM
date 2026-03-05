@@ -20,6 +20,7 @@ public enum ContentPlatform: String, Codable, Sendable, CaseIterable {
     case linkedin  = "LinkedIn"
     case facebook  = "Facebook"
     case instagram = "Instagram"
+    case substack  = "Substack"
     case other     = "Other"
 
     /// Display color for badges and charts.
@@ -28,6 +29,7 @@ public enum ContentPlatform: String, Codable, Sendable, CaseIterable {
         case .linkedin:  return .blue
         case .facebook:  return .indigo
         case .instagram: return .pink
+        case .substack:  return .orange
         case .other:     return .secondary
         }
     }
@@ -38,6 +40,7 @@ public enum ContentPlatform: String, Codable, Sendable, CaseIterable {
         case .linkedin:  return "link.circle.fill"
         case .facebook:  return "person.2.circle.fill"
         case .instagram: return "camera.circle.fill"
+        case .substack:  return "newspaper.fill"
         case .other:     return "globe"
         }
     }

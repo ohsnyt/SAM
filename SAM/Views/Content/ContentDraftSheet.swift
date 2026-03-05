@@ -67,7 +67,7 @@ struct ContentDraftSheet: View {
                     .fontWeight(.medium)
 
                 HStack(spacing: 8) {
-                    ForEach([ContentPlatform.linkedin, .facebook, .instagram], id: \.rawValue) { platform in
+                    ForEach([ContentPlatform.linkedin, .facebook, .instagram, .substack], id: \.rawValue) { platform in
                         Button {
                             selectedPlatform = platform
                             // Reset draft when platform changes
