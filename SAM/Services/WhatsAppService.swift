@@ -26,55 +26,10 @@ actor WhatsAppService {
     /// Fetch messages since a given date, filtered to known phone numbers only.
     /// `knownPhones` contains canonicalized phone numbers (last 10 digits).
     func fetchMessages(since: Date, dbURL: URL, knownPhones: Set<String>) async throws -> [WhatsAppMessageDTO] {
-        logger.info("[DEBUG] fetchMessages: dbURL=\(dbURL.path, privacy: .public), since=\(since, privacy: .public), knownPhones=\(knownPhones.count)")
         let db = try openDatabase(at: dbURL)
         defer { sqlite3_close(db) }
-        logger.info("[DEBUG] Database opened successfully")
 
         let sinceTimestamp = since.timeIntervalSinceReferenceDate
-        logger.info("[DEBUG] sinceTimestamp (timeIntervalSinceReferenceDate)=\(sinceTimestamp)")
-
-        // Count total rows for debugging
-        var countStmt: OpaquePointer?
-        if sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM ZWAMESSAGE", -1, &countStmt, nil) == SQLITE_OK {
-            if sqlite3_step(countStmt) == SQLITE_ROW {
-                let totalCount = sqlite3_column_int64(countStmt, 0)
-                logger.info("[DEBUG] Total ZWAMESSAGE rows in DB: \(totalCount)")
-            }
-            sqlite3_finalize(countStmt)
-        }
-
-        // Count chat sessions
-        var sessionStmt: OpaquePointer?
-        if sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM ZWACHATSESSION WHERE ZSESSIONTYPE = 0", -1, &sessionStmt, nil) == SQLITE_OK {
-            if sqlite3_step(sessionStmt) == SQLITE_ROW {
-                let sessionCount = sqlite3_column_int64(sessionStmt, 0)
-                logger.info("[DEBUG] Private chat sessions (ZSESSIONTYPE=0): \(sessionCount)")
-            }
-            sqlite3_finalize(sessionStmt)
-        }
-
-        // Count messages after watermark
-        var afterStmt: OpaquePointer?
-        if sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM ZWAMESSAGE WHERE ZMESSAGEDATE > ?1", -1, &afterStmt, nil) == SQLITE_OK {
-            sqlite3_bind_double(afterStmt, 1, sinceTimestamp)
-            if sqlite3_step(afterStmt) == SQLITE_ROW {
-                let afterCount = sqlite3_column_int64(afterStmt, 0)
-                logger.info("[DEBUG] Messages with ZMESSAGEDATE > sinceTimestamp: \(afterCount)")
-            }
-            sqlite3_finalize(afterStmt)
-        }
-
-        // Sample a few ZMESSAGEDATE values
-        var sampleStmt: OpaquePointer?
-        if sqlite3_prepare_v2(db, "SELECT ZMESSAGEDATE FROM ZWAMESSAGE ORDER BY ZMESSAGEDATE DESC LIMIT 3", -1, &sampleStmt, nil) == SQLITE_OK {
-            var samples: [Double] = []
-            while sqlite3_step(sampleStmt) == SQLITE_ROW {
-                samples.append(sqlite3_column_double(sampleStmt, 0))
-            }
-            sqlite3_finalize(sampleStmt)
-            logger.info("[DEBUG] Latest 3 ZMESSAGEDATE values: \(samples)")
-        }
 
         // Private chats only (ZSESSIONTYPE = 0), join messages with chat sessions
         let query = """
@@ -105,12 +60,8 @@ actor WhatsAppService {
         sqlite3_bind_double(stmt, 1, sinceTimestamp)
 
         var messages: [WhatsAppMessageDTO] = []
-        var totalRowsRead = 0
-        var filteredOutCount = 0
-        var seenJIDs: Set<String> = []
 
         while sqlite3_step(stmt) == SQLITE_ROW {
-            totalRowsRead += 1
             let pk = sqlite3_column_int64(stmt, 0)
             let stanzaID = columnText(stmt, 1) ?? "unknown-\(pk)"
             let text = columnText(stmt, 2)
@@ -123,15 +74,7 @@ actor WhatsAppService {
 
             // Filter to known phone numbers
             let phone = jidToPhone(contactJID)
-            if !seenJIDs.contains(contactJID) {
-                seenJIDs.insert(contactJID)
-                let matched = knownPhones.contains(phone)
-                logger.info("[DEBUG] JID \(contactJID, privacy: .public) → phone \(phone, privacy: .public) → matched=\(matched), partnerName=\(partnerName ?? "nil", privacy: .public)")
-            }
-            guard knownPhones.contains(phone) else {
-                filteredOutCount += 1
-                continue
-            }
+            guard knownPhones.contains(phone) else { continue }
 
             let messageDate = Date(timeIntervalSinceReferenceDate: dateVal)
 
@@ -148,10 +91,6 @@ actor WhatsAppService {
             ))
         }
 
-        logger.info("[DEBUG] Query read \(totalRowsRead) rows total, \(filteredOutCount) filtered out (unknown), \(messages.count) matched known contacts, \(seenJIDs.count) unique JIDs seen")
-        // Also log a few sample known phones for cross-reference
-        let samplePhones = Array(knownPhones.prefix(5))
-        logger.info("[DEBUG] Sample knownPhones: \(samplePhones, privacy: .public)")
         logger.info("Fetched \(messages.count) WhatsApp messages from known contacts since \(since, privacy: .public)")
         return messages
     }
@@ -164,7 +103,7 @@ actor WhatsAppService {
 
         // Check if the calls table exists — not all WhatsApp versions have it
         guard tableExists("ZWACDCALLEVENT", in: db) else {
-            logger.info("[DEBUG] ZWACDCALLEVENT table not found — WhatsApp call history not available in this version")
+            logger.info("ZWACDCALLEVENT table not found — WhatsApp call history not available in this version")
             return []
         }
 

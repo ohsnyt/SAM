@@ -213,9 +213,6 @@ final class CommunicationsImportCoordinator {
             let knownEmails = try peopleRepository.allKnownEmails()
             let knownPhones = try peopleRepository.allKnownPhones()
             let knownIdentifiers = knownEmails.union(knownPhones)
-            // DEBUG: log known contact counts
-            logger.info("[DEBUG] Known emails: \(knownEmails.count), known phones: \(knownPhones.count)")
-            logger.info("[DEBUG] Lookback: \(self.lookbackDays) days, waMessageSince: \(waMessageSince, privacy: .public), waCallSince: \(waCallSince, privacy: .public)")
 
             // --- iMessage ---
             if messagesEnabled, bookmarkManager.hasMessagesAccess {
@@ -228,19 +225,13 @@ final class CommunicationsImportCoordinator {
             }
 
             // --- WhatsApp Messages ---
-            logger.info("[DEBUG] WhatsApp gate check: messagesEnabled=\(self.whatsAppMessagesEnabled), hasAccess=\(self.bookmarkManager.hasWhatsAppAccess)")
             if whatsAppMessagesEnabled, bookmarkManager.hasWhatsAppAccess {
                 totalWAMessages = try await importWhatsAppMessages(since: waMessageSince, knownPhones: knownPhones)
-            } else {
-                logger.info("[DEBUG] WhatsApp messages SKIPPED (enabled=\(self.whatsAppMessagesEnabled), access=\(self.bookmarkManager.hasWhatsAppAccess))")
             }
 
             // --- WhatsApp Calls ---
-            logger.info("[DEBUG] WhatsApp calls gate check: callsEnabled=\(self.whatsAppCallsEnabled), hasAccess=\(self.bookmarkManager.hasWhatsAppAccess)")
             if whatsAppCallsEnabled, bookmarkManager.hasWhatsAppAccess {
                 totalWACalls = try await importWhatsAppCalls(since: waCallSince, knownPhones: knownPhones)
-            } else {
-                logger.info("[DEBUG] WhatsApp calls SKIPPED (enabled=\(self.whatsAppCallsEnabled), access=\(self.bookmarkManager.hasWhatsAppAccess))")
             }
 
             // --- WhatsApp Unknown Sender Discovery ---
@@ -443,19 +434,14 @@ final class CommunicationsImportCoordinator {
     // MARK: - WhatsApp Messages Import
 
     private func importWhatsAppMessages(since: Date, knownPhones: Set<String>) async throws -> Int {
-        logger.info("[DEBUG] importWhatsAppMessages called, since=\(since, privacy: .public), knownPhones=\(knownPhones.count)")
         guard let resolved = bookmarkManager.resolveWhatsAppURL() else {
-            logger.warning("[DEBUG] Could not resolve WhatsApp bookmark — resolveWhatsAppURL() returned nil")
+            logger.warning("Could not resolve WhatsApp bookmark")
             return 0
         }
-        logger.info("[DEBUG] WhatsApp resolved: dir=\(resolved.directory.path, privacy: .public), messagesDB=\(resolved.messagesDB.path, privacy: .public)")
-        let dbExists = FileManager.default.fileExists(atPath: resolved.messagesDB.path)
-        logger.info("[DEBUG] ChatStorage.sqlite exists at path: \(dbExists)")
         guard resolved.directory.startAccessingSecurityScopedResource() else {
-            logger.warning("[DEBUG] Could not access security-scoped WhatsApp directory")
+            logger.warning("Could not access security-scoped WhatsApp directory")
             return 0
         }
-        logger.info("[DEBUG] Security-scoped access granted for WhatsApp directory")
         defer { bookmarkManager.stopAccessing(resolved.directory) }
 
         let messages = try await whatsAppService.fetchMessages(
@@ -463,16 +449,11 @@ final class CommunicationsImportCoordinator {
             dbURL: resolved.messagesDB,
             knownPhones: knownPhones
         )
-        logger.info("[DEBUG] WhatsApp fetchMessages returned \(messages.count) messages")
 
-        guard !messages.isEmpty else {
-            logger.info("[DEBUG] No new WhatsApp messages from known contacts (0 after known-phone filter)")
-            return 0
-        }
+        guard !messages.isEmpty else { return 0 }
 
         // Group messages by (JID, day) for analysis
         let grouped = groupWhatsAppMessagesByJIDAndDay(messages)
-        logger.info("[DEBUG] WhatsApp grouped into \(grouped.count) thread-days for analysis")
 
         // Analyze and upsert
         var analyzedMessages: [(WhatsAppMessageDTO, MessageAnalysisDTO?)] = []
@@ -536,13 +517,12 @@ final class CommunicationsImportCoordinator {
     // MARK: - WhatsApp Calls Import
 
     private func importWhatsAppCalls(since: Date, knownPhones: Set<String>) async throws -> Int {
-        logger.info("[DEBUG] importWhatsAppCalls called, since=\(since, privacy: .public)")
         guard let resolved = bookmarkManager.resolveWhatsAppURL() else {
-            logger.warning("[DEBUG] Could not resolve WhatsApp bookmark for calls")
+            logger.warning("Could not resolve WhatsApp bookmark for calls")
             return 0
         }
         guard resolved.directory.startAccessingSecurityScopedResource() else {
-            logger.warning("[DEBUG] Could not access security-scoped WhatsApp directory for calls")
+            logger.warning("Could not access security-scoped WhatsApp directory for calls")
             return 0
         }
         defer { bookmarkManager.stopAccessing(resolved.directory) }
@@ -552,12 +532,8 @@ final class CommunicationsImportCoordinator {
             dbURL: resolved.callsDB,
             knownPhones: knownPhones
         )
-        logger.info("[DEBUG] WhatsApp fetchCalls returned \(calls.count) calls")
 
-        guard !calls.isEmpty else {
-            logger.info("[DEBUG] No new WhatsApp call records from known contacts")
-            return 0
-        }
+        guard !calls.isEmpty else { return 0 }
 
         try evidenceRepository.bulkUpsertWhatsAppCalls(calls)
 
