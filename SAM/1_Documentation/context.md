@@ -178,7 +178,8 @@ Coordinator follows standard `ImportStatus` pattern: idle → parsing → previe
 3. Define DTOs, create `{Platform}Service` actor, create coordinator
 4. Integrate with existing `EnrichmentRepository`, `EvidenceRepository`, `UnknownSenderRepository`
 4b. If the platform export includes the user's own posts/articles, implement voice analysis (see §5.6) and store `writingVoiceSummary` in the platform DTO
-5. Add settings UI (folder picker, import status, unmatched count)
+5. Add File → Import → {Platform} menu item that opens a standalone sheet (see §5.7)
+6. If the platform's export is async (user requests → platform emails a download link), implement the auto-detection pipeline (see §5.7)
 
 ### 5.6 Voice Analysis (Standard for All Platforms)
 
@@ -193,6 +194,96 @@ Every social platform import that captures the user's own content (posts, articl
 Cross-platform fallback: If a platform has no voice data, the draft generator uses voice data from any connected platform (preferring Substack > LinkedIn > Facebook), adapted for the target platform's tone.
 
 Currently implemented for: **Substack** (article excerpts), **LinkedIn** (share comments), **Facebook** (user posts).
+
+### 5.7 Auto-Detection Import Pipeline *(Implemented — Substack, March 6, 2026)*
+
+Many social platforms use an **asynchronous export** model: the user requests their data, the platform prepares it (minutes to hours), emails a download link, and the user downloads a ZIP/archive. SAM provides a reusable auto-detection pipeline for this pattern.
+
+#### Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│              Import Sheet (SwiftUI)                     │
+│  State machine driven by {Platform}SheetPhase enum      │
+│  Phases: setup → scanning → zipFound → processing →     │
+│          awaitingReview → complete                       │
+│  Fallback: noZipFound → watchingEmail → emailFound →    │
+│            watchingFile → (loops back to scanning)       │
+└──────────┬──────────────────────────────────────────────┘
+           │
+┌──────────▼──────────────────────────────────────────────┐
+│         {Platform}ImportCoordinator                      │
+│  beginImportFlow()     — routes by config state          │
+│  scanDownloadsFolder() — ~/Downloads pattern match       │
+│  processZip(url:)      — unzip + parse + match           │
+│  startEmailWatcher()   — 5-min Mail.app polling          │
+│  startFileWatcher()    — 30s ~/Downloads polling         │
+│  scheduleReminder()    — calendar-gap-aware reschedule   │
+│  resumeWatchersIfNeeded() — persist across app restart   │
+└──────────┬──────────────────────────────────────────────┘
+           │
+┌──────────▼──────────────────────────────────────────────┐
+│         SystemNotificationService                        │
+│  {PLATFORM}_EXPORT notification category                 │
+│  "Open Export Page" action → opens URL + file watcher    │
+│  "Remind Me Later" action → free-calendar-gap reschedule │
+└─────────────────────────────────────────────────────────┘
+```
+
+#### Sheet Phase State Machine
+
+Every platform that uses async exports should define a `{Platform}SheetPhase` enum with these cases:
+
+| Phase | Trigger | Description |
+|-------|---------|-------------|
+| `.setup` | No prior config | First-time: platform credentials/URL entry + manual file picker |
+| `.scanning` | Has config + prior import | Scan ~/Downloads for matching archive |
+| `.zipFound(info)` | Archive found newer than last import | Preview: filename, date, size; Confirm/Decline |
+| `.processing` | User confirms | Unzip → parse → match (progress indicator) |
+| `.awaitingReview` | Parse complete | Show matched/unmatched summary; user confirms |
+| `.noZipFound` | No matching archive | Instructions + "Download Data..." + optional email watcher |
+| `.watchingEmail` | User clicks "Watch for Email" | Polls Mail.app every 5 min for export-ready email (2-day timeout) |
+| `.emailFound(url)` | Export email detected | macOS notification + "Open Download Page" button |
+| `.watchingFile` | User clicks download link | Polls ~/Downloads every 30s for new archive (2-day timeout) |
+| `.complete(stats)` | Import confirmed | Summary + optional "Delete source file?" |
+| `.failed(message)` | Any error | Error message + Retry button |
+
+#### Prerequisites
+
+- **Entitlement**: `com.apple.security.files.downloads.read-write` — required for real ~/Downloads access (sandbox returns container otherwise). Already added; benefits all platforms.
+- **Mail access**: Email watcher requires `MailImportCoordinator.shared.mailEnabled` and configured accounts. Graceful fallback when unavailable.
+
+#### Adapting for a New Platform
+
+To add auto-detection for LinkedIn or Facebook:
+
+1. **Define file patterns**: Each platform uses different export filenames (e.g., `Basic_LinkedInDataExport_*.zip`, `facebook-*.zip`). Add pattern matching to `scanDownloadsFolder()`.
+2. **Define email patterns**: Each platform sends different export notification emails. Add sender/subject filters to `pollForExportEmail()` (e.g., LinkedIn: sender `linkedin.com`, subject "download your data").
+3. **Create the sheet**: Copy `SubstackImportSheet.swift` as a template. The feed section is Substack-specific; replace with platform-appropriate setup (folder picker for LinkedIn, URL entry for others).
+4. **Add notification category**: Register `{PLATFORM}_EXPORT` in `SystemNotificationService.configure()` with Open/Remind actions.
+5. **Wire menu item**: `File → Import → {Platform}...` opens the sheet. Remove `.disabled()` — the sheet handles all states.
+6. **Add watcher persistence**: Use `sam.{platform}.emailWatcherActive` / `fileWatcherActive` / `StartDate` keys. Call `resumeWatchersIfNeeded()` from `configure(container:)`.
+7. **Add termination cleanup**: Call `{Platform}ImportCoordinator.shared.cancelAll()` from `SAMAppDelegate.applicationShouldTerminate`.
+
+#### UserDefaults Keys (per platform)
+
+```
+sam.{platform}.feedURL                    — platform config (if applicable)
+sam.{platform}.lastSubscriberImportDate   — watermark for auto-scan
+sam.{platform}.emailWatcherActive         — Bool, persists across restarts
+sam.{platform}.emailWatcherStartDate      — Date, for timeout calculation
+sam.{platform}.fileWatcherActive          — Bool
+sam.{platform}.fileWatcherStartDate       — Date
+sam.{platform}.extractedDownloadURL       — String, cached download URL
+```
+
+#### Implementation Reference
+
+First implementation: **Substack** (March 6, 2026)
+- `SubstackImportCoordinator.swift` — full auto-detection pipeline
+- `SubstackImportSheet.swift` — standalone sheet with all 11 phases
+- `SystemNotificationService.swift` — `SUBSTACK_EXPORT` category
+- `SAMApp.swift` — menu item + sheet + ZIP detection listener
 
 ---
 
@@ -332,5 +423,5 @@ Bookmark the **directory** (not file) for SQLite to cover WAL/SHM companions. `.
 
 ---
 
-**Document Version**: 34.4
-**Last Updated**: March 5, 2026 — AI-powered family inference service, anniversary enrichment field, deduced relation rejection, Me contact duplicate prevention.
+**Document Version**: 34.5
+**Last Updated**: March 6, 2026 — Substack auto-detection import pipeline; reusable §5.7 pattern for async platform exports (LinkedIn, Facebook).

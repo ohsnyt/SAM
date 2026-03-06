@@ -4696,6 +4696,49 @@ SAM now understands that different *types* of messages should go through differe
 
 ---
 
+## Substack Auto-Detection Import Pipeline (March 6, 2026)
+
+**What**: Replaced the disabled "Import Substack Feed" menu item with a smart auto-detection pipeline. When the user has previously configured Substack, SAM automatically scans ~/Downloads for export ZIPs, monitors Mail.app for the export-ready email, posts macOS notifications with the download link, and watches for the downloaded file — all without leaving SAM.
+
+**Why**: The previous Substack subscriber import required navigating to Settings → Data Sources → Substack, manually downloading the export, and selecting the CSV via a file picker. This was friction-heavy and easy to forget. The new flow is a single menu item that handles everything, including watching for async exports that take hours to prepare.
+
+### New Files (1)
+
+- `Views/Settings/SubstackImportSheet.swift` — Standalone sheet with 11-phase state machine (setup, scanning, zipFound, processing, awaitingReview, noZipFound, watchingEmail, emailFound, watchingFile, complete, failed). Combines publication feed management with smart subscriber ZIP detection. Manual file picker fallback for all states.
+
+### Modified Files (5)
+
+#### Coordinator Extension
+
+- `Coordinators/SubstackImportCoordinator.swift` — Major extension. Added `SubstackSheetPhase` enum (11 cases), `ZipInfo`/`ImportStats` value types, `beginImportFlow()` routing, `scanDownloadsFolder()` (pattern matching for `export-*.zip`/`substack-export-*.zip`), `processZip(url:)` (unzip via `/usr/bin/unzip` + CSV extraction + matching), `openSubstackExportPage()`, email watcher (5-min Mail.app polling, MIME source parsing for download URL, 2-day timeout), file watcher (30s ~/Downloads polling, 2-day timeout), `scheduleReminder()` (calendar-gap-aware rescheduling), `resumeWatchersIfNeeded()` (watcher persistence across app restarts via UserDefaults), `deleteSourceZip()`, `cancelAll()`.
+
+#### System Notifications
+
+- `Services/SystemNotificationService.swift` — Added `SUBSTACK_EXPORT` notification category with "Open Export Page" (foreground, opens URL + starts file watcher) and "Remind Me Later" (triggers calendar-gap-aware rescheduling) actions. New `postSubstackExportReady(downloadURL:triggerDate:)` method supporting both immediate and scheduled delivery. Delegate handling for both action buttons and default tap.
+
+#### App Integration
+
+- `App/SAMApp.swift` — "Import Substack Feed" (disabled when unconfigured) → "Import Substack..." (always enabled). Added `showSubstackImportSheet` state, `.sheet` presenter, `.samSubstackZipDetected` notification listener to auto-present sheet when file watcher detects ZIP. Added `SubstackImportCoordinator.shared.cancelAll()` to termination handler.
+
+#### Settings Cleanup
+
+- `Views/Settings/SettingsView.swift` — Removed Substack DisclosureGroup from `DataSourcesSettingsView` (configuration moved to File → Import sheet). Updated `ImportStatusDashboard` Substack row to show "File → Import" when no feed URL configured, and last import date when available.
+
+#### Entitlements & Notifications
+
+- `SAM_crm.entitlements` — Added `com.apple.security.files.downloads.read-write` for real ~/Downloads access (sandbox returns container without it). Benefits all future platform auto-detection.
+- `Models/SAMModels.swift` — Added `.samSubstackZipDetected` notification name.
+
+### Architecture Notes
+
+- **Reusable pattern**: The auto-detection pipeline is documented in `context.md` §5.7 with a step-by-step guide for adapting to LinkedIn and Facebook. The `{Platform}SheetPhase` enum, watcher persistence model, and notification category structure are designed as templates.
+- **No schema version bump** — all new state is in UserDefaults (watcher flags, start dates, extracted URLs) and coordinator observable properties.
+- **Watcher persistence**: Both email and file watchers survive app restart. `resumeWatchersIfNeeded()` (called from `configure(container:)`) restarts timers if active flags are set; timeout is calculated from the original start date.
+- **Graceful fallback**: If Mail is not configured, the email watcher button is hidden and the sheet shows manual instructions. All phases include a "Select File Manually..." escape hatch.
+- **Entitlement scope**: `com.apple.security.files.downloads.read-write` is a standard Apple entitlement that grants read/write to ~/Downloads. This is the real filesystem directory, not the sandbox container.
+
+---
+
 **Changelog Started**: February 10, 2026
 **Maintained By**: Project team
 **Related Docs**: See `context.md` for current state and roadmap

@@ -167,6 +167,7 @@ struct DeepWorkScheduleSheet: View {
         }
         .padding(20)
         .frame(width: 420)
+        .onAppear { FeatureAdoptionTracker.shared.recordUsage(.deepWorkSchedule) }
     }
 
     // MARK: - Actions

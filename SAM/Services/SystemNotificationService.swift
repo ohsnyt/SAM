@@ -26,6 +26,9 @@ final class SystemNotificationService: NSObject, UNUserNotificationCenterDelegat
     private static let viewPlanAction = "VIEW_PLAN"
     private static let meetingPrepCategory = "MEETING_PREP"
     private static let viewMeetingPrepAction = "VIEW_MEETING_PREP"
+    private static let substackExportCategory = "SUBSTACK_EXPORT"
+    private static let openSubstackExportAction = "OPEN_SUBSTACK_EXPORT"
+    private static let remindSubstackLaterAction = "REMIND_SUBSTACK_LATER"
 
     private override init() {
         super.init()
@@ -66,7 +69,27 @@ final class SystemNotificationService: NSObject, UNUserNotificationCenterDelegat
             options: []
         )
 
-        center.setNotificationCategories([planCategory, meetingCategory])
+        // Substack Export category
+        let openExportAction = UNNotificationAction(
+            identifier: Self.openSubstackExportAction,
+            title: "Open Export Page",
+            options: [.foreground]
+        )
+
+        let remindLaterAction = UNNotificationAction(
+            identifier: Self.remindSubstackLaterAction,
+            title: "Remind Me Later",
+            options: []
+        )
+
+        let substackCategory = UNNotificationCategory(
+            identifier: Self.substackExportCategory,
+            actions: [openExportAction, remindLaterAction],
+            intentIdentifiers: [],
+            options: []
+        )
+
+        center.setNotificationCategories([planCategory, meetingCategory, substackCategory])
         logger.info("System notification categories configured")
     }
 
@@ -163,6 +186,40 @@ final class SystemNotificationService: NSObject, UNUserNotificationCenterDelegat
         }
     }
 
+    /// Post a system notification when a Substack export is ready to download.
+    func postSubstackExportReady(downloadURL: URL, triggerDate: Date? = nil) async {
+        let granted = await requestPermissionIfNeeded()
+        guard granted else { return }
+
+        let content = UNMutableNotificationContent()
+        content.title = "Substack data export ready to download"
+        content.body = "SAM detected the export instructions email. Open Substack to download the archive."
+        content.sound = .default
+        content.categoryIdentifier = Self.substackExportCategory
+        content.userInfo = ["downloadURL": downloadURL.absoluteString]
+
+        var trigger: UNNotificationTrigger?
+        if let triggerDate {
+            let components = Calendar.current.dateComponents(
+                [.year, .month, .day, .hour, .minute], from: triggerDate
+            )
+            trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
+        }
+
+        let request = UNNotificationRequest(
+            identifier: "substack-export-\(UUID().uuidString)",
+            content: content,
+            trigger: trigger
+        )
+
+        do {
+            try await UNUserNotificationCenter.current().add(request)
+            logger.info("Substack export notification posted (scheduled: \(triggerDate != nil))")
+        } catch {
+            logger.error("Failed to post Substack export notification: \(error.localizedDescription)")
+        }
+    }
+
     // MARK: - UNUserNotificationCenterDelegate
 
     /// Show notification banner even when app is in foreground.
@@ -212,6 +269,29 @@ final class SystemNotificationService: NSObject, UNUserNotificationCenterDelegat
                         object: nil
                     )
                 }
+
+            case Self.substackExportCategory:
+                let actionID = response.actionIdentifier
+                if actionID == Self.openSubstackExportAction {
+                    // Open the download URL and start file watcher
+                    if let urlString = sendableUserInfo["downloadURL"],
+                       let url = URL(string: urlString) {
+                        NSWorkspace.shared.open(url)
+                    }
+                    SubstackImportCoordinator.shared.startFileWatcher()
+                } else if actionID == Self.remindSubstackLaterAction {
+                    Task {
+                        await SubstackImportCoordinator.shared.scheduleReminder()
+                    }
+                } else {
+                    // Default tap — open download URL
+                    if let urlString = sendableUserInfo["downloadURL"],
+                       let url = URL(string: urlString) {
+                        NSWorkspace.shared.open(url)
+                    }
+                    SubstackImportCoordinator.shared.startFileWatcher()
+                }
+
             default:
                 break
             }

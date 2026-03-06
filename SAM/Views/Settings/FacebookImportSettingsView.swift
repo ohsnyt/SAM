@@ -106,6 +106,7 @@ struct FacebookImportSettingsContent: View {
                 showReviewSheet = false
             }
         }
+        .onAppear { FeatureAdoptionTracker.shared.recordUsage(.facebookImport) }
     }
 
     // MARK: - Sub-sections

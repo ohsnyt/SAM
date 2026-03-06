@@ -137,6 +137,15 @@ final class OutcomeEngine {
             // 13. Stale contacts → archive suggestions
             newOutcomes.append(contentsOf: try scanStaleContacts(people: allPeople))
 
+            // 14. Progressive feature adoption coaching
+            newOutcomes.append(contentsOf: scanFeatureAdoption())
+
+            // 15. Substack auto-detection
+            newOutcomes.append(contentsOf: try scanSubstackAutoDetection())
+
+            // 16. WhatsApp auto-detection
+            newOutcomes.append(contentsOf: scanWhatsAppAutoDetection())
+
             // Classify action lanes and suggest channels
             for outcome in newOutcomes {
                 classifyActionLane(for: outcome)
@@ -968,6 +977,81 @@ final class OutcomeEngine {
             return [outcome]
         }
         return []
+    }
+
+    /// Progressive feature adoption coaching — suggests one feature at a time
+    /// based on days since onboarding and whether the user has tried each feature.
+    private func scanFeatureAdoption() -> [SamOutcome] {
+        let suggestions = FeatureAdoptionTracker.shared.suggestionsForUnusedFeatures()
+        return suggestions.compactMap { suggestion in
+            let isDuplicate = (try? outcomeRepo.hasSimilarOutcome(kind: .setup, personID: nil)) ?? false
+            guard !isDuplicate else { return nil }
+            FeatureAdoptionTracker.shared.markCoached(suggestion.feature)
+            return SamOutcome(
+                title: suggestion.title,
+                rationale: suggestion.rationale,
+                outcomeKind: .setup,
+                priorityScore: 0.4,
+                sourceInsightSummary: "Feature adoption coaching: \(suggestion.feature.rawValue)",
+                suggestedNextStep: suggestion.suggestedNextStep
+            )
+        }
+    }
+
+    /// Suggests enabling Substack integration when Me contact has a substack.com URL.
+    private func scanSubstackAutoDetection() throws -> [SamOutcome] {
+        // Skip if already configured
+        guard UserDefaults.standard.string(forKey: "sam.substack.feedURL") == nil else { return [] }
+
+        // Check if Me contact has a Substack URL via cached contact data
+        guard let me = try? peopleRepo.fetchMe() else { return [] }
+
+        // Check email aliases and linked evidence for substack.com references
+        let hasSubstackURL = me.emailAliases.contains { $0.lowercased().contains("substack.com") }
+            || me.linkedEvidence.contains { ($0.snippet ?? "").lowercased().contains("substack.com") }
+
+        guard hasSubstackURL else { return [] }
+
+        // Dedup — don't suggest again within 7 days
+        let isDuplicate = (try? outcomeRepo.hasSimilarOutcome(kind: .setup, personID: nil, withinHours: 168)) ?? false
+        guard !isDuplicate else { return [] }
+
+        let outcome = SamOutcome(
+            title: "Enable Substack Integration",
+            rationale: "SAM found a Substack URL on your contact card. Connect your feed to track posting cadence and get content coaching.",
+            outcomeKind: .setup,
+            priorityScore: 0.5,
+            sourceInsightSummary: "Substack auto-detection: URL found on Me contact",
+            suggestedNextStep: "Open Settings → Data Sources → Substack"
+        )
+        outcome.actionLane = .openURL
+        return [outcome]
+    }
+
+    /// Suggests enabling WhatsApp integration when the database exists on disk.
+    private func scanWhatsAppAutoDetection() -> [SamOutcome] {
+        // Skip if already configured
+        guard !BookmarkManager.shared.hasWhatsAppAccess else { return [] }
+
+        // Check if WhatsApp database exists
+        let whatsAppPath = NSHomeDirectory()
+            .appending("/Library/Group Containers/group.net.whatsapp.WhatsApp.shared/ChatStorage.sqlite")
+        guard FileManager.default.fileExists(atPath: whatsAppPath) else { return [] }
+
+        // Dedup
+        let isDuplicate = (try? outcomeRepo.hasSimilarOutcome(kind: .setup, personID: nil, withinHours: 168)) ?? false
+        guard !isDuplicate else { return [] }
+
+        let outcome = SamOutcome(
+            title: "Enable WhatsApp Integration",
+            rationale: "SAM detected WhatsApp on this Mac. Connect it to import message history and track communication patterns.",
+            outcomeKind: .setup,
+            priorityScore: 0.5,
+            sourceInsightSummary: "WhatsApp auto-detection: database found on disk",
+            suggestedNextStep: "Open Settings → Data Sources → Communications"
+        )
+        outcome.actionLane = .openURL
+        return [outcome]
     }
 
     /// Map GoalType to the most appropriate OutcomeKind.

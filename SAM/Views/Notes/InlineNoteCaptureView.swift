@@ -146,6 +146,7 @@ struct InlineNoteCaptureView: View {
                     if isDictating {
                         stopDictation()
                     } else {
+                        FeatureAdoptionTracker.shared.recordUsage(.dictation)
                         startDictation()
                     }
                 } label: {

@@ -332,6 +332,105 @@ struct EvernoteImportSettingsView: View {
     }
 }
 
+// MARK: - Import Preview Sheet (presented from File → Import)
+
+/// Standalone sheet shown when the user imports Evernote notes via File → Import.
+/// Shows parsed note counts and Import/Cancel buttons.
+struct EvernoteImportPreviewSheet: View {
+
+    let onDismiss: () -> Void
+
+    @State private var coordinator = EvernoteImportCoordinator.shared
+    @State private var isImporting = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Toolbar
+            HStack {
+                Button("Cancel") {
+                    coordinator.cancelImport()
+                    onDismiss()
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Spacer()
+
+                Text("Evernote Import")
+                    .font(.headline)
+
+                Spacer()
+
+                Button("Import") {
+                    Task {
+                        isImporting = true
+                        await coordinator.confirmImport()
+                        isImporting = false
+                        onDismiss()
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(coordinator.newCount == 0 || isImporting)
+                .keyboardShortcut(.return, modifiers: .command)
+            }
+            .padding()
+
+            Divider()
+
+            if isImporting {
+                ProgressView()
+                    .progressViewStyle(.linear)
+                    .padding(.horizontal)
+                    .padding(.top, 8)
+
+                if coordinator.importedCount > 0 {
+                    Text("Importing \(coordinator.importedCount) notes…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 4)
+                }
+
+                Spacer()
+            } else {
+                VStack(alignment: .leading, spacing: 16) {
+                    GroupBox {
+                        VStack(alignment: .leading, spacing: 8) {
+                            if coordinator.fileCount > 1 {
+                                summaryRow("Files parsed:", value: "\(coordinator.fileCount)")
+                            }
+                            summaryRow("Total notes:", value: "\(coordinator.parsedNotes.count)")
+                            if coordinator.splitCount > 0 {
+                                summaryRow("  ↳ Expanded by dates:", value: "+\(coordinator.splitCount)")
+                            }
+                            summaryRow("New (will import):", value: "\(coordinator.newCount)", color: .green)
+                            if coordinator.duplicateCount > 0 {
+                                summaryRow("Already imported (skip):", value: "\(coordinator.duplicateCount)", color: .orange)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+                .padding()
+
+                Spacer()
+            }
+        }
+        .frame(minWidth: 420, minHeight: 260)
+    }
+
+    private func summaryRow(_ label: String, value: String, color: Color = .primary) -> some View {
+        HStack {
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text(value)
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundStyle(color)
+        }
+    }
+}
+
 #Preview {
     EvernoteImportSettingsView()
         .frame(width: 650, height: 500)

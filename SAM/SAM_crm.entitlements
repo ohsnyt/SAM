@@ -8,6 +8,8 @@
 	<true/>
 	<key>com.apple.security.contacts.contacts-write</key>
 	<true/>
+	<key>com.apple.security.files.downloads.read-write</key>
+	<true/>
 	<key>com.apple.security.temporary-exception.apple-events</key>
 	<array>
 		<string>com.apple.mail</string>

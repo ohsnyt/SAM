@@ -136,6 +136,7 @@ struct GoalEntryForm: View {
         }
         .frame(width: 450, height: 520)
         .onAppear {
+            FeatureAdoptionTracker.shared.recordUsage(.goalSetting)
             if case .edit(let goal) = mode {
                 selectedType = goal.goalType
                 title = goal.title

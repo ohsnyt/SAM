@@ -9,6 +9,8 @@
 
 import Foundation
 import SwiftData
+import AppKit
+import UserNotifications
 import os.log
 
 private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "SubstackImportCoordinator")
@@ -31,6 +33,17 @@ final class SubstackImportCoordinator {
 
     /// Subscriber candidates from the most recent CSV import.
     var subscriberCandidates: [SubstackSubscriberCandidate] = []
+
+    /// Current phase of the import sheet state machine.
+    var sheetPhase: SubstackSheetPhase = .setup
+
+    /// Remembers the ZIP URL for post-import deletion.
+    var importedZipURL: URL?
+
+    // MARK: - Watcher Timers
+
+    private var emailPollingTimer: Timer?
+    private var filePollingTimer: Timer?
 
     // MARK: - Persisted Settings
 
@@ -57,6 +70,34 @@ final class SubstackImportCoordinator {
 
     func configure(container: ModelContainer) {
         self.container = container
+        resumeWatchersIfNeeded()
+    }
+
+    // MARK: - Watcher Persistence (UserDefaults)
+
+    private var emailWatcherActive: Bool {
+        get { UserDefaults.standard.bool(forKey: "sam.substack.emailWatcherActive") }
+        set { UserDefaults.standard.set(newValue, forKey: "sam.substack.emailWatcherActive") }
+    }
+
+    private var emailWatcherStartDate: Date? {
+        get { UserDefaults.standard.object(forKey: "sam.substack.emailWatcherStartDate") as? Date }
+        set { UserDefaults.standard.set(newValue, forKey: "sam.substack.emailWatcherStartDate") }
+    }
+
+    private var fileWatcherActive: Bool {
+        get { UserDefaults.standard.bool(forKey: "sam.substack.fileWatcherActive") }
+        set { UserDefaults.standard.set(newValue, forKey: "sam.substack.fileWatcherActive") }
+    }
+
+    private var fileWatcherStartDate: Date? {
+        get { UserDefaults.standard.object(forKey: "sam.substack.fileWatcherStartDate") as? Date }
+        set { UserDefaults.standard.set(newValue, forKey: "sam.substack.fileWatcherStartDate") }
+    }
+
+    private var extractedDownloadURL: String? {
+        get { UserDefaults.standard.string(forKey: "sam.substack.extractedDownloadURL") }
+        set { UserDefaults.standard.set(newValue, forKey: "sam.substack.extractedDownloadURL") }
     }
 
     // MARK: - Track 1: RSS Feed Fetch
@@ -302,6 +343,458 @@ final class SubstackImportCoordinator {
         }
     }
 
+    // MARK: - Import Flow (Sheet Entry Point)
+
+    /// Entry point when the sheet opens. Checks state and routes to the right phase.
+    func beginImportFlow() {
+        let hasFeed = !feedURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let hasImported = lastSubscriberImportDate != nil
+
+        if !hasFeed {
+            sheetPhase = .setup
+            return
+        }
+
+        if !hasImported {
+            // Feed configured but never imported subscribers — go to instructions
+            sheetPhase = .noZipFound
+            return
+        }
+
+        // Returning user — scan Downloads
+        sheetPhase = .scanning
+        Task { await scanDownloadsFolder() }
+    }
+
+    // MARK: - Step 3: Scan ~/Downloads
+
+    /// Scan ~/Downloads for Substack export ZIP files.
+    func scanDownloadsFolder() async {
+        sheetPhase = .scanning
+
+        let fm = FileManager.default
+        guard let downloadsURL = fm.urls(for: .downloadsDirectory, in: .userDomainMask).first else {
+            sheetPhase = .noZipFound
+            return
+        }
+
+        do {
+            let contents = try fm.contentsOfDirectory(
+                at: downloadsURL,
+                includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey],
+                options: [.skipsHiddenFiles]
+            )
+
+            // Filter for ZIP files matching Substack export patterns
+            let zipFiles = contents.filter { url in
+                let name = url.lastPathComponent.lowercased()
+                guard name.hasSuffix(".zip") else { return false }
+                return name.hasPrefix("export-") || name.hasPrefix("substack-export-")
+            }
+
+            // Find the newest ZIP
+            guard let newest = zipFiles.max(by: { a, b in
+                let dateA = (try? a.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+                let dateB = (try? b.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+                return dateA < dateB
+            }) else {
+                sheetPhase = .noZipFound
+                return
+            }
+
+            let resourceValues = try newest.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+            let fileDate = resourceValues.contentModificationDate ?? Date()
+            let fileSize = resourceValues.fileSize ?? 0
+
+            // For auto-detect: only show if newer than last import
+            if let lastImport = lastSubscriberImportDate, fileDate <= lastImport {
+                sheetPhase = .noZipFound
+                return
+            }
+
+            let info = ZipInfo(
+                url: newest,
+                fileName: newest.lastPathComponent,
+                fileDate: fileDate,
+                fileSize: Int64(fileSize)
+            )
+            sheetPhase = .zipFound(info)
+
+        } catch {
+            logger.error("Failed to scan ~/Downloads: \(error.localizedDescription)")
+            sheetPhase = .noZipFound
+        }
+    }
+
+    // MARK: - Step 5: Process ZIP
+
+    /// Unzip a Substack export, find subscriber CSV, parse and match.
+    func processZip(url: URL) async {
+        sheetPhase = .processing
+        importedZipURL = url
+        statusMessage = "Unzipping export..."
+
+        let fm = FileManager.default
+        let tempDir = fm.temporaryDirectory.appendingPathComponent("SAM-Substack-\(UUID().uuidString)")
+
+        do {
+            try fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
+
+            // Unzip via /usr/bin/unzip
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
+            process.arguments = ["-o", url.path, "-d", tempDir.path]
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+            try process.run()
+            process.waitUntilExit()
+
+            guard process.terminationStatus == 0 else {
+                sheetPhase = .failed("Failed to unzip the export file")
+                return
+            }
+
+            statusMessage = "Finding subscriber data..."
+
+            // Find subscriber CSV using existing helper
+            let csvURL = try findSubscriberCSV(at: tempDir)
+
+            // Load and match
+            await loadSubscriberCSV(url: csvURL)
+
+            // If we got candidates, transition to awaitingReview
+            if importStatus == .awaitingReview {
+                sheetPhase = .awaitingReview
+            } else if case .failed(let msg) = importStatus {
+                sheetPhase = .failed(msg)
+            }
+
+            // Clean up temp directory
+            try? fm.removeItem(at: tempDir)
+
+        } catch {
+            sheetPhase = .failed(error.localizedDescription)
+            try? fm.removeItem(at: tempDir)
+        }
+    }
+
+    /// Complete the import and transition to the complete phase.
+    func completeImportFromSheet() async {
+        await confirmSubscriberImport()
+        if importStatus == .complete {
+            let matched = subscriberCandidates.filter {
+                if case .exactMatchEmail = $0.matchStatus { return true }; return false
+            }.count
+            let total = subscriberCandidates.count
+            let stats = ImportStats(
+                subscriberCount: total,
+                matchedCount: matched,
+                newLeads: total - matched,
+                touchesCreated: matched
+            )
+            sheetPhase = .complete(stats)
+        }
+    }
+
+    // MARK: - Step 6: Open Substack Export Page
+
+    /// Open the Substack settings/export page in the browser.
+    func openSubstackExportPage() {
+        let rawURL = feedURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        var base = rawURL
+        if !base.hasPrefix("http") { base = "https://\(base)" }
+        // Remove trailing /feed if present
+        if base.hasSuffix("/feed") { base = String(base.dropLast(5)) }
+        if base.hasSuffix("/") { base = String(base.dropLast()) }
+
+        let exportURL = URL(string: "\(base)/publish/settings")
+            ?? URL(string: "https://substack.com/settings")!
+        NSWorkspace.shared.open(exportURL)
+    }
+
+    // MARK: - Step 7: Email Watcher
+
+    /// Start polling Mail.app for the Substack export-ready email.
+    func startEmailWatcher() {
+        guard !MailImportCoordinator.shared.selectedAccountIDs.isEmpty,
+              MailImportCoordinator.shared.mailEnabled else {
+            logger.warning("Mail not configured — cannot watch for export email")
+            return
+        }
+
+        emailWatcherActive = true
+        emailWatcherStartDate = .now
+        sheetPhase = .watchingEmail
+        scheduleEmailPolling()
+        logger.info("Substack email watcher started")
+    }
+
+    /// Stop the email watcher.
+    func stopEmailWatcher() {
+        emailPollingTimer?.invalidate()
+        emailPollingTimer = nil
+        emailWatcherActive = false
+        emailWatcherStartDate = nil
+        logger.info("Substack email watcher stopped")
+    }
+
+    private func scheduleEmailPolling() {
+        emailPollingTimer?.invalidate()
+        emailPollingTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in
+                await self.pollForExportEmail()
+            }
+        }
+        // Also poll immediately
+        Task { await pollForExportEmail() }
+    }
+
+    private func pollForExportEmail() async {
+        // Check timeout (2 days)
+        if let startDate = emailWatcherStartDate,
+           Date.now.timeIntervalSince(startDate) > 2 * 24 * 3600 {
+            stopEmailWatcher()
+            sheetPhase = .failed("Email watcher timed out after 2 days. Try downloading manually from Substack.")
+            return
+        }
+
+        do {
+            let accountIDs = MailImportCoordinator.shared.selectedAccountIDs
+            let since = emailWatcherStartDate ?? Date.now.addingTimeInterval(-3600)
+
+            let (metas, _) = try await MailService.shared.fetchMetadata(
+                accountIDs: accountIDs,
+                since: since
+            )
+
+            // Filter for Substack export emails
+            let exportEmail = metas.first { meta in
+                let sender = meta.sender.lowercased()
+                let subject = meta.subject.lowercased()
+                return sender.contains("substack.com")
+                    && subject.contains("export")
+                    && subject.contains("ready")
+            }
+
+            guard let email = exportEmail else { return }
+
+            // Found the email — try to extract download URL from MIME source
+            var downloadURL: URL?
+            if let mimeSource = await MailService.shared.fetchMIMESource(for: email) {
+                downloadURL = extractDownloadURL(from: mimeSource)
+            }
+
+            stopEmailWatcher()
+
+            if let url = downloadURL {
+                extractedDownloadURL = url.absoluteString
+                sheetPhase = .emailFound(url)
+
+                // Post macOS notification
+                await SystemNotificationService.shared.postSubstackExportReady(downloadURL: url)
+            } else {
+                // Email found but couldn't extract URL — still useful
+                sheetPhase = .emailFound(URL(string: "https://substack.com/settings")!)
+                await SystemNotificationService.shared.postSubstackExportReady(
+                    downloadURL: URL(string: "https://substack.com/settings")!
+                )
+            }
+
+            logger.info("Substack export email detected")
+
+        } catch {
+            logger.error("Email poll failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Extract download URL from email MIME source HTML.
+    private func extractDownloadURL(from mimeSource: String) -> URL? {
+        // Look for Substack download/export links in the HTML
+        let pattern = #"href="(https://[^"]*substack[^"]*(?:export|download)[^"]*)""#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else { return nil }
+        let range = NSRange(mimeSource.startIndex..<mimeSource.endIndex, in: mimeSource)
+        guard let match = regex.firstMatch(in: mimeSource, range: range),
+              let urlRange = Range(match.range(at: 1), in: mimeSource) else { return nil }
+        return URL(string: String(mimeSource[urlRange]))
+    }
+
+    // MARK: - Step 9: File Watcher
+
+    /// Start polling ~/Downloads for new Substack export ZIP files.
+    func startFileWatcher() {
+        fileWatcherActive = true
+        fileWatcherStartDate = .now
+        sheetPhase = .watchingFile
+        scheduleFilePolling()
+        logger.info("Substack file watcher started")
+    }
+
+    /// Stop the file watcher.
+    func stopFileWatcher() {
+        filePollingTimer?.invalidate()
+        filePollingTimer = nil
+        fileWatcherActive = false
+        fileWatcherStartDate = nil
+        logger.info("Substack file watcher stopped")
+    }
+
+    private func scheduleFilePolling() {
+        filePollingTimer?.invalidate()
+        filePollingTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in
+                await self.pollForZipFile()
+            }
+        }
+    }
+
+    private func pollForZipFile() async {
+        // Check timeout (2 days)
+        if let startDate = fileWatcherStartDate,
+           Date.now.timeIntervalSince(startDate) > 2 * 24 * 3600 {
+            stopFileWatcher()
+            sheetPhase = .failed("File watcher timed out after 2 days.")
+            return
+        }
+
+        let fm = FileManager.default
+        guard let downloadsURL = fm.urls(for: .downloadsDirectory, in: .userDomainMask).first else { return }
+
+        do {
+            let contents = try fm.contentsOfDirectory(
+                at: downloadsURL,
+                includingPropertiesForKeys: [.contentModificationDateKey],
+                options: [.skipsHiddenFiles]
+            )
+
+            let watchStart = fileWatcherStartDate ?? .distantPast
+
+            let newZip = contents.first { url in
+                let name = url.lastPathComponent.lowercased()
+                guard name.hasSuffix(".zip"),
+                      name.hasPrefix("export-") || name.hasPrefix("substack-export-") else { return false }
+                let fileDate = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+                return fileDate > watchStart
+            }
+
+            if newZip != nil {
+                stopFileWatcher()
+                NotificationCenter.default.post(name: .samSubstackZipDetected, object: nil)
+                // Re-scan will pick up the new file
+                await scanDownloadsFolder()
+            }
+        } catch {
+            logger.error("File poll failed: \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - Step 10: Reminder Scheduling
+
+    /// Schedule a reminder notification during the next free calendar gap.
+    func scheduleReminder() async {
+        let calendar = Calendar.current
+        let now = Date.now
+        let endWindow = calendar.date(byAdding: .hour, value: 8, to: now)!
+
+        // Try to find a free 15-min gap in the next 8 hours
+        var reminderDate = calendar.date(byAdding: .hour, value: 2, to: now)! // Fallback: 2 hours
+
+        if let calendarIDs = UserDefaults.standard.stringArray(forKey: "selectedCalendarIdentifiers"),
+           !calendarIDs.isEmpty {
+            if let events = await CalendarService.shared.fetchEvents(
+                from: calendarIDs,
+                startDate: now,
+                endDate: endWindow
+            ) {
+                // Find first 15-min gap between events
+                var cursor = now
+                let sorted = events.sorted { $0.startDate < $1.startDate }
+                for event in sorted {
+                    if event.startDate.timeIntervalSince(cursor) >= 900 { // 15 minutes
+                        reminderDate = cursor.addingTimeInterval(60) // 1 min into the gap
+                        break
+                    }
+                    cursor = max(cursor, event.endDate)
+                }
+                // Check gap after last event
+                if endWindow.timeIntervalSince(cursor) >= 900 {
+                    reminderDate = cursor.addingTimeInterval(60)
+                }
+            }
+        }
+
+        // Schedule the notification
+        let downloadURL = extractedDownloadURL.flatMap { URL(string: $0) }
+            ?? URL(string: "https://substack.com/settings")!
+        await SystemNotificationService.shared.postSubstackExportReady(
+            downloadURL: downloadURL,
+            triggerDate: reminderDate
+        )
+        logger.info("Substack reminder scheduled for \(reminderDate.formatted())")
+    }
+
+    // MARK: - Watcher Persistence
+
+    /// Resume watchers that were active before app restart.
+    private func resumeWatchersIfNeeded() {
+        if emailWatcherActive {
+            // Check if within timeout
+            if let startDate = emailWatcherStartDate,
+               Date.now.timeIntervalSince(startDate) < 2 * 24 * 3600 {
+                sheetPhase = .watchingEmail
+                scheduleEmailPolling()
+                logger.info("Resumed Substack email watcher from previous session")
+            } else {
+                emailWatcherActive = false
+                emailWatcherStartDate = nil
+            }
+        }
+
+        if fileWatcherActive {
+            if let startDate = fileWatcherStartDate,
+               Date.now.timeIntervalSince(startDate) < 2 * 24 * 3600 {
+                sheetPhase = .watchingFile
+                scheduleFilePolling()
+                logger.info("Resumed Substack file watcher from previous session")
+            } else {
+                fileWatcherActive = false
+                fileWatcherStartDate = nil
+            }
+        }
+    }
+
+    // MARK: - Post-Import Cleanup
+
+    /// Delete the source ZIP file after successful import.
+    func deleteSourceZip() throws {
+        guard let url = importedZipURL else { return }
+        try FileManager.default.removeItem(at: url)
+        importedZipURL = nil
+        logger.info("Deleted Substack export ZIP: \(url.lastPathComponent)")
+    }
+
+    // MARK: - Cancellation
+
+    /// Cancel all watchers and timers.
+    func cancelWatchers() {
+        stopEmailWatcher()
+        stopFileWatcher()
+    }
+
+    /// Cancel everything (watchers + any in-progress import).
+    func cancelAll() {
+        cancelWatchers()
+        if case .importing = importStatus {
+            importStatus = .idle
+        }
+    }
+
+    /// Whether the mail system is available for email watching.
+    var isMailAvailableForWatching: Bool {
+        MailImportCoordinator.shared.mailEnabled && !MailImportCoordinator.shared.selectedAccountIDs.isEmpty
+    }
+
     // MARK: - Profile Analysis (Grow Section)
 
     /// Run a profile analysis on the Substack publication for the Grow section.
@@ -528,4 +1021,51 @@ extension SubstackImportCoordinator {
         case complete
         case failed(String)
     }
+}
+
+// MARK: - Sheet Phase State Machine
+
+enum SubstackSheetPhase: Equatable {
+    /// First-time: feed URL entry + manual CSV picker
+    case setup
+    /// Checking ~/Downloads for ZIP files (brief spinner)
+    case scanning
+    /// Preview: filename, date, size — Confirm / Decline
+    case zipFound(ZipInfo)
+    /// Unzipping + CSV parsing + matching (linear progress)
+    case processing
+    /// Subscriber candidates displayed for confirmation
+    case awaitingReview
+    /// Instructions + "Download Substack Data..." button
+    case noZipFound
+    /// Polling Mail.app (spinner + elapsed time)
+    case watchingEmail
+    /// Export email detected — "Open Download Page" button
+    case emailFound(URL)
+    /// Polling ~/Downloads (spinner + status)
+    case watchingFile
+    /// Summary + "Delete ZIP?" prompt
+    case complete(ImportStats)
+    /// Error with retry
+    case failed(String)
+}
+
+// MARK: - Supporting Types
+
+struct ZipInfo: Equatable {
+    let url: URL
+    let fileName: String
+    let fileDate: Date
+    let fileSize: Int64
+
+    var formattedSize: String {
+        ByteCountFormatter.string(fromByteCount: fileSize, countStyle: .file)
+    }
+}
+
+struct ImportStats: Equatable {
+    let subscriberCount: Int
+    let matchedCount: Int
+    let newLeads: Int
+    let touchesCreated: Int
 }

@@ -124,15 +124,19 @@ struct LinkedInImportReviewSheet: View {
             Divider()
 
             if isImporting {
-                VStack(spacing: 12) {
-                    ProgressView()
-                    if let progress = coordinator.progressMessage {
-                        Text(progress)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
+                ProgressView()
+                    .progressViewStyle(.linear)
+                    .padding(.horizontal)
+                    .padding(.top, 8)
+
+                if let progress = coordinator.progressMessage {
+                    Text(progress)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 4)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                Spacer()
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {

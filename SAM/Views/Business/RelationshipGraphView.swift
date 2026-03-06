@@ -797,7 +797,10 @@ struct RelationshipGraphView: View {
         Canvas { context, size in
             drawCanvas(context: &context, size: size, viewport: viewport)
         }
-        .onAppear { canvasSize = geoSize }
+        .onAppear {
+            canvasSize = geoSize
+            FeatureAdoptionTracker.shared.recordUsage(.relationshipGraph)
+        }
         .onChange(of: geoSize) { _, newSize in canvasSize = newSize }
         .onChange(of: scale) { _, _ in updateBridgeIndicators(center: center, viewport: viewport) }
         .onChange(of: offset) { _, _ in updateBridgeIndicators(center: center, viewport: viewport) }

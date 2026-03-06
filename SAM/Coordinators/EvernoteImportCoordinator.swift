@@ -5,6 +5,7 @@
 //  Phase L: Notes Pro — Evernote import coordinator
 //
 
+import AppKit
 import Foundation
 import os.log
 
@@ -82,6 +83,24 @@ final class EvernoteImportCoordinator {
     }
 
     // MARK: - Public API
+
+    /// Present an NSOpenPanel for selecting a folder containing .enex files.
+    /// Returns the selected URL, or nil if the user cancelled.
+    func pickEvernoteFolder() -> URL? {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.message = "Select a folder containing Evernote .enex export files"
+        panel.prompt = "Import"
+
+        if let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first {
+            panel.directoryURL = downloads
+        }
+
+        guard panel.runModal() == .OK, let url = panel.url else { return nil }
+        return url
+    }
 
     /// Parse an ENEX file and prepare for preview
     func loadFile(url: URL) async {

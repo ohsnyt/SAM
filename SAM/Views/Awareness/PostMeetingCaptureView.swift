@@ -213,6 +213,7 @@ struct PostMeetingCaptureView: View {
         }
         .frame(minWidth: 520, idealWidth: 620, minHeight: 520, idealHeight: 680)
         .onAppear {
+            FeatureAdoptionTracker.shared.recordUsage(.postMeetingCapture)
             // Pre-check all attendees as present
             attendancePresent = Set(payload.attendees.map(\.personID))
         }

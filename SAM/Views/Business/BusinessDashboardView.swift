@@ -76,6 +76,7 @@ struct BusinessDashboardView: View {
         }
         .onAppear {
             tracker.refresh()
+            FeatureAdoptionTracker.shared.recordUsage(.businessDashboard)
         }
         .onReceive(NotificationCenter.default.publisher(for: .samNavigateToStrategicInsights)) { _ in
             selectedTab = 0

@@ -12,6 +12,7 @@ import SwiftData
 import Contacts
 import EventKit
 import TipKit
+import UniformTypeIdentifiers
 import os.log
 
 private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "SAMApp")
@@ -41,6 +42,7 @@ final class SAMAppDelegate: NSObject, NSApplicationDelegate {
         MailImportCoordinator.shared.cancelAll()
         CommunicationsImportCoordinator.shared.cancelAll()
         EvernoteImportCoordinator.shared.cancelAll()
+        SubstackImportCoordinator.shared.cancelAll()
         GlobalHotkeyService.shared.unregisterHotkey()
         // Open the MLX circuit breaker and drop the model container so any
         // in-flight generation stream exhausts before the process exits.
@@ -57,6 +59,22 @@ struct SAMApp: App {
     // Check onboarding status immediately
     @State private var showOnboarding: Bool
     @State private var hasCheckedPermissions = false
+
+    // Backup/restore (moved from GeneralSettingsView to File menu)
+    @State private var backupCoordinator = BackupCoordinator.shared
+    @State private var showImportFilePicker = false
+    @State private var showImportConfirmation = false
+    @State private var pendingImportURL: URL?
+    @State private var pendingImportPreview: ImportPreview?
+
+    // Social import sheets from File menu
+    @State private var showLinkedInReviewSheet = false
+    @State private var showFacebookReviewSheet = false
+    @State private var showEvernotePreviewSheet = false
+    @State private var showSubstackImportSheet = false
+
+    // Debug menu
+    @State private var showClearDataConfirmation = false
 
     // MARK: - Lifecycle
 
@@ -184,7 +202,15 @@ struct SAMApp: App {
     }
     
     // MARK: - Scene
-    
+
+    /// Compute a comfortable default window size based on screen dimensions.
+    private static var mainWindowSize: CGSize {
+        let screen = NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
+        let width  = max(900, screen.width * 0.6)
+        let height = screen.height * 0.7
+        return CGSize(width: width, height: height)
+    }
+
     var body: some Scene {
         WindowGroup {
             AppShellView()
@@ -227,7 +253,85 @@ struct SAMApp: App {
                     // Tell the system about our App Shortcuts so Siri/Spotlight can surface them
                     SAMShortcutsProvider.updateAppShortcutParameters()
                 }
+                .fileImporter(
+                    isPresented: $showImportFilePicker,
+                    allowedContentTypes: [.samBackup, .json],
+                    allowsMultipleSelection: false
+                ) { result in
+                    switch result {
+                    case .success(let urls):
+                        guard let url = urls.first else { return }
+                        Task {
+                            do {
+                                let preview = try await backupCoordinator.validateBackup(from: url)
+                                pendingImportURL = url
+                                pendingImportPreview = preview
+                                showImportConfirmation = true
+                            } catch {
+                                backupCoordinator.status = .failed(error.localizedDescription)
+                            }
+                        }
+                    case .failure(let error):
+                        backupCoordinator.status = .failed(error.localizedDescription)
+                    }
+                }
+                .alert("Replace All Data?", isPresented: $showImportConfirmation) {
+                    Button("Cancel", role: .cancel) {
+                        pendingImportURL = nil
+                        pendingImportPreview = nil
+                    }
+                    Button("Replace All Data", role: .destructive) {
+                        guard let url = pendingImportURL else { return }
+                        Task {
+                            await backupCoordinator.performImport(from: url)
+                        }
+                        pendingImportURL = nil
+                        pendingImportPreview = nil
+                    }
+                } message: {
+                    if let preview = pendingImportPreview {
+                        let counts = preview.metadata.counts
+                        let schemaNote = preview.schemaMatch ? "" : "\n\nNote: This backup was created with a different schema version (\(preview.metadata.schemaVersion))."
+                        Text("This will delete ALL existing data and replace it with:\n\n\(counts.people) people, \(counts.notes) notes, \(counts.evidence) evidence items, \(counts.contexts) contexts\n\nA safety backup will be saved to your temp directory first.\(schemaNote)")
+                    }
+                }
+                .alert("Clear All Data?", isPresented: $showClearDataConfirmation) {
+                    Button("Cancel", role: .cancel) { }
+                    Button("Clear Data", role: .destructive) {
+                        clearAllData()
+                    }
+                } message: {
+                    Text("This will delete all people, notes, evidence, and settings, then quit the app. On relaunch you will go through onboarding again.")
+                }
+                .sheet(isPresented: $showLinkedInReviewSheet) {
+                    LinkedInImportReviewSheet(coordinator: LinkedInImportCoordinator.shared) {
+                        showLinkedInReviewSheet = false
+                    }
+                }
+                .sheet(isPresented: $showFacebookReviewSheet) {
+                    FacebookImportReviewSheet(coordinator: FacebookImportCoordinator.shared) {
+                        showFacebookReviewSheet = false
+                    }
+                }
+                .sheet(isPresented: $showEvernotePreviewSheet) {
+                    EvernoteImportPreviewSheet {
+                        showEvernotePreviewSheet = false
+                    }
+                }
+                .sheet(isPresented: $showSubstackImportSheet) {
+                    SubstackImportSheet()
+                }
+                .onReceive(NotificationCenter.default.publisher(for: .samLinkedInAwaitingReview)) { _ in
+                    showLinkedInReviewSheet = true
+                }
+                .onReceive(NotificationCenter.default.publisher(for: .samFacebookAwaitingReview)) { _ in
+                    showFacebookReviewSheet = true
+                }
+                .onReceive(NotificationCenter.default.publisher(for: .samSubstackZipDetected)) { _ in
+                    showSubstackImportSheet = true
+                }
         }
+        .defaultSize(Self.mainWindowSize)
 
         .commands {
             // ⌘K Command Palette + ⌘1–4 sidebar navigation
@@ -272,6 +376,70 @@ struct SAMApp: App {
                 .keyboardShortcut("v", modifiers: [.control, .shift])
             }
 
+            // File → Import submenu + Backup/Restore
+            CommandGroup(replacing: .importExport) {
+                Menu("Import") {
+                    Button("Import Contacts") {
+                        Task { await ContactsImportCoordinator.shared.importNow() }
+                    }
+                    .disabled(CNContactStore.authorizationStatus(for: .contacts) != .authorized)
+
+                    Button("Import Calendar") {
+                        CalendarImportCoordinator.shared.startImport()
+                    }
+                    .disabled(!UserDefaults.standard.bool(forKey: "calendarAutoImportEnabled"))
+
+                    Button("Import Mail") {
+                        MailImportCoordinator.shared.startImport()
+                    }
+                    .disabled(!MailImportCoordinator.shared.mailEnabled || !MailImportCoordinator.shared.isConfigured)
+
+                    Button("Import iMessage & Calls") {
+                        CommunicationsImportCoordinator.shared.startImport()
+                    }
+                    .disabled(!BookmarkManager.shared.hasMessagesAccess && !BookmarkManager.shared.hasCallHistoryAccess)
+
+                    Divider()
+
+                    Button("Import Substack...") {
+                        showSubstackImportSheet = true
+                    }
+
+                    Button("Import LinkedIn Archive...") {
+                        Task { await importLinkedInArchive() }
+                    }
+
+                    Button("Import Facebook Archive...") {
+                        Task { await importFacebookArchive() }
+                    }
+
+                    Button("Import Evernote Notes...") {
+                        Task { await importEvernoteNotes() }
+                    }
+                }
+
+                Divider()
+
+                Button("Backup Data...") {
+                    let panel = NSSavePanel()
+                    let formatter = DateFormatter()
+                    formatter.dateFormat = "yyyy-MM-dd"
+                    panel.nameFieldStringValue = "SAM-Backup-\(formatter.string(from: .now)).sambackup"
+                    panel.allowedContentTypes = [.samBackup]
+                    panel.canCreateDirectories = true
+
+                    if panel.runModal() == .OK, let url = panel.url {
+                        Task {
+                            await backupCoordinator.exportBackup(to: url)
+                        }
+                    }
+                }
+
+                Button("Restore Data...") {
+                    showImportFilePicker = true
+                }
+            }
+
             #if DEBUG
             CommandMenu("Debug") {
                 Button("Reset Onboarding") {
@@ -298,6 +466,29 @@ struct SAMApp: App {
                 }
 
                 Divider()
+
+                Button("Clear All Data") {
+                    showClearDataConfirmation = true
+                }
+
+                Toggle("Reset on version change", isOn: Binding(
+                    get: { UserDefaults.standard.bool(forKey: "autoResetOnVersionChange") },
+                    set: { UserDefaults.standard.set($0, forKey: "autoResetOnVersionChange") }
+                ))
+
+                Divider()
+
+                if LegacyStoreMigrationService.hasLegacyStores() {
+                    Button("Migrate Legacy Data") {
+                        Task { await LegacyStoreMigrationService.shared.migrate() }
+                    }
+
+                    Button("Clean Up Legacy Files") {
+                        LegacyStoreMigrationService.shared.cleanupLegacyStores()
+                    }
+
+                    Divider()
+                }
 
                 Button("Log Store Info") {
                     let url = SAMModelContainer.shared.configurations.first?.url
@@ -366,8 +557,94 @@ struct SAMApp: App {
         #endif
     }
     
+    // MARK: - LinkedIn Import
+
+    private func importLinkedInArchive() async {
+        let coordinator = LinkedInImportCoordinator.shared
+        guard let zipURL = coordinator.pickLinkedInExportZip() else { return }
+        await coordinator.importFromZip(url: zipURL)
+    }
+
+    private func importFacebookArchive() async {
+        let coordinator = FacebookImportCoordinator.shared
+        guard let zipURL = coordinator.pickFacebookExportZip() else { return }
+        await coordinator.importFromZip(url: zipURL)
+    }
+
+    private func importEvernoteNotes() async {
+        let coordinator = EvernoteImportCoordinator.shared
+        guard let folderURL = coordinator.pickEvernoteFolder() else { return }
+        await coordinator.loadDirectory(url: folderURL)
+        // Evernote uses previewing status (not awaitingReview) — show the preview sheet
+        if coordinator.importStatus == .previewing {
+            showEvernotePreviewSheet = true
+        }
+    }
+
+    // MARK: - Clear All Data
+
+    private func clearAllData() {
+        ContactsImportCoordinator.shared.cancelAll()
+        CalendarImportCoordinator.shared.cancelAll()
+        MailImportCoordinator.shared.cancelAll()
+        CommunicationsImportCoordinator.shared.cancelAll()
+        EvernoteImportCoordinator.shared.cancelAll()
+
+        if let storeURL = SAMModelContainer.shared.configurations.first?.url {
+            let fm = FileManager.default
+            let companions = [storeURL,
+                              storeURL.appendingPathExtension("shm"),
+                              storeURL.appendingPathExtension("wal")]
+            for url in companions {
+                do {
+                    if fm.fileExists(atPath: url.path) {
+                        try fm.removeItem(at: url)
+                        logger.notice("Deleted store file: \(url.lastPathComponent, privacy: .public)")
+                    }
+                } catch {
+                    logger.error("Failed to delete \(url.lastPathComponent, privacy: .public): \(error)")
+                }
+            }
+        } else {
+            logger.error("Could not resolve store URL — store files not deleted")
+        }
+
+        let keysToRemove = [
+            "hasCompletedOnboarding",
+            "sam.intro.hasSeenIntroSequence",
+            "selectedContactGroupIdentifier",
+            "selectedGroupIdentifier",
+            "selectedCalendarIdentifier",
+            "autoImportContacts",
+            "lastContactsImport",
+            "lastCalendarImport",
+            "sam.contacts.enabled",
+            "calendarAutoImportEnabled",
+            "mailImportEnabled",
+            "commsMessagesEnabled",
+            "commsCallsEnabled",
+            "pipelineBackfillComplete",
+            "outcomeAutoGenerate",
+            "sam.contacts.import.lastRunAt",
+            "sam.testData.active",
+            "sam.testData.loaded",
+            "sam.linkedin.enabled",
+            "sam.linkedin.messages.lastImportAt",
+            "sam.linkedin.connections.lastImportAt",
+            "linkedInFolderBookmark",
+        ]
+        for key in keysToRemove {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+
+        UserDefaults.standard.set(true, forKey: "sam.tips.pendingReset")
+
+        logger.notice("All SAM data cleared — terminating so fresh state loads on relaunch")
+        NSApplication.shared.terminate(nil)
+    }
+
     // MARK: - Configuration
-    
+
     /// Wire all repositories to the given container.
     /// Called at launch and again after an in-process store replacement (e.g. test data seed).
     static func configureDataLayer(container: ModelContainer? = nil) {
@@ -574,6 +851,27 @@ struct SAMApp: App {
         Task(priority: .utility) {
             try? await Task.sleep(for: .seconds(8))
             await RoleDeductionEngine.shared.deduceRoles()
+
+            // Post-onboarding: create a role review outcome if suggestions were found
+            let roleReviewKey = "sam.onboarding.roleReviewCreated"
+            if !UserDefaults.standard.bool(forKey: roleReviewKey) {
+                try? await Task.sleep(for: .seconds(4))
+                let hasSuggestions = await RoleDeductionEngine.shared.pendingSuggestions.count > 0
+                if hasSuggestions {
+                    let outcome = SamOutcome(
+                        title: "Review roles SAM suggested for your contacts",
+                        rationale: "SAM analyzed your calendar, messages, and contacts to identify likely roles (Client, Lead, Agent, etc.). Review and confirm them in the Relationship Graph.",
+                        outcomeKind: .setup,
+                        priorityScore: 0.95,
+                        sourceInsightSummary: "Post-onboarding role deduction completed with pending suggestions",
+                        suggestedNextStep: "Open People → Graph to review role suggestions"
+                    )
+                    outcome.actionLaneRawValue = ActionLane.reviewGraph.rawValue
+                    try? OutcomeRepository.shared.upsert(outcome: outcome)
+                    UserDefaults.standard.set(true, forKey: roleReviewKey)
+                    logger.info("Created post-onboarding role review outcome")
+                }
+            }
         }
 
         // Pipeline backfill — one-time creation of initial transitions from existing role badges

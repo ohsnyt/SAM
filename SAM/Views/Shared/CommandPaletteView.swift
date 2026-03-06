@@ -90,6 +90,7 @@ struct CommandPaletteView: View {
         .frame(width: 480)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
         .onAppear {
+            FeatureAdoptionTracker.shared.recordUsage(.search)
             if let container = modelContext.container as ModelContainer? {
                 coordinator.configure(container: container)
             }

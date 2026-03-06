@@ -15,36 +15,45 @@ import EventKit
 import Contacts
 import TipKit
 import UniformTypeIdentifiers
-import TipKit
 import UserNotifications
+import AVFoundation
+import Speech
 import os.log
 
 private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "SettingsView")
 
 struct SettingsView: View {
 
-    @State private var selectedTab: SettingsTab = .permissions
+    @State private var selectedTab: SettingsTab = .general
 
     enum SettingsTab: String, CaseIterable, Identifiable {
+        case general = "General"
         case permissions = "Permissions"
         case dataSources = "Data Sources"
-        case ai = "AI"
-        case general = "General"
+        case ai = "AI & Coaching"
+        case business = "Business"
 
         var id: String { rawValue }
 
         var icon: String {
             switch self {
-            case .permissions: return "lock.shield"
-            case .dataSources: return "arrow.down.doc"
-            case .ai: return "brain"
             case .general: return "gearshape"
+            case .permissions: return "lock.shield"
+            case .dataSources: return "externaldrive"
+            case .ai: return "brain"
+            case .business: return "briefcase"
             }
         }
     }
 
     var body: some View {
         TabView(selection: $selectedTab) {
+            GeneralSettingsView()
+                .tabItem {
+                    Label("General", systemImage: "gearshape")
+                }
+                .tag(SettingsTab.general)
+
             PermissionsSettingsView()
                 .tabItem {
                     Label("Permissions", systemImage: "lock.shield")
@@ -53,23 +62,148 @@ struct SettingsView: View {
 
             DataSourcesSettingsView()
                 .tabItem {
-                    Label("Data Sources", systemImage: "arrow.down.doc")
+                    Label("Data Sources", systemImage: "externaldrive")
                 }
                 .tag(SettingsTab.dataSources)
 
             AISettingsView()
                 .tabItem {
-                    Label("AI", systemImage: "brain")
+                    Label("AI & Coaching", systemImage: "brain")
                 }
                 .tag(SettingsTab.ai)
 
-            GeneralSettingsView()
+            BusinessSettingsView()
                 .tabItem {
-                    Label("General", systemImage: "gearshape")
+                    Label("Business", systemImage: "briefcase")
                 }
-                .tag(SettingsTab.general)
+                .tag(SettingsTab.business)
         }
         .frame(width: 650, height: 600)
+    }
+}
+
+// MARK: - Import Status Dashboard
+
+private struct ImportStatusDashboard: View {
+
+    @State private var contactsCoordinator = ContactsImportCoordinator.shared
+    @State private var calendarCoordinator = CalendarImportCoordinator.shared
+    @State private var mailCoordinator = MailImportCoordinator.shared
+    @State private var commsCoordinator = CommunicationsImportCoordinator.shared
+    @State private var substackCoordinator = SubstackImportCoordinator.shared
+    @State private var linkedInCoordinator = LinkedInImportCoordinator.shared
+    @State private var facebookCoordinator = FacebookImportCoordinator.shared
+    @State private var bookmarkManager = BookmarkManager.shared
+
+    var body: some View {
+        Section("Import Status") {
+            importRow("Contacts", icon: "person.crop.circle",
+                      statusText: coordinatorStatusText(contactsCoordinator.importStatus, contactsCoordinator.lastImportedAt),
+                      isImporting: isImporting(contactsCoordinator.importStatus)) {
+                Task { await contactsCoordinator.importNow() }
+            }
+
+            importRow("Calendar", icon: "calendar",
+                      statusText: coordinatorStatusText(calendarCoordinator.importStatus, calendarCoordinator.lastImportedAt),
+                      isImporting: isImporting(calendarCoordinator.importStatus)) {
+                calendarCoordinator.startImport()
+            }
+
+            importRow("Mail", icon: "envelope",
+                      statusText: mailCoordinator.mailEnabled
+                          ? coordinatorStatusText(mailCoordinator.importStatus, mailCoordinator.lastImportedAt)
+                          : "Not configured",
+                      isImporting: isImporting(mailCoordinator.importStatus)) {
+                if mailCoordinator.mailEnabled {
+                    mailCoordinator.startImport()
+                }
+            }
+
+            importRow("iMessage & Calls", icon: "message",
+                      statusText: (bookmarkManager.hasMessagesAccess || bookmarkManager.hasCallHistoryAccess)
+                          ? coordinatorStatusText(commsCoordinator.importStatus, commsCoordinator.lastImportedAt)
+                          : "Not configured",
+                      isImporting: isImporting(commsCoordinator.importStatus)) {
+                if bookmarkManager.hasMessagesAccess || bookmarkManager.hasCallHistoryAccess {
+                    commsCoordinator.startImport()
+                }
+            }
+
+            importRow("Substack", icon: "newspaper.fill",
+                      statusText: substackStatusText,
+                      isImporting: isImportingSubstack,
+                      canImport: false) { }
+                .help("Use File → Import → Substack to configure")
+
+            importRow("LinkedIn", icon: "network",
+                      statusText: bookmarkManager.hasLinkedInFolderAccess
+                          ? coordinatorStatusText(linkedInCoordinator.importStatus, linkedInCoordinator.lastImportedAt)
+                          : "File → Import",
+                      isImporting: isImporting(linkedInCoordinator.importStatus),
+                      canImport: false) { }
+
+            importRow("Facebook", icon: "person.2.fill",
+                      statusText: bookmarkManager.hasFacebookFolderAccess
+                          ? coordinatorStatusText(facebookCoordinator.importStatus, facebookCoordinator.lastImportedAt)
+                          : "File → Import",
+                      isImporting: isImporting(facebookCoordinator.importStatus),
+                      canImport: false) { }
+        }
+    }
+
+    // MARK: - Row Builder
+
+    private func importRow(_ name: String, icon: String, statusText: String,
+                           isImporting: Bool, canImport: Bool = true,
+                           action: @escaping () -> Void) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .frame(width: 20)
+                .foregroundStyle(statusText == "Not configured" ? .secondary : .primary)
+
+            Text(name)
+                .frame(width: 120, alignment: .leading)
+
+            if isImporting {
+                ProgressView()
+                    .controlSize(.small)
+            }
+
+            Text(statusText)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, 2)
+    }
+
+    // MARK: - Status Helpers
+
+    private func coordinatorStatusText<S: Equatable>(_ status: S, _ lastDate: Date?) -> String {
+        if "\(status)".contains("importing") { return "Importing..." }
+        if let date = lastDate {
+            return "Last: \(date.formatted(.relative(presentation: .named)))"
+        }
+        return "Ready"
+    }
+
+    private func isImporting<S: Equatable>(_ status: S) -> Bool {
+        "\(status)".contains("importing")
+    }
+
+    private var substackStatusText: String {
+        if case .importing = substackCoordinator.importStatus { return "Importing..." }
+        let hasFeed = !substackCoordinator.feedURL.isEmpty
+        if !hasFeed { return "File \u{2192} Import" }
+        if let lastImport = substackCoordinator.lastSubscriberImportDate {
+            return "Last: \(lastImport.formatted(.relative(presentation: .named)))"
+        }
+        return "Ready"
+    }
+
+    private var isImportingSubstack: Bool {
+        if case .importing = substackCoordinator.importStatus { return true }
+        return false
     }
 }
 
@@ -85,6 +219,8 @@ struct DataSourcesSettingsView: View {
 
     var body: some View {
         Form {
+            ImportStatusDashboard()
+
             Section {
                 // ── Global Lookback Period ──────────────────────────────
                 VStack(alignment: .leading, spacing: 8) {
@@ -149,33 +285,8 @@ struct DataSourcesSettingsView: View {
                     Label("Communications", systemImage: "message.fill")
                 }
 
-                DisclosureGroup {
-                    EvernoteImportSettingsContent()
-                        .padding(.top, 8)
-                } label: {
-                    Label("Evernote Import", systemImage: "square.and.arrow.down")
-                }
 
-                DisclosureGroup {
-                    LinkedInImportSettingsContent()
-                        .padding(.top, 8)
-                } label: {
-                    Label("LinkedIn Import", systemImage: "network")
-                }
-
-                DisclosureGroup {
-                    FacebookImportSettingsContent()
-                        .padding(.top, 8)
-                } label: {
-                    Label("Facebook Import", systemImage: "person.2.fill")
-                }
-
-                DisclosureGroup {
-                    SubstackImportSettingsContent()
-                        .padding(.top, 8)
-                } label: {
-                    Label("Substack", systemImage: "newspaper.fill")
-                }
+                // Substack configuration moved to File → Import → Substack sheet
             }
         }
         .formStyle(.grouped)
@@ -188,13 +299,6 @@ struct AISettingsView: View {
     var body: some View {
         Form {
             Section {
-                DisclosureGroup {
-                    BusinessProfileSettingsContent()
-                        .padding(.top, 8)
-                } label: {
-                    Label("Business Profile", systemImage: "building.2")
-                }
-
                 DisclosureGroup {
                     IntelligenceSettingsContent()
                         .padding(.top, 8)
@@ -215,23 +319,89 @@ struct AISettingsView: View {
                 } label: {
                     Label("Briefings", systemImage: "text.book.closed")
                 }
-
-                DisclosureGroup {
-                    ComplianceSettingsContent()
-                        .padding(.top, 8)
-                } label: {
-                    Label("Compliance", systemImage: "checkmark.shield")
-                }
-
-                DisclosureGroup {
-                    ClipboardCaptureSettingsContent()
-                        .padding(.top, 8)
-                } label: {
-                    Label("Clipboard Capture", systemImage: "doc.on.clipboard")
-                }
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+// MARK: - Business Settings (new tab)
+
+struct BusinessSettingsView: View {
+    var body: some View {
+        Form {
+            Section {
+                VStack(alignment: .leading, spacing: 20) {
+                    Label("Business", systemImage: "briefcase")
+                        .font(.title2).bold()
+                    Divider()
+                    DisclosureGroup("Business Profile") {
+                        BusinessProfileSettingsContent()
+                            .padding(.top, 8)
+                    }
+                    Divider()
+                    DisclosureGroup("Compliance") {
+                        ComplianceSettingsContent()
+                            .padding(.top, 8)
+                    }
+                }
+                .padding()
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
+// MARK: - Guidance & Tips Settings
+
+struct GuidanceSettingsContent: View {
+
+    @AppStorage("sam.tips.guidanceEnabled") private var tipsEnabled: Bool = true
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Toggle("Show contextual tips", isOn: Binding(
+                get: { tipsEnabled },
+                set: { newValue in
+                    if newValue {
+                        SAMTipState.enableTips()
+                        tipsEnabled = true
+                    } else {
+                        SAMTipState.disableTips()
+                        tipsEnabled = false
+                    }
+                }
+            ))
+
+            Text("Contextual tips appear near features to help you learn SAM's interface.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Toggle("Suggest features you haven't tried", isOn: Binding(
+                get: { FeatureAdoptionTracker.shared.isEnabled },
+                set: { newValue in
+                    UserDefaults.standard.set(newValue, forKey: "sam.coaching.featureAdoptionEnabled")
+                }
+            ))
+
+            Text("SAM will suggest features over your first weeks to help you get the most out of the app.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 12) {
+                Button("Reset All Tips") {
+                    SAMTipState.resetAllTips()
+                    tipsEnabled = true
+                }
+                .buttonStyle(.bordered)
+
+                Button("Replay Intro") {
+                    UserDefaults.standard.set(false, forKey: "sam.intro.hasSeenIntroSequence")
+                    IntroSequenceCoordinator.shared.checkAndShow()
+                }
+                .buttonStyle(.bordered)
+            }
+        }
     }
 }
 
@@ -327,165 +497,157 @@ struct ClipboardCaptureSettingsContent: View {
     }
 }
 
-// MARK: - Permissions Settings
+// MARK: - Permissions Settings (Compact Grid)
 
 struct PermissionsSettingsView: View {
 
     @State private var contactsStatus: String = "Checking..."
     @State private var calendarStatus: String = "Checking..."
     @State private var notificationsStatus: String = "Checking..."
+    @State private var mailStatus: String = "Checking..."
+    @State private var microphoneStatus: String = "Checking..."
+    @State private var speechStatus: String = "Checking..."
+
     @State private var isRequestingContacts = false
     @State private var isRequestingCalendar = false
     @State private var isRequestingNotifications = false
 
+    @State private var bookmarkManager = BookmarkManager.shared
+    @State private var hotkeyService = GlobalHotkeyService.shared
+
+    @AppStorage("autoDetectPermissionLoss") private var autoDetectPermissionLoss = true
+
     var body: some View {
         Form {
             Section {
-                VStack(alignment: .leading, spacing: 20) {
-                    // Header
-                    VStack(alignment: .leading, spacing: 8) {
-                        Label("Permissions", systemImage: "lock.shield")
-                            .font(.title2)
-                            .bold()
-
-                        Text("SAM needs access to Contacts and Calendar to function.")
-                            .foregroundStyle(.secondary)
-                            .font(.body)
-                    }
-                    .padding(.bottom, 10)
+                VStack(alignment: .leading, spacing: 12) {
+                    Label("Permissions", systemImage: "lock.shield")
+                        .font(.title2)
+                        .bold()
 
                     Divider()
 
-                    // Contacts Permission
-                    HStack(spacing: 16) {
-                        Image(systemName: "person.crop.circle.fill")
-                            .font(.system(size: 32))
-                            .foregroundStyle(.blue)
-                            .frame(width: 40)
-
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Contacts")
-                                .font(.headline)
-
-                            Text("Import and sync people from your Contacts")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-
-                        Spacer()
-
-                        VStack(alignment: .trailing, spacing: 4) {
-                            Text(contactsStatus)
-                                .font(.caption)
-                                .foregroundStyle(contactsStatusColor)
-
-                            if contactsStatus != "Authorized" {
-                                Button(isRequestingContacts ? "Requesting..." : "Request Access") {
-                                    requestContactsPermission()
-                                }
+                    // Contacts
+                    permissionRow(
+                        icon: "person.crop.circle.fill", color: .blue, name: "Contacts",
+                        status: contactsStatus
+                    ) {
+                        if contactsStatus != "Authorized" {
+                            Button("Request Access") { requestContactsPermission() }
+                                .controlSize(.small)
                                 .disabled(isRequestingContacts)
-                            }
                         }
                     }
-                    .padding(.vertical, 8)
 
-                    Divider()
-
-                    // Calendar Permission
-                    HStack(spacing: 16) {
-                        Image(systemName: "calendar.circle.fill")
-                            .font(.system(size: 32))
-                            .foregroundStyle(.orange)
-                            .frame(width: 40)
-
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Calendar")
-                                .font(.headline)
-
-                            Text("Import events and create evidence items")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-
-                        Spacer()
-
-                        VStack(alignment: .trailing, spacing: 4) {
-                            Text(calendarStatus)
-                                .font(.caption)
-                                .foregroundStyle(calendarStatusColor)
-
-                            if calendarStatus != "Authorized" {
-                                Button(isRequestingCalendar ? "Requesting..." : "Request Access") {
-                                    requestCalendarPermission()
-                                }
+                    // Calendar
+                    permissionRow(
+                        icon: "calendar.circle.fill", color: .orange, name: "Calendar",
+                        status: calendarStatus
+                    ) {
+                        if calendarStatus != "Authorized" {
+                            Button("Request Access") { requestCalendarPermission() }
+                                .controlSize(.small)
                                 .disabled(isRequestingCalendar)
-                            }
                         }
                     }
-                    .padding(.vertical, 8)
 
-                    Divider()
+                    // Mail
+                    permissionRow(
+                        icon: "envelope.circle.fill", color: .blue, name: "Mail",
+                        status: mailStatus
+                    ) {
+                        if mailStatus != "Authorized" {
+                            Button("Check Access") {
+                                Task {
+                                    if let error = await MailImportCoordinator.shared.checkMailAccess() {
+                                        mailStatus = error
+                                    } else {
+                                        mailStatus = "Authorized"
+                                    }
+                                }
+                            }
+                            .controlSize(.small)
+                        }
+                    }
 
-                    // Notifications Permission
-                    HStack(spacing: 16) {
-                        Image(systemName: "bell.circle.fill")
-                            .font(.system(size: 32))
-                            .foregroundStyle(.red)
-                            .frame(width: 40)
-
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Notifications")
-                                .font(.headline)
-
-                            Text("Coaching alerts and follow-up reminders (optional)")
-                                .font(.caption)
+                    // iMessage
+                    permissionRow(
+                        icon: "message.fill", color: .green, name: "iMessage",
+                        status: bookmarkManager.hasMessagesAccess ? "Authorized" : "Not Configured"
+                    ) {
+                        if !bookmarkManager.hasMessagesAccess {
+                            Text("Grant in Data Sources")
+                                .font(.caption2)
                                 .foregroundStyle(.secondary)
                         }
+                    }
 
-                        Spacer()
-
-                        VStack(alignment: .trailing, spacing: 4) {
-                            Text(notificationsStatus)
-                                .font(.caption)
-                                .foregroundStyle(notificationsStatusColor)
-
-                            if notificationsStatus == "Not Requested" {
-                                Button(isRequestingNotifications ? "Requesting..." : "Request Access") {
-                                    requestNotificationsPermission()
-                                }
-                                .disabled(isRequestingNotifications)
-                            }
+                    // Call History
+                    permissionRow(
+                        icon: "phone.fill", color: .green, name: "Call History",
+                        status: bookmarkManager.hasCallHistoryAccess ? "Authorized" : "Not Configured"
+                    ) {
+                        if !bookmarkManager.hasCallHistoryAccess {
+                            Text("Grant in Data Sources")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
                         }
                     }
-                    .padding(.vertical, 8)
+
+                    // Microphone
+                    permissionRow(
+                        icon: "mic.fill", color: .purple, name: "Microphone",
+                        status: microphoneStatus
+                    ) {
+                        if microphoneStatus != "Authorized" {
+                            Button("Open System Settings") { openPrivacySettings() }
+                                .controlSize(.small)
+                        }
+                    }
+
+                    // Speech Recognition
+                    permissionRow(
+                        icon: "waveform.circle.fill", color: .purple, name: "Speech",
+                        status: speechStatus
+                    ) {
+                        if speechStatus != "Authorized" {
+                            Button("Open System Settings") { openPrivacySettings() }
+                                .controlSize(.small)
+                        }
+                    }
+
+                    // Notifications
+                    permissionRow(
+                        icon: "bell.circle.fill", color: .red, name: "Notifications",
+                        status: notificationsStatus
+                    ) {
+                        if notificationsStatus == "Not Requested" {
+                            Button("Request") { requestNotificationsPermission() }
+                                .controlSize(.small)
+                                .disabled(isRequestingNotifications)
+                        }
+                    }
+
+                    // Accessibility
+                    permissionRow(
+                        icon: "accessibility", color: .gray, name: "Accessibility",
+                        status: hotkeyService.accessibilityGranted ? "Authorized" : "Not Granted"
+                    ) {
+                        if !hotkeyService.accessibilityGranted {
+                            Button("Open System Settings") {
+                                hotkeyService.promptForAccessibility()
+                            }
+                            .controlSize(.small)
+                        }
+                    }
 
                     Divider()
 
-                    // Help Text
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("About Permissions")
-                            .font(.headline)
+                    Toggle("Auto-detect permission loss", isOn: $autoDetectPermissionLoss)
 
-                        Text("If you've previously denied access, you'll need to enable it in System Settings:")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
-                        Text("System Settings → Privacy & Security → Contacts/Calendar → SAM")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .padding(.leading, 8)
-
-                        Text("For Notifications: System Settings → Notifications → SAM")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .padding(.leading, 8)
-
-                        Button("Open System Settings") {
-                            openSystemSettings()
-                        }
-                        .padding(.top, 4)
-                    }
-                    .padding(.top, 8)
+                    Text("Automatically reset onboarding if permissions are revoked (e.g., after rebuilding in Xcode).")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
                 .padding()
             }
@@ -496,29 +658,45 @@ struct PermissionsSettingsView: View {
         }
     }
 
-    private var contactsStatusColor: Color {
-        switch contactsStatus {
-        case "Authorized": return .green
-        case "Denied": return .red
-        default: return .secondary
+    // MARK: - Row Builder
+
+    @ViewBuilder
+    private func permissionRow<Actions: View>(
+        icon: String, color: Color, name: String, status: String,
+        @ViewBuilder actions: () -> Actions
+    ) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 18))
+                .foregroundStyle(color)
+                .frame(width: 24)
+
+            Text(name)
+                .frame(width: 100, alignment: .leading)
+
+            statusBadge(status)
+
+            Spacer()
+
+            actions()
+        }
+        .padding(.vertical, 2)
+    }
+
+    @ViewBuilder
+    private func statusBadge(_ status: String) -> some View {
+        let isGranted = status == "Authorized"
+        HStack(spacing: 4) {
+            Image(systemName: isGranted ? "checkmark.circle.fill" : "xmark.circle")
+                .font(.caption)
+                .foregroundStyle(isGranted ? .green : .orange)
+            Text(status)
+                .font(.caption)
+                .foregroundStyle(isGranted ? .green : .secondary)
         }
     }
 
-    private var calendarStatusColor: Color {
-        switch calendarStatus {
-        case "Authorized": return .green
-        case "Denied": return .red
-        default: return .secondary
-        }
-    }
-
-    private var notificationsStatusColor: Color {
-        switch notificationsStatus {
-        case "Authorized": return .green
-        case "Denied": return .red
-        default: return .secondary
-        }
-    }
+    // MARK: - Permission Checks
 
     private func checkPermissions() async {
         let contactsAuth = CNContactStore.authorizationStatus(for: .contacts)
@@ -527,6 +705,35 @@ struct PermissionsSettingsView: View {
         let calendarAuth = await CalendarService.shared.authorizationStatus()
         calendarStatus = authStatusString(calendarAuth)
 
+        // Mail — try a quick access check
+        if MailImportCoordinator.shared.mailEnabled {
+            if let error = await MailImportCoordinator.shared.checkMailAccess() {
+                mailStatus = error
+            } else {
+                mailStatus = "Authorized"
+            }
+        } else {
+            mailStatus = "Not Configured"
+        }
+
+        // Microphone
+        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .authorized: microphoneStatus = "Authorized"
+        case .denied, .restricted: microphoneStatus = "Denied"
+        case .notDetermined: microphoneStatus = "Not Requested"
+        @unknown default: microphoneStatus = "Unknown"
+        }
+
+        // Speech
+        let speechAuth = SFSpeechRecognizer.authorizationStatus()
+        switch speechAuth {
+        case .authorized: speechStatus = "Authorized"
+        case .denied, .restricted: speechStatus = "Denied"
+        case .notDetermined: speechStatus = "Not Requested"
+        @unknown default: speechStatus = "Unknown"
+        }
+
+        // Notifications
         let notifSettings = await UNUserNotificationCenter.current().notificationSettings()
         switch notifSettings.authorizationStatus {
         case .authorized, .provisional, .ephemeral:
@@ -561,16 +768,15 @@ struct PermissionsSettingsView: View {
         }
     }
 
+    // MARK: - Permission Requests
+
     private func requestContactsPermission() {
         isRequestingContacts = true
-
         Task {
             let granted = await ContactsService.shared.requestAuthorization()
-
             await MainActor.run {
                 contactsStatus = granted ? "Authorized" : "Denied"
                 isRequestingContacts = false
-
                 if granted {
                     ContactsImportCoordinator.shared.permissionGranted()
                     Task {
@@ -584,14 +790,11 @@ struct PermissionsSettingsView: View {
 
     private func requestCalendarPermission() {
         isRequestingCalendar = true
-
         Task {
             let granted = await CalendarImportCoordinator.shared.requestAuthorization()
-
             await MainActor.run {
                 calendarStatus = granted ? "Authorized" : "Denied"
                 isRequestingCalendar = false
-
                 if granted {
                     Task {
                         try? await Task.sleep(for: .milliseconds(500))
@@ -604,7 +807,6 @@ struct PermissionsSettingsView: View {
 
     private func requestNotificationsPermission() {
         isRequestingNotifications = true
-
         Task {
             do {
                 let granted = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])
@@ -621,7 +823,7 @@ struct PermissionsSettingsView: View {
         }
     }
 
-    private func openSystemSettings() {
+    private func openPrivacySettings() {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy") {
             NSWorkspace.shared.open(url)
         }
@@ -764,13 +966,6 @@ struct ContactsSettingsContent: View {
                     .progressViewStyle(.linear)
             }
 
-            // Manual import button
-            Button("Import Now") {
-                Task {
-                    await coordinator.importNow()
-                }
-            }
-            .disabled(coordinator.importStatus == .importing || selectedGroupIdentifier.isEmpty || authorizationStatus != .authorized)
         }
         .task {
             await checkAuthAndLoadGroups()
@@ -1008,13 +1203,6 @@ struct CalendarSettingsContent: View {
                     .progressViewStyle(.linear)
             }
 
-            // Manual import button
-            Button("Import Now") {
-                Task {
-                    await coordinator.importNow()
-                }
-            }
-            .disabled(coordinator.importStatus == .importing || selectedCalendarIdentifier.isEmpty || authorizationStatus != .fullAccess)
         }
         .task {
             await checkAuthAndLoadCalendars()
@@ -1303,90 +1491,10 @@ struct BusinessProfileSettingsContent: View {
 
 struct IntelligenceSettingsContent: View {
 
-    @State private var customNotePrompt: String = UserDefaults.standard.string(forKey: "sam.ai.notePrompt") ?? ""
-    @State private var customEmailPrompt: String = UserDefaults.standard.string(forKey: "sam.ai.emailPrompt") ?? ""
     @State private var insightGenerator = InsightGenerator.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            // Note Analysis Prompt
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Note Analysis Prompt")
-                    .font(.headline)
-
-                Text("Customize the system prompt used when analyzing notes with on-device AI.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                TextEditor(text: $customNotePrompt)
-                    .font(.system(.caption, design: .monospaced))
-                    .frame(height: 120)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 4)
-                            .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
-                    )
-                    .overlay(alignment: .topLeading) {
-                        if customNotePrompt.isEmpty {
-                            Text("Using default prompt...")
-                                .font(.system(.caption, design: .monospaced))
-                                .foregroundStyle(.tertiary)
-                                .padding(.leading, 4)
-                                .padding(.top, 8)
-                                .allowsHitTesting(false)
-                        }
-                    }
-                    .onChange(of: customNotePrompt) { _, newValue in
-                        UserDefaults.standard.set(newValue, forKey: "sam.ai.notePrompt")
-                    }
-
-                Button("Reset to Default") {
-                    customNotePrompt = ""
-                    UserDefaults.standard.removeObject(forKey: "sam.ai.notePrompt")
-                }
-                .disabled(customNotePrompt.isEmpty)
-            }
-
-            Divider()
-
-            // Email Analysis Prompt
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Email Analysis Prompt")
-                    .font(.headline)
-
-                Text("Customize the system prompt used when analyzing emails with on-device AI.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                TextEditor(text: $customEmailPrompt)
-                    .font(.system(.caption, design: .monospaced))
-                    .frame(height: 120)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 4)
-                            .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
-                    )
-                    .overlay(alignment: .topLeading) {
-                        if customEmailPrompt.isEmpty {
-                            Text("Using default prompt...")
-                                .font(.system(.caption, design: .monospaced))
-                                .foregroundStyle(.tertiary)
-                                .padding(.leading, 4)
-                                .padding(.top, 8)
-                                .allowsHitTesting(false)
-                        }
-                    }
-                    .onChange(of: customEmailPrompt) { _, newValue in
-                        UserDefaults.standard.set(newValue, forKey: "sam.ai.emailPrompt")
-                    }
-
-                Button("Reset to Default") {
-                    customEmailPrompt = ""
-                    UserDefaults.standard.removeObject(forKey: "sam.ai.emailPrompt")
-                }
-                .disabled(customEmailPrompt.isEmpty)
-            }
-
-            Divider()
-
             // Insight Generation Settings
             VStack(alignment: .leading, spacing: 12) {
                 Text("Insight Generation")
@@ -1449,27 +1557,10 @@ struct IntelligenceSettingsView: View {
 
 struct GeneralSettingsView: View {
 
-    @State private var showResetConfirmation = false
-    @State private var showOnboardingResetConfirmation = false
-    @AppStorage("autoResetOnVersionChange") private var autoResetOnVersionChange = false
-    @AppStorage("autoDetectPermissionLoss") private var autoDetectPermissionLoss = true
     @State private var silenceTimeout: Double = {
         let stored = UserDefaults.standard.double(forKey: "sam.dictation.silenceTimeout")
         return stored > 0 ? stored : 2.0
     }()
-
-    @AppStorage("sam.tips.guidanceEnabled") private var tipsEnabled: Bool = true
-
-    // Backup/restore
-    @State private var backupCoordinator = BackupCoordinator.shared
-    @State private var showImportFilePicker = false
-    @State private var showImportConfirmation = false
-    @State private var pendingImportURL: URL?
-    @State private var pendingImportPreview: ImportPreview?
-
-    // Legacy store migration
-    @State private var migrationService = LegacyStoreMigrationService.shared
-    @State private var showCleanupConfirmation = false
 
     private var appVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
@@ -1512,413 +1603,27 @@ struct GeneralSettingsView: View {
                     Divider()
 
                     // Guidance & Tips
-                    guidanceSection
-
-                    Divider()
-
-                    // Data Backup
-                    dataBackupSection
-
-                    // Legacy Data Migration (only shown when orphaned stores exist)
-                    if let disc = migrationService.discovery, !disc.isEmpty {
-                        Divider()
-                        legacyDataSection(disc)
+                    DisclosureGroup {
+                        GuidanceSettingsContent()
+                            .padding(.top, 8)
+                    } label: {
+                        Label("Guidance & Tips", systemImage: "lightbulb")
                     }
 
                     Divider()
 
-                    // Auto-reset section
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Automatic Reset")
-                            .font(.headline)
-
-                        Toggle("Auto-detect permission loss (recommended)", isOn: $autoDetectPermissionLoss)
-
-                        Text("When enabled, SAM will automatically reset onboarding if permissions are lost (e.g., after rebuilding the app in Xcode). This saves you from manually resetting permissions.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
-                        if !autoDetectPermissionLoss {
-                            HStack(spacing: 4) {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .foregroundStyle(.orange)
-                                    .font(.caption)
-
-                                Text("Auto-detection disabled. You'll need to manually reset if permissions are lost.")
-                                    .font(.caption)
-                                    .foregroundStyle(.orange)
-                            }
-                            .padding(.top, 4)
-                        }
-
-                        Divider()
-                            .padding(.vertical, 4)
-
-                        Toggle("Reset on version change", isOn: $autoResetOnVersionChange)
-
-                        Text("When enabled, SAM will automatically reset onboarding and clear all data whenever the app version changes. Useful for development and testing.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
-                        if autoResetOnVersionChange {
-                            HStack(spacing: 4) {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .foregroundStyle(.orange)
-                                    .font(.caption)
-
-                                Text("Automatic reset is enabled. Your data will be cleared on version updates.")
-                                    .font(.caption)
-                                    .foregroundStyle(.orange)
-                            }
-                            .padding(.top, 4)
-                        }
+                    // Clipboard Capture
+                    DisclosureGroup {
+                        ClipboardCaptureSettingsContent()
+                            .padding(.top, 8)
+                    } label: {
+                        Label("Clipboard Capture", systemImage: "doc.on.clipboard")
                     }
-
-                    Divider()
-
-                    // Development / Reset section
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Manual Reset")
-                            .font(.headline)
-
-                        Text("These actions are intended for development and testing.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
-                        HStack(spacing: 12) {
-                            Button("Reset Onboarding") {
-                                showOnboardingResetConfirmation = true
-                            }
-                            .buttonStyle(.bordered)
-                            .alert("Reset Onboarding?", isPresented: $showOnboardingResetConfirmation) {
-                                Button("Cancel", role: .cancel) { }
-                                Button("Reset", role: .destructive) {
-                                    resetOnboarding()
-                                }
-                            } message: {
-                                Text("This will mark onboarding as incomplete. The onboarding sheet will appear on next app launch.")
-                            }
-
-                            Button("Clear All Data") {
-                                showResetConfirmation = true
-                            }
-                            .buttonStyle(.bordered)
-                            .alert("Clear All Data?", isPresented: $showResetConfirmation) {
-                                Button("Cancel", role: .cancel) { }
-                                Button("Clear Data", role: .destructive) {
-                                    clearAllData()
-                                }
-                            } message: {
-                                Text("This will delete all people, notes, evidence, and settings, then quit the app. On relaunch you will go through onboarding again.")
-                            }
-                        }
-                    }
-
                 }
                 .padding()
             }
         }
         .formStyle(.grouped)
-        .onAppear {
-            migrationService.discoverLegacyStores()
-        }
-        .alert("Remove Legacy Store Files?", isPresented: $showCleanupConfirmation) {
-            Button("Cancel", role: .cancel) { }
-            Button("Remove", role: .destructive) {
-                migrationService.cleanupLegacyStores()
-            }
-        } message: {
-            if let disc = migrationService.discovery {
-                Text("This will permanently delete \(disc.count) legacy data store files (\(disc.formattedSize)). This cannot be undone.\n\nMake sure you have migrated any data you need before cleaning up.")
-            }
-        }
-        .fileImporter(
-            isPresented: $showImportFilePicker,
-            allowedContentTypes: [.samBackup, .json],
-            allowsMultipleSelection: false
-        ) { result in
-            switch result {
-            case .success(let urls):
-                guard let url = urls.first else { return }
-                Task {
-                    do {
-                        let preview = try await backupCoordinator.validateBackup(from: url)
-                        pendingImportURL = url
-                        pendingImportPreview = preview
-                        showImportConfirmation = true
-                    } catch {
-                        backupCoordinator.status = .failed(error.localizedDescription)
-                    }
-                }
-            case .failure(let error):
-                backupCoordinator.status = .failed(error.localizedDescription)
-            }
-        }
-        .alert("Replace All Data?", isPresented: $showImportConfirmation) {
-            Button("Cancel", role: .cancel) {
-                pendingImportURL = nil
-                pendingImportPreview = nil
-            }
-            Button("Replace All Data", role: .destructive) {
-                guard let url = pendingImportURL else { return }
-                Task {
-                    await backupCoordinator.performImport(from: url)
-                }
-                pendingImportURL = nil
-                pendingImportPreview = nil
-            }
-        } message: {
-            if let preview = pendingImportPreview {
-                let counts = preview.metadata.counts
-                let schemaNote = preview.schemaMatch ? "" : "\n\nNote: This backup was created with a different schema version (\(preview.metadata.schemaVersion))."
-                Text("This will delete ALL existing data and replace it with:\n\n\(counts.people) people, \(counts.notes) notes, \(counts.evidence) evidence items, \(counts.contexts) contexts\n\nA safety backup will be saved to your temp directory first.\(schemaNote)")
-            }
-        }
-    }
-
-    private func resetOnboarding() {
-        UserDefaults.standard.removeObject(forKey: "hasCompletedOnboarding")
-        UserDefaults.standard.removeObject(forKey: "sam.intro.hasSeenIntroSequence")
-        logger.notice("Onboarding + intro reset — will show on next launch")
-    }
-
-    private func clearAllData() {
-        // Cancel all background tasks before deleting the store to prevent
-        // SQLite I/O errors from in-flight queries hitting a deleted file.
-        ContactsImportCoordinator.shared.cancelAll()
-        CalendarImportCoordinator.shared.cancelAll()
-        MailImportCoordinator.shared.cancelAll()
-        CommunicationsImportCoordinator.shared.cancelAll()
-        EvernoteImportCoordinator.shared.cancelAll()
-
-        // Delete the store files directly — the only reliable approach when
-        // multiple ModelContext instances are live across repositories.
-        // Safe because we terminate immediately after.
-        if let storeURL = SAMModelContainer.shared.configurations.first?.url {
-            let fm = FileManager.default
-            // SwiftData writes three files: .store, .store-shm, .store-wal
-            let companions = [storeURL,
-                              storeURL.appendingPathExtension("shm"),
-                              storeURL.appendingPathExtension("wal")]
-            for url in companions {
-                do {
-                    if fm.fileExists(atPath: url.path) {
-                        try fm.removeItem(at: url)
-                        logger.notice("Deleted store file: \(url.lastPathComponent, privacy: .public)")
-                    }
-                } catch {
-                    logger.error("Failed to delete \(url.lastPathComponent, privacy: .public): \(error)")
-                }
-            }
-        } else {
-            logger.error("Could not resolve store URL — store files not deleted")
-        }
-
-        // Clear relevant UserDefaults keys
-        let keysToRemove = [
-            "hasCompletedOnboarding",
-            "sam.intro.hasSeenIntroSequence",
-            "selectedContactGroupIdentifier",
-            "selectedGroupIdentifier",
-            "selectedCalendarIdentifier",
-            "autoImportContacts",
-            "lastContactsImport",
-            "lastCalendarImport",
-            "sam.contacts.enabled",
-            "calendarAutoImportEnabled",
-            "mailImportEnabled",
-            "commsMessagesEnabled",
-            "commsCallsEnabled",
-            "pipelineBackfillComplete",
-            "outcomeAutoGenerate",
-            "sam.contacts.import.lastRunAt",
-            // Test data flags — must be cleared so Harvey doesn't re-seed after store wipe
-            "sam.testData.active",
-            "sam.testData.loaded",
-            // LinkedIn import watermarks and folder bookmark
-            "sam.linkedin.enabled",
-            "sam.linkedin.messages.lastImportAt",
-            "sam.linkedin.connections.lastImportAt",
-            "linkedInFolderBookmark",
-        ]
-        for key in keysToRemove {
-            UserDefaults.standard.removeObject(forKey: key)
-        }
-
-        // Schedule TipKit reset on next launch — calling Tips.resetDatastore() here
-        // fails with tipsDatastoreAlreadyConfigured because TipKit was already
-        // configured at app startup. The flag is checked in SAMApp.init before configure().
-        UserDefaults.standard.set(true, forKey: "sam.tips.pendingReset")
-
-        logger.notice("All SAM data cleared — terminating so fresh state loads on relaunch")
-        NSApplication.shared.terminate(nil)
-    }
-
-    // MARK: - Legacy Data Section
-
-    private func legacyDataSection(_ disc: LegacyStoreDiscovery) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Legacy Data")
-                .font(.headline)
-
-            HStack(spacing: 6) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
-                    .font(.caption)
-                Text("Found \(disc.count) legacy data store\(disc.count == 1 ? "" : "s") (\(disc.formattedSize)) from previous SAM versions.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            if let mostRecent = disc.mostRecent {
-                Text("Most recent: \(mostRecent.version)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            HStack(spacing: 12) {
-                Button("Migrate Data...") {
-                    Task {
-                        await migrationService.migrate()
-                    }
-                }
-                .buttonStyle(.bordered)
-                .disabled(migrationService.isBusy || disc.mostRecent == nil)
-
-                Button("Clean Up Old Files...") {
-                    showCleanupConfirmation = true
-                }
-                .buttonStyle(.bordered)
-            }
-
-            // Status display
-            switch migrationService.status {
-            case .idle, .discovering:
-                EmptyView()
-            case .migrating(let step):
-                HStack(spacing: 8) {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text(step)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            case .cleaning:
-                HStack(spacing: 8) {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text("Removing legacy files...")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            case .success(let message):
-                HStack(spacing: 6) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
-                        .font(.caption)
-                    Text(message)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            case .failed(let message):
-                HStack(spacing: 6) {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.red)
-                        .font(.caption)
-                    Text(message)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                        .lineLimit(3)
-                }
-            }
-        }
-    }
-
-    // MARK: - Data Backup Section
-
-    private var dataBackupSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Data Backup")
-                .font(.headline)
-
-            Text("Export all your data to a .sambackup file or restore from a previous backup. Importing replaces all existing data.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            HStack(spacing: 12) {
-                Button("Export Backup...") {
-                    let panel = NSSavePanel()
-                    let formatter = DateFormatter()
-                    formatter.dateFormat = "yyyy-MM-dd"
-                    panel.nameFieldStringValue = "SAM-Backup-\(formatter.string(from: .now)).sambackup"
-                    panel.allowedContentTypes = [.samBackup]
-                    panel.canCreateDirectories = true
-
-                    if panel.runModal() == .OK, let url = panel.url {
-                        Task {
-                            await backupCoordinator.exportBackup(to: url)
-                        }
-                    }
-                }
-                .buttonStyle(.bordered)
-                .disabled(backupCoordinator.status == .exporting || backupCoordinator.status == .importing)
-
-                Button("Import Backup...") {
-                    showImportFilePicker = true
-                }
-                .buttonStyle(.bordered)
-                .disabled(backupCoordinator.status == .exporting || backupCoordinator.status == .importing)
-            }
-
-            // Status display
-            switch backupCoordinator.status {
-            case .idle:
-                EmptyView()
-            case .exporting:
-                HStack(spacing: 8) {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text(backupCoordinator.progress.isEmpty ? "Exporting..." : backupCoordinator.progress)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            case .importing:
-                HStack(spacing: 8) {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text(backupCoordinator.progress.isEmpty ? "Importing..." : backupCoordinator.progress)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            case .validating:
-                HStack(spacing: 8) {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text("Validating backup...")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            case .success(let message):
-                HStack(spacing: 6) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
-                        .font(.caption)
-                    Text(message)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            case .failed(let message):
-                HStack(spacing: 6) {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.red)
-                        .font(.caption)
-                    Text(message)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                        .lineLimit(3)
-                }
-            }
-        }
     }
 
     // MARK: - Dictation Section
@@ -1953,44 +1658,6 @@ struct GeneralSettingsView: View {
                 Text("5.0s")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
-            }
-        }
-    }
-
-    private var guidanceSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Guidance")
-                .font(.headline)
-
-            Toggle("Show contextual tips", isOn: Binding(
-                get: { tipsEnabled },
-                set: { newValue in
-                    if newValue {
-                        SAMTipState.enableTips()
-                        tipsEnabled = true
-                    } else {
-                        SAMTipState.disableTips()
-                        tipsEnabled = false
-                    }
-                }
-            ))
-
-            Text("Contextual tips appear near features to help you learn SAM's interface.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            HStack(spacing: 12) {
-                Button("Reset All Tips") {
-                    SAMTipState.resetAllTips()
-                    tipsEnabled = true
-                }
-                .buttonStyle(.bordered)
-
-                Button("Replay Intro") {
-                    UserDefaults.standard.set(false, forKey: "sam.intro.hasSeenIntroSequence")
-                    IntroSequenceCoordinator.shared.checkAndShow()
-                }
-                .buttonStyle(.bordered)
             }
         }
     }

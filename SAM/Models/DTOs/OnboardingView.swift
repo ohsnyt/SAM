@@ -44,10 +44,17 @@ struct OnboardingView: View {
     @State private var speechPermissionGranted = false
     @State private var skippedMicrophone = false
 
+    // Communications
+    @State private var skippedCommunications = false
+
     // Notifications
     @State private var notificationsGranted = false
     @State private var notificationsDenied = false
     @State private var skippedNotifications = false
+
+    // Pre-check
+    @State private var preCheckComplete = false
+    @State private var stepReadiness: [OnboardingStep: Bool] = [:]
 
     // AI Setup (MLX)
     @State private var isMlxDownloading = false
@@ -64,6 +71,7 @@ struct OnboardingView: View {
         case calendarSelection
         case mailPermission
         case mailAddressSelection
+        case communicationsPermission
         case microphonePermission
         case notificationsPermission
         case aiSetup
@@ -95,6 +103,8 @@ struct OnboardingView: View {
                         mailPermissionStep
                     case .mailAddressSelection:
                         mailAddressSelectionStep
+                    case .communicationsPermission:
+                        communicationsPermissionStep
                     case .microphonePermission:
                         microphonePermissionStep
                     case .notificationsPermission:
@@ -115,7 +125,7 @@ struct OnboardingView: View {
         }
         .frame(width: 600, height: 500)
         .task {
-            await checkStatuses()
+            await runPreChecks()
         }
     }
 
@@ -132,7 +142,7 @@ struct OnboardingView: View {
                     .font(.title2)
                     .bold()
 
-                if currentStep != .welcome {
+                if currentStep != .welcome && currentStep != .complete && currentStepNumber > 0 && totalSteps > 0 {
                     Text("Step \(currentStepNumber) of \(totalSteps)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -142,32 +152,136 @@ struct OnboardingView: View {
             Spacer()
 
             // Quit button - escape hatch for users who want to exit
-            Button {
-                NSApplication.shared.terminate(nil)
-            } label: {
-                Text("Quit")
-                    .foregroundStyle(.secondary)
+            Button("Quit") {
+                // Dispatch async to avoid SwiftUI view-update-cycle issues
+                DispatchQueue.main.async {
+                    NSApplication.shared.terminate(nil)
+                }
             }
-            .buttonStyle(.plain)
             .keyboardShortcut("q", modifiers: .command)
         }
         .padding()
         .background(.ultraThinMaterial)
     }
 
-    private var currentStepNumber: Int {
-        let ordered: [OnboardingStep] = [
+    /// Steps the user will actually walk through (dynamically filtered by pre-check).
+    private var activeSteps: [OnboardingStep] {
+        let allIntermediate: [OnboardingStep] = [
             .contactsPermission, .contactsGroupSelection,
             .calendarPermission, .calendarSelection,
             .mailPermission, .mailAddressSelection,
-            .microphonePermission, .notificationsPermission,
-            .aiSetup, .complete
+            .communicationsPermission, .microphonePermission,
+            .notificationsPermission, .aiSetup
         ]
-        guard let idx = ordered.firstIndex(of: currentStep) else { return 0 }
+        let pending = allIntermediate.filter { stepReadiness[$0] != true }
+        return [.welcome] + pending + [.complete]
+    }
+
+    private var currentStepNumber: Int {
+        let actionSteps = activeSteps.filter { $0 != .welcome && $0 != .complete }
+        guard let idx = actionSteps.firstIndex(of: currentStep) else { return 0 }
         return idx + 1
     }
 
-    private var totalSteps: Int { 10 }
+    private var totalSteps: Int {
+        activeSteps.filter { $0 != .welcome && $0 != .complete }.count
+    }
+
+    // MARK: - Active-Step Navigation
+
+    private func advanceToNextActiveStep() {
+        if let idx = activeSteps.firstIndex(of: currentStep), idx + 1 < activeSteps.count {
+            currentStep = activeSteps[idx + 1]
+        }
+    }
+
+    private func retreatToPreviousActiveStep() {
+        if let idx = activeSteps.firstIndex(of: currentStep), idx > 0 {
+            currentStep = activeSteps[idx - 1]
+        }
+    }
+
+    // MARK: - Pre-Check
+
+    private func runPreChecks() async {
+        guard !preCheckComplete else { return }
+
+        // Run permission checks in parallel with the existing state vars
+        contactsStatus = await ContactsService.shared.authorizationStatus()
+        calendarStatus = await CalendarService.shared.authorizationStatus()
+
+        let notificationSettings = await UNUserNotificationCenter.current().notificationSettings()
+        switch notificationSettings.authorizationStatus {
+        case .authorized, .provisional, .ephemeral:
+            notificationsGranted = true
+        case .denied:
+            notificationsDenied = true
+        case .notDetermined:
+            break
+        @unknown default:
+            break
+        }
+
+        // Mic + Speech
+        micPermissionGranted = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+        speechPermissionGranted = SFSpeechRecognizer.authorizationStatus() == .authorized
+
+        // Mail
+        let mailError = await MailImportCoordinator.shared.checkMailAccess()
+        if mailError == nil {
+            mailAccessGranted = true
+        }
+
+        // Me emails (needed for mail address readiness)
+        await fetchMeEmailAddresses()
+
+        // Contacts: permission + group auto-select
+        let contactsReady = contactsStatus == .authorized
+        stepReadiness[.contactsPermission] = contactsReady
+        if contactsReady {
+            await loadGroups()
+            let groupAutoSelected = !selectedGroupIdentifier.isEmpty && selectedGroupIdentifier != "__create_sam__"
+            stepReadiness[.contactsGroupSelection] = groupAutoSelected
+        } else {
+            stepReadiness[.contactsGroupSelection] = false
+        }
+
+        // Calendar: permission + selection auto-select
+        let calendarReady = calendarStatus == .fullAccess
+        stepReadiness[.calendarPermission] = calendarReady
+        if calendarReady {
+            await loadCalendars()
+            let calAutoSelected = !selectedCalendarIdentifier.isEmpty && selectedCalendarIdentifier != "__create_sam__"
+            stepReadiness[.calendarSelection] = calAutoSelected
+        } else {
+            stepReadiness[.calendarSelection] = false
+        }
+
+        // Mail
+        stepReadiness[.mailPermission] = mailAccessGranted
+        // Mail address selection: ready if mail granted and (<=1 email or all selected)
+        if mailAccessGranted {
+            stepReadiness[.mailAddressSelection] = meEmailAddresses.count <= 1
+        } else {
+            stepReadiness[.mailAddressSelection] = false
+        }
+
+        // Communications
+        stepReadiness[.communicationsPermission] = BookmarkManager.shared.hasMessagesAccess || BookmarkManager.shared.hasCallHistoryAccess
+
+        // Mic + Speech
+        stepReadiness[.microphonePermission] = micPermissionGranted && speechPermissionGranted
+
+        // Notifications
+        stepReadiness[.notificationsPermission] = notificationsGranted
+
+        // AI (MLX)
+        let models = await MLXModelManager.shared.availableModels
+        mlxModelReady = models.contains { $0.isDownloaded }
+        stepReadiness[.aiSetup] = mlxModelReady
+
+        preCheckComplete = true
+    }
 
     // MARK: - Steps
 
@@ -186,14 +300,31 @@ struct OnboardingView: View {
                 FeatureRow(icon: "lightbulb.fill", text: "Generating insights about client needs")
                 FeatureRow(icon: "bell.fill", text: "Reminding you when follow-ups are needed")
                 FeatureRow(icon: "person.text.rectangle", text: "Identifying your clients, agents, and partners from your data")
+                FeatureRow(icon: "brain.head.profile", text: "Coaching you on who to contact next and why")
                 FeatureRow(icon: "lock.shield.fill", text: "Keeping all data private and on your device")
             }
             .padding(.leading, 8)
 
-            Text("Let's get started by setting up permissions.")
-                .font(.body)
-                .foregroundStyle(.secondary)
+            if !preCheckComplete {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Checking current setup…")
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                }
                 .padding(.top, 8)
+            } else if totalSteps == 0 {
+                Text("Everything is already configured!")
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 8)
+            } else {
+                Text("Let's get started by setting up permissions.")
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 8)
+            }
         }
     }
 
@@ -581,6 +712,89 @@ struct OnboardingView: View {
         }
     }
 
+    private var communicationsPermissionStep: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Image(systemName: "message.and.waveform.fill")
+                .font(.system(size: 64))
+                .foregroundStyle(.green)
+                .frame(maxWidth: .infinity)
+
+            Text("iMessage & Call History")
+                .font(.title)
+                .bold()
+
+            Text("SAM can analyze your iMessage conversations and call history to build a complete picture of your relationships:")
+                .font(.body)
+                .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 12) {
+                BulletPoint("Summarize message conversations with clients")
+                BulletPoint("Track call frequency and patterns")
+                BulletPoint("Never stores raw message text — only AI summaries")
+            }
+            .padding(.leading, 8)
+
+            Text("SAM reads local database files on your Mac. You'll be asked to select each folder. Message text is analyzed on-device then discarded.")
+                .font(.callout)
+                .foregroundStyle(.orange)
+                .padding()
+                .background(Color.orange.opacity(0.1))
+                .cornerRadius(8)
+
+            // Messages access
+            HStack(spacing: 12) {
+                Image(systemName: BookmarkManager.shared.hasMessagesAccess ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(BookmarkManager.shared.hasMessagesAccess ? .green : .secondary)
+                    .font(.title3)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Messages Database")
+                        .font(.body)
+                    Text("~/Library/Messages/")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                if !BookmarkManager.shared.hasMessagesAccess {
+                    Button("Grant Access") {
+                        BookmarkManager.shared.requestMessagesAccess()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.green)
+                    .controlSize(.small)
+                }
+            }
+
+            // Call history access
+            HStack(spacing: 12) {
+                Image(systemName: BookmarkManager.shared.hasCallHistoryAccess ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(BookmarkManager.shared.hasCallHistoryAccess ? .green : .secondary)
+                    .font(.title3)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Call History Database")
+                        .font(.body)
+                    Text("~/Library/Application Support/CallHistoryDB/")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                if !BookmarkManager.shared.hasCallHistoryAccess {
+                    Button("Grant Access") {
+                        BookmarkManager.shared.requestCallHistoryAccess()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.green)
+                    .controlSize(.small)
+                }
+            }
+        }
+    }
+
     private var microphonePermissionStep: some View {
         VStack(alignment: .leading, spacing: 20) {
             Image(systemName: "mic.circle.fill")
@@ -710,7 +924,7 @@ struct OnboardingView: View {
             }
             .padding(.leading, 8)
 
-            Text("The download is approximately 4 GB. All processing stays on your device — nothing is sent to the cloud.")
+            Text("The download is approximately 4 GB and runs in the background — you can start using SAM immediately. All processing stays on your device.")
                 .font(.callout)
                 .foregroundStyle(.orange)
                 .padding()
@@ -779,129 +993,72 @@ struct OnboardingView: View {
     }
 
     private var completeStep: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(spacing: 16) {
             Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 64))
+                .font(.system(size: 48))
                 .foregroundStyle(.green)
-                .frame(maxWidth: .infinity)
 
-            Text(completionTitle)
-                .font(.title)
+            Text("You're All Set!")
+                .font(.title2)
                 .bold()
-                .frame(maxWidth: .infinity)
 
-            Text(completionMessage)
-                .font(.body)
+            Text("SAM is now importing your data and identifying roles. You'll see coaching suggestions in the Today view within minutes.")
+                .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
 
-            VStack(spacing: 16) {
-                if !selectedGroupIdentifier.isEmpty {
-                    StatusRow(icon: "person.crop.circle.fill",
-                             color: .blue,
-                             title: "Contacts",
-                             subtitle: "Ready to import")
-                } else if skippedContacts {
-                    SkippedRow(icon: "person.crop.circle.fill",
-                              color: .blue,
-                              title: "Contacts",
-                              subtitle: "Skipped - you can enable this in Settings later")
-                }
-
-                if !selectedCalendarIdentifier.isEmpty {
-                    StatusRow(icon: "calendar.circle.fill",
-                             color: .orange,
-                             title: "Calendar",
-                             subtitle: "Ready to import")
-                } else if skippedCalendar {
-                    SkippedRow(icon: "calendar.circle.fill",
-                              color: .orange,
-                              title: "Calendar",
-                              subtitle: "Skipped - you can enable this in Settings later")
-                }
-
-                if mailAccessGranted {
-                    StatusRow(icon: "envelope.circle.fill",
-                             color: .blue,
-                             title: "Email",
-                             subtitle: "Ready to import")
-                } else if skippedMail {
-                    SkippedRow(icon: "envelope.circle.fill",
-                              color: .blue,
-                              title: "Email",
-                              subtitle: "Skipped - you can enable this in Settings later")
-                }
-
-                if micPermissionGranted && speechPermissionGranted {
-                    StatusRow(icon: "mic.circle.fill",
-                             color: .purple,
-                             title: "Dictation",
-                             subtitle: "Ready for voice notes")
-                } else if skippedMicrophone {
-                    SkippedRow(icon: "mic.circle.fill",
-                              color: .purple,
-                              title: "Dictation",
-                              subtitle: "Skipped - you can enable this later")
-                }
-
-                if notificationsGranted {
-                    StatusRow(icon: "bell.circle.fill",
-                             color: .red,
-                             title: "Notifications",
-                             subtitle: "Enabled for coaching alerts")
-                } else if skippedNotifications || notificationsDenied {
-                    SkippedRow(icon: "bell.circle.fill",
-                              color: .red,
-                              title: "Notifications",
-                              subtitle: "Skipped — enable in System Settings → Notifications → SAM")
-                }
-
-                if mlxModelReady {
-                    StatusRow(icon: "cpu.fill",
-                             color: .indigo,
-                             title: "Enhanced AI",
-                             subtitle: "Mistral 7B downloaded · Hybrid backend will be activated")
-                } else if skippedAISetup {
-                    SkippedRow(icon: "cpu.fill",
-                              color: .indigo,
-                              title: "Enhanced AI",
-                              subtitle: "Skipped — download in Settings → AI → Coaching later")
-                }
+            // Compact summary grid — always shows all 7 sources
+            VStack(spacing: 4) {
+                completionRow(icon: "person.crop.circle.fill", color: .blue, title: "Contacts",
+                              enabled: !skippedContacts && !selectedGroupIdentifier.isEmpty)
+                completionRow(icon: "calendar.circle.fill", color: .orange, title: "Calendar",
+                              enabled: !skippedCalendar && !selectedCalendarIdentifier.isEmpty)
+                completionRow(icon: "envelope.circle.fill", color: .blue, title: "Email",
+                              enabled: mailAccessGranted && !skippedMail)
+                completionRow(icon: "message.and.waveform.fill", color: .green, title: "iMessage & Calls",
+                              enabled: BookmarkManager.shared.hasMessagesAccess || BookmarkManager.shared.hasCallHistoryAccess)
+                completionRow(icon: "mic.circle.fill", color: .purple, title: "Dictation",
+                              enabled: micPermissionGranted && speechPermissionGranted)
+                completionRow(icon: "bell.circle.fill", color: .red, title: "Notifications",
+                              enabled: notificationsGranted)
+                completionRow(icon: "cpu.fill", color: .indigo, title: "Enhanced AI",
+                              enabled: mlxModelReady)
             }
-            .padding(.vertical)
+            .padding(.top, 4)
+
+            Text("You can change any of these in Settings.")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
         }
     }
 
-    private var completionTitle: String {
-        let skippedAny = skippedContacts || skippedCalendar || skippedMail || skippedMicrophone || skippedNotifications || skippedAISetup
-        let skippedAll = skippedContacts && skippedCalendar && skippedMail && skippedMicrophone
-        if skippedAll {
-            return "Ready to Start"
-        } else if skippedAny {
-            return "Partially Configured"
-        } else {
-            return "You're All Set!"
-        }
-    }
+    private func completionRow(icon: String, color: Color, title: String, enabled: Bool) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 16))
+                .foregroundStyle(enabled ? color : color.opacity(0.3))
+                .frame(width: 22)
 
-    private var completionMessage: String {
-        let skippedAny = skippedContacts || skippedCalendar || skippedMail || skippedMicrophone || skippedNotifications || skippedAISetup
-        let skippedAll = skippedContacts && skippedCalendar && skippedMail && skippedMicrophone
-        if skippedAll {
-            return "You can configure permissions anytime in Settings. SAM will be ready when you are."
-        } else if skippedAny {
-            return "SAM will import the enabled sources. You can configure additional permissions in Settings later."
-        } else {
-            return "SAM will now import your contacts, calendar events, and email. This may take a moment."
+            Text(title)
+                .font(.callout)
+                .foregroundStyle(enabled ? .primary : .secondary)
+
+            Spacer()
+
+            Image(systemName: enabled ? "checkmark.circle.fill" : "minus.circle")
+                .font(.system(size: 14))
+                .foregroundStyle(enabled ? .green : .gray.opacity(0.5))
         }
+        .padding(.vertical, 4)
+        .padding(.horizontal, 10)
     }
 
     // MARK: - Footer
 
     private var footer: some View {
         HStack {
-            if currentStep != .welcome {
+            if currentStep != .welcome && currentStep != .complete {
                 Button("Back") {
                     goBack()
                 }
@@ -917,14 +1074,16 @@ struct OnboardingView: View {
                 } else {
                     Button("Skip") {
                         skippedMail = true
-                        currentStep = .microphonePermission
+                        stepReadiness[.mailPermission] = true
+                        stepReadiness[.mailAddressSelection] = true
+                        advanceToNextActiveStep()
                     }
                     .foregroundStyle(.secondary)
                 }
 
                 Button(mailAccessGranted ? "Continue" : "Enable Email") {
                     if mailAccessGranted {
-                        currentStep = .microphonePermission
+                        Task { await goNext() }
                     } else {
                         Task { await checkMailPermission() }
                     }
@@ -940,14 +1099,15 @@ struct OnboardingView: View {
                 } else {
                     Button("Skip") {
                         skippedMicrophone = true
-                        currentStep = .notificationsPermission
+                        stepReadiness[.microphonePermission] = true
+                        advanceToNextActiveStep()
                     }
                     .foregroundStyle(.secondary)
                 }
 
                 Button(micGranted ? "Continue" : "Enable Dictation") {
                     if micGranted {
-                        currentStep = .notificationsPermission
+                        advanceToNextActiveStep()
                     } else {
                         Task { await requestMicrophonePermission() }
                     }
@@ -961,33 +1121,108 @@ struct OnboardingView: View {
                 } else {
                     Button("Skip") {
                         skippedNotifications = true
-                        currentStep = .aiSetup
+                        stepReadiness[.notificationsPermission] = true
+                        advanceToNextActiveStep()
                     }
                     .foregroundStyle(.secondary)
                 }
 
                 Button(notificationsGranted ? "Continue" : "Enable Notifications") {
                     if notificationsGranted {
-                        currentStep = .aiSetup
+                        advanceToNextActiveStep()
                     } else {
                         Task { await requestNotificationsPermission() }
                     }
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(notificationsGranted ? .green : nil)
-            } else {
-                // Show skip option for other permission steps
-                if shouldShowSkip {
-                    Button("Skip for Now") {
-                        skipCurrentStep()
-                    }
-                    .foregroundStyle(.secondary)
+            } else if currentStep == .contactsPermission {
+                if contactsStatus == .authorized {
+                    alreadyEnabledBadge
+                } else if shouldShowSkip {
+                    Button("Skip for Now") { skipCurrentStep() }
+                        .foregroundStyle(.secondary)
                 }
-
+                Button(nextButtonTitle) { Task { await goNext() } }
+                    .keyboardShortcut(.defaultAction)
+                    .buttonStyle(.borderedProminent)
+                    .tint(contactsStatus == .authorized ? .green : nil)
+            } else if currentStep == .calendarPermission {
+                if calendarStatus == .fullAccess {
+                    alreadyEnabledBadge
+                } else if shouldShowSkip {
+                    Button("Skip for Now") { skipCurrentStep() }
+                        .foregroundStyle(.secondary)
+                }
+                Button(nextButtonTitle) { Task { await goNext() } }
+                    .keyboardShortcut(.defaultAction)
+                    .buttonStyle(.borderedProminent)
+                    .tint(calendarStatus == .fullAccess ? .green : nil)
+            } else if currentStep == .communicationsPermission {
+                let commsGranted = BookmarkManager.shared.hasMessagesAccess || BookmarkManager.shared.hasCallHistoryAccess
+                if commsGranted {
+                    alreadyEnabledBadge
+                } else if shouldShowSkip {
+                    Button("Skip for Now") { skipCurrentStep() }
+                        .foregroundStyle(.secondary)
+                }
+                Button(commsGranted ? "Continue" : "Next") { Task { await goNext() } }
+                    .keyboardShortcut(.defaultAction)
+                    .buttonStyle(.borderedProminent)
+                    .tint(commsGranted ? .green : nil)
+            } else if currentStep == .contactsGroupSelection {
+                let groupReady = !selectedGroupIdentifier.isEmpty && selectedGroupIdentifier != "__create_sam__"
+                if groupReady {
+                    alreadyEnabledBadgeWith(text: "Already configured")
+                } else if shouldShowSkip {
+                    Button("Skip for Now") { skipCurrentStep() }
+                        .foregroundStyle(.secondary)
+                }
+                Button(groupReady ? "Continue" : nextButtonTitle) { Task { await goNext() } }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!canProceed)
+                    .buttonStyle(.borderedProminent)
+                    .tint(groupReady ? .green : nil)
+            } else if currentStep == .calendarSelection {
+                let calendarReady = !selectedCalendarIdentifier.isEmpty && selectedCalendarIdentifier != "__create_sam__"
+                if calendarReady {
+                    alreadyEnabledBadgeWith(text: "Already configured")
+                } else if shouldShowSkip {
+                    Button("Skip for Now") { skipCurrentStep() }
+                        .foregroundStyle(.secondary)
+                }
+                Button(calendarReady ? "Continue" : nextButtonTitle) { Task { await goNext() } }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!canProceed)
+                    .buttonStyle(.borderedProminent)
+                    .tint(calendarReady ? .green : nil)
+            } else if currentStep == .mailAddressSelection {
+                let addressReady = !selectedMailAddresses.isEmpty || meEmailAddresses.count <= 1
+                if addressReady {
+                    alreadyEnabledBadgeWith(text: "Already configured")
+                } else if shouldShowSkip {
+                    Button("Skip for Now") { skipCurrentStep() }
+                        .foregroundStyle(.secondary)
+                }
+                Button(addressReady ? "Continue" : nextButtonTitle) { Task { await goNext() } }
+                    .keyboardShortcut(.defaultAction)
+                    .buttonStyle(.borderedProminent)
+                    .tint(addressReady ? .green : nil)
+            } else if currentStep == .aiSetup {
+                if mlxModelReady {
+                    alreadyEnabledBadgeWith(text: "Model ready")
+                } else if shouldShowSkip {
+                    Button("Skip for Now") { skipCurrentStep() }
+                        .foregroundStyle(.secondary)
+                }
+                Button(mlxModelReady ? "Finish Setup" : nextButtonTitle) { Task { await goNext() } }
+                    .keyboardShortcut(.defaultAction)
+                    .buttonStyle(.borderedProminent)
+                    .tint(mlxModelReady ? .green : nil)
+            } else {
+                // Welcome + complete steps (no skip/badge needed)
                 Button(nextButtonTitle) {
-                    Task {
-                        await goNext()
-                    }
+                    Task { await goNext() }
                 }
                 .keyboardShortcut(.defaultAction)
                 .disabled(!canProceed)
@@ -1000,10 +1235,15 @@ struct OnboardingView: View {
 
     /// Green checkmark shown in footer when a permission is already granted.
     private var alreadyEnabledBadge: some View {
+        alreadyEnabledBadgeWith(text: "Permission granted")
+    }
+
+    /// Green checkmark with custom label text.
+    private func alreadyEnabledBadgeWith(text: String) -> some View {
         HStack(spacing: 4) {
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(.green)
-            Text("Permission granted")
+            Text(text)
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -1011,7 +1251,7 @@ struct OnboardingView: View {
 
     private var shouldShowSkip: Bool {
         switch currentStep {
-        case .contactsPermission, .contactsGroupSelection, .calendarPermission, .calendarSelection, .mailAddressSelection, .aiSetup:
+        case .contactsPermission, .contactsGroupSelection, .calendarPermission, .calendarSelection, .mailAddressSelection, .communicationsPermission, .aiSetup:
             return true
         default:
             return false
@@ -1023,7 +1263,7 @@ struct OnboardingView: View {
     private var nextButtonTitle: String {
         switch currentStep {
         case .welcome:
-            return "Get Started"
+            return totalSteps == 0 ? "Start Using SAM" : "Get Started"
         case .contactsPermission:
             return contactsStatus == .authorized ? "Next" : "Grant Access"
         case .contactsGroupSelection:
@@ -1035,6 +1275,8 @@ struct OnboardingView: View {
         case .mailPermission:
             return "Next" // not used; footer overrides
         case .mailAddressSelection:
+            return "Next"
+        case .communicationsPermission:
             return "Next"
         case .microphonePermission:
             return "Next" // not used; footer overrides
@@ -1050,7 +1292,7 @@ struct OnboardingView: View {
     private var canProceed: Bool {
         switch currentStep {
         case .welcome:
-            return true
+            return preCheckComplete
         case .contactsPermission:
             return true // Always enabled - clicking triggers permission request or advances if already granted
         case .contactsGroupSelection:
@@ -1064,6 +1306,8 @@ struct OnboardingView: View {
         case .mailPermission:
             return true
         case .mailAddressSelection:
+            return true
+        case .communicationsPermission:
             return true
         case .microphonePermission:
             return true
@@ -1082,75 +1326,82 @@ struct OnboardingView: View {
         switch currentStep {
         case .contactsPermission:
             skippedContacts = true
-            currentStep = .calendarPermission
+            stepReadiness[.contactsPermission] = true
+            stepReadiness[.contactsGroupSelection] = true
         case .contactsGroupSelection:
             skippedContacts = true
-            currentStep = .calendarPermission
+            stepReadiness[.contactsGroupSelection] = true
         case .calendarPermission:
             skippedCalendar = true
-            currentStep = .mailPermission
+            stepReadiness[.calendarPermission] = true
+            stepReadiness[.calendarSelection] = true
         case .calendarSelection:
             skippedCalendar = true
-            currentStep = .mailPermission
+            stepReadiness[.calendarSelection] = true
         case .mailAddressSelection:
-            // Skip means keep all selected (default)
-            currentStep = .microphonePermission
+            stepReadiness[.mailAddressSelection] = true
+        case .communicationsPermission:
+            skippedCommunications = true
+            stepReadiness[.communicationsPermission] = true
         case .aiSetup:
             skippedAISetup = true
-            currentStep = .complete
+            stepReadiness[.aiSetup] = true
         default:
             break
         }
+        advanceToNextActiveStep()
     }
 
     private func goNext() async {
         switch currentStep {
         case .welcome:
-            currentStep = .contactsPermission
+            advanceToNextActiveStep()
 
         case .contactsPermission:
             if contactsStatus != .authorized {
                 await requestContactsPermission()
+                // requestContactsPermission handles navigation on grant
             } else {
-                currentStep = .contactsGroupSelection
+                advanceToNextActiveStep()
             }
 
         case .contactsGroupSelection:
-            currentStep = .calendarPermission
+            advanceToNextActiveStep()
 
         case .calendarPermission:
             if calendarStatus != .fullAccess {
                 await requestCalendarPermission()
+                // requestCalendarPermission handles navigation on grant
             } else {
-                currentStep = .calendarSelection
+                advanceToNextActiveStep()
             }
 
         case .calendarSelection:
-            currentStep = .mailPermission
+            advanceToNextActiveStep()
 
         case .mailPermission:
-            // If mail was granted, advance to address selection
-            if mailAccessGranted && !meEmailAddresses.isEmpty {
-                currentStep = .mailAddressSelection
-            } else {
-                currentStep = .microphonePermission
+            if mailAccessGranted {
+                advanceToNextActiveStep()
             }
+            // If not granted, checkMailPermission handles navigation
 
         case .mailAddressSelection:
             applyMailFilterRules()
-            currentStep = .microphonePermission
+            advanceToNextActiveStep()
+
+        case .communicationsPermission:
+            advanceToNextActiveStep()
 
         case .microphonePermission:
-            currentStep = .notificationsPermission
+            advanceToNextActiveStep()
 
         case .notificationsPermission:
-            currentStep = .aiSetup
+            advanceToNextActiveStep()
 
         case .aiSetup:
-            currentStep = .complete
+            advanceToNextActiveStep()
 
         case .complete:
-            // Save selections and trigger imports
             saveSelections()
             await triggerImports()
             dismiss()
@@ -1158,54 +1409,10 @@ struct OnboardingView: View {
     }
 
     private func goBack() {
-        switch currentStep {
-        case .welcome:
-            break
-        case .contactsPermission:
-            currentStep = .welcome
-        case .contactsGroupSelection:
-            currentStep = .contactsPermission
-        case .calendarPermission:
-            currentStep = .contactsGroupSelection
-        case .calendarSelection:
-            currentStep = .calendarPermission
-        case .mailPermission:
-            currentStep = .calendarSelection
-        case .mailAddressSelection:
-            currentStep = .mailPermission
-        case .microphonePermission:
-            if mailAccessGranted && !meEmailAddresses.isEmpty {
-                currentStep = .mailAddressSelection
-            } else {
-                currentStep = .mailPermission
-            }
-        case .notificationsPermission:
-            currentStep = .microphonePermission
-        case .aiSetup:
-            currentStep = .notificationsPermission
-        case .complete:
-            currentStep = .aiSetup
-        }
+        retreatToPreviousActiveStep()
     }
 
     // MARK: - Permissions
-
-    private func checkStatuses() async {
-        contactsStatus = await ContactsService.shared.authorizationStatus()
-        calendarStatus = await CalendarService.shared.authorizationStatus()
-
-        let notificationSettings = await UNUserNotificationCenter.current().notificationSettings()
-        switch notificationSettings.authorizationStatus {
-        case .authorized, .provisional, .ephemeral:
-            notificationsGranted = true
-        case .denied:
-            notificationsDenied = true
-        case .notDetermined:
-            break
-        @unknown default:
-            break
-        }
-    }
 
     private func requestContactsPermission() async {
         isRequestingContacts = true
@@ -1214,9 +1421,14 @@ struct OnboardingView: View {
         isRequestingContacts = false
 
         if granted {
-            // Notify coordinator so it can attempt import when group is selected
             ContactsImportCoordinator.shared.permissionGranted()
-            currentStep = .contactsGroupSelection
+            stepReadiness[.contactsPermission] = true
+            // Load groups and check if SAM auto-selected
+            await loadGroups()
+            if !selectedGroupIdentifier.isEmpty && selectedGroupIdentifier != "__create_sam__" {
+                stepReadiness[.contactsGroupSelection] = true
+            }
+            advanceToNextActiveStep()
         }
     }
 
@@ -1227,7 +1439,13 @@ struct OnboardingView: View {
         isRequestingCalendar = false
 
         if granted {
-            currentStep = .calendarSelection
+            stepReadiness[.calendarPermission] = true
+            // Load calendars and check if SAM auto-selected
+            await loadCalendars()
+            if !selectedCalendarIdentifier.isEmpty && selectedCalendarIdentifier != "__create_sam__" {
+                stepReadiness[.calendarSelection] = true
+            }
+            advanceToNextActiveStep()
         }
     }
 
@@ -1240,9 +1458,14 @@ struct OnboardingView: View {
             mailAccessError = error
         } else {
             mailAccessGranted = true
-            // After granting, advance to address selection if we have emails
+            stepReadiness[.mailPermission] = true
+            // Mark address step ready if <=1 email
+            if meEmailAddresses.count <= 1 {
+                stepReadiness[.mailAddressSelection] = true
+            }
+            // After granting, advance to next active step
             if !meEmailAddresses.isEmpty {
-                currentStep = .mailAddressSelection
+                advanceToNextActiveStep()
             }
         }
     }
@@ -1263,7 +1486,8 @@ struct OnboardingView: View {
         micPermissionGranted = micGranted
 
         if micGranted && speechGranted {
-            currentStep = .notificationsPermission
+            stepReadiness[.microphonePermission] = true
+            advanceToNextActiveStep()
         }
     }
 
@@ -1381,6 +1605,7 @@ struct OnboardingView: View {
 
         // Always mark onboarding complete, even if permissions were skipped
         UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
+        UserDefaults.standard.set(Date.now.timeIntervalSince1970, forKey: "sam.onboarding.completedAt")
     }
 
     private func triggerImports() async {
@@ -1420,7 +1645,8 @@ struct OnboardingView: View {
             if granted {
                 notificationsGranted = true
                 notificationsDenied = false
-                currentStep = .aiSetup
+                stepReadiness[.notificationsPermission] = true
+                advanceToNextActiveStep()
             } else {
                 notificationsDenied = true
                 notificationsGranted = false
@@ -1489,38 +1715,6 @@ struct OnboardingView: View {
 
 // MARK: - Helper Views
 
-private struct SkippedRow: View {
-    let icon: String
-    let color: Color
-    let title: String
-    let subtitle: String
-
-    var body: some View {
-        HStack(spacing: 16) {
-            Image(systemName: icon)
-                .font(.system(size: 32))
-                .foregroundStyle(color.opacity(0.5))
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(.headline)
-                    .foregroundStyle(.secondary)
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-
-            Image(systemName: "minus.circle.fill")
-                .foregroundStyle(.gray)
-        }
-        .padding()
-        .background(Color.gray.opacity(0.05))
-        .cornerRadius(8)
-    }
-}
-
 private struct FeatureRow: View {
     let icon: String
     let text: String
@@ -1550,37 +1744,6 @@ private struct BulletPoint: View {
             Text(text)
                 .font(.body)
         }
-    }
-}
-
-private struct StatusRow: View {
-    let icon: String
-    let color: Color
-    let title: String
-    let subtitle: String
-
-    var body: some View {
-        HStack(spacing: 16) {
-            Image(systemName: icon)
-                .font(.system(size: 32))
-                .foregroundStyle(color)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(.headline)
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-
-            Image(systemName: "checkmark.circle.fill")
-                .foregroundStyle(.green)
-        }
-        .padding()
-        .background(Color.gray.opacity(0.1))
-        .cornerRadius(8)
     }
 }
 

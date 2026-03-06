@@ -13,6 +13,7 @@
 import Foundation
 import SwiftUI
 import SwiftData
+import UniformTypeIdentifiers
 import os.log
 
 private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "LinkedInImportCoordinator")
@@ -135,6 +136,9 @@ final class LinkedInImportCoordinator {
 
     private(set) var profileAnalysisStatus: ProfileAnalysisStatus = .idle
     private(set) var latestProfileAnalysis: ProfileAnalysisDTO? = nil
+
+    /// Temp directory created when importing from a ZIP file. Cleaned up after import completes or cancels.
+    private var tempExtractDir: URL? = nil
 
     // MARK: - Parsed state (held between loadFolder and confirmImport)
 
@@ -310,6 +314,110 @@ final class LinkedInImportCoordinator {
         let connCount = pendingConnections.count
         logger.info("Folder parsed: \(allMessages.count) msgs (\(newMessages.count) new), \(connCount) connections, \(erCount) endorse rcvd, \(egCount) endorse given, \(recCount) rec given, \(rrCount) rec rcvd, \(rxCount) reactions, \(cmCount) comments, \(invCount) invitations, \(shrCount) shares")
         logger.info("Import candidates: \(self.importCandidates.count) (\(self.recommendedToAddCount) to add, \(self.noInteractionCount) later)")
+
+        // Notify observers (SAMApp listens to present the review sheet from the File menu flow)
+        NotificationCenter.default.post(name: .samLinkedInAwaitingReview, object: nil)
+    }
+
+    /// Present an NSOpenPanel starting in ~/Downloads, filtered to ZIP files,
+    /// so the user can select their LinkedIn export with one click.
+    /// Returns the selected URL, or nil if the user cancelled.
+    func pickLinkedInExportZip() -> URL? {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.zip, .archive]
+        panel.allowsOtherFileTypes = true
+        panel.message = "Select your LinkedIn data export ZIP file"
+        panel.prompt = "Import"
+
+        // Start in ~/Downloads so the user can see their export immediately
+        if let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first {
+            panel.directoryURL = downloads
+        }
+
+        guard panel.runModal() == .OK, let url = panel.url else { return nil }
+        return url
+    }
+
+    /// Import a LinkedIn data export from a ZIP file.
+    /// Validates the filename, unzips to a temp directory, then calls loadFolder().
+    func importFromZip(url: URL) async {
+        let filename = url.lastPathComponent
+
+        // Validate filename prefix
+        guard filename.hasPrefix("Complete_LinkedInDataExport_") else {
+            lastError = "This appears to be a partial export. SAM needs the complete export (Complete_LinkedInDataExport_*.zip). Request your full archive from LinkedIn — it takes up to 24 hours."
+            importStatus = .failed
+            return
+        }
+
+        // Create temp directory
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SAM-LinkedIn-\(UUID().uuidString)")
+
+        do {
+            try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        } catch {
+            lastError = "Failed to create temporary directory: \(error.localizedDescription)"
+            importStatus = .failed
+            return
+        }
+
+        importStatus = .parsing
+        progressMessage = "Unzipping archive…"
+        lastError = nil
+
+        // Unzip using /usr/bin/unzip
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
+        process.arguments = ["-o", url.path, "-d", tempDir.path]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+
+            guard process.terminationStatus == 0 else {
+                lastError = "Failed to unzip the LinkedIn export. The file may be corrupted — try downloading it again."
+                importStatus = .failed
+                cleanupTempDir()
+                return
+            }
+        } catch {
+            lastError = "Failed to run unzip: \(error.localizedDescription)"
+            importStatus = .failed
+            cleanupTempDir()
+            return
+        }
+
+        // Find the extracted content directory.
+        // The ZIP may contain files directly or inside a top-level folder.
+        let extractedDir: URL
+        let fm = FileManager.default
+        let topLevelItems = (try? fm.contentsOfDirectory(at: tempDir, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])) ?? []
+
+        if topLevelItems.count == 1,
+           let only = topLevelItems.first,
+           (try? only.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true {
+            // Single top-level folder — use it
+            extractedDir = only
+        } else {
+            // Files directly in temp dir
+            extractedDir = tempDir
+        }
+
+        tempExtractDir = tempDir
+
+        // Save bookmark so reprocessForSender can re-access later
+        BookmarkManager.shared.saveLinkedInFolderBookmark(extractedDir)
+
+        // Reset status so loadFolder starts fresh
+        importStatus = .idle
+
+        await loadFolder(url: extractedDir)
     }
 
     /// Confirm and execute the import with user-selected classifications.
@@ -627,6 +735,7 @@ final class LinkedInImportCoordinator {
     /// Cancel a pending import (when user dismisses before confirming).
     func cancelImport() {
         clearPendingState()
+        cleanupTempDir()
         importStatus          = .idle
         parsedMessageCount    = 0
         newMessageCount       = 0
@@ -1986,5 +2095,14 @@ final class LinkedInImportCoordinator {
         pendingUserProfile          = nil
         touchScores                 = [:]
         importCandidates            = []
+        cleanupTempDir()
+    }
+
+    /// Remove the temporary directory created during ZIP import, if any.
+    private func cleanupTempDir() {
+        guard let dir = tempExtractDir else { return }
+        tempExtractDir = nil
+        try? FileManager.default.removeItem(at: dir)
+        logger.info("Cleaned up temp LinkedIn extract directory")
     }
 }

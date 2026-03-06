@@ -56,6 +56,7 @@ struct ClipboardCaptureWindowView: View {
             }
         }
         .frame(width: 600, height: 500)
+        .onAppear { FeatureAdoptionTracker.shared.recordUsage(.clipboardCapture) }
         .task {
             await parseClipboard()
         }

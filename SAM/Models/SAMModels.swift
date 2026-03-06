@@ -1181,5 +1181,17 @@ extension Notification.Name {
     /// Posted when new DeducedRelation records are created (e.g., by FamilyInferenceService).
     /// RelationshipGraphCoordinator listens to refresh unconfirmed count and filters.
     static let samDeducedRelationsDidChange = Notification.Name("samDeducedRelationsDidChange")
+
+    /// Posted when LinkedInImportCoordinator finishes parsing a ZIP/folder and is ready for review.
+    /// SAMApp listens to present the LinkedInImportReviewSheet from the File menu flow.
+    static let samLinkedInAwaitingReview = Notification.Name("samLinkedInAwaitingReview")
+
+    /// Posted when FacebookImportCoordinator finishes parsing a ZIP/folder and is ready for review.
+    /// SAMApp listens to present the FacebookImportReviewSheet from the File menu flow.
+    static let samFacebookAwaitingReview = Notification.Name("samFacebookAwaitingReview")
+
+    /// Posted when the file watcher detects a Substack export ZIP in ~/Downloads.
+    /// SAMApp listens to auto-present the SubstackImportSheet.
+    static let samSubstackZipDetected = Notification.Name("samSubstackZipDetected")
 }
 

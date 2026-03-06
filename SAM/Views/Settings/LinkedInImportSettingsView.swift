@@ -137,6 +137,7 @@ struct LinkedInImportSettingsContent: View {
                 }
             }
         }
+        .onAppear { FeatureAdoptionTracker.shared.recordUsage(.linkedInImport) }
     }
 
     // MARK: - Sub-sections
@@ -173,15 +174,13 @@ struct LinkedInImportSettingsContent: View {
             if coordinator.importStatus == .awaitingReview || coordinator.parsedMessageCount > 0 || coordinator.pendingConnectionCount > 0 {
                 previewSection
             } else {
-                // Folder picker
-                HStack(spacing: 8) {
-                    Button("Select LinkedIn Export Folder") {
-                        selectFolder()
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(isActive)
+                // Primary path: File menu
+                Text("Use **File → Import → Import LinkedIn Archive** to import. SAM will automatically find your download and unzip it.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
 
-                    if coordinator.importStatus == .parsing {
+                if coordinator.importStatus == .parsing {
+                    HStack(spacing: 8) {
                         ProgressView()
                             .scaleEffect(0.7)
                         Text("Reading files...")
@@ -190,9 +189,19 @@ struct LinkedInImportSettingsContent: View {
                     }
                 }
 
-                Text("Select the folder that contains your unzipped LinkedIn export (messages.csv, Connections.csv, etc.)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                // Fallback: manual folder picker
+                HStack(spacing: 8) {
+                    Button("Select Folder Manually") {
+                        selectFolder()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(isActive)
+
+                    Text("Fallback if automatic detection doesn't work")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
             }
         }
     }

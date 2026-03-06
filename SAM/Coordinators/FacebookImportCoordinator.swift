@@ -13,6 +13,7 @@
 import Foundation
 import SwiftUI
 import SwiftData
+import UniformTypeIdentifiers
 import os.log
 
 @MainActor
@@ -87,6 +88,9 @@ final class FacebookImportCoordinator {
     private(set) var crossPlatformComparison: CrossPlatformProfileComparison? = nil
     private(set) var crossPlatformOverlapCount: Int = 0
 
+    /// Temp directory created when importing from a ZIP file. Cleaned up after import completes or cancels.
+    private var tempExtractDir: URL? = nil
+
     // MARK: - Parsed state (held between loadFolder and confirmImport)
 
     private var pendingFriends: [FacebookFriendDTO] = []
@@ -135,6 +139,100 @@ final class FacebookImportCoordinator {
     }
 
     // MARK: - Public API
+
+    /// Present an NSOpenPanel starting in ~/Downloads, filtered to ZIP files,
+    /// so the user can select their Facebook export with one click.
+    /// Returns the selected URL, or nil if the user cancelled.
+    func pickFacebookExportZip() -> URL? {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.zip, .archive]
+        panel.allowsOtherFileTypes = true
+        panel.message = "Select your Facebook data export ZIP file"
+        panel.prompt = "Import"
+
+        if let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first {
+            panel.directoryURL = downloads
+        }
+
+        guard panel.runModal() == .OK, let url = panel.url else { return nil }
+        return url
+    }
+
+    /// Import a Facebook data export from a ZIP file.
+    /// Validates the filename, unzips to a temp directory, then calls loadFolder().
+    func importFromZip(url: URL) async {
+        let filename = url.lastPathComponent.lowercased()
+
+        // Soft validation — Facebook exports are typically named "facebook-username-yyyy-mm-dd-*.zip"
+        if !filename.contains("facebook") && !filename.contains("fb") {
+            logger.info("Facebook ZIP filename doesn't contain 'facebook': \(url.lastPathComponent, privacy: .public) — proceeding anyway")
+        }
+
+        // Create temp directory
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SAM-Facebook-\(UUID().uuidString)")
+
+        do {
+            try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        } catch {
+            lastError = "Failed to create temporary directory: \(error.localizedDescription)"
+            importStatus = .failed
+            return
+        }
+
+        importStatus = .parsing
+        progressMessage = "Unzipping archive…"
+        lastError = nil
+
+        // Unzip
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
+        process.arguments = ["-o", url.path, "-d", tempDir.path]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+
+            guard process.terminationStatus == 0 else {
+                lastError = "Failed to unzip the Facebook export. The file may be corrupted — try downloading it again."
+                importStatus = .failed
+                cleanupTempDir()
+                return
+            }
+        } catch {
+            lastError = "Failed to run unzip: \(error.localizedDescription)"
+            importStatus = .failed
+            cleanupTempDir()
+            return
+        }
+
+        // Find extracted content directory (ZIP may contain a top-level folder)
+        let extractedDir: URL
+        let fm = FileManager.default
+        let topLevelItems = (try? fm.contentsOfDirectory(at: tempDir, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])) ?? []
+
+        if topLevelItems.count == 1,
+           let only = topLevelItems.first,
+           (try? only.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true {
+            extractedDir = only
+        } else {
+            extractedDir = tempDir
+        }
+
+        tempExtractDir = tempDir
+
+        BookmarkManager.shared.saveFacebookFolderBookmark(extractedDir)
+
+        // Reset status so loadFolder starts fresh
+        importStatus = .idle
+
+        await loadFolder(url: extractedDir)
+    }
 
     /// Parse a Facebook data export folder. Call from Settings UI after user selects folder.
     /// Populates importCandidates for the review sheet.
@@ -204,6 +302,9 @@ final class FacebookImportCoordinator {
             importStatus = .awaitingReview
             progressMessage = nil
             logger.info("Facebook import ready for review: \(self.exactMatchCount) exact, \(self.probableMatchCount) probable, \(self.noMatchCount) no match")
+
+            // Notify observers (SAMApp listens to present the review sheet from the File menu flow)
+            NotificationCenter.default.post(name: .samFacebookAwaitingReview, object: nil)
 
         } catch let error as ImportError {
             importStatus = .failed
@@ -343,6 +444,7 @@ final class FacebookImportCoordinator {
     /// Cancel the current import and reset to idle.
     func cancelImport() {
         resetParsedState()
+        cleanupTempDir()
         importStatus = .idle
         progressMessage = nil
         lastError = nil
@@ -1124,6 +1226,15 @@ final class FacebookImportCoordinator {
         probableMatchCount = 0
         noMatchCount = 0
         userProfileParsed = false
+        cleanupTempDir()
+    }
+
+    /// Remove the temporary directory created during ZIP import, if any.
+    private func cleanupTempDir() {
+        guard let dir = tempExtractDir else { return }
+        tempExtractDir = nil
+        try? FileManager.default.removeItem(at: dir)
+        logger.info("Cleaned up temp Facebook extract directory")
     }
 
     // MARK: - Error Type

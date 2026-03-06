@@ -252,6 +252,7 @@ struct ContentDraftSheet: View {
         }
         .padding(20)
         .frame(width: 480)
+        .onAppear { FeatureAdoptionTracker.shared.recordUsage(.contentDraft) }
         .onChange(of: draftText) {
             localComplianceFlags = ComplianceScanner.scanWithSettings(draftText)
         }
