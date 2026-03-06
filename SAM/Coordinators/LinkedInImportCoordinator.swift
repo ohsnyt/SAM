@@ -14,9 +14,46 @@ import Foundation
 import SwiftUI
 import SwiftData
 import UniformTypeIdentifiers
+import UserNotifications
 import os.log
 
 private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "LinkedInImportCoordinator")
+
+// MARK: - Sheet State Machine
+
+enum LinkedInSheetPhase: Equatable {
+    case setup                              // First-time: instructions + manual ZIP picker
+    case scanning                           // Checking ~/Downloads for ZIP (brief)
+    case zipFound(LinkedInZipInfo)          // Preview: filename, date, size → Confirm / Decline
+    case processing                         // Unzipping + parsing 10 CSVs (progress messages)
+    case awaitingReview                     // Candidate review (embedded inline — 3 sections)
+    case importing                          // 11-step confirmImport pipeline (progress)
+    case noZipFound                         // Instructions + "Request LinkedIn Data..." + watchers
+    case watchingEmail                      // Polling Mail.app (spinner + elapsed)
+    case emailFound(URL)                    // Export email detected → "Open Download Page"
+    case watchingFile                       // Polling ~/Downloads (spinner + status)
+    case complete(LinkedInImportStats)      // Summary + Apple Contacts sync prompt + "Delete ZIP?"
+    case failed(String)                     // Error with retry
+}
+
+struct LinkedInZipInfo: Equatable {
+    let url: URL
+    let fileName: String
+    let fileDate: Date
+    let fileSize: Int64
+
+    var formattedSize: String {
+        ByteCountFormatter.string(fromByteCount: fileSize, countStyle: .file)
+    }
+}
+
+struct LinkedInImportStats: Equatable {
+    let connectionCount: Int
+    let messageCount: Int
+    let matchedCount: Int
+    let newContacts: Int
+    let enrichments: Int
+}
 
 @MainActor
 @Observable
@@ -137,6 +174,50 @@ final class LinkedInImportCoordinator {
     private(set) var profileAnalysisStatus: ProfileAnalysisStatus = .idle
     private(set) var latestProfileAnalysis: ProfileAnalysisDTO? = nil
 
+    // MARK: - Sheet Phase State (Auto-Detection Flow)
+
+    /// Current phase of the LinkedIn import sheet state machine.
+    var sheetPhase: LinkedInSheetPhase = .setup
+
+    /// Remembers the ZIP URL for post-import deletion.
+    var importedZipURL: URL?
+
+    // MARK: - Watcher Timers
+
+    private var emailPollingTimer: Timer?
+    private var filePollingTimer: Timer?
+
+    // MARK: - Watcher Persistence (UserDefaults)
+
+    private var emailWatcherActive: Bool {
+        get { UserDefaults.standard.bool(forKey: "sam.linkedin.emailWatcherActive") }
+        set { UserDefaults.standard.set(newValue, forKey: "sam.linkedin.emailWatcherActive") }
+    }
+
+    private var emailWatcherStartDate: Date? {
+        get { UserDefaults.standard.object(forKey: "sam.linkedin.emailWatcherStartDate") as? Date }
+        set { UserDefaults.standard.set(newValue, forKey: "sam.linkedin.emailWatcherStartDate") }
+    }
+
+    private var fileWatcherActive: Bool {
+        get { UserDefaults.standard.bool(forKey: "sam.linkedin.fileWatcherActive") }
+        set { UserDefaults.standard.set(newValue, forKey: "sam.linkedin.fileWatcherActive") }
+    }
+
+    private var fileWatcherStartDate: Date? {
+        get { UserDefaults.standard.object(forKey: "sam.linkedin.fileWatcherStartDate") as? Date }
+        set { UserDefaults.standard.set(newValue, forKey: "sam.linkedin.fileWatcherStartDate") }
+    }
+
+    private var extractedDownloadURL: String? {
+        get { UserDefaults.standard.string(forKey: "sam.linkedin.extractedDownloadURL") }
+        set { UserDefaults.standard.set(newValue, forKey: "sam.linkedin.extractedDownloadURL") }
+    }
+
+    // MARK: - Container
+
+    private var container: ModelContainer?
+
     /// Temp directory created when importing from a ZIP file. Cleaned up after import completes or cancels.
     private var tempExtractDir: URL? = nil
 
@@ -178,6 +259,12 @@ final class LinkedInImportCoordinator {
         Task { @MainActor in
             self.latestProfileAnalysis = await BusinessProfileService.shared.profileAnalysis(for: "linkedIn")
         }
+    }
+
+    /// Wire to SwiftData container and resume any active watchers from a prior session.
+    func configure(container: ModelContainer) {
+        self.container = container
+        resumeWatchersIfNeeded()
     }
 
     // MARK: - Public API
@@ -301,6 +388,7 @@ final class LinkedInImportCoordinator {
         }
 
         importStatus = .awaitingReview
+        sheetPhase = .awaitingReview
         progressMessage = nil
 
         let erCount   = pendingEndorsementsReceived.count
@@ -342,14 +430,18 @@ final class LinkedInImportCoordinator {
     }
 
     /// Import a LinkedIn data export from a ZIP file.
-    /// Validates the filename, unzips to a temp directory, then calls loadFolder().
+    /// Accepts both Complete and Basic LinkedIn exports.
+    /// Unzips to a temp directory, then calls loadFolder().
     func importFromZip(url: URL) async {
         let filename = url.lastPathComponent
 
-        // Validate filename prefix
-        guard filename.hasPrefix("Complete_LinkedInDataExport_") else {
-            lastError = "This appears to be a partial export. SAM needs the complete export (Complete_LinkedInDataExport_*.zip). Request your full archive from LinkedIn — it takes up to 24 hours."
+        // Accept both Complete and Basic LinkedIn exports
+        guard filename.hasPrefix("Complete_LinkedInDataExport_")
+           || filename.hasPrefix("Basic_LinkedInDataExport_") else {
+            let msg = "Expected a LinkedIn data export ZIP (Complete_LinkedInDataExport_*.zip or Basic_LinkedInDataExport_*.zip). Request your archive from LinkedIn — it takes up to 24 hours."
+            lastError = msg
             importStatus = .failed
+            sheetPhase = .failed(msg)
             return
         }
 
@@ -360,12 +452,15 @@ final class LinkedInImportCoordinator {
         do {
             try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         } catch {
-            lastError = "Failed to create temporary directory: \(error.localizedDescription)"
+            let msg = "Failed to create temporary directory: \(error.localizedDescription)"
+            lastError = msg
             importStatus = .failed
+            sheetPhase = .failed(msg)
             return
         }
 
         importStatus = .parsing
+        sheetPhase = .processing
         progressMessage = "Unzipping archive…"
         lastError = nil
 
@@ -381,14 +476,18 @@ final class LinkedInImportCoordinator {
             process.waitUntilExit()
 
             guard process.terminationStatus == 0 else {
-                lastError = "Failed to unzip the LinkedIn export. The file may be corrupted — try downloading it again."
+                let msg = "Failed to unzip the LinkedIn export. The file may be corrupted — try downloading it again."
+                lastError = msg
                 importStatus = .failed
+                sheetPhase = .failed(msg)
                 cleanupTempDir()
                 return
             }
         } catch {
-            lastError = "Failed to run unzip: \(error.localizedDescription)"
+            let msg = "Failed to run unzip: \(error.localizedDescription)"
+            lastError = msg
             importStatus = .failed
+            sheetPhase = .failed(msg)
             cleanupTempDir()
             return
         }
@@ -741,6 +840,394 @@ final class LinkedInImportCoordinator {
         newMessageCount       = 0
         duplicateMessageCount = 0
         userProfileParsed     = false
+    }
+
+    // MARK: - Sheet Import Flow (Auto-Detection)
+
+    /// Entry point when the import sheet opens. Routes to the appropriate phase.
+    func beginImportFlow() {
+        let hasImported = lastConnectionImportAt != nil
+
+        if !hasImported {
+            // First-time user — show instructions + manual ZIP picker
+            sheetPhase = .setup
+            return
+        }
+
+        // Returning user — scan ~/Downloads for a newer ZIP
+        sheetPhase = .scanning
+        Task { await scanDownloadsFolder() }
+    }
+
+    /// Scan ~/Downloads for LinkedIn export ZIP files.
+    func scanDownloadsFolder() async {
+        sheetPhase = .scanning
+
+        let fm = FileManager.default
+        guard let downloadsURL = fm.urls(for: .downloadsDirectory, in: .userDomainMask).first else {
+            sheetPhase = .noZipFound
+            return
+        }
+
+        do {
+            let contents = try fm.contentsOfDirectory(
+                at: downloadsURL,
+                includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey],
+                options: [.skipsHiddenFiles]
+            )
+
+            // Filter for ZIP files matching LinkedIn export patterns (case-insensitive)
+            let zipFiles = contents.filter { url in
+                let name = url.lastPathComponent.lowercased()
+                guard name.hasSuffix(".zip") else { return false }
+                return name.hasPrefix("complete_linkedindataexport_")
+                    || name.hasPrefix("basic_linkedindataexport_")
+            }
+
+            // Find the newest ZIP by modification date
+            guard let newest = zipFiles.max(by: { a, b in
+                let dateA = (try? a.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+                let dateB = (try? b.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+                return dateA < dateB
+            }) else {
+                sheetPhase = .noZipFound
+                return
+            }
+
+            let resourceValues = try newest.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+            let fileDate = resourceValues.contentModificationDate ?? Date()
+            let fileSize = resourceValues.fileSize ?? 0
+
+            // Only show if newer than last import
+            if let lastImport = lastConnectionImportAt, fileDate <= lastImport {
+                sheetPhase = .noZipFound
+                return
+            }
+
+            let info = LinkedInZipInfo(
+                url: newest,
+                fileName: newest.lastPathComponent,
+                fileDate: fileDate,
+                fileSize: Int64(fileSize)
+            )
+            sheetPhase = .zipFound(info)
+
+        } catch {
+            logger.error("Failed to scan ~/Downloads: \(error.localizedDescription)")
+            sheetPhase = .noZipFound
+        }
+    }
+
+    /// Process a ZIP file through the existing import pipeline and transition to review.
+    func processZip(url: URL) async {
+        sheetPhase = .processing
+        importedZipURL = url
+        await importFromZip(url: url)
+
+        // importFromZip → loadFolder → sets importStatus and sheetPhase
+        // If it failed, sheetPhase was already set by importFromZip
+    }
+
+    /// Open the LinkedIn data export settings page in the browser.
+    func openLinkedInExportPage() {
+        if let url = URL(string: "https://www.linkedin.com/mypreferences/d/download-my-data") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    // MARK: - Email Watcher
+
+    /// Start polling Mail.app for the LinkedIn export-ready email.
+    func startEmailWatcher() {
+        guard MailImportCoordinator.shared.mailEnabled,
+              !MailImportCoordinator.shared.selectedAccountIDs.isEmpty else {
+            logger.warning("Mail not configured — cannot watch for LinkedIn export email")
+            return
+        }
+
+        emailWatcherActive = true
+        emailWatcherStartDate = .now
+        sheetPhase = .watchingEmail
+        scheduleEmailPolling()
+        logger.info("LinkedIn email watcher started")
+    }
+
+    /// Stop the email watcher.
+    func stopEmailWatcher() {
+        emailPollingTimer?.invalidate()
+        emailPollingTimer = nil
+        emailWatcherActive = false
+        emailWatcherStartDate = nil
+        logger.info("LinkedIn email watcher stopped")
+    }
+
+    private func scheduleEmailPolling() {
+        emailPollingTimer?.invalidate()
+        emailPollingTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in
+                await self.pollForExportEmail()
+            }
+        }
+        // Also poll immediately
+        Task { await pollForExportEmail() }
+    }
+
+    private func pollForExportEmail() async {
+        // Check timeout (2 days)
+        if let startDate = emailWatcherStartDate,
+           Date.now.timeIntervalSince(startDate) > 2 * 24 * 3600 {
+            stopEmailWatcher()
+            sheetPhase = .failed("Email watcher timed out after 2 days. Try downloading manually from LinkedIn.")
+            return
+        }
+
+        do {
+            let accountIDs = MailImportCoordinator.shared.selectedAccountIDs
+            let since = emailWatcherStartDate ?? Date.now.addingTimeInterval(-3600)
+
+            let (metas, _) = try await MailService.shared.fetchMetadata(
+                accountIDs: accountIDs,
+                since: since
+            )
+
+            // Filter for LinkedIn export emails
+            let exportEmail = metas.first { meta in
+                let sender = meta.sender.lowercased()
+                let subject = meta.subject.lowercased()
+                return sender.contains("linkedin.com")
+                    && subject.contains("data")
+                    && (subject.contains("ready") || subject.contains("download"))
+            }
+
+            guard let email = exportEmail else { return }
+
+            // Found the email — try to extract download URL from MIME source
+            var downloadURL: URL?
+            if let mimeSource = await MailService.shared.fetchMIMESource(for: email) {
+                downloadURL = extractLinkedInDownloadURL(from: mimeSource)
+            }
+
+            stopEmailWatcher()
+
+            if let url = downloadURL {
+                extractedDownloadURL = url.absoluteString
+                sheetPhase = .emailFound(url)
+                await SystemNotificationService.shared.postLinkedInExportReady(downloadURL: url)
+            } else {
+                let fallbackURL = URL(string: "https://www.linkedin.com/mypreferences/d/download-my-data")!
+                sheetPhase = .emailFound(fallbackURL)
+                await SystemNotificationService.shared.postLinkedInExportReady(downloadURL: fallbackURL)
+            }
+
+            logger.info("LinkedIn export email detected")
+
+        } catch {
+            logger.error("LinkedIn email poll failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Extract download URL from email MIME source HTML.
+    private func extractLinkedInDownloadURL(from mimeSource: String) -> URL? {
+        let pattern = #"href="(https://[^"]*linkedin[^"]*(?:download|export)[^"]*)""#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else { return nil }
+        let range = NSRange(mimeSource.startIndex..<mimeSource.endIndex, in: mimeSource)
+        guard let match = regex.firstMatch(in: mimeSource, range: range),
+              let urlRange = Range(match.range(at: 1), in: mimeSource) else { return nil }
+        return URL(string: String(mimeSource[urlRange]))
+    }
+
+    // MARK: - File Watcher
+
+    /// Start polling ~/Downloads for new LinkedIn export ZIP files.
+    func startFileWatcher() {
+        fileWatcherActive = true
+        fileWatcherStartDate = .now
+        sheetPhase = .watchingFile
+        scheduleFilePolling()
+        logger.info("LinkedIn file watcher started")
+    }
+
+    /// Stop the file watcher.
+    func stopFileWatcher() {
+        filePollingTimer?.invalidate()
+        filePollingTimer = nil
+        fileWatcherActive = false
+        fileWatcherStartDate = nil
+        logger.info("LinkedIn file watcher stopped")
+    }
+
+    private func scheduleFilePolling() {
+        filePollingTimer?.invalidate()
+        filePollingTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in
+                await self.pollForZipFile()
+            }
+        }
+    }
+
+    private func pollForZipFile() async {
+        // Check timeout (2 days)
+        if let startDate = fileWatcherStartDate,
+           Date.now.timeIntervalSince(startDate) > 2 * 24 * 3600 {
+            stopFileWatcher()
+            sheetPhase = .failed("File watcher timed out after 2 days.")
+            return
+        }
+
+        let fm = FileManager.default
+        guard let downloadsURL = fm.urls(for: .downloadsDirectory, in: .userDomainMask).first else { return }
+
+        do {
+            let contents = try fm.contentsOfDirectory(
+                at: downloadsURL,
+                includingPropertiesForKeys: [.contentModificationDateKey],
+                options: [.skipsHiddenFiles]
+            )
+
+            let watchStart = fileWatcherStartDate ?? .distantPast
+
+            let newZip = contents.first { url in
+                let name = url.lastPathComponent.lowercased()
+                guard name.hasSuffix(".zip"),
+                      name.hasPrefix("complete_linkedindataexport_")
+                   || name.hasPrefix("basic_linkedindataexport_") else { return false }
+                let fileDate = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+                return fileDate > watchStart
+            }
+
+            if newZip != nil {
+                stopFileWatcher()
+                NotificationCenter.default.post(name: .samLinkedInZipDetected, object: nil)
+                // Re-scan will pick up the new file
+                await scanDownloadsFolder()
+            }
+        } catch {
+            logger.error("LinkedIn file poll failed: \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - Reminder Scheduling
+
+    /// Schedule a reminder notification during the next free calendar gap.
+    func scheduleReminder() async {
+        let calendar = Calendar.current
+        let now = Date.now
+        let endWindow = calendar.date(byAdding: .hour, value: 8, to: now)!
+
+        // Fallback: 2 hours from now
+        var reminderDate = calendar.date(byAdding: .hour, value: 2, to: now)!
+
+        if let calendarIDs = UserDefaults.standard.stringArray(forKey: "selectedCalendarIdentifiers"),
+           !calendarIDs.isEmpty {
+            if let events = await CalendarService.shared.fetchEvents(
+                from: calendarIDs,
+                startDate: now,
+                endDate: endWindow
+            ) {
+                var cursor = now
+                let sorted = events.sorted { $0.startDate < $1.startDate }
+                for event in sorted {
+                    if event.startDate.timeIntervalSince(cursor) >= 900 { // 15 min gap
+                        reminderDate = cursor.addingTimeInterval(60)
+                        break
+                    }
+                    cursor = max(cursor, event.endDate)
+                }
+                if endWindow.timeIntervalSince(cursor) >= 900 {
+                    reminderDate = cursor.addingTimeInterval(60)
+                }
+            }
+        }
+
+        let downloadURL = extractedDownloadURL.flatMap { URL(string: $0) }
+            ?? URL(string: "https://www.linkedin.com/mypreferences/d/download-my-data")!
+        await SystemNotificationService.shared.postLinkedInExportReady(
+            downloadURL: downloadURL,
+            triggerDate: reminderDate
+        )
+        logger.info("LinkedIn reminder scheduled for \(reminderDate.formatted())")
+    }
+
+    // MARK: - Watcher Persistence
+
+    /// Resume watchers that were active before app restart.
+    private func resumeWatchersIfNeeded() {
+        if emailWatcherActive {
+            if let startDate = emailWatcherStartDate,
+               Date.now.timeIntervalSince(startDate) < 2 * 24 * 3600 {
+                sheetPhase = .watchingEmail
+                scheduleEmailPolling()
+                logger.info("Resumed LinkedIn email watcher from previous session")
+            } else {
+                emailWatcherActive = false
+                emailWatcherStartDate = nil
+            }
+        }
+
+        if fileWatcherActive {
+            if let startDate = fileWatcherStartDate,
+               Date.now.timeIntervalSince(startDate) < 2 * 24 * 3600 {
+                sheetPhase = .watchingFile
+                scheduleFilePolling()
+                logger.info("Resumed LinkedIn file watcher from previous session")
+            } else {
+                fileWatcherActive = false
+                fileWatcherStartDate = nil
+            }
+        }
+    }
+
+    // MARK: - Post-Import Cleanup
+
+    /// Delete the source ZIP file after successful import.
+    func deleteSourceZip() throws {
+        guard let url = importedZipURL else { return }
+        try FileManager.default.removeItem(at: url)
+        importedZipURL = nil
+        logger.info("Deleted LinkedIn export ZIP: \(url.lastPathComponent)")
+    }
+
+    // MARK: - Cancellation (Sheet Flow)
+
+    /// Cancel all watchers and timers.
+    func cancelWatchers() {
+        stopEmailWatcher()
+        stopFileWatcher()
+    }
+
+    /// Cancel everything (watchers + any in-progress import).
+    func cancelAll() {
+        cancelWatchers()
+        cancelImport()
+    }
+
+    /// Whether the mail system is available for email watching.
+    var isMailAvailableForWatching: Bool {
+        MailImportCoordinator.shared.mailEnabled && !MailImportCoordinator.shared.selectedAccountIDs.isEmpty
+    }
+
+    /// Complete the import from the sheet and transition to the complete phase.
+    func completeImportFromSheet(classifications: [UUID: LinkedInClassification]) async {
+        sheetPhase = .importing
+        await confirmImport(classifications: classifications)
+
+        if importStatus == .success {
+            let stats = LinkedInImportStats(
+                connectionCount: pendingConnectionCount,
+                messageCount: lastImportCount,
+                matchedCount: matchedConnectionCount + exactMatchCount,
+                newContacts: importCandidates.filter {
+                    let c = classifications[$0.id] ?? $0.defaultClassification
+                    return c == .add || c == .skip
+                }.count,
+                enrichments: enrichmentCandidateCount
+            )
+            sheetPhase = .complete(stats)
+        } else if importStatus == .failed {
+            sheetPhase = .failed(lastError ?? "Import failed")
+        }
     }
 
     // MARK: - §13 Apple Contacts LinkedIn URL Sync

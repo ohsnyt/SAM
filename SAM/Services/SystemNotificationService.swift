@@ -29,6 +29,12 @@ final class SystemNotificationService: NSObject, UNUserNotificationCenterDelegat
     private static let substackExportCategory = "SUBSTACK_EXPORT"
     private static let openSubstackExportAction = "OPEN_SUBSTACK_EXPORT"
     private static let remindSubstackLaterAction = "REMIND_SUBSTACK_LATER"
+    private static let linkedInExportCategory = "LINKEDIN_EXPORT"
+    private static let openLinkedInExportAction = "OPEN_LINKEDIN_EXPORT"
+    private static let remindLinkedInLaterAction = "REMIND_LINKEDIN_LATER"
+    private static let facebookExportCategory = "FACEBOOK_EXPORT"
+    private static let openFacebookExportAction = "OPEN_FACEBOOK_EXPORT"
+    private static let remindFacebookLaterAction = "REMIND_FACEBOOK_LATER"
 
     private override init() {
         super.init()
@@ -89,7 +95,47 @@ final class SystemNotificationService: NSObject, UNUserNotificationCenterDelegat
             options: []
         )
 
-        center.setNotificationCategories([planCategory, meetingCategory, substackCategory])
+        // LinkedIn Export category
+        let openLinkedInExportAction = UNNotificationAction(
+            identifier: Self.openLinkedInExportAction,
+            title: "Open Download Page",
+            options: [.foreground]
+        )
+
+        let remindLinkedInLaterAction = UNNotificationAction(
+            identifier: Self.remindLinkedInLaterAction,
+            title: "Remind Me Later",
+            options: []
+        )
+
+        let linkedInCategory = UNNotificationCategory(
+            identifier: Self.linkedInExportCategory,
+            actions: [openLinkedInExportAction, remindLinkedInLaterAction],
+            intentIdentifiers: [],
+            options: []
+        )
+
+        // Facebook Export category
+        let openFacebookExportAction = UNNotificationAction(
+            identifier: Self.openFacebookExportAction,
+            title: "Open Download Page",
+            options: [.foreground]
+        )
+
+        let remindFacebookLaterAction = UNNotificationAction(
+            identifier: Self.remindFacebookLaterAction,
+            title: "Remind Me Later",
+            options: []
+        )
+
+        let facebookCategory = UNNotificationCategory(
+            identifier: Self.facebookExportCategory,
+            actions: [openFacebookExportAction, remindFacebookLaterAction],
+            intentIdentifiers: [],
+            options: []
+        )
+
+        center.setNotificationCategories([planCategory, meetingCategory, substackCategory, linkedInCategory, facebookCategory])
         logger.info("System notification categories configured")
     }
 
@@ -220,6 +266,74 @@ final class SystemNotificationService: NSObject, UNUserNotificationCenterDelegat
         }
     }
 
+    /// Post a system notification when a LinkedIn export is ready to download.
+    func postLinkedInExportReady(downloadURL: URL, triggerDate: Date? = nil) async {
+        let granted = await requestPermissionIfNeeded()
+        guard granted else { return }
+
+        let content = UNMutableNotificationContent()
+        content.title = "LinkedIn data export ready to download"
+        content.body = "SAM detected the export email. Open LinkedIn to download the archive."
+        content.sound = .default
+        content.categoryIdentifier = Self.linkedInExportCategory
+        content.userInfo = ["downloadURL": downloadURL.absoluteString]
+
+        var trigger: UNNotificationTrigger?
+        if let triggerDate {
+            let components = Calendar.current.dateComponents(
+                [.year, .month, .day, .hour, .minute], from: triggerDate
+            )
+            trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
+        }
+
+        let request = UNNotificationRequest(
+            identifier: "linkedin-export-\(UUID().uuidString)",
+            content: content,
+            trigger: trigger
+        )
+
+        do {
+            try await UNUserNotificationCenter.current().add(request)
+            logger.info("LinkedIn export notification posted (scheduled: \(triggerDate != nil))")
+        } catch {
+            logger.error("Failed to post LinkedIn export notification: \(error.localizedDescription)")
+        }
+    }
+
+    /// Post a system notification when a Facebook export is ready to download.
+    func postFacebookExportReady(downloadURL: URL, triggerDate: Date? = nil) async {
+        let granted = await requestPermissionIfNeeded()
+        guard granted else { return }
+
+        let content = UNMutableNotificationContent()
+        content.title = "Facebook data export ready to download"
+        content.body = "SAM detected the export email. Open Facebook to download the archive."
+        content.sound = .default
+        content.categoryIdentifier = Self.facebookExportCategory
+        content.userInfo = ["downloadURL": downloadURL.absoluteString]
+
+        var trigger: UNNotificationTrigger?
+        if let triggerDate {
+            let components = Calendar.current.dateComponents(
+                [.year, .month, .day, .hour, .minute], from: triggerDate
+            )
+            trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
+        }
+
+        let request = UNNotificationRequest(
+            identifier: "facebook-export-\(UUID().uuidString)",
+            content: content,
+            trigger: trigger
+        )
+
+        do {
+            try await UNUserNotificationCenter.current().add(request)
+            logger.info("Facebook export notification posted (scheduled: \(triggerDate != nil))")
+        } catch {
+            logger.error("Failed to post Facebook export notification: \(error.localizedDescription)")
+        }
+    }
+
     // MARK: - UNUserNotificationCenterDelegate
 
     /// Show notification banner even when app is in foreground.
@@ -273,7 +387,6 @@ final class SystemNotificationService: NSObject, UNUserNotificationCenterDelegat
             case Self.substackExportCategory:
                 let actionID = response.actionIdentifier
                 if actionID == Self.openSubstackExportAction {
-                    // Open the download URL and start file watcher
                     if let urlString = sendableUserInfo["downloadURL"],
                        let url = URL(string: urlString) {
                         NSWorkspace.shared.open(url)
@@ -284,12 +397,53 @@ final class SystemNotificationService: NSObject, UNUserNotificationCenterDelegat
                         await SubstackImportCoordinator.shared.scheduleReminder()
                     }
                 } else {
-                    // Default tap — open download URL
                     if let urlString = sendableUserInfo["downloadURL"],
                        let url = URL(string: urlString) {
                         NSWorkspace.shared.open(url)
                     }
                     SubstackImportCoordinator.shared.startFileWatcher()
+                }
+
+            case Self.linkedInExportCategory:
+                let actionID = response.actionIdentifier
+                if actionID == Self.openLinkedInExportAction {
+                    if let urlString = sendableUserInfo["downloadURL"],
+                       let url = URL(string: urlString) {
+                        NSWorkspace.shared.open(url)
+                    }
+                    LinkedInImportCoordinator.shared.startFileWatcher()
+                } else if actionID == Self.remindLinkedInLaterAction {
+                    Task {
+                        await LinkedInImportCoordinator.shared.scheduleReminder()
+                    }
+                } else {
+                    // Default tap — open download URL and start file watcher
+                    if let urlString = sendableUserInfo["downloadURL"],
+                       let url = URL(string: urlString) {
+                        NSWorkspace.shared.open(url)
+                    }
+                    LinkedInImportCoordinator.shared.startFileWatcher()
+                }
+
+            case Self.facebookExportCategory:
+                let actionID = response.actionIdentifier
+                if actionID == Self.openFacebookExportAction {
+                    if let urlString = sendableUserInfo["downloadURL"],
+                       let url = URL(string: urlString) {
+                        NSWorkspace.shared.open(url)
+                    }
+                    FacebookImportCoordinator.shared.startFileWatcher()
+                } else if actionID == Self.remindFacebookLaterAction {
+                    Task {
+                        await FacebookImportCoordinator.shared.scheduleReminder()
+                    }
+                } else {
+                    // Default tap — open download URL and start file watcher
+                    if let urlString = sendableUserInfo["downloadURL"],
+                       let url = URL(string: urlString) {
+                        NSWorkspace.shared.open(url)
+                    }
+                    FacebookImportCoordinator.shared.startFileWatcher()
                 }
 
             default:

@@ -7,6 +7,7 @@
 
 import SwiftUI
 import AppKit
+import AVKit
 
 /// A narrated 6-slide intro sequence shown on first launch after onboarding.
 /// Presents SAM's core value proposition with synchronized speech narration.
@@ -14,6 +15,7 @@ struct IntroSequenceOverlay: View {
 
     @State private var coordinator = IntroSequenceCoordinator.shared
     @State private var shimmerActive = false
+    @State private var videoPlayer: AVPlayer?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -40,6 +42,8 @@ struct IntroSequenceOverlay: View {
             shimmerActive = false
             if newSlide == .welcome {
                 triggerShimmerAfterDelay()
+            } else {
+                videoPlayer?.pause()
             }
         }
     }
@@ -50,14 +54,13 @@ struct IntroSequenceOverlay: View {
     private var slideContent: some View {
         let slide = coordinator.currentSlide
 
-        VStack(spacing: 20) {
-            Spacer()
+        if slide == .welcome {
+            // Video fills the welcome slide
+            welcomeVideoSlide
+        } else {
+            VStack(spacing: 20) {
+                Spacer()
 
-            if slide == .welcome {
-                // App icon with shimmer effect on welcome slide
-                appIconView
-                    .onAppear { triggerShimmerAfterDelay() }
-            } else {
                 // Animated SF Symbol for all other slides
                 Image(systemName: slide.symbolName)
                     .font(.system(size: 64))
@@ -65,40 +68,74 @@ struct IntroSequenceOverlay: View {
                     .symbolEffect(.pulse, options: .repeating, isActive: coordinator.isPlaying && !coordinator.isPaused)
                     .id(slide)  // Force symbol recreation for each slide
                     .transition(.opacity)
-            }
 
-            // Headline
-            Text(slide.headline)
-                .font(.title2)
-                .fontWeight(.semibold)
-                .multilineTextAlignment(.center)
-                .id("headline-\(slide.rawValue)")
-                .transition(.opacity)
+                // Headline
+                Text(slide.headline)
+                    .font(.title2)
+                    .fontWeight(.semibold)
+                    .multilineTextAlignment(.center)
+                    .id("headline-\(slide.rawValue)")
+                    .transition(.opacity)
 
-            // Subtitle
-            Text(slide.subtitle)
-                .font(.body)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .id("subtitle-\(slide.rawValue)")
-                .transition(.opacity)
+                // Subtitle
+                Text(slide.subtitle)
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .id("subtitle-\(slide.rawValue)")
+                    .transition(.opacity)
 
-            // "Get Started" button on last slide
-            if slide == .getStarted {
-                Button(action: { coordinator.markComplete() }) {
-                    Text("Get Started")
-                        .fontWeight(.semibold)
-                        .frame(minWidth: 140)
+                // "Get Started" button on last slide
+                if slide == .getStarted {
+                    Button(action: { coordinator.markComplete() }) {
+                        Text("Get Started")
+                            .fontWeight(.semibold)
+                            .frame(minWidth: 140)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .padding(.top, 8)
+                    .transition(.opacity)
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .padding(.top, 8)
-                .transition(.opacity)
-            }
 
-            Spacer()
+                Spacer()
+            }
+            .padding(.horizontal, 48)
         }
-        .padding(.horizontal, 48)
+    }
+
+    // MARK: - Welcome Video Slide
+
+    private var welcomeVideoSlide: some View {
+        VStack(spacing: 0) {
+            if let player = videoPlayer {
+                VideoPlayer(player: player)
+                    .disabled(true) // Prevent user interaction with playback controls
+                    .transition(.opacity)
+            } else {
+                // Fallback: app icon if video can't be loaded
+                appIconView
+            }
+        }
+        .onAppear {
+            setupVideoPlayer()
+        }
+        .onDisappear {
+            videoPlayer?.pause()
+        }
+        .onChange(of: coordinator.currentSlide) { _, newSlide in
+            if newSlide != .welcome {
+                videoPlayer?.pause()
+            }
+        }
+    }
+
+    private func setupVideoPlayer() {
+        guard let url = Bundle.main.url(forResource: "SAM_intro", withExtension: "mp4") else { return }
+        let player = AVPlayer(url: url)
+        player.isMuted = true
+        player.play()
+        videoPlayer = player
     }
 
     // MARK: - App Icon with Shimmer

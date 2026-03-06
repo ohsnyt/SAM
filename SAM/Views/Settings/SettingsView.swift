@@ -141,6 +141,7 @@ private struct ImportStatusDashboard: View {
                           : "File → Import",
                       isImporting: isImporting(linkedInCoordinator.importStatus),
                       canImport: false) { }
+                .help("Use File → Import → LinkedIn to configure")
 
             importRow("Facebook", icon: "person.2.fill",
                       statusText: bookmarkManager.hasFacebookFolderAccess
@@ -148,6 +149,7 @@ private struct ImportStatusDashboard: View {
                           : "File → Import",
                       isImporting: isImporting(facebookCoordinator.importStatus),
                       canImport: false) { }
+                .help("Use File → Import → Facebook to configure")
         }
     }
 

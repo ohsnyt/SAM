@@ -14,7 +14,44 @@ import Foundation
 import SwiftUI
 import SwiftData
 import UniformTypeIdentifiers
+import UserNotifications
 import os.log
+
+// MARK: - Sheet State Machine
+
+enum FacebookSheetPhase: Equatable {
+    case setup                              // First-time: instructions + manual ZIP picker
+    case scanning                           // Checking ~/Downloads for ZIP (brief)
+    case zipFound(FacebookZipInfo)          // Preview: filename, date, size → Confirm / Decline
+    case processing                         // Unzipping + parsing JSON files (progress messages)
+    case awaitingReview                     // Candidate review (embedded inline — 3 sections)
+    case importing                          // confirmImport pipeline (progress)
+    case noZipFound                         // Instructions + "Request Facebook Data..." + watchers
+    case watchingEmail                      // Polling Mail.app (spinner + elapsed)
+    case emailFound(URL)                    // Export email detected → "Open Download Page"
+    case watchingFile                       // Polling ~/Downloads (spinner + status)
+    case complete(FacebookImportStats)      // Summary + "Delete ZIP?"
+    case failed(String)                     // Error with retry
+}
+
+struct FacebookZipInfo: Equatable {
+    let url: URL
+    let fileName: String
+    let fileDate: Date
+    let fileSize: Int64
+
+    var formattedSize: String {
+        ByteCountFormatter.string(fromByteCount: fileSize, countStyle: .file)
+    }
+}
+
+struct FacebookImportStats: Equatable {
+    let friendCount: Int
+    let messageCount: Int
+    let matchedCount: Int
+    let newContacts: Int
+    let postCount: Int
+}
 
 @MainActor
 @Observable
@@ -88,6 +125,50 @@ final class FacebookImportCoordinator {
     private(set) var crossPlatformComparison: CrossPlatformProfileComparison? = nil
     private(set) var crossPlatformOverlapCount: Int = 0
 
+    // MARK: - Sheet Phase State (Auto-Detection Flow)
+
+    /// Current phase of the Facebook import sheet state machine.
+    var sheetPhase: FacebookSheetPhase = .setup
+
+    /// Remembers the ZIP URL for post-import deletion.
+    var importedZipURL: URL?
+
+    // MARK: - Watcher Timers
+
+    private var emailPollingTimer: Timer?
+    private var filePollingTimer: Timer?
+
+    // MARK: - Watcher Persistence (UserDefaults)
+
+    private var emailWatcherActive: Bool {
+        get { UserDefaults.standard.bool(forKey: "sam.facebook.emailWatcherActive") }
+        set { UserDefaults.standard.set(newValue, forKey: "sam.facebook.emailWatcherActive") }
+    }
+
+    private var emailWatcherStartDate: Date? {
+        get { UserDefaults.standard.object(forKey: "sam.facebook.emailWatcherStartDate") as? Date }
+        set { UserDefaults.standard.set(newValue, forKey: "sam.facebook.emailWatcherStartDate") }
+    }
+
+    private var fileWatcherActive: Bool {
+        get { UserDefaults.standard.bool(forKey: "sam.facebook.fileWatcherActive") }
+        set { UserDefaults.standard.set(newValue, forKey: "sam.facebook.fileWatcherActive") }
+    }
+
+    private var fileWatcherStartDate: Date? {
+        get { UserDefaults.standard.object(forKey: "sam.facebook.fileWatcherStartDate") as? Date }
+        set { UserDefaults.standard.set(newValue, forKey: "sam.facebook.fileWatcherStartDate") }
+    }
+
+    private var extractedDownloadURL: String? {
+        get { UserDefaults.standard.string(forKey: "sam.facebook.extractedDownloadURL") }
+        set { UserDefaults.standard.set(newValue, forKey: "sam.facebook.extractedDownloadURL") }
+    }
+
+    // MARK: - Container
+
+    private var container: ModelContainer?
+
     /// Temp directory created when importing from a ZIP file. Cleaned up after import completes or cancels.
     private var tempExtractDir: URL? = nil
 
@@ -136,6 +217,17 @@ final class FacebookImportCoordinator {
                 staleImportWarning = "Facebook data was last imported \(daysSince) days ago. Consider re-importing for fresh interaction data."
             }
         }
+
+        // Load cached profile analysis from prior import session
+        Task { @MainActor in
+            self.latestProfileAnalysis = await BusinessProfileService.shared.profileAnalysis(for: "facebook")
+        }
+    }
+
+    /// Wire to SwiftData container and resume any active watchers from a prior session.
+    func configure(container: ModelContainer) {
+        self.container = container
+        resumeWatchersIfNeeded()
     }
 
     // MARK: - Public API
@@ -180,10 +272,12 @@ final class FacebookImportCoordinator {
         } catch {
             lastError = "Failed to create temporary directory: \(error.localizedDescription)"
             importStatus = .failed
+            sheetPhase = .failed("Failed to create temporary directory: \(error.localizedDescription)")
             return
         }
 
         importStatus = .parsing
+        sheetPhase = .processing
         progressMessage = "Unzipping archive…"
         lastError = nil
 
@@ -201,12 +295,14 @@ final class FacebookImportCoordinator {
             guard process.terminationStatus == 0 else {
                 lastError = "Failed to unzip the Facebook export. The file may be corrupted — try downloading it again."
                 importStatus = .failed
+                sheetPhase = .failed("Failed to unzip the Facebook export. The file may be corrupted — try downloading it again.")
                 cleanupTempDir()
                 return
             }
         } catch {
             lastError = "Failed to run unzip: \(error.localizedDescription)"
             importStatus = .failed
+            sheetPhase = .failed("Failed to run unzip: \(error.localizedDescription)")
             cleanupTempDir()
             return
         }
@@ -300,6 +396,7 @@ final class FacebookImportCoordinator {
             noMatchCount = importCandidates.filter { $0.matchStatus == .noMatch }.count
 
             importStatus = .awaitingReview
+            sheetPhase = .awaitingReview
             progressMessage = nil
             logger.info("Facebook import ready for review: \(self.exactMatchCount) exact, \(self.probableMatchCount) probable, \(self.noMatchCount) no match")
 
@@ -309,11 +406,13 @@ final class FacebookImportCoordinator {
         } catch let error as ImportError {
             importStatus = .failed
             lastError = error.message
+            sheetPhase = .failed(error.message)
             progressMessage = nil
             logger.error("Facebook import failed: \(error.message)")
         } catch {
             importStatus = .failed
             lastError = "Unexpected error: \(error.localizedDescription)"
+            sheetPhase = .failed("Unexpected error: \(error.localizedDescription)")
             progressMessage = nil
             logger.error("Facebook import failed: \(error)")
         }
@@ -436,6 +535,7 @@ final class FacebookImportCoordinator {
         } catch {
             importStatus = .failed
             lastError = "Import failed: \(error.localizedDescription)"
+            sheetPhase = .failed("Import failed: \(error.localizedDescription)")
             progressMessage = nil
             logger.error("Facebook confirmImport failed: \(error)")
         }
@@ -448,6 +548,378 @@ final class FacebookImportCoordinator {
         importStatus = .idle
         progressMessage = nil
         lastError = nil
+    }
+
+    // MARK: - Sheet Flow Methods
+
+    /// Entry point for the import sheet. Determines the starting phase based on prior import history.
+    func beginImportFlow() {
+        if lastFacebookImportAt != nil {
+            // Returning user — scan Downloads for a newer ZIP
+            sheetPhase = .scanning
+            Task { await scanDownloadsFolder() }
+        } else {
+            sheetPhase = .setup
+        }
+    }
+
+    /// Scan ~/Downloads for a Facebook export ZIP newer than the last import.
+    func scanDownloadsFolder() async {
+        let fm = FileManager.default
+        guard let downloadsURL = fm.urls(for: .downloadsDirectory, in: .userDomainMask).first else {
+            sheetPhase = .noZipFound
+            return
+        }
+
+        do {
+            let contents = try fm.contentsOfDirectory(
+                at: downloadsURL,
+                includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey],
+                options: [.skipsHiddenFiles]
+            )
+
+            // Filter for ZIP files matching Facebook export patterns (case-insensitive)
+            let zipFiles = contents.filter { url in
+                let name = url.lastPathComponent.lowercased()
+                guard name.hasSuffix(".zip") else { return false }
+                return name.contains("facebook")
+            }
+
+            // Find the newest ZIP by modification date
+            guard let newest = zipFiles.max(by: { a, b in
+                let dateA = (try? a.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+                let dateB = (try? b.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+                return dateA < dateB
+            }) else {
+                sheetPhase = .noZipFound
+                return
+            }
+
+            let resourceValues = try newest.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+            let fileDate = resourceValues.contentModificationDate ?? Date()
+            let fileSize = resourceValues.fileSize ?? 0
+
+            // Only show if newer than last import
+            if let lastImport = lastFacebookImportAt, fileDate <= lastImport {
+                sheetPhase = .noZipFound
+                return
+            }
+
+            let info = FacebookZipInfo(
+                url: newest,
+                fileName: newest.lastPathComponent,
+                fileDate: fileDate,
+                fileSize: Int64(fileSize)
+            )
+            sheetPhase = .zipFound(info)
+
+        } catch {
+            logger.error("Failed to scan ~/Downloads: \(error.localizedDescription)")
+            sheetPhase = .noZipFound
+        }
+    }
+
+    /// Process a ZIP file through the existing import pipeline and transition to review.
+    func processZip(url: URL) async {
+        sheetPhase = .processing
+        importedZipURL = url
+        await importFromZip(url: url)
+        // importFromZip → loadFolder → sets importStatus and sheetPhase
+    }
+
+    /// Open the Facebook data export settings page in the browser.
+    func openFacebookExportPage() {
+        if let url = URL(string: "https://www.facebook.com/dyi/?referrer=yfi_settings") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    // MARK: - Email Watcher
+
+    /// Start polling Mail.app for the Facebook export-ready email.
+    func startEmailWatcher() {
+        guard MailImportCoordinator.shared.mailEnabled,
+              !MailImportCoordinator.shared.selectedAccountIDs.isEmpty else {
+            logger.warning("Mail not configured — cannot watch for Facebook export email")
+            return
+        }
+
+        emailWatcherActive = true
+        emailWatcherStartDate = .now
+        sheetPhase = .watchingEmail
+        scheduleEmailPolling()
+        logger.info("Facebook email watcher started")
+    }
+
+    /// Stop the email watcher.
+    func stopEmailWatcher() {
+        emailPollingTimer?.invalidate()
+        emailPollingTimer = nil
+        emailWatcherActive = false
+        emailWatcherStartDate = nil
+        logger.info("Facebook email watcher stopped")
+    }
+
+    private func scheduleEmailPolling() {
+        emailPollingTimer?.invalidate()
+        emailPollingTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in
+                await self.pollForExportEmail()
+            }
+        }
+        // Also poll immediately
+        Task { await pollForExportEmail() }
+    }
+
+    private func pollForExportEmail() async {
+        // Check timeout (2 days)
+        if let startDate = emailWatcherStartDate,
+           Date.now.timeIntervalSince(startDate) > 2 * 24 * 3600 {
+            stopEmailWatcher()
+            sheetPhase = .failed("Email watcher timed out after 2 days. Try downloading manually from Facebook.")
+            return
+        }
+
+        do {
+            let accountIDs = MailImportCoordinator.shared.selectedAccountIDs
+            let since = emailWatcherStartDate ?? Date.now.addingTimeInterval(-3600)
+
+            let (metas, _) = try await MailService.shared.fetchMetadata(
+                accountIDs: accountIDs,
+                since: since
+            )
+
+            // Filter for Facebook export emails
+            let exportEmail = metas.first { meta in
+                let sender = meta.sender.lowercased()
+                let subject = meta.subject.lowercased()
+                return (sender.contains("facebook.com") || sender.contains("facebookmail.com"))
+                    && (subject.contains("download") || subject.contains("ready") || subject.contains("export"))
+            }
+
+            guard let email = exportEmail else { return }
+
+            // Found the email — try to extract download URL from MIME source
+            var downloadURL: URL?
+            if let mimeSource = await MailService.shared.fetchMIMESource(for: email) {
+                downloadURL = extractFacebookDownloadURL(from: mimeSource)
+            }
+
+            stopEmailWatcher()
+
+            if let url = downloadURL {
+                extractedDownloadURL = url.absoluteString
+                sheetPhase = .emailFound(url)
+                await SystemNotificationService.shared.postFacebookExportReady(downloadURL: url)
+            } else {
+                let fallbackURL = URL(string: "https://www.facebook.com/dyi/?referrer=yfi_settings")!
+                sheetPhase = .emailFound(fallbackURL)
+                await SystemNotificationService.shared.postFacebookExportReady(downloadURL: fallbackURL)
+            }
+
+            logger.info("Facebook export email detected")
+
+        } catch {
+            logger.error("Facebook email poll failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Extract download URL from email MIME source HTML.
+    private func extractFacebookDownloadURL(from mimeSource: String) -> URL? {
+        let pattern = #"href="(https://[^"]*facebook[^"]*(?:download|export)[^"]*)""#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else { return nil }
+        let range = NSRange(mimeSource.startIndex..<mimeSource.endIndex, in: mimeSource)
+        guard let match = regex.firstMatch(in: mimeSource, range: range),
+              let urlRange = Range(match.range(at: 1), in: mimeSource) else { return nil }
+        return URL(string: String(mimeSource[urlRange]))
+    }
+
+    // MARK: - File Watcher
+
+    /// Start polling ~/Downloads for new Facebook export ZIP files.
+    func startFileWatcher() {
+        fileWatcherActive = true
+        fileWatcherStartDate = .now
+        sheetPhase = .watchingFile
+        scheduleFilePolling()
+        logger.info("Facebook file watcher started")
+    }
+
+    /// Stop the file watcher.
+    func stopFileWatcher() {
+        filePollingTimer?.invalidate()
+        filePollingTimer = nil
+        fileWatcherActive = false
+        fileWatcherStartDate = nil
+        logger.info("Facebook file watcher stopped")
+    }
+
+    private func scheduleFilePolling() {
+        filePollingTimer?.invalidate()
+        filePollingTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in
+                await self.pollForZipFile()
+            }
+        }
+    }
+
+    private func pollForZipFile() async {
+        // Check timeout (2 days)
+        if let startDate = fileWatcherStartDate,
+           Date.now.timeIntervalSince(startDate) > 2 * 24 * 3600 {
+            stopFileWatcher()
+            sheetPhase = .failed("File watcher timed out after 2 days.")
+            return
+        }
+
+        let fm = FileManager.default
+        guard let downloadsURL = fm.urls(for: .downloadsDirectory, in: .userDomainMask).first else { return }
+
+        do {
+            let contents = try fm.contentsOfDirectory(
+                at: downloadsURL,
+                includingPropertiesForKeys: [.contentModificationDateKey],
+                options: [.skipsHiddenFiles]
+            )
+
+            let watchStart = fileWatcherStartDate ?? .distantPast
+
+            let newZip = contents.first { url in
+                let name = url.lastPathComponent.lowercased()
+                guard name.hasSuffix(".zip"), name.contains("facebook") else { return false }
+                let fileDate = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+                return fileDate > watchStart
+            }
+
+            if newZip != nil {
+                stopFileWatcher()
+                NotificationCenter.default.post(name: .samFacebookZipDetected, object: nil)
+                // Re-scan will pick up the new file
+                await scanDownloadsFolder()
+            }
+        } catch {
+            logger.error("Facebook file poll failed: \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - Reminder Scheduling
+
+    /// Schedule a reminder notification during the next free calendar gap.
+    func scheduleReminder() async {
+        let calendar = Calendar.current
+        let now = Date.now
+        let endWindow = calendar.date(byAdding: .hour, value: 8, to: now)!
+
+        // Fallback: 2 hours from now
+        var reminderDate = calendar.date(byAdding: .hour, value: 2, to: now)!
+
+        if let calendarIDs = UserDefaults.standard.stringArray(forKey: "selectedCalendarIdentifiers"),
+           !calendarIDs.isEmpty {
+            if let events = await CalendarService.shared.fetchEvents(
+                from: calendarIDs,
+                startDate: now,
+                endDate: endWindow
+            ) {
+                var cursor = now
+                let sorted = events.sorted { $0.startDate < $1.startDate }
+                for event in sorted {
+                    if event.startDate.timeIntervalSince(cursor) >= 900 { // 15 min gap
+                        reminderDate = cursor.addingTimeInterval(60)
+                        break
+                    }
+                    cursor = max(cursor, event.endDate)
+                }
+                if endWindow.timeIntervalSince(cursor) >= 900 {
+                    reminderDate = cursor.addingTimeInterval(60)
+                }
+            }
+        }
+
+        let downloadURL = extractedDownloadURL.flatMap { URL(string: $0) }
+            ?? URL(string: "https://www.facebook.com/dyi/?referrer=yfi_settings")!
+        await SystemNotificationService.shared.postFacebookExportReady(
+            downloadURL: downloadURL,
+            triggerDate: reminderDate
+        )
+        logger.info("Facebook reminder scheduled for \(reminderDate.formatted())")
+    }
+
+    // MARK: - Watcher Persistence
+
+    /// Resume watchers that were active before app restart.
+    private func resumeWatchersIfNeeded() {
+        if emailWatcherActive {
+            if let startDate = emailWatcherStartDate,
+               Date.now.timeIntervalSince(startDate) < 2 * 24 * 3600 {
+                sheetPhase = .watchingEmail
+                scheduleEmailPolling()
+                logger.info("Resumed Facebook email watcher from previous session")
+            } else {
+                emailWatcherActive = false
+                emailWatcherStartDate = nil
+            }
+        }
+
+        if fileWatcherActive {
+            if let startDate = fileWatcherStartDate,
+               Date.now.timeIntervalSince(startDate) < 2 * 24 * 3600 {
+                sheetPhase = .watchingFile
+                scheduleFilePolling()
+                logger.info("Resumed Facebook file watcher from previous session")
+            } else {
+                fileWatcherActive = false
+                fileWatcherStartDate = nil
+            }
+        }
+    }
+
+    // MARK: - Post-Import Cleanup
+
+    /// Delete the source ZIP file after successful import.
+    func deleteSourceZip() throws {
+        guard let url = importedZipURL else { return }
+        try FileManager.default.removeItem(at: url)
+        importedZipURL = nil
+        logger.info("Deleted Facebook export ZIP: \(url.lastPathComponent)")
+    }
+
+    // MARK: - Cancellation (Sheet Flow)
+
+    /// Cancel all watchers and timers.
+    func cancelWatchers() {
+        stopEmailWatcher()
+        stopFileWatcher()
+    }
+
+    /// Cancel everything (watchers + any in-progress import).
+    func cancelAll() {
+        cancelWatchers()
+        cancelImport()
+    }
+
+    /// Whether the mail system is available for email watching.
+    var isMailAvailableForWatching: Bool {
+        MailImportCoordinator.shared.mailEnabled && !MailImportCoordinator.shared.selectedAccountIDs.isEmpty
+    }
+
+    /// Complete the import from the sheet and transition to the complete phase.
+    func completeImportFromSheet(classifications: [UUID: FacebookClassification]) async {
+        sheetPhase = .importing
+        await confirmImport(classifications: classifications)
+
+        if importStatus == .success {
+            let stats = FacebookImportStats(
+                friendCount: parsedFriendCount,
+                messageCount: parsedMessageCount,
+                matchedCount: matchedFriendCount,
+                newContacts: importCandidates.filter { (classifications[$0.id] ?? $0.defaultClassification) == .add }.count,
+                postCount: parsedPostCount
+            )
+            sheetPhase = .complete(stats)
+        }
+        // If failed, sheetPhase was already set by confirmImport error path
     }
 
     // MARK: - Private: Touch Score Computation

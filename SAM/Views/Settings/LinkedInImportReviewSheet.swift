@@ -5,45 +5,35 @@
 //  Phase 3: LinkedIn Import Review UI
 //  Phase 4: Enhanced De-duplication — adds "Probable Matches" section
 //
-//  Presents parsed LinkedIn connections in three sections:
-//   - "Probable Matches" — contacts that likely match existing SAM contacts (default: Merge)
-//   - "Recommended to Add" — contacts with touch score > 0 and no match (default ON)
-//   - "No Recent Interaction" — contacts with no touch signals and no match (default OFF)
+//  `LinkedInReviewContent` is the reusable three-section review UI, embedded by both
+//  this standalone sheet and the new LinkedInImportSheet.
 //
 
 import SwiftUI
 
-// MARK: - Sheet
+// MARK: - Reusable Review Content
 
-struct LinkedInImportReviewSheet: View {
+/// The three-section candidate review view (probable matches, recommended to add, no interaction).
+/// Designed to be embedded inside any parent (LinkedInImportSheet or LinkedInImportReviewSheet).
+struct LinkedInReviewContent: View {
 
     let coordinator: LinkedInImportCoordinator
-    let onDismiss: () -> Void
-
-    /// Per-candidate classification state. Seeded from defaultClassification in onAppear.
-    @State private var classifications: [UUID: LinkedInClassification] = [:]
-    @State private var isImporting = false
-    @State private var showSyncConfirmation = false
-    /// Snapshot of sync candidates captured when the confirmation alert is shown.
-    @State private var syncCandidatesSnapshot: [AppleContactsSyncCandidate] = []
+    @Binding var classifications: [UUID: LinkedInClassification]
 
     // MARK: - Partitioned candidates
 
-    /// Candidates that probably match an existing SAM contact and need user confirmation.
     private var probableMatches: [LinkedInImportCandidate] {
         coordinator.importCandidates
             .filter { $0.matchStatus.isProbable }
             .sorted { ($0.touchScore?.totalScore ?? 0) > ($1.touchScore?.totalScore ?? 0) }
     }
 
-    /// No-match candidates with touch score > 0 (recommended to add).
     private var recommendedToAdd: [LinkedInImportCandidate] {
         coordinator.importCandidates
             .filter { $0.matchStatus == .noMatch && ($0.touchScore?.totalScore ?? 0) > 0 }
             .sorted { ($0.touchScore?.totalScore ?? 0) > ($1.touchScore?.totalScore ?? 0) }
     }
 
-    /// No-match candidates with no touch score (no recent interaction).
     private var noInteraction: [LinkedInImportCandidate] {
         coordinator.importCandidates
             .filter { $0.matchStatus == .noMatch && ($0.touchScore?.totalScore ?? 0) == 0 }
@@ -52,225 +42,128 @@ struct LinkedInImportReviewSheet: View {
 
     // MARK: - Summary counts
 
-    private var addCount: Int {
+    var addCount: Int {
         coordinator.importCandidates.filter {
             let c = classifications[$0.id] ?? $0.defaultClassification
             return c == .add || c == .skip
         }.count
     }
-    private var mergeCount: Int {
+    var mergeCount: Int {
         coordinator.importCandidates.filter {
             (classifications[$0.id] ?? $0.defaultClassification) == .merge
         }.count
     }
-    private var laterCount: Int {
+    var laterCount: Int {
         coordinator.importCandidates.filter {
             (classifications[$0.id] ?? $0.defaultClassification) == .later
-        }.count
-    }
-    private var skipCount: Int {
-        coordinator.importCandidates.filter {
-            (classifications[$0.id] ?? $0.defaultClassification) == .skip
         }.count
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            // Toolbar
-            HStack {
-                Button("Cancel") {
-                    coordinator.cancelImport()
-                    onDismiss()
-                }
-                .keyboardShortcut(.cancelAction)
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
 
-                Spacer()
-
-                VStack(spacing: 2) {
-                    Text("LinkedIn Import Review")
-                        .font(.headline)
-                    subtitleText
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-
-                Button("Import") {
-                    Task {
-                        isImporting = true
-                        await coordinator.confirmImport(classifications: classifications)
-                        isImporting = false
-                        // §13 — if auto-sync is off, build sync candidates now and
-                        // show confirmation if there are contacts to update.
-                        if !coordinator.autoSyncLinkedInURLs {
-                            await coordinator.prepareSyncCandidates(classifications: classifications)
-                            if !coordinator.appleContactsSyncCandidates.isEmpty {
-                                syncCandidatesSnapshot = coordinator.appleContactsSyncCandidates
-                                showSyncConfirmation = true
-                                // Don't dismiss yet — wait for the user's sync decision
-                                return
+                    // Probable Matches section
+                    if !probableMatches.isEmpty {
+                        Section {
+                            ForEach(probableMatches) { candidate in
+                                ProbableMatchRow(
+                                    candidate: candidate,
+                                    isMerging: (classifications[candidate.id] ?? candidate.defaultClassification) == .merge,
+                                    onMerge: { classifications[candidate.id] = .merge },
+                                    onSkip:  { classifications[candidate.id] = .skip }
+                                )
+                                Divider().padding(.leading, 44)
                             }
+                        } header: {
+                            sectionHeader(
+                                title: "Probable Matches",
+                                count: probableMatches.count,
+                                actionLabel: "Merge All",
+                                action: { setAll(probableMatches, to: .merge) }
+                            )
                         }
-                        onDismiss()
+                    }
+
+                    // Recommended to Add section
+                    if !recommendedToAdd.isEmpty {
+                        Section {
+                            ForEach(recommendedToAdd) { candidate in
+                                CandidateRow(
+                                    candidate: candidate,
+                                    isAdding: (classifications[candidate.id] ?? candidate.defaultClassification) == .add,
+                                    onToggle: { toggle(candidate) }
+                                )
+                                Divider().padding(.leading, 44)
+                            }
+                        } header: {
+                            sectionHeader(
+                                title: "Recommended to Add",
+                                count: recommendedToAdd.count,
+                                actionLabel: "Add All",
+                                action: { setAll(recommendedToAdd, to: .add) }
+                            )
+                        }
+                    }
+
+                    // No Recent Interaction section
+                    if !noInteraction.isEmpty {
+                        Section {
+                            ForEach(noInteraction) { candidate in
+                                CandidateRow(
+                                    candidate: candidate,
+                                    isAdding: (classifications[candidate.id] ?? candidate.defaultClassification) == .add,
+                                    onToggle: { toggle(candidate) }
+                                )
+                                Divider().padding(.leading, 44)
+                            }
+                        } header: {
+                            sectionHeader(
+                                title: "No Recent Interaction",
+                                count: noInteraction.count,
+                                actionLabel: "Add All",
+                                action: { setAll(noInteraction, to: .add) }
+                            )
+                        }
+                    }
+
+                    if coordinator.importCandidates.isEmpty {
+                        VStack(spacing: 8) {
+                            Image(systemName: "checkmark.circle")
+                                .font(.largeTitle)
+                                .foregroundStyle(.secondary)
+                            Text("All connections already in SAM")
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(40)
                     }
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(isImporting)
-                .keyboardShortcut(.return, modifiers: .command)
             }
-            .padding()
 
+            // Footer summary
             Divider()
-
-            if isImporting {
-                ProgressView()
-                    .progressViewStyle(.linear)
-                    .padding(.horizontal)
-                    .padding(.top, 8)
-
-                if let progress = coordinator.progressMessage {
-                    Text(progress)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .padding(.top, 4)
-                }
-
+            HStack {
+                footerText
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Spacer()
-            } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
-
-                        // Probable Matches section — must be resolved before import
-                        if !probableMatches.isEmpty {
-                            Section {
-                                ForEach(probableMatches) { candidate in
-                                    ProbableMatchRow(
-                                        candidate: candidate,
-                                        isMerging: (classifications[candidate.id] ?? candidate.defaultClassification) == .merge,
-                                        onMerge: { classifications[candidate.id] = .merge },
-                                        onSkip:  { classifications[candidate.id] = .skip }
-                                    )
-                                    Divider().padding(.leading, 44)
-                                }
-                            } header: {
-                                sectionHeader(
-                                    title: "Probable Matches",
-                                    count: probableMatches.count,
-                                    actionLabel: "Merge All",
-                                    action: { setAll(probableMatches, to: .merge) }
-                                )
-                            }
-                        }
-
-                        // Recommended to Add section
-                        if !recommendedToAdd.isEmpty {
-                            Section {
-                                ForEach(recommendedToAdd) { candidate in
-                                    CandidateRow(
-                                        candidate: candidate,
-                                        isAdding: (classifications[candidate.id] ?? candidate.defaultClassification) == .add,
-                                        onToggle: { toggle(candidate) }
-                                    )
-                                    Divider().padding(.leading, 44)
-                                }
-                            } header: {
-                                sectionHeader(
-                                    title: "Recommended to Add",
-                                    count: recommendedToAdd.count,
-                                    actionLabel: "Add All",
-                                    action: { setAll(recommendedToAdd, to: .add) }
-                                )
-                            }
-                        }
-
-                        // No Recent Interaction section
-                        if !noInteraction.isEmpty {
-                            Section {
-                                ForEach(noInteraction) { candidate in
-                                    CandidateRow(
-                                        candidate: candidate,
-                                        isAdding: (classifications[candidate.id] ?? candidate.defaultClassification) == .add,
-                                        onToggle: { toggle(candidate) }
-                                    )
-                                    Divider().padding(.leading, 44)
-                                }
-                            } header: {
-                                sectionHeader(
-                                    title: "No Recent Interaction",
-                                    count: noInteraction.count,
-                                    actionLabel: "Add All",
-                                    action: { setAll(noInteraction, to: .add) }
-                                )
-                            }
-                        }
-
-                        if coordinator.importCandidates.isEmpty {
-                            VStack(spacing: 8) {
-                                Image(systemName: "checkmark.circle")
-                                    .font(.largeTitle)
-                                    .foregroundStyle(.secondary)
-                                Text("All connections already in SAM")
-                                    .foregroundStyle(.secondary)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(40)
-                        }
-                    }
-                }
-
-                // Footer summary
-                Divider()
-                HStack {
-                    footerText
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                }
-                .padding(.horizontal)
-                .padding(.vertical, 8)
             }
+            .padding(.horizontal)
+            .padding(.vertical, 8)
         }
-        .frame(minWidth: 660, minHeight: 500)
         .onAppear { seedClassifications() }
-        .sheet(isPresented: $showSyncConfirmation) {
-            AppleContactsSyncConfirmationSheet(
-                candidates: syncCandidatesSnapshot,
-                onSync: {
-                    Task {
-                        await coordinator.performAppleContactsSync(candidates: syncCandidatesSnapshot)
-                        showSyncConfirmation = false
-                        onDismiss()
-                    }
-                },
-                onSkip: {
-                    coordinator.dismissAppleContactsSync()
-                    showSyncConfirmation = false
-                    onDismiss()
-                }
-            )
-        }
     }
 
     // MARK: - Dynamic text
 
     @ViewBuilder
-    private var subtitleText: some View {
-        let total = coordinator.pendingConnectionCount
-        let exact = coordinator.exactMatchCount
-        if exact > 0 {
-            Text("\(total) connections · \(exact) already matched · \(addCount) to add · \(laterCount) to later")
-        } else {
-            Text("\(total) connections · \(addCount) to add · \(laterCount) to later")
-        }
-    }
-
-    @ViewBuilder
-    private var footerText: some View {
+    var footerText: some View {
         if mergeCount > 0 {
-            Text("\(addCount) to add · \(mergeCount) to merge · \(laterCount) to later")
+            Text("\(addCount) to add \u{00B7} \(mergeCount) to merge \u{00B7} \(laterCount) to later")
         } else {
-            Text("\(addCount) to add · \(laterCount) to later")
+            Text("\(addCount) to add \u{00B7} \(laterCount) to later")
         }
     }
 
@@ -302,7 +195,7 @@ struct LinkedInImportReviewSheet: View {
 
     // MARK: - Helpers
 
-    private func seedClassifications() {
+    func seedClassifications() {
         for candidate in coordinator.importCandidates {
             if classifications[candidate.id] == nil {
                 classifications[candidate.id] = candidate.defaultClassification
@@ -310,7 +203,6 @@ struct LinkedInImportReviewSheet: View {
         }
     }
 
-    /// For Add/Later candidates: toggle between .add and .later.
     private func toggle(_ candidate: LinkedInImportCandidate) {
         let current = classifications[candidate.id] ?? candidate.defaultClassification
         classifications[candidate.id] = current == .add ? .later : .add
@@ -323,11 +215,120 @@ struct LinkedInImportReviewSheet: View {
     }
 }
 
+// MARK: - Standalone Review Sheet (backward compat wrapper)
+
+struct LinkedInImportReviewSheet: View {
+
+    let coordinator: LinkedInImportCoordinator
+    let onDismiss: () -> Void
+
+    @State private var classifications: [UUID: LinkedInClassification] = [:]
+    @State private var isImporting = false
+    @State private var showSyncConfirmation = false
+    @State private var syncCandidatesSnapshot: [AppleContactsSyncCandidate] = []
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Toolbar
+            HStack {
+                Button("Cancel") {
+                    coordinator.cancelImport()
+                    onDismiss()
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Spacer()
+
+                VStack(spacing: 2) {
+                    Text("LinkedIn Import Review")
+                        .font(.headline)
+                    subtitleText
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Button("Import") {
+                    Task {
+                        isImporting = true
+                        await coordinator.confirmImport(classifications: classifications)
+                        isImporting = false
+                        if !coordinator.autoSyncLinkedInURLs {
+                            await coordinator.prepareSyncCandidates(classifications: classifications)
+                            if !coordinator.appleContactsSyncCandidates.isEmpty {
+                                syncCandidatesSnapshot = coordinator.appleContactsSyncCandidates
+                                showSyncConfirmation = true
+                                return
+                            }
+                        }
+                        onDismiss()
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isImporting)
+                .keyboardShortcut(.return, modifiers: .command)
+            }
+            .padding()
+
+            Divider()
+
+            if isImporting {
+                ProgressView()
+                    .progressViewStyle(.linear)
+                    .padding(.horizontal)
+                    .padding(.top, 8)
+
+                if let progress = coordinator.progressMessage {
+                    Text(progress)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 4)
+                }
+
+                Spacer()
+            } else {
+                LinkedInReviewContent(
+                    coordinator: coordinator,
+                    classifications: $classifications
+                )
+            }
+        }
+        .frame(minWidth: 660, minHeight: 500)
+        .sheet(isPresented: $showSyncConfirmation) {
+            AppleContactsSyncConfirmationSheet(
+                candidates: syncCandidatesSnapshot,
+                onSync: {
+                    Task {
+                        await coordinator.performAppleContactsSync(candidates: syncCandidatesSnapshot)
+                        showSyncConfirmation = false
+                        onDismiss()
+                    }
+                },
+                onSkip: {
+                    coordinator.dismissAppleContactsSync()
+                    showSyncConfirmation = false
+                    onDismiss()
+                }
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var subtitleText: some View {
+        let total = coordinator.pendingConnectionCount
+        let exact = coordinator.exactMatchCount
+        if exact > 0 {
+            Text("\(total) connections \u{00B7} \(exact) already matched")
+        } else {
+            Text("\(total) connections")
+        }
+    }
+}
+
 // MARK: - Probable Match Row
 
-/// Shows a side-by-side comparison of the LinkedIn import data and the existing SAM contact.
-/// The user chooses Merge (accept the match) or Keep Separate (reject the match, create new contact).
-private struct ProbableMatchRow: View {
+struct ProbableMatchRow: View {
     let candidate: LinkedInImportCandidate
     let isMerging: Bool
     let onMerge: () -> Void
@@ -335,7 +336,6 @@ private struct ProbableMatchRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // Match reason label
             if let status = matchReason {
                 Text(status)
                     .font(.caption2)
@@ -347,7 +347,6 @@ private struct ProbableMatchRow: View {
             }
 
             HStack(alignment: .top, spacing: 16) {
-                // Left: LinkedIn data
                 VStack(alignment: .leading, spacing: 3) {
                     Text("From LinkedIn")
                         .font(.caption2)
@@ -372,7 +371,6 @@ private struct ProbableMatchRow: View {
 
                 Divider()
 
-                // Right: existing SAM contact
                 if let info = candidate.matchedPersonInfo {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Existing in SAM")
@@ -398,7 +396,6 @@ private struct ProbableMatchRow: View {
                 }
             }
 
-            // Action buttons
             HStack(spacing: 10) {
                 Button(action: onMerge) {
                     Label("Merge", systemImage: "arrow.triangle.merge")
@@ -434,7 +431,7 @@ private struct ProbableMatchRow: View {
 
 // MARK: - Candidate Row
 
-private struct CandidateRow: View {
+struct CandidateRow: View {
     let candidate: LinkedInImportCandidate
     let isAdding: Bool
     let onToggle: () -> Void
@@ -442,13 +439,11 @@ private struct CandidateRow: View {
     var body: some View {
         Button(action: onToggle) {
             HStack(spacing: 12) {
-                // Checkbox
                 Image(systemName: isAdding ? "checkmark.square.fill" : "square")
                     .foregroundStyle(isAdding ? .blue : .secondary)
                     .font(.system(size: 18))
                     .frame(width: 24)
 
-                // Contact info
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text(candidate.fullName.isEmpty ? "Unknown" : candidate.fullName)
@@ -465,11 +460,10 @@ private struct CandidateRow: View {
                         }
                     }
 
-                    // Company / position
                     if let company = candidate.company, !company.isEmpty {
                         HStack(spacing: 4) {
                             if let position = candidate.position, !position.isEmpty {
-                                Text("\(position) · \(company)")
+                                Text("\(position) \u{00B7} \(company)")
                             } else {
                                 Text(company)
                             }
@@ -478,7 +472,6 @@ private struct CandidateRow: View {
                         .foregroundStyle(.secondary)
                     }
 
-                    // Touch summary + connection date
                     HStack(spacing: 8) {
                         if let score = candidate.touchScore, !score.touchSummary.isEmpty {
                             Text(score.touchSummary)
@@ -505,17 +498,13 @@ private struct CandidateRow: View {
 
 // MARK: - Apple Contacts Sync Confirmation Sheet
 
-/// One-shot confirmation sheet shown after import when SAM found contacts
-/// whose Apple Contact record doesn't yet have their LinkedIn URL.
-/// (§13.1 — batch LinkedIn URL enrichment of Apple Contacts)
-private struct AppleContactsSyncConfirmationSheet: View {
+struct AppleContactsSyncConfirmationSheet: View {
     let candidates: [AppleContactsSyncCandidate]
     let onSync: () -> Void
     let onSkip: () -> Void
 
     var body: some View {
         VStack(spacing: 20) {
-            // Icon + title
             VStack(spacing: 8) {
                 Image(systemName: "person.crop.circle.badge.plus")
                     .font(.system(size: 44))
@@ -531,7 +520,6 @@ private struct AppleContactsSyncConfirmationSheet: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            // Contact list (scrollable, max height ~180)
             ScrollView {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(candidates) { candidate in
@@ -550,7 +538,6 @@ private struct AppleContactsSyncConfirmationSheet: View {
             .frame(maxHeight: 180)
             .padding(.horizontal)
 
-            // Action buttons
             HStack(spacing: 12) {
                 Button("Not Now") {
                     onSkip()

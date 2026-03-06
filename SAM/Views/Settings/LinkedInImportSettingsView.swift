@@ -19,53 +19,18 @@ private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "Lin
 struct LinkedInImportSettingsContent: View {
 
     @State private var coordinator = LinkedInImportCoordinator.shared
-    @Environment(\.openURL) private var openURL
-    @State private var showReviewSheet = false
     @State private var showProfileAnalysis = false
     @State private var autoSyncLinkedInURLs: Bool = UserDefaults.standard.bool(forKey: "sam.linkedin.autoSyncAppleContactURLs")
-
-    private var isActive: Bool { coordinator.importStatus.isActive }
 
     // MARK: - Body
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
 
-            // Description
-            Text("Import messages and connection data from a LinkedIn data export. Request your archive from LinkedIn — it may take up to 24 hours to prepare.")
+            // Description — point to the import sheet
+            Text("Use **File \u{2192} Import \u{2192} LinkedIn** to import connections, messages, and interaction data from a LinkedIn data export.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-
-            // Stale import warning (>90 days since last import)
-            if let warning = coordinator.staleImportWarning {
-                HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
-                        .font(.caption)
-                    Text(warning)
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                }
-                .padding(8)
-                .background(Color.orange.opacity(0.1))
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-            }
-
-            Divider()
-
-            // Request archive section
-            requestArchiveSection
-
-            Divider()
-
-            // Import section
-            importSection
-
-            // Status display
-            if coordinator.importStatus != .idle && coordinator.importStatus != .awaitingReview {
-                Divider()
-                statusSection
-            }
 
             // Last import info
             if let lastImport = coordinator.lastImportedAt {
@@ -125,11 +90,6 @@ struct LinkedInImportSettingsContent: View {
             }
         }
         .padding(.vertical, 4)
-        .sheet(isPresented: $showReviewSheet) {
-            LinkedInImportReviewSheet(coordinator: coordinator) {
-                showReviewSheet = false
-            }
-        }
         .sheet(isPresented: $showProfileAnalysis) {
             if let analysis = coordinator.latestProfileAnalysis {
                 ProfileAnalysisSheet(analysis: analysis) {
@@ -138,169 +98,6 @@ struct LinkedInImportSettingsContent: View {
             }
         }
         .onAppear { FeatureAdoptionTracker.shared.recordUsage(.linkedInImport) }
-    }
-
-    // MARK: - Sub-sections
-
-    private var requestArchiveSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Step 1 — Request your LinkedIn archive")
-                .font(.caption)
-                .fontWeight(.semibold)
-
-            HStack(spacing: 8) {
-                Button("Open LinkedIn Data Export") {
-                    if let url = URL(string: "https://www.linkedin.com/mypreferences/d/download-my-data") {
-                        openURL(url)
-                    }
-                }
-                .buttonStyle(.bordered)
-                .disabled(false)
-
-                Text("Select Basic data, request archive. Allow up to 24 hours.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private var importSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Step 2 — Import the archive")
-                .font(.caption)
-                .fontWeight(.semibold)
-
-            // Preview state — show counts and Review button when ready
-            if coordinator.importStatus == .awaitingReview || coordinator.parsedMessageCount > 0 || coordinator.pendingConnectionCount > 0 {
-                previewSection
-            } else {
-                // Primary path: File menu
-                Text("Use **File → Import → Import LinkedIn Archive** to import. SAM will automatically find your download and unzip it.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                if coordinator.importStatus == .parsing {
-                    HStack(spacing: 8) {
-                        ProgressView()
-                            .scaleEffect(0.7)
-                        Text("Reading files...")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                // Fallback: manual folder picker
-                HStack(spacing: 8) {
-                    Button("Select Folder Manually") {
-                        selectFolder()
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .disabled(isActive)
-
-                    Text("Fallback if automatic detection doesn't work")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var previewSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Counts
-            Group {
-                summaryRow("Messages found:", value: coordinator.parsedMessageCount)
-                if coordinator.newMessageCount > 0 {
-                    summaryRow("New (will import):", value: coordinator.newMessageCount, color: .green)
-                }
-                if coordinator.duplicateMessageCount > 0 {
-                    summaryRow("Already imported (skip):", value: coordinator.duplicateMessageCount, color: .orange)
-                }
-                if coordinator.pendingConnectionCount > 0 {
-                    summaryRow("Connections to match:", value: coordinator.pendingConnectionCount)
-                }
-                if coordinator.pendingEndorsementsReceivedCount > 0 {
-                    summaryRow("Endorsements received:", value: coordinator.pendingEndorsementsReceivedCount)
-                }
-                if coordinator.pendingEndorsementsGivenCount > 0 {
-                    summaryRow("Endorsements given:", value: coordinator.pendingEndorsementsGivenCount)
-                }
-                if coordinator.pendingRecommendationsGivenCount > 0 {
-                    summaryRow("Recommendations given:", value: coordinator.pendingRecommendationsGivenCount)
-                }
-                if coordinator.pendingInvitationsCount > 0 {
-                    summaryRow("Invitations:", value: coordinator.pendingInvitationsCount)
-                }
-            }
-            .padding(.leading, 8)
-
-            HStack(spacing: 12) {
-                Button("Review & Import") {
-                    showReviewSheet = true
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(coordinator.importStatus != .awaitingReview)
-
-                Button("Cancel") {
-                    coordinator.cancelImport()
-                }
-                .buttonStyle(.bordered)
-                .disabled(isActive)
-            }
-        }
-    }
-
-    private var statusSection: some View {
-        HStack(spacing: 8) {
-            if isActive {
-                ProgressView()
-                    .scaleEffect(0.7)
-            } else if coordinator.importStatus == .success {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-                    .font(.caption)
-            } else if coordinator.importStatus == .failed {
-                Image(systemName: "xmark.circle.fill")
-                    .foregroundStyle(.red)
-                    .font(.caption)
-            }
-
-            // Show granular phase description while importing, status text otherwise
-            if let progress = coordinator.progressMessage, isActive {
-                Text(progress)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else {
-                Text(coordinator.importStatus.displayText)
-                    .font(.caption)
-                    .foregroundStyle(coordinator.importStatus == .failed ? .red : .secondary)
-            }
-
-            if coordinator.importStatus == .success {
-                if coordinator.exactMatchCount > 0 {
-                    Text("· \(coordinator.exactMatchCount) auto-matched")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                if coordinator.matchedConnectionCount > 0 {
-                    Text("· \(coordinator.matchedConnectionCount) connection(s) matched")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                if coordinator.unmatchedConnectionCount > 0 {
-                    Text("· \(coordinator.unmatchedConnectionCount) unmatched — see Today → Unknown Senders")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                }
-                if coordinator.enrichmentCandidateCount > 0 {
-                    Text("· \(coordinator.enrichmentCandidateCount) contact update(s) queued — see People list")
-                        .font(.caption)
-                        .foregroundStyle(.blue)
-                }
-            }
-        }
     }
 
     // MARK: - Auto-Sync (§13.2)
@@ -403,39 +200,6 @@ struct LinkedInImportSettingsContent: View {
         return profile.writingVoiceSummary
     }
 
-    // MARK: - Helpers
-
-    private func summaryRow(_ label: String, value: Int, color: Color = .primary) -> some View {
-        HStack {
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Spacer()
-            Text("\(value)")
-                .font(.caption)
-                .fontWeight(.semibold)
-                .foregroundStyle(color)
-        }
-    }
-
-    private func selectFolder() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.message = "Select the folder containing your LinkedIn data export files"
-        panel.prompt = "Select Folder"
-
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-
-        // Persist a security-scoped bookmark so we can re-access this folder
-        // later when promoting unknown LinkedIn contacts from triage.
-        BookmarkManager.shared.saveLinkedInFolderBookmark(url)
-
-        Task {
-            await coordinator.loadFolder(url: url)
-        }
-    }
 }
 
 // MARK: - Standalone wrapper

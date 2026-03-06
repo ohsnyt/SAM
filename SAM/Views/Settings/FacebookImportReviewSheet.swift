@@ -12,58 +12,15 @@
 
 import SwiftUI
 
-// MARK: - Sheet
+// MARK: - Sheet (backward-compat wrapper)
 
 struct FacebookImportReviewSheet: View {
 
     let coordinator: FacebookImportCoordinator
     let onDismiss: () -> Void
 
-    /// Per-candidate classification state. Seeded from defaultClassification in onAppear.
     @State private var classifications: [UUID: FacebookClassification] = [:]
     @State private var isImporting = false
-
-    // MARK: - Partitioned candidates
-
-    /// Candidates that probably match an existing SAM contact and need user confirmation.
-    private var probableMatches: [FacebookImportCandidate] {
-        coordinator.importCandidates
-            .filter { $0.matchStatus.isProbable }
-            .sorted { ($0.touchScore?.totalScore ?? 0) > ($1.touchScore?.totalScore ?? 0) }
-    }
-
-    /// No-match candidates with touch score > 0 (recommended to add).
-    private var recommendedToAdd: [FacebookImportCandidate] {
-        coordinator.importCandidates
-            .filter { $0.matchStatus == .noMatch && ($0.touchScore?.totalScore ?? 0) > 0 }
-            .sorted { ($0.touchScore?.totalScore ?? 0) > ($1.touchScore?.totalScore ?? 0) }
-    }
-
-    /// No-match candidates with no touch score (no recent interaction).
-    private var noInteraction: [FacebookImportCandidate] {
-        coordinator.importCandidates
-            .filter { $0.matchStatus == .noMatch && ($0.touchScore?.totalScore ?? 0) == 0 }
-            .sorted { ($0.friendedOn ?? .distantPast) > ($1.friendedOn ?? .distantPast) }
-    }
-
-    // MARK: - Summary counts
-
-    private var addCount: Int {
-        coordinator.importCandidates.filter {
-            let c = classifications[$0.id] ?? $0.defaultClassification
-            return c == .add || c == .skip
-        }.count
-    }
-    private var mergeCount: Int {
-        coordinator.importCandidates.filter {
-            (classifications[$0.id] ?? $0.defaultClassification) == .merge
-        }.count
-    }
-    private var laterCount: Int {
-        coordinator.importCandidates.filter {
-            (classifications[$0.id] ?? $0.defaultClassification) == .later
-        }.count
-    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -77,13 +34,8 @@ struct FacebookImportReviewSheet: View {
 
                 Spacer()
 
-                VStack(spacing: 2) {
-                    Text("Facebook Import Review")
-                        .font(.headline)
-                    subtitleText
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+                Text("Facebook Import Review")
+                    .font(.headline)
 
                 Spacer()
 
@@ -114,118 +66,173 @@ struct FacebookImportReviewSheet: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
-
-                        // Probable Matches section — must be resolved before import
-                        if !probableMatches.isEmpty {
-                            Section {
-                                ForEach(probableMatches) { candidate in
-                                    FacebookProbableMatchRow(
-                                        candidate: candidate,
-                                        isMerging: (classifications[candidate.id] ?? candidate.defaultClassification) == .merge,
-                                        onMerge: { classifications[candidate.id] = .merge },
-                                        onSkip:  { classifications[candidate.id] = .skip }
-                                    )
-                                    Divider().padding(.leading, 44)
-                                }
-                            } header: {
-                                sectionHeader(
-                                    title: "Probable Matches",
-                                    count: probableMatches.count,
-                                    actionLabel: "Merge All",
-                                    action: { setAll(probableMatches, to: .merge) }
-                                )
-                            }
-                        }
-
-                        // Recommended to Add section
-                        if !recommendedToAdd.isEmpty {
-                            Section {
-                                ForEach(recommendedToAdd) { candidate in
-                                    FacebookCandidateRow(
-                                        candidate: candidate,
-                                        isAdding: (classifications[candidate.id] ?? candidate.defaultClassification) == .add,
-                                        onToggle: { toggle(candidate) }
-                                    )
-                                    Divider().padding(.leading, 44)
-                                }
-                            } header: {
-                                sectionHeader(
-                                    title: "Recommended to Add",
-                                    count: recommendedToAdd.count,
-                                    actionLabel: "Add All",
-                                    action: { setAll(recommendedToAdd, to: .add) }
-                                )
-                            }
-                        }
-
-                        // No Recent Interaction section
-                        if !noInteraction.isEmpty {
-                            Section {
-                                ForEach(noInteraction) { candidate in
-                                    FacebookCandidateRow(
-                                        candidate: candidate,
-                                        isAdding: (classifications[candidate.id] ?? candidate.defaultClassification) == .add,
-                                        onToggle: { toggle(candidate) }
-                                    )
-                                    Divider().padding(.leading, 44)
-                                }
-                            } header: {
-                                sectionHeader(
-                                    title: "No Recent Interaction",
-                                    count: noInteraction.count,
-                                    actionLabel: "Add All",
-                                    action: { setAll(noInteraction, to: .add) }
-                                )
-                            }
-                        }
-
-                        if coordinator.importCandidates.isEmpty {
-                            VStack(spacing: 8) {
-                                Image(systemName: "checkmark.circle")
-                                    .font(.largeTitle)
-                                    .foregroundStyle(.secondary)
-                                Text("All friends already in SAM")
-                                    .foregroundStyle(.secondary)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(40)
-                        }
-                    }
-                }
-
-                // Footer summary
-                Divider()
-                HStack {
-                    footerText
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                }
-                .padding(.horizontal)
-                .padding(.vertical, 8)
+                FacebookReviewContent(
+                    coordinator: coordinator,
+                    classifications: $classifications
+                )
             }
         }
         .frame(minWidth: 660, minHeight: 500)
         .onAppear { seedClassifications() }
     }
 
-    // MARK: - Dynamic text
+    private func seedClassifications() {
+        for candidate in coordinator.importCandidates {
+            if classifications[candidate.id] == nil {
+                classifications[candidate.id] = candidate.defaultClassification
+            }
+        }
+    }
+}
 
-    @ViewBuilder
-    private var subtitleText: some View {
-        let total = coordinator.parsedFriendCount
-        let exact = coordinator.exactMatchCount
-        if exact > 0 {
-            Text("\(total) friends · \(exact) already matched · \(addCount) to add · \(laterCount) to later")
-        } else {
-            Text("\(total) friends · \(addCount) to add · \(laterCount) to later")
+// MARK: - Reusable Review Content (embedded in both review sheet and import sheet)
+
+struct FacebookReviewContent: View {
+
+    let coordinator: FacebookImportCoordinator
+    @Binding var classifications: [UUID: FacebookClassification]
+
+    // MARK: - Partitioned candidates
+
+    var probableMatches: [FacebookImportCandidate] {
+        coordinator.importCandidates
+            .filter { $0.matchStatus.isProbable }
+            .sorted { ($0.touchScore?.totalScore ?? 0) > ($1.touchScore?.totalScore ?? 0) }
+    }
+
+    var recommendedToAdd: [FacebookImportCandidate] {
+        coordinator.importCandidates
+            .filter { $0.matchStatus == .noMatch && ($0.touchScore?.totalScore ?? 0) > 0 }
+            .sorted { ($0.touchScore?.totalScore ?? 0) > ($1.touchScore?.totalScore ?? 0) }
+    }
+
+    var noInteraction: [FacebookImportCandidate] {
+        coordinator.importCandidates
+            .filter { $0.matchStatus == .noMatch && ($0.touchScore?.totalScore ?? 0) == 0 }
+            .sorted { ($0.friendedOn ?? .distantPast) > ($1.friendedOn ?? .distantPast) }
+    }
+
+    // MARK: - Summary counts
+
+    var addCount: Int {
+        coordinator.importCandidates.filter {
+            let c = classifications[$0.id] ?? $0.defaultClassification
+            return c == .add || c == .skip
+        }.count
+    }
+
+    var mergeCount: Int {
+        coordinator.importCandidates.filter {
+            (classifications[$0.id] ?? $0.defaultClassification) == .merge
+        }.count
+    }
+
+    var laterCount: Int {
+        coordinator.importCandidates.filter {
+            (classifications[$0.id] ?? $0.defaultClassification) == .later
+        }.count
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+
+                    // Probable Matches section
+                    if !probableMatches.isEmpty {
+                        Section {
+                            ForEach(probableMatches) { candidate in
+                                FacebookProbableMatchRow(
+                                    candidate: candidate,
+                                    isMerging: (classifications[candidate.id] ?? candidate.defaultClassification) == .merge,
+                                    onMerge: { classifications[candidate.id] = .merge },
+                                    onSkip:  { classifications[candidate.id] = .skip }
+                                )
+                                Divider().padding(.leading, 44)
+                            }
+                        } header: {
+                            sectionHeader(
+                                title: "Probable Matches",
+                                count: probableMatches.count,
+                                actionLabel: "Merge All",
+                                action: { setAll(probableMatches, to: .merge) }
+                            )
+                        }
+                    }
+
+                    // Recommended to Add section
+                    if !recommendedToAdd.isEmpty {
+                        Section {
+                            ForEach(recommendedToAdd) { candidate in
+                                FacebookCandidateRow(
+                                    candidate: candidate,
+                                    isAdding: (classifications[candidate.id] ?? candidate.defaultClassification) == .add,
+                                    onToggle: { toggle(candidate) }
+                                )
+                                Divider().padding(.leading, 44)
+                            }
+                        } header: {
+                            sectionHeader(
+                                title: "Recommended to Add",
+                                count: recommendedToAdd.count,
+                                actionLabel: "Add All",
+                                action: { setAll(recommendedToAdd, to: .add) }
+                            )
+                        }
+                    }
+
+                    // No Recent Interaction section
+                    if !noInteraction.isEmpty {
+                        Section {
+                            ForEach(noInteraction) { candidate in
+                                FacebookCandidateRow(
+                                    candidate: candidate,
+                                    isAdding: (classifications[candidate.id] ?? candidate.defaultClassification) == .add,
+                                    onToggle: { toggle(candidate) }
+                                )
+                                Divider().padding(.leading, 44)
+                            }
+                        } header: {
+                            sectionHeader(
+                                title: "No Recent Interaction",
+                                count: noInteraction.count,
+                                actionLabel: "Add All",
+                                action: { setAll(noInteraction, to: .add) }
+                            )
+                        }
+                    }
+
+                    if coordinator.importCandidates.isEmpty {
+                        VStack(spacing: 8) {
+                            Image(systemName: "checkmark.circle")
+                                .font(.largeTitle)
+                                .foregroundStyle(.secondary)
+                            Text("All friends already in SAM")
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(40)
+                    }
+                }
+            }
+
+            // Footer summary
+            Divider()
+            HStack {
+                footerText
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 8)
         }
     }
 
+    // MARK: - Dynamic text
+
     @ViewBuilder
-    private var footerText: some View {
+    var footerText: some View {
         if mergeCount > 0 {
             Text("\(addCount) to add · \(mergeCount) to merge · \(laterCount) to later")
         } else {
@@ -235,7 +242,7 @@ struct FacebookImportReviewSheet: View {
 
     // MARK: - Section Header
 
-    private func sectionHeader(
+    func sectionHeader(
         title: String,
         count: Int,
         actionLabel: String,
@@ -261,7 +268,7 @@ struct FacebookImportReviewSheet: View {
 
     // MARK: - Helpers
 
-    private func seedClassifications() {
+    func seedClassifications() {
         for candidate in coordinator.importCandidates {
             if classifications[candidate.id] == nil {
                 classifications[candidate.id] = candidate.defaultClassification
@@ -269,7 +276,6 @@ struct FacebookImportReviewSheet: View {
         }
     }
 
-    /// For Add/Later candidates: toggle between .add and .later.
     private func toggle(_ candidate: FacebookImportCandidate) {
         let current = classifications[candidate.id] ?? candidate.defaultClassification
         classifications[candidate.id] = current == .add ? .later : .add
@@ -285,8 +291,7 @@ struct FacebookImportReviewSheet: View {
 // MARK: - Probable Match Row
 
 /// Shows a side-by-side comparison of the Facebook import data and the existing SAM contact.
-/// The user chooses Merge (accept the match) or Keep Separate (reject the match, create new contact).
-private struct FacebookProbableMatchRow: View {
+struct FacebookProbableMatchRow: View {
     let candidate: FacebookImportCandidate
     let isMerging: Bool
     let onMerge: () -> Void
@@ -384,7 +389,7 @@ private struct FacebookProbableMatchRow: View {
 
 // MARK: - Candidate Row
 
-private struct FacebookCandidateRow: View {
+struct FacebookCandidateRow: View {
     let candidate: FacebookImportCandidate
     let isAdding: Bool
     let onToggle: () -> Void

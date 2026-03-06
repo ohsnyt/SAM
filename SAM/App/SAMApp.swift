@@ -43,6 +43,8 @@ final class SAMAppDelegate: NSObject, NSApplicationDelegate {
         CommunicationsImportCoordinator.shared.cancelAll()
         EvernoteImportCoordinator.shared.cancelAll()
         SubstackImportCoordinator.shared.cancelAll()
+        LinkedInImportCoordinator.shared.cancelAll()
+        FacebookImportCoordinator.shared.cancelAll()
         GlobalHotkeyService.shared.unregisterHotkey()
         // Open the MLX circuit breaker and drop the model container so any
         // in-flight generation stream exhausts before the process exits.
@@ -68,8 +70,8 @@ struct SAMApp: App {
     @State private var pendingImportPreview: ImportPreview?
 
     // Social import sheets from File menu
-    @State private var showLinkedInReviewSheet = false
-    @State private var showFacebookReviewSheet = false
+    @State private var showLinkedInImportSheet = false
+    @State private var showFacebookImportSheet = false
     @State private var showEvernotePreviewSheet = false
     @State private var showSubstackImportSheet = false
 
@@ -303,15 +305,11 @@ struct SAMApp: App {
                 } message: {
                     Text("This will delete all people, notes, evidence, and settings, then quit the app. On relaunch you will go through onboarding again.")
                 }
-                .sheet(isPresented: $showLinkedInReviewSheet) {
-                    LinkedInImportReviewSheet(coordinator: LinkedInImportCoordinator.shared) {
-                        showLinkedInReviewSheet = false
-                    }
+                .sheet(isPresented: $showLinkedInImportSheet) {
+                    LinkedInImportSheet()
                 }
-                .sheet(isPresented: $showFacebookReviewSheet) {
-                    FacebookImportReviewSheet(coordinator: FacebookImportCoordinator.shared) {
-                        showFacebookReviewSheet = false
-                    }
+                .sheet(isPresented: $showFacebookImportSheet) {
+                    FacebookImportSheet()
                 }
                 .sheet(isPresented: $showEvernotePreviewSheet) {
                     EvernoteImportPreviewSheet {
@@ -322,10 +320,16 @@ struct SAMApp: App {
                     SubstackImportSheet()
                 }
                 .onReceive(NotificationCenter.default.publisher(for: .samLinkedInAwaitingReview)) { _ in
-                    showLinkedInReviewSheet = true
+                    showLinkedInImportSheet = true
+                }
+                .onReceive(NotificationCenter.default.publisher(for: .samLinkedInZipDetected)) { _ in
+                    showLinkedInImportSheet = true
                 }
                 .onReceive(NotificationCenter.default.publisher(for: .samFacebookAwaitingReview)) { _ in
-                    showFacebookReviewSheet = true
+                    showFacebookImportSheet = true
+                }
+                .onReceive(NotificationCenter.default.publisher(for: .samFacebookZipDetected)) { _ in
+                    showFacebookImportSheet = true
                 }
                 .onReceive(NotificationCenter.default.publisher(for: .samSubstackZipDetected)) { _ in
                     showSubstackImportSheet = true
@@ -376,46 +380,22 @@ struct SAMApp: App {
                 .keyboardShortcut("v", modifiers: [.control, .shift])
             }
 
-            // File → Import submenu + Backup/Restore
+            // File → Import + Backup/Restore
             CommandGroup(replacing: .importExport) {
-                Menu("Import") {
-                    Button("Import Contacts") {
-                        Task { await ContactsImportCoordinator.shared.importNow() }
-                    }
-                    .disabled(CNContactStore.authorizationStatus(for: .contacts) != .authorized)
+                Button("Import Substack...") {
+                    showSubstackImportSheet = true
+                }
 
-                    Button("Import Calendar") {
-                        CalendarImportCoordinator.shared.startImport()
-                    }
-                    .disabled(!UserDefaults.standard.bool(forKey: "calendarAutoImportEnabled"))
+                Button("Import LinkedIn...") {
+                    showLinkedInImportSheet = true
+                }
 
-                    Button("Import Mail") {
-                        MailImportCoordinator.shared.startImport()
-                    }
-                    .disabled(!MailImportCoordinator.shared.mailEnabled || !MailImportCoordinator.shared.isConfigured)
+                Button("Import Facebook...") {
+                    showFacebookImportSheet = true
+                }
 
-                    Button("Import iMessage & Calls") {
-                        CommunicationsImportCoordinator.shared.startImport()
-                    }
-                    .disabled(!BookmarkManager.shared.hasMessagesAccess && !BookmarkManager.shared.hasCallHistoryAccess)
-
-                    Divider()
-
-                    Button("Import Substack...") {
-                        showSubstackImportSheet = true
-                    }
-
-                    Button("Import LinkedIn Archive...") {
-                        Task { await importLinkedInArchive() }
-                    }
-
-                    Button("Import Facebook Archive...") {
-                        Task { await importFacebookArchive() }
-                    }
-
-                    Button("Import Evernote Notes...") {
-                        Task { await importEvernoteNotes() }
-                    }
+                Button("Import Evernote Notes...") {
+                    Task { await importEvernoteNotes() }
                 }
 
                 Divider()
@@ -442,6 +422,29 @@ struct SAMApp: App {
 
             #if DEBUG
             CommandMenu("Debug") {
+                // Auto-import triggers (normally automatic, here for testing)
+                Button("Import Contacts") {
+                    Task { await ContactsImportCoordinator.shared.importNow() }
+                }
+                .disabled(CNContactStore.authorizationStatus(for: .contacts) != .authorized)
+
+                Button("Import Calendar") {
+                    CalendarImportCoordinator.shared.startImport()
+                }
+                .disabled(!UserDefaults.standard.bool(forKey: "calendarAutoImportEnabled"))
+
+                Button("Import Mail") {
+                    MailImportCoordinator.shared.startImport()
+                }
+                .disabled(!MailImportCoordinator.shared.mailEnabled || !MailImportCoordinator.shared.isConfigured)
+
+                Button("Import iMessage & Calls") {
+                    CommunicationsImportCoordinator.shared.startImport()
+                }
+                .disabled(!BookmarkManager.shared.hasMessagesAccess && !BookmarkManager.shared.hasCallHistoryAccess)
+
+                Divider()
+
                 Button("Reset Onboarding") {
                     UserDefaults.standard.set(false, forKey: "hasCompletedOnboarding")
                     UserDefaults.standard.set(false, forKey: "sam.contacts.enabled")
@@ -528,6 +531,7 @@ struct SAMApp: App {
         }
         .defaultSize(width: 500, height: 300)
         .windowResizability(.contentSize)
+        .commandsRemoved()
 
         // Clipboard Capture window — opened from ⌃⇧V hotkey or menu command
         WindowGroup("Clipboard Capture", id: "clipboard-capture", for: ClipboardCapturePayload.self) { $payload in
@@ -538,6 +542,7 @@ struct SAMApp: App {
         }
         .defaultSize(width: 600, height: 500)
         .windowResizability(.contentSize)
+        .commandsRemoved()
 
         // Compose Message window — opened from communicate-lane outcomes
         WindowGroup("Compose", id: "compose-message", for: ComposePayload.self) { $payload in
@@ -548,6 +553,7 @@ struct SAMApp: App {
         }
         .defaultSize(width: 540, height: 400)
         .windowResizability(.contentSize)
+        .commandsRemoved()
 
         #if os(macOS)
         Settings {
@@ -557,20 +563,6 @@ struct SAMApp: App {
         #endif
     }
     
-    // MARK: - LinkedIn Import
-
-    private func importLinkedInArchive() async {
-        let coordinator = LinkedInImportCoordinator.shared
-        guard let zipURL = coordinator.pickLinkedInExportZip() else { return }
-        await coordinator.importFromZip(url: zipURL)
-    }
-
-    private func importFacebookArchive() async {
-        let coordinator = FacebookImportCoordinator.shared
-        guard let zipURL = coordinator.pickFacebookExportZip() else { return }
-        await coordinator.importFromZip(url: zipURL)
-    }
-
     private func importEvernoteNotes() async {
         let coordinator = EvernoteImportCoordinator.shared
         guard let folderURL = coordinator.pickEvernoteFolder() else { return }
@@ -631,7 +623,17 @@ struct SAMApp: App {
             "sam.linkedin.enabled",
             "sam.linkedin.messages.lastImportAt",
             "sam.linkedin.connections.lastImportAt",
+            "sam.linkedin.emailWatcherActive",
+            "sam.linkedin.emailWatcherStartDate",
+            "sam.linkedin.fileWatcherActive",
+            "sam.linkedin.fileWatcherStartDate",
+            "sam.linkedin.extractedDownloadURL",
             "linkedInFolderBookmark",
+            "sam.facebook.emailWatcherActive",
+            "sam.facebook.emailWatcherStartDate",
+            "sam.facebook.fileWatcherActive",
+            "sam.facebook.fileWatcherStartDate",
+            "sam.facebook.extractedDownloadURL",
         ]
         for key in keysToRemove {
             UserDefaults.standard.removeObject(forKey: key)
@@ -676,6 +678,8 @@ struct SAMApp: App {
         ContactEnrichmentCoordinator.shared.configure(container: c)
         IntentionalTouchRepository.shared.configure(container: c)
         SubstackImportCoordinator.shared.configure(container: c)
+        LinkedInImportCoordinator.shared.configure(container: c)
+        FacebookImportCoordinator.shared.configure(container: c)
 
         // One-time migration: isArchived → lifecycleStatusRawValue (v31→v32)
         SAMModelContainer.runMigrationV32IfNeeded()

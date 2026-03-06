@@ -45,7 +45,7 @@ final class IntroSequenceCoordinator {
         var narrationText: String {
             switch self {
             case .welcome:
-                return "Welcome to SAM. I'm your intelligent business coaching assistant, designed to help you build stronger relationships and grow your practice."
+                return "Welcome to SAM. – I'm your intelligent business coaching assistant. I will help you to build stronger relationships and grow your practice."
             case .relationships:
                 return "I observe your interactions — calendar, email, messages — and help you stay on top of every relationship. I'll tell you who needs attention and why."
             case .coaching:
@@ -241,6 +241,20 @@ final class IntroSequenceCoordinator {
             }
         }
 
+        // Delay narration on the welcome slide so the intro video can play first.
+        if slide == .welcome {
+            Task(priority: .userInitiated) { [weak self] in
+                try? await Task.sleep(for: .seconds(1.5))
+                guard let self, self.narratingSlide == slide, self.isPlaying, !self.isPaused else { return }
+                self.beginNarration(for: slide)
+            }
+            return
+        }
+
+        beginNarration(for: slide)
+    }
+
+    private func beginNarration(for slide: IntroSlide) {
         NarrationService.shared.speak(slide.narrationText, onStart: { [weak self] in
             guard let self else { return }
             // Speech started — cancel the pre-start fallback. The primary advance

@@ -4,6 +4,114 @@
 
 ---
 
+## March 6, 2026 — File Menu Cleanup
+
+### Overview
+Reorganized the File menu to follow macOS Human Interface Guidelines and remove clutter. Removed non-functional "New" menu items for auxiliary windows (Quick Note, Clipboard Capture, Compose) that require programmatic context to function. Moved automatic import triggers (Contacts, Calendar, Mail, iMessage & Calls) to the Debug menu since SAM runs these automatically. Flattened the Import submenu into top-level items. Close remains in its standard HIG position between New and Import.
+
+### File Menu (Before → After)
+**Before:** New submenu (New Window, New Quick Note Window, New Clipboard Capture Window, New Compose Window), Close, Import submenu (7 items including auto-imports), Backup/Restore.
+
+**After:** New Window (⌘N), Close (⌘W), Import Substack.../LinkedIn.../Facebook.../Evernote Notes..., Backup Data.../Restore Data...
+
+### Files Changed
+- `App/SAMApp.swift` — Added `.commandsRemoved()` to Quick Note, Clipboard Capture, and Compose WindowGroups. Flattened Import submenu to 4 top-level items (Substack, LinkedIn, Facebook, Evernote). Moved auto-import commands (Contacts, Calendar, Mail, iMessage & Calls) to Debug menu.
+
+---
+
+## March 6, 2026 — Intro Sequence Video + Narration Delay
+
+### Overview
+Added a short intro video (`SAM_intro.mp4`) to the welcome slide of the first-launch intro sequence. The video plays muted while SAM's speech narration plays simultaneously. Added a 1.5-second delay before narration begins on the welcome slide to let the video establish visually.
+
+### Files Changed
+- `Views/Awareness/IntroSequenceOverlay.swift` — Added `AVKit.VideoPlayer` for welcome slide (muted, auto-play, lifecycle-managed). Falls back to app icon if video not found.
+- `Coordinators/IntroSequenceCoordinator.swift` — Extracted `beginNarration(for:)` method. Added 1.5s async delay before narration on welcome slide only, with pause/skip guards.
+- `Resources/SAM_intro.mp4` — Bundled intro video (auto-included by Xcode).
+
+---
+
+## March 6, 2026 — Facebook Smart Auto-Detection Import Flow
+
+### Overview
+Applied the reusable auto-detection pipeline (§5.7) — third platform after Substack and LinkedIn — to Facebook imports. The old `File → Import → Import Facebook Archive...` menu item opened a raw NSOpenPanel with no guidance. The new `File → Import → Facebook...` opens a unified import sheet that handles the full lifecycle: scanning ~/Downloads for ZIP files, requesting a data export, watching for the export email, detecting the downloaded ZIP, parsing JSON files, reviewing matches, and importing.
+
+### Sheet State Machine
+`FacebookSheetPhase` enum with 12 cases: `.setup`, `.scanning`, `.zipFound(info)`, `.processing`, `.awaitingReview`, `.importing`, `.noZipFound`, `.watchingEmail`, `.emailFound(url)`, `.watchingFile`, `.complete(stats)`, `.failed(message)`.
+
+### Files Changed
+
+#### New File
+- `Views/Settings/FacebookImportSheet.swift` — Full phase-driven import sheet (580px wide). Renders all 12 phases with appropriate UI: ZIP preview with confirm/decline, progress indicators, inline review content (reuses `FacebookReviewContent`), email/file watcher status, completion summary with delete-ZIP toggle. Uses `.fileImporter` for manual ZIP selection as fallback.
+
+#### Coordinator
+- `Coordinators/FacebookImportCoordinator.swift` — Added `FacebookSheetPhase` enum, `FacebookZipInfo` struct, `FacebookImportStats` struct. New observable state (`sheetPhase`, `importedZipURL`). Watcher infrastructure: `emailPollingTimer`/`filePollingTimer`, UserDefaults-backed persistence (`sam.facebook.emailWatcherActive`, `emailWatcherStartDate`, `fileWatcherActive`, `fileWatcherStartDate`, `extractedDownloadURL`). New methods: `beginImportFlow()`, `scanDownloadsFolder()`, `processZip()`, `openFacebookExportPage()`, email/file watcher start/stop/poll, `scheduleReminder()`, `resumeWatchersIfNeeded()`, `deleteSourceZip()`, `cancelWatchers()`, `cancelAll()`, `completeImportFromSheet()`, `isMailAvailableForWatching`. Added `configure(container:)` method. Added sheetPhase transitions to `importFromZip()`, `loadFolder()`, and `confirmImport()`.
+
+#### Review Refactor
+- `Views/Settings/FacebookImportReviewSheet.swift` — Extracted three-section review UI (probable matches, recommended to add, no interaction) into reusable `FacebookReviewContent` view. Made `FacebookProbableMatchRow`, `FacebookCandidateRow` internal (was private) for cross-file reuse. `FacebookImportReviewSheet` simplified to wrapper.
+
+#### System Notifications
+- `Services/SystemNotificationService.swift` — Added `FACEBOOK_EXPORT` notification category with "Open Download Page" (foreground, opens URL + starts file watcher) and "Remind Me Later" (triggers calendar-gap-aware rescheduling) actions. New `postFacebookExportReady(downloadURL:triggerDate:)` method. Delegate handling for both action buttons and default tap.
+
+#### App Integration
+- `App/SAMApp.swift` — Renamed menu "Import Facebook Archive..." → "Import Facebook...". Replaced `importFacebookArchive()` file picker with `showFacebookImportSheet` state + `.sheet` presenter. Added `.samFacebookZipDetected` notification listener to auto-present sheet. Changed `.samFacebookAwaitingReview` to route to new sheet. Added `FacebookImportCoordinator.shared.configure(container:)` to `configureDataLayer()`, `cancelAll()` to termination handler, watcher UserDefaults keys to `clearAllData()`.
+
+#### Settings Cleanup
+- `Views/Settings/FacebookImportSettingsView.swift` — Removed step-by-step import instructions, folder picker, preview/status sections, stale import warning, and unused state. Kept: profile analysis section, writing voice summary, last import info, error display.
+- `Views/Settings/SettingsView.swift` — Added `.help("Use File → Import → Facebook to configure")` to Facebook ImportStatusDashboard row.
+- `Models/SAMModels.swift` — Added `.samFacebookZipDetected` notification name.
+
+### Key Differences from LinkedIn
+- **No Apple Contacts sync** — Facebook doesn't write URLs to Apple Contacts
+- **JSON format** — Facebook exports use JSON files, not CSVs
+- **48-hour export wait** — Facebook exports take up to 48 hours (vs LinkedIn's 24 hours)
+- **Email patterns** — Watches for `facebook.com`/`facebookmail.com` senders with download/ready/export subjects
+- **Cross-platform analysis** — Facebook has `runCrossPlatformAnalysis()` that compares with LinkedIn (runs as background task after import, not surfaced in the sheet)
+
+### Architecture Notes
+- **Third §5.7 implementation**: Further validates the reusable pattern (state machine, watcher persistence, notification categories). All three platforms share identical architectures.
+- **No schema version bump** — all new state is in UserDefaults and coordinator observable properties.
+- **Watcher persistence**: Email and file watchers survive app restart via `resumeWatchersIfNeeded()` called from `configure(container:)`.
+
+---
+
+## March 6, 2026 — LinkedIn Smart Auto-Detection Import Flow
+
+### Overview
+Applied the reusable auto-detection pipeline (§5.7) — first implemented for Substack — to LinkedIn imports. The old `File → Import → Import LinkedIn Archive...` menu item opened a raw NSOpenPanel with no guidance. The new `File → Import → LinkedIn...` opens a unified import sheet that handles the full lifecycle: scanning ~/Downloads for ZIP files, requesting a data export, watching for the export email, detecting the downloaded ZIP, parsing, reviewing matches, and importing.
+
+### Sheet State Machine
+`LinkedInSheetPhase` enum with 12 cases: `.setup`, `.scanning`, `.zipFound(info)`, `.processing`, `.awaitingReview`, `.importing`, `.noZipFound`, `.watchingEmail`, `.emailFound(url)`, `.watchingFile`, `.complete(stats)`, `.failed(message)`.
+
+### Files Changed
+
+#### New File
+- `Views/Settings/LinkedInImportSheet.swift` — Full phase-driven import sheet (580px wide). Renders all 12 phases with appropriate UI: ZIP preview with confirm/decline, progress indicators, inline review content (reuses `LinkedInReviewContent`), email/file watcher status, completion summary with Apple Contacts sync prompt and delete-ZIP toggle. Uses `.fileImporter` for manual ZIP selection as fallback.
+
+#### Coordinator
+- `Coordinators/LinkedInImportCoordinator.swift` — Added `LinkedInSheetPhase` enum, `LinkedInZipInfo` struct, `LinkedInImportStats` struct. New observable state (`sheetPhase`, `importedZipURL`). Watcher infrastructure: `emailPollingTimer`/`filePollingTimer`, UserDefaults-backed persistence (`sam.linkedin.emailWatcherActive`, `emailWatcherStartDate`, `fileWatcherActive`, `fileWatcherStartDate`, `extractedDownloadURL`). New methods: `beginImportFlow()`, `scanDownloadsFolder()`, `processZip()`, `openLinkedInExportPage()`, email/file watcher start/stop/poll, `scheduleReminder()`, `resumeWatchersIfNeeded()`, `deleteSourceZip()`, `cancelWatchers()`, `cancelAll()`, `completeImportFromSheet()`, `isMailAvailableForWatching`. Relaxed `importFromZip` prefix validation to accept both `Complete_` and `Basic_` prefixes. Added `configure(container:)` method.
+
+#### Review Refactor
+- `Views/Settings/LinkedInImportReviewSheet.swift` — Extracted three-section review UI (probable matches, recommended to add, no interaction) into reusable `LinkedInReviewContent` view. Made `ProbableMatchRow`, `CandidateRow`, `AppleContactsSyncConfirmationSheet` internal (was private) for cross-file reuse. `LinkedInImportReviewSheet` simplified to wrapper.
+
+#### System Notifications
+- `Services/SystemNotificationService.swift` — Added `LINKEDIN_EXPORT` notification category with "Open Download Page" (foreground, opens URL + starts file watcher) and "Remind Me Later" (triggers calendar-gap-aware rescheduling) actions. New `postLinkedInExportReady(downloadURL:triggerDate:)` method. Delegate handling for both action buttons and default tap.
+
+#### App Integration
+- `App/SAMApp.swift` — Renamed menu "Import LinkedIn Archive..." → "Import LinkedIn...". Replaced `importLinkedInArchive()` file picker with `showLinkedInImportSheet` state + `.sheet` presenter. Added `.samLinkedInZipDetected` notification listener to auto-present sheet. Changed `.samLinkedInAwaitingReview` to route to new sheet. Added `LinkedInImportCoordinator.shared.configure(container:)` to `configureDataLayer()`, `cancelAll()` to termination handler, watcher UserDefaults keys to `clearAllData()`.
+
+#### Settings Cleanup
+- `Views/Settings/LinkedInImportSettingsView.swift` — Removed step-by-step import instructions, folder picker, preview/status sections, and unused state. Kept: auto-sync Apple Contacts toggle, profile analysis section, writing voice summary, watermark info.
+- `Views/Settings/SettingsView.swift` — Added `.help("Use File → Import → LinkedIn to configure")` to LinkedIn ImportStatusDashboard row.
+- `Models/SAMModels.swift` — Added `.samLinkedInZipDetected` notification name.
+
+### Architecture Notes
+- **Second §5.7 implementation**: Validates the reusable pattern (state machine, watcher persistence, notification categories) established by Substack. LinkedIn adds inline review content (absent in Substack) and ZIP auto-detection from ~/Downloads.
+- **No schema version bump** — all new state is in UserDefaults and coordinator observable properties.
+- **Watcher persistence**: Email and file watchers survive app restart via `resumeWatchersIfNeeded()` called from `configure(container:)`.
+
+---
+
 ## March 5, 2026 — AI Family Inference, Anniversary Enrichment & Duplicate Prevention
 
 ### Overview

@@ -195,7 +195,7 @@ Cross-platform fallback: If a platform has no voice data, the draft generator us
 
 Currently implemented for: **Substack** (article excerpts), **LinkedIn** (share comments), **Facebook** (user posts).
 
-### 5.7 Auto-Detection Import Pipeline *(Implemented — Substack, March 6, 2026)*
+### 5.7 Auto-Detection Import Pipeline *(Implemented — Substack + LinkedIn, March 6, 2026)*
 
 Many social platforms use an **asynchronous export** model: the user requests their data, the platform prepares it (minutes to hours), emails a download link, and the user downloads a ZIP/archive. SAM provides a reusable auto-detection pipeline for this pattern.
 
@@ -253,13 +253,21 @@ Every platform that uses async exports should define a `{Platform}SheetPhase` en
 - **Entitlement**: `com.apple.security.files.downloads.read-write` — required for real ~/Downloads access (sandbox returns container otherwise). Already added; benefits all platforms.
 - **Mail access**: Email watcher requires `MailImportCoordinator.shared.mailEnabled` and configured accounts. Graceful fallback when unavailable.
 
+#### Implemented Platforms
+
+| Platform | File Pattern | Email Sender | Sheet | Coordinator |
+|----------|-------------|--------------|-------|-------------|
+| Substack | `substack-*.zip` | `substack.com` | `SubstackImportSheet` | `SubstackImportCoordinator` |
+| LinkedIn | `Complete_LinkedInDataExport_*.zip`, `Basic_LinkedInDataExport_*.zip` | `linkedin.com` | `LinkedInImportSheet` | `LinkedInImportCoordinator` |
+| Facebook | `*facebook*.zip` (case-insensitive) | `facebook.com`, `facebookmail.com` | `FacebookImportSheet` | `FacebookImportCoordinator` |
+
 #### Adapting for a New Platform
 
-To add auto-detection for LinkedIn or Facebook:
+To add auto-detection for another async-export platform:
 
-1. **Define file patterns**: Each platform uses different export filenames (e.g., `Basic_LinkedInDataExport_*.zip`, `facebook-*.zip`). Add pattern matching to `scanDownloadsFolder()`.
-2. **Define email patterns**: Each platform sends different export notification emails. Add sender/subject filters to `pollForExportEmail()` (e.g., LinkedIn: sender `linkedin.com`, subject "download your data").
-3. **Create the sheet**: Copy `SubstackImportSheet.swift` as a template. The feed section is Substack-specific; replace with platform-appropriate setup (folder picker for LinkedIn, URL entry for others).
+1. **Define file patterns**: Each platform uses different export filenames. Add pattern matching to `scanDownloadsFolder()`.
+2. **Define email patterns**: Each platform sends different export notification emails. Add sender/subject filters to `pollForExportEmail()`.
+3. **Create the sheet**: Copy `SubstackImportSheet.swift`, `LinkedInImportSheet.swift`, or `FacebookImportSheet.swift` as a template. Replace platform-specific setup sections.
 4. **Add notification category**: Register `{PLATFORM}_EXPORT` in `SystemNotificationService.configure()` with Open/Remind actions.
 5. **Wire menu item**: `File → Import → {Platform}...` opens the sheet. Remove `.disabled()` — the sheet handles all states.
 6. **Add watcher persistence**: Use `sam.{platform}.emailWatcherActive` / `fileWatcherActive` / `StartDate` keys. Call `resumeWatchersIfNeeded()` from `configure(container:)`.
@@ -423,5 +431,5 @@ Bookmark the **directory** (not file) for SQLite to cover WAL/SHM companions. `.
 
 ---
 
-**Document Version**: 34.5
-**Last Updated**: March 6, 2026 — Substack auto-detection import pipeline; reusable §5.7 pattern for async platform exports (LinkedIn, Facebook).
+**Document Version**: 36
+**Last Updated**: March 6, 2026 — Facebook auto-detection import pipeline (third §5.7 implementation); unified import sheet with 12-phase state machine, email/file watchers, inline review, system notifications.

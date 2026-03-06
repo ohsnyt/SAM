@@ -1193,5 +1193,13 @@ extension Notification.Name {
     /// Posted when the file watcher detects a Substack export ZIP in ~/Downloads.
     /// SAMApp listens to auto-present the SubstackImportSheet.
     static let samSubstackZipDetected = Notification.Name("samSubstackZipDetected")
+
+    /// Posted when the file watcher detects a LinkedIn export ZIP in ~/Downloads.
+    /// SAMApp listens to auto-present the LinkedInImportSheet.
+    static let samLinkedInZipDetected = Notification.Name("samLinkedInZipDetected")
+
+    /// Posted when the file watcher detects a Facebook export ZIP in ~/Downloads.
+    /// SAMApp listens to auto-present the FacebookImportSheet.
+    static let samFacebookZipDetected = Notification.Name("samFacebookZipDetected")
 }
 
