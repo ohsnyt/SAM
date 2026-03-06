@@ -401,7 +401,37 @@ final class PeopleRepository {
         return try modelContext.fetch(descriptor).first
     }
 
-    /// Upsert the Me contact, ensuring only one person has isMe = true
+    /// Set the isMe flag on a person identified by contactIdentifier.
+    /// Called when the Me contact was already imported via bulkUpsert (same identifier).
+    func setMeFlag(contactIdentifier: String) throws {
+        guard let modelContext = modelContext else {
+            throw RepositoryError.notConfigured
+        }
+
+        // Clear any existing Me flags first
+        let meDescriptor = FetchDescriptor<SamPerson>(
+            predicate: #Predicate { $0.isMe == true }
+        )
+        for existing in try modelContext.fetch(meDescriptor) {
+            existing.isMe = false
+        }
+
+        // Find the person by contactIdentifier and set isMe
+        let allDescriptor = FetchDescriptor<SamPerson>(
+            predicate: #Predicate { $0.contactIdentifier != nil }
+        )
+        let allPeople = try modelContext.fetch(allDescriptor)
+        if let match = allPeople.first(where: { $0.contactIdentifier == contactIdentifier }) {
+            match.isMe = true
+            try modelContext.save()
+            logger.info("Set isMe flag on existing person: \(match.displayNameCache ?? match.displayName, privacy: .public)")
+        }
+    }
+
+    /// Upsert the Me contact, ensuring only one person has isMe = true.
+    /// Matches by contactIdentifier first, then falls back to name+email matching
+    /// (the "Me" card can return a different unified identifier than the same person
+    /// fetched through a group).
     func upsertMe(contact: ContactDTO) throws {
         guard let modelContext = modelContext else {
             throw RepositoryError.notConfigured
@@ -419,14 +449,32 @@ final class PeopleRepository {
             existing.isMe = false
         }
 
-        // Find or create the person by contactIdentifier
-        let allDescriptor = FetchDescriptor<SamPerson>(
-            predicate: #Predicate { $0.contactIdentifier != nil }
-        )
+        // Find existing person — first by contactIdentifier, then by name+email fallback
+        let allDescriptor = FetchDescriptor<SamPerson>()
         let allPeople = try modelContext.fetch(allDescriptor)
-        let person: SamPerson
 
-        if let existing = allPeople.first(where: { $0.contactIdentifier == contact.identifier }) {
+        let existing: SamPerson? = {
+            // 1. Exact contactIdentifier match
+            if let match = allPeople.first(where: { $0.contactIdentifier == contact.identifier }) {
+                return match
+            }
+            // 2. Name + email fallback (handles different unified identifiers for same person)
+            let meEmails = Set(canonicalEmails)
+            let meName = contact.displayName.lowercased()
+            if !meEmails.isEmpty {
+                if let match = allPeople.first(where: { person in
+                    let nameMatch = (person.displayNameCache ?? person.displayName).lowercased() == meName
+                    let emailMatch = !person.emailAliases.filter({ meEmails.contains($0) }).isEmpty
+                    return nameMatch && emailMatch
+                }) {
+                    return match
+                }
+            }
+            return nil
+        }()
+
+        let person: SamPerson
+        if let existing {
             existing.displayNameCache = contact.displayName
             existing.emailCache = primaryEmail
             existing.emailAliases = canonicalEmails
@@ -437,7 +485,11 @@ final class PeopleRepository {
                 existing.lifecycleStatus = .active
             }
             existing.isMe = true
-
+            // Update contactIdentifier if it was a fallback match (different unified ID)
+            if existing.contactIdentifier != contact.identifier {
+                logger.info("Me contact identifier updated: \(existing.contactIdentifier ?? "nil") → \(contact.identifier)")
+                existing.contactIdentifier = contact.identifier
+            }
             existing.displayName = contact.displayName
             existing.email = primaryEmail
             person = existing

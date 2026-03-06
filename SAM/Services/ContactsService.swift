@@ -579,6 +579,8 @@ actor ContactsService {
                 CNContactPhoneNumbersKey as CNKeyDescriptor,
                 CNContactSocialProfilesKey as CNKeyDescriptor,
                 CNContactInstantMessageAddressesKey as CNKeyDescriptor,
+                CNContactRelationsKey as CNKeyDescriptor,
+                CNContactDatesKey as CNKeyDescriptor,
             ]
             let keysWithNote: [CNKeyDescriptor] = baseKeys + [CNContactNoteKey as CNKeyDescriptor]
 
@@ -672,6 +674,37 @@ actor ContactsService {
                         let labeled = CNLabeledValue(label: nil, value: im)
                         mutable.instantMessageAddresses.append(labeled)
                     }
+
+                case .contactRelation:
+                    let parts = value.split(separator: "|", maxSplits: 1).map(String.init)
+                    guard parts.count == 2 else { break }
+                    let existingNames = mutable.contactRelations.map { $0.value.name.lowercased() }
+                    guard !existingNames.contains(parts[1].lowercased()) else { break }
+                    let cnLabel = Self.mapToCNRelationLabel(parts[0])
+                    mutable.contactRelations.append(
+                        CNLabeledValue(label: cnLabel, value: CNContactRelation(name: parts[1]))
+                    )
+
+                case .anniversary:
+                    // Parse "YYYY-MM-DD" or "MM-DD" date string
+                    let components = value.split(separator: "-").compactMap { Int($0) }
+                    guard components.count >= 2 else { break }
+                    var dc = DateComponents()
+                    if components.count == 3 {
+                        dc.year = components[0]
+                        dc.month = components[1]
+                        dc.day = components[2]
+                    } else {
+                        dc.month = components[0]
+                        dc.day = components[1]
+                    }
+                    // Skip if an anniversary date already exists
+                    let hasAnniversary = mutable.dates.contains { labeled in
+                        labeled.label == CNLabelDateAnniversary
+                    }
+                    guard !hasAnniversary else { break }
+                    let labeled = CNLabeledValue(label: CNLabelDateAnniversary, value: dc as NSDateComponents)
+                    mutable.dates.append(labeled)
                 }
             }
 
@@ -690,6 +723,36 @@ actor ContactsService {
         } catch {
             logger.error("updateContact failed for \(identifier, privacy: .public): \(error.localizedDescription, privacy: .public)")
             return false
+        }
+    }
+
+    // MARK: - CN Relation Label Mapping
+
+    /// Maps a human-readable relation label to the appropriate CNLabel constant.
+    static func mapToCNRelationLabel(_ label: String) -> String {
+        switch label.lowercased() {
+        case "wife", "husband", "spouse", "partner":
+            return CNLabelContactRelationSpouse
+        case "mother", "mom":
+            return CNLabelContactRelationMother
+        case "father", "dad":
+            return CNLabelContactRelationFather
+        case "parent":
+            return CNLabelContactRelationParent
+        case "son":
+            return CNLabelContactRelationSon
+        case "daughter":
+            return CNLabelContactRelationDaughter
+        case "child":
+            return CNLabelContactRelationChild
+        case "brother":
+            return CNLabelContactRelationBrother
+        case "sister":
+            return CNLabelContactRelationSister
+        case "sibling":
+            return "sibling"  // No built-in CNLabel for sibling
+        default:
+            return label  // Custom label
         }
     }
 

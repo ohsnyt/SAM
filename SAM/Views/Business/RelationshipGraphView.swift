@@ -449,13 +449,57 @@ struct RelationshipGraphView: View {
                     fitToView()
                 }
             )
+        } else if coordinator.focusMode == "deducedRelationships" {
+            VStack {
+                HStack(spacing: 8) {
+                    Image(systemName: "person.2.fill")
+                        .foregroundStyle(.pink)
+                    Text("Deduced Family Relationships")
+                        .font(.callout.bold())
+
+                    let count = coordinator.unconfirmedDeducedRelationCount
+                    if count > 0 {
+                        Text("(\(count) unconfirmed)")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+
+                    if count > 0 {
+                        Button("Confirm All") {
+                            coordinator.confirmAllDeducedRelations()
+                            if coordinator.unconfirmedDeducedRelationCount == 0 {
+                                coordinator.clearFocusMode()
+                            }
+                            fitToView()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                    }
+
+                    Button("Exit") {
+                        coordinator.clearFocusMode()
+                        fitToView()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(.regularMaterial)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .padding(.top, 8)
+                .padding(.horizontal, 8)
+                Spacer()
+            }
         } else if coordinator.focusMode != nil {
             VStack {
                 HStack {
                     Image(systemName: "scope")
-                    Text("Showing deduced relationships")
+                    Text("Focus Mode")
                         .font(.callout.bold())
-                    Button("Exit Focus Mode") {
+                    Button("Exit") {
                         coordinator.clearFocusMode()
                         fitToView()
                     }
@@ -813,7 +857,6 @@ struct RelationshipGraphView: View {
             contextMenuItems(for: node)
         } else if let edge = hoveredEdge,
                   edge.edgeType == .deducedFamily,
-                  !edge.isConfirmedDeduction,
                   edge.deducedRelationID != nil {
             edgeContextMenuItems(for: edge)
         } else {
@@ -825,12 +868,24 @@ struct RelationshipGraphView: View {
     private func edgeContextMenuItems(for edge: GraphEdge) -> some View {
         let sourceName = coordinator.nodes.first(where: { $0.id == edge.sourceID })?.displayName ?? "?"
         let targetName = coordinator.nodes.first(where: { $0.id == edge.targetID })?.displayName ?? "?"
-        Button {
+        let label = edge.label ?? "related to"
+
+        if !edge.isConfirmedDeduction {
+            Button {
+                if let relID = edge.deducedRelationID {
+                    coordinator.confirmDeducedRelation(id: relID)
+                }
+            } label: {
+                Label("Confirm: \(sourceName) is \(label) \(targetName)", systemImage: "checkmark.circle")
+            }
+        }
+
+        Button(role: .destructive) {
             if let relID = edge.deducedRelationID {
-                coordinator.confirmDeducedRelation(id: relID)
+                coordinator.rejectDeducedRelation(id: relID)
             }
         } label: {
-            Label("Confirm: \(sourceName) is \(edge.label ?? "related to") \(targetName)", systemImage: "checkmark.circle")
+            Label("Reject: \(sourceName) is not \(label) \(targetName)", systemImage: "xmark.circle")
         }
     }
 

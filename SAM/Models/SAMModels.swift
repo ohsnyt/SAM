@@ -1078,6 +1078,7 @@ public final class DeducedRelation {
     public var relationTypeRawValue: String
     public var sourceLabel: String
     public var isConfirmed: Bool
+    public var isRejectedValue: Bool?
     public var createdAt: Date
     public var confirmedAt: Date?
 
@@ -1087,6 +1088,13 @@ public final class DeducedRelation {
         set { relationTypeRawValue = newValue.rawValue }
     }
 
+    /// Non-optional accessor; existing rows default to false.
+    @Transient
+    public var isRejected: Bool {
+        get { isRejectedValue ?? false }
+        set { isRejectedValue = newValue }
+    }
+
     public init(
         id: UUID = UUID(),
         personAID: UUID,
@@ -1094,6 +1102,7 @@ public final class DeducedRelation {
         relationType: DeducedRelationType,
         sourceLabel: String,
         isConfirmed: Bool = false,
+        isRejected: Bool = false,
         createdAt: Date = .now,
         confirmedAt: Date? = nil
     ) {
@@ -1103,6 +1112,7 @@ public final class DeducedRelation {
         self.relationTypeRawValue = relationType.rawValue
         self.sourceLabel = sourceLabel
         self.isConfirmed = isConfirmed
+        self.isRejectedValue = isRejected
         self.createdAt = createdAt
         self.confirmedAt = confirmedAt
     }
@@ -1167,5 +1177,9 @@ extension Notification.Name {
     /// Posted when the user taps a meeting prep notification.
     /// AwarenessView listens and expands the "More" section so MeetingPrepSection is visible.
     static let samExpandMeetingPrep = Notification.Name("samExpandMeetingPrep")
+
+    /// Posted when new DeducedRelation records are created (e.g., by FamilyInferenceService).
+    /// RelationshipGraphCoordinator listens to refresh unconfirmed count and filters.
+    static let samDeducedRelationsDidChange = Notification.Name("samDeducedRelationsDidChange")
 }
 

@@ -228,9 +228,18 @@ final class ContactsImportCoordinator {
             // Upsert into PeopleRepository
             let (created, updated) = try peopleRepo.bulkUpsert(contacts: contacts)
 
-            // Import the Me contact (even if not in the SAM group)
+            // Import the Me contact (even if not in the SAM group).
+            // If the Me card's identifier already appeared in the group import, just flag it.
+            // Otherwise upsertMe creates/finds the person. This prevents duplicates when the
+            // "Me" card returns a different unified identifier than the group fetch.
             if let meContact = await contactsService.fetchMeContact(keys: .detail) {
-                try peopleRepo.upsertMe(contact: meContact)
+                let groupIdentifiers = Set(contacts.map(\.identifier))
+                if groupIdentifiers.contains(meContact.identifier) {
+                    // Already imported via bulkUpsert — just set isMe flag
+                    try peopleRepo.setMeFlag(contactIdentifier: meContact.identifier)
+                } else {
+                    try peopleRepo.upsertMe(contact: meContact)
+                }
             }
 
             // Detect and clear stale contactIdentifiers (deleted Apple Contacts)

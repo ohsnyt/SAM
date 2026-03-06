@@ -28,6 +28,7 @@ struct ContactDTO: Sendable, Identifiable {
     // let note: String
     let imageData: Data?
     let thumbnailImageData: Data?
+    let dates: [DateDTO]
     let contactRelations: [RelationDTO]
     let socialProfiles: [SocialProfileDTO]
     let instantMessageAddresses: [InstantMessageDTO]
@@ -82,6 +83,12 @@ extension ContactDTO {
         let name: String
     }
     
+    struct DateDTO: Sendable, Identifiable {
+        let id = UUID()
+        let label: String?   // "anniversary", "other", or localized label
+        let date: DateComponents?
+    }
+
     struct SocialProfileDTO: Sendable, Identifiable {
         let id = UUID()
         let service: String
@@ -141,6 +148,13 @@ extension ContactDTO {
         self.imageData = contact.isKeyAvailable(CNContactImageDataKey) ? contact.imageData : nil
         self.thumbnailImageData = contact.isKeyAvailable(CNContactThumbnailImageDataKey) ? contact.thumbnailImageData : nil
         
+        self.dates = contact.isKeyAvailable(CNContactDatesKey) ? contact.dates.map { labeled in
+            DateDTO(
+                label: labeled.label.flatMap { CNLabeledValue<NSString>.localizedString(forLabel: $0) },
+                date: labeled.value as DateComponents
+            )
+        } : []
+
         self.contactRelations = contact.isKeyAvailable(CNContactRelationsKey) ? contact.contactRelations.map { relation in
             RelationDTO(
                 label: relation.label.flatMap { CNLabeledValue<NSString>.localizedString(forLabel: $0) },
@@ -204,6 +218,7 @@ extension ContactDTO {
                     CNContactEmailAddressesKey,
                     CNContactPostalAddressesKey,
                     CNContactBirthdayKey,
+                    CNContactDatesKey,
                     // CNContactNoteKey,  // Requires Notes entitlement - removed
                     CNContactImageDataKey,
                     CNContactThumbnailImageDataKey,
@@ -212,7 +227,7 @@ extension ContactDTO {
                     CNContactInstantMessageAddressesKey,
                     CNContactUrlAddressesKey
                 ] as [CNKeyDescriptor]
-                
+
             case .full:
                 return [
                     CNContactIdentifierKey,
@@ -226,6 +241,7 @@ extension ContactDTO {
                     CNContactEmailAddressesKey,
                     CNContactPostalAddressesKey,
                     CNContactBirthdayKey,
+                    CNContactDatesKey,
                     // CNContactNoteKey,  // Requires Notes entitlement - removed
                     CNContactImageDataKey,
                     CNContactThumbnailImageDataKey,

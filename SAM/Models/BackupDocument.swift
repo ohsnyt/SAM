@@ -502,6 +502,7 @@ struct DeducedRelationBackup: Codable {
     var relationTypeRawValue: String
     var sourceLabel: String
     var isConfirmed: Bool
+    var isRejected: Bool?    // Optional for backward compatibility with older backups
     var createdAt: Date
     var confirmedAt: Date?
 }

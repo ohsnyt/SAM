@@ -163,7 +163,20 @@ final class RelationshipGraphCoordinator {
     private let deducedRelationRepository = DeducedRelationRepository.shared
     private let graphBuilder = GraphBuilderService.shared
 
-    private init() {}
+    private init() {
+        // Listen for new deduced relations created by FamilyInferenceService
+        NotificationCenter.default.addObserver(
+            forName: .samDeducedRelationsDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in
+                self.refreshUnconfirmedCount()
+                self.applyFilters()
+            }
+        }
+    }
 
     // MARK: - Status Enum
 
@@ -398,6 +411,9 @@ final class RelationshipGraphCoordinator {
         } else {
             familyClusters = []
         }
+
+        // Refresh unconfirmed deduced relation count for banner display
+        refreshUnconfirmedCount()
     }
 
     // MARK: - Data Gathering
@@ -615,7 +631,7 @@ final class RelationshipGraphCoordinator {
 
     private func gatherDeducedFamilyLinks() throws -> [DeducedFamilyLink] {
         let allRelations = try deducedRelationRepository.fetchAll()
-        return allRelations.map { relation in
+        return allRelations.filter { !$0.isRejected }.map { relation in
             DeducedFamilyLink(
                 personAID: relation.personAID,
                 personBID: relation.personBID,
@@ -716,14 +732,68 @@ final class RelationshipGraphCoordinator {
 
     // MARK: - Deduced Relation Confirmation
 
+    /// Number of unconfirmed deduced relations (refreshed in applyFilters and after confirms).
+    private(set) var unconfirmedDeducedRelationCount: Int = 0
+
+    /// Refresh the count of unconfirmed deduced relations.
+    private func refreshUnconfirmedCount() {
+        unconfirmedDeducedRelationCount = (try? deducedRelationRepository.fetchUnconfirmed().count) ?? 0
+    }
+
     /// Confirm a deduced relationship and rebuild to update the edge visual.
     func confirmDeducedRelation(id: UUID) {
         do {
             try deducedRelationRepository.confirm(id: id)
+            // Queue enrichment for Contacts write-back
+            if let relation = try? deducedRelationRepository.fetchAll().first(where: { $0.id == id }) {
+                ContactEnrichmentCoordinator.shared.queueDeducedRelationshipEnrichments(for: relation)
+                // Fire-and-forget family inference for transitive relationships
+                Task {
+                    await FamilyInferenceService.shared.inferFromCluster(confirmedRelation: relation)
+                }
+            }
+            refreshUnconfirmedCount()
             invalidateLayoutCache()
             Task { await buildGraph() }
         } catch {
             logger.error("Failed to confirm deduced relation: \(error)")
+        }
+    }
+
+    /// Confirm all unconfirmed deduced relations at once.
+    /// Queues enrichments for each and rebuilds the graph.
+    func confirmAllDeducedRelations() {
+        do {
+            let unconfirmed = try deducedRelationRepository.fetchUnconfirmed()
+            guard !unconfirmed.isEmpty else { return }
+            let count = try deducedRelationRepository.confirmAll()
+            // Queue enrichments for all newly confirmed relations
+            ContactEnrichmentCoordinator.shared.queueDeducedRelationshipEnrichments(for: unconfirmed)
+            refreshUnconfirmedCount()
+            invalidateLayoutCache()
+            logger.info("Confirmed all \(count) deduced relations and queued enrichments")
+            Task { await buildGraph() }
+            // Fire-and-forget family inference — deduplicate by unique clusters
+            // Use the first relation as seed; the service walks the full cluster
+            if let firstRelation = unconfirmed.first {
+                Task {
+                    await FamilyInferenceService.shared.inferFromCluster(confirmedRelation: firstRelation)
+                }
+            }
+        } catch {
+            logger.error("Failed to confirm all deduced relations: \(error)")
+        }
+    }
+
+    /// Reject a deduced relationship — removes it from the graph and prevents re-creation on future imports.
+    func rejectDeducedRelation(id: UUID) {
+        do {
+            try deducedRelationRepository.reject(id: id)
+            refreshUnconfirmedCount()
+            invalidateLayoutCache()
+            Task { await buildGraph() }
+        } catch {
+            logger.error("Failed to reject deduced relation: \(error)")
         }
     }
 

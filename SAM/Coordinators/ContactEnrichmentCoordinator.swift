@@ -157,6 +157,79 @@ final class ContactEnrichmentCoordinator {
         return lines.joined(separator: "\n")
     }
 
+    // MARK: - Deduced Relationship Enrichment
+
+    /// Queue bidirectional enrichment items for a confirmed deduced relationship.
+    /// Person A gets the forward label ("wife|Ruth Smith"), Person B gets the inverse ("husband|David Smith").
+    func queueDeducedRelationshipEnrichments(for relation: DeducedRelation) {
+        guard let personA = try? peopleRepo.fetch(id: relation.personAID),
+              let personB = try? peopleRepo.fetch(id: relation.personBID),
+              personA.contactIdentifier != nil,
+              personB.contactIdentifier != nil else {
+            logger.debug("Skipping enrichment queuing: one or both people lack contactIdentifier")
+            return
+        }
+
+        let forwardLabel = relation.sourceLabel
+        let inverseLabel = Self.inverseRelationLabel(forwardLabel)
+        let personAName = personA.displayNameCache ?? personA.displayName
+        let personBName = personB.displayNameCache ?? personB.displayName
+
+        var candidates: [EnrichmentCandidate] = []
+
+        // Person A gets: "forwardLabel|personBName"
+        candidates.append(EnrichmentCandidate(
+            personID: personA.id,
+            field: .contactRelation,
+            proposedValue: "\(forwardLabel)|\(personBName)",
+            currentValue: nil,
+            source: .deducedRelationship,
+            sourceDetail: "Deduced family relationship"
+        ))
+
+        // Person B gets: "inverseLabel|personAName"
+        candidates.append(EnrichmentCandidate(
+            personID: personB.id,
+            field: .contactRelation,
+            proposedValue: "\(inverseLabel)|\(personAName)",
+            currentValue: nil,
+            source: .deducedRelationship,
+            sourceDetail: "Deduced family relationship (inverse)"
+        ))
+
+        do {
+            let inserted = try enrichmentRepo.bulkRecord(candidates)
+            if inserted > 0 {
+                refresh()
+                logger.info("Queued \(inserted) deduced relationship enrichment(s)")
+            }
+        } catch {
+            logger.error("Failed to queue deduced relationship enrichments: \(error.localizedDescription)")
+        }
+    }
+
+    /// Queue enrichments for a batch of confirmed deduced relations.
+    func queueDeducedRelationshipEnrichments(for relations: [DeducedRelation]) {
+        for relation in relations {
+            queueDeducedRelationshipEnrichments(for: relation)
+        }
+    }
+
+    /// Map a forward relation label to its inverse.
+    static func inverseRelationLabel(_ label: String) -> String {
+        switch label.lowercased() {
+        case "wife":                        return "husband"
+        case "husband":                     return "wife"
+        case "spouse", "partner":           return "spouse"
+        case "mother", "mom":               return "child"
+        case "father", "dad":               return "child"
+        case "parent":                      return "child"
+        case "son", "daughter", "child":    return "parent"
+        case "brother", "sister", "sibling": return "sibling"
+        default:                            return label
+        }
+    }
+
     // MARK: - Helpers
 
     private func relativeTimeString(from date: Date) -> String {

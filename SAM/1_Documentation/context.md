@@ -218,7 +218,7 @@ All models use SwiftData lightweight migration. Enum storage uses `rawValue` pat
 | **ContentPost** | Social posting tracker | platform, topic, postedAt |
 | **BusinessGoal** | User-defined targets | type, target, start/end, progress |
 | **ComplianceAuditEntry** | Draft audit trail | channel, flags, original/final draft |
-| **DeducedRelation** | Family relationships from Contacts data | personA, personB, type, confirmed |
+| **DeducedRelation** | Family relationships from Contacts data | personA, personB, type, confirmed, rejected |
 | **PendingEnrichment** | Contact update candidates | field, proposed/current value, source, status |
 | **IntentionalTouch** | Social touch events | platform, type, direction, weight, dedup key |
 | **LinkedInImport** | Import audit record | date, counts, status |
@@ -332,5 +332,5 @@ Bookmark the **directory** (not file) for SQLite to cover WAL/SHM companions. `.
 
 ---
 
-**Document Version**: 34.3
-**Last Updated**: March 5, 2026 — Data migration & schema version hygiene (centralized schemaVersion, legacy store discovery/migration/cleanup, backup versioning fix).
+**Document Version**: 34.4
+**Last Updated**: March 5, 2026 — AI-powered family inference service, anniversary enrichment field, deduced relation rejection, Me contact duplicate prevention.

@@ -20,17 +20,21 @@ public enum EnrichmentField: String, Codable, Sendable, CaseIterable {
     case phone        = "phone"
     case linkedInURL  = "linkedInURL"
     case facebookURL  = "facebookURL"
-    case whatsApp     = "whatsApp"
+    case whatsApp        = "whatsApp"
+    case contactRelation = "contactRelation"
+    case anniversary     = "anniversary"
 
     public var displayName: String {
         switch self {
-        case .company:     return "Company"
-        case .jobTitle:    return "Job Title"
-        case .email:       return "Email Address"
-        case .phone:       return "Phone Number"
-        case .linkedInURL: return "LinkedIn Profile"
-        case .facebookURL: return "Facebook Profile"
-        case .whatsApp:    return "WhatsApp"
+        case .company:         return "Company"
+        case .jobTitle:        return "Job Title"
+        case .email:           return "Email Address"
+        case .phone:           return "Phone Number"
+        case .linkedInURL:     return "LinkedIn Profile"
+        case .facebookURL:     return "Facebook Profile"
+        case .whatsApp:        return "WhatsApp"
+        case .contactRelation: return "Family Relationship"
+        case .anniversary:     return "Anniversary"
         }
     }
 }
@@ -47,6 +51,7 @@ public enum EnrichmentSource: String, Codable, Sendable {
     case calendarAttendees             = "calendarAttendees"
     case linkedInNotification          = "linkedInNotification"
     case whatsAppMessages              = "whatsAppMessages"
+    case deducedRelationship            = "deducedRelationship"
 
     public var displayName: String {
         switch self {
@@ -60,6 +65,7 @@ public enum EnrichmentSource: String, Codable, Sendable {
         case .calendarAttendees:            return "Calendar"
         case .linkedInNotification:         return "LinkedIn Notification"
         case .whatsAppMessages:             return "WhatsApp"
+        case .deducedRelationship:          return "Deduced Relationship"
         }
     }
 }

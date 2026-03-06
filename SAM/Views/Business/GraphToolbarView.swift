@@ -60,6 +60,19 @@ struct GraphToolbarView: ToolbarContent {
             }
         }
 
+        // MARK: - Deduced Relationships Review
+
+        if coordinator.unconfirmedDeducedRelationCount > 0 && coordinator.focusMode == nil {
+            ToolbarItem(placement: .automatic) {
+                Button {
+                    coordinator.activateFocusMode("deducedRelationships")
+                } label: {
+                    Label("Review Family (\(coordinator.unconfirmedDeducedRelationCount))", systemImage: "person.2.fill")
+                }
+                .help("Review deduced family relationships")
+            }
+        }
+
         // MARK: - Intelligence Overlays
 
         ToolbarItem(placement: .automatic) {

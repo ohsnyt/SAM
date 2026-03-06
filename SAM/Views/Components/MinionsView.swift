@@ -97,7 +97,7 @@ struct MinionsView: View {
         }
         if strategicCoordinator.generationStatus == .generating {
             items.append(MinionItem(
-                id: "strategy", icon: "chess.queen",
+                id: "strategy", icon: "chart.bar.xaxis.ascending",
                 label: "Strategy", tooltip: "Running business intelligence analysis"))
         }
         if roleDeduction.deductionStatus == .running {

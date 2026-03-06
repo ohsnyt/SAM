@@ -474,6 +474,7 @@ final class BackupCoordinator {
                     relationTypeRawValue: r.relationTypeRawValue,
                     sourceLabel: r.sourceLabel,
                     isConfirmed: r.isConfirmed,
+                    isRejected: r.isRejected,
                     createdAt: r.createdAt,
                     confirmedAt: r.confirmedAt
                 )
@@ -809,6 +810,7 @@ final class BackupCoordinator {
                     relationType: DeducedRelationType(rawValue: dto.relationTypeRawValue) ?? .other,
                     sourceLabel: dto.sourceLabel,
                     isConfirmed: dto.isConfirmed,
+                    isRejected: dto.isRejected ?? false,
                     createdAt: dto.createdAt,
                     confirmedAt: dto.confirmedAt
                 )
@@ -1381,6 +1383,7 @@ final class BackupCoordinator {
                         id: r.id, personAID: r.personAID, personBID: r.personBID,
                         relationTypeRawValue: r.relationTypeRawValue,
                         sourceLabel: r.sourceLabel, isConfirmed: r.isConfirmed,
+                        isRejected: r.isRejected,
                         createdAt: r.createdAt, confirmedAt: r.confirmedAt
                     )
                 },

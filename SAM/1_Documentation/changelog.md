@@ -4,6 +4,52 @@
 
 ---
 
+## March 5, 2026 — AI Family Inference, Anniversary Enrichment & Duplicate Prevention
+
+### Overview
+Added an AI-powered family inference service that analyzes connected family clusters after deduced relationship confirmations to infer transitive relationships (shared children, siblings, in-laws) and propagate anniversary dates between spouses. New relationships are created as unconfirmed DeducedRelations for user review. Added the ability to reject incorrect deduced relations (persisted to prevent re-creation). Fixed duplicate Me contact creation caused by Apple Contacts returning different unified identifiers for group vs. Me card fetches. Also fixed parent/father duplicate deduced relations and a missing SF Symbol.
+
+### What Changed
+- **FamilyInferenceService** (new) — Actor singleton following specialist service pattern. After a deduced relationship is confirmed, gathers the connected family cluster via BFS walk, fetches people + contact data (birthday, anniversary), sends focused prompt to AIService, parses JSON response, creates unconfirmed DeducedRelations and queues anniversary PendingEnrichments. Posts `.samDeducedRelationsDidChange` notification.
+- **ContactDTO** — Added `DateDTO` nested struct and `dates: [DateDTO]` field. `CNContactDatesKey` added to `.detail` and `.full` KeySets. Parses anniversary and other date labels from `CNContact.dates`.
+- **EnrichmentField** — Added `.anniversary` case with "Anniversary" display name.
+- **ContactsService** — `.anniversary` handler in `updateContact()` writes `CNLabelDateAnniversary` to Apple Contact dates. `CNContactDatesKey` added to fetch keys.
+- **DeducedRelation** — Added `isRejectedValue: Bool?` stored property with `@Transient isRejected` computed accessor (defaults `false`). Nullable for lightweight migration compatibility.
+- **DeducedRelationRepository** — `reject(id:)` marks relation as rejected, clears confirmed. `upsert()` skips rejected pairs and checks complementary types (parent↔child). `fetchUnconfirmed()` excludes rejected. `isMoreSpecificLabel()` keeps "father" over "parent".
+- **RelationshipGraphCoordinator** — Triggers `FamilyInferenceService.inferFromCluster()` after single and batch confirms. `rejectDeducedRelation(id:)` method. Notification listener for `.samDeducedRelationsDidChange` refreshes unconfirmed count. `gatherDeducedFamilyLinks()` filters rejected relations.
+- **RelationshipGraphView** — Edge context menu now appears on all deduced family edges (confirmed + unconfirmed). Added "Reject" option (destructive role). Confirm shown only for unconfirmed edges.
+- **EnrichmentReviewSheet** — `.anniversary` items formatted as human-readable dates via `formatAnniversaryDate()`.
+- **PeopleRepository** — New `setMeFlag(contactIdentifier:)` for lightweight isMe assignment. `upsertMe()` now falls back to name+email matching when contactIdentifier differs, updates contactIdentifier on fallback match.
+- **ContactsImportCoordinator** — Checks if Me contact identifier was already in group import; uses `setMeFlag()` instead of `upsertMe()` to prevent duplicate creation.
+- **BackupDocument/BackupCoordinator** — `isRejected` field added to DeducedRelationBackup (optional for backward compat).
+- **MinionsView** — Replaced invalid `chess.queen` SF Symbol with `chart.bar.xaxis.ascending`.
+- **SAMModels** — Added `.samDeducedRelationsDidChange` notification name.
+
+### Files
+| File | Action |
+|------|--------|
+| `Services/FamilyInferenceService.swift` | New — AI family cluster inference actor |
+| `Models/DTOs/ContactDTO.swift` | Modified — DateDTO, dates field, CNContactDatesKey |
+| `Models/SAMModels-Enrichment.swift` | Modified — .anniversary enum case |
+| `Models/SAMModels.swift` | Modified — DeducedRelation.isRejectedValue, notification |
+| `Services/ContactsService.swift` | Modified — .anniversary write handler, CNContactDatesKey in fetch keys |
+| `Repositories/DeducedRelationRepository.swift` | Modified — reject(), complementary type dedup, specific label preference |
+| `Coordinators/RelationshipGraphCoordinator.swift` | Modified — inference triggers, reject method, notification listener |
+| `Views/Business/RelationshipGraphView.swift` | Modified — edge context menu for all deduced edges, reject option |
+| `Views/People/EnrichmentReviewSheet.swift` | Modified — anniversary date formatting |
+| `Repositories/PeopleRepository.swift` | Modified — setMeFlag(), upsertMe() name+email fallback |
+| `Coordinators/ContactsImportCoordinator.swift` | Modified — Me contact duplicate prevention |
+| `Models/BackupDocument.swift` | Modified — isRejected field |
+| `Coordinators/BackupCoordinator.swift` | Modified — isRejected export/import |
+| `Views/Components/MinionsView.swift` | Modified — SF Symbol fix |
+
+### Architecture Notes
+- FamilyInferenceService uses `@MainActor static` helpers for SwiftData/Contacts access, sends `Sendable` DTOs to actor for prompt formatting, then dispatches `@MainActor static processResponse()` for writes.
+- `DeducedRelation.isRejectedValue` is `Bool?` (nullable) to enable lightweight CoreData migration. The `@Transient isRejected` computed property defaults nil to false.
+- Me contact duplication root cause: Apple's `unifiedMeContactWithKeys` can return a different unified identifier than `unifiedContacts(matching: groupPredicate)` for the same underlying person.
+
+---
+
 ## March 5, 2026 — Enhanced Post-Meeting/Call Capture with Guided Q&A
 
 ### Overview

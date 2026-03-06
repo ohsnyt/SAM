@@ -177,9 +177,19 @@ private struct EnrichmentRowView: View {
                                 .font(.system(size: 9))
                                 .foregroundStyle(.secondary)
                         }
-                        Text(item.proposedValue)
-                            .font(.caption)
-                            .foregroundStyle(.blue)
+                        if item.field == .contactRelation {
+                            Text(Self.formatContactRelation(item.proposedValue))
+                                .font(.caption)
+                                .foregroundStyle(.blue)
+                        } else if item.field == .anniversary {
+                            Text(Self.formatAnniversaryDate(item.proposedValue))
+                                .font(.caption)
+                                .foregroundStyle(.blue)
+                        } else {
+                            Text(item.proposedValue)
+                                .font(.caption)
+                                .foregroundStyle(.blue)
+                        }
                     }
 
                     if let detail = item.sourceDetail, !detail.isEmpty {
@@ -195,5 +205,38 @@ private struct EnrichmentRowView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+
+    /// Format "wife|Ruth Smith" as "wife — Ruth Smith" for readable display.
+    static func formatContactRelation(_ value: String) -> String {
+        let parts = value.split(separator: "|", maxSplits: 1).map(String.init)
+        guard parts.count == 2 else { return value }
+        return "\(parts[0]) — \(parts[1])"
+    }
+
+    /// Format "YYYY-MM-DD" or "MM-DD" anniversary date for readable display.
+    static func formatAnniversaryDate(_ value: String) -> String {
+        let components = value.split(separator: "-").compactMap { Int($0) }
+        guard components.count >= 2 else { return value }
+
+        var dc = DateComponents()
+        if components.count == 3 {
+            dc.year = components[0]
+            dc.month = components[1]
+            dc.day = components[2]
+        } else {
+            dc.month = components[0]
+            dc.day = components[1]
+        }
+
+        if let date = Calendar.current.date(from: dc) {
+            let formatter = DateFormatter()
+            formatter.dateStyle = components.count == 3 ? .long : .long
+            if components.count < 3 {
+                formatter.dateFormat = "MMMM d"
+            }
+            return formatter.string(from: date)
+        }
+        return value
     }
 }
