@@ -2,238 +2,106 @@
 //  IntroSequenceOverlay.swift
 //  SAM
 //
-//  Phase AB: In-App Guidance — First-launch narrated intro sequence view
+//  Phase AB: In-App Guidance — First-launch intro video view
 //
 
 import SwiftUI
-import AppKit
 import AVKit
 
-/// A narrated 6-slide intro sequence shown on first launch after onboarding.
-/// Presents SAM's core value proposition with synchronized speech narration.
+/// A full intro video shown on first launch after onboarding.
+/// Plays a 2:39 video presenting SAM's value proposition, then shows a "Get Started" button.
 struct IntroSequenceOverlay: View {
 
     @State private var coordinator = IntroSequenceCoordinator.shared
-    @State private var shimmerActive = false
-    @State private var videoPlayer: AVPlayer?
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var player: AVPlayer?
+    @State private var playerObserver: Any?
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Slide content
-            slideContent
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .animation(reduceMotion ? .none : .easeInOut(duration: 0.4), value: coordinator.currentSlide)
-
-            Divider()
-
-            // Bottom controls
-            bottomBar
-                .padding(.horizontal, 24)
-                .padding(.vertical, 16)
-        }
-        .frame(minWidth: 550, idealWidth: 650, maxWidth: 750,
-               minHeight: 400, idealHeight: 500, maxHeight: 600)
-        .background(.ultraThinMaterial)
-        .onAppear {
-            coordinator.startPlayback()
-        }
-        .onChange(of: coordinator.currentSlide) { _, newSlide in
-            shimmerActive = false
-            if newSlide == .welcome {
-                triggerShimmerAfterDelay()
+        ZStack {
+            // Video fills the sheet
+            if let player {
+                VideoPlayer(player: player)
+                    .disabled(true) // Prevent user interaction with transport controls
             } else {
-                videoPlayer?.pause()
+                // Fallback if video can't be loaded
+                Color.black
+                    .overlay {
+                        Image(nsImage: NSApplication.shared.applicationIconImage)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 128, height: 128)
+                    }
             }
-        }
-    }
 
-    // MARK: - Slide Content
-
-    @ViewBuilder
-    private var slideContent: some View {
-        let slide = coordinator.currentSlide
-
-        if slide == .welcome {
-            // Video fills the welcome slide
-            welcomeVideoSlide
-        } else {
-            VStack(spacing: 20) {
+            // Overlay controls
+            VStack {
                 Spacer()
 
-                // Animated SF Symbol for all other slides
-                Image(systemName: slide.symbolName)
-                    .font(.system(size: 64))
-                    .foregroundStyle(.tint)
-                    .symbolEffect(.pulse, options: .repeating, isActive: coordinator.isPlaying && !coordinator.isPaused)
-                    .id(slide)  // Force symbol recreation for each slide
-                    .transition(.opacity)
-
-                // Headline
-                Text(slide.headline)
-                    .font(.title2)
-                    .fontWeight(.semibold)
-                    .multilineTextAlignment(.center)
-                    .id("headline-\(slide.rawValue)")
-                    .transition(.opacity)
-
-                // Subtitle
-                Text(slide.subtitle)
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .id("subtitle-\(slide.rawValue)")
-                    .transition(.opacity)
-
-                // "Get Started" button on last slide
-                if slide == .getStarted {
+                if coordinator.videoFinished {
+                    // "Get Started" button after video ends
                     Button(action: { coordinator.markComplete() }) {
                         Text("Get Started")
                             .fontWeight(.semibold)
-                            .frame(minWidth: 140)
+                            .frame(minWidth: 160)
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
-                    .padding(.top, 8)
-                    .transition(.opacity)
+                    .padding(.bottom, 40)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                } else {
+                    // Skip button during video playback
+                    HStack {
+                        Spacer()
+                        Button("Skip") {
+                            coordinator.skip()
+                        }
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(.white.opacity(0.7))
+                        .padding(20)
+                    }
                 }
-
-                Spacer()
             }
-            .padding(.horizontal, 48)
+            .animation(.easeInOut(duration: 0.4), value: coordinator.videoFinished)
         }
-    }
-
-    // MARK: - Welcome Video Slide
-
-    private var welcomeVideoSlide: some View {
-        VStack(spacing: 0) {
-            if let player = videoPlayer {
-                VideoPlayer(player: player)
-                    .disabled(true) // Prevent user interaction with playback controls
-                    .transition(.opacity)
-            } else {
-                // Fallback: app icon if video can't be loaded
-                appIconView
-            }
-        }
+        .frame(minWidth: 756, idealWidth: 882, maxWidth: 1260,
+               minHeight: 432, idealHeight: 504, maxHeight: 720)
+        .background(.black)
         .onAppear {
-            setupVideoPlayer()
+            setupPlayer()
         }
         .onDisappear {
-            videoPlayer?.pause()
-        }
-        .onChange(of: coordinator.currentSlide) { _, newSlide in
-            if newSlide != .welcome {
-                videoPlayer?.pause()
-            }
+            tearDownPlayer()
         }
     }
 
-    private func setupVideoPlayer() {
-        guard let url = Bundle.main.url(forResource: "SAM_intro", withExtension: "mp4") else { return }
-        let player = AVPlayer(url: url)
-        player.isMuted = true
-        player.play()
-        videoPlayer = player
-    }
+    // MARK: - Player Setup
 
-    // MARK: - App Icon with Shimmer
+    private func setupPlayer() {
+        guard let url = Bundle.main.url(forResource: "SAM_intro_video_hb", withExtension: "mp4") else { return }
+        let avPlayer = AVPlayer(url: url)
+        player = avPlayer
 
-    private var appIconView: some View {
-        Image(nsImage: NSApplication.shared.applicationIconImage)
-            .resizable()
-            .aspectRatio(contentMode: .fit)
-            .frame(width: 128, height: 128)
-            .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-            .overlay {
-                // Shimmer overlay — a bright gradient that sweeps across
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                .white.opacity(0),
-                                .white.opacity(0.4),
-                                .white.opacity(0),
-                            ],
-                            startPoint: shimmerActive ? .trailing : .leading,
-                            endPoint: shimmerActive ? UnitPoint(x: 1.5, y: 0.5) : UnitPoint(x: -0.5, y: 0.5)
-                        )
-                    )
-                    .blendMode(.screen)
-            }
-            .shadow(color: .black.opacity(0.2), radius: 12, x: 0, y: 4)
-            .id(IntroSequenceCoordinator.IntroSlide.welcome)
-            .transition(.opacity)
-    }
-
-    private func triggerShimmerAfterDelay() {
-        shimmerActive = false
-        Task {
-            // Repeat shimmer sweep every ~2 seconds while on the welcome slide
-            while coordinator.currentSlide == .welcome {
-                try? await Task.sleep(for: .seconds(1.0))
-                guard coordinator.currentSlide == .welcome else { return }
-                withAnimation(.easeInOut(duration: 0.8)) {
-                    shimmerActive = true
-                }
-                // Wait for sweep to finish, then reset before next cycle
-                try? await Task.sleep(for: .seconds(3.2))
-                guard coordinator.currentSlide == .welcome else { return }
-                shimmerActive = false
+        // Observe when playback reaches the end
+        playerObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: avPlayer.currentItem,
+            queue: .main
+        ) { _ in
+            Task { @MainActor in
+                coordinator.videoDidFinish()
             }
         }
+
+        avPlayer.play()
     }
 
-    // MARK: - Bottom Bar
-
-    private var bottomBar: some View {
-        HStack {
-            // Pause/Play button
-            Button(action: {
-                if coordinator.isPaused {
-                    coordinator.resume()
-                } else {
-                    coordinator.pause()
-                }
-            }) {
-                Image(systemName: coordinator.isPaused ? "play.fill" : "pause.fill")
-                    .font(.body)
-                    .frame(width: 24, height: 24)
-            }
-            .buttonStyle(.borderless)
-            .help(coordinator.isPaused ? "Resume" : "Pause")
-
-            Spacer()
-
-            // Progress dots
-            HStack(spacing: 8) {
-                ForEach(IntroSequenceCoordinator.IntroSlide.allCases, id: \.rawValue) { slide in
-                    Circle()
-                        .fill(slide.rawValue <= coordinator.currentSlide.rawValue
-                              ? Color.accentColor
-                              : Color.secondary.opacity(0.3))
-                        .frame(width: 8, height: 8)
-                        .animation(.easeInOut(duration: 0.2), value: coordinator.currentSlide)
-                }
-            }
-
-            Spacer()
-
-            // Skip button
-            if coordinator.currentSlide != .getStarted {
-                Button("Skip") {
-                    coordinator.skip()
-                }
-                .buttonStyle(.borderless)
-                .foregroundStyle(.secondary)
-            } else {
-                // Invisible placeholder to maintain layout
-                Button("Skip") {}
-                    .buttonStyle(.borderless)
-                    .opacity(0)
-            }
+    private func tearDownPlayer() {
+        player?.pause()
+        if let observer = playerObserver {
+            NotificationCenter.default.removeObserver(observer)
         }
+        playerObserver = nil
+        player = nil
     }
 }
 
@@ -241,5 +109,5 @@ struct IntroSequenceOverlay: View {
 
 #Preview {
     IntroSequenceOverlay()
-        .frame(width: 650, height: 500)
+        .frame(width: 882, height: 504)
 }

@@ -4,6 +4,19 @@
 
 ---
 
+## March 6, 2026 — Intro Video Replacement
+
+### Overview
+Replaced the 6-slide narrated intro sequence with a single 2:39 intro video (`SAM_intro_video_hb.mp4`, 1260x720). The video provides a more polished and motivational first-launch experience while also giving SAM additional time to process initial data imports and compile the first briefing and recommendations in the background.
+
+### Files Changed
+- `Coordinators/IntroSequenceCoordinator.swift` — Removed slide system (6-case enum, NarrationService integration, fallback timers, slide progression, inter-slide delays). Simplified to video lifecycle: `showIntroSequence`, `videoFinished`, `checkAndShow()`, `videoDidFinish()`, `skip()`, `markComplete()`.
+- `Views/Awareness/IntroSequenceOverlay.swift` — Replaced slide-based UI with AVPlayer video playback. `.AVPlayerItemDidPlayToEndTime` observer triggers "Get Started" button on completion. Skip button during playback. Window sized at 7:4 aspect ratio (882x504 ideal) matching the video.
+- `Resources/SAM_intro.mp4` — Removed (superseded by the new video).
+- `Resources/SAM_intro_video_hb.mp4` — New intro video (already present from prior commit).
+
+---
+
 ## March 6, 2026 — File Menu Cleanup
 
 ### Overview
