@@ -885,7 +885,8 @@ struct ScenarioDataGenerator {
 // MARK: - Test Suite: Outcome Engine Signal-to-Noise
 // ═══════════════════════════════════════════════════════════════════════
 
-@Suite("Scenario: Outcome Engine Quality")
+@Suite("Scenario: Outcome Engine Quality", .serialized)
+@MainActor
 struct OutcomeEngineQualityTests {
 
     // MARK: - Setup
@@ -1101,7 +1102,8 @@ struct OutcomeEngineQualityTests {
 // MARK: - Test Suite: Briefing Data Quality
 // ═══════════════════════════════════════════════════════════════════════
 
-@Suite("Scenario: Briefing Data Quality")
+@Suite("Scenario: Briefing Data Quality", .serialized)
+@MainActor
 struct BriefingDataQualityTests {
 
     @MainActor
@@ -1178,7 +1180,8 @@ struct BriefingDataQualityTests {
 // MARK: - Test Suite: Relationship Health Scoring
 // ═══════════════════════════════════════════════════════════════════════
 
-@Suite("Scenario: Relationship Health Quality")
+@Suite("Scenario: Relationship Health Quality", .serialized)
+@MainActor
 struct RelationshipHealthQualityTests {
 
     @MainActor
