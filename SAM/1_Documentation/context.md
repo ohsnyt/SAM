@@ -407,11 +407,7 @@ Bookmark the **directory** (not file) for SQLite to cover WAL/SHM companions. `.
 ### ~~Priority 6 — Data Migration & Schema Version Hygiene~~ ✅ Completed (Mar 5, 2026)
 
 ### Priority 7 - Update onboarding, helps, tooltips *(in progress)*
-- ~~It would be good to have a menu item where all the import calls live. This would make it easier for users to find and bring consistency.~~ ✅ **Done** (Mar 6, 2026) — File menu reorganized per macOS HIG: flat Import items (Substack, LinkedIn, Facebook, Evernote) in File menu; auto-imports (Contacts, Calendar, Mail, iMessage) run automatically at launch.
-- ~~Is it possible for SAM to notice features that the User is not utilizing well, and coach the user on how to use those effectively — not all at once, but over days or weeks?~~ ✅ **Done** — FeatureAdoptionTracker (OutcomeEngine scanner #14) surfaces unused features as coaching cards progressively over time.
-- ~~First-launch intro sequence~~ ✅ **Done** (Mar 6, 2026) — Replaced 6-slide narrated intro with a 2:39 motivational video. Gives SAM time to process initial data imports and compile first briefing in the background.
-- ~~Settings organization~~ ✅ **Done** — Consolidated from 10 tabs → 4 (General, Permissions, Data Sources, AI & Coaching, Business). Legacy Data migration section added to Settings → General. Import status dashboard in Data Sources.
-- **Remaining**: Examine onboarding permission flow. Current onboarding requests Contacts + Calendar. Consider adding: MLX model download, macOS notifications permission, iMessage & phone log access. Determine minimal required vs. deferrable permissions.
+— FeatureAdoptionTracker (OutcomeEngine scanner #14) surfaces unused features as coaching cards progressively over time.
 - **Remaining**: Formalize which settings are deferred to coaching instructions during first hours of operation (social media imports, content posting, compliance settings, etc.) vs. required at startup.
 - **Remaining**: Walk user through role confirmation via relationship graph after initial imports complete.
 
