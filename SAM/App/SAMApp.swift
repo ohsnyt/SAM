@@ -734,14 +734,15 @@ struct SAMApp: App {
 
         let contactsEnabled = UserDefaults.standard.bool(forKey: "sam.contacts.enabled")
         let calendarEnabled = UserDefaults.standard.bool(forKey: "calendarAutoImportEnabled")
+        let mailEnabled = UserDefaults.standard.bool(forKey: "mailImportEnabled")
 
         // If nothing was ever enabled, don't reset (user might have skipped everything)
-        if !contactsEnabled && !calendarEnabled {
+        if !contactsEnabled && !calendarEnabled && !mailEnabled {
             return false
         }
-        
+
         var permissionsLost = false
-        
+
         // Check contacts if it was enabled
         if contactsEnabled {
             let contactsAuth = await ContactsService.shared.authorizationStatus()
@@ -750,18 +751,25 @@ struct SAMApp: App {
                 permissionsLost = true
             }
         }
-        
+
         // Check calendar if it was enabled
         if calendarEnabled {
             let calendarAuth = await CalendarService.shared.authorizationStatus()
             if calendarAuth != .fullAccess {
-
-
                 logger.warning("Calendar was enabled but permission is now \(calendarAuth.rawValue)")
                 permissionsLost = true
             }
         }
-        
+
+        // Check mail if it was enabled (AppleScript automation permission)
+        if mailEnabled {
+            let mailError = await MailService.shared.checkAccess()
+            if mailError != nil {
+                logger.warning("Mail was enabled but automation permission is now revoked")
+                permissionsLost = true
+            }
+        }
+
         return permissionsLost
     }
     

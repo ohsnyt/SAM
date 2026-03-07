@@ -4,6 +4,26 @@
 
 ---
 
+## March 6, 2026 — Priority 7: Onboarding, Helps & Tooltips Remediation
+
+### Overview
+Fixed bugs and gaps in onboarding, feature adoption coaching, and permission loss detection. Role confirmation walkthrough was already complete.
+
+### Fixes
+1. **Feature adoption dedup bug** (`OutcomeEngine.swift`): `scanFeatureAdoption()` used `hasSimilarOutcome(kind: .setup, personID: nil)` which blocked ALL feature coaching if ANY `.setup` outcome existed. Changed to title-based dedup via new `hasSimilarOutcome(title:)` overload.
+2. **Missing coaching entries** (`FeatureAdoptionTracker.swift`): Added 3 `CoachingEntry` items for `postMeetingCapture` (day 2), `contentDraft` (day 3), and `deepWorkSchedule` (day 4) — these features had usage tracking but no coaching prompts.
+3. **Communications state not persisted** (`OnboardingView.swift`): `saveSelections()` now sets `sam.comms.enabled` in UserDefaults when user grants iMessage/phone access during onboarding.
+4. **Mail permission loss undetected** (`SAMApp.swift`): `checkIfPermissionsLost()` now checks mail automation permission (via `MailService.checkAccess()`) in addition to contacts and calendar.
+
+### Files Changed
+- `Repositories/OutcomeRepository.swift` — Added `hasSimilarOutcome(title:withinHours:)` overload
+- `Coordinators/OutcomeEngine.swift` — Changed dedup from kind-based to title-based in `scanFeatureAdoption()`
+- `Coordinators/FeatureAdoptionTracker.swift` — Added 3 coaching timeline entries
+- `Models/DTOs/OnboardingView.swift` — Persist `sam.comms.enabled` in `saveSelections()`
+- `App/SAMApp.swift` — Added mail to `checkIfPermissionsLost()`, included in early-return guard
+
+---
+
 ## March 6, 2026 — Legacy Role Extraction via SQLite3
 
 ### Overview

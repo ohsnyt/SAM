@@ -1599,6 +1599,10 @@ struct OnboardingView: View {
             MailImportCoordinator.shared.setMailEnabled(true)
         }
 
+        if !skippedCommunications && (BookmarkManager.shared.hasMessagesAccess || BookmarkManager.shared.hasCallHistoryAccess) {
+            UserDefaults.standard.set(true, forKey: "sam.comms.enabled")
+        }
+
         if mlxModelReady {
             UserDefaults.standard.set("hybrid", forKey: "aiBackend")
         }

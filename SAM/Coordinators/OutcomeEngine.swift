@@ -984,7 +984,7 @@ final class OutcomeEngine {
     private func scanFeatureAdoption() -> [SamOutcome] {
         let suggestions = FeatureAdoptionTracker.shared.suggestionsForUnusedFeatures()
         return suggestions.compactMap { suggestion in
-            let isDuplicate = (try? outcomeRepo.hasSimilarOutcome(kind: .setup, personID: nil)) ?? false
+            let isDuplicate = (try? outcomeRepo.hasSimilarOutcome(title: suggestion.title)) ?? false
             guard !isDuplicate else { return nil }
             FeatureAdoptionTracker.shared.markCoached(suggestion.feature)
             return SamOutcome(

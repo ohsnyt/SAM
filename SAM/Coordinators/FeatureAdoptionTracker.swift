@@ -191,6 +191,27 @@ final class FeatureAdoptionTracker {
             suggestedNextStep: "Open Settings → Imports → Facebook Import"
         ),
         CoachingEntry(
+            dayThreshold: 2,
+            feature: .postMeetingCapture,
+            title: "Capture meeting notes right after meetings",
+            rationale: "SAM prompts you after meetings end with talking points and pending actions from the briefing, so you can capture key takeaways while they're fresh.",
+            suggestedNextStep: "After your next meeting ends, look for the capture prompt in Today"
+        ),
+        CoachingEntry(
+            dayThreshold: 3,
+            feature: .contentDraft,
+            title: "Draft social media content with AI",
+            rationale: "SAM can generate platform-aware drafts for LinkedIn, Facebook, Instagram, or Substack based on your recent client interactions and business themes.",
+            suggestedNextStep: "Open the content draft sheet from a coaching card or the Grow section"
+        ),
+        CoachingEntry(
+            dayThreshold: 4,
+            feature: .deepWorkSchedule,
+            title: "Schedule deep work blocks on your calendar",
+            rationale: "Protect focused time for important tasks like case prep, training, or strategic planning by scheduling deep work blocks directly from SAM.",
+            suggestedNextStep: "Tap a deep work coaching card to schedule a block on your calendar"
+        ),
+        CoachingEntry(
             dayThreshold: 7,
             feature: .clipboardCapture,
             title: "Capture conversations with \u{2303}\u{21e7}V",

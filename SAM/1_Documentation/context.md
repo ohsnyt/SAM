@@ -406,10 +406,7 @@ Bookmark the **directory** (not file) for SQLite to cover WAL/SHM companions. `.
 
 ### ~~Priority 6 — Data Migration & Schema Version Hygiene~~ ✅ Completed (Mar 5, 2026)
 
-### Priority 7 - Update onboarding, helps, tooltips *(in progress)*
-— FeatureAdoptionTracker (OutcomeEngine scanner #14) surfaces unused features as coaching cards progressively over time.
-- **Remaining**: Formalize which settings are deferred to coaching instructions during first hours of operation (social media imports, content posting, compliance settings, etc.) vs. required at startup.
-- **Remaining**: Walk user through role confirmation via relationship graph after initial imports complete.
+### ~~Priority 7 — Onboarding, Helps & Tooltips Remediation~~ ✅ Completed (Mar 6, 2026)
 
 ### Priority 8 - Security review
 - Can we use TouchID, FaceID, Apple Watch, password to enforce secure access to SAM? Would this be a good thing?
@@ -427,5 +424,5 @@ Bookmark the **directory** (not file) for SQLite to cover WAL/SHM companions. `.
 
 ---
 
-**Document Version**: 37
-**Last Updated**: March 6, 2026 — File menu reorganized per HIG; intro video replacement; Legacy Data migration in Settings → General; Priority 7 progress tracked.
+**Document Version**: 38
+**Last Updated**: March 6, 2026 — Priority 7 completed: onboarding, feature adoption coaching, and permission loss detection fixes.

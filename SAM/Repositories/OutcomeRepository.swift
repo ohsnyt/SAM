@@ -402,6 +402,26 @@ final class OutcomeRepository {
         }
     }
 
+    /// Check if a pending/inProgress outcome with the same title exists within a time window.
+    /// Used by feature adoption coaching to avoid blocking on unrelated setup outcomes.
+    func hasSimilarOutcome(
+        title: String,
+        withinHours hours: Int = 24
+    ) throws -> Bool {
+        guard let context else { throw RepositoryError.notConfigured }
+
+        let cutoff = Calendar.current.date(byAdding: .hour, value: -hours, to: .now) ?? .now
+        let descriptor = FetchDescriptor<SamOutcome>()
+        let all = try context.fetch(descriptor)
+
+        let lowercaseTitle = title.lowercased()
+        return all.contains { outcome in
+            outcome.title.lowercased() == lowercaseTitle &&
+            outcome.createdAt >= cutoff &&
+            (outcome.status == .pending || outcome.status == .inProgress)
+        }
+    }
+
     // MARK: - Errors
 
     enum RepositoryError: Error, LocalizedError {
