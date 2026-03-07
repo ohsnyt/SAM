@@ -50,6 +50,7 @@ struct PersonDetailView: View {
     @State private var showingEnrichmentSheet = false
     @State private var showingLifecycleConfirm = false
     @State private var pendingLifecycleStatus: ContactLifecycleStatus?
+    @State private var roleDeductionEngine = RoleDeductionEngine.shared
 
     @Query(filter: #Predicate<SamPerson> { $0.lifecycleStatusRawValue == "active" })
     private var allPeople: [SamPerson]
@@ -99,6 +100,10 @@ struct PersonDetailView: View {
         .focusable(false)  // Prevent ScrollView stealing first click on macOS
         .navigationTitle("")  // Remove title since we show it in the header
         .toolbar {
+            ToolbarItem {
+                Divider()
+                    .frame(height: 20)
+            }
             ToolbarItemGroup {
                 if person.contactIdentifier != nil {
                     Button {
@@ -612,6 +617,19 @@ struct PersonDetailView: View {
                             .foregroundStyle(style.color)
                             .clipShape(RoundedRectangle(cornerRadius: 4))
                     }
+                }
+
+                // Suggested role badge (pulsing)
+                if !isEditingBadges, let suggestion = roleDeductionEngine.suggestion(for: person.id) {
+                    RoleSuggestionBadge(
+                        suggestion: suggestion,
+                        onConfirm: {
+                            roleDeductionEngine.confirmRole(personID: person.id, role: suggestion.suggestedRole)
+                        },
+                        onDismiss: {
+                            roleDeductionEngine.dismissSuggestion(personID: person.id)
+                        }
+                    )
                 }
 
                 // Edit toggle button
@@ -2325,6 +2343,61 @@ private struct ReferrerPickerSheet: View {
 }
 
 
+
+// MARK: - Role Suggestion Badge
+
+/// Pulsing badge shown in the role area when SAM has a pending role suggestion.
+private struct RoleSuggestionBadge: View {
+    let suggestion: RoleSuggestion
+    let onConfirm: () -> Void
+    let onDismiss: () -> Void
+
+    @State private var isPulsing = false
+
+    var body: some View {
+        let style = RoleBadgeStyle.forBadge(suggestion.suggestedRole)
+        HStack(spacing: 4) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 8))
+            Text(suggestion.suggestedRole)
+                .font(.caption)
+            Text("?")
+                .font(.caption.bold())
+
+            Button {
+                withAnimation { onConfirm() }
+            } label: {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 9, weight: .bold))
+            }
+            .buttonStyle(.plain)
+            .help("Confirm \(suggestion.suggestedRole) role")
+
+            Button {
+                withAnimation { onDismiss() }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .bold))
+            }
+            .buttonStyle(.plain)
+            .help("Dismiss suggestion")
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(style.color.opacity(isPulsing ? 0.2 : 0.1))
+        .foregroundStyle(style.color)
+        .clipShape(RoundedRectangle(cornerRadius: 4))
+        .overlay(
+            RoundedRectangle(cornerRadius: 4)
+                .strokeBorder(style.color.opacity(0.4), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+        )
+        .onAppear {
+            withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
+                isPulsing = true
+            }
+        }
+    }
+}
 
 // MARK: - Preview
 

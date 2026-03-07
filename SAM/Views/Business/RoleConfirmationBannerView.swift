@@ -38,6 +38,12 @@ struct RoleConfirmationBannerView: View {
                             .foregroundStyle(.tertiary)
                     }
 
+                    if engine.remainingAfterCurrentBatch > 0 {
+                        Text("(\(engine.remainingAfterCurrentBatch) more to review)")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+
                     Spacer()
 
                     // Navigation + actions

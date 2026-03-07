@@ -222,6 +222,53 @@ struct SAMApp: App {
                         .interactiveDismissDisabled() // Prevent accidental dismissal
                         // Users can use "Skip" buttons for each step or "Quit" to exit entirely
                         // This ensures intentional choices rather than accidental dismissal
+                        .fileImporter(
+                            isPresented: $showImportFilePicker,
+                            allowedContentTypes: [.samBackup, .json],
+                            allowsMultipleSelection: false
+                        ) { result in
+                            switch result {
+                            case .success(let urls):
+                                guard let url = urls.first else { return }
+                                Task {
+                                    do {
+                                        let preview = try await backupCoordinator.validateBackup(from: url)
+                                        pendingImportURL = url
+                                        pendingImportPreview = preview
+                                        showImportConfirmation = true
+                                    } catch {
+                                        backupCoordinator.status = .failed(error.localizedDescription)
+                                    }
+                                }
+                            case .failure(let error):
+                                backupCoordinator.status = .failed(error.localizedDescription)
+                            }
+                        }
+                        .alert("Replace All Data?", isPresented: $showImportConfirmation) {
+                            Button("Cancel", role: .cancel) {
+                                pendingImportURL = nil
+                                pendingImportPreview = nil
+                            }
+                            Button("Replace All Data", role: .destructive) {
+                                guard let url = pendingImportURL else { return }
+                                Task {
+                                    await backupCoordinator.performImport(from: url)
+                                    // After successful restore, dismiss onboarding
+                                    if case .success = backupCoordinator.status {
+                                        UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
+                                        showOnboarding = false
+                                    }
+                                }
+                                pendingImportURL = nil
+                                pendingImportPreview = nil
+                            }
+                        } message: {
+                            if let preview = pendingImportPreview {
+                                let counts = preview.metadata.counts
+                                let schemaNote = preview.schemaMatch ? "" : "\n\nNote: This backup was created with a different schema version (\(preview.metadata.schemaVersion))."
+                                Text("This will delete ALL existing data and replace it with:\n\n\(counts.people) people, \(counts.notes) notes, \(counts.evidence) evidence items, \(counts.contexts) contexts\n\nA safety backup will be saved to your temp directory first.\(schemaNote)")
+                            }
+                        }
                         .onDisappear {
                             // When onboarding completes, trigger imports then show intro.
                             // Imports run at .utility so they don't compete with the intro

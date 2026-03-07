@@ -134,6 +134,21 @@ final class RoleDeductionEngine {
         saveSuggestions()
     }
 
+    /// Look up a pending suggestion for a specific person.
+    func suggestion(for personID: UUID) -> RoleSuggestion? {
+        pendingSuggestions.first { $0.personID == personID }
+    }
+
+    /// All person IDs with pending suggestions.
+    var pendingPersonIDs: Set<UUID> {
+        Set(pendingSuggestions.map(\.personID))
+    }
+
+    /// Remaining suggestion count after the current batch.
+    var remainingAfterCurrentBatch: Int {
+        max(0, pendingSuggestions.count - currentBatch.count)
+    }
+
     // MARK: - Deduction
 
     func deduceRoles() async {
@@ -251,7 +266,7 @@ final class RoleDeductionEngine {
                 currentRole = suggestion.suggestedRole
             }
             current.append(suggestion)
-            if current.count >= 12 {
+            if current.count >= 10 {
                 batches.append(current)
                 current = []
             }

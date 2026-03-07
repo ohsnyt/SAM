@@ -25,6 +25,7 @@ enum PeopleSortOrder: String, CaseIterable, Identifiable {
 }
 
 enum PeopleSpecialFilter: String, CaseIterable {
+    case pendingRoleSuggestions = "Pending Role Suggestions"
     case needsContactUpdate = "Needs Contact Update"
     case notInContacts = "Not in Contacts"
     case archived = "Archived"
@@ -34,13 +35,19 @@ enum PeopleSpecialFilter: String, CaseIterable {
     /// SF Symbol icon for filter summary display.
     var icon: String {
         switch self {
-        case .needsContactUpdate: return "arrow.up.circle.fill"
-        case .notInContacts:      return "person.crop.circle.badge.exclamationmark"
-        case .archived:           return "archivebox"
-        case .dnc:                return "hand.raised"
-        case .deceased:           return "heart.slash"
+        case .pendingRoleSuggestions: return "sparkles"
+        case .needsContactUpdate:    return "arrow.up.circle.fill"
+        case .notInContacts:         return "person.crop.circle.badge.exclamationmark"
+        case .archived:              return "archivebox"
+        case .dnc:                   return "hand.raised"
+        case .deceased:              return "heart.slash"
         }
     }
+
+    /// "Needs attention" group — filters for active contacts needing action.
+    static let attentionGroup: Set<PeopleSpecialFilter> = [.pendingRoleSuggestions, .needsContactUpdate, .notInContacts]
+    /// "Excluded" group — contacts removed from active consideration.
+    static let excludedGroup: Set<PeopleSpecialFilter> = [.archived, .dnc, .deceased]
 }
 
 struct PeopleListView: View {
@@ -48,19 +55,29 @@ struct PeopleListView: View {
     // MARK: - Bindings
 
     @Binding var selectedPersonID: UUID?
+    @Binding var activeSpecialFilters: Set<PeopleSpecialFilter>
 
     // MARK: - Dependencies
 
     @Query(sort: \SamPerson.displayNameCache) private var allPeople: [SamPerson]
     @State private var importCoordinator = ContactsImportCoordinator.shared
     @State private var enrichmentCoordinator = ContactEnrichmentCoordinator.shared
+    @State private var graphCoordinator = RelationshipGraphCoordinator.shared
 
     // MARK: - State
 
     @State private var searchText = ""
     @State private var sortOrder: PeopleSortOrder = .firstName
-    @State private var activeRoleFilters: Set<String> = []
-    @State private var activeSpecialFilters: Set<PeopleSpecialFilter> = []
+
+    /// Role filters are shared with the graph coordinator so switching between
+    /// Contacts and Graph views preserves the active filter.
+    private var activeRoleFilters: Set<String> {
+        get { graphCoordinator.activeRoleFilters }
+        nonmutating set {
+            graphCoordinator.activeRoleFilters = newValue
+            graphCoordinator.applyFilters()
+        }
+    }
 
     // MARK: - Computed
 
@@ -121,6 +138,10 @@ struct PeopleListView: View {
         }
 
         // Special filters
+        if activeSpecialFilters.contains(.pendingRoleSuggestions) {
+            let pendingIDs = RoleDeductionEngine.shared.pendingPersonIDs
+            list = list.filter { pendingIDs.contains($0.id) }
+        }
         if activeSpecialFilters.contains(.needsContactUpdate) {
             list = list.filter { enrichmentCoordinator.peopleWithEnrichment.contains($0.id) }
         }
@@ -188,12 +209,24 @@ struct PeopleListView: View {
 
     // MARK: - Body
 
+    /// Title text: shows filter ratio when any filter/search is active.
+    private var navigationTitleText: String {
+        let anyFiltersActive = !activeRoleFilters.isEmpty || !activeSpecialFilters.isEmpty || !searchText.isEmpty
+        if anyFiltersActive {
+            return "\(displayedPeople.count) / \(allPeople.count) Selected"
+        }
+        return "\(allPeople.count) People"
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             TipView(PeopleListTip())
                 .tipViewStyle(SAMTipViewStyle())
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
+
+            // Inline sort/filter controls above the list
+            inlineSortFilterBar
 
             peopleList
                 .overlay {
@@ -204,96 +237,10 @@ struct PeopleListView: View {
                     }
                 }
         }
-        .navigationTitle("\(displayedPeople.count) People")
+        .navigationTitle(navigationTitleText)
         .searchable(text: $searchText, prompt: "Search people")
         .toolbar {
             ToolbarItemGroup {
-                // Sort picker
-                Menu {
-                    ForEach(PeopleSortOrder.allCases) { order in
-                        Button {
-                            sortOrder = order
-                        } label: {
-                            HStack {
-                                Text(order.rawValue)
-                                if sortOrder == order {
-                                    Image(systemName: "checkmark")
-                                }
-                            }
-                        }
-                    }
-                } label: {
-                    Label("Sort", systemImage: "arrow.up.arrow.down")
-                }
-                .help("Sort people")
-
-                // Role + special filter
-                Menu {
-                    let anyFiltersActive = !activeRoleFilters.isEmpty || !activeSpecialFilters.isEmpty
-                    if anyFiltersActive {
-                        Button("Clear All Filters") {
-                            activeRoleFilters.removeAll()
-                            activeSpecialFilters.removeAll()
-                        }
-                        Divider()
-                    }
-                    ForEach(availableRoles, id: \.self) { role in
-                        let isSelected = activeRoleFilters.contains(role)
-                        Button {
-                            if isSelected {
-                                activeRoleFilters.remove(role)
-                            } else {
-                                activeRoleFilters.insert(role)
-                            }
-                        } label: {
-                            HStack {
-                                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                                    .foregroundStyle(isSelected
-                                        ? RoleBadgeStyle.forBadge(role).color
-                                        : .secondary)
-                                Image(systemName: RoleBadgeStyle.forBadge(role).icon)
-                                    .foregroundStyle(RoleBadgeStyle.forBadge(role).color)
-                                Text(role)
-                            }
-                        }
-                    }
-                    if availableRoles.isEmpty {
-                        Text("No roles assigned yet")
-                            .foregroundStyle(.secondary)
-                    }
-                    Divider()
-                    ForEach(PeopleSpecialFilter.allCases, id: \.self) { filter in
-                        let isSelected = activeSpecialFilters.contains(filter)
-                        Button {
-                            if isSelected {
-                                activeSpecialFilters.remove(filter)
-                            } else {
-                                activeSpecialFilters.insert(filter)
-                            }
-                        } label: {
-                            HStack {
-                                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                                    .foregroundStyle(isSelected ? Color.accentColor : .secondary)
-                                Text(filter.rawValue)
-                            }
-                        }
-                    }
-                } label: {
-                    let anyFiltersActive = !activeRoleFilters.isEmpty || !activeSpecialFilters.isEmpty
-                    Label("Filter", systemImage: anyFiltersActive
-                          ? "line.3.horizontal.decrease.circle.fill"
-                          : "line.3.horizontal.decrease")
-                }
-                .help({
-                    let roleCount = activeRoleFilters.count
-                    let specialCount = activeSpecialFilters.count
-                    if roleCount == 0 && specialCount == 0 { return "Filter by role or contact status" }
-                    var parts: [String] = []
-                    if roleCount > 0 { parts.append("\(roleCount) role\(roleCount == 1 ? "" : "s")") }
-                    if specialCount > 0 { parts.append("\(specialCount) special filter\(specialCount == 1 ? "" : "s")") }
-                    return "Filtering by " + parts.joined(separator: ", ")
-                }())
-
                 importStatusBadge
 
                 Button {
@@ -307,13 +254,143 @@ struct PeopleListView: View {
                 .help("Import contacts from Apple Contacts")
             }
         }
+        .onChange(of: activeSpecialFilters) { _, newValue in
+            // Sync pending suggestions filter to graph coordinator
+            if newValue.contains(.pendingRoleSuggestions) {
+                graphCoordinator.pendingSuggestionPersonIDs = RoleDeductionEngine.shared.pendingPersonIDs
+            } else {
+                graphCoordinator.pendingSuggestionPersonIDs.removeAll()
+            }
+            graphCoordinator.applyFilters()
+        }
+    }
+
+    // MARK: - Inline Sort/Filter Bar
+
+    private var inlineSortFilterBar: some View {
+        HStack(spacing: 6) {
+            // Sort picker
+            Menu {
+                ForEach(PeopleSortOrder.allCases) { order in
+                    Button {
+                        sortOrder = order
+                    } label: {
+                        HStack {
+                            Text(order.rawValue)
+                            if sortOrder == order {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+            } label: {
+                Label("Sort", systemImage: "arrow.up.arrow.down")
+                    .font(.caption)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("Sort people")
+
+            // Role + special filter
+            Menu {
+                let anyFiltersActive = !activeRoleFilters.isEmpty || !activeSpecialFilters.isEmpty
+                if anyFiltersActive {
+                    Button("Clear All Filters") {
+                        activeRoleFilters.removeAll()
+                        activeSpecialFilters.removeAll()
+                    }
+                    Divider()
+                }
+                ForEach(availableRoles, id: \.self) { role in
+                    let isSelected = activeRoleFilters.contains(role)
+                    Button {
+                        if isSelected {
+                            activeRoleFilters.remove(role)
+                        } else {
+                            activeRoleFilters.insert(role)
+                        }
+                    } label: {
+                        HStack {
+                            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(isSelected
+                                    ? RoleBadgeStyle.forBadge(role).color
+                                    : .secondary)
+                            Image(systemName: RoleBadgeStyle.forBadge(role).icon)
+                                .foregroundStyle(RoleBadgeStyle.forBadge(role).color)
+                            Text(role)
+                        }
+                    }
+                }
+                if availableRoles.isEmpty {
+                    Text("No roles assigned yet")
+                        .foregroundStyle(.secondary)
+                }
+                Divider()
+                // Needs Attention group
+                specialFilterButton(.pendingRoleSuggestions)
+                specialFilterButton(.needsContactUpdate)
+                specialFilterButton(.notInContacts)
+                Divider()
+                // Excluded group
+                specialFilterButton(.archived)
+                specialFilterButton(.dnc)
+                specialFilterButton(.deceased)
+            } label: {
+                let anyFiltersActive = !activeRoleFilters.isEmpty || !activeSpecialFilters.isEmpty
+                Label("Filter", systemImage: anyFiltersActive
+                      ? "line.3.horizontal.decrease.circle.fill"
+                      : "line.3.horizontal.decrease")
+                    .font(.caption)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help({
+                let roleCount = activeRoleFilters.count
+                let specialCount = activeSpecialFilters.count
+                if roleCount == 0 && specialCount == 0 { return "Filter by role or contact status" }
+                var parts: [String] = []
+                if roleCount > 0 { parts.append("\(roleCount) role\(roleCount == 1 ? "" : "s")") }
+                if specialCount > 0 { parts.append("\(specialCount) special filter\(specialCount == 1 ? "" : "s")") }
+                return "Filtering by " + parts.joined(separator: ", ")
+            }())
+
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 4)
+    }
+
+    /// Button for a special filter with mutual exclusivity: attention vs excluded groups.
+    private func specialFilterButton(_ filter: PeopleSpecialFilter) -> some View {
+        let isSelected = activeSpecialFilters.contains(filter)
+        return Button {
+            if isSelected {
+                activeSpecialFilters.remove(filter)
+            } else {
+                // Clear the opposite group before inserting
+                if PeopleSpecialFilter.attentionGroup.contains(filter) {
+                    activeSpecialFilters.subtract(PeopleSpecialFilter.excludedGroup)
+                } else if PeopleSpecialFilter.excludedGroup.contains(filter) {
+                    activeSpecialFilters.subtract(PeopleSpecialFilter.attentionGroup)
+                }
+                activeSpecialFilters.insert(filter)
+            }
+        } label: {
+            HStack {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(isSelected ? Color.accentColor : .secondary)
+                Image(systemName: filter.icon)
+                    .foregroundStyle(isSelected ? Color.accentColor : .secondary)
+                Text(filter.rawValue)
+            }
+        }
     }
 
     // MARK: - People List
 
     private var peopleList: some View {
         List(selection: $selectedPersonID) {
-            // Active filter summary
+            // Active filter chips
             let anyFiltersActive = !activeRoleFilters.isEmpty || !activeSpecialFilters.isEmpty
             if anyFiltersActive {
                 HStack(spacing: 6) {
@@ -337,9 +414,6 @@ struct PeopleListView: View {
                         .foregroundStyle(Color.accentColor)
                     }
                     Spacer()
-                    Text("\(displayedPeople.count) of \(allPeople.count)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
                 }
                 .padding(.vertical, 2)
                 .listRowSeparator(.hidden)
@@ -653,7 +727,7 @@ private struct PersonRowView: View {
     try? context.save()
 
     return NavigationStack {
-        PeopleListView(selectedPersonID: .constant(nil))
+        PeopleListView(selectedPersonID: .constant(nil), activeSpecialFilters: .constant([]))
             .modelContainer(container)
     }
     .frame(width: 400, height: 600)
@@ -664,7 +738,7 @@ private struct PersonRowView: View {
     PeopleRepository.shared.configure(container: container)
 
     return NavigationStack {
-        PeopleListView(selectedPersonID: .constant(nil))
+        PeopleListView(selectedPersonID: .constant(nil), activeSpecialFilters: .constant([]))
             .modelContainer(container)
     }
     .frame(width: 400, height: 600)

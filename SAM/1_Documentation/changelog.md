@@ -4,6 +4,69 @@
 
 ---
 
+## March 7, 2026 — UI Polish, Backup Improvements & Role Suggestion UX
+
+### Bug Fixes
+
+1. **Onboarding stuck at Contact Access** (`OnboardingView.swift`): `advanceToNextActiveStep()` failed when the current step was marked ready (via `stepReadiness`) before advancing — the step was removed from `activeSteps`, so `firstIndex(of:)` returned nil. Added fallback logic using canonical step ordering. Same fix applied to `retreatToPreviousActiveStep()`.
+
+2. **File > Restore Data blocked during onboarding** (`SAMApp.swift`): `.fileImporter` was only on `AppShellView`, blocked by the modal onboarding sheet. Added duplicate `.fileImporter` + confirmation alert on the onboarding sheet. Successful restore auto-dismisses onboarding.
+
+3. **No refresh after backup restore** (`BackupCoordinator.swift`): Added `refreshAfterRestore()` — clears briefing/weekly date gates, prunes expired outcomes/undo entries, triggers OutcomeEngine generation, regenerates morning briefing, refreshes MeetingPrepCoordinator.
+
+4. **Business profile not included in backup** (`BackupCoordinator.swift`): Added 7 missing UserDefaults keys to `includedPreferenceKeys`: `sam.businessProfile`, `sam.userLinkedInProfile`, `sam.userFacebookProfile`, `sam.userSubstackProfile`, `sam.profileAnalyses`, `sam.profileAnalysisSnapshot`, `sam.facebookAnalysisSnapshot`.
+
+### People List View Improvements
+
+5. **Navigation title shows filter ratio** (`PeopleListView.swift`): Title bar now shows "36 / 219 Selected" when filtering, "219 People" when unfiltered. Removed redundant "36 of 219" from inline filter chip row.
+
+6. **Sort/filter moved inline** (`PeopleListView.swift`): Sort and Filter menus repositioned from window toolbar to inline controls above the list (`.menuStyle(.borderlessButton)`), keeping them near the content they control.
+
+7. **Toolbar divider** (`PersonDetailView.swift`): Added `Divider()` toolbar item before detail view buttons to visually separate list and detail toolbar areas.
+
+### Shared Role Filters (People List + Graph)
+
+8. **Unified role filters** (`PeopleListView.swift`, `RelationshipGraphCoordinator.swift`): Role filters are now shared between People list and Graph via `RelationshipGraphCoordinator.shared.activeRoleFilters`. Filtering to "Clients" in the list and switching to Graph shows only clients, and vice versa.
+
+9. **Special filters lifted to AppShellView** (`AppShellView.swift`, `PeopleListView.swift`): `activeSpecialFilters` moved from `@State` to `@Binding` owned by AppShellView, so filter state persists when switching between Contacts and Graph modes. Filters clear when navigating away from People via sidebar.
+
+### Graph Toolbar Role Filter Display
+
+10. **Colored role icons in graph toolbar** (`GraphToolbarView.swift`): Replaced generic blue number badge with up to 3 colored role icons (e.g., green dollar for Client, orange target for Lead) plus "+N" overflow. Dropdown items now show colored `checkmark.circle.fill` when active.
+
+### Role Suggestion UX Overhaul
+
+11. **Batch size reduced to 10** (`RoleDeductionEngine.swift`): Down from 12 for clearer review. Each batch remains single-role grouped.
+
+12. **"Pending Role Suggestions" filter** (`PeopleListView.swift`): New special filter (sparkles icon) shows only people with pending role suggestions. Syncs to graph via `pendingSuggestionPersonIDs` on `RelationshipGraphCoordinator`.
+
+13. **Role suggestion badge in PersonDetailView** (`PersonDetailView.swift`): Pulsing dashed-border badge appears in the role area for people with pending suggestions. Shows suggested role with inline Confirm (checkmark) and Dismiss (xmark) buttons.
+
+14. **Remaining count on graph banner** (`RoleConfirmationBannerView.swift`): Shows "(N more to review)" after current batch.
+
+15. **Filter menu logical grouping** (`PeopleListView.swift`): Three groups separated by dividers — Roles, Needs Attention (Pending Role Suggestions / Needs Contact Update / Not in Contacts), Excluded (Archived / DNC / Deceased). Attention and Excluded groups are mutually exclusive — selecting one auto-clears the other.
+
+### Helper Methods
+
+- `RoleDeductionEngine`: Added `suggestion(for:)`, `pendingPersonIDs`, `remainingAfterCurrentBatch`
+- `RelationshipGraphCoordinator`: Added `pendingSuggestionPersonIDs` filter field
+- `PeopleSpecialFilter`: Added `.attentionGroup` and `.excludedGroup` static sets
+
+### Modified Files (10)
+
+- `SAMApp.swift` — Onboarding fileImporter, restore during onboarding
+- `BackupCoordinator.swift` — Post-restore refresh, business profile backup keys
+- `OnboardingView.swift` — Step advancement fix with canonical ordering
+- `AppShellView.swift` — Lifted `peopleSpecialFilters`, sidebar clear, PeopleListView binding
+- `PeopleListView.swift` — Inline sort/filter, shared role filters, special filter groups, pending suggestions filter
+- `PersonDetailView.swift` — Toolbar divider, RoleSuggestionBadge
+- `RelationshipGraphCoordinator.swift` — `pendingSuggestionPersonIDs` filter
+- `RoleDeductionEngine.swift` — Batch size 10, helper methods
+- `GraphToolbarView.swift` — Colored role icons label, highlighted menu items
+- `RoleConfirmationBannerView.swift` — Remaining count display
+
+---
+
 ## March 6, 2026 — Priority 7: Onboarding, Helps & Tooltips Remediation
 
 ### Overview

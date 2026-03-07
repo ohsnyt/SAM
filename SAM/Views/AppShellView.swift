@@ -26,6 +26,7 @@ struct AppShellView: View {
     @State private var showCommandPalette = false
     @State private var introCoordinator = IntroSequenceCoordinator.shared
     @State private var peopleMode: PeopleMode = .contacts
+    @State private var peopleSpecialFilters: Set<PeopleSpecialFilter> = []
     @AppStorage("sam.tips.guidanceEnabled") private var tipsEnabled: Bool = true
     @Environment(\.openWindow) private var openWindow
 
@@ -40,7 +41,7 @@ struct AppShellView: View {
                     sidebar
                         .navigationSplitViewColumnWidth(min: 120, ideal: 130, max: 200)
                 } content: {
-                    PeopleListView(selectedPersonID: $selectedPersonID)
+                    PeopleListView(selectedPersonID: $selectedPersonID, activeSpecialFilters: $peopleSpecialFilters)
                         .navigationSplitViewColumnWidth(min: 200, ideal: 280, max: 500)
                 } detail: {
                     peopleDetailView
@@ -129,6 +130,14 @@ struct AppShellView: View {
         .onReceive(NotificationCenter.default.publisher(for: .samNavigateToSection)) { notification in
             if let section = notification.userInfo?["section"] as? String {
                 sidebarSelection = section
+            }
+        }
+        .onChange(of: sidebarSelection) { _, newValue in
+            // Clear people-specific filters when navigating away from People
+            if newValue != "people" {
+                peopleSpecialFilters.removeAll()
+                RelationshipGraphCoordinator.shared.pendingSuggestionPersonIDs.removeAll()
+                RelationshipGraphCoordinator.shared.applyFilters()
             }
         }
     }

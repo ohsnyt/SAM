@@ -66,6 +66,10 @@ final class BackupCoordinator {
         "insightAutoGenerateEnabled", "insightDaysSinceContactThreshold",
         "autoResetOnVersionChange", "autoDetectPermissionLoss", "pipelineBackfillComplete",
         "calendarLookbackDays",
+        // Business profile & social profiles (user-entered context)
+        "sam.businessProfile",
+        "sam.userLinkedInProfile", "sam.userFacebookProfile", "sam.userSubstackProfile",
+        "sam.profileAnalyses", "sam.profileAnalysisSnapshot", "sam.facebookAnalysisSnapshot",
     ]
 
     // ─────────────────────────────────────────────────────────────────
@@ -1104,6 +1108,9 @@ final class BackupCoordinator {
             status = .success(summary)
             progress = ""
 
+            // Post-restore: clear date gates and trigger regeneration
+            await refreshAfterRestore()
+
         } catch {
             logger.error("Import failed: \(error.localizedDescription)")
             status = .failed(error.localizedDescription)
@@ -1410,6 +1417,41 @@ final class BackupCoordinator {
         // Restore status
         status = savedStatus
         progress = savedProgress
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // MARK: - Post-Restore Refresh
+    // ─────────────────────────────────────────────────────────────────
+
+    /// After restoring from backup, clear stale date gates and regenerate
+    /// outcomes, briefings, and other derived data from the restored dataset.
+    private func refreshAfterRestore() async {
+        logger.info("Post-restore refresh starting")
+
+        // Clear briefing date gate so a new briefing generates from restored data
+        UserDefaults.standard.removeObject(forKey: "lastBriefingDate")
+        UserDefaults.standard.removeObject(forKey: "lastWeeklyDigestWeek")
+
+        // Prune expired outcomes/undo entries
+        try? OutcomeRepository.shared.pruneExpired()
+        try? OutcomeRepository.shared.purgeOld()
+        try? UndoRepository.shared.pruneExpired()
+
+        // Regenerate outcomes from restored data
+        let autoGenerate = UserDefaults.standard.object(forKey: "outcomeAutoGenerate") == nil
+            ? true
+            : UserDefaults.standard.bool(forKey: "outcomeAutoGenerate")
+        if autoGenerate {
+            OutcomeEngine.shared.startGeneration()
+        }
+
+        // Generate a fresh morning briefing from restored data
+        await DailyBriefingCoordinator.shared.checkFirstOpenOfDay()
+
+        // Refresh meeting prep from restored evidence
+        await MeetingPrepCoordinator.shared.refresh()
+
+        logger.info("Post-restore refresh complete")
     }
 }
 

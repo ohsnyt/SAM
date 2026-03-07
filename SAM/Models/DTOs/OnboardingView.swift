@@ -189,15 +189,43 @@ struct OnboardingView: View {
 
     // MARK: - Active-Step Navigation
 
+    private static let canonicalOrder: [OnboardingStep] = [
+        .welcome, .contactsPermission, .contactsGroupSelection,
+        .calendarPermission, .calendarSelection,
+        .mailPermission, .mailAddressSelection,
+        .communicationsPermission, .microphonePermission,
+        .notificationsPermission, .aiSetup, .complete
+    ]
+
     private func advanceToNextActiveStep() {
-        if let idx = activeSteps.firstIndex(of: currentStep), idx + 1 < activeSteps.count {
-            currentStep = activeSteps[idx + 1]
+        let steps = activeSteps
+        if let idx = steps.firstIndex(of: currentStep), idx + 1 < steps.count {
+            currentStep = steps[idx + 1]
+        } else if !steps.contains(currentStep) {
+            // Current step was marked ready and removed from activeSteps.
+            // Find the first active step whose canonical position is after the current one.
+            let currentOrdinal = Self.canonicalOrder.firstIndex(of: currentStep) ?? 0
+            if let next = steps.first(where: {
+                (Self.canonicalOrder.firstIndex(of: $0) ?? 0) > currentOrdinal
+            }) {
+                currentStep = next
+            } else {
+                currentStep = .complete
+            }
         }
     }
 
     private func retreatToPreviousActiveStep() {
-        if let idx = activeSteps.firstIndex(of: currentStep), idx > 0 {
-            currentStep = activeSteps[idx - 1]
+        let steps = activeSteps
+        if let idx = steps.firstIndex(of: currentStep), idx > 0 {
+            currentStep = steps[idx - 1]
+        } else if !steps.contains(currentStep) {
+            let currentOrdinal = Self.canonicalOrder.firstIndex(of: currentStep) ?? 0
+            if let prev = steps.last(where: {
+                (Self.canonicalOrder.firstIndex(of: $0) ?? 0) < currentOrdinal
+            }) {
+                currentStep = prev
+            }
         }
     }
 

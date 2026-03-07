@@ -144,6 +144,7 @@ struct GraphToolbarView: ToolbarContent {
                 Divider()
                 ForEach(allRoles, id: \.self) { role in
                     let isActive = coordinator.activeRoleFilters.contains(role)
+                    let style = RoleBadgeStyle.forBadge(role)
                     Button {
                         if isActive {
                             coordinator.activeRoleFilters.remove(role)
@@ -153,24 +154,18 @@ struct GraphToolbarView: ToolbarContent {
                         coordinator.applyFilters()
                     } label: {
                         HStack {
-                            let style = RoleBadgeStyle.forBadge(role)
+                            Image(systemName: isActive ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(isActive ? style.color : .secondary)
                             Image(systemName: style.icon)
                                 .foregroundStyle(style.color)
                             Text(role)
-                            if isActive {
-                                Spacer()
-                                Image(systemName: "checkmark")
-                            }
                         }
                     }
                 }
             } label: {
-                Label("Roles", systemImage: "person.3")
+                roleFilterLabel
             }
             .help("Filter by role")
-            .overlay(alignment: .topTrailing) {
-                filterBadge(count: coordinator.activeRoleFilters.count)
-            }
 
             // Edge type filter
             Menu {
@@ -271,6 +266,33 @@ struct GraphToolbarView: ToolbarContent {
     }
 
     // MARK: - Filter Badge
+
+    /// Role filter menu label: shows colored role icons when filtered, generic icon when not.
+    @ViewBuilder
+    private var roleFilterLabel: some View {
+        let active = coordinator.activeRoleFilters
+        if active.isEmpty {
+            Label("Roles", systemImage: "person.3")
+        } else {
+            // Show up to 3 role icons in their colors, plus overflow count
+            let sorted = allRoles.filter { active.contains($0) }
+            let visible = sorted.prefix(3)
+            let overflow = active.count - visible.count
+            HStack(spacing: 3) {
+                ForEach(Array(visible), id: \.self) { role in
+                    let style = RoleBadgeStyle.forBadge(role)
+                    Image(systemName: style.icon)
+                        .font(.system(size: 12))
+                        .foregroundStyle(style.color)
+                }
+                if overflow > 0 {
+                    Text("+\(overflow)")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
 
     @ViewBuilder
     private func filterBadge(count: Int) -> some View {

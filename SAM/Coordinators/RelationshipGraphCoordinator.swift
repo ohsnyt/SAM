@@ -53,6 +53,7 @@ final class RelationshipGraphCoordinator {
 
     var activeRoleFilters: Set<String> = []          // Empty = show all
     var activeEdgeTypeFilters: Set<EdgeType> = []    // Empty = show all
+    var pendingSuggestionPersonIDs: Set<UUID> = []   // Empty = no filter; non-empty = show only these
     var showOrphanedNodes: Bool = false
     var revealedNodeIDs: Set<UUID> = []
     var showGhostNodes: Bool = true
@@ -367,8 +368,12 @@ final class RelationshipGraphCoordinator {
             if let focusIDs = focusNodeIDs {
                 guard focusIDs.contains(node.id) else { return false }
             }
+            // Pending suggestions filter (overrides role filter when active)
+            if !pendingSuggestionPersonIDs.isEmpty {
+                guard pendingSuggestionPersonIDs.contains(node.id) else { return false }
+            }
             // Role filter
-            if !activeRoleFilters.isEmpty {
+            if !activeRoleFilters.isEmpty && pendingSuggestionPersonIDs.isEmpty {
                 guard node.roleBadges.contains(where: { activeRoleFilters.contains($0) }) else { return false }
             }
             // Ghost filter
