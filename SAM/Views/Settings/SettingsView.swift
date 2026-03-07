@@ -1699,18 +1699,31 @@ struct GeneralSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.green)
             case .failed(let message):
-                Label(message, systemImage: "xmark.circle.fill")
-                    .font(.caption)
-                    .foregroundStyle(.red)
+                VStack(alignment: .leading, spacing: 4) {
+                    Label(message, systemImage: "xmark.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                    if message.contains("schemas too old") {
+                        Text("Try \"Import Roles Only\" to recover role assignments via direct database read.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
             default:
                 EmptyView()
             }
 
             HStack(spacing: 12) {
-                Button("Migrate Data...") {
+                Button("Migrate All Data...") {
                     Task { await migrationService.migrate() }
                 }
                 .disabled(migrationService.isBusy)
+
+                Button("Import Roles Only...") {
+                    Task { await migrationService.migrateRolesOnly() }
+                }
+                .disabled(migrationService.isBusy)
+                .help("Reads role assignments directly from the legacy database and applies them to matching contacts. Works even when full migration fails.")
 
                 Button("Clean Up Old Files...", role: .destructive) {
                     showCleanupConfirmation = true

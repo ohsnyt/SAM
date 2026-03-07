@@ -4,6 +4,17 @@
 
 ---
 
+## March 6, 2026 — Legacy Role Extraction via SQLite3
+
+### Overview
+When full SwiftData lightweight migration fails (schema too old), SAM can now extract role assignments directly from legacy stores using raw SQLite3 reads. This recovers the most valuable manually-entered data — contact role badges (Client, Lead, Agent, etc.) — even when the overall schema is incompatible. Contacts are matched by Apple Contacts identifier (primary) or display name (fallback).
+
+### Files Changed
+- `Services/LegacyStoreMigrationService.swift` — Added `import SQLite3`, `RoleExtractionResult` struct, `migrateRolesOnly()` public method, `extractAndApplyRoles(from:)` private method. Opens legacy `.store` file read-only via `sqlite3_open_v2`, queries `ZSAMPERSON` table for `ZCONTACTIDENTIFIER`, `ZROLEBADGES` (binary plist blob decoded via `NSKeyedUnarchiver` with `PropertyListSerialization` fallback), and `ZDISPLAYNAMECACHE`. Matches against current store by contactIdentifier then display name. Applies missing role badges and saves.
+- `Views/Settings/SettingsView.swift` — Added "Import Roles Only..." button to Legacy Data section. When full migration fails with "schemas too old", shows hint text suggesting role-only import. Renamed "Migrate Data..." to "Migrate All Data..." for clarity.
+
+---
+
 ## March 6, 2026 — Legacy Data Migration in Settings
 
 ### Overview
