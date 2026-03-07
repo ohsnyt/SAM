@@ -406,14 +406,14 @@ Bookmark the **directory** (not file) for SQLite to cover WAL/SHM companions. `.
 
 ### ~~Priority 6 — Data Migration & Schema Version Hygiene~~ ✅ Completed (Mar 5, 2026)
 
-### Priority 7 - Update onboarding, helps, tooltips
-- In light of the many changes to the UI, we need to carefully examine the onboarding process. For example, when onboarding we permission from the user to add contacts (primarily through Contacts, iMessage and phone imports, and calendar imports).  Once we have that, we can deduce identify roles on all those people and then walk the user through confirming those roles via the relationship graph tool. 
-- What minimal permissions and/or settings are required at startup? (should include: download and install the MLX, macOS notifications, contacts, calendar, message & phone logs) 
-- What settings can we defer to coaching instructions in the course of the first hours of operation of SAM (such as social media platform imports)? 
-- It would be good to have a menu item (or a settings tab, whichever is best practice according to the Apple human interface guidlines for 2026) where all the import calls live (import calls, import mail, import Facebook, etc.) This would both make it easier for the users to find, but also bring consistency and a "one glance" view of how the user can enrich their contact and relationship data.
-- Is it possible for SAM to notice features that the User is not utilizing well, and coach the user on how to use those effectively - not all at once, but over days or weeks?
-- What would you recommend in terms of the organization of the settings, the onboarding process, and the coaching process (both at startup and whenever the users incorporates a new social media platform or communication platform)?
-- Does all this make sense? 
+### Priority 7 - Update onboarding, helps, tooltips *(in progress)*
+- ~~It would be good to have a menu item where all the import calls live. This would make it easier for users to find and bring consistency.~~ ✅ **Done** (Mar 6, 2026) — File menu reorganized per macOS HIG: flat Import items (Substack, LinkedIn, Facebook, Evernote) in File menu; auto-imports (Contacts, Calendar, Mail, iMessage) run automatically at launch.
+- ~~Is it possible for SAM to notice features that the User is not utilizing well, and coach the user on how to use those effectively — not all at once, but over days or weeks?~~ ✅ **Done** — FeatureAdoptionTracker (OutcomeEngine scanner #14) surfaces unused features as coaching cards progressively over time.
+- ~~First-launch intro sequence~~ ✅ **Done** (Mar 6, 2026) — Replaced 6-slide narrated intro with a 2:39 motivational video. Gives SAM time to process initial data imports and compile first briefing in the background.
+- ~~Settings organization~~ ✅ **Done** — Consolidated from 10 tabs → 4 (General, Permissions, Data Sources, AI & Coaching, Business). Legacy Data migration section added to Settings → General. Import status dashboard in Data Sources.
+- **Remaining**: Examine onboarding permission flow. Current onboarding requests Contacts + Calendar. Consider adding: MLX model download, macOS notifications permission, iMessage & phone log access. Determine minimal required vs. deferrable permissions.
+- **Remaining**: Formalize which settings are deferred to coaching instructions during first hours of operation (social media imports, content posting, compliance settings, etc.) vs. required at startup.
+- **Remaining**: Walk user through role confirmation via relationship graph after initial imports complete.
 
 ### Priority 8 - Security review
 - Can we use TouchID, FaceID, Apple Watch, password to enforce secure access to SAM? Would this be a good thing?
@@ -431,5 +431,5 @@ Bookmark the **directory** (not file) for SQLite to cover WAL/SHM companions. `.
 
 ---
 
-**Document Version**: 36
-**Last Updated**: March 6, 2026 — Facebook auto-detection import pipeline (third §5.7 implementation); unified import sheet with 12-phase state machine, email/file watchers, inline review, system notifications.
+**Document Version**: 37
+**Last Updated**: March 6, 2026 — File menu reorganized per HIG; intro video replacement; Legacy Data migration in Settings → General; Priority 7 progress tracked.
