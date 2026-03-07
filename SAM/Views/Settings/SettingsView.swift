@@ -1563,6 +1563,8 @@ struct GeneralSettingsView: View {
         let stored = UserDefaults.standard.double(forKey: "sam.dictation.silenceTimeout")
         return stored > 0 ? stored : 2.0
     }()
+    @State private var migrationService = LegacyStoreMigrationService.shared
+    @State private var showCleanupConfirmation = false
 
     private var appVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
@@ -1621,11 +1623,101 @@ struct GeneralSettingsView: View {
                     } label: {
                         Label("Clipboard Capture", systemImage: "doc.on.clipboard")
                     }
+
+                    // Legacy Data — only visible when orphaned stores are detected
+                    if let discovery = migrationService.discovery, !discovery.isEmpty {
+                        Divider()
+                        legacyDataSection(discovery: discovery)
+                    }
                 }
                 .padding()
             }
         }
         .formStyle(.grouped)
+        .onAppear {
+            if migrationService.discovery == nil {
+                migrationService.discoverLegacyStores()
+            }
+        }
+        .alert("Clean Up Legacy Files?", isPresented: $showCleanupConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Delete Old Files", role: .destructive) {
+                migrationService.cleanupLegacyStores()
+            }
+        } message: {
+            if let discovery = migrationService.discovery {
+                Text("This will permanently delete \(discovery.count) legacy store\(discovery.count == 1 ? "" : "s") (\(discovery.formattedSize)). Make sure you have migrated any data you need first.")
+            }
+        }
+    }
+
+    // MARK: - Legacy Data Section
+
+    private func legacyDataSection(discovery: LegacyStoreDiscovery) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("Legacy Data", systemImage: "clock.arrow.circlepath")
+                .font(.headline)
+
+            Text("Data from a previous SAM version was found on this Mac.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            HStack {
+                Text("\(discovery.count) legacy store\(discovery.count == 1 ? "" : "s")")
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text(discovery.formattedSize)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let mostRecent = discovery.mostRecent {
+                Text("Most recent: \(mostRecent.version)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            // Status display
+            switch migrationService.status {
+            case .migrating(let message):
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            case .cleaning:
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Cleaning up...")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            case .success(let message):
+                Label(message, systemImage: "checkmark.circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.green)
+            case .failed(let message):
+                Label(message, systemImage: "xmark.circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            default:
+                EmptyView()
+            }
+
+            HStack(spacing: 12) {
+                Button("Migrate Data...") {
+                    Task { await migrationService.migrate() }
+                }
+                .disabled(migrationService.isBusy)
+
+                Button("Clean Up Old Files...", role: .destructive) {
+                    showCleanupConfirmation = true
+                }
+                .disabled(migrationService.isBusy)
+            }
+        }
     }
 
     // MARK: - Dictation Section

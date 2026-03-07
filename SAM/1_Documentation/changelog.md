@@ -4,6 +4,16 @@
 
 ---
 
+## March 6, 2026 — Legacy Data Migration in Settings
+
+### Overview
+Added the missing "Legacy Data" section to Settings → General. The Today view banner directed users to this location when orphaned stores from previous SAM versions were detected, but the section had never been implemented (migration was only available via the Debug menu).
+
+### Files Changed
+- `Views/Settings/SettingsView.swift` — Added `legacyDataSection` to `GeneralSettingsView`, shown only when `LegacyStoreMigrationService` discovers orphaned stores. Displays store count, total size, most recent version. "Migrate Data..." button runs the backup round-trip migration. "Clean Up Old Files..." button with destructive confirmation alert. Progress/success/error status inline. Discovery runs on appear.
+
+---
+
 ## March 6, 2026 — Intro Video Replacement
 
 ### Overview
