@@ -34,11 +34,20 @@ actor DailyBriefingService {
         tomorrowPreview: [BriefingCalendarItem],
         goalProgress: [GoalProgress] = []
     ) async -> (visual: String, tts: String) {
-        // Guard: nothing to narrate — skip AI entirely to prevent hallucination
-        let hasData = !calendarItems.isEmpty || !priorityActions.isEmpty
-            || !followUps.isEmpty || !lifeEvents.isEmpty || !goalProgress.isEmpty
-        guard hasData else {
-            logger.info("No briefing data — skipping narrative generation")
+        // Guard: require meaningful data to prevent hallucination.
+        // A single sparse section (e.g. one stale action) is not enough context
+        // for the model to produce a grounded narrative.
+        let sectionCount = [
+            !calendarItems.isEmpty,
+            !priorityActions.isEmpty,
+            !followUps.isEmpty,
+            !lifeEvents.isEmpty,
+            !goalProgress.isEmpty
+        ].filter { $0 }.count
+        let totalItems = calendarItems.count + priorityActions.count
+            + followUps.count + lifeEvents.count + goalProgress.count
+        guard sectionCount >= 2 || totalItems >= 3 else {
+            logger.info("Insufficient briefing data (\(sectionCount) sections, \(totalItems) items) — skipping narrative to prevent hallucination")
             return ("", "")
         }
 
@@ -101,17 +110,91 @@ actor DailyBriefingService {
 
         let ttsSystem = "Respond with ONLY the spoken narrative. No formatting, headers, or brackets."
 
+        // Collect all real names from the input data for post-generation validation
+        var knownNames = Set<String>()
+        for item in calendarItems {
+            for name in item.attendeeNames { knownNames.insert(name) }
+        }
+        for action in priorityActions {
+            if let name = action.personName { knownNames.insert(name) }
+        }
+        for fu in followUps { knownNames.insert(fu.personName) }
+        for le in lifeEvents { knownNames.insert(le.personName) }
+
         do {
             async let visualResult = AIService.shared.generateNarrative(prompt: visualPrompt, systemInstruction: visualSystem)
             async let ttsResult = AIService.shared.generateNarrative(prompt: ttsPrompt, systemInstruction: ttsSystem)
 
-            let visual = try await visualResult
+            var visual = try await visualResult
             let tts = try await ttsResult
+
+            // Validate: reject narrative if it contains names not present in input data
+            if !knownNames.isEmpty {
+                let hallucinated = detectHallucinatedNames(in: visual, knownNames: knownNames)
+                if !hallucinated.isEmpty {
+                    logger.warning("Morning narrative contained hallucinated names: \(hallucinated.joined(separator: ", ")) — discarding")
+                    visual = ""
+                }
+            }
+
             return (visual, tts)
         } catch {
             logger.warning("Morning narrative generation failed: \(error.localizedDescription)")
             return ("", "")
         }
+    }
+
+    // MARK: - Hallucination Detection
+
+    /// Detect proper nouns in AI output that don't appear in the known input names.
+    /// Uses a simple heuristic: capitalized words that aren't common English words
+    /// and don't appear as a component of any known name.
+    private func detectHallucinatedNames(in text: String, knownNames: Set<String>) -> [String] {
+        // Build set of all name components (first names, last names)
+        var nameComponents = Set<String>()
+        for name in knownNames {
+            for part in name.split(separator: " ") {
+                let component = String(part)
+                if component.count >= 2 {
+                    nameComponents.insert(component.lowercased())
+                }
+            }
+        }
+
+        // Common capitalized words that aren't names
+        let commonWords: Set<String> = [
+            "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+            "january", "february", "march", "april", "may", "june", "july", "august",
+            "september", "october", "november", "december",
+            "today", "tomorrow", "morning", "afternoon", "evening", "night",
+            "between", "before", "after", "first", "next", "also", "your",
+            "sam", "wfg", "world", "financial", "group", "zoom", "teams",
+            "linkedin", "facebook", "instagram", "substack", "google", "apple",
+        ]
+
+        // Find capitalized words that look like names but aren't in our known set
+        let words = text.split(separator: " ")
+        var suspicious: [String] = []
+        for word in words {
+            let cleaned = word.trimmingCharacters(in: .punctuationCharacters)
+            guard cleaned.count >= 2,
+                  cleaned.first?.isUppercase == true,
+                  !commonWords.contains(cleaned.lowercased()),
+                  !nameComponents.contains(cleaned.lowercased()) else { continue }
+
+            // Check if it could be a name (not a sentence-start common word)
+            // Heuristic: if it appears mid-sentence (preceded by non-period), it's likely a name
+            if let range = text.range(of: cleaned),
+               range.lowerBound > text.startIndex {
+                let before = text[text.index(before: range.lowerBound)]
+                if before != "." && before != "!" && before != "?" && before != "\n" {
+                    suspicious.append(cleaned)
+                }
+            }
+        }
+
+        // Only flag if we found multiple suspicious names (single false positive is common)
+        return suspicious.count >= 2 ? suspicious : []
     }
 
     // MARK: - Evening Narrative
@@ -124,9 +207,10 @@ actor DailyBriefingService {
         metrics: BriefingMetrics,
         tomorrowHighlights: [BriefingCalendarItem]
     ) async -> (visual: String, tts: String) {
-        // Guard: nothing to recap — skip AI entirely to prevent hallucination
-        guard !accomplishments.isEmpty || !streakUpdates.isEmpty || !tomorrowHighlights.isEmpty else {
-            logger.info("No evening data — skipping narrative generation")
+        // Guard: require meaningful data to prevent hallucination
+        let totalItems = accomplishments.count + streakUpdates.count + tomorrowHighlights.count
+        guard totalItems >= 2 else {
+            logger.info("Insufficient evening data (\(totalItems) items) — skipping narrative to prevent hallucination")
             return ("", "")
         }
 

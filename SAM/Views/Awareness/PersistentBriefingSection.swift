@@ -19,6 +19,7 @@ private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "Per
 struct PersistentBriefingSection: View {
 
     private var coordinator: DailyBriefingCoordinator { DailyBriefingCoordinator.shared }
+    @State private var isBriefingExpanded = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -34,13 +35,39 @@ struct PersistentBriefingSection: View {
             }
 
             if let briefing = coordinator.morningBriefing {
-                briefingContent(briefing)
-                    .padding(.horizontal)
-                    .padding(.bottom, 12)
+                if briefing.wasViewed {
+                    // Collapsible toggle for already-viewed briefings
+                    Button(action: { withAnimation { isBriefingExpanded.toggle() } }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: isBriefingExpanded ? "chevron.down" : "chevron.right")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                            Text("Today's Briefing")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                        }
+                        .contentShape(Rectangle())
+                        .padding(.horizontal)
+                        .padding(.bottom, 4)
+                    }
+                    .buttonStyle(.plain)
+
+                    if isBriefingExpanded {
+                        briefingContent(briefing)
+                            .padding(.horizontal)
+                            .padding(.bottom, 12)
+                    }
+                } else {
+                    // Not yet viewed — always expanded
+                    briefingContent(briefing)
+                        .padding(.horizontal)
+                        .padding(.bottom, 12)
+                }
             } else if coordinator.generationStatus != .generating {
-                Text("Your briefing will appear here once SAM has enough data.")
-                    .font(.body)
-                    .foregroundStyle(.secondary)
+                // No briefing — show generate button
+                generateBriefingCTA
                     .padding(.horizontal)
                     .padding(.bottom, 12)
             }
@@ -327,6 +354,27 @@ struct PersistentBriefingSection: View {
         case "cold":    return .red
         default:        return .gray
         }
+    }
+
+    private var generateBriefingCTA: some View {
+        Button(action: {
+            Task {
+                await coordinator.regenerateBriefing()
+            }
+        }) {
+            HStack(spacing: 8) {
+                Image(systemName: "sparkles")
+                    .foregroundStyle(.blue)
+                Text("Generate Briefing")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+            .background(.blue.opacity(0.08))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
     }
 
     private var startYourDayCTA: some View {

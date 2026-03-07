@@ -29,6 +29,17 @@ func configureAllRepositories(with container: ModelContainer) {
     EvidenceRepository.shared.configure(container: container)
     ContextsRepository.shared.configure(container: container)
     NotesRepository.shared.configure(container: container)
+    OutcomeRepository.shared.configure(container: container)
+    PipelineRepository.shared.configure(container: container)
+    ProductionRepository.shared.configure(container: container)
+    GoalRepository.shared.configure(container: container)
+    IntentionalTouchRepository.shared.configure(container: container)
+    InsightGenerator.shared.configure(container: container)
+    DailyBriefingCoordinator.shared.configure(container: container)
+    UndoRepository.shared.configure(container: container)
+    ContentPostRepository.shared.configure(container: container)
+    DeducedRelationRepository.shared.configure(container: container)
+    ComplianceAuditRepository.shared.configure(container: container)
 }
 
 // MARK: - DTO Factories
@@ -46,6 +57,7 @@ func makeContactDTO(
     jobTitle: String = "",
     postalAddresses: [ContactDTO.PostalAddressDTO] = [],
     birthday: DateComponents? = nil,
+    dates: [ContactDTO.DateDTO] = [],
     imageData: Data? = nil,
     thumbnailImageData: Data? = nil,
     contactRelations: [ContactDTO.RelationDTO] = [],
@@ -68,6 +80,7 @@ func makeContactDTO(
         birthday: birthday,
         imageData: imageData,
         thumbnailImageData: thumbnailImageData,
+        dates: dates,
         contactRelations: contactRelations,
         socialProfiles: socialProfiles,
         instantMessageAddresses: instantMessageAddresses,

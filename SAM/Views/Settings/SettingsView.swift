@@ -1567,11 +1567,7 @@ struct GeneralSettingsView: View {
     @State private var showCleanupConfirmation = false
 
     private var appVersion: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
-    }
-
-    private var buildNumber: String {
-        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.9"
     }
 
     var body: some View {
@@ -1593,9 +1589,11 @@ struct GeneralSettingsView: View {
                         }
 
                         HStack {
-                            Text("Build:")
+                            Text("Schema:")
                                 .foregroundStyle(.secondary)
-                            Text(buildNumber)
+                            Text(SAMModelContainer.schemaVersion)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
                     }
 

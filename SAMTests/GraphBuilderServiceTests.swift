@@ -499,16 +499,17 @@ struct GraphIntegrationTests {
         let laidOut = await service.layoutGraph(
             nodes: result.nodes, edges: result.edges,
             iterations: 300, bounds: bounds,
-            contextClusters: [household1, household2, business]
+            contextClusters: [business1, business2, business3]
         )
         #expect(laidOut.count == 21)
 
         // Verify all velocities are near zero (converged)
-        let maxVelocity = laidOut.map { sqrt($0.velocity.x * $0.velocity.x + $0.velocity.y * $0.velocity.y) }.max() ?? 0
+        let velocities: [Double] = laidOut.map { sqrt($0.velocity.x * $0.velocity.x + $0.velocity.y * $0.velocity.y) }
+        let maxVelocity = velocities.max() ?? 0
         #expect(maxVelocity < 5.0, "Max velocity \(maxVelocity) should be < 5.0 after convergence")
 
-        // Verify household members are clustered (members of household1 closer to each other than to outsiders)
-        let nodeMap = Dictionary(uniqueKeysWithValues: laidOut.map { ($0.id, $0.position) })
+        // Verify business context members are clustered (members of business1 closer to each other than to outsiders)
+        let nodeMap: [UUID: CGPoint] = Dictionary(uniqueKeysWithValues: laidOut.map { ($0.id, $0.position) })
         if let pos0 = nodeMap[ids[0]], let pos1 = nodeMap[ids[1]], let pos19 = nodeMap[ids[19]] {
             let distMembers = sqrt(pow(pos0.x - pos1.x, 2) + pow(pos0.y - pos1.y, 2))
             let distOutsider = sqrt(pow(pos0.x - pos19.x, 2) + pow(pos0.y - pos19.y, 2))

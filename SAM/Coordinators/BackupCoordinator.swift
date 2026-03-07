@@ -1445,8 +1445,11 @@ final class BackupCoordinator {
             OutcomeEngine.shared.startGeneration()
         }
 
-        // Generate a fresh morning briefing from restored data
-        await DailyBriefingCoordinator.shared.checkFirstOpenOfDay()
+        // Do NOT auto-generate briefing here — the restored data may not have
+        // calendar/contacts imported yet, which leads to hallucinated narratives.
+        // The date gate is cleared above so the next time the user visits Today
+        // (or taps "Generate Briefing"), a fresh briefing will be created with
+        // whatever data is actually available at that point.
 
         // Refresh meeting prep from restored evidence
         await MeetingPrepCoordinator.shared.refresh()

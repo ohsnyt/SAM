@@ -1009,6 +1009,12 @@ final class DailyBriefingCoordinator {
         showMorningBriefing = false
     }
 
+    /// Manually trigger briefing generation (e.g. from a "Generate Briefing" button).
+    /// Skips date-gate checks — always generates fresh.
+    func regenerateBriefing() async {
+        await generateMorningBriefing()
+    }
+
     func markEveningViewed() {
         eveningBriefing?.wasViewed = true
         eveningBriefing?.viewedAt = .now
