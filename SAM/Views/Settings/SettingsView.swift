@@ -298,6 +298,9 @@ struct DataSourcesSettingsView: View {
 // MARK: - AI Settings (consolidated tab)
 
 struct AISettingsView: View {
+
+    @Environment(\.openWindow) private var openWindow
+
     var body: some View {
         Form {
             Section {
@@ -321,6 +324,21 @@ struct AISettingsView: View {
                 } label: {
                     Label("Briefings", systemImage: "text.book.closed")
                 }
+            }
+
+            Section {
+                Button {
+                    openWindow(id: "prompt-lab")
+                } label: {
+                    HStack {
+                        Label("Open Prompt Lab", systemImage: "wand.and.stars")
+                        Spacer()
+                        Text("Compare and refine AI prompts")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .buttonStyle(.plain)
             }
         }
         .formStyle(.grouped)

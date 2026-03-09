@@ -4,6 +4,43 @@
 
 ---
 
+## March 9, 2026 — Prompt Lab: Side-by-Side Prompt Comparison Tool
+
+### New Feature: Prompt Lab
+
+A dedicated window for testing, comparing, and refining SAM's AI prompts against sample data.
+
+**Architecture:**
+- `PromptLabTypes.swift` — `PromptSite` enum (10 AI prompt sites), `PromptVariant`, `PromptTestRun`, `VariantRating` types, rich sample input data per site
+- `PromptLabCoordinator.swift` — `@MainActor @Observable` singleton, JSON-persisted store (`~/Library/Application Support/SAM/PromptLabStore.json`), variant CRUD, test run execution, deploy/revert, default prompt registry
+- `PromptLabView.swift` — Split-view UI: left panel (site picker + sample input editor), right panel (horizontally scrollable columns for side-by-side comparison)
+- `PromptLabColumnView.swift` — Per-variant column: collapsible prompt editor, output display, rating controls (winner/good/neutral/poor/rejected), deploy/duplicate/delete actions
+
+**Supported prompt sites** (10 initial):
+Note Analysis, Email Analysis, Message Analysis, Pipeline Analyst, Time Analyst, Pattern Detector, Content Topics, Content Draft, Morning Briefing, Evening Briefing
+
+**Prompt override integration:**
+- PipelineAnalystService, TimeAnalystService, PatternDetectorService — refactored to check `UserDefaults` for custom prompt overrides (new `buildSystemInstructions()` method pattern)
+- ContentAdvisorService `analyze()` — added custom prompt override check
+- Backward-compatible with existing `sam.ai.notePrompt`/`emailPrompt`/`messagePrompt` keys
+
+**Access:**
+- Settings → AI & Coaching → "Open Prompt Lab" button
+- Debug menu → "Open Prompt Lab" (⇧⌘P)
+- `.samOpenPromptLab` notification + AppShellView listener
+
+**Workflow:**
+1. Select a prompt site from the dropdown
+2. Edit or use the provided sample input
+3. Create variants (clone from default or blank)
+4. Click "Run All" (⌘↩) to test all variants against the same input
+5. Compare outputs side-by-side, rate each variant
+6. Deploy winning variant as the active prompt via the column menu
+
+No schema change.
+
+---
+
 ## March 9, 2026 — Generative Reasoning Quality Test Suite
 
 ### Test Fixes

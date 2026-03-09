@@ -29,54 +29,7 @@ actor PipelineAnalystService {
         }
 
         let businessContext = await BusinessProfileService.shared.fullContextBlock()
-
-        let instructions = """
-            You are a pipeline analyst for an independent financial services practice. \
-            Analyze the pipeline data provided and generate strategic recommendations. \
-            Focus on conversion bottlenecks, stuck prospects, production gaps, and recruiting health.
-
-            \(businessContext)
-
-            CRITICAL: You MUST respond with ONLY valid JSON.
-            - Do NOT wrap the JSON in markdown code blocks
-            - Return ONLY the raw JSON object starting with { and ending with }
-
-            The JSON structure must be:
-            {
-              "health_summary": "1-2 sentence overall pipeline health assessment",
-              "recommendations": [
-                {
-                  "title": "Short actionable title",
-                  "rationale": "Why this matters and what to do",
-                  "priority": 0.8,
-                  "category": "pipeline",
-                  "approaches": [
-                    {
-                      "title": "Short approach name",
-                      "summary": "2-3 sentence description of this approach",
-                      "steps": ["Step 1", "Step 2", "Step 3"],
-                      "effort": "moderate"
-                    }
-                  ]
-                }
-              ],
-              "risk_alerts": ["Urgent issue description"]
-            }
-
-            Rules:
-            - health_summary should be specific to the numbers provided, not generic
-            - Include 2-3 recommendations maximum, focused on highest impact
-            - priority is 0.0 to 1.0 (1.0 = most urgent)
-            - risk_alerts only for truly urgent issues (stuck people, zero conversion, etc.)
-            - If data is sparse, keep recommendations brief rather than speculating
-            - Each recommendation should include 2-3 approaches (alternative ways to implement it)
-            - effort is "quick" (< 30 min), "moderate" (1-2 hours), or "substantial" (half-day+)
-            - Name specific stuck people and explain what to do for each (e.g., "John Smith has been a Lead for 45 days — schedule a needs analysis")
-            - Each rationale must include 2-3 concrete next steps that reference people by name
-            - For pending production, name the person + product type + specific next step (e.g., "Jane Doe's IUL application — call carrier for status update")
-            - risk_alerts must name the people involved (e.g., "3 Applicants stalled: Tom Lee, Sarah Kim, Mike Chen")
-            - The top 3 stuck prospects each get an individual action plan in the approaches
-            """
+        let instructions = await buildSystemInstructions(businessContext: businessContext)
 
         let prompt = """
             Analyze this pipeline data for a financial strategist:
@@ -90,6 +43,67 @@ actor PipelineAnalystService {
         let responseText = try await AIService.shared.generate(prompt: prompt, systemInstruction: instructions)
         logger.info("📏 Pipeline response — \(responseText.count)ch (~\(responseText.count/4)t)")
         return try parseResponse(responseText)
+    }
+
+    // MARK: - Prompt Construction
+
+    @MainActor
+    private func buildSystemInstructions(businessContext: String) -> String {
+        let custom = UserDefaults.standard.string(forKey: PromptSite.pipelineAnalyst.userDefaultsKey) ?? ""
+        if !custom.isEmpty {
+            return custom + "\n\n" + businessContext
+        }
+        return Self.defaultPrompt(businessContext: businessContext)
+    }
+
+    static func defaultPrompt(businessContext: String) -> String {
+        """
+        You are a pipeline analyst for an independent financial services practice. \
+        Analyze the pipeline data provided and generate strategic recommendations. \
+        Focus on conversion bottlenecks, stuck prospects, production gaps, and recruiting health.
+
+        \(businessContext)
+
+        CRITICAL: You MUST respond with ONLY valid JSON.
+        - Do NOT wrap the JSON in markdown code blocks
+        - Return ONLY the raw JSON object starting with { and ending with }
+
+        The JSON structure must be:
+        {
+          "health_summary": "1-2 sentence overall pipeline health assessment",
+          "recommendations": [
+            {
+              "title": "Short actionable title",
+              "rationale": "Why this matters and what to do",
+              "priority": 0.8,
+              "category": "pipeline",
+              "approaches": [
+                {
+                  "title": "Short approach name",
+                  "summary": "2-3 sentence description of this approach",
+                  "steps": ["Step 1", "Step 2", "Step 3"],
+                  "effort": "moderate"
+                }
+              ]
+            }
+          ],
+          "risk_alerts": ["Urgent issue description"]
+        }
+
+        Rules:
+        - health_summary should be specific to the numbers provided, not generic
+        - Include 2-3 recommendations maximum, focused on highest impact
+        - priority is 0.0 to 1.0 (1.0 = most urgent)
+        - risk_alerts only for truly urgent issues (stuck people, zero conversion, etc.)
+        - If data is sparse, keep recommendations brief rather than speculating
+        - Each recommendation should include 2-3 approaches (alternative ways to implement it)
+        - effort is "quick" (< 30 min), "moderate" (1-2 hours), or "substantial" (half-day+)
+        - Name specific stuck people and explain what to do for each (e.g., "John Smith has been a Lead for 45 days — schedule a needs analysis")
+        - Each rationale must include 2-3 concrete next steps that reference people by name
+        - For pending production, name the person + product type + specific next step (e.g., "Jane Doe's IUL application — call carrier for status update")
+        - risk_alerts must name the people involved (e.g., "3 Applicants stalled: Tom Lee, Sarah Kim, Mike Chen")
+        - The top 3 stuck prospects each get an individual action plan in the approaches
+        """
     }
 
     // MARK: - Parsing

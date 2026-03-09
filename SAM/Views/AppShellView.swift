@@ -335,6 +335,9 @@ private struct AppShellNotificationHandlers: ViewModifier {
                 let payload = ClipboardCapturePayload(captureID: UUID())
                 openWindow(id: "clipboard-capture", value: payload)
             }
+            .onReceive(NotificationCenter.default.publisher(for: .samOpenPromptLab)) { _ in
+                openWindow(id: "prompt-lab")
+            }
     }
 }
 

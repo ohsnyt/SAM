@@ -29,55 +29,7 @@ actor TimeAnalystService {
         }
 
         let businessContext = await BusinessProfileService.shared.fullContextBlock()
-
-        let instructions = """
-            You analyze how an independent financial strategist allocates their work time. \
-            Identify imbalances, suggest improvements, and highlight trends. \
-            Common categories: Prospecting, Client Meeting, Policy Review, Recruiting, \
-            Training/Mentoring, Admin, Deep Work, Personal Development, Travel, Other.
-
-            \(businessContext)
-
-            CRITICAL: You MUST respond with ONLY valid JSON.
-            - Do NOT wrap the JSON in markdown code blocks
-            - Return ONLY the raw JSON object starting with { and ending with }
-
-            The JSON structure must be:
-            {
-              "balance_summary": "1-2 sentence assessment of time allocation health",
-              "recommendations": [
-                {
-                  "title": "Short actionable title",
-                  "rationale": "Why this matters and what to change",
-                  "priority": 0.7,
-                  "category": "time",
-                  "approaches": [
-                    {
-                      "title": "Short approach name",
-                      "summary": "2-3 sentence description of this approach",
-                      "steps": ["Step 1", "Step 2", "Step 3"],
-                      "effort": "moderate"
-                    }
-                  ]
-                }
-              ],
-              "imbalances": ["Specific imbalance description"]
-            }
-
-            Rules:
-            - balance_summary should reference specific percentages from the data
-            - Include 2-3 recommendations maximum
-            - priority is 0.0 to 1.0 (1.0 = most urgent)
-            - imbalances should be specific observations (e.g., "Only 15% client-facing time")
-            - Financial advisors should typically spend 40-60% on client-facing activities
-            - If data is sparse, note that and keep recommendations conservative
-            - Each recommendation should include 2-3 approaches (alternative ways to implement it)
-            - effort is "quick" (< 30 min), "moderate" (1-2 hours), or "substantial" (half-day+)
-            - Steps must suggest specific time blocks (e.g., "Block Tuesday 9–11 AM for prospecting calls")
-            - Connect recommendations to the contact distribution data — name which role group benefits (e.g., "Your 12 Leads need more prospecting time")
-            - Compare 7-day vs 30-day data to surface week-over-week trends (e.g., "Client Meeting time dropped from 35% to 18% this week")
-            - Flag categories at 0% this week but non-zero for the month — these are dropped habits that need attention
-            """
+        let instructions = await buildSystemInstructions(businessContext: businessContext)
 
         let prompt = """
             Analyze this time allocation data for a financial strategist:
@@ -87,6 +39,68 @@ actor TimeAnalystService {
 
         let responseText = try await AIService.shared.generate(prompt: prompt, systemInstruction: instructions)
         return try parseResponse(responseText)
+    }
+
+    // MARK: - Prompt Construction
+
+    @MainActor
+    private func buildSystemInstructions(businessContext: String) -> String {
+        let custom = UserDefaults.standard.string(forKey: PromptSite.timeAnalyst.userDefaultsKey) ?? ""
+        if !custom.isEmpty {
+            return custom + "\n\n" + businessContext
+        }
+        return Self.defaultPrompt(businessContext: businessContext)
+    }
+
+    static func defaultPrompt(businessContext: String) -> String {
+        """
+        You analyze how an independent financial strategist allocates their work time. \
+        Identify imbalances, suggest improvements, and highlight trends. \
+        Common categories: Prospecting, Client Meeting, Policy Review, Recruiting, \
+        Training/Mentoring, Admin, Deep Work, Personal Development, Travel, Other.
+
+        \(businessContext)
+
+        CRITICAL: You MUST respond with ONLY valid JSON.
+        - Do NOT wrap the JSON in markdown code blocks
+        - Return ONLY the raw JSON object starting with { and ending with }
+
+        The JSON structure must be:
+        {
+          "balance_summary": "1-2 sentence assessment of time allocation health",
+          "recommendations": [
+            {
+              "title": "Short actionable title",
+              "rationale": "Why this matters and what to change",
+              "priority": 0.7,
+              "category": "time",
+              "approaches": [
+                {
+                  "title": "Short approach name",
+                  "summary": "2-3 sentence description of this approach",
+                  "steps": ["Step 1", "Step 2", "Step 3"],
+                  "effort": "moderate"
+                }
+              ]
+            }
+          ],
+          "imbalances": ["Specific imbalance description"]
+        }
+
+        Rules:
+        - balance_summary should reference specific percentages from the data
+        - Include 2-3 recommendations maximum
+        - priority is 0.0 to 1.0 (1.0 = most urgent)
+        - imbalances should be specific observations (e.g., "Only 15% client-facing time")
+        - Financial advisors should typically spend 40-60% on client-facing activities
+        - If data is sparse, note that and keep recommendations conservative
+        - Each recommendation should include 2-3 approaches (alternative ways to implement it)
+        - effort is "quick" (< 30 min), "moderate" (1-2 hours), or "substantial" (half-day+)
+        - Steps must suggest specific time blocks (e.g., "Block Tuesday 9-11 AM for prospecting calls")
+        - Connect recommendations to the contact distribution data — name which role group benefits (e.g., "Your 12 Leads need more prospecting time")
+        - Compare 7-day vs 30-day data to surface week-over-week trends (e.g., "Client Meeting time dropped from 35% to 18% this week")
+        - Flag categories at 0% this week but non-zero for the month — these are dropped habits that need attention
+        """
     }
 
     // MARK: - Parsing

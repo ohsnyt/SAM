@@ -551,6 +551,13 @@ struct SAMApp: App {
 
                 Divider()
 
+                Button("Open Prompt Lab") {
+                    NotificationCenter.default.post(name: .samOpenPromptLab, object: nil)
+                }
+                .keyboardShortcut("p", modifiers: [.command, .shift])
+
+                Divider()
+
                 Button("Seed Harvey Snodgrass Test Data") {
                     Task { await TestDataSeeder.shared.seedFresh() }
                 }
@@ -607,6 +614,11 @@ struct SAMApp: App {
             SettingsView()
                 .modelContainer(SAMModelContainer.shared)
         }
+
+        Window("Prompt Lab", id: "prompt-lab") {
+            PromptLabView()
+        }
+        .defaultSize(width: 1200, height: 700)
         #endif
     }
     

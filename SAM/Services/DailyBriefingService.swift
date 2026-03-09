@@ -279,15 +279,24 @@ actor DailyBriefingService {
         let currentTime = now.formatted(date: .omitted, time: .shortened)
         parts.append("CURRENT TIME: \(currentTime)")
 
-        if !calendarItems.isEmpty {
-            let items = calendarItems.map { item in
+        // Filter out events that have already ended
+        let upcomingItems = calendarItems.filter { item in
+            if let endTime = item.endsAt {
+                return endTime > now
+            }
+            // No end time — include if start is today or later
+            return item.startsAt > now
+        }
+
+        if !upcomingItems.isEmpty {
+            let items = upcomingItems.map { item in
                 let start = item.startsAt.formatted(date: .omitted, time: .shortened)
                 let end = item.endsAt.map { $0.formatted(date: .omitted, time: .shortened) } ?? ""
                 let timeRange = end.isEmpty ? start : "\(start)–\(end)"
                 let attendees = item.attendeeNames.isEmpty ? "" : " with \(item.attendeeNames.joined(separator: ", "))"
                 return "- \(timeRange): \(item.eventTitle)\(attendees)"
             }.joined(separator: "\n")
-            parts.append("TODAY'S SCHEDULE (\(calendarItems.count) events):\n\(items)")
+            parts.append("TODAY'S SCHEDULE (\(upcomingItems.count) upcoming events):\n\(items)")
         }
 
         if !priorityActions.isEmpty {

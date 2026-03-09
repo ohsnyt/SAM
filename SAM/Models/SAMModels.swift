@@ -1174,6 +1174,9 @@ extension Notification.Name {
     /// Posted to open the Clipboard Capture window (global hotkey or menu command).
     static let samOpenClipboardCapture = Notification.Name("samOpenClipboardCapture")
 
+    /// Posted to open the Prompt Lab window.
+    static let samOpenPromptLab = Notification.Name("samOpenPromptLab")
+
     /// Posted when the user taps a meeting prep notification.
     /// AwarenessView listens and expands the "More" section so MeetingPrepSection is visible.
     static let samExpandMeetingPrep = Notification.Name("samExpandMeetingPrep")

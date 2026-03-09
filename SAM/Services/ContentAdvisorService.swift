@@ -30,7 +30,14 @@ actor ContentAdvisorService {
 
         let businessContext = await BusinessProfileService.shared.fullContextBlock()
 
-        let instructions = """
+        let customPrompt = await MainActor.run {
+            UserDefaults.standard.string(forKey: PromptSite.contentTopics.userDefaultsKey) ?? ""
+        }
+        let instructions: String
+        if !customPrompt.isEmpty {
+            instructions = customPrompt + "\n\n" + businessContext
+        } else {
+        instructions = """
             You suggest educational content topics for an independent financial strategist. \
             Topics should be relevant to their client base, timely for the season, and compliant with \
             financial services regulations. Content is for social media posts, newsletters, or client education.
@@ -68,6 +75,7 @@ actor ContentAdvisorService {
             Reference specific past articles when suggesting new topics. \
             Maintain voice consistency with the user's established writing style.
             """
+        }
 
         let prompt = """
             Suggest educational content topics based on this context:

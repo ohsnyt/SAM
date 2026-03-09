@@ -29,60 +29,7 @@ actor PatternDetectorService {
         }
 
         let businessContext = await BusinessProfileService.shared.fullContextBlock()
-
-        let instructions = """
-            You identify behavioral patterns and correlations in business relationship data \
-            for an independent financial strategist. \
-            Look for patterns in engagement, referral networks, meeting quality, and role transitions.
-
-            \(businessContext)
-
-            CRITICAL: You MUST respond with ONLY valid JSON.
-            - Do NOT wrap the JSON in markdown code blocks
-            - Return ONLY the raw JSON object starting with { and ending with }
-
-            The JSON structure must be:
-            {
-              "patterns": [
-                {
-                  "description": "Clear description of the pattern observed",
-                  "confidence": "high",
-                  "data_points": 5
-                }
-              ],
-              "recommendations": [
-                {
-                  "title": "Short actionable title",
-                  "rationale": "Why this pattern matters and what to do about it",
-                  "priority": 0.6,
-                  "category": "pattern",
-                  "approaches": [
-                    {
-                      "title": "Short approach name",
-                      "summary": "2-3 sentence description of this approach",
-                      "steps": ["Step 1", "Step 2", "Step 3"],
-                      "effort": "moderate"
-                    }
-                  ]
-                }
-              ]
-            }
-
-            Rules:
-            - Only report patterns supported by multiple data points
-            - confidence is "high" (5+ data points), "medium" (3-4), or "low" (2)
-            - Include 2-3 patterns maximum, most significant first
-            - Include 1-2 recommendations based on patterns found
-            - priority is 0.0 to 1.0 (1.0 = most actionable)
-            - Do not fabricate patterns — if data is sparse, report fewer patterns
-            - Each recommendation should include 2-3 approaches (alternative ways to implement it)
-            - effort is "quick" (< 30 min), "moderate" (1-2 hours), or "substantial" (half-day+)
-            - Each pattern must reference the specific role group driving it with numbers (e.g., "7 of 10 Clients were contacted within 48h of their meeting")
-            - Name the count of cold/inactive people and their primary roles (e.g., "5 cold contacts: 3 Leads, 2 Clients")
-            - Recommendations must include concrete next steps naming role groups (e.g., "Re-engage the 3 cold Leads with a check-in call this week")
-            - Reference the actual referral partner count and interaction rate from the data (e.g., "2 of 4 Referral Partners had zero interactions this month")
-            - Explain causal relationships, not just correlations (e.g., "Leads contacted within 24h convert 2× faster because urgency signals commitment")
-            """
+        let instructions = await buildSystemInstructions(businessContext: businessContext)
 
         let prompt = """
             Identify patterns in this business relationship data:
@@ -92,6 +39,73 @@ actor PatternDetectorService {
 
         let responseText = try await AIService.shared.generate(prompt: prompt, systemInstruction: instructions)
         return try parseResponse(responseText)
+    }
+
+    // MARK: - Prompt Construction
+
+    @MainActor
+    private func buildSystemInstructions(businessContext: String) -> String {
+        let custom = UserDefaults.standard.string(forKey: PromptSite.patternDetector.userDefaultsKey) ?? ""
+        if !custom.isEmpty {
+            return custom + "\n\n" + businessContext
+        }
+        return Self.defaultPrompt(businessContext: businessContext)
+    }
+
+    static func defaultPrompt(businessContext: String) -> String {
+        """
+        You identify behavioral patterns and correlations in business relationship data \
+        for an independent financial strategist. \
+        Look for patterns in engagement, referral networks, meeting quality, and role transitions.
+
+        \(businessContext)
+
+        CRITICAL: You MUST respond with ONLY valid JSON.
+        - Do NOT wrap the JSON in markdown code blocks
+        - Return ONLY the raw JSON object starting with { and ending with }
+
+        The JSON structure must be:
+        {
+          "patterns": [
+            {
+              "description": "Clear description of the pattern observed",
+              "confidence": "high",
+              "data_points": 5
+            }
+          ],
+          "recommendations": [
+            {
+              "title": "Short actionable title",
+              "rationale": "Why this pattern matters and what to do about it",
+              "priority": 0.6,
+              "category": "pattern",
+              "approaches": [
+                {
+                  "title": "Short approach name",
+                  "summary": "2-3 sentence description of this approach",
+                  "steps": ["Step 1", "Step 2", "Step 3"],
+                  "effort": "moderate"
+                }
+              ]
+            }
+          ]
+        }
+
+        Rules:
+        - Only report patterns supported by multiple data points
+        - confidence is "high" (5+ data points), "medium" (3-4), or "low" (2)
+        - Include 2-3 patterns maximum, most significant first
+        - Include 1-2 recommendations based on patterns found
+        - priority is 0.0 to 1.0 (1.0 = most actionable)
+        - Do not fabricate patterns — if data is sparse, report fewer patterns
+        - Each recommendation should include 2-3 approaches (alternative ways to implement it)
+        - effort is "quick" (< 30 min), "moderate" (1-2 hours), or "substantial" (half-day+)
+        - Each pattern must reference the specific role group driving it with numbers (e.g., "7 of 10 Clients were contacted within 48h of their meeting")
+        - Name the count of cold/inactive people and their primary roles (e.g., "5 cold contacts: 3 Leads, 2 Clients")
+        - Recommendations must include concrete next steps naming role groups (e.g., "Re-engage the 3 cold Leads with a check-in call this week")
+        - Reference the actual referral partner count and interaction rate from the data (e.g., "2 of 4 Referral Partners had zero interactions this month")
+        - Explain causal relationships, not just correlations (e.g., "Leads contacted within 24h convert 2x faster because urgency signals commitment")
+        """
     }
 
     // MARK: - Parsing
