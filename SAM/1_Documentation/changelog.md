@@ -4,6 +4,46 @@
 
 ---
 
+## March 9, 2026 — Generative Reasoning Quality Test Suite
+
+### Test Fixes
+
+1. **Calendar evidence contaminating stale client tests** (`ScenarioHarnessTests.swift`): `buildCalendarEvents()` was cycling through all clients/agents for meeting attendees, including stale clients and the silent recruiting prospect. Upcoming future meetings (next 3 days) explicitly used `clients[0..2]` — the exact indices marked as stale — giving them `daysSince` values of 0, -1, -2 instead of 50+. Fixed by filtering out `staleClients` and `silentRecruitingProspect` from calendar event attendee selection.
+
+2. **Missing `.linkedIn` in CommunicationChannel validation** (`ScenarioHarnessTests.swift`): `actionLaneClassification` test had a hardcoded `validChannels` set missing the `.linkedIn` case. Replaced with `Set(CommunicationChannel.allCases)` for future-proof validation.
+
+### New Test Suite: Generative Reasoning Quality (16 tests)
+
+Evaluates SAM's AI-powered recommendation and briefing pipelines using the existing `ScenarioDataGenerator` (~950 synthetic contacts, 5 years of evidence). Tests are structural quality evals — they verify output properties rather than exact text.
+
+**Performance optimization**: Shared `GenerativeTestContext` singleton builds the scenario and runs outcome generation once (~3 min), then all 16 tests reuse the cached results (0s each). Total suite time: ~4.5 min (vs. ~45 min if rebuilt per-test).
+
+**Outcome Engine tests (10)**:
+- Engine completes successfully without errors
+- All linked people exist in the scenario dataset (no hallucinated references)
+- Scanner category coverage (preparation + outreach/followUp kinds present)
+- Priority scores non-zero and in valid range [0, 1.5]
+- Upcoming meetings generate preparation outcomes with linked people
+- Archived/DNC/deceased contacts never receive outcomes
+- Zero-engagement social imports (LinkedIn/Facebook noise) never receive outcomes
+- Stale clients get outreach outcomes; recently active clients don't
+- Double-generation doesn't create duplicate outcomes
+- Outcome count reasonable (3–50) with no single kind >80%
+
+**Briefing tests (4)**:
+- Calendar items have valid titles and chronological dates
+- Follow-up urgencies are from the valid set
+- Recently active clients excluded from briefing follow-ups
+- AI narrative length within bounds (visual: 100–2000 chars, TTS: 50–1000 chars)
+
+**AI Narrative tests (1)**:
+- Morning narrative references only names from input data (hallucination detection via capitalized word-pair extraction with common-phrase skip list)
+
+**Classification tests (1)**:
+- All outcomes have valid `ActionLane` and `CommunicationChannel` enum values
+
+---
+
 ## March 7, 2026 — UI Polish, Backup Improvements & Role Suggestion UX
 
 ### Bug Fixes

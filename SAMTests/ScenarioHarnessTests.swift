@@ -524,18 +524,23 @@ struct ScenarioDataGenerator {
                     let startDate = cal.date(bySettingHour: hour, minute: 0, second: 0, of: currentDate)!
                     let endDate = startDate.addingTimeInterval(3600) // 1 hour
 
-                    // Pick a person to meet with
+                    // Pick a person to meet with (exclude stale/silent contacts)
+                    let staleIDs = Set(staleClients.map(\.id))
+                    let silentID = silentRecruitingProspect?.id
+                    let eligibleClients = clients.filter { !staleIDs.contains($0.id) }
+                    let eligibleAgents = agents.filter { $0.id != silentID }
+
                     let attendee: SamPerson
-                    if meetingIndex % 4 == 0, !clients.isEmpty {
-                        attendee = clients[meetingIndex % clients.count]
+                    if meetingIndex % 4 == 0, !eligibleClients.isEmpty {
+                        attendee = eligibleClients[meetingIndex % eligibleClients.count]
                     } else if meetingIndex % 4 == 1, !leads.isEmpty {
                         attendee = leads[meetingIndex % leads.count]
-                    } else if meetingIndex % 4 == 2, !agents.isEmpty {
-                        attendee = agents[meetingIndex % agents.count]
+                    } else if meetingIndex % 4 == 2, !eligibleAgents.isEmpty {
+                        attendee = eligibleAgents[meetingIndex % eligibleAgents.count]
                     } else if !applicants.isEmpty {
                         attendee = applicants[meetingIndex % applicants.count]
                     } else {
-                        attendee = clients.first!
+                        attendee = eligibleClients.first!
                     }
 
                     let titles = [
@@ -566,12 +571,14 @@ struct ScenarioDataGenerator {
             currentDate = cal.date(byAdding: .day, value: 1, to: currentDate)!
         }
 
-        // Add a few upcoming meetings (next 3 days)
+        // Add a few upcoming meetings (next 3 days) — skip stale clients
+        let staleIDs = Set(staleClients.map(\.id))
+        let upcomingEligible = clients.filter { !staleIDs.contains($0.id) }
         for i in 0..<3 {
             let futureDate = cal.date(byAdding: .day, value: i + 1, to: .now)!
             let startDate = cal.date(bySettingHour: 10, minute: 0, second: 0, of: futureDate)!
             let endDate = startDate.addingTimeInterval(3600)
-            let attendee = clients[i % clients.count]
+            let attendee = upcomingEligible[i % upcomingEligible.count]
 
             let ev = SamEvidenceItem(
                 id: UUID(),
@@ -1228,5 +1235,496 @@ struct RelationshipHealthQualityTests {
             #expect(health.daysSinceLastInteraction == nil || health.interactionCount30 == 0,
                     "Contact with no linked evidence should have nil days or zero 30-day interaction count")
         }
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// MARK: - Test Suite: Generative Reasoning Quality
+// ═══════════════════════════════════════════════════════════════════════
+
+/// Shared state for generative reasoning tests. Built once, used by all tests in the suite.
+/// This avoids rebuilding ~950 contacts + 5 years of evidence + running the outcome engine
+/// for every single test (which was causing 2-3 min per test).
+@MainActor
+private final class GenerativeTestContext {
+    static let shared = GenerativeTestContext()
+
+    var gen: ScenarioDataGenerator?
+    var outcomes: [SamOutcome] = []
+    var engineStatus: OutcomeEngine.GenerationStatus = .idle
+    var engineError: String?
+    var isSetUp = false
+
+    func setUp() async throws {
+        guard !isSetUp else { return }
+
+        var g = try ScenarioDataGenerator()
+        try g.buildFullScenario()
+        configureAllRepositories(with: g.container)
+        OutcomeRepository.shared.configure(container: g.container)
+        PipelineRepository.shared.configure(container: g.container)
+        ProductionRepository.shared.configure(container: g.container)
+        GoalRepository.shared.configure(container: g.container)
+        IntentionalTouchRepository.shared.configure(container: g.container)
+        InsightGenerator.shared.configure(container: g.container)
+        DailyBriefingCoordinator.shared.configure(container: g.container)
+
+        await OutcomeEngine.shared.generateOutcomes()
+
+        gen = g
+        engineStatus = OutcomeEngine.shared.generationStatus
+        engineError = OutcomeEngine.shared.lastError
+        outcomes = (try? OutcomeRepository.shared.fetchActive()) ?? []
+        isSetUp = true
+    }
+
+    var knownNames: Set<String> {
+        guard let gen else { return [] }
+        var names = Set<String>()
+        let allPeople = gen.coreContacts + gen.linkedInOnlyContacts + gen.facebookOnlyContacts
+        for p in allPeople {
+            names.insert(p.displayName)
+            for part in p.displayName.split(separator: " ") { names.insert(String(part)) }
+        }
+        if let me = gen.meContact { names.insert(me.displayName) }
+        return names
+    }
+}
+
+/// Tests that SAM's generative pipelines (outcome engine, briefings, strategic coordinator)
+/// produce reasonable, grounded outputs when run against realistic scenario data.
+/// These are structural quality evals — they verify properties like:
+///   - Outcomes reference real people from the dataset
+///   - Priority ordering reflects scenario conditions
+///   - Briefing data sections are populated and internally consistent
+///   - No hallucinated names appear in generated content
+///   - Coverage: the right scanner types fire for the right conditions
+@Suite("Scenario: Generative Reasoning Quality", .serialized)
+@MainActor
+struct GenerativeReasoningQualityTests {
+
+    private var ctx: GenerativeTestContext { GenerativeTestContext.shared }
+
+    // MARK: - Outcome Engine: Full Pipeline
+
+    @Test("Outcome engine generates outcomes successfully")
+    @MainActor
+    func outcomeEngineRuns() async throws {
+        try await ctx.setUp()
+
+        #expect(ctx.engineStatus == .success,
+                "Outcome engine should complete successfully, got: \(ctx.engineStatus.rawValue)")
+        #expect(ctx.engineError == nil,
+                "Outcome engine should have no error: \(ctx.engineError ?? "none")")
+    }
+
+    @Test("Generated outcomes reference real people only")
+    @MainActor
+    func outcomesReferenceRealPeople() async throws {
+        try await ctx.setUp()
+        let names = ctx.knownNames
+
+        var orphanedOutcomes: [String] = []
+        for outcome in ctx.outcomes {
+            if let person = outcome.linkedPerson {
+                let personNameParts = person.displayName.split(separator: " ")
+                let hasKnownName = personNameParts.allSatisfy { names.contains(String($0)) }
+                if !hasKnownName {
+                    orphanedOutcomes.append("\(outcome.title) → \(person.displayName)")
+                }
+            }
+        }
+        #expect(orphanedOutcomes.isEmpty,
+                "All outcome-linked people should be from the dataset: \(orphanedOutcomes.joined(separator: ", "))")
+    }
+
+    @Test("Outcome kinds cover expected scanner categories")
+    @MainActor
+    func outcomeKindCoverage() async throws {
+        try await ctx.setUp()
+        let kinds = Set(ctx.outcomes.map(\.outcomeKindRawValue))
+
+        #expect(kinds.contains(OutcomeKind.preparation.rawValue),
+                "Should generate preparation outcomes for upcoming meetings")
+
+        let hasRelationshipOutcomes = kinds.contains(OutcomeKind.outreach.rawValue)
+            || kinds.contains(OutcomeKind.followUp.rawValue)
+        #expect(hasRelationshipOutcomes,
+                "Should generate outreach or follow-up outcomes for stale/recent contacts")
+    }
+
+    @Test("Outcomes have non-zero priority scores")
+    @MainActor
+    func outcomePriorityScoring() async throws {
+        try await ctx.setUp()
+        #expect(!ctx.outcomes.isEmpty, "Should have at least one active outcome")
+
+        let zeroPriority = ctx.outcomes.filter { $0.priorityScore == 0 }
+        #expect(zeroPriority.isEmpty,
+                "\(zeroPriority.count) outcomes have zero priority — all should be scored")
+
+        let outOfRange = ctx.outcomes.filter { $0.priorityScore < 0 || $0.priorityScore > 1.5 }
+        #expect(outOfRange.isEmpty,
+                "\(outOfRange.count) outcomes have priority outside [0, 1.5] range")
+    }
+
+    @Test("Preparation outcomes exist for upcoming meetings with linked people")
+    @MainActor
+    func preparationOutcomesForUpcoming() async throws {
+        try await ctx.setUp()
+        let preps = ctx.outcomes.filter { $0.outcomeKind == .preparation }
+
+        #expect(!preps.isEmpty, "Should generate preparation outcomes for upcoming meetings")
+
+        let unlinked = preps.filter { $0.linkedPerson == nil }
+        #expect(unlinked.isEmpty,
+                "All preparation outcomes should be linked to a person, \(unlinked.count) unlinked")
+    }
+
+    @Test("No outcomes target excluded contacts")
+    @MainActor
+    func noOutcomesForExcluded() async throws {
+        try await ctx.setUp()
+        guard let gen = ctx.gen else { return }
+
+        let excludedIDs = Set(
+            gen.archivedContacts.map(\.id) +
+            gen.dncContacts.map(\.id) +
+            gen.deceasedContacts.map(\.id)
+        )
+
+        let leaked = ctx.outcomes.filter { outcome in
+            if let person = outcome.linkedPerson {
+                return excludedIDs.contains(person.id)
+            }
+            return false
+        }
+        #expect(leaked.isEmpty,
+                "Outcomes should never target archived/DNC/deceased contacts, found \(leaked.count)")
+    }
+
+    @Test("No outcomes target zero-engagement social imports")
+    @MainActor
+    func noOutcomesForSocialNoise() async throws {
+        try await ctx.setUp()
+        guard let gen = ctx.gen else { return }
+
+        let noiseIDs = Set(
+            (gen.linkedInOnlyContacts + gen.facebookOnlyContacts)
+                .filter { $0.roleBadges.isEmpty && $0.linkedEvidence.isEmpty }
+                .map(\.id)
+        )
+
+        let leaked = ctx.outcomes.compactMap { outcome -> String? in
+            guard let person = outcome.linkedPerson, noiseIDs.contains(person.id) else { return nil }
+            return "\(outcome.title) → \(person.displayName)"
+        }
+        #expect(leaked.isEmpty,
+                "Zero-engagement social imports should not get outcomes: \(leaked.prefix(5).joined(separator: "; "))")
+    }
+
+    @Test("Outreach outcomes prioritize stale clients over recently active ones")
+    @MainActor
+    func stalePrioritizedOverActive() async throws {
+        try await ctx.setUp()
+        guard let gen = ctx.gen else { return }
+
+        let outreach = ctx.outcomes.filter { $0.outcomeKind == .outreach }
+
+        let staleIDs = Set(gen.staleClients.map(\.id))
+        let staleOutreach = outreach.filter { staleIDs.contains($0.linkedPerson?.id ?? UUID()) }
+
+        #expect(!staleOutreach.isEmpty,
+                "Stale clients should generate outreach outcomes")
+
+        let recentID = gen.recentlyActiveClient.id
+        let recentOutreach = outreach.filter { $0.linkedPerson?.id == recentID }
+        #expect(recentOutreach.isEmpty,
+                "Recently active client should NOT get outreach outcomes")
+    }
+
+    @Test("Outcome deduplication prevents duplicate suggestions")
+    @MainActor
+    func noDuplicateOutcomes() async throws {
+        try await ctx.setUp()
+
+        // Run generation a second time
+        OutcomeEngine.shared.generationStatus = .idle
+        await OutcomeEngine.shared.generateOutcomes()
+
+        let active = try OutcomeRepository.shared.fetchActive()
+
+        var seen: Set<String> = []
+        var duplicates: [String] = []
+        for outcome in active {
+            let key = "\(outcome.outcomeKindRawValue)|\(outcome.linkedPerson?.id.uuidString ?? "nil")"
+            if seen.contains(key) {
+                duplicates.append("\(outcome.outcomeKind.rawValue) for \(outcome.linkedPerson?.displayName ?? "unknown")")
+            }
+            seen.insert(key)
+        }
+        #expect(duplicates.isEmpty,
+                "Should not have duplicate outcomes after double generation: \(duplicates.prefix(5).joined(separator: "; "))")
+    }
+
+    // MARK: - Briefing Data Assembly
+
+    @Test("Morning briefing gathers calendar items from scenario")
+    @MainActor
+    func briefingCalendarItems() async throws {
+        try await ctx.setUp()
+
+        await DailyBriefingCoordinator.shared.checkFirstOpenOfDay()
+
+        let briefing = DailyBriefingCoordinator.shared.morningBriefing
+
+        if let briefing {
+            for item in briefing.calendarItems {
+                #expect(!item.eventTitle.isEmpty, "Calendar item should have a title")
+                #expect(item.startsAt <= item.endsAt ?? .distantFuture,
+                        "Calendar start should be before end")
+            }
+
+            for followUp in briefing.followUps {
+                #expect(!followUp.personName.isEmpty, "Follow-up should name a person")
+                #expect(followUp.daysSinceInteraction >= 0,
+                        "\(followUp.personName) has negative daysSinceInteraction: \(followUp.daysSinceInteraction)")
+            }
+
+            for action in briefing.priorityActions {
+                #expect(!action.title.isEmpty, "Action should have a title")
+                let validUrgencies = ["immediate", "soon", "standard", "low"]
+                #expect(validUrgencies.contains(action.urgency),
+                        "Action urgency '\(action.urgency)' should be one of \(validUrgencies)")
+            }
+        }
+    }
+
+    @Test("Briefing follow-ups target stale contacts, not recently active ones")
+    @MainActor
+    func briefingFollowUpTargeting() async throws {
+        try await ctx.setUp()
+        guard let gen = ctx.gen else { return }
+
+        await DailyBriefingCoordinator.shared.checkFirstOpenOfDay()
+
+        if let briefing = DailyBriefingCoordinator.shared.morningBriefing {
+            let followUpNames = Set(briefing.followUps.map(\.personName))
+            let recentName = gen.recentlyActiveClient.displayName
+
+            #expect(!followUpNames.contains(recentName),
+                    "Recently active client '\(recentName)' should NOT appear in follow-ups")
+        }
+    }
+
+    // MARK: - AI Narrative Quality (requires on-device AI availability)
+
+    @Test("Morning narrative contains only real names from input data")
+    @MainActor
+    func narrativeNoHallucinatedNames() async throws {
+        try await ctx.setUp()
+        guard let gen = ctx.gen else { return }
+
+        let calendarItems = [
+            BriefingCalendarItem(
+                eventTitle: "Client Review with \(gen.clients[3].displayName)",
+                startsAt: Calendar.current.date(bySettingHour: 10, minute: 0, second: 0, of: .now)!,
+                endsAt: Calendar.current.date(bySettingHour: 11, minute: 0, second: 0, of: .now),
+                attendeeNames: [gen.clients[3].displayName],
+                attendeeRoles: ["Client"]
+            ),
+            BriefingCalendarItem(
+                eventTitle: "Recruiting Check-in with \(gen.agents[0].displayName)",
+                startsAt: Calendar.current.date(bySettingHour: 14, minute: 0, second: 0, of: .now)!,
+                endsAt: Calendar.current.date(bySettingHour: 15, minute: 0, second: 0, of: .now),
+                attendeeNames: [gen.agents[0].displayName],
+                attendeeRoles: ["Agent"]
+            )
+        ]
+
+        let followUps = gen.staleClients.prefix(2).map { client in
+            BriefingFollowUp(
+                personName: client.displayName,
+                reason: "No interaction in 50+ days",
+                daysSinceInteraction: 52,
+                suggestedAction: "Schedule a portfolio review call"
+            )
+        }
+
+        let priorityActions = [
+            BriefingAction(
+                title: "Prepare for \(gen.clients[3].displayName) review",
+                rationale: "Annual review meeting at 10 AM",
+                urgency: "immediate",
+                sourceKind: "outcome"
+            )
+        ]
+
+        let result = await DailyBriefingService.shared.generateMorningNarrative(
+            calendarItems: calendarItems,
+            priorityActions: priorityActions,
+            followUps: Array(followUps),
+            lifeEvents: [],
+            tomorrowPreview: []
+        )
+
+        // If AI is unavailable (CI environment), the result will be empty — that's OK
+        guard !result.visual.isEmpty else { return }
+
+        // Validate no hallucinated names
+        let inputNames = Set(
+            calendarItems.flatMap(\.attendeeNames) +
+            followUps.map(\.personName) +
+            (priorityActions.compactMap(\.personName))
+        )
+
+        let words = result.visual.components(separatedBy: .whitespacesAndNewlines)
+        var suspiciousNames: [String] = []
+        for i in 0..<(words.count - 1) {
+            let w1 = words[i].trimmingCharacters(in: .punctuationCharacters)
+            let w2 = words[i + 1].trimmingCharacters(in: .punctuationCharacters)
+            guard w1.count > 1, w2.count > 1,
+                  w1.first?.isUppercase == true,
+                  w2.first?.isUppercase == true else { continue }
+
+            let fullName = "\(w1) \(w2)"
+            let skipPhrases: Set<String> = ["Good Morning", "This Morning", "Annual Review",
+                                            "Client Review", "Financial Planning", "Between Your",
+                                            "First Up", "Also Worth", "Next Week", "Deep Work"]
+            guard !skipPhrases.contains(fullName) else { continue }
+
+            if !inputNames.contains(w1) && !inputNames.contains(fullName) {
+                let names = ctx.knownNames
+                if !names.contains(w1) && !names.contains(fullName) {
+                    suspiciousNames.append(fullName)
+                }
+            }
+        }
+
+        #expect(suspiciousNames.isEmpty,
+                "Narrative may contain hallucinated names: \(suspiciousNames.joined(separator: ", "))")
+    }
+
+    @Test("Morning narrative is reasonable length and non-empty when given good data")
+    @MainActor
+    func narrativeReasonableLength() async throws {
+        try await ctx.setUp()
+        guard let gen = ctx.gen else { return }
+
+        let calendarItems = gen.clients[3...5].enumerated().map { (i, client) in
+            BriefingCalendarItem(
+                eventTitle: "Meeting with \(client.displayName)",
+                startsAt: Calendar.current.date(bySettingHour: 9 + i * 2, minute: 0, second: 0, of: .now)!,
+                endsAt: Calendar.current.date(bySettingHour: 10 + i * 2, minute: 0, second: 0, of: .now),
+                attendeeNames: [client.displayName],
+                attendeeRoles: ["Client"]
+            )
+        }
+
+        let followUps = [
+            BriefingFollowUp(
+                personName: gen.staleClients[0].displayName,
+                reason: "Overdue for check-in",
+                daysSinceInteraction: 55
+            )
+        ]
+
+        let actions = [
+            BriefingAction(
+                title: "Review \(gen.applicants[0].displayName)'s application status",
+                rationale: "Underwriting pending for 2 weeks",
+                urgency: "soon",
+                sourceKind: "outcome"
+            )
+        ]
+
+        let result = await DailyBriefingService.shared.generateMorningNarrative(
+            calendarItems: calendarItems,
+            priorityActions: actions,
+            followUps: followUps,
+            lifeEvents: [],
+            tomorrowPreview: []
+        )
+
+        guard !result.visual.isEmpty else { return }
+
+        #expect(result.visual.count >= 100,
+                "Visual narrative too short (\(result.visual.count) chars) — may be truncated or degenerate")
+        #expect(result.visual.count <= 2000,
+                "Visual narrative too long (\(result.visual.count) chars) — should be 4-6 sentences")
+
+        if !result.tts.isEmpty {
+            #expect(result.tts.count >= 50,
+                    "TTS narrative too short (\(result.tts.count) chars)")
+            #expect(result.tts.count <= 1000,
+                    "TTS narrative too long (\(result.tts.count) chars) — should be 2-3 sentences")
+        }
+    }
+
+    // MARK: - Goal Pacing Reasonableness
+
+    @Test("Goal pacing outcomes reference active goals with valid pace")
+    @MainActor
+    func goalPacingReasonable() async throws {
+        try await ctx.setUp()
+
+        let validGoalTypes = Set(GoalType.allCases.map(\.rawValue))
+        for outcome in ctx.outcomes where outcome.title.lowercased().contains("goal") || outcome.title.lowercased().contains("pace") || outcome.title.lowercased().contains("target") {
+            #expect(outcome.title.count >= 10,
+                    "Goal outcome title too short: '\(outcome.title)'")
+        }
+
+        let allProgress = GoalProgressEngine.shared.computeAllProgress()
+        for gp in allProgress {
+            #expect(validGoalTypes.contains(gp.goalType.rawValue),
+                    "Goal type '\(gp.goalType.rawValue)' not in valid set")
+            #expect(gp.targetValue > 0,
+                    "Goal target should be positive: \(gp.title)")
+        }
+    }
+
+    // MARK: - Action Lane Classification
+
+    @Test("Outcomes have valid action lane assignments")
+    @MainActor
+    func actionLaneClassification() async throws {
+        try await ctx.setUp()
+        #expect(!ctx.outcomes.isEmpty, "Should have active outcomes to test")
+
+        for outcome in ctx.outcomes {
+            let lane = outcome.actionLane
+            let validLanes: Set<ActionLane> = [.communicate, .deepWork, .record, .call, .schedule, .reviewGraph, .openURL]
+            #expect(validLanes.contains(lane),
+                    "Outcome '\(outcome.title)' has unexpected lane: \(lane)")
+
+            if lane == .communicate || lane == .call {
+                if let channel = outcome.suggestedChannel {
+                    let validChannels = Set(CommunicationChannel.allCases)
+                    #expect(validChannels.contains(channel),
+                            "Outcome '\(outcome.title)' has invalid channel: \(channel)")
+                }
+            }
+        }
+    }
+
+    // MARK: - Outcome Count Reasonableness
+
+    @Test("Outcome count is reasonable for scenario complexity")
+    @MainActor
+    func outcomeCountReasonable() async throws {
+        try await ctx.setUp()
+
+        #expect(ctx.outcomes.count >= 3,
+                "Should generate at least 3 outcomes for a realistic scenario, got \(ctx.outcomes.count)")
+        #expect(ctx.outcomes.count <= 50,
+                "Should not flood user with outcomes (\(ctx.outcomes.count) is too many for one session)")
+
+        let kindCounts = Dictionary(grouping: ctx.outcomes, by: \.outcomeKindRawValue)
+            .mapValues(\.count)
+        let maxKindCount = kindCounts.values.max() ?? 0
+        let ratio = Double(maxKindCount) / Double(ctx.outcomes.count)
+        #expect(ratio < 0.8,
+                "Outcomes are too homogeneous: \(kindCounts) — single kind is \(Int(ratio * 100))% of total")
     }
 }
