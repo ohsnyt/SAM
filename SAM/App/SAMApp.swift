@@ -739,6 +739,7 @@ struct SAMApp: App {
         SubstackImportCoordinator.shared.configure(container: c)
         LinkedInImportCoordinator.shared.configure(container: c)
         FacebookImportCoordinator.shared.configure(container: c)
+        EventRepository.shared.configure(container: c)
 
         // One-time migration: isArchived → lifecycleStatusRawValue (v31→v32)
         SAMModelContainer.runMigrationV32IfNeeded()

@@ -426,6 +426,7 @@ actor DailyBriefingService {
         case .recruiting:        reasonableDailyMax = 3;  reasonableWeeklyMax = 15
         case .contentPosts:      reasonableDailyMax = 3;  reasonableWeeklyMax = 15
         case .deepWorkHours:     reasonableDailyMax = 8;  reasonableWeeklyMax = 40
+        case .eventsHosted:      reasonableDailyMax = 2;  reasonableWeeklyMax = 5
         }
 
         if perDay > reasonableDailyMax {

@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct PromptLabView: View {
 
@@ -16,6 +17,8 @@ struct PromptLabView: View {
     @State private var showInputEditor = true
     @State private var showAddVariant = false
     @State private var newVariantName = ""
+    @State private var showImportResult = false
+    @State private var importResultMessage = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -89,6 +92,19 @@ struct PromptLabView: View {
             .disabled(coordinator.isRunning || coordinator.variants(for: selectedSite).isEmpty)
             .keyboardShortcut(.return, modifiers: .command)
 
+            // Import from registry
+            Button {
+                importFromRegistry()
+            } label: {
+                Label("Import Registry", systemImage: "square.and.arrow.down")
+            }
+            .disabled(coordinator.isRunning)
+            .alert("Registry Import", isPresented: $showImportResult) {
+                Button("OK") {}
+            } message: {
+                Text(importResultMessage)
+            }
+
             // Clear runs
             Button {
                 coordinator.clearRuns(for: selectedSite)
@@ -100,6 +116,38 @@ struct PromptLabView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .background(.bar)
+    }
+
+    // MARK: - Registry Import
+
+    private func importFromRegistry() {
+        let panel = NSOpenPanel()
+        panel.title = "Import Prompt Registry"
+        panel.allowedContentTypes = [.json]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.directoryURL = URL(fileURLWithPath: "/Users/david/Swift/SAM/sam-prompt-research/data/prompt_registry")
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        do {
+            let result = try coordinator.importFromRegistry(at: url)
+            var message = "Imported \(result.imported) variant(s) from registry v\(result.registryVersion)."
+            if result.skipped > 0 {
+                message += "\nSkipped \(result.skipped) already-imported variant(s)."
+            }
+            if !result.unrecognizedSites.isEmpty {
+                message += "\nUnrecognized sites: \(result.unrecognizedSites.joined(separator: ", "))"
+            }
+            importResultMessage = message
+            showImportResult = true
+
+            // Refresh the current site's default variant
+            coordinator.ensureDefaultVariant(for: selectedSite)
+        } catch {
+            importResultMessage = "Import failed: \(error.localizedDescription)"
+            showImportResult = true
+        }
     }
 
     // MARK: - Input Panel (left side)

@@ -1064,6 +1064,7 @@ final class OutcomeEngine {
         case .meetingsHeld:      return .preparation
         case .contentPosts:      return .contentCreation
         case .deepWorkHours:     return .growth
+        case .eventsHosted:      return .growth
         }
     }
 
@@ -1146,6 +1147,13 @@ final class OutcomeEngine {
                 "Schedule a 2-hour focus block on your calendar for tomorrow",
                 kind
             )
+        case .eventsHosted:
+            return (
+                "Plan your next event",
+                "\(paceLabel) on events — \(Int(remaining)) remaining over \(daysRemaining) days (\(rateText)).",
+                "Create a new event in SAM and start building your invitation list",
+                kind
+            )
         }
     }
 
@@ -1173,6 +1181,7 @@ final class OutcomeEngine {
         case .recruiting:        reasonableDailyMax = 3;  reasonableWeeklyMax = 15
         case .contentPosts:      reasonableDailyMax = 3;  reasonableWeeklyMax = 15
         case .deepWorkHours:     reasonableDailyMax = 8;  reasonableWeeklyMax = 40
+        case .eventsHosted:      reasonableDailyMax = 2;  reasonableWeeklyMax = 5
         }
 
         // If daily rate is unreasonable, skip to weekly

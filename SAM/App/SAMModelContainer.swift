@@ -58,6 +58,9 @@ enum SAMSchema {
         SocialProfileSnapshot.self,     // Platform-agnostic social profile storage (schema SAM_v34)
         FacebookImport.self,            // Facebook archive import history (schema SAM_v34)
         SubstackImport.self,            // Substack RSS/subscriber import history (schema SAM_v34)
+        SamEvent.self,                      // Event/workshop management with RSVP tracking
+        EventParticipation.self,            // Event ↔ Person join table with RSVP state
+        SamPresentation.self,               // Presentation library for recurring workshops
     ]
 }
 

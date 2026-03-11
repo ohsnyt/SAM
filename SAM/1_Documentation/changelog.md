@@ -4,6 +4,77 @@
 
 ---
 
+## March 11, 2026 — Event Management, Presentation Library & RSVP Intelligence
+
+### New Feature: Event/Workshop Management
+
+Complete event lifecycle system for planning, inviting, and tracking attendance at workshops and client events.
+
+**Architecture:**
+- `SamEvent` model — title, format (workshop/seminar/webinar/social/oneOnOne), status (draft→inviting→confirmed→inProgress→completed→cancelled), date/time, venue, RSVP tracking with accepted/tentative/declined counts, optional presentation link
+- `EventParticipation` model — join table linking events to people with RSVP state, invitation tracking, attendance confirmation
+- `EventCoordinator.swift` — `@MainActor @Observable` singleton orchestrating event CRUD, participant management, AI-powered invitation generation, topic suggestions
+- `EventRepository.swift` — SwiftData CRUD with fetch-upcoming/past/all, participant queries
+- `EventTopicAdvisorService.swift` — AI-driven event topic and format suggestions based on client portfolio
+
+**Views:**
+- `EventManagerView.swift` — Segmented picker switching between Events (HSplitView list+detail) and Presentations tabs
+- `EventDetailView.swift` — Full event detail with header, action buttons (Add People, Promote, Draft Invitations), participant list with role-colored badges, RSVP filter, per-participant quick actions
+- `EventFormView.swift` — Create/edit event form
+- `InvitationDraftSheet.swift` — AI-generated personalized invitation popup with edit-before-send, signature learning
+- `AddParticipantsSheet.swift` — Search and add participants from contacts
+- `SocialPromotionSheet.swift` — Social media promotion drafts
+
+**Undo support:** Event deletion is undoable via the universal undo system. `.samUndoDidRestore` notification refreshes the event list.
+
+### New Feature: Presentation Library
+
+Reusable presentation management with drag-and-drop PDF import and AI content digestion.
+
+**Architecture:**
+- `SamPresentation` model — title, description, topicTags, estimatedDurationMinutes, targetAudience, fileAttachments (security-scoped bookmarks), contentSummary, keyTalkingPoints, contentAnalyzedAt, linked events
+- `PresentationFile` — embedded Codable struct storing fileName, fileType, bookmarkData, fileSizeBytes
+- `PresentationAnalysisCoordinator.swift` — `@MainActor @Observable` singleton with `AnalysisStatus` enum (idle/extracting/analyzing/success/failed). PDFKit text extraction from security-scoped bookmarks, AI summary generation returning summary + talking points + topic tags. Status auto-resets after 5s.
+
+**Drag-and-drop flow:**
+1. User drags PDF onto Presentations tab → blue dashed drop overlay appears
+2. `.onDrop(of: [.fileURL])` handler creates security-scoped bookmark, derives title from filename
+3. `SamPresentation` inserted into SwiftData with `PresentationFile` attachment
+4. `PresentationAnalysisCoordinator.analyze()` kicks off automatically
+5. MinionsView shows "Extracting" → "Analyzing" row with presentation title tooltip
+6. On completion, presentation detail shows AI-generated summary and talking points
+
+**PresentationFormSheet** includes Files section with "Add PDF" button; auto-fills title from first file; auto-triggers analysis on create.
+
+### New Feature: RSVP Auto-Detection & Third-Party Flows
+
+**RSVP Detection pipeline:**
+- `RSVPDetectionDTO` — extended with `additionalGuestCount`, `additionalGuestNames`, `eventReference` fields
+- `MessageAnalysisService` / `EmailAnalysisService` — extended LLM prompts with RSVP detection rules including guest detection and event references
+- `RSVPMatchingService.swift` — `tryAutoAddToEvent()` finds best matching event via title word overlap, substring, day-of-week, and date scoring; auto-adds participant with user confirmation flag; posts `.samRSVPAutoAdded` notification
+- Guest handling: named guests searched in contacts and auto-added; unnamed guests logged
+- Multi-event matching: scores candidates and picks highest confidence match
+
+### Enhancement: Sender Identity & Signature Learning
+
+**Identity settings:**
+- `SettingsView` — "Your Identity" section with first/last name fields, default closing field, "Auto-fill from Me Contact" button
+- Auto-populates from Me contact on first launch
+
+**AI integration:**
+- `AIService` — `senderName(forWarmRelationship:)` returns first name for warm relationships (3+ evidence items in 90 days), full name for formal
+- `AIService.closing(forMessageKind:isWarm:)` — checks learned preferences, falls back to user default
+- Signature learning: `InvitationDraftSheet` compares original draft closing to edited version on send, stores preferences by message kind × warmth in UserDefaults (`sam.closing.<kind>.<warm|formal>`)
+- `EventCoordinator.generatePersonalizedInvitation` prompt includes `SENDER` field and sign-off instruction
+
+### Enhancement: Morning Briefing — Past Event Filtering
+
+`DailyBriefingCoordinator` now filters out past events from the morning briefing calendar section, showing only today's remaining and future events.
+
+No schema version bump — all new models handled by SwiftData lightweight migration.
+
+---
+
 ## March 9, 2026 — Prompt Lab: Side-by-Side Prompt Comparison Tool
 
 ### New Feature: Prompt Lab

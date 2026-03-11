@@ -53,6 +53,16 @@ actor EmailAnalysisService {
         return try parseResponse(responseText)
     }
 
+    private static func mapRSVPStatus(_ status: String) -> RSVPDetectionDTO.RSVPResponse {
+        switch status.lowercased() {
+        case "accepted":  return .accepted
+        case "declined":  return .declined
+        case "tentative": return .tentative
+        case "question":  return .question
+        default:          return .tentative
+        }
+    }
+
     private static func mapEntityKind(_ raw: String) -> EmailEntityDTO.EntityKind {
         switch raw {
         case "person": .person
@@ -76,6 +86,17 @@ actor EmailAnalysisService {
             let dateFormatter = DateFormatter()
             dateFormatter.dateStyle = .long
 
+            let rsvpDetections = (llm.rsvp_detections ?? []).map { rsvp in
+                RSVPDetectionDTO(
+                    responseText: rsvp.response_text,
+                    detectedStatus: Self.mapRSVPStatus(rsvp.status),
+                    confidence: rsvp.confidence,
+                    additionalGuestCount: rsvp.additional_guest_count ?? 0,
+                    additionalGuestNames: rsvp.additional_guest_names ?? [],
+                    eventReference: rsvp.event_reference
+                )
+            }
+
             return EmailAnalysisDTO(
                 summary: llm.summary,
                 namedEntities: (llm.entities ?? []).map { e in
@@ -97,6 +118,7 @@ actor EmailAnalysisService {
                         confidence: t.confidence ?? 0.5
                     )
                 },
+                rsvpDetections: rsvpDetections,
                 sentiment: EmailAnalysisDTO.Sentiment(rawValue: llm.sentiment ?? "neutral") ?? .neutral,
                 analysisVersion: Self.currentAnalysisVersion
             )
@@ -110,6 +132,7 @@ actor EmailAnalysisService {
                     namedEntities: [],
                     topics: [],
                     temporalEvents: [],
+                    rsvpDetections: [],
                     sentiment: .neutral,
                     analysisVersion: Self.currentAnalysisVersion
                 )
@@ -133,7 +156,17 @@ actor EmailAnalysisService {
           "temporal_events": [
             { "description": "What is happening", "date_string": "March 15, 2026", "confidence": 0.0-1.0 }
           ],
-          "sentiment": "positive|neutral|negative|urgent"
+          "sentiment": "positive|neutral|negative|urgent",
+          "rsvp_detections": [
+            {
+              "response_text": "the exact quote indicating RSVP",
+              "status": "accepted | declined | tentative | question",
+              "confidence": 0.9,
+              "additional_guest_count": 0,
+              "additional_guest_names": [],
+              "event_reference": "Thursday workshop"
+            }
+          ]
         }
 
         Rules:
@@ -142,6 +175,13 @@ actor EmailAnalysisService {
         - For temporal events, extract any mentioned dates, deadlines, or scheduled events
         - Sentiment reflects the overall tone (urgent if action is required immediately)
         - If the email is too short or generic, return empty arrays
+
+        RSVP Detection Rules:
+        - Detect when someone is confirming, declining, or tentatively responding to an event/meeting/workshop
+        - If they mention bringing others, set additional_guest_count and additional_guest_names
+        - If they reference a specific event by name or date, set event_reference
+        - If the email mentions another person is coming, include their name in additional_guest_names
+        - Omit rsvp_detections if no RSVP-like language is present
         """
 }
 
@@ -151,7 +191,17 @@ nonisolated private struct LLMEmailResponse: Codable {
     let entities: [LLMEntity]?
     let topics: [String]?
     let temporal_events: [LLMTemporalEvent]?
+    let rsvp_detections: [LLMRSVPDetection]?
     let sentiment: String?
+}
+
+nonisolated private struct LLMRSVPDetection: Codable {
+    let response_text: String
+    let status: String
+    let confidence: Double
+    let additional_guest_count: Int?
+    let additional_guest_names: [String]?
+    let event_reference: String?
 }
 
 nonisolated private struct LLMEntity: Codable {

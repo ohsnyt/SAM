@@ -81,6 +81,8 @@ final class UndoRepository {
             try restoreInsight(entry.snapshotData)
         case .person:
             try restorePersonLifecycleOrMerge(entry)
+        case .event:
+            try restoreEvent(entry.snapshotData)
         }
 
         entry.isRestored = true
@@ -445,6 +447,41 @@ final class UndoRepository {
 
         try modelContext.save()
         logger.info("Restored person merge: re-created '\(snapshot.sourceDisplayName)'")
+    }
+
+    private func restoreEvent(_ data: Data) throws {
+        let snapshot = try JSONDecoder().decode(EventSnapshot.self, from: data)
+
+        // Re-create the event
+        let event = try EventRepository.shared.createEvent(
+            title: snapshot.title,
+            eventDescription: snapshot.eventDescription,
+            format: EventFormat(rawValue: snapshot.formatRawValue) ?? .inPerson,
+            startDate: snapshot.startDate,
+            endDate: snapshot.endDate,
+            venue: snapshot.venue,
+            joinLink: snapshot.joinLink,
+            targetParticipantCount: snapshot.targetParticipantCount
+        )
+
+        // Restore auto-ack settings
+        try? EventRepository.shared.updateAutoAcknowledge(
+            eventID: event.id,
+            enabled: snapshot.autoAcknowledgeEnabled,
+            acceptTemplate: snapshot.ackAcceptTemplate,
+            declineTemplate: snapshot.ackDeclineTemplate
+        )
+
+        // Re-add participants (without messages/RSVP state — those are lost)
+        let allPeople = try modelContext?.fetch(FetchDescriptor<SamPerson>()) ?? []
+        let personMap = Dictionary(uniqueKeysWithValues: allPeople.map { ($0.id, $0) })
+        for personID in snapshot.participantPersonIDs {
+            if let person = personMap[personID] {
+                try? EventRepository.shared.addParticipant(event: event, person: person)
+            }
+        }
+
+        logger.info("Restored event '\(snapshot.title)' with \(snapshot.participantPersonIDs.count) participants")
     }
 
     // MARK: - Errors

@@ -724,6 +724,10 @@ public final class SamEvidenceItem {
     @Relationship(deleteRule: .nullify, inverse: \SamNote.linkedEvidence)
     public var linkedNotes: [SamNote] = []
 
+    /// Event this evidence item is associated with (e.g., workshop calendar event).
+    @Relationship(deleteRule: .nullify)
+    public var linkedEvent: SamEvent?
+
     /// Insights that reference this evidence item as supporting material.
     /// Phase 3: inverse of SamInsight.basedOnEvidence.
     public var supportingInsights: [SamInsight] = []
@@ -896,6 +900,10 @@ public final class SamOutcome {
 
     @Relationship(deleteRule: .nullify)
     public var linkedContext: SamContext?
+
+    /// Event this outcome is associated with (invitation, reminder, follow-up).
+    @Relationship(deleteRule: .nullify)
+    public var linkedEvent: SamEvent?
 
     // ── Feedback ────────────────────────────────────────────────────
 
@@ -1136,6 +1144,10 @@ extension Notification.Name {
     /// Posted after UndoCoordinator successfully restores an entity.
     /// Listeners should refresh their data.
     static let samUndoDidRestore = Notification.Name("samUndoDidRestore")
+
+    /// Posted when an RSVP detection auto-adds a person to an event.
+    /// userInfo: ["personName": String, "eventTitle": String, "rsvpStatus": String, "eventID": String, "participationID": String]
+    static let samRSVPAutoAdded = Notification.Name("samRSVPAutoAdded")
 
     /// Posted when a meeting ends to open the structured post-meeting capture sheet.
     /// userInfo: ["eventTitle": String, "eventDate": Date, "attendeeIDs": [UUID]]

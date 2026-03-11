@@ -37,6 +37,7 @@ final class StrategicCoordinator {
     var generationStatus: GenerationStatus = .idle
     var lastGeneratedAt: Date?
     var strategicRecommendations: [StrategicRec] = []
+    var suggestedEventTopics: [SuggestedEventTopic] = []
 
     // MARK: - Private State
 
@@ -47,18 +48,21 @@ final class StrategicCoordinator {
     private var lastTimeAnalyzed: Date?
     private var lastPatternAnalyzed: Date?
     private var lastContentAnalyzed: Date?
+    private var lastEventTopicsAnalyzed: Date?
 
     // Cached specialist outputs
     private var cachedPipelineAnalysis: PipelineAnalysis?
     private var cachedTimeAnalysis: TimeAnalysis?
     private var cachedPatternAnalysis: PatternAnalysis?
     private var cachedContentAnalysis: ContentAnalysis?
+    private var cachedEventTopicAnalysis: EventTopicAnalysis?
 
     // TTL durations
     private let pipelineTTL: TimeInterval = 4 * 60 * 60    // 4 hours
     private let timeTTL: TimeInterval = 12 * 60 * 60       // 12 hours
     private let patternTTL: TimeInterval = 24 * 60 * 60    // 24 hours
     private let contentTTL: TimeInterval = 24 * 60 * 60    // 24 hours
+    private let eventTopicTTL: TimeInterval = 24 * 60 * 60 // 24 hours
 
     // Dependencies
     private let tracker = PipelineTracker.shared
@@ -100,6 +104,7 @@ final class StrategicCoordinator {
         let timeData = gatherTimeData()
         let patternData = gatherPatternData()
         let contentData = gatherContentData()
+        let eventHistoryData = gatherEventHistory()
         // Log context sizes — chars ÷ 4 ≈ tokens; helps identify which specialist has the largest input
         logger.info("📏 Context sizes — pipeline: \(pipelineData.count)ch (~\(pipelineData.count/4)t), time: \(timeData.count)ch (~\(timeData.count/4)t), pattern: \(patternData.count)ch (~\(patternData.count/4)t), content: \(contentData.count)ch (~\(contentData.count/4)t)")
 
@@ -109,6 +114,7 @@ final class StrategicCoordinator {
         let needsTime = !isCacheValid(lastTimeAnalyzed, ttl: timeTTL)
         let needsPattern = !isCacheValid(lastPatternAnalyzed, ttl: patternTTL)
         let needsContent = !isCacheValid(lastContentAnalyzed, ttl: contentTTL)
+        let needsEventTopics = !isCacheValid(lastEventTopicsAnalyzed, ttl: eventTopicTTL)
 
         // Run specialists concurrently
         async let pipelineResult = needsPipeline
@@ -123,17 +129,25 @@ final class StrategicCoordinator {
         async let contentResult = needsContent
             ? runContentAdvisor(data: contentData)
             : cachedContentAnalysis ?? ContentAnalysis()
+        async let eventTopicResult = needsEventTopics
+            ? runEventTopicAdvisor(data: contentData, eventHistory: eventHistoryData)
+            : cachedEventTopicAnalysis ?? EventTopicAnalysis()
 
         let pipeline = await pipelineResult
         let time = await timeResult
         let pattern = await patternResult
         let content = await contentResult
+        let eventTopics = await eventTopicResult
 
         // Update caches
         if needsPipeline { cachedPipelineAnalysis = pipeline; lastPipelineAnalyzed = now }
         if needsTime { cachedTimeAnalysis = time; lastTimeAnalyzed = now }
         if needsPattern { cachedPatternAnalysis = pattern; lastPatternAnalyzed = now }
         if needsContent { cachedContentAnalysis = content; lastContentAnalyzed = now }
+        if needsEventTopics { cachedEventTopicAnalysis = eventTopics; lastEventTopicsAnalyzed = now }
+
+        // Update observable event topics
+        suggestedEventTopics = eventTopics.suggestions
 
         // Synthesize (deterministic)
         let topRecs = synthesize(pipeline: pipeline, time: time, pattern: pattern, content: content)
@@ -441,6 +455,39 @@ final class StrategicCoordinator {
         return lines.joined(separator: "\n")
     }
 
+    private func gatherEventHistory() -> String {
+        var lines: [String] = []
+
+        do {
+            let pastEvents = try EventRepository.shared.fetchPast()
+            let upcomingEvents = try EventRepository.shared.fetchUpcoming()
+
+            if !pastEvents.isEmpty {
+                lines.append("PAST EVENTS (most recent first):")
+                for event in pastEvents.prefix(10) {
+                    let attendees = event.acceptedCount
+                    lines.append("  - \"\(event.title)\" (\(event.startDate.formatted(date: .abbreviated, time: .omitted)), \(event.format.displayName), \(attendees) attendees)")
+                }
+            }
+
+            if !upcomingEvents.isEmpty {
+                lines.append("")
+                lines.append("UPCOMING EVENTS:")
+                for event in upcomingEvents {
+                    lines.append("  - \"\(event.title)\" (\(event.startDate.formatted(date: .abbreviated, time: .omitted)), \(event.format.displayName))")
+                }
+            }
+
+            if pastEvents.isEmpty && upcomingEvents.isEmpty {
+                lines.append("EVENT HISTORY: No events created yet.")
+            }
+        } catch {
+            logger.error("Failed to gather event history: \(error)")
+        }
+
+        return lines.joined(separator: "\n")
+    }
+
     // MARK: - Specialist Dispatch
 
     private func runPipelineAnalyst(data: String) async -> PipelineAnalysis {
@@ -492,6 +539,19 @@ final class StrategicCoordinator {
         } catch {
             logger.error("Content advisor failed: \(error.localizedDescription)")
             return ContentAnalysis()
+        }
+    }
+
+    private func runEventTopicAdvisor(data: String, eventHistory: String) async -> EventTopicAnalysis {
+        let clock = ContinuousClock()
+        let start = clock.now
+        do {
+            let result = try await EventTopicAdvisorService.shared.analyze(data: data, eventHistory: eventHistory)
+            logger.info("⏱ Event Topics: \((clock.now - start).formatted(.units(allowed: [.seconds, .milliseconds], width: .abbreviated)))")
+            return result
+        } catch {
+            logger.error("Event topic advisor failed: \(error.localizedDescription)")
+            return EventTopicAnalysis()
         }
     }
 
@@ -646,6 +706,12 @@ final class StrategicCoordinator {
             digest.contentSuggestions = content.topicSuggestions.map(\.topic).joined(separator: "; ")
         }
 
+        // Persist event topic suggestions as JSON
+        if let eventTopicData = try? JSONEncoder().encode(suggestedEventTopics),
+           let eventTopicJSON = String(data: eventTopicData, encoding: .utf8) {
+            digest.eventTopicSuggestions = eventTopicJSON
+        }
+
         // Encode recommendations
         if let data = try? JSONEncoder().encode(topRecs),
            let json = String(data: data, encoding: .utf8) {
@@ -688,6 +754,13 @@ final class StrategicCoordinator {
                 if let data = digest.strategicActions.data(using: .utf8),
                    let recs = try? JSONDecoder().decode([StrategicRec].self, from: data) {
                     strategicRecommendations = recs
+                }
+
+                // Restore event topic suggestions
+                if let topicJSON = digest.eventTopicSuggestions,
+                   let topicData = topicJSON.data(using: .utf8),
+                   let topics = try? JSONDecoder().decode([SuggestedEventTopic].self, from: topicData) {
+                    suggestedEventTopics = topics
                 }
             }
         } catch {

@@ -40,6 +40,7 @@ func configureAllRepositories(with container: ModelContainer) {
     ContentPostRepository.shared.configure(container: container)
     DeducedRelationRepository.shared.configure(container: container)
     ComplianceAuditRepository.shared.configure(container: container)
+    EventRepository.shared.configure(container: container)
 }
 
 // MARK: - DTO Factories

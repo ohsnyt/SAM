@@ -130,6 +130,8 @@ final class GoalProgressEngine {
             return measureContentPosts(start: start, end: end)
         case .deepWorkHours:
             return measureDeepWorkHours(start: start, end: end)
+        case .eventsHosted:
+            return measureEventsHosted(start: start, end: end)
         }
     }
 
@@ -187,6 +189,15 @@ final class GoalProgressEngine {
         guard let breakdown = try? timeTrackingRepo.categoryBreakdown(from: start, to: end) else { return 0 }
         let deepMinutes = breakdown[.deepWork, default: 0]
         return Double(deepMinutes) / 60.0
+    }
+
+    private func measureEventsHosted(start: Date, end: Date) -> Double {
+        guard let allEvents = try? EventRepository.shared.fetchAll() else { return 0 }
+        let count = allEvents.filter { event in
+            event.startDate >= start && event.startDate <= end
+            && (event.status == .completed || event.status == .inProgress || (event.startDate <= .now && event.status != .cancelled))
+        }.count
+        return Double(count)
     }
 
     // MARK: - Pace

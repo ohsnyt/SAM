@@ -1577,6 +1577,10 @@ struct IntelligenceSettingsView: View {
 
 struct GeneralSettingsView: View {
 
+    @AppStorage("sam.user.firstName") private var userFirstName = ""
+    @AppStorage("sam.user.lastName") private var userLastName = ""
+    @AppStorage("sam.user.defaultClosing") private var defaultClosing = "Best,"
+    @AppStorage("sam.messages.allowEmoji") private var allowEmoji = false
     @State private var silenceTimeout: Double = {
         let stored = UserDefaults.standard.double(forKey: "sam.dictation.silenceTimeout")
         return stored > 0 ? stored : 2.0
@@ -1617,6 +1621,63 @@ struct GeneralSettingsView: View {
 
                     Divider()
 
+                    // Identity & Signature
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Your Identity")
+                            .font(.headline)
+
+                        HStack(spacing: 12) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("First Name")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                TextField("First name", text: $userFirstName)
+                                    .textFieldStyle(.roundedBorder)
+                            }
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Last Name")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                TextField("Last name", text: $userLastName)
+                                    .textFieldStyle(.roundedBorder)
+                            }
+                        }
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Default Closing")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            TextField("e.g. Best, / Yours, / Warm regards,", text: $defaultClosing)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(maxWidth: 250)
+                        }
+
+                        Text("Used to sign AI-generated messages. SAM uses your first name for people you interact with regularly, and your full name for others. SAM learns your preferred closing style as you edit drafts.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        if userFirstName.isEmpty {
+                            Button("Auto-fill from Me Contact") {
+                                autoFillFromMeContact()
+                            }
+                            .font(.caption)
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                    }
+
+                    Divider()
+
+                    // AI Messages
+                    VStack(alignment: .leading, spacing: 8) {
+                        Toggle("Allow emoji and icons in AI messages", isOn: $allowEmoji)
+                        Text("When off, SAM will not use emoji, emoticons, or Unicode symbols in generated messages, briefings, and coaching text.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Divider()
+
                     // Dictation
                     dictationSection
 
@@ -1653,6 +1714,10 @@ struct GeneralSettingsView: View {
         .onAppear {
             if migrationService.discovery == nil {
                 migrationService.discoverLegacyStores()
+            }
+            // Auto-populate name from Me contact if not yet set
+            if userFirstName.isEmpty {
+                autoFillFromMeContact()
             }
         }
         .alert("Clean Up Legacy Files?", isPresented: $showCleanupConfirmation) {
@@ -1746,6 +1811,23 @@ struct GeneralSettingsView: View {
                 }
                 .disabled(migrationService.isBusy)
             }
+        }
+    }
+
+    // MARK: - Dictation Section
+
+    // MARK: - Auto-fill from Me Contact
+
+    private func autoFillFromMeContact() {
+        guard let me = try? PeopleRepository.shared.fetchMe(),
+              let fullName = me.displayNameCache, !fullName.isEmpty else { return }
+
+        let parts = fullName.split(separator: " ", maxSplits: 1)
+        if let first = parts.first {
+            userFirstName = String(first)
+        }
+        if parts.count > 1 {
+            userLastName = String(parts[1])
         }
     }
 

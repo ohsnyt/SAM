@@ -17,6 +17,7 @@ struct EmailAnalysisDTO: Sendable {
     let namedEntities: [EmailEntityDTO]  // People, orgs, products mentioned
     let topics: [String]                 // Financial topics detected
     let temporalEvents: [TemporalEventDTO]  // Dates/events mentioned
+    let rsvpDetections: [RSVPDetectionDTO]  // Event RSVP responses detected
     let sentiment: Sentiment             // Overall tone
     let analysisVersion: Int
 

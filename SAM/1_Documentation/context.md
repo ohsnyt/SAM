@@ -326,6 +326,9 @@ All models use SwiftData lightweight migration. Enum storage uses `rawValue` pat
 | **ProfileAnalysisRecord** | Profile analysis results | platform, score, JSON |
 | **EngagementSnapshot** | Engagement metrics per period | platform, period, metrics |
 | **SocialProfileSnapshot** | Cross-platform profile storage | platform, identity, data blobs |
+| **SamEvent** | Event/workshop management | title, format, status, startDate, RSVP tracking, presentation link |
+| **EventParticipation** | Event ↔ Person join with RSVP | event, person, rsvpStatus, invitedAt, respondedAt |
+| **SamPresentation** | Reusable presentation library | title, description, topicTags, fileAttachments, contentSummary, keyTalkingPoints |
 
 **Non-SwiftData**: `UserLinkedInProfileDTO`, `UserFacebookProfileDTO` — stored as JSON in UserDefaults, injected into AI prompts via `BusinessProfileService.contextFragment()`.
 
@@ -408,6 +411,8 @@ Bookmark the **directory** (not file) for SQLite to cover WAL/SHM companions. `.
 
 ### ~~Priority 7 — Onboarding, Helps & Tooltips Remediation~~ ✅ Completed (Mar 6, 2026)
 
+### ~~Event Management & Presentation Library~~ ✅ Completed (Mar 11, 2026)
+
 ### Priority 8 - Security review
 - Can we use TouchID, FaceID, Apple Watch, password to enforce secure access to SAM? Would this be a good thing?
 - Is the SAM data (SwiftData, other app data) stored securely at present? Do we need to incorporate encryption?
@@ -424,5 +429,5 @@ Bookmark the **directory** (not file) for SQLite to cover WAL/SHM companions. `.
 
 ---
 
-**Document Version**: 38
-**Last Updated**: March 6, 2026 — Priority 7 completed: onboarding, feature adoption coaching, and permission loss detection fixes.
+**Document Version**: 39
+**Last Updated**: March 11, 2026 — Event management, presentation library with drag-and-drop PDF import, RSVP auto-detection, sender identity & signature learning.

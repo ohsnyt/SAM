@@ -24,6 +24,7 @@ public enum GoalType: String, Codable, Sendable, CaseIterable {
     case meetingsHeld     = "Meetings Held"
     case contentPosts     = "Content Posts"
     case deepWorkHours    = "Deep Work Hours"
+    case eventsHosted     = "Events Hosted"
 
     public var displayName: String { rawValue }
 
@@ -36,6 +37,7 @@ public enum GoalType: String, Codable, Sendable, CaseIterable {
         case .meetingsHeld:      return "calendar"
         case .contentPosts:      return "text.bubble.fill"
         case .deepWorkHours:     return "brain.head.profile"
+        case .eventsHosted:      return "person.3.sequence"
         }
     }
 
@@ -48,6 +50,7 @@ public enum GoalType: String, Codable, Sendable, CaseIterable {
         case .meetingsHeld:      return "meetings"
         case .contentPosts:      return "posts"
         case .deepWorkHours:     return "hours"
+        case .eventsHosted:      return "events"
         }
     }
 
@@ -60,6 +63,7 @@ public enum GoalType: String, Codable, Sendable, CaseIterable {
         case .meetingsHeld:      return .orange
         case .contentPosts:      return .pink
         case .deepWorkHours:     return .indigo
+        case .eventsHosted:      return .cyan
         }
     }
 

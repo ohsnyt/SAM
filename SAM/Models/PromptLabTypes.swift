@@ -22,6 +22,7 @@ enum PromptSite: String, CaseIterable, Identifiable, Codable {
     case contentDraft       = "Content Draft"
     case morningBriefing    = "Morning Briefing"
     case eveningBriefing    = "Evening Briefing"
+    case eventTopics        = "Event Topics"
 
     var id: String { rawValue }
 
@@ -37,6 +38,7 @@ enum PromptSite: String, CaseIterable, Identifiable, Codable {
         case .contentDraft:     return "doc.richtext"
         case .morningBriefing:  return "sunrise"
         case .eveningBriefing:  return "sunset"
+        case .eventTopics:      return "calendar.badge.plus"
         }
     }
 
@@ -53,6 +55,7 @@ enum PromptSite: String, CaseIterable, Identifiable, Codable {
         case .contentDraft:     return "Generates platform-aware social media drafts with compliance scanning."
         case .morningBriefing:  return "Generates a concise morning briefing narrative from today's schedule and actions."
         case .eveningBriefing:  return "Generates an end-of-day summary narrative from accomplishments and metrics."
+        case .eventTopics:      return "Suggests workshop/event topics based on recent interactions and seasonal context."
         }
     }
 
@@ -61,7 +64,7 @@ enum PromptSite: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .noteAnalysis, .emailAnalysis, .messageAnalysis,
              .pipelineAnalyst, .timeAnalyst, .patternDetector,
-             .contentTopics, .contentDraft:
+             .contentTopics, .contentDraft, .eventTopics:
             return "JSON"
         case .morningBriefing, .eveningBriefing:
             return "Narrative text"
@@ -257,6 +260,29 @@ enum PromptSite: String, CaseIterable, Identifiable, Codable {
                 - Policies Submitted: 12/20 this quarter (60%, ahead of pace)
                 """
 
+        case .eventTopics:
+            return """
+                RECENT MEETING TOPICS (last 14 days):
+                - Retirement planning with David Thompson (age 58)
+                - Life insurance review with Martinez family (VP promotion, elder care)
+                - Annuity discussion with Tom Wilson (interested in guaranteed income)
+                - College savings 529 plan with Lisa Park (daughter starting high school)
+                - Long-term care options inquiry from Gloria Martinez (age 78)
+
+                DISCUSSION TOPICS (from notes):
+                - retirement timing, market volatility, long-term care costs
+                - college affordability, estate planning after life changes
+
+                CONTACT DISTRIBUTION:
+                Client: 45, Lead: 22, Applicant: 8, Agent: 5
+
+                SEASONAL CONTEXT: March 2026, Q1
+
+                PAST EVENTS:
+                - "Understanding Your Benefits" (Jan 2026, virtual, 18 attendees)
+                - "Year-End Tax Planning" (Dec 2025, in person, 24 attendees)
+                """
+
         case .eveningBriefing:
             return """
                 ACCOMPLISHMENTS TODAY:
@@ -397,5 +423,87 @@ struct PromptLabStore: Codable {
     init() {
         variants = [:]
         testRuns = []
+    }
+}
+
+// MARK: - Prompt Registry (Import Format)
+
+/// Mirrors the JSON published by sam-prompt-research's `publish` stage.
+struct PromptRegistry: Codable {
+    let metadata: RegistryMetadata
+    let prompts: [RegistryPrompt]
+}
+
+struct RegistryMetadata: Codable {
+    let version: Int
+    let publishedAt: String
+    let sourcePostCount: Int
+    let patternCount: Int
+    let variantCount: Int
+    let minScoreThreshold: Double
+
+    enum CodingKeys: String, CodingKey {
+        case version
+        case publishedAt = "published_at"
+        case sourcePostCount = "source_post_count"
+        case patternCount = "pattern_count"
+        case variantCount = "variant_count"
+        case minScoreThreshold = "min_score_threshold"
+    }
+}
+
+struct RegistryPrompt: Codable {
+    let site: String
+    let name: String
+    let systemInstruction: String
+    let approach: String
+    let avgScore: Double
+    let jsonValidity: Double
+    let concreteness: Double
+    let actionability: Double
+    let compliance: Double
+    let relevance: Double
+    let tone: Double
+
+    enum CodingKeys: String, CodingKey {
+        case site, name, approach, compliance, relevance, tone
+        case systemInstruction = "system_instruction"
+        case avgScore = "avg_score"
+        case jsonValidity = "json_validity"
+        case concreteness, actionability
+    }
+}
+
+/// Result of a registry import operation.
+struct RegistryImportResult: Sendable {
+    let imported: Int
+    let skipped: Int
+    let unrecognizedSites: [String]
+    let registryVersion: Int
+}
+
+// MARK: - PromptSite ↔ Registry Key Mapping
+
+extension PromptSite {
+    /// The camelCase key used in the prompt-research registry JSON.
+    var registryKey: String {
+        switch self {
+        case .noteAnalysis:     return "noteAnalysis"
+        case .emailAnalysis:    return "emailAnalysis"
+        case .messageAnalysis:  return "messageAnalysis"
+        case .pipelineAnalyst:  return "pipelineAnalyst"
+        case .timeAnalyst:      return "timeAnalyst"
+        case .patternDetector:  return "patternDetector"
+        case .contentTopics:    return "contentTopics"
+        case .contentDraft:     return "contentDraft"
+        case .morningBriefing:  return "morningBriefing"
+        case .eveningBriefing:  return "eveningBriefing"
+        case .eventTopics:      return "eventTopics"
+        }
+    }
+
+    /// Look up a PromptSite from a registry JSON site key.
+    static func fromRegistryKey(_ key: String) -> PromptSite? {
+        allCases.first { $0.registryKey == key }
     }
 }

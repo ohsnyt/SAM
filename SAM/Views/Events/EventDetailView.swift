@@ -1,0 +1,672 @@
+//
+//  EventDetailView.swift
+//  SAM
+//
+//  Created on March 11, 2026.
+//  Event detail — participant list, RSVP management, invitations, and follow-ups.
+//
+
+import SwiftUI
+
+struct EventDetailView: View {
+
+    let eventID: UUID
+    var onDelete: (() -> Void)?
+    @State private var selectedParticipationID: UUID?
+    @State private var participantFilter: ParticipantFilter = .all
+    @State private var showAddParticipants = false
+    @State private var showSocialPromotion = false
+    @State private var showInvitationDrafts = false
+    @State private var showDeleteConfirmation = false
+    @State private var refreshToken = UUID()
+    @State private var lastActionMessage: String?
+
+    enum ParticipantFilter: String, CaseIterable {
+        case all = "All"
+        case accepted = "Accepted"
+        case pending = "Pending"
+        case declined = "Declined"
+        case needsConfirmation = "Needs Review"
+    }
+
+    private var event: SamEvent? {
+        _ = refreshToken // Force re-evaluation after participant changes
+        return try? EventRepository.shared.fetch(id: eventID)
+    }
+
+    var body: some View {
+        Group {
+            if let event {
+                HSplitView {
+                    participantList(event: event)
+                        .frame(minWidth: 300, idealWidth: 380, maxWidth: 500, maxHeight: .infinity)
+                    participantDetail(event: event)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            } else {
+                ContentUnavailableView(
+                    "Event Not Found",
+                    systemImage: "exclamationmark.triangle"
+                )
+            }
+        }
+        .frame(maxHeight: .infinity)
+        .onReceive(NotificationCenter.default.publisher(for: .samRSVPAutoAdded)) { notification in
+            // Refresh if the auto-add was for this event
+            if let eventIDStr = notification.userInfo?["eventID"] as? String,
+               eventIDStr == eventID.uuidString {
+                refreshToken = UUID()
+                if let name = notification.userInfo?["personName"] as? String,
+                   let status = notification.userInfo?["rsvpStatus"] as? String {
+                    lastActionMessage = "\(name) was auto-added (\(status) detected from message)"
+                }
+            }
+        }
+        .alert("Delete Event?", isPresented: $showDeleteConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Delete", role: .destructive) {
+                deleteEvent()
+            }
+        } message: {
+            Text("This will delete the event and all its participant data. You can undo this for up to 30 days.")
+        }
+    }
+
+    // MARK: - Delete
+
+    private func deleteEvent() {
+        do {
+            try EventRepository.shared.deleteEvent(id: eventID)
+            onDelete?()
+        } catch {
+            lastActionMessage = "Error: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - Participant List (left)
+
+    private func participantList(event: SamEvent) -> some View {
+        VStack(spacing: 0) {
+            // Event header
+            eventHeader(event: event)
+
+            Divider()
+
+            // Action bar
+            actionBar(event: event)
+
+            Divider()
+
+            // Filter bar
+            Picker("Filter", selection: $participantFilter) {
+                ForEach(ParticipantFilter.allCases, id: \.self) { filter in
+                    Text(filter.rawValue).tag(filter)
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+
+            Divider()
+
+            // Participant rows
+            List(selection: $selectedParticipationID) {
+                let participations = filteredParticipations(event: event)
+                if participations.isEmpty {
+                    ContentUnavailableView(
+                        "No Participants",
+                        systemImage: "person.badge.plus",
+                        description: Text("Add people to this event")
+                    )
+                } else {
+                    ForEach(participations, id: \.id) { participation in
+                        ParticipantRowView(participation: participation)
+                            .tag(participation.id)
+                    }
+                }
+            }
+            .listStyle(.plain)
+            .frame(maxHeight: .infinity)
+        }
+    }
+
+    // MARK: - Event Header
+
+    private func eventHeader(event: SamEvent) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Image(systemName: event.format.icon)
+                Text(event.title)
+                    .font(.title3.bold())
+                Spacer()
+                Text(event.status.displayName)
+                    .font(.caption)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(.tertiary.opacity(0.3), in: Capsule())
+
+                Menu {
+                    Button(role: .destructive) {
+                        showDeleteConfirmation = true
+                    } label: {
+                        Label("Delete Event", systemImage: "trash")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .foregroundStyle(.secondary)
+                }
+                .menuStyle(.borderlessButton)
+                .frame(width: 24)
+            }
+
+            HStack(spacing: 16) {
+                Label(
+                    event.startDate.formatted(date: .abbreviated, time: .shortened),
+                    systemImage: "calendar"
+                )
+                .font(.caption)
+
+                if let venue = event.venue {
+                    Label(venue, systemImage: "mappin")
+                        .font(.caption)
+                        .lineLimit(1)
+                }
+
+                if event.format == .virtual, event.joinLink != nil {
+                    Label("Link Set", systemImage: "link")
+                        .font(.caption)
+                        .foregroundStyle(.green)
+                }
+            }
+            .foregroundStyle(.secondary)
+
+            // RSVP summary bar
+            HStack(spacing: 12) {
+                rsvpBadge(count: event.participations.filter { $0.rsvpStatus == .accepted }.count,
+                          label: "Accepted", color: .green)
+                rsvpBadge(count: event.participations.filter { $0.rsvpStatus == .tentative }.count,
+                          label: "Tentative", color: .orange)
+                rsvpBadge(count: event.participations.filter { $0.rsvpStatus == .declined }.count,
+                          label: "Declined", color: .red)
+                rsvpBadge(count: event.participations.filter {
+                    $0.rsvpStatus == .invited || $0.rsvpStatus == .pending
+                }.count, label: "Pending", color: .blue)
+
+                Spacer()
+
+                Text("\(event.acceptedCount)/\(event.targetParticipantCount) target")
+                    .font(.caption.bold())
+                    .foregroundStyle(event.acceptedCount >= event.targetParticipantCount ? .green : .secondary)
+            }
+
+            if let message = lastActionMessage {
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.blue)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .padding(12)
+    }
+
+    private func rsvpBadge(count: Int, label: String, color: Color) -> some View {
+        HStack(spacing: 3) {
+            Text("\(count)")
+                .font(.caption.bold())
+                .foregroundStyle(color)
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: - Action Bar
+
+    private func actionBar(event: SamEvent) -> some View {
+        HStack(spacing: 8) {
+            Button {
+                showAddParticipants = true
+            } label: {
+                Label("Add People", systemImage: "person.badge.plus")
+                    .font(.caption)
+            }
+
+            Spacer()
+
+            Button {
+                showSocialPromotion = true
+            } label: {
+                Label("Promote", systemImage: "megaphone")
+                    .font(.caption)
+            }
+
+            Button {
+                showInvitationDrafts = true
+            } label: {
+                Label("Draft Invitations", systemImage: "paperplane")
+                    .font(.caption)
+            }
+            .disabled(!hasUninvitedParticipants(event: event))
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .sheet(isPresented: $showAddParticipants, onDismiss: { refreshToken = UUID() }) {
+            AddParticipantsSheet(event: event)
+        }
+        .sheet(isPresented: $showSocialPromotion) {
+            SocialPromotionSheet(event: event)
+        }
+        .sheet(isPresented: $showInvitationDrafts, onDismiss: { refreshToken = UUID() }) {
+            InvitationDraftSheet(event: event) {
+                refreshToken = UUID()
+            }
+        }
+    }
+
+    // MARK: - Participant Detail (right)
+
+    private func participantDetail(event: SamEvent) -> some View {
+        Group {
+            if let participationID = selectedParticipationID,
+               let participation = event.participations.first(where: { $0.id == participationID }) {
+                ParticipantDetailView(participation: participation, event: event)
+            } else {
+                ContentUnavailableView(
+                    "Select a Participant",
+                    systemImage: "person.circle",
+                    description: Text("Choose someone from the participant list")
+                )
+            }
+        }
+    }
+
+    // MARK: - Filtering
+
+    private func hasUninvitedParticipants(event: SamEvent) -> Bool {
+        event.participations.contains { $0.inviteStatus == .notInvited }
+    }
+
+    private func filteredParticipations(event: SamEvent) -> [EventParticipation] {
+        let sorted = EventRepository.shared.fetchParticipations(for: event)
+        switch participantFilter {
+        case .all:
+            return sorted
+        case .accepted:
+            return sorted.filter { $0.rsvpStatus == .accepted }
+        case .pending:
+            return sorted.filter { $0.rsvpStatus == .pending || $0.rsvpStatus == .invited }
+        case .declined:
+            return sorted.filter { $0.rsvpStatus == .declined }
+        case .needsConfirmation:
+            return sorted.filter { !$0.rsvpUserConfirmed && $0.rsvpDetectionConfidence != nil }
+        }
+    }
+}
+
+// MARK: - Participant Row
+
+struct ParticipantRowView: View {
+    let participation: EventParticipation
+
+    var body: some View {
+        HStack(spacing: 8) {
+            // Priority indicator
+            if participation.priority != .standard {
+                Image(systemName: participation.priority.icon)
+                    .font(.caption)
+                    .foregroundStyle(participation.priority == .vip ? .yellow : .blue)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(participation.person?.displayNameCache ?? "Unknown")
+                    .font(.body)
+                    .lineLimit(1)
+
+                HStack(spacing: 6) {
+                    Text(participation.eventRole)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+
+                    if participation.inviteStatus != .notInvited {
+                        Text(participation.inviteStatus.displayName)
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+            }
+
+            Spacer()
+
+            // RSVP status badge
+            rsvpStatusBadge
+
+            // Needs confirmation indicator
+            if !participation.rsvpUserConfirmed && participation.rsvpDetectionConfidence != nil {
+                Image(systemName: "exclamationmark.circle")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .help("SAM detected an RSVP — needs your confirmation")
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    private var rsvpStatusBadge: some View {
+        HStack(spacing: 3) {
+            Image(systemName: participation.rsvpStatus.icon)
+            Text(participation.rsvpStatus.displayName)
+        }
+        .font(.caption2)
+        .foregroundStyle(rsvpColor)
+    }
+
+    private var rsvpColor: Color {
+        switch participation.rsvpStatus {
+        case .accepted:   return .green
+        case .declined:   return .red
+        case .tentative:  return .orange
+        case .invited:    return .blue
+        case .noResponse: return .gray
+        case .pending:    return .secondary
+        }
+    }
+}
+
+// MARK: - Participant Detail
+
+struct ParticipantDetailView: View {
+    let participation: EventParticipation
+    let event: SamEvent
+    @State private var showInvitationDraft = false
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                // Person header
+                personHeader
+
+                Divider()
+
+                // RSVP confirmation (if needed)
+                if !participation.rsvpUserConfirmed, let confidence = participation.rsvpDetectionConfidence {
+                    rsvpConfirmationCard(confidence: confidence)
+                    Divider()
+                }
+
+                // Message log
+                messageLogSection
+
+                Divider()
+
+                // Quick actions
+                quickActions
+            }
+            .padding(16)
+        }
+    }
+
+    private var personHeader: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                VStack(alignment: .leading) {
+                    Text(participation.person?.displayNameCache ?? "Unknown")
+                        .font(.title2.bold())
+
+                    HStack(spacing: 8) {
+                        if participation.priority != .standard {
+                            Label(participation.priority.displayName, systemImage: participation.priority.icon)
+                                .font(.caption)
+                                .foregroundStyle(participation.priority == .vip ? .yellow : .blue)
+                        }
+
+                        Text(participation.eventRole)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Spacer()
+
+                VStack(alignment: .trailing, spacing: 4) {
+                    HStack(spacing: 4) {
+                        Image(systemName: participation.rsvpStatus.icon)
+                        Text(participation.rsvpStatus.displayName)
+                    }
+                    .font(.callout.bold())
+                    .foregroundStyle(rsvpColor)
+
+                    if let sentAt = participation.inviteSentAt {
+                        Text("Invited \(sentAt.formatted(date: .abbreviated, time: .omitted))")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+            }
+
+            // Roles from the person's contact record
+            if let person = participation.person, !person.roleBadges.isEmpty {
+                HStack(spacing: 4) {
+                    ForEach(person.roleBadges, id: \.self) { badge in
+                        Text(badge)
+                            .font(.caption2)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(.quaternary, in: Capsule())
+                    }
+                }
+            }
+        }
+    }
+
+    private func rsvpConfirmationCard(confidence: Double) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: "exclamationmark.circle.fill")
+                    .foregroundStyle(.orange)
+                Text("RSVP Needs Confirmation")
+                    .font(.headline)
+                Spacer()
+                Text("\(Int(confidence * 100))% confidence")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let quote = participation.rsvpResponseQuote {
+                Text("\"\(quote)\"")
+                    .font(.callout)
+                    .italic()
+                    .padding(8)
+                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
+            }
+
+            Text("SAM detected this as: \(participation.rsvpStatus.displayName)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 8) {
+                Button("Confirm as \(participation.rsvpStatus.displayName)") {
+                    try? EventRepository.shared.confirmRSVP(participationID: participation.id)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+
+                ForEach([RSVPStatus.accepted, .declined, .tentative], id: \.self) { status in
+                    if status != participation.rsvpStatus {
+                        Button(status.displayName) {
+                            try? EventRepository.shared.updateRSVP(
+                                participationID: participation.id,
+                                status: status,
+                                userConfirmed: true
+                            )
+                        }
+                        .controlSize(.small)
+                    }
+                }
+            }
+        }
+        .padding(12)
+        .background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var messageLogSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Message History")
+                .font(.headline)
+
+            if participation.messageLog.isEmpty {
+                Text("No messages yet")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .padding(.vertical, 8)
+            } else {
+                ForEach(participation.messageLog) { message in
+                    messageRow(message)
+                }
+            }
+        }
+    }
+
+    private func messageRow(_ message: EventMessage) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Image(systemName: messageIcon(for: message.kind))
+                    .font(.caption)
+                    .foregroundStyle(messageColor(for: message.kind))
+
+                Text(message.kind.rawValue.capitalized)
+                    .font(.caption.bold())
+
+                if let channel = message.channel {
+                    Text("via \(channel.displayName)")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+
+                Spacer()
+
+                if message.isDraft {
+                    Text("DRAFT")
+                        .font(.caption2.bold())
+                        .foregroundStyle(.blue)
+                } else if let sentAt = message.sentAt {
+                    Text(sentAt.formatted(date: .abbreviated, time: .shortened))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Text(message.body)
+                .font(.callout)
+                .lineLimit(3)
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(message.isDraft ? Color.blue.opacity(0.05) : Color.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
+
+            if message.isDraft {
+                HStack {
+                    Spacer()
+                    Button("Copy & Mark Sent") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(message.body, forType: .string)
+                        try? EventRepository.shared.markMessageSent(
+                            participationID: participation.id,
+                            messageID: message.id
+                        )
+                    }
+                    .font(.caption)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                }
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    private var quickActions: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Quick Actions")
+                .font(.headline)
+
+            HStack(spacing: 8) {
+                if participation.inviteStatus == .notInvited || participation.inviteStatus == .draftReady {
+                    Button {
+                        showInvitationDraft = true
+                    } label: {
+                        Label("Draft Invitation", systemImage: "paperplane")
+                    }
+                    .controlSize(.small)
+                    .sheet(isPresented: $showInvitationDraft) {
+                        InvitationDraftSheet(
+                            event: event,
+                            singleParticipation: participation
+                        ) { }
+                    }
+                }
+
+                if participation.rsvpStatus != .accepted && participation.rsvpStatus != .declined {
+                    Menu {
+                        Button("Accepted") {
+                            try? EventRepository.shared.updateRSVP(
+                                participationID: participation.id,
+                                status: .accepted,
+                                userConfirmed: true
+                            )
+                        }
+                        Button("Declined") {
+                            try? EventRepository.shared.updateRSVP(
+                                participationID: participation.id,
+                                status: .declined,
+                                userConfirmed: true
+                            )
+                        }
+                        Button("Tentative") {
+                            try? EventRepository.shared.updateRSVP(
+                                participationID: participation.id,
+                                status: .tentative,
+                                userConfirmed: true
+                            )
+                        }
+                    } label: {
+                        Label("Set RSVP", systemImage: "checkmark.circle")
+                    }
+                    .controlSize(.small)
+                }
+            }
+        }
+    }
+
+    // MARK: - Helpers
+
+    private var rsvpColor: Color {
+        switch participation.rsvpStatus {
+        case .accepted:   return .green
+        case .declined:   return .red
+        case .tentative:  return .orange
+        case .invited:    return .blue
+        case .noResponse: return .gray
+        case .pending:    return .secondary
+        }
+    }
+
+    private func messageIcon(for kind: EventMessage.EventMessageKind) -> String {
+        switch kind {
+        case .invitation:      return "paperplane"
+        case .reminder:        return "bell"
+        case .acknowledgment:  return "checkmark.bubble"
+        case .followUp:        return "arrow.turn.up.right"
+        case .rsvpResponse:    return "bubble.left"
+        case .custom:          return "text.bubble"
+        }
+    }
+
+    private func messageColor(for kind: EventMessage.EventMessageKind) -> Color {
+        switch kind {
+        case .invitation:      return .blue
+        case .reminder:        return .orange
+        case .acknowledgment:  return .green
+        case .followUp:        return .purple
+        case .rsvpResponse:    return .teal
+        case .custom:          return .secondary
+        }
+    }
+}

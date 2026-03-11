@@ -219,6 +219,63 @@ final class PromptLabCoordinator {
         saveStore()
     }
 
+    // MARK: - Registry Import
+
+    /// Import optimized prompt variants from a sam-prompt-research registry JSON file.
+    /// Skips variants whose name already exists for that site to avoid duplicates.
+    func importFromRegistry(at url: URL) throws -> RegistryImportResult {
+        let data = try Data(contentsOf: url)
+        let decoder = JSONDecoder()
+        let registry = try decoder.decode(PromptRegistry.self, from: data)
+
+        var imported = 0
+        var skipped = 0
+        var unrecognizedSites: [String] = []
+
+        for prompt in registry.prompts {
+            guard let site = PromptSite.fromRegistryKey(prompt.site) else {
+                if !unrecognizedSites.contains(prompt.site) {
+                    unrecognizedSites.append(prompt.site)
+                }
+                logger.warning("Skipping unrecognized registry site: \(prompt.site)")
+                continue
+            }
+
+            // Ensure the default variant exists before adding research variants
+            ensureDefaultVariant(for: site)
+
+            let existingVariants = store.variants[site] ?? []
+            let variantName = "Research: \(prompt.name) (v\(registry.metadata.version))"
+
+            // Skip if a variant with this name already exists
+            if existingVariants.contains(where: { $0.name == variantName }) {
+                skipped += 1
+                logger.info("Skipped duplicate: \(variantName) for \(site.rawValue)")
+                continue
+            }
+
+            let variant = PromptVariant(
+                name: variantName,
+                systemInstruction: prompt.systemInstruction
+            )
+            var siteVariants = store.variants[site] ?? []
+            siteVariants.append(variant)
+            store.variants[site] = siteVariants
+            imported += 1
+            logger.info("Imported \(variantName) for \(site.rawValue) (avg score: \(String(format: "%.1f", prompt.avgScore)))")
+        }
+
+        saveStore()
+        logger.info("Registry v\(registry.metadata.version) import complete: \(imported) imported, \(skipped) skipped, \(unrecognizedSites.count) unrecognized sites")
+
+        return RegistryImportResult(
+            imported: imported,
+            skipped: skipped,
+            unrecognizedSites: unrecognizedSites,
+            registryVersion: registry.metadata.version
+        )
+    }
+
     // MARK: - Default Prompts
 
     /// Returns the built-in default system instruction for each prompt site.
@@ -253,6 +310,9 @@ final class PromptLabCoordinator {
 
         case .eveningBriefing:
             return Self.defaultEveningBriefingPrompt
+
+        case .eventTopics:
+            return Self.defaultEventTopicsPrompt
         }
     }
 
@@ -288,6 +348,9 @@ final class PromptLabCoordinator {
 
         case .eveningBriefing:
             return input
+
+        case .eventTopics:
+            return "Suggest workshop/event topics based on this context:\n\n\(input)"
         }
     }
 
@@ -527,5 +590,18 @@ final class PromptLabCoordinator {
         Celebrate accomplishments. Note key metrics. Preview tomorrow. Be encouraging but honest.
 
         Respond with ONLY the narrative paragraph. No headers, bullets, or formatting.
+        """
+
+    static let defaultEventTopicsPrompt = """
+        You suggest workshop and event topics for an independent financial strategist \
+        to host for their clients, leads, and professional network. Topics should be \
+        educational, compliant with financial services regulations, timely, and grounded \
+        in actual recent interactions.
+
+        Suggest 3-5 topics. Every rationale MUST reference specific people or meeting topics \
+        from the data. Do NOT invent interactions or people. Topics should be educational \
+        workshops, not sales pitches. Never suggest specific product recommendations.
+
+        Return valid JSON with a "suggestions" array.
         """
 }

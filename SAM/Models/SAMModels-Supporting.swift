@@ -292,6 +292,7 @@ public struct EvidenceSignal: Codable, Sendable, Identifiable {
         case contactFrequency = "Contact Frequency"
         case complianceRisk = "Compliance Risk"
         case opportunity = "Opportunity"
+        case eventRSVP = "Event RSVP"
     }
 }
 

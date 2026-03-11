@@ -16,6 +16,7 @@ struct MessageAnalysisDTO: Sendable {
     let temporalEvents: [TemporalEventDTO]
     let sentiment: Sentiment
     let actionItems: [String]
+    let rsvpDetections: [RSVPDetectionDTO]
     let analysisVersion: Int
 
     enum Sentiment: String, Sendable {

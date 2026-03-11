@@ -82,6 +82,67 @@ actor AIService {
         }
     }
 
+    // MARK: - Emoji / Icon Guidance
+
+    /// Returns a prompt clause instructing the model to omit emoji/icons when the user has disabled them.
+    /// Read from UserDefaults on the caller's behalf (nonisolated so callers outside the actor can use it).
+    nonisolated static var emojiGuidance: String {
+        let allowed = UserDefaults.standard.bool(forKey: "sam.messages.allowEmoji")
+        return allowed ? "" : " Do not use emoji, emoticons, or Unicode icons/symbols (e.g. 🎉, 📅, ⭐, 👋, ✅) in your response."
+    }
+
+    // MARK: - Signature / Closing Guidance
+
+    /// Returns the user's first name, full name, and default closing from settings.
+    nonisolated static var userFirstName: String {
+        UserDefaults.standard.string(forKey: "sam.user.firstName") ?? ""
+    }
+
+    nonisolated static var userFullName: String {
+        let first = UserDefaults.standard.string(forKey: "sam.user.firstName") ?? ""
+        let last = UserDefaults.standard.string(forKey: "sam.user.lastName") ?? ""
+        return [first, last].filter { !$0.isEmpty }.joined(separator: " ")
+    }
+
+    nonisolated static var userDefaultClosing: String {
+        UserDefaults.standard.string(forKey: "sam.user.defaultClosing").flatMap { $0.isEmpty ? nil : $0 } ?? "Best,"
+    }
+
+    /// Returns the sender name appropriate for the relationship warmth.
+    /// Warm relationships (3+ recent interactions in 90 days) use first name only.
+    nonisolated static func senderName(forWarmRelationship isWarm: Bool) -> String {
+        isWarm ? userFirstName : userFullName
+    }
+
+    /// Returns the preferred closing for a given message kind and relationship warmth.
+    /// Checks learned preferences first, then falls back to the user's default.
+    nonisolated static func closing(forMessageKind kind: String? = nil, isWarm: Bool = true) -> String {
+        // Check learned closings: key format "sam.closing.<kind>.<warm|formal>"
+        let warmth = isWarm ? "warm" : "formal"
+        if let kind, !kind.isEmpty {
+            let key = "sam.closing.\(kind).\(warmth)"
+            if let learned = UserDefaults.standard.string(forKey: key), !learned.isEmpty {
+                return learned
+            }
+        }
+        // Fallback to warmth-level default
+        let warmthKey = "sam.closing.default.\(warmth)"
+        if let learned = UserDefaults.standard.string(forKey: warmthKey), !learned.isEmpty {
+            return learned
+        }
+        return userDefaultClosing
+    }
+
+    /// Record a closing preference learned from user edits.
+    nonisolated static func learnClosing(_ closing: String, forMessageKind kind: String?, isWarm: Bool) {
+        let warmth = isWarm ? "warm" : "formal"
+        if let kind, !kind.isEmpty {
+            UserDefaults.standard.set(closing, forKey: "sam.closing.\(kind).\(warmth)")
+        }
+        // Also update the warmth-level default
+        UserDefaults.standard.set(closing, forKey: "sam.closing.default.\(warmth)")
+    }
+
     // MARK: - Backend Selection
 
     private let foundationModel = SystemLanguageModel.default
@@ -140,18 +201,21 @@ actor AIService {
         activeGenerationCount += 1
         defer { activeGenerationCount -= 1 }
 
+        let emojiClause = Self.emojiGuidance
+        let effectiveSystem = systemInstruction.map { $0 + emojiClause } ?? (emojiClause.isEmpty ? nil : String(emojiClause.dropFirst()))
+
         let backend = activeBackend()
 
         switch backend {
         case .foundationModels:
-            return try await generateWithFoundationModels(prompt: prompt, systemInstruction: systemInstruction)
+            return try await generateWithFoundationModels(prompt: prompt, systemInstruction: effectiveSystem)
 
         case .mlx:
             // Try MLX first, fall back to FoundationModels on failure or if circuit is open
             let mlxReady = await MLXModelManager.shared.isSelectedModelReady()
             if mlxReady && !mlxCircuitOpen {
                 do {
-                    return try await generateWithMLX(prompt: prompt, systemInstruction: systemInstruction, maxTokens: maxTokens)
+                    return try await generateWithMLX(prompt: prompt, systemInstruction: effectiveSystem, maxTokens: maxTokens)
                 } catch {
                     mlxCircuitOpen = true
                     logger.warning("MLX generation failed (\(error.localizedDescription)) — circuit open, falling back to FoundationModels for this session")
@@ -159,11 +223,11 @@ actor AIService {
             } else if !mlxReady {
                 logger.info("MLX model not ready — falling back to FoundationModels")
             }
-            return try await generateWithFoundationModels(prompt: prompt, systemInstruction: systemInstruction)
+            return try await generateWithFoundationModels(prompt: prompt, systemInstruction: effectiveSystem)
 
         case .hybrid:
             // Structured extraction always uses FoundationModels
-            return try await generateWithFoundationModels(prompt: prompt, systemInstruction: systemInstruction)
+            return try await generateWithFoundationModels(prompt: prompt, systemInstruction: effectiveSystem)
         }
     }
 
@@ -177,18 +241,21 @@ actor AIService {
         activeGenerationCount += 1
         defer { activeGenerationCount -= 1 }
 
+        let emojiClause = Self.emojiGuidance
+        let effectiveSystem = systemInstruction.map { $0 + emojiClause } ?? (emojiClause.isEmpty ? nil : String(emojiClause.dropFirst()))
+
         let backend = activeBackend()
 
         switch backend {
         case .foundationModels:
-            return try await generateWithFoundationModels(prompt: prompt, systemInstruction: systemInstruction)
+            return try await generateWithFoundationModels(prompt: prompt, systemInstruction: effectiveSystem)
 
         case .mlx, .hybrid:
             // Prefer MLX for narrative tasks; fall back to FM if circuit is open or model not ready
             let mlxReady = await MLXModelManager.shared.isSelectedModelReady()
             if mlxReady && !mlxCircuitOpen {
                 do {
-                    return try await generateWithMLX(prompt: prompt, systemInstruction: systemInstruction, maxTokens: maxTokens)
+                    return try await generateWithMLX(prompt: prompt, systemInstruction: effectiveSystem, maxTokens: maxTokens)
                 } catch {
                     mlxCircuitOpen = true
                     logger.warning("MLX generation failed (\(error.localizedDescription)) — circuit open, falling back to FoundationModels for this session")
@@ -198,7 +265,7 @@ actor AIService {
             } else {
                 logger.info("MLX model not ready — narrative falling back to FoundationModels")
             }
-            return try await generateWithFoundationModels(prompt: prompt, systemInstruction: systemInstruction)
+            return try await generateWithFoundationModels(prompt: prompt, systemInstruction: effectiveSystem)
         }
     }
 

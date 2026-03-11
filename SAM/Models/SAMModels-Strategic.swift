@@ -45,6 +45,9 @@ public final class StrategicDigest {
     /// Per-recommendation acted/dismissed/ignored tracking (JSON)
     public var feedbackJSON: String?
 
+    /// Pre-computed event topic suggestions (JSON array of SuggestedEventTopic)
+    public var eventTopicSuggestions: String?
+
     // MARK: - Transient
 
     @Transient

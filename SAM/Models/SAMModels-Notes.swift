@@ -78,6 +78,10 @@ public final class SamNote {
     @Relationship(deleteRule: .nullify)
     public var linkedEvidence: [SamEvidenceItem] = []
 
+    /// Event this note is associated with (e.g., workshop debrief note).
+    @Relationship(deleteRule: .nullify)
+    public var linkedEvent: SamEvent?
+
     // ── LLM extraction results (embedded value arrays) ─────────────
 
     /// People mentioned in note content (extracted by LLM)

@@ -173,6 +173,10 @@ struct AppShellView: View {
                 Label("Grow", systemImage: "arrow.up.right.circle")
             }
 
+            NavigationLink(value: "events") {
+                Label("Events", systemImage: "calendar.badge.clock")
+            }
+
             NavigationLink(value: "search") {
                 Label("Search", systemImage: "magnifyingglass")
             }
@@ -259,6 +263,9 @@ struct AppShellView: View {
 
         case "grow":
             GrowDashboardView()
+
+        case "events":
+            EventManagerView()
 
         case "search":
             SearchView()

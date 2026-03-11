@@ -29,6 +29,7 @@ struct MinionsView: View {
     @State private var roleDeduction = RoleDeductionEngine.shared
     @State private var linkedInCoordinator = LinkedInImportCoordinator.shared
     @State private var facebookCoordinator = FacebookImportCoordinator.shared
+    @State private var presentationAnalysis = PresentationAnalysisCoordinator.shared
 
     var body: some View {
         let minions = activeMinions
@@ -114,6 +115,13 @@ struct MinionsView: View {
             items.append(MinionItem(
                 id: "facebook", icon: "face.smiling",
                 label: "Facebook", tooltip: "Processing Facebook data"))
+        }
+        if presentationAnalysis.analysisStatus == .extracting || presentationAnalysis.analysisStatus == .analyzing {
+            let label = presentationAnalysis.analysisStatus == .extracting ? "Extracting" : "Analyzing"
+            let title = presentationAnalysis.currentPresentationTitle ?? "presentation"
+            items.append(MinionItem(
+                id: "presentation", icon: "doc.richtext",
+                label: label, tooltip: "Digesting \(title)"))
         }
 
         return items

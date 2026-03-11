@@ -340,6 +340,17 @@ final class DailyBriefingCoordinator {
                     sourceKind: "goal_pacing"
                 ))
             }
+
+            // Event topic mention (only when user has an active events goal)
+            if let topicAction = eventTopicBriefingAction(goalProgress: goalProgress) {
+                briefing.strategicHighlights.append(topicAction)
+            }
+
+            // Event goal suggestion (adaptive cadence)
+            if let goalSuggestion = eventGoalSuggestionAction(goalProgress: goalProgress) {
+                briefing.strategicHighlights.append(goalSuggestion)
+            }
+
             generationProgress = 0.9
 
             // Stage 5: Persist (0.9 → 1.0)
@@ -1555,6 +1566,114 @@ final class DailyBriefingCoordinator {
     // MARK: - Goal Pacing Helper
 
     /// Picks the smallest time unit where the rate is >= 1 (day → week → month).
+    // MARK: - Event Topic Briefing Integration
+
+    /// Mention the top event topic in the briefing — only when the user has an active events goal.
+    private func eventTopicBriefingAction(goalProgress: [GoalProgress]) -> BriefingAction? {
+        // Gate: user must have an active events goal
+        let hasEventGoal = goalProgress.contains { $0.goalType == .eventsHosted }
+        guard hasEventGoal else { return nil }
+
+        // Gate: don't mention if there's an upcoming event within 2 weeks
+        if let upcoming = try? EventRepository.shared.fetchUpcoming(),
+           let next = upcoming.first,
+           next.startDate.timeIntervalSinceNow < 14 * 86400 {
+            return nil
+        }
+
+        // Gate: must have pre-computed topics
+        let topics = StrategicCoordinator.shared.suggestedEventTopics
+        guard let topTopic = topics.first else { return nil }
+
+        // Gate: don't repeat if we mentioned event topics in the last 7 days
+        let lastMentionKey = "sam.briefing.lastEventTopicMention"
+        if let lastMention = UserDefaults.standard.object(forKey: lastMentionKey) as? Date,
+           Date.now.timeIntervalSince(lastMention) < 7 * 86400 {
+            return nil
+        }
+
+        // Gate: check calibration — if user consistently dismisses, suppress
+        let ledger = CalibrationService.cachedLedger
+        if let stats = ledger.kindStats["event_topic"], stats.actRate < 0.2, (stats.actedOn + stats.dismissed) >= 5 {
+            return nil
+        }
+
+        // Record mention time
+        UserDefaults.standard.set(Date.now, forKey: lastMentionKey)
+
+        let audienceStr = topTopic.targetAudience.isEmpty
+            ? ""
+            : " — relevant to your \(topTopic.targetAudience.joined(separator: ", ").lowercased())s"
+
+        return BriefingAction(
+            title: "Consider hosting: \(topTopic.title)",
+            rationale: "\(topTopic.rationale)\(audienceStr)",
+            urgency: "standard",
+            sourceKind: "event_topic"
+        )
+    }
+
+    /// Suggest setting an events goal on an adaptive cadence.
+    /// - Not in the first 15 days of using SAM
+    /// - First suggestion between days 15-30
+    /// - Then monthly, backing off if dismissed
+    private func eventGoalSuggestionAction(goalProgress: [GoalProgress]) -> BriefingAction? {
+        // Skip if user already has an active events goal
+        let hasEventGoal = goalProgress.contains { $0.goalType == .eventsHosted }
+        guard !hasEventGoal else { return nil }
+
+        // Check how long the user has been using SAM
+        let firstLaunchKey = "sam.firstLaunchDate"
+        let firstLaunch: Date
+        if let stored = UserDefaults.standard.object(forKey: firstLaunchKey) as? Date {
+            firstLaunch = stored
+        } else {
+            // First time — record now, don't suggest yet
+            UserDefaults.standard.set(Date.now, forKey: firstLaunchKey)
+            return nil
+        }
+
+        let daysSinceFirstLaunch = Int(Date.now.timeIntervalSince(firstLaunch) / 86400)
+
+        // Not in the first 15 days
+        guard daysSinceFirstLaunch >= 15 else { return nil }
+
+        // Check when we last suggested
+        let lastSuggestKey = "sam.briefing.lastEventGoalSuggestion"
+        let suggestionCountKey = "sam.briefing.eventGoalSuggestionCount"
+
+        if let lastSuggestion = UserDefaults.standard.object(forKey: lastSuggestKey) as? Date {
+            let daysSinceLast = Int(Date.now.timeIntervalSince(lastSuggestion) / 86400)
+
+            // Check calibration for adaptive suppression
+            let ledger = CalibrationService.cachedLedger
+            if let stats = ledger.kindStats["event_goal_suggestion"] {
+                // If dismissed 3+ times with no acts, stop suggesting
+                if stats.dismissed >= 3 && stats.actedOn == 0 { return nil }
+                // If dismissed more than acted on, extend interval to 60 days
+                if stats.dismissed > stats.actedOn && daysSinceLast < 60 { return nil }
+            }
+
+            // Normal cadence: 30 days between suggestions
+            guard daysSinceLast >= 30 else { return nil }
+        } else {
+            // No previous suggestion recorded — allow it (covers both days 15-30
+            // initial window and any later first-time suggestion)
+        }
+
+        // Record suggestion
+        UserDefaults.standard.set(Date.now, forKey: lastSuggestKey)
+        let count = UserDefaults.standard.integer(forKey: suggestionCountKey)
+        UserDefaults.standard.set(count + 1, forKey: suggestionCountKey)
+
+        return BriefingAction(
+            title: "Set an events goal",
+            rationale: "Hosting workshops is one of the most effective ways to meet new prospects and deepen client relationships. Consider setting an events goal to track your progress.",
+            urgency: "standard",
+            sourceKind: "event_goal_suggestion"
+        )
+    }
+
     private func goalPacingRateText(_ gp: GoalProgress) -> String {
         let remaining = max(gp.targetValue - gp.currentValue, 0)
         let days = Double(max(gp.daysRemaining, 1))

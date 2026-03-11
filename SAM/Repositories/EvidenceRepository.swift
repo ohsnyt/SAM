@@ -918,9 +918,26 @@ final class EvidenceRepository {
                 confidence: entity.confidence
             ))
         }
+        for rsvp in analysis.rsvpDetections {
+            signals.append(EvidenceSignal(
+                type: .eventRSVP,
+                message: "RSVP \(rsvp.detectedStatus.rawValue): \(rsvp.responseText)",
+                confidence: rsvp.confidence
+            ))
+        }
         existing.signals = signals
 
         try context.save()
+
+        // Notify EventCoordinator of RSVP signals for matching
+        if !analysis.rsvpDetections.isEmpty {
+            Task { @MainActor in
+                RSVPMatchingService.shared.processDetections(
+                    analysis.rsvpDetections,
+                    fromEvidence: existing
+                )
+            }
+        }
     }
 
     /// Update an already-persisted iMessage/WhatsApp evidence item with LLM analysis results.
@@ -943,9 +960,26 @@ final class EvidenceRepository {
                 confidence: event.confidence
             ))
         }
+        for rsvp in analysis.rsvpDetections {
+            signals.append(EvidenceSignal(
+                type: .eventRSVP,
+                message: "RSVP \(rsvp.detectedStatus.rawValue): \(rsvp.responseText)",
+                confidence: rsvp.confidence
+            ))
+        }
         existing.signals = signals
 
         try context.save()
+
+        // Notify EventCoordinator of RSVP signals for matching
+        if !analysis.rsvpDetections.isEmpty {
+            Task { @MainActor in
+                RSVPMatchingService.shared.processDetections(
+                    analysis.rsvpDetections,
+                    fromEvidence: existing
+                )
+            }
+        }
     }
 
     // MARK: - Call Record Bulk Upsert

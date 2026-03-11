@@ -95,6 +95,7 @@ public enum UndoEntityType: String, Codable, Sendable {
     case participation
     case insight
     case person
+    case event
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -227,4 +228,22 @@ public struct PersonMergeSnapshot: Codable, Sendable {
     public let unionedEmails: [String]
     public let unionedPhones: [String]
     public let unionedRoleBadges: [String]
+}
+
+/// Snapshot of a deleted event — captures core fields for full restoration.
+public struct EventSnapshot: Codable, Sendable {
+    public let id: UUID
+    public let title: String
+    public let eventDescription: String?
+    public let formatRawValue: String
+    public let statusRawValue: String
+    public let startDate: Date
+    public let endDate: Date
+    public let venue: String?
+    public let joinLink: String?
+    public let targetParticipantCount: Int
+    public let autoAcknowledgeEnabled: Bool
+    public let ackAcceptTemplate: String?
+    public let ackDeclineTemplate: String?
+    public let participantPersonIDs: [UUID]
 }

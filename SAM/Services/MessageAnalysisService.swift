@@ -88,7 +88,17 @@ actor MessageAnalysisService {
             { "description": "event described", "date_string": "March 15", "confidence": 0.8 }
           ],
           "sentiment": "positive | neutral | negative | urgent",
-          "action_items": ["action1", "action2"]
+          "action_items": ["action1", "action2"],
+          "rsvp_detections": [
+            {
+              "response_text": "the exact quote indicating RSVP",
+              "status": "accepted | declined | tentative | question",
+              "confidence": 0.9,
+              "additional_guest_count": 0,
+              "additional_guest_names": [],
+              "event_reference": "Thursday workshop"
+            }
+          ]
         }
 
         Rules:
@@ -98,6 +108,14 @@ actor MessageAnalysisService {
         - Sentiment reflects the overall tone of the conversation
         - Action items are things that need follow-up
         - If the conversation is too short or trivial, keep the summary brief
+
+        RSVP Detection Rules:
+        - Detect when someone is confirming, declining, or tentatively responding to an event/meeting/workshop
+        - Include rsvp_detections when the contact says things like "I'll be there", "count me in", "can't make it", "let me check my schedule"
+        - If they mention bringing others ("I'll bring my team", "Mike and Lisa are coming too", "plus 3"), set additional_guest_count and additional_guest_names
+        - If they reference a specific event by name or date ("the Thursday workshop", "March 20 seminar"), set event_reference
+        - If someone says another person is coming ("I told Mike about it and he wants to come"), detect that as an RSVP with the other person's name in additional_guest_names
+        - Omit rsvp_detections if no RSVP-like language is present
         - The response MUST be raw JSON with no markdown formatting
         """
 
@@ -133,6 +151,16 @@ actor MessageAnalysisService {
 
     // MARK: - Response Parsing
 
+    private static func mapRSVPStatus(_ status: String) -> RSVPDetectionDTO.RSVPResponse {
+        switch status.lowercased() {
+        case "accepted":  return .accepted
+        case "declined":  return .declined
+        case "tentative": return .tentative
+        case "question":  return .question
+        default:          return .tentative
+        }
+    }
+
     private func parseResponse(_ jsonString: String) throws -> MessageAnalysisDTO {
         let cleaned = JSONExtraction.extractJSON(from: jsonString)
 
@@ -161,12 +189,24 @@ actor MessageAnalysisService {
             default: sentiment = .neutral
             }
 
+            let rsvpDetections = (decoded.rsvp_detections ?? []).map { rsvp in
+                RSVPDetectionDTO(
+                    responseText: rsvp.response_text,
+                    detectedStatus: Self.mapRSVPStatus(rsvp.status),
+                    confidence: rsvp.confidence,
+                    additionalGuestCount: rsvp.additional_guest_count ?? 0,
+                    additionalGuestNames: rsvp.additional_guest_names ?? [],
+                    eventReference: rsvp.event_reference
+                )
+            }
+
             return MessageAnalysisDTO(
                 summary: decoded.summary ?? "No summary available",
                 topics: decoded.topics ?? [],
                 temporalEvents: temporalEvents,
                 sentiment: sentiment,
                 actionItems: decoded.action_items ?? [],
+                rsvpDetections: rsvpDetections,
                 analysisVersion: Self.currentAnalysisVersion
             )
         } catch {
@@ -180,6 +220,7 @@ actor MessageAnalysisService {
                     temporalEvents: [],
                     sentiment: .neutral,
                     actionItems: [],
+                    rsvpDetections: [],
                     analysisVersion: Self.currentAnalysisVersion
                 )
             }
@@ -196,10 +237,20 @@ nonisolated private struct LLMMessageResponse: Codable, Sendable {
     let temporal_events: [LLMTemporalEvent]?
     let sentiment: String?
     let action_items: [String]?
+    let rsvp_detections: [LLMRSVPDetection]?
 }
 
 nonisolated private struct LLMTemporalEvent: Codable, Sendable {
     let description: String
     let date_string: String
     let confidence: Double
+}
+
+nonisolated private struct LLMRSVPDetection: Codable, Sendable {
+    let response_text: String
+    let status: String          // "accepted", "declined", "tentative", "question"
+    let confidence: Double
+    let additional_guest_count: Int?
+    let additional_guest_names: [String]?
+    let event_reference: String?
 }

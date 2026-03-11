@@ -238,6 +238,8 @@ actor CalendarService {
         startDate: Date,
         endDate: Date,
         notes: String?,
+        location: String? = nil,
+        url: URL? = nil,
         calendarTitle: String = "SAM Tasks"
     ) async -> String? {
         guard authorizationStatus() == .fullAccess else {
@@ -261,6 +263,8 @@ actor CalendarService {
         event.startDate = startDate
         event.endDate = endDate
         event.notes = notes
+        event.location = location
+        event.url = url
         event.calendar = ekCalendar
         event.availability = .free  // SAM task blocks don't block booking tools
 
