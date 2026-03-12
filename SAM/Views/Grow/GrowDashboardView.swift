@@ -78,6 +78,9 @@ struct GrowDashboardView: View {
                     toolbarProfileButton
                 }
             }
+            ToolbarItem(placement: .primaryAction) {
+                GuideButton(articleID: "grow.lead-acquisition")
+            }
         }
         .task {
             await loadAnalyses()

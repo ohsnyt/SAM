@@ -252,6 +252,8 @@ struct PeopleListView: View {
                 }
                 .disabled(importCoordinator.importStatus == .importing)
                 .help("Import contacts from Apple Contacts")
+
+                GuideButton(articleID: "people.contact-list")
             }
         }
         .onChange(of: activeSpecialFilters) { _, newValue in

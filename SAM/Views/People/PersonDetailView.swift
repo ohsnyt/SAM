@@ -1868,6 +1868,12 @@ struct PersonDetailView: View {
     // Notes section (Phase L-2)
     private var notesSection: some View {
         samSection(title: "Notes") {
+            HStack {
+                Spacer()
+                GuideButton(articleID: "people.adding-notes")
+            }
+            .padding(.bottom, 4)
+
             // Inline capture — always visible
             InlineNoteCaptureView(
                 linkedPerson: person,

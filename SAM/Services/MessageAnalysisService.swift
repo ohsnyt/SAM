@@ -110,12 +110,15 @@ actor MessageAnalysisService {
         - If the conversation is too short or trivial, keep the summary brief
 
         RSVP Detection Rules:
-        - Detect when someone is confirming, declining, or tentatively responding to an event/meeting/workshop
-        - Include rsvp_detections when the contact says things like "I'll be there", "count me in", "can't make it", "let me check my schedule"
-        - If they mention bringing others ("I'll bring my team", "Mike and Lisa are coming too", "plus 3"), set additional_guest_count and additional_guest_names
-        - If they reference a specific event by name or date ("the Thursday workshop", "March 20 seminar"), set event_reference
-        - If someone says another person is coming ("I told Mike about it and he wants to come"), detect that as an RSVP with the other person's name in additional_guest_names
-        - Omit rsvp_detections if no RSVP-like language is present
+        - ONLY detect RSVPs when someone is explicitly confirming, declining, or tentatively responding to a SPECIFIC event, meeting, workshop, seminar, or gathering that is being organized
+        - The message MUST reference a specific event by name, date, or clear context (e.g., "the Thursday workshop", "your seminar", "the test event today", "count me in for Saturday")
+        - Include rsvp_detections when the contact says things like "I'll be there", "count me in", "can't make it", "let me check my schedule" — but ONLY in reference to a specific event
+        - Do NOT treat casual mentions of wanting to "meet up", "get together", "catch up", or "hang out" as RSVPs — these are social conversation, not event responses
+        - Do NOT treat third-party mentions like "Joseph wants to meet up" as RSVPs unless they explicitly reference a specific organized event
+        - If they mention bringing others to a specific event ("I'll bring my team", "Mike and Lisa are coming too"), set additional_guest_count and additional_guest_names
+        - The event_reference field is REQUIRED for all rsvp_detections — set it to the event name, date, or description referenced in the message
+        - If they reference a specific event by name or date ("the Thursday workshop", "March 20 seminar"), set event_reference to that reference
+        - Omit rsvp_detections entirely if no RSVP-like language referencing a specific event is present
         - The response MUST be raw JSON with no markdown formatting
         """
 

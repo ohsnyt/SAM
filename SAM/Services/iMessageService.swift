@@ -24,7 +24,7 @@ actor iMessageService {
 
     /// Fetch messages since a given date, filtered to known identifiers only.
     /// `knownIdentifiers` contains both canonicalized phone numbers (10-digit) and lowercased emails.
-    func fetchMessages(since: Date, dbURL: URL, knownIdentifiers: Set<String>) async throws -> [MessageDTO] {
+    func fetchMessages(since: Date, dbURL: URL, knownIdentifiers: Set<String>) async throws -> (known: [MessageDTO], unknown: [MessageDTO]) {
         let db = try openDatabase(at: dbURL)
         defer { sqlite3_close(db) }
 
@@ -60,6 +60,7 @@ actor iMessageService {
         sqlite3_bind_int64(stmt, 1, sinceTimestamp)
 
         var messages: [MessageDTO] = []
+        var unknownMessages: [MessageDTO] = []
 
         while sqlite3_step(stmt) == SQLITE_ROW {
             let rowID = sqlite3_column_int64(stmt, 0)
@@ -78,13 +79,10 @@ actor iMessageService {
                 finalText = extractAttributedBodyText(stmt, column: 9)
             }
 
-            // Filter to known identifiers
             let canonicalHandle = canonicalizeHandle(handleID)
-            guard knownIdentifiers.contains(canonicalHandle) else { continue }
-
             let messageDate = iMessageTimestampToDate(dateVal)
 
-            messages.append(MessageDTO(
+            let dto = MessageDTO(
                 id: rowID,
                 guid: guid,
                 text: finalText,
@@ -94,11 +92,18 @@ actor iMessageService {
                 chatGUID: chatGUID,
                 serviceName: service,
                 hasAttachment: hasAttachment
-            ))
+            )
+
+            if knownIdentifiers.contains(canonicalHandle) {
+                messages.append(dto)
+            } else if !isFromMe, let txt = finalText, !txt.isEmpty {
+                // Capture incoming messages from unknown senders (for event RSVP detection)
+                unknownMessages.append(dto)
+            }
         }
 
-        logger.info("Fetched \(messages.count) messages from known senders since \(since, privacy: .public)")
-        return messages
+        logger.info("Fetched \(messages.count) messages from known senders, \(unknownMessages.count) from unknown senders since \(since, privacy: .public)")
+        return (known: messages, unknown: unknownMessages)
     }
 
     /// Fetch all unique handles with message counts (for future unknown sender discovery).

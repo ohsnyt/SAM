@@ -43,6 +43,7 @@ final class EventRepository {
         startDate: Date,
         endDate: Date,
         venue: String? = nil,
+        address: String? = nil,
         joinLink: String? = nil,
         targetParticipantCount: Int = 20
     ) throws -> SamEvent {
@@ -55,6 +56,7 @@ final class EventRepository {
             startDate: startDate,
             endDate: endDate,
             venue: venue,
+            address: address,
             joinLink: joinLink,
             targetParticipantCount: targetParticipantCount
         )
@@ -120,6 +122,7 @@ final class EventRepository {
         startDate: Date? = nil,
         endDate: Date? = nil,
         venue: String? = nil,
+        address: String? = nil,
         joinLink: String? = nil,
         targetParticipantCount: Int? = nil,
         status: EventStatus? = nil
@@ -132,6 +135,7 @@ final class EventRepository {
         if let startDate { event.startDate = startDate }
         if let endDate { event.endDate = endDate }
         if let venue { event.venue = venue }
+        if let address { event.address = address }
         if let joinLink { event.joinLink = joinLink }
         if let targetParticipantCount { event.targetParticipantCount = targetParticipantCount }
         if let status { event.status = status }

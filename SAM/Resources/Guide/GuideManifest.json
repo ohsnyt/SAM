@@ -1,0 +1,353 @@
+{
+  "sections": [
+    { "id": "getting-started", "title": "Getting Started", "icon": "sparkles", "sortOrder": 0 },
+    { "id": "today", "title": "Today & Coaching", "icon": "sun.max", "sortOrder": 1 },
+    { "id": "people", "title": "People & Relationships", "icon": "person.2", "sortOrder": 2 },
+    { "id": "business", "title": "Business Dashboard", "icon": "chart.bar", "sortOrder": 3 },
+    { "id": "grow", "title": "Grow & Content", "icon": "leaf", "sortOrder": 4 },
+    { "id": "events", "title": "Events & Presentations", "icon": "calendar.badge.clock", "sortOrder": 5 },
+    { "id": "search", "title": "Search", "icon": "magnifyingglass", "sortOrder": 6 }
+  ],
+  "articles": [
+    {
+      "id": "getting-started.welcome",
+      "title": "Welcome to SAM",
+      "sectionID": "getting-started",
+      "sortOrder": 0,
+      "markdownFileName": "01-Welcome.md",
+      "searchKeywords": ["intro", "overview", "start", "first time"],
+      "relatedTipID": null,
+      "relatedFeatureID": null
+    },
+    {
+      "id": "getting-started.keyboard-shortcuts",
+      "title": "Keyboard Shortcuts",
+      "sectionID": "getting-started",
+      "sortOrder": 1,
+      "markdownFileName": "02-Keyboard-Shortcuts.md",
+      "searchKeywords": ["keys", "hotkey", "shortcut", "command", "navigate"],
+      "relatedTipID": null,
+      "relatedFeatureID": null
+    },
+    {
+      "id": "getting-started.dictation",
+      "title": "Voice Dictation",
+      "sectionID": "getting-started",
+      "sortOrder": 2,
+      "markdownFileName": "03-Dictation.md",
+      "searchKeywords": ["voice", "microphone", "transcribe", "speech", "dictate"],
+      "relatedTipID": "DictationTip",
+      "relatedFeatureID": "dictation"
+    },
+    {
+      "id": "getting-started.clipboard-capture",
+      "title": "Clipboard Capture",
+      "sectionID": "getting-started",
+      "sortOrder": 3,
+      "markdownFileName": "04-Clipboard-Capture.md",
+      "searchKeywords": ["clipboard", "paste", "copy", "conversation", "capture"],
+      "relatedTipID": null,
+      "relatedFeatureID": "clipboardCapture"
+    },
+    {
+      "id": "getting-started.settings",
+      "title": "Settings and Permissions",
+      "sectionID": "getting-started",
+      "sortOrder": 4,
+      "markdownFileName": "05-Settings-and-Permissions.md",
+      "searchKeywords": ["settings", "permissions", "contacts", "calendar", "mail", "privacy", "configure", "data sources"],
+      "relatedTipID": null,
+      "relatedFeatureID": null
+    },
+    {
+      "id": "getting-started.privacy",
+      "title": "Privacy and On-Device AI",
+      "sectionID": "getting-started",
+      "sortOrder": 5,
+      "markdownFileName": "06-Privacy-and-Security.md",
+      "searchKeywords": ["privacy", "security", "on-device", "local", "data", "ai", "foundation models"],
+      "relatedTipID": null,
+      "relatedFeatureID": null
+    },
+    {
+      "id": "today.daily-briefing",
+      "title": "Daily Briefing",
+      "sectionID": "today",
+      "sortOrder": 0,
+      "markdownFileName": "01-Daily-Briefing.md",
+      "searchKeywords": ["morning", "briefing", "schedule", "priorities", "today"],
+      "relatedTipID": "BriefingButtonTip",
+      "relatedFeatureID": null
+    },
+    {
+      "id": "today.outcome-queue",
+      "title": "Outcome Queue",
+      "sectionID": "today",
+      "sortOrder": 1,
+      "markdownFileName": "02-Outcome-Queue.md",
+      "searchKeywords": ["outcomes", "actions", "coaching", "queue", "done", "skip"],
+      "relatedTipID": "OutcomeQueueTip",
+      "relatedFeatureID": null
+    },
+    {
+      "id": "today.coaching",
+      "title": "How Coaching Works",
+      "sectionID": "today",
+      "sortOrder": 2,
+      "markdownFileName": "03-How-Coaching-Works.md",
+      "searchKeywords": ["coaching", "calibration", "learning", "adapt", "preferences", "mute", "rating", "encouragement"],
+      "relatedTipID": null,
+      "relatedFeatureID": null
+    },
+    {
+      "id": "people.contact-list",
+      "title": "Contact List",
+      "sectionID": "people",
+      "sortOrder": 0,
+      "markdownFileName": "01-Contact-List.md",
+      "searchKeywords": ["contacts", "list", "people", "filter", "roles"],
+      "relatedTipID": "PeopleListTip",
+      "relatedFeatureID": null
+    },
+    {
+      "id": "people.person-detail",
+      "title": "Person Detail",
+      "sectionID": "people",
+      "sortOrder": 1,
+      "markdownFileName": "02-Person-Detail.md",
+      "searchKeywords": ["detail", "profile", "coaching", "person", "summary"],
+      "relatedTipID": "PersonCoachingTip",
+      "relatedFeatureID": null
+    },
+    {
+      "id": "people.adding-notes",
+      "title": "Adding Notes",
+      "sectionID": "people",
+      "sortOrder": 2,
+      "markdownFileName": "03-Adding-Notes.md",
+      "searchKeywords": ["notes", "capture", "meeting", "action items"],
+      "relatedTipID": "AddNoteTip",
+      "relatedFeatureID": "postMeetingCapture"
+    },
+    {
+      "id": "people.relationship-graph",
+      "title": "Relationship Graph",
+      "sectionID": "people",
+      "sortOrder": 3,
+      "markdownFileName": "04-Relationship-Graph.md",
+      "searchKeywords": ["graph", "network", "connections", "visualization", "map"],
+      "relatedTipID": "RelationshipGraphTip",
+      "relatedFeatureID": "relationshipGraph"
+    },
+    {
+      "id": "business.overview",
+      "title": "Dashboard Overview",
+      "sectionID": "business",
+      "sortOrder": 0,
+      "markdownFileName": "01-Dashboard-Overview.md",
+      "searchKeywords": ["dashboard", "business", "overview", "tabs"],
+      "relatedTipID": "BusinessDashboardTip",
+      "relatedFeatureID": "businessDashboard"
+    },
+    {
+      "id": "business.goals",
+      "title": "Goals",
+      "sectionID": "business",
+      "sortOrder": 1,
+      "markdownFileName": "02-Goals.md",
+      "searchKeywords": ["goals", "targets", "pacing", "progress", "tracking"],
+      "relatedTipID": "GoalsTip",
+      "relatedFeatureID": "goalSetting"
+    },
+    {
+      "id": "business.client-pipeline",
+      "title": "Client Pipeline",
+      "sectionID": "business",
+      "sortOrder": 2,
+      "markdownFileName": "03-Client-Pipeline.md",
+      "searchKeywords": ["pipeline", "funnel", "lead", "applicant", "client", "conversion"],
+      "relatedTipID": "ClientPipelineTip",
+      "relatedFeatureID": null
+    },
+    {
+      "id": "business.recruiting-pipeline",
+      "title": "Recruiting Pipeline",
+      "sectionID": "business",
+      "sortOrder": 3,
+      "markdownFileName": "04-Recruiting-Pipeline.md",
+      "searchKeywords": ["recruiting", "agents", "licensing", "mentoring"],
+      "relatedTipID": "RecruitingPipelineTip",
+      "relatedFeatureID": null
+    },
+    {
+      "id": "business.production",
+      "title": "Production",
+      "sectionID": "business",
+      "sortOrder": 4,
+      "markdownFileName": "05-Production.md",
+      "searchKeywords": ["production", "policies", "products", "carrier", "premium"],
+      "relatedTipID": "ProductionTip",
+      "relatedFeatureID": null
+    },
+    {
+      "id": "business.strategic-insights",
+      "title": "Strategic Insights",
+      "sectionID": "business",
+      "sortOrder": 5,
+      "markdownFileName": "06-Strategic-Insights.md",
+      "searchKeywords": ["strategy", "insights", "projections", "patterns", "time"],
+      "relatedTipID": "StrategicInsightsTip",
+      "relatedFeatureID": null
+    },
+    {
+      "id": "grow.lead-acquisition",
+      "title": "Lead Acquisition",
+      "sectionID": "grow",
+      "sortOrder": 0,
+      "markdownFileName": "01-Lead-Acquisition.md",
+      "searchKeywords": ["leads", "acquisition", "profiles", "social", "import"],
+      "relatedTipID": null,
+      "relatedFeatureID": null
+    },
+    {
+      "id": "grow.content-drafts",
+      "title": "Content Drafts",
+      "sectionID": "grow",
+      "sortOrder": 1,
+      "markdownFileName": "02-Content-Drafts.md",
+      "searchKeywords": ["content", "drafts", "social media", "posts", "writing"],
+      "relatedTipID": null,
+      "relatedFeatureID": "contentDraft"
+    },
+    {
+      "id": "grow.social-imports",
+      "title": "Social Imports",
+      "sectionID": "grow",
+      "sortOrder": 2,
+      "markdownFileName": "03-Social-Imports.md",
+      "searchKeywords": ["linkedin", "facebook", "substack", "import", "connections"],
+      "relatedTipID": null,
+      "relatedFeatureID": "substackImport"
+    },
+    {
+      "id": "events.overview",
+      "title": "Events Overview",
+      "sectionID": "events",
+      "sortOrder": 0,
+      "markdownFileName": "00-Overview.md",
+      "searchKeywords": ["events", "overview", "presentations", "invitations"],
+      "relatedTipID": null,
+      "relatedFeatureID": null
+    },
+    {
+      "id": "events.creating",
+      "title": "Creating an Event",
+      "sectionID": "events",
+      "sortOrder": 1,
+      "markdownFileName": "01-Creating-an-Event.md",
+      "searchKeywords": ["create", "new event", "setup"],
+      "relatedTipID": null,
+      "relatedFeatureID": null
+    },
+    {
+      "id": "events.participants",
+      "title": "Adding Participants",
+      "sectionID": "events",
+      "sortOrder": 2,
+      "markdownFileName": "02-Adding-Participants.md",
+      "searchKeywords": ["participants", "attendees", "guests", "add people"],
+      "relatedTipID": null,
+      "relatedFeatureID": null
+    },
+    {
+      "id": "events.invitations",
+      "title": "Sending Invitations",
+      "sectionID": "events",
+      "sortOrder": 3,
+      "markdownFileName": "03-Sending-Invitations.md",
+      "searchKeywords": ["invitations", "email", "send", "invite"],
+      "relatedTipID": null,
+      "relatedFeatureID": null
+    },
+    {
+      "id": "events.rsvp",
+      "title": "RSVP Tracking",
+      "sectionID": "events",
+      "sortOrder": 4,
+      "markdownFileName": "04-RSVP-Tracking.md",
+      "searchKeywords": ["rsvp", "responses", "tracking", "attendance"],
+      "relatedTipID": null,
+      "relatedFeatureID": null
+    },
+    {
+      "id": "events.social-promotion",
+      "title": "Social Promotion",
+      "sectionID": "events",
+      "sortOrder": 5,
+      "markdownFileName": "05-Social-Promotion.md",
+      "searchKeywords": ["social", "promotion", "sharing", "marketing"],
+      "relatedTipID": null,
+      "relatedFeatureID": null
+    },
+    {
+      "id": "events.presentation-library",
+      "title": "Presentation Library",
+      "sectionID": "events",
+      "sortOrder": 6,
+      "markdownFileName": "06-Presentation-Library.md",
+      "searchKeywords": ["presentation", "library", "slides", "pdf"],
+      "relatedTipID": null,
+      "relatedFeatureID": null
+    },
+    {
+      "id": "events.linking-presentations",
+      "title": "Linking Presentations to Events",
+      "sectionID": "events",
+      "sortOrder": 7,
+      "markdownFileName": "07-Linking-Presentations-to-Events.md",
+      "searchKeywords": ["link", "presentation", "event", "associate"],
+      "relatedTipID": null,
+      "relatedFeatureID": null
+    },
+    {
+      "id": "events.identity",
+      "title": "Your Identity and Signature",
+      "sectionID": "events",
+      "sortOrder": 8,
+      "markdownFileName": "08-Your-Identity-and-Signature.md",
+      "searchKeywords": ["identity", "signature", "sender", "profile"],
+      "relatedTipID": null,
+      "relatedFeatureID": null
+    },
+    {
+      "id": "events.undo",
+      "title": "Undoing Mistakes",
+      "sectionID": "events",
+      "sortOrder": 9,
+      "markdownFileName": "09-Undoing-Mistakes.md",
+      "searchKeywords": ["undo", "redo", "mistakes", "revert"],
+      "relatedTipID": null,
+      "relatedFeatureID": null
+    },
+    {
+      "id": "events.workflow",
+      "title": "Putting It All Together",
+      "sectionID": "events",
+      "sortOrder": 10,
+      "markdownFileName": "10-Putting-It-All-Together.md",
+      "searchKeywords": ["workflow", "complete", "end to end", "summary"],
+      "relatedTipID": null,
+      "relatedFeatureID": null
+    },
+    {
+      "id": "search.overview",
+      "title": "Universal Search",
+      "sectionID": "search",
+      "sortOrder": 0,
+      "markdownFileName": "01-Universal-Search.md",
+      "searchKeywords": ["search", "find", "query", "command palette"],
+      "relatedTipID": "SearchTip",
+      "relatedFeatureID": "search"
+    }
+  ]
+}

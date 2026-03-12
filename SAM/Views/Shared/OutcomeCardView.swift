@@ -24,6 +24,8 @@ struct OutcomeCardView: View {
     var sequenceStepCount: Int = 0
     /// The next awaiting step in the sequence (for hint text).
     var nextAwaitingStep: SamOutcome?
+    /// Optional guide article ID for "Learn more" link (e.g., feature adoption outcomes).
+    var guideArticleID: String?
 
     @State private var copiedStep = false
 
@@ -109,6 +111,23 @@ struct OutcomeCardView: View {
                     .font(.caption2)
                     .foregroundStyle(.green)
                     .padding(.top, 1)
+            }
+
+            // Guide link for feature adoption outcomes
+            if let articleID = guideArticleID {
+                Button {
+                    GuideContentService.shared.navigateTo(articleID: articleID)
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "book.pages")
+                            .font(.caption2)
+                        Text("Learn more")
+                            .font(.caption2)
+                    }
+                    .foregroundStyle(.blue)
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 2)
             }
 
             // Action buttons

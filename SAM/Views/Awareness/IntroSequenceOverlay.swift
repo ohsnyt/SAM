@@ -2,106 +2,203 @@
 //  IntroSequenceOverlay.swift
 //  SAM
 //
-//  Phase AB: In-App Guidance — First-launch intro video view
+//  In-App Guidance — 4-page welcome sequence shown on first launch
 //
 
 import SwiftUI
-import AVKit
 
-/// A full intro video shown on first launch after onboarding.
-/// Plays a 2:39 video presenting SAM's value proposition, then shows a "Get Started" button.
+/// A 4-page aspirational welcome shown on first launch.
+/// Replaces the previous video-only intro with a lighter, faster onboarding.
 struct IntroSequenceOverlay: View {
 
     @State private var coordinator = IntroSequenceCoordinator.shared
-    @State private var player: AVPlayer?
-    @State private var playerObserver: Any?
 
     var body: some View {
-        ZStack {
-            // Video fills the sheet
-            if let player {
-                VideoPlayer(player: player)
-                    .disabled(true) // Prevent user interaction with transport controls
-            } else {
-                // Fallback if video can't be loaded
-                Color.black
-                    .overlay {
-                        Image(nsImage: NSApplication.shared.applicationIconImage)
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(width: 128, height: 128)
-                    }
+        VStack(spacing: 0) {
+            // Page content
+            TabView(selection: $coordinator.currentPage) {
+                welcomePage.tag(0)
+                relationshipsPage.tag(1)
+                businessPage.tag(2)
+                tipsPage.tag(3)
             }
+            .tabViewStyle(.automatic)
+            .animation(.easeInOut(duration: 0.3), value: coordinator.currentPage)
 
-            // Overlay controls
-            VStack {
+            Divider()
+
+            // Navigation controls
+            HStack {
+                Button("Skip") {
+                    coordinator.skip()
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.secondary)
+
                 Spacer()
 
-                if coordinator.videoFinished {
-                    // "Get Started" button after video ends
-                    Button(action: { coordinator.markComplete() }) {
-                        Text("Get Started")
-                            .fontWeight(.semibold)
-                            .frame(minWidth: 160)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .padding(.bottom, 40)
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
-                } else {
-                    // Skip button during video playback
-                    HStack {
-                        Spacer()
-                        Button("Skip") {
-                            coordinator.skip()
-                        }
-                        .buttonStyle(.borderless)
-                        .foregroundStyle(.white.opacity(0.7))
-                        .padding(20)
+                // Page dots
+                HStack(spacing: 6) {
+                    ForEach(0..<coordinator.pageCount, id: \.self) { page in
+                        Circle()
+                            .fill(page == coordinator.currentPage ? Color.accentColor : Color.secondary.opacity(0.3))
+                            .frame(width: 7, height: 7)
                     }
                 }
+
+                Spacer()
+
+                HStack(spacing: 8) {
+                    if coordinator.currentPage > 0 {
+                        Button {
+                            coordinator.previousPage()
+                        } label: {
+                            Image(systemName: "chevron.left")
+                        }
+                        .buttonStyle(.bordered)
+                    }
+
+                    Button {
+                        coordinator.nextPage()
+                    } label: {
+                        if coordinator.currentPage == coordinator.pageCount - 1 {
+                            Text("Get Started")
+                                .fontWeight(.semibold)
+                        } else {
+                            Image(systemName: "chevron.right")
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
             }
-            .animation(.easeInOut(duration: 0.4), value: coordinator.videoFinished)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 16)
         }
-        .frame(minWidth: 756, idealWidth: 882, maxWidth: 1260,
-               minHeight: 432, idealHeight: 504, maxHeight: 720)
-        .background(.black)
-        .onAppear {
-            setupPlayer()
-        }
-        .onDisappear {
-            tearDownPlayer()
-        }
+        .frame(width: 520, height: 420)
+        .background(.background)
     }
 
-    // MARK: - Player Setup
+    // MARK: - Page 1: Welcome
 
-    private func setupPlayer() {
-        guard let url = Bundle.main.url(forResource: "SAM_intro_video_hb", withExtension: "mp4") else { return }
-        let avPlayer = AVPlayer(url: url)
-        player = avPlayer
+    private var welcomePage: some View {
+        VStack(spacing: 20) {
+            Spacer()
 
-        // Observe when playback reaches the end
-        playerObserver = NotificationCenter.default.addObserver(
-            forName: .AVPlayerItemDidPlayToEndTime,
-            object: avPlayer.currentItem,
-            queue: .main
-        ) { _ in
-            Task { @MainActor in
-                coordinator.videoDidFinish()
-            }
+            Image(nsImage: NSApplication.shared.applicationIconImage)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 96, height: 96)
+
+            Text("SAM helps you build your practice")
+                .font(.title.bold())
+                .multilineTextAlignment(.center)
+
+            Text("Your cognitive coaching assistant for relationships and business growth.")
+                .font(.title3)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 40)
+
+            Spacer()
         }
-
-        avPlayer.play()
+        .padding(32)
     }
 
-    private func tearDownPlayer() {
-        player?.pause()
-        if let observer = playerObserver {
-            NotificationCenter.default.removeObserver(observer)
+    // MARK: - Page 2: Relationships
+
+    private var relationshipsPage: some View {
+        VStack(spacing: 20) {
+            Spacer()
+
+            symbolComposition(
+                primary: "person.2.fill",
+                secondary: "heart.fill",
+                accent: .green
+            )
+
+            Text("Your relationships, coached")
+                .font(.title2.bold())
+                .multilineTextAlignment(.center)
+
+            Text("SAM observes your interactions and recommends specific actions for each person — who to follow up with, what to say, and why it matters.")
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 40)
+
+            Spacer()
         }
-        playerObserver = nil
-        player = nil
+        .padding(32)
+    }
+
+    // MARK: - Page 3: Business
+
+    private var businessPage: some View {
+        VStack(spacing: 20) {
+            Spacer()
+
+            symbolComposition(
+                primary: "chart.bar.fill",
+                secondary: "arrow.up.right",
+                accent: .blue
+            )
+
+            Text("Your business, visible")
+                .font(.title2.bold())
+                .multilineTextAlignment(.center)
+
+            Text("Pipeline health, production metrics, recruiting progress, and strategic insights — all in one place. SAM connects individual actions to business goals.")
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 40)
+
+            Spacer()
+        }
+        .padding(32)
+    }
+
+    // MARK: - Page 4: Tips
+
+    private var tipsPage: some View {
+        VStack(spacing: 20) {
+            Spacer()
+
+            symbolComposition(
+                primary: "lightbulb.fill",
+                secondary: "questionmark.circle",
+                accent: .orange
+            )
+
+            Text("Tips will guide you")
+                .font(.title2.bold())
+                .multilineTextAlignment(.center)
+
+            Text("Orange tips appear contextually as you explore SAM's features. Dismiss them when you're ready, or find help anytime in the Help menu.")
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 40)
+
+            Spacer()
+        }
+        .padding(32)
+    }
+
+    // MARK: - Helpers
+
+    private func symbolComposition(primary: String, secondary: String, accent: Color) -> some View {
+        ZStack {
+            Image(systemName: primary)
+                .font(.system(size: 48))
+                .foregroundStyle(accent)
+
+            Image(systemName: secondary)
+                .font(.system(size: 20))
+                .foregroundStyle(accent.opacity(0.7))
+                .offset(x: 30, y: -20)
+        }
+        .frame(height: 72)
     }
 }
 
@@ -109,5 +206,4 @@ struct IntroSequenceOverlay: View {
 
 #Preview {
     IntroSequenceOverlay()
-        .frame(width: 882, height: 504)
 }

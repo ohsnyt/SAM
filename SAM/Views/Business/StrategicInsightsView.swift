@@ -148,6 +148,8 @@ struct StrategicInsightsView: View {
 
             Spacer()
 
+            GuideButton(articleID: "business.strategic-insights")
+
             Button {
                 Task { await coordinator.generateDigest(type: .onDemand) }
             } label: {
@@ -157,7 +159,6 @@ struct StrategicInsightsView: View {
             .buttonStyle(.bordered)
             .controlSize(.small)
             .disabled(coordinator.generationStatus == .generating)
-            .popoverTip(RefreshAnalysisTip(), arrowEdge: .bottom)
         }
     }
 

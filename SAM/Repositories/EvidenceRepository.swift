@@ -858,6 +858,7 @@ final class EvidenceRepository {
                 existing.snippet = snippet
                 existing.bodyText = nil
                 existing.occurredAt = message.date
+                existing.isFromMe = message.isFromMe
                 setLinkedPeople(resolved, on: existing)
                 existing.signals = signals
                 updated += 1
@@ -879,6 +880,7 @@ final class EvidenceRepository {
                     snippet: snippet,
                     signals: signals
                 )
+                evidence.isFromMe = message.isFromMe
                 setLinkedPeople(resolved, on: evidence)
                 context.insert(evidence)
                 created += 1
@@ -1102,6 +1104,7 @@ final class EvidenceRepository {
                 existing.snippet = snippet
                 existing.bodyText = nil
                 existing.occurredAt = message.date
+                existing.isFromMe = message.isFromMe
                 setLinkedPeople(resolved, on: existing)
                 existing.signals = signals
                 updated += 1
@@ -1125,6 +1128,7 @@ final class EvidenceRepository {
                     snippet: snippet,
                     signals: signals
                 )
+                evidence.isFromMe = message.isFromMe
                 setLinkedPeople(resolved, on: evidence)
                 context.insert(evidence)
                 created += 1

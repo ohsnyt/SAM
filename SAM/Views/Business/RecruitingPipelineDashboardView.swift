@@ -18,6 +18,13 @@ struct RecruitingPipelineDashboardView: View {
 
     var body: some View {
         VStack(spacing: 16) {
+            HStack {
+                Spacer()
+                GuideButton(articleID: "business.recruiting-pipeline")
+            }
+            .padding(.horizontal)
+            .padding(.top, 4)
+
             TipView(RecruitingPipelineTip())
                 .tipViewStyle(SAMTipViewStyle())
 

@@ -18,8 +18,14 @@ struct EventDetailView: View {
     @State private var showSocialPromotion = false
     @State private var showInvitationDrafts = false
     @State private var showDeleteConfirmation = false
+    @State private var showEditEvent = false
+    @State private var showUpdateNotification = false
+    @State private var showUpdateSheet = false
+    @State private var pendingChangeSummary: EventCoordinator.EventChangeSummary?
     @State private var refreshToken = UUID()
     @State private var lastActionMessage: String?
+    @State private var unknownRSVPs: [EventCoordinator.UnknownEventRSVP] = []
+    @State private var quickAddRSVP: EventCoordinator.UnknownEventRSVP?
 
     enum ParticipantFilter: String, CaseIterable {
         case all = "All"
@@ -69,6 +75,27 @@ struct EventDetailView: View {
             }
         } message: {
             Text("This will delete the event and all its participant data. You can undo this for up to 30 days.")
+        }
+        .alert("Notify Participants?", isPresented: $showUpdateNotification) {
+            Button("Send Updates") {
+                // showUpdateNotification is already dismissed; show the update sheet
+                showUpdateSheet = true
+            }
+            Button("Skip", role: .cancel) {
+                pendingChangeSummary = nil
+            }
+        } message: {
+            Text("Event details changed. Would you like to notify participants who have already been invited?\n\n\(pendingChangeSummary?.changeDescription ?? "")")
+        }
+        .sheet(isPresented: $showUpdateSheet, onDismiss: {
+            pendingChangeSummary = nil
+            refreshToken = UUID()
+        }) {
+            if let event, let changes = pendingChangeSummary {
+                EventUpdateSheet(event: event, changes: changes) {
+                    refreshToken = UUID()
+                }
+            }
         }
     }
 
@@ -127,6 +154,74 @@ struct EventDetailView: View {
             }
             .listStyle(.plain)
             .frame(maxHeight: .infinity)
+
+            // Unknown sender RSVPs
+            if !unknownRSVPs.isEmpty {
+                Divider()
+                unknownRSVPSection
+            }
+        }
+        .onAppear { refreshUnknownRSVPs(event: event) }
+        .onChange(of: refreshToken) { refreshUnknownRSVPs(event: event) }
+    }
+
+    private func refreshUnknownRSVPs(event: SamEvent) {
+        unknownRSVPs = EventCoordinator.shared.unknownSenderRSVPs(for: event)
+    }
+
+    private var unknownRSVPSection: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Image(systemName: "person.crop.circle.badge.questionmark")
+                    .foregroundStyle(.orange)
+                Text("Possible RSVPs from Unknown Contacts")
+                    .font(.caption.bold())
+                Spacer()
+                Text("\(unknownRSVPs.count)")
+                    .font(.caption.bold())
+                    .foregroundStyle(.orange)
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 8)
+
+            ForEach(unknownRSVPs) { rsvp in
+                Button {
+                    quickAddRSVP = rsvp
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "person.badge.plus")
+                            .font(.caption)
+                            .foregroundStyle(.blue)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(rsvp.displayName ?? rsvp.senderHandle)
+                                .font(.callout)
+                                .lineLimit(1)
+                            Text(rsvp.messagePreview)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                        }
+
+                        Spacer()
+
+                        Text(rsvp.messageDate.formatted(date: .abbreviated, time: .shortened))
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 4)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.bottom, 8)
+        .sheet(item: $quickAddRSVP) { rsvp in
+            UnknownSenderQuickAddSheet(rsvp: rsvp, eventID: eventID) {
+                refreshToken = UUID()
+                lastActionMessage = "Added to event and confirmed"
+            }
         }
     }
 
@@ -146,6 +241,12 @@ struct EventDetailView: View {
                     .background(.tertiary.opacity(0.3), in: Capsule())
 
                 Menu {
+                    Button {
+                        showEditEvent = true
+                    } label: {
+                        Label("Edit Event", systemImage: "pencil")
+                    }
+                    Divider()
                     Button(role: .destructive) {
                         showDeleteConfirmation = true
                     } label: {
@@ -157,6 +258,15 @@ struct EventDetailView: View {
                 }
                 .menuStyle(.borderlessButton)
                 .frame(width: 24)
+                .sheet(isPresented: $showEditEvent) {
+                    EventFormView(existingEvent: event, onUpdated: { changeSummary in
+                        refreshToken = UUID()
+                        if let changes = changeSummary {
+                            pendingChangeSummary = changes
+                            showUpdateNotification = true
+                        }
+                    })
+                }
             }
 
             HStack(spacing: 16) {
@@ -167,7 +277,8 @@ struct EventDetailView: View {
                 .font(.caption)
 
                 if let venue = event.venue {
-                    Label(venue, systemImage: "mappin")
+                    let locationText = [venue, event.address].compactMap { $0 }.joined(separator: ", ")
+                    Label(locationText, systemImage: "mappin")
                         .font(.caption)
                         .lineLimit(1)
                 }
@@ -595,11 +706,15 @@ struct ParticipantDetailView: View {
                         Label("Draft Invitation", systemImage: "paperplane")
                     }
                     .controlSize(.small)
-                    .sheet(isPresented: $showInvitationDraft) {
-                        InvitationDraftSheet(
-                            event: event,
-                            singleParticipation: participation
-                        ) { }
+                } else if participation.inviteStatus == .invited || participation.inviteStatus == .reminderSent {
+                    // Already invited but no confirmed RSVP — allow resend
+                    if participation.rsvpStatus != .accepted && participation.rsvpStatus != .declined {
+                        Button {
+                            showInvitationDraft = true
+                        } label: {
+                            Label("Resend Invitation", systemImage: "arrow.clockwise")
+                        }
+                        .controlSize(.small)
                     }
                 }
 
@@ -633,6 +748,14 @@ struct ParticipantDetailView: View {
                 }
             }
         }
+        .sheet(isPresented: $showInvitationDraft) {
+            InvitationDraftSheet(
+                event: event,
+                singleParticipation: participation
+            ) {
+                showInvitationDraft = false
+            }
+        }
     }
 
     // MARK: - Helpers
@@ -654,6 +777,7 @@ struct ParticipantDetailView: View {
         case .reminder:        return "bell"
         case .acknowledgment:  return "checkmark.bubble"
         case .followUp:        return "arrow.turn.up.right"
+        case .update:          return "arrow.triangle.2.circlepath"
         case .rsvpResponse:    return "bubble.left"
         case .custom:          return "text.bubble"
         }
@@ -665,6 +789,7 @@ struct ParticipantDetailView: View {
         case .reminder:        return .orange
         case .acknowledgment:  return .green
         case .followUp:        return .purple
+        case .update:          return .indigo
         case .rsvpResponse:    return .teal
         case .custom:          return .secondary
         }

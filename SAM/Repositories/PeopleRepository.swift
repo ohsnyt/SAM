@@ -119,6 +119,39 @@ final class PeopleRepository {
         try modelContext.save()
     }
 
+    /// Insert a standalone SamPerson without an Apple Contact.
+    /// Used when adding unknown senders (e.g., iMessage RSVP) who aren't yet in Contacts.
+    @discardableResult
+    func insertStandalone(
+        displayName: String,
+        phone: String? = nil,
+        email: String? = nil
+    ) throws -> SamPerson {
+        guard let modelContext else { throw RepositoryError.notConfigured }
+
+        let person = SamPerson(
+            id: UUID(),
+            displayName: displayName,
+            roleBadges: []
+        )
+        person.displayNameCache = displayName
+
+        if let phone = phone {
+            let canonical = canonicalizePhone(phone)
+            person.phoneAliases = canonical.map { [$0] } ?? []
+        }
+        if let email = canonicalizeEmail(email) {
+            person.emailCache = email
+            person.emailAliases = [email]
+            person.email = email
+        }
+
+        modelContext.insert(person)
+        try modelContext.save()
+        logger.info("Inserted standalone SamPerson '\(displayName)' (no Apple Contact)")
+        return person
+    }
+
     /// Upsert a person from a ContactDTO
     /// If person exists (by contactIdentifier), updates cache fields
     /// If person doesn't exist, creates new SamPerson

@@ -381,8 +381,12 @@ struct CoachingSettingsContent: View {
 
     private var feedbackSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("What SAM Has Learned")
-                .font(.headline)
+            HStack {
+                Text("What SAM Has Learned")
+                    .font(.headline)
+                Spacer()
+                GuideButton(articleID: "today.coaching")
+            }
 
             Text("SAM adapts to your patterns over time. Here's what it's learned so far.")
                 .font(.caption)

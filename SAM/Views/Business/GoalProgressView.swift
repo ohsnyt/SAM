@@ -29,6 +29,8 @@ struct GoalProgressView: View {
 
                 Spacer()
 
+                GuideButton(articleID: "business.goals")
+
                 Button {
                     showAddGoal = true
                 } label: {

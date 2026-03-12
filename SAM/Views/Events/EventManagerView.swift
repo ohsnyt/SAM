@@ -31,12 +31,16 @@ struct EventManagerView: View {
     var body: some View {
         VStack(spacing: 0) {
             // Section picker
-            Picker("Section", selection: $activeSection) {
-                ForEach(EventSection.allCases, id: \.self) { section in
-                    Text(section.rawValue).tag(section)
+            HStack {
+                Picker("Section", selection: $activeSection) {
+                    ForEach(EventSection.allCases, id: \.self) { section in
+                        Text(section.rawValue).tag(section)
+                    }
                 }
+                .pickerStyle(.segmented)
+
+                GuideButton(articleID: "events.overview")
             }
-            .pickerStyle(.segmented)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
 
@@ -57,10 +61,10 @@ struct EventManagerView: View {
             refreshToken = UUID()
         }
         .sheet(isPresented: $showNewEventForm) {
-            EventFormView { event in
+            EventFormView(onCreated: { event in
                 selectedEventID = event.id
                 refreshToken = UUID()
-            }
+            })
         }
     }
 

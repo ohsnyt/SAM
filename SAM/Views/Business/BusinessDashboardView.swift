@@ -73,6 +73,9 @@ struct BusinessDashboardView: View {
                 }
                 .help("Refresh pipeline metrics")
             }
+            ToolbarItem {
+                GuideButton(articleID: "business.overview")
+            }
         }
         .onAppear {
             tracker.refresh()

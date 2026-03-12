@@ -18,6 +18,13 @@ struct ProductionDashboardView: View {
 
     var body: some View {
         VStack(spacing: 16) {
+            HStack {
+                Spacer()
+                GuideButton(articleID: "business.production")
+            }
+            .padding(.horizontal)
+            .padding(.top, 4)
+
             TipView(ProductionTip())
                 .tipViewStyle(SAMTipViewStyle())
 

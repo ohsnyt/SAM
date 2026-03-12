@@ -126,6 +126,9 @@ struct RelationshipGraphView: View {
                     offset: $offset,
                     fitToView: fitToView
                 )
+                ToolbarItem {
+                    GuideButton(articleID: "people.relationship-graph")
+                }
             }
             .task {
                 if coordinator.graphStatus != .ready {

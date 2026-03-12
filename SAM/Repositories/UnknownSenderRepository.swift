@@ -57,6 +57,15 @@ final class UnknownSenderRepository {
         return Set(all.filter { $0.status == .neverInclude }.map(\.email))
     }
 
+    /// Fetch a single unknown sender by ID.
+    func fetchByID(_ id: UUID) throws -> UnknownSender? {
+        guard let modelContext else { throw RepositoryError.notConfigured }
+
+        let descriptor = FetchDescriptor<UnknownSender>()
+        let all = try modelContext.fetch(descriptor)
+        return all.first { $0.id == id }
+    }
+
     // MARK: - Bulk Record
 
     /// Upsert unknown senders from import results.

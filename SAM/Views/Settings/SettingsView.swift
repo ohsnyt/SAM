@@ -377,6 +377,7 @@ struct BusinessSettingsView: View {
 struct GuidanceSettingsContent: View {
 
     @AppStorage("sam.tips.guidanceEnabled") private var tipsEnabled: Bool = true
+    @AppStorage("sam.guide.showHelpButtons") private var showHelpButtons: Bool = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -408,6 +409,12 @@ struct GuidanceSettingsContent: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
+            Toggle("Show help buttons in views", isOn: $showHelpButtons)
+
+            Text("Small \"?\" buttons in toolbars and headers that open the SAM Guide to the relevant article.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
             HStack(spacing: 12) {
                 Button("Reset All Tips") {
                     SAMTipState.resetAllTips()
@@ -415,9 +422,13 @@ struct GuidanceSettingsContent: View {
                 }
                 .buttonStyle(.bordered)
 
-                Button("Replay Intro") {
-                    UserDefaults.standard.set(false, forKey: "sam.intro.hasSeenIntroSequence")
-                    IntroSequenceCoordinator.shared.checkAndShow()
+                Button("Replay Welcome") {
+                    IntroSequenceCoordinator.shared.replay()
+                }
+                .buttonStyle(.bordered)
+
+                Button("Open SAM Guide") {
+                    GuideContentService.shared.navigateTo(sectionID: "getting-started")
                 }
                 .buttonStyle(.bordered)
             }
@@ -541,9 +552,13 @@ struct PermissionsSettingsView: View {
         Form {
             Section {
                 VStack(alignment: .leading, spacing: 12) {
-                    Label("Permissions", systemImage: "lock.shield")
-                        .font(.title2)
-                        .bold()
+                    HStack {
+                        Label("Permissions", systemImage: "lock.shield")
+                            .font(.title2)
+                            .bold()
+                        Spacer()
+                        GuideButton(articleID: "getting-started.settings")
+                    }
 
                     Divider()
 

@@ -20,6 +20,13 @@ struct SearchView: View {
     var body: some View {
         HSplitView {
             VStack(spacing: 0) {
+                HStack {
+                    Spacer()
+                    GuideButton(articleID: "search.overview")
+                }
+                .padding(.horizontal, 8)
+                .padding(.top, 4)
+
                 TipView(SearchTip())
                     .tipViewStyle(SAMTipViewStyle())
                     .padding(.horizontal, 8)

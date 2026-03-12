@@ -6,7 +6,7 @@
 //  Clean rebuild - Phase A: Foundation
 //
 //  Main navigation container for the app.
-//  Manages the NavigationSplitView with sidebar and detail routing.
+//  Manages a single NavigationSplitView with sidebar and detail routing.
 //
 
 import SwiftUI
@@ -14,7 +14,7 @@ import SwiftData
 import TipKit
 
 struct AppShellView: View {
-    
+
     // MARK: - Navigation State
 
     fileprivate enum PeopleMode: String { case contacts, graph }
@@ -27,54 +27,38 @@ struct AppShellView: View {
     @State private var introCoordinator = IntroSequenceCoordinator.shared
     @State private var peopleMode: PeopleMode = .contacts
     @State private var peopleSpecialFilters: Set<PeopleSpecialFilter> = []
-    @AppStorage("sam.tips.guidanceEnabled") private var tipsEnabled: Bool = true
     @Environment(\.openWindow) private var openWindow
 
-    
+    /// Whether the People section needs its middle column (contact list).
+    private var showPeopleList: Bool {
+        sidebarSelection == "people" && peopleMode == .contacts
+    }
+
     // MARK: - Body
-    
+
     var body: some View {
-        Group {
-            if sidebarSelection == "people" && peopleMode == .contacts {
-                // Three-column layout for People > Contacts
-                NavigationSplitView(columnVisibility: $columnVisibility) {
-                    sidebar
-                        .navigationSplitViewColumnWidth(min: 120, ideal: 130, max: 200)
-                } content: {
-                    PeopleListView(selectedPersonID: $selectedPersonID, activeSpecialFilters: $peopleSpecialFilters)
-                        .navigationSplitViewColumnWidth(min: 200, ideal: 280, max: 500)
-                } detail: {
-                    peopleDetailView
-                }
-                .navigationTitle("SAM")
-                .toolbar {
-                    ToolbarItem(placement: .principal) {
-                        peopleModeToolbar
-                    }
-                }
-            } else if sidebarSelection == "people" && peopleMode == .graph {
-                // Two-column layout for People > Graph
-                NavigationSplitView {
-                    sidebar
-                        .navigationSplitViewColumnWidth(min: 120, ideal: 130, max: 200)
-                } detail: {
-                    RelationshipGraphView()
-                }
-                .navigationTitle("SAM")
-                .toolbar {
-                    ToolbarItem(placement: .principal) {
-                        peopleModeToolbar
-                    }
-                }
+        NavigationSplitView(columnVisibility: $columnVisibility) {
+            sidebar
+                .navigationSplitViewColumnWidth(min: 120, ideal: 130, max: 200)
+        } content: {
+            if showPeopleList {
+                PeopleListView(selectedPersonID: $selectedPersonID, activeSpecialFilters: $peopleSpecialFilters)
+                    .navigationSplitViewColumnWidth(min: 200, ideal: 280, max: 500)
             } else {
-                // Two-column layout for Today, Business, Grow, Search
-                NavigationSplitView {
-                    sidebar
-                        .navigationSplitViewColumnWidth(min: 120, ideal: 130, max: 200)
-                } detail: {
-                    detailView
+                Color.clear
+                    .navigationSplitViewColumnWidth(0)
+            }
+        } detail: {
+            detailView
+        }
+        .navigationTitle("SAM")
+        .navigationSplitViewStyle(.balanced)
+        .toolbar(removing: .sidebarToggle)
+        .toolbar {
+            if sidebarSelection == "people" {
+                ToolbarItem(placement: .principal) {
+                    peopleModeToolbar
                 }
-                .navigationTitle("SAM")
             }
         }
         .tipViewStyle(SAMTipViewStyle())
@@ -182,57 +166,8 @@ struct AppShellView: View {
             }
         }
         .navigationTitle("SAM")
-        .safeAreaInset(edge: .top) {
-            if tipsEnabled {
-                Text("Use ⌘K for quick navigation, ⌘1–5 to jump between sections.")
-                    .font(.caption)
-                    .foregroundStyle(.white)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .frame(maxWidth: .infinity)
-                    .background(Color.orange, in: RoundedRectangle(cornerRadius: 10))
-                    .padding(.horizontal, 8)
-                    .padding(.top, 6)
-            }
-        }
         .safeAreaInset(edge: .bottom) {
-            VStack(spacing: 0) {
-                MinionsView()
-
-                Divider()
-
-                // Tips toggle — orange background when on, plain when off
-                Button {
-                    if tipsEnabled {
-                        SAMTipState.disableTips()
-                        tipsEnabled = false
-                    } else {
-                        SAMTipState.enableTips()
-                        tipsEnabled = true
-                    }
-                } label: {
-                    Label(
-                        tipsEnabled ? "Tips On" : "Tips Off",
-                        systemImage: tipsEnabled
-                            ? "questionmark.circle.fill"
-                            : "questionmark.circle"
-                    )
-                    .font(.caption)
-                    .foregroundStyle(tipsEnabled ? Color.white : Color.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(
-                        tipsEnabled
-                            ? Color.orange.opacity(0.85).clipShape(RoundedRectangle(cornerRadius: 8))
-                            : nil
-                    )
-                    .padding(.horizontal, 4)
-                }
-                .buttonStyle(.plain)
-                .help(tipsEnabled ? "Hide tips" : "Show tips")
-            }
+            MinionsView()
         }
         .onAppear {
             // Migrate stale @AppStorage values from old sidebar items
@@ -249,14 +184,21 @@ struct AppShellView: View {
             }
         }
     }
-    
+
     // MARK: - Detail Routing
-    
+
     @ViewBuilder
     private var detailView: some View {
         switch sidebarSelection {
         case "today":
             AwarenessView()
+
+        case "people":
+            if peopleMode == .graph {
+                RelationshipGraphView()
+            } else {
+                peopleDetailView
+            }
 
         case "business":
             BusinessDashboardView()
@@ -297,7 +239,7 @@ struct AppShellView: View {
 
 }
 
-// MARK: - Notification Handlers (shared between layout branches)
+// MARK: - Notification Handlers
 
 private struct AppShellNotificationHandlers: ViewModifier {
     @Binding var sidebarSelection: String
@@ -345,6 +287,9 @@ private struct AppShellNotificationHandlers: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: .samOpenPromptLab)) { _ in
                 openWindow(id: "prompt-lab")
             }
+            .onReceive(NotificationCenter.default.publisher(for: .samOpenGuide)) { _ in
+                openWindow(id: "guide")
+            }
     }
 }
 
@@ -353,13 +298,13 @@ private struct AppShellNotificationHandlers: ViewModifier {
 /// Helper view that fetches a person by ID and displays PersonDetailView
 private struct PeopleDetailContainer: View {
     let personID: UUID
-    
+
     @Query private var allPeople: [SamPerson]
-    
+
     var person: SamPerson? {
         allPeople.first(where: { $0.id == personID })
     }
-    
+
     var body: some View {
         if let person = person {
             PersonDetailView(person: person)

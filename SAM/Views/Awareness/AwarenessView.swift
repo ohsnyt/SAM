@@ -80,6 +80,9 @@ struct AwarenessView: View {
                 }
                 .disabled(isGenerating)
             }
+            ToolbarItem(placement: .primaryAction) {
+                GuideButton(articleID: "today.daily-briefing")
+            }
         }
         .sheet(isPresented: Binding(
             get: { briefingCoordinator.showEveningBriefing },

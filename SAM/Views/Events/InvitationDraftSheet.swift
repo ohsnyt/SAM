@@ -23,6 +23,7 @@ struct InvitationDraftSheet: View {
     @State private var sentCount = 0
     @State private var skippedCount = 0
     @State private var originalDraftText = ""
+    @State private var selectedChannel: CommunicationChannel = .iMessage
 
     private var currentParticipation: EventParticipation? {
         guard currentIndex < uninvited.count else { return nil }
@@ -72,6 +73,16 @@ struct InvitationDraftSheet: View {
                     .sorted { ($0.person?.displayNameCache ?? "") < ($1.person?.displayNameCache ?? "") }
             }
             if !uninvited.isEmpty {
+                // Set default channel for first person
+                if let first = uninvited.first, let person = first.person {
+                    if let existing = first.inviteChannel {
+                        selectedChannel = existing
+                    } else if person.emailCache != nil && person.phoneAliases.isEmpty {
+                        selectedChannel = .email
+                    } else {
+                        selectedChannel = .iMessage
+                    }
+                }
                 await generateCurrentDraft()
             }
         }
@@ -120,6 +131,20 @@ struct InvitationDraftSheet: View {
                         }
                     }
                     Spacer()
+
+                    // Channel picker
+                    Picker("Send via", selection: $selectedChannel) {
+                        Label("iMessage", systemImage: "message.fill")
+                            .tag(CommunicationChannel.iMessage)
+                        Label("Email", systemImage: "envelope.fill")
+                            .tag(CommunicationChannel.email)
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 180)
+                    .onChange(of: selectedChannel) {
+                        Task { await generateCurrentDraft() }
+                    }
+
                     if participation.priority != .standard {
                         Label(participation.priority.displayName, systemImage: participation.priority.icon)
                             .font(.caption)
@@ -243,7 +268,7 @@ struct InvitationDraftSheet: View {
         draftText = ""
 
         do {
-            let text = try await EventCoordinator.shared.generateInvitationText(for: participation)
+            let text = try await EventCoordinator.shared.generateInvitationText(for: participation, channel: selectedChannel)
             draftText = text
             originalDraftText = text
         } catch {
@@ -255,7 +280,7 @@ struct InvitationDraftSheet: View {
     private func saveDraft() {
         guard let participation = currentParticipation else { return }
         do {
-            try EventCoordinator.shared.saveInvitationDraft(for: participation, body: draftText)
+            try EventCoordinator.shared.saveInvitationDraft(for: participation, body: draftText, channel: selectedChannel)
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -265,8 +290,14 @@ struct InvitationDraftSheet: View {
         guard let participation = currentParticipation else { return }
         learnClosingIfChanged(person: participation.person)
         do {
-            try EventCoordinator.shared.sendInvitation(for: participation, body: draftText)
+            try EventCoordinator.shared.sendInvitation(for: participation, body: draftText, channel: selectedChannel)
             sentCount += 1
+            // Auto-dismiss for single-participant flow
+            if singleParticipation != nil {
+                onComplete()
+                dismiss()
+                return
+            }
             advanceToNext()
         } catch {
             errorMessage = error.localizedDescription
@@ -279,6 +310,16 @@ struct InvitationDraftSheet: View {
         originalDraftText = ""
         errorMessage = nil
         if !isFinished {
+            // Default channel for new person: use their existing inviteChannel or infer from contact info
+            if let next = currentParticipation, let person = next.person {
+                if let existing = next.inviteChannel {
+                    selectedChannel = existing
+                } else if person.emailCache != nil && person.phoneAliases.isEmpty {
+                    selectedChannel = .email
+                } else {
+                    selectedChannel = .iMessage
+                }
+            }
             Task { await generateCurrentDraft() }
         }
     }

@@ -18,6 +18,13 @@ struct ClientPipelineDashboardView: View {
 
     var body: some View {
         VStack(spacing: 16) {
+            HStack {
+                Spacer()
+                GuideButton(articleID: "business.client-pipeline")
+            }
+            .padding(.horizontal)
+            .padding(.top, 4)
+
             TipView(ClientPipelineTip())
                 .tipViewStyle(SAMTipViewStyle())
 

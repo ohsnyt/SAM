@@ -690,6 +690,11 @@ public final class SamEvidenceItem {
     public var snippet:    String
     public var bodyText:   String?
 
+    /// True when this evidence was created from an outgoing message/email
+    /// sent by the user (Me contact). Used by RSVPMatchingService to avoid
+    /// attributing RSVP language from the user's own words to a contact.
+    public var isFromMe: Bool = false
+
     // ── Computed signals (re-derived on every upsert) ──────────────
     /// Deterministic, explainable tags produced by `InsightGeneratorV1`.
     /// Stored as an embedded value array; not a separate table because

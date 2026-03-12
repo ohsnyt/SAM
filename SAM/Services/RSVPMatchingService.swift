@@ -25,11 +25,21 @@ final class RSVPMatchingService {
     /// Matches the sender to active event participations and updates RSVP status.
     /// If the sender is not yet a participant on any upcoming event, auto-adds them
     /// to the nearest upcoming event and flags for user review.
+    ///
+    /// Only processes RSVP detections from INCOMING messages (isFromMe == false).
+    /// Outgoing messages contain the user's own words, not the contact's RSVP response.
     func processDetections(
         _ detections: [RSVPDetectionDTO],
         fromEvidence evidence: SamEvidenceItem
     ) {
         guard !detections.isEmpty else { return }
+
+        // Skip outgoing messages — RSVP language in messages the user sent
+        // should not be attributed to the linked contact as their response.
+        if evidence.isFromMe {
+            logger.debug("Skipping RSVP processing for outgoing message \(evidence.id)")
+            return
+        }
 
         let linkedPeople = evidence.linkedPeople
         guard !linkedPeople.isEmpty else {
@@ -38,7 +48,7 @@ final class RSVPMatchingService {
         }
 
         for person in linkedPeople {
-            // Skip the "Me" contact
+            // Skip the "Me" contact (safety net — linked people should not include Me)
             if person.isMe { continue }
 
             do {
@@ -109,8 +119,20 @@ final class RSVPMatchingService {
                 return
             }
 
-            // Match to the best event using event_reference if available
+            // Require event_reference to match — refuse to auto-add to a random event
+            guard let reference = detection.eventReference, !reference.isEmpty else {
+                logger.debug("RSVP from \(personName) has no event_reference — skipping auto-add")
+                return
+            }
+
+            // Match to the best event using event_reference
             let targetEvent = matchEvent(from: candidates, detection: detection)
+
+            // Only auto-add if the match scored above zero (actual reference match)
+            guard matchScore(from: candidates, detection: detection) > 0 else {
+                logger.debug("RSVP from \(personName) event_reference '\(reference)' did not match any event — skipping auto-add")
+                return
+            }
 
             // Add the sender
             let participation = try autoAddParticipant(
@@ -170,16 +192,15 @@ final class RSVPMatchingService {
 
     // MARK: - Multi-Event Matching
 
-    /// Match a detection to the best event. Uses event_reference for title/date matching,
-    /// falls back to the nearest upcoming event.
-    private func matchEvent(from candidates: [SamEvent], detection: RSVPDetectionDTO) -> SamEvent {
+    /// Score each candidate event against a detection's event_reference.
+    /// Returns (bestEvent, bestScore). Score of 0 means no meaningful match.
+    private func scoreCandidates(from candidates: [SamEvent], detection: RSVPDetectionDTO) -> (event: SamEvent, score: Int) {
         guard let reference = detection.eventReference, !reference.isEmpty else {
-            return candidates.first! // Already guaranteed non-empty by caller
+            return (candidates.first!, 0)
         }
 
         let refLower = reference.lowercased()
 
-        // Score each candidate by how well the reference matches
         var bestScore = 0
         var bestEvent = candidates.first!
 
@@ -227,7 +248,18 @@ final class RSVPMatchingService {
             logger.debug("Matched event reference '\(reference)' to '\(bestEvent.title)' (score: \(bestScore))")
         }
 
-        return bestEvent
+        return (bestEvent, bestScore)
+    }
+
+    /// Match a detection to the best event. Uses event_reference for title/date matching,
+    /// falls back to the nearest upcoming event.
+    private func matchEvent(from candidates: [SamEvent], detection: RSVPDetectionDTO) -> SamEvent {
+        scoreCandidates(from: candidates, detection: detection).event
+    }
+
+    /// Return the best match score for a detection against candidate events.
+    private func matchScore(from candidates: [SamEvent], detection: RSVPDetectionDTO) -> Int {
+        scoreCandidates(from: candidates, detection: detection).score
     }
 
     // MARK: - Additional Guest Handling

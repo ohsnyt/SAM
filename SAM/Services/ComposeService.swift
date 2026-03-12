@@ -113,7 +113,8 @@ final class ComposeService {
 
     // MARK: - Direct Send (Power User Mode)
 
-    /// Send iMessage directly via AppleScript. Requires Automation permission.
+    /// Send iMessage directly via AppleScript. Requires Automation permission
+    /// and the `com.apple.MobileSMS` entry in the apple-events entitlement.
     func sendDirectIMessage(recipient: String, body: String) async -> Bool {
         let escaped = body
             .replacingOccurrences(of: "\\", with: "\\\\")
@@ -122,10 +123,11 @@ final class ComposeService {
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
 
+        // macOS 13+ (Ventura): Apple renamed "service" to "account" in Messages' AppleScript dictionary
         let script = """
             tell application "Messages"
                 set targetService to 1st account whose service type = iMessage
-                set targetBuddy to participant "\(recipientEscaped)" of targetService
+                set targetBuddy to buddy "\(recipientEscaped)" of targetService
                 send "\(escaped)" to targetBuddy
             end tell
             """
