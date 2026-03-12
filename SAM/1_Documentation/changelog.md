@@ -4,6 +4,61 @@
 
 ---
 
+## March 12, 2026 — Unknown Sender Auto-Reply, Confirmation Flow & Reminder Scheduler
+
+### New Feature: Auto-Reply to Unknown Sender Event RSVPs
+
+When an unknown sender texts about an upcoming event, SAM can now auto-send a holding reply and post an OS notification.
+
+**Architecture:**
+- `SamEvent.autoReplyUnknownSenders: Bool` — per-event toggle (independent of `autoAcknowledgeEnabled`)
+- `EventCoordinator.autoReplyToUnknownEventRSVPs(messages:)` — scans incoming unknown messages for event title keyword overlap + attendance-intent keywords; sends holding reply via `ComposeService.sendDirectIMessage` if both `autoReplyUnknownSenders` and `directSendEnabled` are on; always posts OS notification via `SystemNotificationService.postUnknownSenderRSVP`
+- `CommunicationsImportCoordinator` — hooks auto-reply call after `bulkRecordUnknownSenders` during iMessage import
+- `EventFormView` — "Auto-reply to unknown senders" toggle in Auto-Acknowledgment section
+
+### Enhancement: Two-Phase Unknown Sender Confirmation (UnknownSenderQuickAddSheet)
+
+Reworked from single-phase (add + dismiss) to two-phase flow:
+
+- **Phase 1**: Name + "Add to Event" (existing). On success → transitions to Phase 2 (no dismiss).
+- **Phase 2**: Editable TextEditor with AI-generated confirmation message draft.
+  - `EventCoordinator.generateConfirmationMessage(for:event:)` resolves `{name}`/`{date}` from `ackAcceptTemplate`
+  - Nameless contacts (friendlyFirstName = "there") get appended name-request line
+  - **Send** → sends via ComposeService, logs `.acknowledgment` message, calls `onAdded`, auto-dismisses
+  - **Cancel** → `.confirmationDialog` with 3 options: "Unconfirm and Remove" (reverts participation + person), "Keep Confirmed, Skip Message", "Write a Different Message"
+
+**Bug fix**: `onAdded?()` callback deferred until sheet truly exits (send/skip/revert), preventing parent view from dismissing sheet before Phase 2 renders.
+
+### New Feature: Event Reminder Scheduler
+
+Background 5-minute polling loop that checks upcoming events for reminder windows.
+
+**Architecture:**
+- `EventCoordinator.startReminderScheduler()` / `stopReminderScheduler()` — `TaskPriority.utility` loop
+- `checkAndSendReminders()` — checks two windows per event:
+  - **1 day before** (1440 min): all accepted attendees → AI reminder via `generateReminderDrafts`
+  - **10 min before** (virtual/hybrid only): short message with join link
+- If `directSendEnabled` → auto-send + OS notification "Reminders sent". Otherwise → drafts + OS notification "Reminders ready to review"
+- Dedup: skips if a reminder was already sent/drafted in the last hour
+- `SAMApp.applicationDidFinishLaunching` starts scheduler; `applicationShouldTerminate` stops it
+
+**SystemNotificationService additions:**
+- `postUnknownSenderRSVP(senderHandle:eventTitle:eventID:autoReplied:)` — unknown sender RSVP notification with tap → navigate to event
+- `postEventReminder(eventTitle:eventID:attendeeCount:autoSent:)` — reminder status notification with tap → navigate to event
+- Two new UNNotificationCategory registrations: `UNKNOWN_SENDER_RSVP`, `EVENT_REMINDER`
+
+### Bug Fix: generateReminder Name Resolution
+
+`EventCoordinator.generateReminder` now uses `friendlyFirstName(for:)` instead of raw `displayNameCache`, preventing phone-number-as-name in reminder messages.
+
+### Bug Fix: EventFormView Address Verification
+
+Fixed double-click required for address verification: `onChange(of: address)` was resetting `addressValidationMessage` to nil when geocoding updated the address field. Now skips the reset when `isValidatingAddress` is true.
+
+No schema version bump — `autoReplyUnknownSenders` uses SwiftData lightweight migration with `Bool` default.
+
+---
+
 ## March 11, 2026 — Event Management, Presentation Library & RSVP Intelligence
 
 ### New Feature: Event/Workshop Management

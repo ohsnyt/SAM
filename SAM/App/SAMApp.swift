@@ -32,6 +32,9 @@ final class SAMAppDelegate: NSObject, NSApplicationDelegate {
            GlobalHotkeyService.shared.checkAccessibilityPermission() {
             GlobalHotkeyService.shared.registerHotkey()
         }
+
+        // Start event reminder scheduler
+        EventCoordinator.shared.startReminderScheduler()
     }
 
     @MainActor
@@ -45,6 +48,7 @@ final class SAMAppDelegate: NSObject, NSApplicationDelegate {
         SubstackImportCoordinator.shared.cancelAll()
         LinkedInImportCoordinator.shared.cancelAll()
         FacebookImportCoordinator.shared.cancelAll()
+        EventCoordinator.shared.stopReminderScheduler()
         GlobalHotkeyService.shared.unregisterHotkey()
         // Open the MLX circuit breaker and drop the model container so any
         // in-flight generation stream exhausts before the process exits.
@@ -574,6 +578,41 @@ struct SAMApp: App {
                 }
             }
             #endif
+
+            // Help menu (⌘?)
+            CommandGroup(replacing: .help) {
+                Button("SAM Guide") {
+                    GuideContentService.shared.navigateTo(sectionID: "getting-started")
+                }
+                .keyboardShortcut("?", modifiers: .command)
+
+                Divider()
+
+                Button("Getting Started") {
+                    GuideContentService.shared.navigateTo(sectionID: "getting-started")
+                }
+                Button("Today & Coaching") {
+                    GuideContentService.shared.navigateTo(sectionID: "today")
+                }
+                Button("People & Relationships") {
+                    GuideContentService.shared.navigateTo(sectionID: "people")
+                }
+                Button("Business Dashboard") {
+                    GuideContentService.shared.navigateTo(sectionID: "business")
+                }
+                Button("Events & Presentations") {
+                    GuideContentService.shared.navigateTo(sectionID: "events")
+                }
+                Button("Grow & Content") {
+                    GuideContentService.shared.navigateTo(sectionID: "grow")
+                }
+
+                Divider()
+
+                Button("Keyboard Shortcuts") {
+                    GuideContentService.shared.navigateTo(articleID: "getting-started.keyboard-shortcuts")
+                }
+            }
         }
 
         // Quick Note auxiliary window — opened from outcome cards
@@ -619,6 +658,11 @@ struct SAMApp: App {
             PromptLabView()
         }
         .defaultSize(width: 1200, height: 700)
+
+        Window("SAM Guide", id: "guide") {
+            GuideWindowView()
+        }
+        .defaultSize(width: 700, height: 550)
         #endif
     }
     

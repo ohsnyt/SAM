@@ -56,6 +56,10 @@ final class CommunicationsImportCoordinator {
     private(set) var lastWhatsAppCallWatermark: Date?
 
     private var importTask: Task<Void, Never>?
+    private var periodicImportTask: Task<Void, Never>?
+
+    /// Import interval in seconds (default: 1 minute). 0 disables periodic import.
+    private(set) var importIntervalSeconds: TimeInterval = 60
 
     private init() {
         // Default both to true — user has already granted DB access as the gating step
@@ -96,6 +100,8 @@ final class CommunicationsImportCoordinator {
         if let ts = UserDefaults.standard.object(forKey: "commsLastWhatsAppCallWatermark") as? Double {
             lastWhatsAppCallWatermark = Date(timeIntervalSinceReferenceDate: ts)
         }
+        let interval = UserDefaults.standard.double(forKey: "commsImportIntervalSeconds")
+        importIntervalSeconds = interval > 0 ? interval : 60
     }
 
     func setMessagesEnabled(_ value: Bool) {
@@ -147,6 +153,42 @@ final class CommunicationsImportCoordinator {
         UserDefaults.standard.set(value, forKey: "commsAnalyzeWhatsAppMessages")
     }
 
+    func setImportInterval(_ value: TimeInterval) {
+        importIntervalSeconds = value
+        UserDefaults.standard.set(value, forKey: "commsImportIntervalSeconds")
+        // Restart periodic import with new interval
+        if periodicImportTask != nil {
+            stopPeriodicImport()
+            startPeriodicImport()
+        }
+    }
+
+    // MARK: - Periodic Import
+
+    /// Start periodic background import on a repeating interval.
+    func startPeriodicImport() {
+        guard importIntervalSeconds > 0 else { return }
+        guard messagesEnabled || callsEnabled || whatsAppMessagesEnabled || whatsAppCallsEnabled else { return }
+        guard periodicImportTask == nil else { return }
+
+        periodicImportTask = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(importIntervalSeconds))
+                guard !Task.isCancelled else { break }
+                logger.info("Periodic communications import triggered")
+                await performImport()
+            }
+        }
+        logger.info("Periodic communications import started (interval: \(Int(self.importIntervalSeconds))s)")
+    }
+
+    /// Stop periodic background import.
+    func stopPeriodicImport() {
+        periodicImportTask?.cancel()
+        periodicImportTask = nil
+        logger.info("Periodic communications import stopped")
+    }
+
     // MARK: - Import Status
 
     enum ImportStatus: Equatable {
@@ -159,6 +201,7 @@ final class CommunicationsImportCoordinator {
     func cancelAll() {
         importTask?.cancel()
         importTask = nil
+        stopPeriodicImport()
         if importStatus == .importing {
             importStatus = .idle
         }
@@ -168,13 +211,17 @@ final class CommunicationsImportCoordinator {
     // MARK: - Public API
 
     /// Fire-and-forget import — does not block the caller.
+    /// Also starts periodic import if not already running.
     func startImport() {
         #if DEBUG
         if UserDefaults.standard.isTestDataLoaded || UserDefaults.standard.isTestDataActive { return }
         #endif
         guard importStatus != .importing else { return }
         importTask?.cancel()
-        importTask = Task { await performImport() }
+        importTask = Task {
+            await performImport()
+            startPeriodicImport()
+        }
     }
 
     func importNow() async {
@@ -330,12 +377,31 @@ final class CommunicationsImportCoordinator {
         }
         defer { bookmarkManager.stopAccessing(resolved.directory) }
 
-        // Fetch messages from known contacts
-        let messages = try await messageService.fetchMessages(
+        // Fetch messages from known contacts (and capture unknown senders)
+        let (messages, unknownMessages) = try await messageService.fetchMessages(
             since: since,
             dbURL: resolved.database,
             knownIdentifiers: knownIdentifiers
         )
+
+        // Record unknown senders for triage + event RSVP detection
+        if !unknownMessages.isEmpty {
+            let unknownSenderData: [(email: String, displayName: String?, subject: String, date: Date, source: EvidenceSource, isLikelyMarketing: Bool)]
+                = unknownMessages.map { msg in
+                    let handle = msg.handleID
+                    let text = msg.text ?? ""
+                    let preview = String(text.prefix(200))
+                    return (email: handle, displayName: nil, subject: preview, date: msg.date, source: .iMessage, isLikelyMarketing: false)
+                }
+            try? UnknownSenderRepository.shared.bulkRecordUnknownSenders(unknownSenderData)
+            logger.info("Recorded \(unknownMessages.count) messages from unknown iMessage senders")
+
+            // Check for event-matching RSVPs from unknown senders
+            let autoReplyData = unknownMessages.map { msg in
+                (handleID: msg.handleID, text: msg.text, date: msg.date)
+            }
+            EventCoordinator.shared.autoReplyToUnknownEventRSVPs(messages: autoReplyData)
+        }
 
         guard !messages.isEmpty else {
             logger.info("No new messages from known contacts")
@@ -368,9 +434,21 @@ final class CommunicationsImportCoordinator {
                     return (text: text, date: msg.date, isFromMe: msg.isFromMe)
                 }
 
-                if analysisInput.count >= 2, let lastMsg = threadMessages.last {
+                if !analysisInput.isEmpty, let lastMsg = threadMessages.last {
+                    // Use the last INCOMING message as the reference for RSVP matching.
+                    // Thread analysis covers both directions, but RSVPs should only be
+                    // attributed to contacts from their incoming messages (isFromMe=false).
+                    let referenceGUID: String
+                    if let lastIncoming = threadMessages.last(where: { !$0.isFromMe }) {
+                        referenceGUID = lastIncoming.guid
+                    } else {
+                        // All outgoing — use last message; isFromMe on evidence will
+                        // cause RSVPMatchingService to skip RSVP attribution (correct).
+                        referenceGUID = lastMsg.guid
+                    }
+
                     deferred.append(DeferredThreadAnalysis(
-                        lastMessageGUID: lastMsg.guid,
+                        lastMessageGUID: referenceGUID,
                         messages: analysisInput,
                         handle: handle,
                         contactName: contactName,
@@ -505,9 +583,17 @@ final class CommunicationsImportCoordinator {
                     return (text: text, date: msg.date, isFromMe: msg.isFromMe)
                 }
 
-                if analysisInput.count >= 2, let lastMsg = threadMessages.last {
+                if !analysisInput.isEmpty, let lastMsg = threadMessages.last {
+                    // Use the last INCOMING message as the reference for RSVP matching.
+                    let referenceStanzaID: String
+                    if let lastIncoming = threadMessages.last(where: { !$0.isFromMe }) {
+                        referenceStanzaID = lastIncoming.stanzaID
+                    } else {
+                        referenceStanzaID = lastMsg.stanzaID
+                    }
+
                     deferred.append(DeferredWAThreadAnalysis(
-                        lastMessageStanzaID: lastMsg.stanzaID,
+                        lastMessageStanzaID: referenceStanzaID,
                         messages: analysisInput,
                         jid: jid,
                         contactName: contactName,

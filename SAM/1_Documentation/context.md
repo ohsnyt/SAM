@@ -326,7 +326,7 @@ All models use SwiftData lightweight migration. Enum storage uses `rawValue` pat
 | **ProfileAnalysisRecord** | Profile analysis results | platform, score, JSON |
 | **EngagementSnapshot** | Engagement metrics per period | platform, period, metrics |
 | **SocialProfileSnapshot** | Cross-platform profile storage | platform, identity, data blobs |
-| **SamEvent** | Event/workshop management | title, format, status, startDate, RSVP tracking, presentation link |
+| **SamEvent** | Event/workshop management | title, format, status, startDate, RSVP tracking, autoReplyUnknownSenders, presentation link |
 | **EventParticipation** | Event ↔ Person join with RSVP | event, person, rsvpStatus, invitedAt, respondedAt |
 | **SamPresentation** | Reusable presentation library | title, description, topicTags, fileAttachments, contentSummary, keyTalkingPoints |
 
@@ -429,5 +429,5 @@ Bookmark the **directory** (not file) for SQLite to cover WAL/SHM companions. `.
 
 ---
 
-**Document Version**: 39
-**Last Updated**: March 11, 2026 — Event management, presentation library with drag-and-drop PDF import, RSVP auto-detection, sender identity & signature learning.
+**Document Version**: 40
+**Last Updated**: March 12, 2026 — Unknown sender auto-reply, post-confirmation message flow, event reminder scheduler.

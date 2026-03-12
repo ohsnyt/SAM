@@ -24,6 +24,7 @@ public final class SamEvent {
     public var startDate: Date
     public var endDate: Date
     public var venue: String?
+    public var address: String?
     public var joinLink: String?
 
     /// "inPerson", "virtual", "hybrid"
@@ -64,10 +65,14 @@ public final class SamEvent {
     }
 
     /// User-approved template for acceptance acks. Supports {name} and {date} placeholders.
-    public var ackAcceptTemplate: String = "Thanks {name}! See you on {date}."
+    public var ackAcceptTemplate: String = "Thanks {name}! See you at {date}."
 
     /// User-approved template for decline acks. Nil means don't auto-ack declines.
     public var ackDeclineTemplate: String?
+
+    /// Whether SAM may auto-reply to unknown senders whose message matches this event.
+    /// Independent of `autoAcknowledgeEnabled` (which handles known-contact RSVPs).
+    public var autoReplyUnknownSenders: Bool = false
 
     // MARK: Social Promotion
 
@@ -132,6 +137,7 @@ public final class SamEvent {
         startDate: Date,
         endDate: Date,
         venue: String? = nil,
+        address: String? = nil,
         joinLink: String? = nil,
         targetParticipantCount: Int = 20,
         createdAt: Date = .now,
@@ -145,6 +151,7 @@ public final class SamEvent {
         self.startDate = startDate
         self.endDate = endDate
         self.venue = venue
+        self.address = address
         self.joinLink = joinLink
         self.targetParticipantCount = targetParticipantCount
         self.createdAt = createdAt
@@ -290,6 +297,7 @@ public struct EventMessage: Codable, Sendable, Identifiable {
         case reminder
         case acknowledgment
         case followUp
+        case update
         case rsvpResponse
         case custom
     }

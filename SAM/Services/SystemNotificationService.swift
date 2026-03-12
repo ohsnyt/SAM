@@ -35,6 +35,10 @@ final class SystemNotificationService: NSObject, UNUserNotificationCenterDelegat
     private static let facebookExportCategory = "FACEBOOK_EXPORT"
     private static let openFacebookExportAction = "OPEN_FACEBOOK_EXPORT"
     private static let remindFacebookLaterAction = "REMIND_FACEBOOK_LATER"
+    private static let unknownSenderRSVPCategory = "UNKNOWN_SENDER_RSVP"
+    private static let viewUnknownSenderAction = "VIEW_UNKNOWN_SENDER"
+    private static let eventReminderCategory = "EVENT_REMINDER"
+    private static let viewEventRemindersAction = "VIEW_EVENT_REMINDERS"
 
     private override init() {
         super.init()
@@ -135,7 +139,35 @@ final class SystemNotificationService: NSObject, UNUserNotificationCenterDelegat
             options: []
         )
 
-        center.setNotificationCategories([planCategory, meetingCategory, substackCategory, linkedInCategory, facebookCategory])
+        // Unknown Sender RSVP category
+        let viewUnknownSenderAction = UNNotificationAction(
+            identifier: Self.viewUnknownSenderAction,
+            title: "View Event",
+            options: [.foreground]
+        )
+
+        let unknownSenderCategory = UNNotificationCategory(
+            identifier: Self.unknownSenderRSVPCategory,
+            actions: [viewUnknownSenderAction],
+            intentIdentifiers: [],
+            options: []
+        )
+
+        // Event Reminder category
+        let viewRemindersAction = UNNotificationAction(
+            identifier: Self.viewEventRemindersAction,
+            title: "View Reminders",
+            options: [.foreground]
+        )
+
+        let eventReminderCategory = UNNotificationCategory(
+            identifier: Self.eventReminderCategory,
+            actions: [viewRemindersAction],
+            intentIdentifiers: [],
+            options: []
+        )
+
+        center.setNotificationCategories([planCategory, meetingCategory, substackCategory, linkedInCategory, facebookCategory, unknownSenderCategory, eventReminderCategory])
         logger.info("System notification categories configured")
     }
 
@@ -334,6 +366,66 @@ final class SystemNotificationService: NSObject, UNUserNotificationCenterDelegat
         }
     }
 
+    /// Post a system notification when an unknown sender's message matches an event RSVP.
+    func postUnknownSenderRSVP(senderHandle: String, eventTitle: String, eventID: UUID, autoReplied: Bool) async {
+        let granted = await requestPermissionIfNeeded()
+        guard granted else { return }
+
+        let content = UNMutableNotificationContent()
+        content.title = autoReplied ? "Auto-replied to unknown RSVP" : "Unknown sender RSVP detected"
+        content.body = "\(senderHandle) messaged about \"\(eventTitle)\""
+        if autoReplied {
+            content.subtitle = "Holding reply sent"
+        }
+        content.sound = .default
+        content.categoryIdentifier = Self.unknownSenderRSVPCategory
+        content.userInfo = ["eventID": eventID.uuidString]
+
+        let request = UNNotificationRequest(
+            identifier: "unknown-rsvp-\(eventID.uuidString)-\(senderHandle.hashValue)",
+            content: content,
+            trigger: nil
+        )
+
+        do {
+            try await UNUserNotificationCenter.current().add(request)
+            logger.info("Unknown sender RSVP notification posted for event: \(eventTitle)")
+        } catch {
+            logger.error("Failed to post unknown sender RSVP notification: \(error.localizedDescription)")
+        }
+    }
+
+    /// Post a system notification for event reminders (sent or ready to review).
+    func postEventReminder(eventTitle: String, eventID: UUID, attendeeCount: Int, autoSent: Bool) async {
+        let granted = await requestPermissionIfNeeded()
+        guard granted else { return }
+
+        let content = UNMutableNotificationContent()
+        if autoSent {
+            content.title = "Event reminders sent"
+            content.body = "Sent reminders to \(attendeeCount) \(attendeeCount == 1 ? "attendee" : "attendees") for \"\(eventTitle)\""
+        } else {
+            content.title = "Event reminders ready to review"
+            content.body = "\(attendeeCount) reminder \(attendeeCount == 1 ? "draft" : "drafts") for \"\(eventTitle)\""
+        }
+        content.sound = .default
+        content.categoryIdentifier = Self.eventReminderCategory
+        content.userInfo = ["eventID": eventID.uuidString]
+
+        let request = UNNotificationRequest(
+            identifier: "event-reminder-\(eventID.uuidString)-\(Date.now.timeIntervalSince1970)",
+            content: content,
+            trigger: nil
+        )
+
+        do {
+            try await UNUserNotificationCenter.current().add(request)
+            logger.info("Event reminder notification posted for: \(eventTitle)")
+        } catch {
+            logger.error("Failed to post event reminder notification: \(error.localizedDescription)")
+        }
+    }
+
     // MARK: - UNUserNotificationCenterDelegate
 
     /// Show notification banner even when app is in foreground.
@@ -444,6 +536,16 @@ final class SystemNotificationService: NSObject, UNUserNotificationCenterDelegat
                         NSWorkspace.shared.open(url)
                     }
                     FacebookImportCoordinator.shared.startFileWatcher()
+                }
+
+            case Self.unknownSenderRSVPCategory, Self.eventReminderCategory:
+                // Navigate to the event — post section navigation to events
+                if let eventIDString = sendableUserInfo["eventID"] {
+                    NotificationCenter.default.post(
+                        name: .samNavigateToSection,
+                        object: nil,
+                        userInfo: ["section": "events", "eventID": eventIDString]
+                    )
                 }
 
             default:

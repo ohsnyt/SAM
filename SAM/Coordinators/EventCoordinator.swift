@@ -26,6 +26,108 @@ final class EventCoordinator {
     var selectedEvent: SamEvent?
     var isGeneratingDrafts = false
     var lastError: String?
+    private var reminderSchedulerTask: Task<Void, Never>?
+
+    // MARK: - Unknown Sender Event RSVPs
+
+    /// An unknown sender whose message may reference an event.
+    struct UnknownEventRSVP: Identifiable, Sendable {
+        let id: UUID        // UnknownSender ID
+        let senderHandle: String  // phone number or email
+        let displayName: String?
+        let messagePreview: String
+        let messageDate: Date
+        let matchedEventID: UUID
+        let matchedEventTitle: String
+    }
+
+    /// Scan unknown senders for messages that reference upcoming events.
+    func unknownSenderRSVPs(for event: SamEvent) -> [UnknownEventRSVP] {
+        guard let unknownSenders = try? UnknownSenderRepository.shared.fetchPending() else { return [] }
+        let titleWords = Set(event.title.lowercased().components(separatedBy: .whitespacesAndNewlines).filter { $0.count > 2 })
+        guard !titleWords.isEmpty else { return [] }
+
+        var matches: [UnknownEventRSVP] = []
+        for sender in unknownSenders where sender.source == .iMessage {
+            guard let preview = sender.latestSubject, !preview.isEmpty else { continue }
+            let previewLower = preview.lowercased()
+
+            // Check if the message references this event by title keyword overlap
+            let previewWords = Set(previewLower.components(separatedBy: .whitespacesAndNewlines).filter { $0.count > 2 })
+            let overlap = titleWords.intersection(previewWords)
+
+            // Require at least 2 word matches, or 1 match if the title is short (1-2 words)
+            let threshold = titleWords.count <= 2 ? 1 : 2
+            guard overlap.count >= threshold else { continue }
+
+            // Also check for attendance-related keywords
+            let attendKeywords = ["attend", "come", "coming", "rsvp", "join", "count me", "i'll be", "sign me", "interested", "want to"]
+            let hasAttendanceIntent = attendKeywords.contains { previewLower.contains($0) }
+            guard hasAttendanceIntent else { continue }
+
+            matches.append(UnknownEventRSVP(
+                id: sender.id,
+                senderHandle: sender.email,  // phone number for iMessage senders
+                displayName: sender.displayName,
+                messagePreview: preview,
+                messageDate: sender.latestEmailDate ?? sender.firstSeenAt,
+                matchedEventID: event.id,
+                matchedEventTitle: event.title
+            ))
+        }
+        return matches
+    }
+
+    /// Add an unknown sender as a contact and confirm them for an event.
+    /// Returns the created participation.
+    func addUnknownSenderToEvent(
+        unknownSenderID: UUID,
+        eventID: UUID,
+        contactName: String?
+    ) throws -> EventParticipation? {
+        let eventRepo = EventRepository.shared
+        guard let event = try eventRepo.fetch(id: eventID) else { return nil }
+
+        // Find the unknown sender
+        guard let sender = try UnknownSenderRepository.shared.fetchByID(unknownSenderID) else { return nil }
+
+        // Determine display name: use provided name, fall back to phone/email handle
+        let displayName = (contactName?.isEmpty == false) ? contactName! : sender.email
+
+        // Determine whether the handle is a phone number or email
+        let isPhone = !sender.email.contains("@")
+        let phone: String? = isPhone ? sender.email : nil
+        let email: String? = isPhone ? nil : sender.email
+
+        // Create a SamPerson (standalone, no Apple Contact required)
+        let person = try PeopleRepository.shared.insertStandalone(
+            displayName: displayName,
+            phone: phone,
+            email: email
+        )
+
+        // Mark unknown sender as added
+        try UnknownSenderRepository.shared.markAdded(sender)
+
+        // Add as participant with accepted RSVP
+        let participation = try eventRepo.addParticipant(
+            event: event,
+            person: person,
+            priority: .standard,
+            eventRole: "Attendee"
+        )
+        try eventRepo.updateRSVP(
+            participationID: participation.id,
+            status: .accepted,
+            userConfirmed: true
+        )
+
+        // Trigger auto-ack if enabled
+        try processAutoAcknowledgment(participationID: participation.id)
+
+        logger.info("Added unknown sender \(sender.email) to event \(event.title) as \(displayName)")
+        return participation
+    }
 
     // MARK: - Event Lifecycle
 
@@ -37,6 +139,7 @@ final class EventCoordinator {
         startDate: Date,
         duration: TimeInterval = 3600,
         venue: String? = nil,
+        address: String? = nil,
         joinLink: String? = nil,
         targetParticipants: Int = 20
     ) throws -> SamEvent {
@@ -48,6 +151,7 @@ final class EventCoordinator {
             startDate: startDate,
             endDate: endDate,
             venue: venue,
+            address: address,
             joinLink: joinLink,
             targetParticipantCount: targetParticipants
         )
@@ -190,7 +294,8 @@ final class EventCoordinator {
     private func generatePersonalizedInvitation(
         event: SamEvent,
         person: SamPerson,
-        priority: ParticipantPriority
+        priority: ParticipantPriority,
+        channel: CommunicationChannel = .iMessage
     ) async throws -> String {
         let personContext = buildPersonContext(person: person)
         let eventDetails = buildEventDetails(event: event)
@@ -198,9 +303,37 @@ final class EventCoordinator {
         let senderName = AIService.senderName(forWarmRelationship: isWarm)
         let closing = AIService.closing(forMessageKind: "invitation", isWarm: isWarm)
 
+        let channelGuidelines: String
+        switch channel {
+        case .email:
+            channelGuidelines = """
+                FORMAT: Email
+                - Start with a greeting (e.g., "Hi {name}," or "Dear {name},")
+                - Write in complete paragraphs — 3-5 sentences for standard, slightly longer for VIP
+                - Include all event details: date, time, venue/link
+                - Sign off with exactly: "\(closing)\\n\(senderName)"
+                - Write ONLY the message body with greeting and sign-off — no subject line
+                """
+        case .iMessage, .whatsApp:
+            channelGuidelines = """
+                FORMAT: Text message (iMessage)
+                - NO greeting/salutation — jump straight into the message
+                - NO sign-off or closing — do not include "Best," or a signature
+                - Keep it SHORT: 2-3 sentences max, conversational tone
+                - Include the key details: what, when, where
+                - End with a casual ask ("You in?" or "Would love to see you there")
+                - Write like you're texting a colleague, not composing an email
+                """
+        default:
+            channelGuidelines = """
+                FORMAT: Short message
+                - Keep it concise: 2-3 sentences
+                - Include the key details: what, when, where
+                """
+        }
+
         let prompt = """
-            Write a personalized invitation for the following event. \
-            The invitation should feel warm and individual — not like a mass email.
+            Write a personalized invitation for the following event.
 
             EVENT DETAILS:
             \(eventDetails)
@@ -212,16 +345,16 @@ final class EventCoordinator {
 
             SENDER: \(AIService.userFullName)
 
+            \(channelGuidelines)
+
             GUIDELINES:
             - Reference something specific from the person's context if available
             - For VIP/speakers: acknowledge their expertise and why their presence matters
             - For standard attendees: focus on what they'll gain from attending
-            - Keep it concise: 3-5 sentences for standard, slightly longer for VIP
-            - Include the date, time, and venue/link
-            - End with a soft ask, not a demand ("Would love to have you there" not "Please confirm")
+            - ALWAYS include the full location (venue name AND street address) for in-person/hybrid events
+            - ALWAYS include the join link for virtual/hybrid events
+            - End with a soft ask, not a demand
             - Do NOT promise financial returns or use pressure tactics
-            - Sign off with exactly: "\(closing)\n\(senderName)"
-            - Write ONLY the message body with sign-off — no subject line
 
             Return only the invitation text.
             """
@@ -240,21 +373,23 @@ final class EventCoordinator {
     }
 
     /// Generate a personalized invitation draft for a single participant (text only, does not save).
-    func generateInvitationText(for participation: EventParticipation) async throws -> String {
+    func generateInvitationText(for participation: EventParticipation, channel: CommunicationChannel? = nil) async throws -> String {
         guard let event = participation.event, let person = participation.person else {
             throw EventCoordinatorError.missingData
         }
+        let resolvedChannel = channel ?? participation.inviteChannel ?? preferredInviteChannel(for: person)
         return try await generatePersonalizedInvitation(
             event: event,
             person: person,
-            priority: participation.priority
+            priority: participation.priority,
+            channel: resolvedChannel
         )
     }
 
     /// Save a finalized invitation draft and mark the participation as draft-ready.
-    func saveInvitationDraft(for participation: EventParticipation, body: String) throws {
+    func saveInvitationDraft(for participation: EventParticipation, body: String, channel: CommunicationChannel? = nil) throws {
         guard let person = participation.person else { return }
-        let channel = preferredInviteChannel(for: person)
+        let channel = channel ?? participation.inviteChannel ?? preferredInviteChannel(for: person)
         try EventRepository.shared.appendMessage(
             participationID: participation.id,
             kind: .invitation,
@@ -266,9 +401,9 @@ final class EventCoordinator {
     }
 
     /// Send an invitation: copy to clipboard, open compose in the preferred channel, and mark sent.
-    func sendInvitation(for participation: EventParticipation, body: String) throws {
+    func sendInvitation(for participation: EventParticipation, body: String, channel: CommunicationChannel? = nil) throws {
         guard let person = participation.person else { return }
-        let channel = participation.inviteChannel ?? preferredInviteChannel(for: person)
+        let channel = channel ?? participation.inviteChannel ?? preferredInviteChannel(for: person)
 
         // Append as a sent message (not draft)
         try EventRepository.shared.appendMessage(
@@ -282,23 +417,58 @@ final class EventCoordinator {
         participation.inviteSentAt = .now
         participation.inviteChannel = channel
 
-        // Hand off to system compose
-        let recipientID = person.phoneAliases.first ?? person.emailCache ?? ""
+        // Resolve recipient address based on channel
+        let recipientID: String
         switch channel {
-        case .iMessage:
-            ComposeService.shared.composeIMessage(recipient: recipientID, body: body)
         case .email:
-            ComposeService.shared.composeEmail(recipient: recipientID, subject: nil, body: body)
+            recipientID = person.emailCache ?? person.phoneAliases.first ?? ""
+        case .iMessage:
+            recipientID = person.phoneAliases.first ?? person.emailCache ?? ""
         case .whatsApp:
-            ComposeService.shared.composeWhatsApp(phone: recipientID, body: body)
+            recipientID = person.phoneAliases.first ?? ""
         default:
-            // Fallback: copy to clipboard
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(body, forType: .string)
+            recipientID = person.phoneAliases.first ?? person.emailCache ?? ""
+        }
+        let compose = ComposeService.shared
+
+        if compose.directSendEnabled {
+            Task {
+                var delivered = false
+                switch channel {
+                case .iMessage:
+                    delivered = await compose.sendDirectIMessage(recipient: recipientID, body: body)
+                case .email:
+                    let subject = participation.event?.title ?? "Event Invitation"
+                    delivered = await compose.sendDirectEmail(recipient: recipientID, subject: subject, body: body)
+                default:
+                    break
+                }
+                // Fall back to system handoff if direct send fails or unsupported channel
+                if !delivered {
+                    deliverViaSystemHandoff(channel: channel, recipient: recipientID, body: body)
+                }
+            }
+        } else {
+            deliverViaSystemHandoff(channel: channel, recipient: recipientID, body: body)
         }
 
         if let event = participation.event, event.status == .draft {
             try? EventRepository.shared.updateEvent(id: event.id, status: .inviting)
+        }
+    }
+
+    /// System handoff delivery — opens the system app with the draft pre-filled.
+    private func deliverViaSystemHandoff(channel: CommunicationChannel, recipient: String, body: String) {
+        let compose = ComposeService.shared
+        switch channel {
+        case .iMessage:
+            compose.composeIMessage(recipient: recipient, body: body)
+        case .email:
+            compose.composeEmail(recipient: recipient, subject: nil, body: body)
+        case .whatsApp:
+            compose.composeWhatsApp(phone: recipient, body: body)
+        default:
+            compose.copyToClipboard(body)
         }
     }
 
@@ -308,16 +478,19 @@ final class EventCoordinator {
     }
 
     /// Generate or regenerate an invitation draft for a specific participant.
-    func regenerateInvitation(for participation: EventParticipation) async throws {
+    func regenerateInvitation(for participation: EventParticipation, channel: CommunicationChannel? = nil) async throws {
         guard let event = participation.event, let person = participation.person else { return }
+
+        let resolvedChannel = channel ?? participation.inviteChannel ?? preferredInviteChannel(for: person)
 
         let draft = try await generatePersonalizedInvitation(
             event: event,
             person: person,
-            priority: participation.priority
+            priority: participation.priority,
+            channel: resolvedChannel
         )
 
-        let channel = preferredInviteChannel(for: person)
+        let channel = resolvedChannel
 
         try EventRepository.shared.appendMessage(
             participationID: participation.id,
@@ -425,11 +598,14 @@ final class EventCoordinator {
     }
 
     /// Check if a confirmed RSVP should trigger an auto-acknowledgment.
+    /// When conditions are met, sends the acknowledgment via ComposeService
+    /// (direct send if enabled, otherwise system handoff).
     private func processAutoAcknowledgment(participationID: UUID) throws {
         let repo = EventRepository.shared
 
         guard let participation = try repo.fetchParticipation(id: participationID),
-              let event = participation.event else { return }
+              let event = participation.event,
+              let person = participation.person else { return }
 
         // Check all conditions for auto-ack
         guard event.autoAcknowledgeEnabled,
@@ -449,11 +625,10 @@ final class EventCoordinator {
 
         guard let template else { return }
 
-        // Resolve placeholders
-        let name = participation.person?.displayNameCache ?? "there"
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateStyle = .medium
-        let dateStr = dateFormatter.string(from: event.startDate)
+        // Resolve placeholders — use first name only for natural tone.
+        // If the display name looks like a phone number (no letters), fall back to "there".
+        let name = Self.friendlyFirstName(for: person)
+        let dateStr = Self.smartDateTimeString(for: event.startDate)
 
         let body = template
             .replacingOccurrences(of: "{name}", with: name)
@@ -463,16 +638,285 @@ final class EventCoordinator {
             ?? participation.inviteChannel
             ?? .iMessage
 
+        // Log the message in the participation's message history
         try repo.appendMessage(
             participationID: participationID,
             kind: .acknowledgment,
             channel: channel,
             body: body,
-            isDraft: false // Auto-acks are marked as sent immediately
+            isDraft: false
         )
 
+        // Actually deliver the message via ComposeService
+        let recipientID = person.phoneAliases.first ?? person.emailCache ?? ""
+        guard !recipientID.isEmpty else {
+            logger.warning("No recipient identifier for auto-ack to \(name) — logged but not delivered")
+            try repo.markAcknowledgmentSent(participationID: participationID, wasAuto: true)
+            return
+        }
+
+        let compose = ComposeService.shared
+        Task {
+            var delivered = false
+            if compose.directSendEnabled {
+                // Direct send — no user interaction required
+                switch channel {
+                case .iMessage:
+                    delivered = await compose.sendDirectIMessage(recipient: recipientID, body: body)
+                case .email:
+                    let subject = "Re: \(event.title)"
+                    delivered = await compose.sendDirectEmail(recipient: recipientID, subject: subject, body: body)
+                default:
+                    break
+                }
+            }
+
+            if !delivered {
+                // Fall back to system handoff (opens Messages/Mail for user to confirm)
+                switch channel {
+                case .iMessage:
+                    compose.composeIMessage(recipient: recipientID, body: body)
+                case .email:
+                    compose.composeEmail(recipient: recipientID, subject: nil, body: body)
+                case .whatsApp:
+                    compose.composeWhatsApp(phone: recipientID, body: body)
+                default:
+                    compose.copyToClipboard(body)
+                }
+            }
+
+            logger.info("Auto-acknowledgment \(delivered ? "sent directly" : "handed off") to \(name) for \(event.title)")
+        }
+
         try repo.markAcknowledgmentSent(participationID: participationID, wasAuto: true)
-        logger.info("Auto-acknowledgment sent to \(name) for \(event.title)")
+    }
+
+    // MARK: - Event Update Notifications
+
+    /// Describes what changed in an event update.
+    struct EventChangeSummary: Sendable {
+        var timeChanged: Bool = false
+        var venueChanged: Bool = false
+        var joinLinkChanged: Bool = false
+        var formatChanged: Bool = false
+
+        var oldStartDate: Date?
+        var newStartDate: Date?
+        var oldVenue: String?
+        var newVenue: String?
+        var oldJoinLink: String?
+        var newJoinLink: String?
+        var oldFormat: EventFormat?
+        var newFormat: EventFormat?
+
+        var hasChanges: Bool {
+            timeChanged || venueChanged || joinLinkChanged || formatChanged
+        }
+
+        /// Human-readable summary of what changed.
+        var changeDescription: String {
+            var parts: [String] = []
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateStyle = .medium
+            dateFormatter.timeStyle = .short
+
+            if timeChanged, let old = oldStartDate, let new = newStartDate {
+                parts.append("Time changed from \(dateFormatter.string(from: old)) to \(dateFormatter.string(from: new))")
+            }
+            if venueChanged {
+                if let new = newVenue, !new.isEmpty {
+                    parts.append("Venue changed to \(new)")
+                } else {
+                    parts.append("Venue removed")
+                }
+            }
+            if joinLinkChanged {
+                if let new = newJoinLink, !new.isEmpty {
+                    parts.append("Join link updated")
+                } else {
+                    parts.append("Join link removed")
+                }
+            }
+            if formatChanged, let new = newFormat {
+                parts.append("Format changed to \(new.displayName)")
+            }
+            return parts.joined(separator: ". ")
+        }
+    }
+
+    /// Audience options for update notifications.
+    enum UpdateAudience: String, CaseIterable, Sendable {
+        case allContacted = "Everyone Contacted"
+        case acceptedOnly = "Accepted Only"
+        case includeDeclined = "Include Declined"
+
+        var description: String {
+            switch self {
+            case .allContacted: return "Invited, accepted, and tentative"
+            case .acceptedOnly: return "Only those who accepted"
+            case .includeDeclined: return "Everyone, including those who declined"
+            }
+        }
+    }
+
+    /// Filter participants based on audience selection.
+    func participantsForUpdate(event: SamEvent, audience: UpdateAudience) -> [EventParticipation] {
+        event.participations.filter { p in
+            switch audience {
+            case .allContacted:
+                return p.inviteStatus != .notInvited && p.rsvpStatus != .declined
+            case .acceptedOnly:
+                return p.rsvpStatus == .accepted
+            case .includeDeclined:
+                return p.inviteStatus != .notInvited
+            }
+        }
+    }
+
+    /// Generate an update notification message for a participant.
+    func generateUpdateText(
+        for participation: EventParticipation,
+        changes: EventChangeSummary,
+        channel: CommunicationChannel? = nil
+    ) async throws -> String {
+        guard let event = participation.event, let person = participation.person else {
+            throw EventCoordinatorError.missingData
+        }
+        let resolvedChannel = channel ?? participation.inviteChannel ?? preferredInviteChannel(for: person)
+        return try await generateUpdateNotification(
+            event: event,
+            person: person,
+            changes: changes,
+            channel: resolvedChannel
+        )
+    }
+
+    /// Send an update notification for a participant.
+    func sendUpdateNotification(for participation: EventParticipation, body: String, channel: CommunicationChannel? = nil) throws {
+        guard let person = participation.person else { return }
+        let channel = channel ?? participation.inviteChannel ?? preferredInviteChannel(for: person)
+
+        // Resolve recipient address based on channel
+        let recipientID: String
+        switch channel {
+        case .email:
+            recipientID = person.emailCache ?? person.phoneAliases.first ?? ""
+        case .iMessage:
+            recipientID = person.phoneAliases.first ?? person.emailCache ?? ""
+        case .whatsApp:
+            recipientID = person.phoneAliases.first ?? ""
+        default:
+            recipientID = person.phoneAliases.first ?? person.emailCache ?? ""
+        }
+
+        try EventRepository.shared.appendMessage(
+            participationID: participation.id,
+            kind: .update,
+            channel: channel,
+            body: body,
+            isDraft: false
+        )
+
+        let compose = ComposeService.shared
+        if compose.directSendEnabled {
+            Task {
+                var delivered = false
+                switch channel {
+                case .iMessage:
+                    delivered = await compose.sendDirectIMessage(recipient: recipientID, body: body)
+                case .email:
+                    let subject = "Update: \(participation.event?.title ?? "Event")"
+                    delivered = await compose.sendDirectEmail(recipient: recipientID, subject: subject, body: body)
+                default:
+                    break
+                }
+                if !delivered {
+                    deliverViaSystemHandoff(channel: channel, recipient: recipientID, body: body)
+                }
+            }
+        } else {
+            deliverViaSystemHandoff(channel: channel, recipient: recipientID, body: body)
+        }
+    }
+
+    /// Generate an AI-powered update notification referencing specific changes.
+    private func generateUpdateNotification(
+        event: SamEvent,
+        person: SamPerson,
+        changes: EventChangeSummary,
+        channel: CommunicationChannel
+    ) async throws -> String {
+        let firstName = Self.friendlyFirstName(for: person)
+        let eventDetails = buildEventDetails(event: event)
+        let isWarm = isWarmRelationship(person: person)
+        let senderName = AIService.senderName(forWarmRelationship: isWarm)
+        let closing = AIService.closing(forMessageKind: "update", isWarm: isWarm)
+
+        let channelGuidelines: String
+        switch channel {
+        case .email:
+            channelGuidelines = """
+                FORMAT: Email
+                - Start with "Hi \(firstName),"
+                - Clearly state this is an update to "\(event.title)"
+                - Describe what changed in a friendly, clear way
+                - Include the updated event details (date, time, venue/link)
+                - If they already RSVP'd, reassure them and ask if the change affects their plans
+                - Sign off with exactly: "\(closing)\\n\(senderName)"
+                """
+        case .iMessage, .whatsApp:
+            channelGuidelines = """
+                FORMAT: Text message
+                - NO greeting or sign-off
+                - Lead with "Quick update on \(event.title):" or similar
+                - State what changed concisely
+                - Include the updated details
+                - End with something like "Hope that still works for you!" or "Let me know if that changes anything"
+                - Keep it to 2-4 sentences
+                """
+        default:
+            channelGuidelines = """
+                FORMAT: Short message
+                - State what changed concisely
+                - Include updated details
+                """
+        }
+
+        let prompt = """
+            Write an update notification for someone who was previously invited to this event. \
+            The event details have changed and you need to inform them.
+
+            EVENT (updated details):
+            \(eventDetails)
+
+            WHAT CHANGED:
+            \(changes.changeDescription)
+
+            RECIPIENT: \(firstName)
+
+            SENDER: \(AIService.userFullName)
+
+            \(channelGuidelines)
+
+            GUIDELINES:
+            - Be warm and apologetic about the change — people rearranged their schedules
+            - Make the change obvious and easy to spot
+            - Do NOT pressure them to still attend
+            - If the time changed, emphasize the new date/time prominently
+
+            Return only the notification text.
+            """
+
+        let systemInstruction = """
+            You are a warm, professional communication assistant for an independent financial strategist. \
+            You write clear, considerate update messages that respect people's time and prior commitments.
+            """
+
+        return try await AIService.shared.generate(
+            prompt: prompt,
+            systemInstruction: systemInstruction,
+            maxTokens: 1024
+        )
     }
 
     // MARK: - Reminders
@@ -515,7 +959,7 @@ final class EventCoordinator {
         person: SamPerson,
         minutesBefore: Int
     ) async throws -> String {
-        let name = person.displayNameCache ?? "there"
+        let name = Self.friendlyFirstName(for: person)
 
         // For last-minute reminders, keep it short with the join link
         if minutesBefore <= 15 {
@@ -777,10 +1221,66 @@ final class EventCoordinator {
         lines.append("Duration: \(Int(duration)) minutes")
 
         if let venue = event.venue { lines.append("Venue: \(venue)") }
+        if let address = event.address { lines.append("Address: \(address)") }
         if let link = event.joinLink { lines.append("Join Link: \(link)") }
         lines.append("Target Participants: \(event.targetParticipantCount)")
 
         return lines.joined(separator: "\n")
+    }
+
+    /// Produces a natural, context-aware date+time string.
+    /// - Same month as today: "1 pm on the 19th"
+    /// - Different month, same year: "1 pm on March 19th"
+    /// - Different year: "1 pm on March 19th, 2027"
+    static func smartDateTimeString(for date: Date) -> String {
+        let cal = Calendar.current
+        let now = Date.now
+        let sameMonth = cal.isDate(date, equalTo: now, toGranularity: .month)
+        let sameYear = cal.isDate(date, equalTo: now, toGranularity: .year)
+
+        // Time: "1 pm", "3:30 pm"
+        let hour = cal.component(.hour, from: date)
+        let minute = cal.component(.minute, from: date)
+        let period = hour >= 12 ? "pm" : "am"
+        let displayHour = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour)
+        let timeStr = minute == 0
+            ? "\(displayHour) \(period)"
+            : "\(displayHour):\(String(format: "%02d", minute)) \(period)"
+
+        // Day ordinal: "19th", "1st", "2nd", "3rd"
+        let day = cal.component(.day, from: date)
+        let ordinal: String
+        switch day {
+        case 1, 21, 31: ordinal = "\(day)st"
+        case 2, 22:     ordinal = "\(day)nd"
+        case 3, 23:     ordinal = "\(day)rd"
+        default:        ordinal = "\(day)th"
+        }
+
+        if sameMonth {
+            return "\(timeStr) on the \(ordinal)"
+        } else if sameYear {
+            let monthName = cal.monthSymbols[cal.component(.month, from: date) - 1]
+            return "\(timeStr) on \(monthName) \(ordinal)"
+        } else {
+            let monthName = cal.monthSymbols[cal.component(.month, from: date) - 1]
+            let year = cal.component(.year, from: date)
+            return "\(timeStr) on \(monthName) \(ordinal), \(year)"
+        }
+    }
+
+    /// Resolve a friendly first name for a person, falling back to "there"
+    /// when the display name is missing or looks like a phone number/email handle.
+    static func friendlyFirstName(for person: SamPerson) -> String {
+        guard let displayName = person.displayNameCache,
+              !displayName.isEmpty else { return "there" }
+
+        let firstName = displayName.components(separatedBy: " ").first ?? displayName
+
+        // If the first name has no letters (e.g. a phone number like "5551234567"), use "there"
+        guard firstName.contains(where: \.isLetter) else { return "there" }
+
+        return firstName
     }
 
     private func preferredInviteChannel(for person: SamPerson) -> CommunicationChannel {
@@ -838,6 +1338,199 @@ final class EventCoordinator {
             .filter { $0.occurredAt > cutoff }
             .count
         return recentCount >= 3
+    }
+
+    // MARK: - Auto-Reply to Unknown Sender Event RSVPs
+
+    /// Scan unknown sender messages for event-matching RSVPs.
+    /// If the event has `autoReplyUnknownSenders` enabled and direct send is on,
+    /// sends a holding reply. Always posts an OS notification.
+    func autoReplyToUnknownEventRSVPs(messages: [(handleID: String, text: String?, date: Date)]) {
+        guard let events = try? EventRepository.shared.fetchUpcoming() else { return }
+        guard !events.isEmpty else { return }
+
+        for event in events {
+            let titleWords = Set(
+                event.title.lowercased()
+                    .components(separatedBy: .whitespacesAndNewlines)
+                    .filter { $0.count > 2 }
+            )
+            guard !titleWords.isEmpty else { continue }
+
+            let attendKeywords = ["attend", "come", "coming", "rsvp", "join", "count me", "i'll be", "sign me", "interested", "want to"]
+
+            for message in messages {
+                guard let text = message.text, !text.isEmpty else { continue }
+                let textLower = text.lowercased()
+
+                // Check title keyword overlap
+                let textWords = Set(textLower.components(separatedBy: .whitespacesAndNewlines).filter { $0.count > 2 })
+                let overlap = titleWords.intersection(textWords)
+                let threshold = titleWords.count <= 2 ? 1 : 2
+                guard overlap.count >= threshold else { continue }
+
+                // Check attendance intent
+                guard attendKeywords.contains(where: { textLower.contains($0) }) else { continue }
+
+                // This message matches an event RSVP
+                var autoReplied = false
+
+                if event.autoReplyUnknownSenders && ComposeService.shared.directSendEnabled {
+                    let holdingReply = "Got your message about \(event.title) — I'll get back to you soon!"
+                    Task {
+                        let sent = await ComposeService.shared.sendDirectIMessage(
+                            recipient: message.handleID,
+                            body: holdingReply
+                        )
+                        if sent {
+                            self.logger.info("Auto-replied to unknown sender \(message.handleID) for event \(event.title)")
+                        }
+                    }
+                    autoReplied = true
+                }
+
+                // Post OS notification
+                Task {
+                    await SystemNotificationService.shared.postUnknownSenderRSVP(
+                        senderHandle: message.handleID,
+                        eventTitle: event.title,
+                        eventID: event.id,
+                        autoReplied: autoReplied
+                    )
+                }
+            }
+        }
+    }
+
+    // MARK: - Post-Confirmation Message Generation
+
+    /// Generate a confirmation message for a newly confirmed unknown sender.
+    /// Resolves {name} and {date} from the event's ackAcceptTemplate.
+    /// If the person has no real name, appends a name-request line.
+    func generateConfirmationMessage(for person: SamPerson, event: SamEvent) -> String {
+        let name = Self.friendlyFirstName(for: person)
+        let dateStr = Self.smartDateTimeString(for: event.startDate)
+
+        var message = event.ackAcceptTemplate
+            .replacingOccurrences(of: "{name}", with: name)
+            .replacingOccurrences(of: "{date}", with: dateStr)
+
+        // If the person's name resolved to "there" (nameless), ask for their name
+        if name == "there" {
+            message += "\n\nBy the way, I don't recognize this number — could you share your name?"
+        }
+
+        return message
+    }
+
+    // MARK: - Reminder Scheduler
+
+    /// Start a background 5-minute polling loop to check for events needing reminders.
+    func startReminderScheduler() {
+        guard reminderSchedulerTask == nil else { return }
+        reminderSchedulerTask = Task(priority: .utility) {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(300)) // 5 minutes
+                guard !Task.isCancelled else { break }
+                await self.checkAndSendReminders()
+            }
+        }
+        logger.info("Reminder scheduler started (5-minute interval)")
+    }
+
+    /// Stop the reminder scheduler.
+    func stopReminderScheduler() {
+        reminderSchedulerTask?.cancel()
+        reminderSchedulerTask = nil
+        logger.info("Reminder scheduler stopped")
+    }
+
+    /// Check all upcoming events for reminder windows and generate/send as needed.
+    private func checkAndSendReminders() async {
+        guard let events = try? EventRepository.shared.fetchUpcoming() else { return }
+
+        for event in events {
+            guard let minutesUntil = event.minutesUntilStart else { continue }
+
+            // 1-day window: fire when between 1440 and 1435 minutes out (catches within 5-min poll)
+            if minutesUntil <= 1440 && minutesUntil > 1435 {
+                await sendReminderDrafts(for: event, minutesBefore: 1440)
+            }
+
+            // 10-minute window (virtual/hybrid only): fire when between 10 and 5 minutes out
+            if (event.format == .virtual || event.format == .hybrid),
+               minutesUntil <= 10 && minutesUntil > 5 {
+                await sendReminderDrafts(for: event, minutesBefore: 10)
+            }
+        }
+    }
+
+    /// Generate and optionally send reminders for an event at a given window.
+    private func sendReminderDrafts(for event: SamEvent, minutesBefore: Int) async {
+        let accepted = event.participations.filter { $0.rsvpStatus == .accepted }
+        guard !accepted.isEmpty else { return }
+
+        // Dedup: skip if reminders already exist for this window
+        let windowLabel = minutesBefore >= 1440 ? "1day" : "\(minutesBefore)min"
+        for participation in accepted {
+            let hasExisting = participation.messageLog.contains { msg in
+                msg.kind == .reminder && msg.body.contains(windowLabel) == false
+            }
+            // More robust dedup: check if any reminder was sent/drafted in the last hour
+            let recentCutoff = Date.now.addingTimeInterval(-3600)
+            let hasRecentReminder = participation.messageLog.contains { msg in
+                msg.kind == .reminder && (msg.sentAt ?? .distantPast) > recentCutoff
+            }
+            if hasRecentReminder { continue }
+        }
+
+        do {
+            let count = try await generateReminderDrafts(for: event, minutesBefore: minutesBefore)
+            guard count > 0 else { return }
+
+            let directSend = ComposeService.shared.directSendEnabled
+
+            if directSend {
+                // Auto-send all drafts
+                var sentCount = 0
+                let refreshedEvent = try? EventRepository.shared.fetch(id: event.id)
+                let participations = (refreshedEvent ?? event).participations.filter { $0.rsvpStatus == .accepted }
+
+                for participation in participations {
+                    guard let person = participation.person else { continue }
+                    // Find the most recent reminder draft
+                    guard let draft = participation.messageLog.last(where: { $0.kind == .reminder && $0.isDraft }) else { continue }
+
+                    let handle = person.phoneAliases.first ?? person.emailAliases.first ?? ""
+                    guard !handle.isEmpty else { continue }
+
+                    let sent = await ComposeService.shared.sendDirectIMessage(recipient: handle, body: draft.body)
+                    if sent {
+                        try? EventRepository.shared.markMessageSent(participationID: participation.id, messageID: draft.id)
+                        sentCount += 1
+                    }
+                }
+
+                await SystemNotificationService.shared.postEventReminder(
+                    eventTitle: event.title,
+                    eventID: event.id,
+                    attendeeCount: sentCount,
+                    autoSent: true
+                )
+                logger.info("Auto-sent \(sentCount) reminders for \(event.title) (\(windowLabel))")
+            } else {
+                // Drafts only — notify user to review
+                await SystemNotificationService.shared.postEventReminder(
+                    eventTitle: event.title,
+                    eventID: event.id,
+                    attendeeCount: count,
+                    autoSent: false
+                )
+                logger.info("Generated \(count) reminder drafts for \(event.title) (\(windowLabel))")
+            }
+        } catch {
+            logger.error("Failed to generate/send reminders for \(event.title): \(error)")
+        }
     }
 }
 
