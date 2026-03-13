@@ -122,8 +122,13 @@ final class EventCoordinator {
             userConfirmed: true
         )
 
-        // Trigger auto-ack if enabled
-        try processAutoAcknowledgment(participationID: participation.id)
+        // Auto-transition draft → inviting
+        transitionFromDraftIfNeeded(event: event)
+
+        // NOTE: Do NOT call processAutoAcknowledgment here.
+        // UnknownSenderQuickAddSheet Phase 2 handles the confirmation message,
+        // letting the user review/edit before sending. Auto-acking here would
+        // send a duplicate.
 
         logger.info("Added unknown sender \(sender.email) to event \(event.title) as \(displayName)")
         return participation
@@ -561,6 +566,39 @@ final class EventCoordinator {
 
     // MARK: - RSVP Processing
 
+    /// Auto-transition event from draft → inviting when meaningful activity occurs
+    /// (RSVP received, invitation sent, or promotion posted).
+    private func transitionFromDraftIfNeeded(event: SamEvent) {
+        guard event.status == .draft else { return }
+        event.status = .inviting
+        logger.info("Event '\(event.title)' auto-transitioned from Draft → Inviting")
+    }
+
+    /// Confirm a SAM-detected RSVP and trigger auto-acknowledgment if eligible.
+    /// Call this instead of `EventRepository.confirmRSVP` to ensure the ack pipeline fires.
+    func confirmDetectedRSVP(participationID: UUID) throws {
+        try EventRepository.shared.confirmRSVP(participationID: participationID)
+        if let participation = try? EventRepository.shared.fetchParticipation(id: participationID),
+           let event = participation.event {
+            transitionFromDraftIfNeeded(event: event)
+        }
+        try processAutoAcknowledgment(participationID: participationID)
+    }
+
+    /// Confirm a SAM-detected RSVP with a corrected status and trigger auto-acknowledgment.
+    func confirmDetectedRSVP(participationID: UUID, correctedStatus: RSVPStatus) throws {
+        try EventRepository.shared.updateRSVP(
+            participationID: participationID,
+            status: correctedStatus,
+            userConfirmed: true
+        )
+        if let participation = try? EventRepository.shared.fetchParticipation(id: participationID),
+           let event = participation.event {
+            transitionFromDraftIfNeeded(event: event)
+        }
+        try processAutoAcknowledgment(participationID: participationID)
+    }
+
     /// Process a detected RSVP signal from evidence analysis.
     /// Called by the evidence pipeline when a message matches an invited participant.
     func processRSVPSignal(
@@ -586,6 +624,12 @@ final class EventCoordinator {
             body: responseQuote,
             isDraft: false
         )
+
+        // Auto-transition draft → inviting on any RSVP activity
+        if let participation = try? EventRepository.shared.fetchParticipation(id: participationID),
+           let event = participation.event {
+            transitionFromDraftIfNeeded(event: event)
+        }
 
         if needsConfirmation {
             logger.info("Low-confidence RSVP detected (confidence: \(String(format: "%.0f%%", confidence * 100))) — needs user confirmation")
@@ -1375,8 +1419,8 @@ final class EventCoordinator {
                 // This message matches an event RSVP
                 var autoReplied = false
 
-                if event.autoReplyUnknownSenders && ComposeService.shared.directSendEnabled {
-                    let holdingReply = "Got your message about \(event.title) — I'll get back to you soon!"
+                if (event.autoReplyUnknownSenders || event.autoAcknowledgeEnabled) && ComposeService.shared.directSendEnabled {
+                    let holdingReply = "Got your message — I'll get back to you soon!"
                     Task {
                         let sent = await ComposeService.shared.sendDirectIMessage(
                             recipient: message.handleID,

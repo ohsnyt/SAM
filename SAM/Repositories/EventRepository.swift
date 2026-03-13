@@ -236,6 +236,12 @@ final class EventRepository {
             event.socialPromotions[idx].isPosted = true
             event.socialPromotions[idx].postedAt = .now
         }
+
+        // Auto-transition draft → inviting when a promotion is posted
+        if event.status == .draft {
+            event.status = .inviting
+        }
+
         event.updatedAt = .now
         try context?.save()
     }

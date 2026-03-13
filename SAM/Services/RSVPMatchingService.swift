@@ -69,9 +69,14 @@ final class RSVPMatchingService {
                 }
 
                 for participation in activeParticipations {
-                    // Skip if already has a confirmed RSVP
-                    if participation.rsvpUserConfirmed &&
-                       (participation.rsvpStatus == .accepted || participation.rsvpStatus == .declined) {
+                    // If already confirmed-accepted, only process cancellations (declined).
+                    // Skip duplicate acceptance signals to avoid re-sending holding replies.
+                    if participation.rsvpUserConfirmed && participation.rsvpStatus == .accepted
+                       && rsvpStatus != .declined {
+                        continue
+                    }
+                    // If already confirmed-declined, skip everything — user already handled it
+                    if participation.rsvpUserConfirmed && participation.rsvpStatus == .declined {
                         continue
                     }
 
@@ -134,6 +139,13 @@ final class RSVPMatchingService {
                 return
             }
 
+            // Skip if person is already a confirmed-accepted participant on this event
+            if let existing = targetEvent.participations.first(where: { $0.person?.id == person.id }),
+               existing.rsvpUserConfirmed && existing.rsvpStatus == .accepted {
+                logger.debug("Skipping auto-add for \(personName) — already confirmed-accepted on '\(targetEvent.title)'")
+                return
+            }
+
             // Add the sender
             let participation = try autoAddParticipant(
                 person: person,
@@ -143,6 +155,35 @@ final class RSVPMatchingService {
             )
 
             logger.info("Auto-added \(personName) to event '\(targetEvent.title)' with RSVP: \(rsvpStatus.displayName)")
+
+            // Auto-transition draft → inviting on RSVP activity
+            if targetEvent.status == .draft {
+                try EventRepository.shared.updateEvent(id: targetEvent.id, status: .inviting)
+            }
+
+            // Send holding reply if auto-ack is enabled and direct send is on
+            if (targetEvent.autoAcknowledgeEnabled || targetEvent.autoReplyUnknownSenders),
+               ComposeService.shared.directSendEnabled {
+                let name = EventCoordinator.friendlyFirstName(for: person)
+                let holdingReply = "Got your message about \(targetEvent.title), \(name) — I'll get back to you soon!"
+                let handle = person.phoneAliases.first ?? person.emailAliases.first ?? ""
+                if !handle.isEmpty {
+                    Task {
+                        let sent = await ComposeService.shared.sendDirectIMessage(recipient: handle, body: holdingReply)
+                        if sent {
+                            // Log the holding reply on the participation
+                            try? EventRepository.shared.appendMessage(
+                                participationID: participation.id,
+                                kind: .acknowledgment,
+                                channel: .iMessage,
+                                body: holdingReply,
+                                isDraft: false
+                            )
+                            self.logger.info("Sent holding reply to \(personName) for event '\(targetEvent.title)'")
+                        }
+                    }
+                }
+            }
 
             NotificationCenter.default.post(
                 name: .samRSVPAutoAdded,

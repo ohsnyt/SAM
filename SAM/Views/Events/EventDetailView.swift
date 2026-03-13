@@ -596,7 +596,7 @@ struct ParticipantDetailView: View {
 
             HStack(spacing: 8) {
                 Button("Confirm as \(participation.rsvpStatus.displayName)") {
-                    try? EventRepository.shared.confirmRSVP(participationID: participation.id)
+                    try? EventCoordinator.shared.confirmDetectedRSVP(participationID: participation.id)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
@@ -604,10 +604,9 @@ struct ParticipantDetailView: View {
                 ForEach([RSVPStatus.accepted, .declined, .tentative], id: \.self) { status in
                     if status != participation.rsvpStatus {
                         Button(status.displayName) {
-                            try? EventRepository.shared.updateRSVP(
+                            try? EventCoordinator.shared.confirmDetectedRSVP(
                                 participationID: participation.id,
-                                status: status,
-                                userConfirmed: true
+                                correctedStatus: status
                             )
                         }
                         .controlSize(.small)

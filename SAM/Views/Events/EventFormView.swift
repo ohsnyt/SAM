@@ -270,11 +270,11 @@ struct EventFormView: View {
 
                     Toggle("Auto-reply to unknown senders", isOn: $autoReplyUnknownSenders)
 
-                    if autoReplyUnknownSenders {
-                        Text("When an unknown number texts about this event, SAM will auto-send a holding reply if direct send is enabled.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
+                    Text(autoReplyUnknownSenders
+                         ? "When an unknown number texts about this event, SAM will auto-send a holding reply if direct send is enabled."
+                         : "Unknown sender holding replies will still fire if auto-acknowledge RSVPs is on above. Enable this to also send holding replies when auto-acknowledge is off.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
             .formStyle(.grouped)
