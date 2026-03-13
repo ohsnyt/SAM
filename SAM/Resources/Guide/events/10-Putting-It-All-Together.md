@@ -72,3 +72,11 @@ The more you use events, the smarter SAM gets:
 | Check RSVP status | Event detail | Participant list (auto-updates) |
 | Undo deletion | Toast notification | Click Undo |
 | Set your name/closing | Settings > General | Your Identity section |
+
+---
+
+## See Also
+
+- **Events Overview** — Start here if you want to understand the event system before diving into the workflow
+- **Your Identity and Signature** — Set up your name and closing before sending your first invitations
+- **Presentation Library** — Organize your decks before linking them to events

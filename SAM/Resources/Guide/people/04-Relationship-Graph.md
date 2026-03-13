@@ -37,10 +37,25 @@ Lines between nodes represent different relationship types:
 | **Dashed** | Recruiting — prospect-to-agent relationship |
 | **Light** | Co-attendance — appeared in the same meeting or event |
 | **Dotted** | Communication — email or message exchange |
-| **Double** | Deduced family — automated family detection |
+| **Dashed double** | Deduced family (unconfirmed) — automated family detection awaiting your review |
+| **Solid double** | Deduced family (confirmed) — family relationship you've verified |
 | **Marching ants** | Ghost mention — unconfirmed reference from notes |
 
-Hover over any edge to see the relationship label and confidence score.
+Hover over any edge to see the relationship label and status.
+
+## Confirming or Rejecting Deduced Relationships
+
+SAM automatically detects family relationships from your notes and evidence. These appear as dashed lines until you confirm or reject them.
+
+**Double-click** an unconfirmed family edge (dashed line) to see a confirmation alert with three options:
+
+| Button | What It Does |
+|--------|-------------|
+| **Confirm** | Marks the relationship as verified — the edge becomes solid |
+| **Incorrect** | Rejects the deduction — the edge is removed and SAM will not suggest it again |
+| **Cancel** | Dismisses the alert without changing anything |
+
+You can also **right-click** any deduced family edge to access the same Confirm and Reject options from the context menu. This works for both confirmed and unconfirmed edges — you can reject a previously confirmed relationship if you made a mistake.
 
 ## Toolbar Controls
 

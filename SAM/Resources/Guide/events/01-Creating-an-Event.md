@@ -2,7 +2,7 @@
 
 ## Step by Step
 
-1. Open the **Event Manager** (sidebar > Grow)
+1. Open the **Event Manager** (sidebar > Events)
 2. Make sure you're on the **Events** tab
 3. Click the **+ New Event** button in the upper-right of the event list
 4. Fill in the event details:
@@ -20,6 +20,10 @@
 
 5. Click **Create**
 
+![The New Event form with empty fields ready to fill in](01-03.png)
+
+![A completed New Event form for a Personal Finance Workshop with all fields filled in](01-04.png)
+
 ## Tips
 
 - **Start with Draft status.** Every new event starts as a "Draft." This gives you time to add participants and prepare invitations before anything goes out.
@@ -36,6 +40,12 @@ You control when to advance the status. SAM won't change it automatically — it
 
 If plans change, you can also mark an event as **Cancelled**.
 
+![An event in Inviting status with participants showing mixed RSVP statuses](01-01.png)
+
 ---
 
-**Screenshot to capture:** The New Event form sheet with fields filled in for a sample workshop.
+## See Also
+
+- **Adding Participants** — How to build your guest list after creating the event
+- **Linking Presentations to Events** — Connect your slide deck so SAM can personalize invitations
+- **Events Overview** — The big picture of how event management works in SAM

@@ -33,4 +33,8 @@ Each platform has a different audience and communication style. SAM adapts:
 
 ---
 
-**Screenshot to capture:** The Social Promotion sheet showing a generated LinkedIn post draft for a workshop event.
+## See Also
+
+- **Sending Invitations** — Personalized direct invitations complement your social promotion
+- **Content Drafts** — SAM's broader content drafting tools for ongoing social media presence
+- **Linking Presentations to Events** — Link a presentation so SAM can reference its topics in promotional posts

@@ -24,6 +24,14 @@ There are two main areas inside Events:
 
 In SAM's sidebar, click **Events** to open the Event Manager. You'll see a segmented control at the top to switch between **Events** and **Presentations**.
 
+![The Event Manager with the Events tab selected, showing the event list and placeholder](00-01.png)
+
+![The Presentations tab showing your library of reusable presentation decks](00-02.png)
+
 ---
 
-**Screenshot to capture:** The Event Manager view showing the segmented picker at the top with "Events" selected, the event list on the left, and either an event detail or the "Select an Event" placeholder on the right.
+## See Also
+
+- **Creating an Event** — Step-by-step guide to setting up your first event
+- **Presentation Library** — Store and organize your reusable workshop decks
+- **Putting It All Together** — A complete end-to-end workflow for running an event

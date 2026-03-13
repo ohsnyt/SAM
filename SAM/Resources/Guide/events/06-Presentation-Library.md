@@ -6,7 +6,7 @@ The Presentation Library is where you store your reusable presentation decks —
 
 ## How to Access It
 
-1. Open the **Event Manager** (sidebar > Grow)
+1. Open the **Event Manager** (sidebar > Events)
 2. Click the **Presentations** tab at the top (next to Events)
 3. You'll see your presentation library with a list on the left and details on the right
 
@@ -75,9 +75,8 @@ If you update your slides and want SAM to re-read them:
 
 ---
 
-**Screenshots to capture:**
-1. The Presentations tab showing a list of presentations on the left
-2. A PDF being dragged onto the list (showing the blue dashed drop zone)
-3. The minion row in the sidebar footer showing "Analyzing — Personal Finance Workshop"
-4. A presentation detail view showing the Content Summary, Key Talking Points, and Topic Tags after analysis
-5. The New Presentation form with the Files section and Add PDF button
+## See Also
+
+- **Linking Presentations to Events** — Connect presentations to events for smarter invitations and delivery tracking
+- **Events Overview** — How presentations fit into SAM's event management system
+- **Creating an Event** — Set up an event and link a presentation during creation

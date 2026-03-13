@@ -24,4 +24,7 @@ Even if you miss the toast notification, you can find your deleted event in the 
 
 ---
 
-**Screenshot to capture:** The undo toast notification at the bottom of the screen after deleting an event.
+## See Also
+
+- **Creating an Event** — How to set up events that you can later undo if needed
+- **Events Overview** — The big picture of SAM's event management system

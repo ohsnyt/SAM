@@ -8,6 +8,10 @@
 4. Click on a person to add them as a participant
 5. Close the sheet when you're done
 
+![The Add Participants sheet with a search field and contact suggestions](02-01.png)
+
+![SAM's contact suggestions loaded in the Add Participants sheet](02-02.png)
+
 Each person you add starts with:
 - **RSVP Status:** Pending (they haven't been invited yet)
 - **Invite Status:** Not Invited
@@ -39,6 +43,12 @@ Once participants are added, the detail view shows each person with:
 
 You can filter the participant list by RSVP status using the filter bar: **All**, **Accepted**, **Tentative**, **Declined**, **Pending**.
 
+![The participant list with RSVP statuses and quick actions for a selected participant](02-03.png)
+
 ---
 
-**Screenshot to capture:** The event detail view showing several participants with different RSVP statuses and the filter bar. Also capture the Add People search sheet.
+## See Also
+
+- **Sending Invitations** — Draft and send personalized invitations to your participants
+- **RSVP Tracking** — How SAM automatically detects and updates attendance responses
+- **Contact List** — Browse your SAM contacts to find people to invite

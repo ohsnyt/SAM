@@ -562,6 +562,13 @@ struct SAMApp: App {
 
                 Divider()
 
+                Button("Capture Guide Screenshots") {
+                    Task { await GuideScreenshotRunner.shared.run() }
+                }
+                .help("Navigates through app sections and captures screenshots for the Guide help system. Requires test data.")
+
+                Divider()
+
                 Button("Seed Harvey Snodgrass Test Data") {
                     Task { await TestDataSeeder.shared.seedFresh() }
                 }

@@ -37,6 +37,7 @@ All AI processing happens on your Mac using Apple's on-device models. No data le
 | ⌘2 | **People** | Contact list, person profiles, relationship graph |
 | ⌘3 | **Business** | Goals, client pipeline, recruiting pipeline, production, strategic insights |
 | ⌘4 | **Grow** | Social profile analysis, content drafts, lead acquisition |
+| — | **Events** | Event management, RSVP tracking, presentation library |
 | ⌘5 | **Search** | Cross-type search across all your data |
 
 ---

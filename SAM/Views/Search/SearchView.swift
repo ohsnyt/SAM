@@ -15,10 +15,11 @@ struct SearchView: View {
     @State private var coordinator = SearchCoordinator()
     @State private var selectedResult: SearchResultSelection?
     @State private var searchTask: Task<Void, Never>?
+    @State private var searchListWidth: CGFloat = 350
     @Environment(\.modelContext) private var modelContext
 
     var body: some View {
-        HSplitView {
+        HStack(spacing: 0) {
             VStack(spacing: 0) {
                 HStack {
                     Spacer()
@@ -34,10 +35,12 @@ struct SearchView: View {
 
                 resultsList
             }
-            .frame(minWidth: 250, idealWidth: 350)
+            .frame(width: searchListWidth)
+
+            SearchListDivider(listWidth: $searchListWidth)
 
             detailPane
-                .frame(minWidth: 300)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .onAppear {
             if let container = modelContext.container as ModelContainer? {
@@ -414,6 +417,35 @@ private struct InsightDetailReadOnlyView: View {
         case .medium: return .orange
         case .high: return .red
         }
+    }
+}
+
+// MARK: - Draggable Divider
+
+private struct SearchListDivider: View {
+    @Binding var listWidth: CGFloat
+
+    var body: some View {
+        Rectangle()
+            .fill(Color(nsColor: .separatorColor))
+            .frame(width: 1)
+            .padding(.horizontal, 3)
+            .frame(width: 7)
+            .contentShape(Rectangle())
+            .onHover { hovering in
+                if hovering {
+                    NSCursor.resizeLeftRight.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 1)
+                    .onChanged { value in
+                        let newWidth = listWidth + value.translation.width
+                        listWidth = min(max(newWidth, 250), 500)
+                    }
+            )
     }
 }
 

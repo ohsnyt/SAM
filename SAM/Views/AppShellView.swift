@@ -27,9 +27,10 @@ struct AppShellView: View {
     @State private var introCoordinator = IntroSequenceCoordinator.shared
     @State private var peopleMode: PeopleMode = .contacts
     @State private var peopleSpecialFilters: Set<PeopleSpecialFilter> = []
+    @State private var eventSection: EventManagerView.EventSection = .events
     @Environment(\.openWindow) private var openWindow
 
-    /// Whether the People section needs its middle column (contact list).
+    /// Whether the People section shows the contact list + detail side by side.
     private var showPeopleList: Bool {
         sidebarSelection == "people" && peopleMode == .contacts
     }
@@ -41,25 +42,24 @@ struct AppShellView: View {
             sidebar
                 .navigationSplitViewColumnWidth(min: 120, ideal: 130, max: 200)
                 .toolbar(removing: .sidebarToggle)
-        } content: {
-            if showPeopleList {
-                PeopleListView(selectedPersonID: $selectedPersonID, activeSpecialFilters: $peopleSpecialFilters)
-                    .navigationSplitViewColumnWidth(min: 200, ideal: 280, max: 500)
-            } else {
-                Color.clear
-                    .navigationSplitViewColumnWidth(0)
-            }
         } detail: {
             detailView
         }
         .navigationTitle("SAM")
-        .navigationSplitViewStyle(.balanced)
         .toolbar(removing: .sidebarToggle)
         .background { SidebarToggleConfigurator() }
         .toolbar {
             if sidebarSelection == "people" {
                 ToolbarItem(placement: .principal) {
                     peopleModeToolbar
+                }
+            }
+            if sidebarSelection == "events" {
+                ToolbarItem(placement: .principal) {
+                    eventSectionToolbar
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    GuideButton(articleID: "events.overview")
                 }
             }
         }
@@ -139,6 +139,18 @@ struct AppShellView: View {
         .frame(width: 180)
     }
 
+    // MARK: - Event Section Toolbar
+
+    private var eventSectionToolbar: some View {
+        Picker("", selection: $eventSection) {
+            ForEach(EventManagerView.EventSection.allCases, id: \.self) { section in
+                Text(section.rawValue).tag(section)
+            }
+        }
+        .pickerStyle(.segmented)
+        .frame(width: 220)
+    }
+
     // MARK: - Sidebar
 
     private var sidebar: some View {
@@ -199,7 +211,7 @@ struct AppShellView: View {
             if peopleMode == .graph {
                 RelationshipGraphView()
             } else {
-                peopleDetailView
+                peopleContactsView
             }
 
         case "business":
@@ -209,7 +221,7 @@ struct AppShellView: View {
             GrowDashboardView()
 
         case "events":
-            EventManagerView()
+            EventManagerView(activeSection: $eventSection)
 
         case "search":
             SearchView()
@@ -223,22 +235,67 @@ struct AppShellView: View {
         }
     }
 
-    // MARK: - People Detail View
+    // MARK: - People Contacts View (List + Detail via HSplitView)
 
-    @ViewBuilder
-    private var peopleDetailView: some View {
-        if let selectedID = selectedPersonID {
-            PeopleDetailContainer(personID: selectedID)
-                .id(selectedID)
-        } else {
-            ContentUnavailableView(
-                "Select a Person",
-                systemImage: "person.circle",
-                description: Text("Choose someone from the list to view their details")
-            )
+    @State private var peopleListWidth: CGFloat = 280
+
+    private var peopleContactsView: some View {
+        HStack(spacing: 0) {
+            PeopleListView(selectedPersonID: $selectedPersonID, activeSpecialFilters: $peopleSpecialFilters)
+                .frame(width: peopleListWidth)
+
+            PeopleListDivider(listWidth: $peopleListWidth)
+
+            Group {
+                if let selectedID = selectedPersonID {
+                    PeopleDetailContainer(personID: selectedID)
+                        .id(selectedID)
+                } else {
+                    ContentUnavailableView(
+                        "Select a Person",
+                        systemImage: "person.circle",
+                        description: Text("Choose someone from the list to view their details")
+                    )
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
     }
 
+}
+
+// MARK: - Draggable Split Divider
+
+/// A thin vertical divider that can be dragged to resize the people list column.
+/// Shows the standard macOS horizontal-resize cursor on hover.
+private struct PeopleListDivider: View {
+    @Binding var listWidth: CGFloat
+
+    private let minWidth: CGFloat = 200
+    private let maxWidth: CGFloat = 500
+
+    var body: some View {
+        Rectangle()
+            .fill(Color(nsColor: .separatorColor))
+            .frame(width: 1)
+            .padding(.horizontal, 3)
+            .frame(width: 7) // Wider hit target
+            .contentShape(Rectangle())
+            .onHover { hovering in
+                if hovering {
+                    NSCursor.resizeLeftRight.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 1)
+                    .onChanged { value in
+                        let newWidth = listWidth + value.translation.width
+                        listWidth = min(max(newWidth, minWidth), maxWidth)
+                    }
+            )
+    }
 }
 
 // MARK: - Notification Handlers

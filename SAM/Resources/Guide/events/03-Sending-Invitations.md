@@ -22,6 +22,12 @@ Use this to send a personalized invitation to **one specific person**.
 3. SAM generates a personalized invitation just for that person
 4. Review, edit, and send
 
+![The participant list showing a selected participant with Quick Actions including Draft Invitation](03-01.png)
+
+![The Draft Invitations sheet generating a personalized invitation with a progress spinner](03-02.png)
+
+![A completed draft invitation with personalized text ready to review, edit, and send](03-03.png)
+
 ## How SAM Personalizes Invitations
 
 SAM considers several things when writing each invitation:
@@ -56,7 +62,8 @@ SAM tracks this separately for different situations:
 
 ---
 
-**Screenshots to capture:**
-1. The Draft Invitation sheet showing the generated text with the progress spinner
-2. The same sheet after the draft has loaded, showing the editable text and the Copy & Mark Sent button
-3. A per-participant Draft Invitation button in the Quick Actions area
+## See Also
+
+- **Your Identity and Signature** — How SAM learns your name and preferred sign-off
+- **RSVP Tracking** — What happens after people receive your invitations
+- **Social Promotion** — Draft social media posts to promote your event publicly

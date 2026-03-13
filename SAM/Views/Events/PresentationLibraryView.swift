@@ -18,11 +18,14 @@ struct PresentationLibraryView: View {
     @State private var showNewPresentation = false
     @State private var refreshToken = UUID()
     @State private var isDropTargeted = false
+    @State private var presentationListWidth: CGFloat = 300
 
     var body: some View {
-        HSplitView {
+        HStack(spacing: 0) {
             presentationList
-                .frame(minWidth: 260, idealWidth: 300, maxWidth: 400)
+                .frame(width: presentationListWidth)
+
+            PresentationListDivider(listWidth: $presentationListWidth)
 
             Group {
                 if let id = selectedPresentationID,
@@ -36,7 +39,7 @@ struct PresentationLibraryView: View {
                     )
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .sheet(isPresented: $showNewPresentation) {
             PresentationFormSheet { presentation in
@@ -531,6 +534,35 @@ struct PresentationDetailView: View {
         presentation.fileAttachments.removeAll { $0.id == file.id }
         presentation.updatedAt = .now
         onUpdate()
+    }
+}
+
+// MARK: - Draggable Divider
+
+private struct PresentationListDivider: View {
+    @Binding var listWidth: CGFloat
+
+    var body: some View {
+        Rectangle()
+            .fill(Color(nsColor: .separatorColor))
+            .frame(width: 1)
+            .padding(.horizontal, 3)
+            .frame(width: 7)
+            .contentShape(Rectangle())
+            .onHover { hovering in
+                if hovering {
+                    NSCursor.resizeLeftRight.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 1)
+                    .onChanged { value in
+                        let newWidth = listWidth + value.translation.width
+                        listWidth = min(max(newWidth, 260), 500)
+                    }
+            )
     }
 }
 

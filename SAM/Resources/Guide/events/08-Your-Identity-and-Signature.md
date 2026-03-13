@@ -42,4 +42,7 @@ Over time, SAM learns exactly how you like to sign different types of messages t
 
 ---
 
-**Screenshot to capture:** The Settings > General > Your Identity section showing the First Name, Last Name, and Default Closing fields.
+## See Also
+
+- **Sending Invitations** — Where your identity and signature are used in practice
+- **Settings and Permissions** — The full Settings guide including the General tab where identity lives

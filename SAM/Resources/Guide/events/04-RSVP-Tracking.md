@@ -20,6 +20,8 @@ This is one of SAM's most powerful features for events. You don't have to manual
 
 SAM assigns a confidence score to each detection. When SAM is very confident (>80%), it updates the status quietly. When confidence is lower, it flags the detection for your review — you'll see these in the **Unconfirmed** section so you can verify SAM got it right.
 
+![Participant list showing mixed RSVP statuses — Accepted, Tentative, Pending, and Declined](04-01.png)
+
 ## When Someone New RSVPs
 
 Here's the scenario: You invited Michelle, and she told her coworker Dave about the event. Dave texts you: "Hey, Michelle told me about the workshop on Thursday — I'd love to come!"
@@ -52,6 +54,26 @@ Since you may have referral partners, other agents, or co-hosts also sending inv
 - That person texts you saying they're coming
 - SAM catches it and adds them to the event
 
+## Auto-Reply to Unknown Senders
+
+When someone you don't know texts about an event, SAM can automatically send a brief holding reply — something like "Thanks for your interest! I'll follow up with details shortly." This buys you time to review who they are.
+
+To enable this:
+1. Open your event's settings
+2. Turn on **Auto-reply to unknown senders**
+3. Make sure **Direct Send** is also enabled in Settings > Messaging
+
+SAM will also post a macOS notification so you know an unknown sender reached out: **"Auto-replied to unknown RSVP — {sender} messaged about {event}."**
+
+## Event Reminders
+
+SAM can automatically send reminders to accepted participants:
+
+- **1 day before:** AI-generated personalized reminders for each accepted attendee
+- **10 minutes before:** Join link reminders for virtual or hybrid events
+
+If Direct Send is enabled, reminders go out automatically. Otherwise, SAM drafts them for your review and notifies you: **"Event reminders ready to review."**
+
 ## Manual RSVP Updates
 
 You can always update RSVP status manually:
@@ -61,7 +83,8 @@ You can always update RSVP status manually:
 
 ---
 
-**Screenshots to capture:**
-1. A participant list showing mixed RSVP statuses (green Accepted, orange Tentative, red Declined)
-2. The notification banner that appears when SAM auto-adds someone ("Dave was auto-added to Personal Finance Workshop")
-3. An unconfirmed RSVP detection awaiting user review
+## See Also
+
+- **Adding Participants** — How to build and manage your participant list
+- **Sending Invitations** — Draft personalized invitations that trigger the RSVP tracking flow
+- **Events Overview** — The big picture of event management in SAM

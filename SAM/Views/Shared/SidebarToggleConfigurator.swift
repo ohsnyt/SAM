@@ -93,3 +93,4 @@ private final class SidebarToggleInstallerView: NSView {
 // MARK: - Accessory Controller (for identity check)
 
 private final class SidebarToggleAccessoryController: NSTitlebarAccessoryViewController {}
+

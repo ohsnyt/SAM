@@ -15,7 +15,8 @@ struct EventManagerView: View {
     @State private var showNewEventForm = false
     @State private var eventFilter: EventFilter = .upcoming
     @State private var refreshToken = UUID()
-    @State private var activeSection: EventSection = .events
+    @Binding var activeSection: EventSection
+    @State private var eventListWidth: CGFloat = 300
 
     enum EventSection: String, CaseIterable {
         case events = "Events"
@@ -29,24 +30,7 @@ struct EventManagerView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Section picker
-            HStack {
-                Picker("Section", selection: $activeSection) {
-                    ForEach(EventSection.allCases, id: \.self) { section in
-                        Text(section.rawValue).tag(section)
-                    }
-                }
-                .pickerStyle(.segmented)
-
-                GuideButton(articleID: "events.overview")
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-
-            Divider()
-
-            // Content
+        Group {
             switch activeSection {
             case .events:
                 eventsContent
@@ -69,9 +53,11 @@ struct EventManagerView: View {
     }
 
     private var eventsContent: some View {
-        HSplitView {
+        HStack(spacing: 0) {
             eventList
-                .frame(minWidth: 260, idealWidth: 300, maxWidth: 400)
+                .frame(width: eventListWidth)
+
+            EventListDivider(listWidth: $eventListWidth)
 
             Group {
                 if let eventID = selectedEventID {
@@ -87,7 +73,7 @@ struct EventManagerView: View {
                     )
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
     }
 
@@ -216,5 +202,34 @@ struct EventRowView: View {
         case .completed:  return .secondary
         case .cancelled:  return .red
         }
+    }
+}
+
+// MARK: - Draggable Divider
+
+private struct EventListDivider: View {
+    @Binding var listWidth: CGFloat
+
+    var body: some View {
+        Rectangle()
+            .fill(Color(nsColor: .separatorColor))
+            .frame(width: 1)
+            .padding(.horizontal, 3)
+            .frame(width: 7)
+            .contentShape(Rectangle())
+            .onHover { hovering in
+                if hovering {
+                    NSCursor.resizeLeftRight.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 1)
+                    .onChanged { value in
+                        let newWidth = listWidth + value.translation.width
+                        listWidth = min(max(newWidth, 260), 500)
+                    }
+            )
     }
 }

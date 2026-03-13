@@ -41,4 +41,8 @@ The specificity comes from SAM having read your actual slides.
 
 ---
 
-**Screenshot to capture:** A presentation detail view showing the Delivery History section with delivery count, last delivered date, and next scheduled date.
+## See Also
+
+- **Presentation Library** — How to add and manage your presentation decks
+- **Sending Invitations** — How linked presentation content improves invitation quality
+- **Creating an Event** — Where to select a presentation during event setup

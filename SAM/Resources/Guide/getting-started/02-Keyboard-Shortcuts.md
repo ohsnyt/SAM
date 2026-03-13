@@ -14,6 +14,8 @@ SAM supports standard macOS keyboard shortcuts plus navigation shortcuts for fas
 | ⌘K | Command Palette (search from anywhere) |
 | ⌘? | Open SAM Guide |
 
+**Note:** The **Events** section is accessible from the sidebar but does not have a numbered shortcut.
+
 ## Text Editing
 
 These shortcuts work in every text input throughout SAM — notes, drafts, descriptions, and any multi-line editor.
