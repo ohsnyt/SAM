@@ -499,8 +499,7 @@ struct PromptLabColumnView: View {
 
                 if let run = latestRun {
                     Button {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(run.output, forType: .string)
+                        ClipboardSecurity.copyPersistent(run.output)
                     } label: {
                         Image(systemName: "doc.on.doc")
                             .font(.caption)

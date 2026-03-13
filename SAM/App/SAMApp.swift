@@ -66,6 +66,9 @@ struct SAMApp: App {
     @State private var showOnboarding: Bool
     @State private var hasCheckedPermissions = false
 
+    // Security
+    @State private var lockService = AppLockService.shared
+
     // Backup/restore (moved from GeneralSettingsView to File menu)
     @State private var backupCoordinator = BackupCoordinator.shared
     @State private var showImportFilePicker = false
@@ -78,6 +81,13 @@ struct SAMApp: App {
     @State private var showFacebookImportSheet = false
     @State private var showEvernotePreviewSheet = false
     @State private var showSubstackImportSheet = false
+
+    // Backup passphrase
+    @State private var showPassphraseSheet = false
+    @State private var backupPassphrase = ""
+    @State private var pendingBackupURL: URL?
+    @State private var showImportPassphraseSheet = false
+    @State private var importPassphrase = ""
 
     // Debug menu
     @State private var showClearDataConfirmation = false
@@ -219,8 +229,15 @@ struct SAMApp: App {
 
     var body: some Scene {
         WindowGroup {
-            AppShellView()
-                .modelContainer(SAMModelContainer.shared)
+            ZStack {
+                AppShellView()
+                    .modelContainer(SAMModelContainer.shared)
+
+                if lockService.isLocked {
+                    AppLockView()
+                        .transition(.opacity)
+                }
+            }
                 .sheet(isPresented: $showOnboarding) {
                     OnboardingView()
                         .interactiveDismissDisabled() // Prevent accidental dismissal
@@ -289,6 +306,9 @@ struct SAMApp: App {
                         }
                 }
                 .task {
+                    // Configure app lock on launch
+                    lockService.configureOnLaunch()
+
                     // Check permissions ONCE on first launch
                     // This runs before user interaction, preventing the race condition
                     // where users could click on people before permissions are verified
@@ -320,6 +340,11 @@ struct SAMApp: App {
                                 pendingImportURL = url
                                 pendingImportPreview = preview
                                 showImportConfirmation = true
+                            } catch let error as BackupError where error == .authenticationRequired {
+                                // Encrypted backup — ask for passphrase
+                                pendingImportURL = url
+                                importPassphrase = ""
+                                showImportPassphraseSheet = true
                             } catch {
                                 backupCoordinator.status = .failed(error.localizedDescription)
                             }
@@ -335,11 +360,13 @@ struct SAMApp: App {
                     }
                     Button("Replace All Data", role: .destructive) {
                         guard let url = pendingImportURL else { return }
+                        let phrase = importPassphrase.isEmpty ? nil : importPassphrase
                         Task {
-                            await backupCoordinator.performImport(from: url)
+                            await backupCoordinator.performImport(from: url, passphrase: phrase)
                         }
                         pendingImportURL = nil
                         pendingImportPreview = nil
+                        importPassphrase = ""
                     }
                 } message: {
                     if let preview = pendingImportPreview {
@@ -370,6 +397,43 @@ struct SAMApp: App {
                 .sheet(isPresented: $showSubstackImportSheet) {
                     SubstackImportSheet()
                 }
+                .sheet(isPresented: $showPassphraseSheet) {
+                    BackupPassphraseSheet(
+                        passphrase: $backupPassphrase,
+                        isExport: true
+                    ) {
+                        showPassphraseSheet = false
+                        guard let url = pendingBackupURL else { return }
+                        Task {
+                            await backupCoordinator.exportBackup(to: url, passphrase: backupPassphrase)
+                        }
+                        pendingBackupURL = nil
+                    } onCancel: {
+                        showPassphraseSheet = false
+                        pendingBackupURL = nil
+                    }
+                }
+                .sheet(isPresented: $showImportPassphraseSheet) {
+                    BackupPassphraseSheet(
+                        passphrase: $importPassphrase,
+                        isExport: false
+                    ) {
+                        showImportPassphraseSheet = false
+                        guard let url = pendingImportURL else { return }
+                        Task {
+                            do {
+                                let preview = try await backupCoordinator.validateBackup(from: url, passphrase: importPassphrase.isEmpty ? nil : importPassphrase)
+                                pendingImportPreview = preview
+                                showImportConfirmation = true
+                            } catch {
+                                backupCoordinator.status = .failed(error.localizedDescription)
+                            }
+                        }
+                    } onCancel: {
+                        showImportPassphraseSheet = false
+                        pendingImportURL = nil
+                    }
+                }
                 .onReceive(NotificationCenter.default.publisher(for: .samLinkedInAwaitingReview)) { _ in
                     showLinkedInImportSheet = true
                 }
@@ -384,6 +448,12 @@ struct SAMApp: App {
                 }
                 .onReceive(NotificationCenter.default.publisher(for: .samSubstackZipDetected)) { _ in
                     showSubstackImportSheet = true
+                }
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.willResignActiveNotification)) { _ in
+                    lockService.appDidResignActive()
+                }
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                    lockService.appDidBecomeActive()
                 }
         }
         .defaultSize(Self.mainWindowSize)
@@ -452,22 +522,30 @@ struct SAMApp: App {
                 Divider()
 
                 Button("Backup Data...") {
-                    let panel = NSSavePanel()
-                    let formatter = DateFormatter()
-                    formatter.dateFormat = "yyyy-MM-dd"
-                    panel.nameFieldStringValue = "SAM-Backup-\(formatter.string(from: .now)).sambackup"
-                    panel.allowedContentTypes = [.samBackup]
-                    panel.canCreateDirectories = true
+                    Task {
+                        // Auth gate for export
+                        guard await AppLockService.shared.authenticateForExport() else { return }
 
-                    if panel.runModal() == .OK, let url = panel.url {
-                        Task {
-                            await backupCoordinator.exportBackup(to: url)
+                        let panel = NSSavePanel()
+                        let formatter = DateFormatter()
+                        formatter.dateFormat = "yyyy-MM-dd"
+                        panel.nameFieldStringValue = "SAM-Backup-\(formatter.string(from: .now)).sambackup"
+                        panel.allowedContentTypes = [.samBackup]
+                        panel.canCreateDirectories = true
+
+                        if panel.runModal() == .OK, let url = panel.url {
+                            pendingBackupURL = url
+                            backupPassphrase = ""
+                            showPassphraseSheet = true
                         }
                     }
                 }
 
                 Button("Restore Data...") {
-                    showImportFilePicker = true
+                    Task {
+                        guard await AppLockService.shared.authenticateForExport() else { return }
+                        showImportFilePicker = true
+                    }
                 }
             }
 

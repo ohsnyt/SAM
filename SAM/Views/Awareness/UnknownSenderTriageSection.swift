@@ -440,7 +440,7 @@ struct UnknownSenderTriageSection: View {
             do {
                 try repository.markAdded(sender)
             } catch {
-                logger.error("Failed to mark added for \(sender.email, privacy: .public): \(error)")
+                logger.error("Failed to mark added for \(sender.email, privacy: .private): \(error)")
             }
         }
 
@@ -479,7 +479,7 @@ struct UnknownSenderTriageSection: View {
                             facebookTouchScore: sender.intentionalTouchScore
                         )
                     } catch {
-                        logger.error("Failed to create SamPerson for \(sender.email, privacy: .public): \(error)")
+                        logger.error("Failed to create SamPerson for \(sender.email, privacy: .private): \(error)")
                     }
                 } else {
                     // Email/calendar senders → search ALL Apple Contacts for a match
@@ -497,16 +497,16 @@ struct UnknownSenderTriageSection: View {
                         // Check if already in SAM group → auto-link directly
                         let inSAMGroup = await contactsService.isContactInSAMGroup(identifier: existing.identifier)
                         if inSAMGroup {
-                            logger.info("Triage: auto-linking '\(displayName, privacy: .public)' (already in SAM group)")
+                            logger.info("Triage: auto-linking '\(displayName, privacy: .private)' (already in SAM group)")
                             do {
                                 try peopleRepository.upsert(contact: existing)
                                 addedEmails.append(sender.email)
                             } catch {
-                                logger.error("Failed to upsert contact for \(sender.email, privacy: .public): \(error)")
+                                logger.error("Failed to upsert contact for \(sender.email, privacy: .private): \(error)")
                             }
                         } else {
                             // Match found but NOT in SAM group → needs user confirmation
-                            logger.info("Triage: match found for '\(displayName, privacy: .public)' outside SAM group — queuing for confirmation")
+                            logger.info("Triage: match found for '\(displayName, privacy: .private)' outside SAM group — queuing for confirmation")
                             matchesNeedingConfirmation.append(
                                 TriageMatchCandidate(sender: sender, matchedContact: existing)
                             )
@@ -518,7 +518,7 @@ struct UnknownSenderTriageSection: View {
                             email: sender.email,
                             note: nil
                         ) else {
-                            logger.error("Failed to create contact for \(sender.email, privacy: .public)")
+                            logger.error("Failed to create contact for \(sender.email, privacy: .private)")
                             continue
                         }
 
@@ -526,7 +526,7 @@ struct UnknownSenderTriageSection: View {
                             try peopleRepository.upsert(contact: created)
                             addedEmails.append(sender.email)
                         } catch {
-                            logger.error("Failed to upsert contact for \(sender.email, privacy: .public): \(error)")
+                            logger.error("Failed to upsert contact for \(sender.email, privacy: .private): \(error)")
                         }
                     }
                 }
@@ -575,36 +575,36 @@ struct UnknownSenderTriageSection: View {
                 switch match.resolution {
                 case .samePerson:
                     // Link to existing contact + add to SAM group
-                    logger.info("Triage confirm: linking '\(displayName, privacy: .public)' to existing contact \(match.matchedContact.identifier, privacy: .public)")
+                    logger.info("Triage confirm: linking '\(displayName, privacy: .private)' to existing contact \(match.matchedContact.identifier, privacy: .private)")
                     do {
                         try peopleRepository.upsert(contact: match.matchedContact)
                         addedEmails.append(sender.email)
                     } catch {
-                        logger.error("Failed to upsert matched contact for \(sender.email, privacy: .public): \(error)")
+                        logger.error("Failed to upsert matched contact for \(sender.email, privacy: .private): \(error)")
                     }
                     await contactsService.addContactToSAMGroup(identifier: match.matchedContact.identifier)
 
                 case .differentPerson:
                     // Create a brand-new Apple Contact + add to SAM group
-                    logger.info("Triage confirm: creating new contact for '\(displayName, privacy: .public)' (rejected match)")
+                    logger.info("Triage confirm: creating new contact for '\(displayName, privacy: .private)' (rejected match)")
                     guard let created = await contactsService.createContact(
                         fullName: displayName,
                         email: sender.email,
                         note: nil
                     ) else {
-                        logger.error("Failed to create contact for \(sender.email, privacy: .public)")
+                        logger.error("Failed to create contact for \(sender.email, privacy: .private)")
                         continue
                     }
                     do {
                         try peopleRepository.upsert(contact: created)
                         addedEmails.append(sender.email)
                     } catch {
-                        logger.error("Failed to upsert new contact for \(sender.email, privacy: .public): \(error)")
+                        logger.error("Failed to upsert new contact for \(sender.email, privacy: .private): \(error)")
                     }
 
                 case .pending:
                     // Should not happen — log and skip
-                    logger.warning("Triage confirm: unresolved match for '\(displayName, privacy: .public)' — skipping")
+                    logger.warning("Triage confirm: unresolved match for '\(displayName, privacy: .private)' — skipping")
                 }
             }
 

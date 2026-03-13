@@ -369,8 +369,7 @@ struct ProfileAnalysisSheet: View {
                 .textSelection(.enabled)
 
             Button {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(ep.prompt, forType: .string)
+                ClipboardSecurity.copyPersistent(ep.prompt)
                 withAnimation { copiedPrompt = true }
                 Task {
                     try? await Task.sleep(nanoseconds: 2_000_000_000)

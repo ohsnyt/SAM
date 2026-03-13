@@ -88,8 +88,7 @@ struct OutcomeCardView: View {
                     Spacer()
 
                     Button {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(step, forType: .string)
+                        ClipboardSecurity.copy(step, clearAfter: 60)
                         copiedStep = true
                         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                             copiedStep = false

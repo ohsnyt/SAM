@@ -296,8 +296,7 @@ struct ContentDraftSheet: View {
     }
 
     private func copyToClipboard() {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(draftText, forType: .string)
+        ClipboardSecurity.copy(draftText, clearAfter: 60)
     }
 
     private func logAsPosted() {

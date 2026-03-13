@@ -1716,6 +1716,11 @@ struct GeneralSettingsView: View {
                         Label("Clipboard Capture", systemImage: "doc.on.clipboard")
                     }
 
+                    Divider()
+
+                    // Security
+                    SecuritySettingsContent()
+
                     // Legacy Data — only visible when orphaned stores are detected
                     if let discovery = migrationService.discovery, !discovery.isEmpty {
                         Divider()
@@ -1879,6 +1884,58 @@ struct GeneralSettingsView: View {
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
+        }
+    }
+}
+
+// MARK: - Security Settings
+
+private struct SecuritySettingsContent: View {
+
+    @State private var lockService = AppLockService.shared
+    @State private var selectedTimeout: Int = AppLockService.shared.lockTimeoutMinutes
+
+    private let timeoutOptions = [1, 5, 15, 30, 60]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("Security", systemImage: "lock.shield")
+                .font(.headline)
+
+            HStack {
+                Text("Lock after inactive:")
+                    .foregroundStyle(.secondary)
+                Picker("", selection: $selectedTimeout) {
+                    ForEach(timeoutOptions, id: \.self) { minutes in
+                        Text(minutes == 1 ? "1 minute" : "\(minutes) minutes").tag(minutes)
+                    }
+                }
+                .labelsHidden()
+                .frame(maxWidth: 140)
+                .onChange(of: selectedTimeout) { _, newValue in
+                    lockService.lockTimeoutMinutes = newValue
+                }
+            }
+
+            Button("Lock Now") {
+                lockService.lock()
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+
+            if lockService.isBiometricAvailable {
+                Text("Touch ID is available and will be used for authentication.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("Touch ID is not available. System password will be used.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Text("SAM always requires authentication on launch and after the idle timeout expires. All backups are encrypted with a passphrase.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 }

@@ -1013,7 +1013,7 @@ final class DailyBriefingCoordinator {
                 userInfo: ["payload": capturePayload]
             )
 
-            logger.info("Prompted post-call capture for \(personName, privacy: .public) (\(callSource))")
+            logger.info("Prompted post-call capture for \(personName, privacy: .private) (\(callSource))")
 
             // Only prompt for one call at a time to avoid window spam
             break

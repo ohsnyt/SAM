@@ -370,6 +370,14 @@ Never use pipe-separated options as JSON example values — LLMs echo them liter
 ### Security-Scoped Bookmarks
 Bookmark the **directory** (not file) for SQLite to cover WAL/SHM companions. `.fileImporter` URLs require `startAccessingSecurityScopedResource()` / `stopAccessingSecurityScopedResource()`.
 
+### App Security
+- **Authentication is mandatory** — SAM always locks on launch and after idle timeout. Uses `LocalAuthentication` framework (`deviceOwnerAuthentication` = Touch ID + system password fallback). No opt-out setting.
+- **Backup encryption is mandatory** — All exports require a user-supplied passphrase. AES-256-GCM encryption with HKDF-SHA256 key derivation. `SAMENC1` header for format detection.
+- **Clipboard auto-clear** — Sensitive data copied via `ClipboardSecurity.copy(_:clearAfter:)` is cleared after 60 seconds. Non-sensitive data uses `copyPersistent(_:)`.
+- **Log privacy** — All PII (names, emails, phones, social URLs, contact IDs) uses `privacy: .private` in os.log calls.
+- **Keychain storage** — `KeychainService` actor wraps Security framework for sensitive credential storage (`kSecAttrAccessibleWhenUnlockedThisDeviceOnly`).
+- **Database encryption** — Not needed separately; macOS FileVault provides full-disk encryption and the app sandbox isolates data. `FileProtectionType.complete` is not used (causes SQLite I/O errors on macOS).
+
 ---
 
 ## 8. Schema Versions
@@ -416,15 +424,10 @@ Bookmark the **directory** (not file) for SQLite to cover WAL/SHM companions. `.
 
 ### ~~Event Management & Presentation Library~~ ✅ Completed (Mar 11, 2026)
 
-### Priority 8 - Security review
-- Can we use TouchID, FaceID, Apple Watch, password to enforce secure access to SAM? Would this be a good thing?
-- Is the SAM data (SwiftData, other app data) stored securely at present? Do we need to incorporate encryption?
-- Do we need to consider database encryption?
-- Do we need to encrypt backups using the same TouchID, FaceID, Apple Watch, password used to unlock SAM?
+### ~~Priority 8 — Security Hardening~~ ✅ Completed (Mar 13, 2026)
 
 ### Priority 9+ — Future
 
-- Review and update tooltips
 - iOS companion app (read-only)
 - Custom activity types
 - API integrations (WFG back-office)
@@ -432,5 +435,5 @@ Bookmark the **directory** (not file) for SQLite to cover WAL/SHM companions. `.
 
 ---
 
-**Document Version**: 40
-**Last Updated**: March 12, 2026 — Unknown sender auto-reply, post-confirmation message flow, event reminder scheduler.
+**Document Version**: 41
+**Last Updated**: March 13, 2026 — Security hardening: mandatory auth, encrypted backups, clipboard security, log privacy, keychain service.

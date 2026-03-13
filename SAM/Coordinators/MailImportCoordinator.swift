@@ -329,7 +329,7 @@ final class MailImportCoordinator {
             // 2. Filter to just this sender's emails
             let senderMetas = allMetas.filter { $0.senderEmail == senderEmail.lowercased() }
             guard !senderMetas.isEmpty else {
-                logger.info("No emails found for sender \(senderEmail, privacy: .public) to reprocess")
+                logger.info("No emails found for sender \(senderEmail, privacy: .private) to reprocess")
                 return
             }
 
@@ -358,10 +358,10 @@ final class MailImportCoordinator {
             // 6. Trigger insights
             InsightGenerator.shared.startAutoGeneration()
 
-            logger.info("Reprocessed \(emails.count) emails for sender \(senderEmail, privacy: .public)")
+            logger.info("Reprocessed \(emails.count) emails for sender \(senderEmail, privacy: .private)")
 
         } catch {
-            logger.error("Reprocess failed for \(senderEmail, privacy: .public): \(error)")
+            logger.error("Reprocess failed for \(senderEmail, privacy: .private): \(error)")
         }
     }
 

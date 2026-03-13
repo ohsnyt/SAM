@@ -475,8 +475,7 @@ struct GrowDashboardView: View {
                 .background(.quaternary.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
                 .textSelection(.enabled)
             Button {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(ep.prompt, forType: .string)
+                ClipboardSecurity.copyPersistent(ep.prompt)
                 withAnimation { copiedPrompt = true }
                 Task {
                     try? await Task.sleep(nanoseconds: 2_000_000_000)

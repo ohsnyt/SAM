@@ -4,6 +4,52 @@
 
 ---
 
+## Security Hardening (March 13, 2026)
+
+**What**: Mandatory authentication on every launch, mandatory backup encryption, clipboard auto-clear, log privacy audit, and keychain service.
+
+**Why**: SAM stores sensitive relationship and business data. Security should be enforced by default with no opt-out, minimizing friction while ensuring data protection at rest, in transit (backups), and in logs.
+
+### New Files (3)
+
+- `Services/AppLockService.swift` — `@MainActor @Observable` singleton. Always-on Touch ID + system password authentication via `LocalAuthentication` framework. Locks on launch, locks after idle timeout (configurable 1–60 min, default 5). Lifecycle-based idle detection via `willResignActiveNotification` / `didBecomeActiveNotification` (not polling). Separate `authenticateForExport()` gate for backup operations.
+- `Utilities/KeychainService.swift` — `actor` wrapping Security framework (`SecItemAdd/CopyMatching/Update/Delete`). Stores sensitive data with `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`. Service name `com.matthewsessions.SAM`.
+- `Utilities/ClipboardSecurity.swift` — `@MainActor enum` with `copy(_:clearAfter:)` (60s auto-clear, smart: only clears if user hasn't copied something else since) and `copyPersistent(_:)` for non-sensitive data.
+
+### New Files (1) — UI
+
+- `Views/Shared/AppLockView.swift` — Full-screen `.ultraThinMaterial` overlay with app icon, "SAM is Locked" title, unlock button. Auto-authenticates on appear.
+
+### Modified Files (15)
+
+#### Lock Integration
+
+- `App/SAMApp.swift` — Lock overlay in ZStack (shows whenever `isLocked` is true, no opt-out). `configureOnLaunch()` in `.task`. Lifecycle observers for resign/become active. Backup export always passes passphrase (no nil path).
+- `Views/Settings/SettingsView.swift` — `SecuritySettingsContent` simplified: removed enable/disable toggles and export auth toggle. Shows only idle timeout picker, Lock Now button, and Touch ID availability info.
+
+#### Backup Encryption (Mandatory)
+
+- `Coordinators/BackupCoordinator.swift` — Added AES-256-GCM encryption/decryption with HKDF-SHA256 key derivation. `SAMENC1` header for encrypted format detection. `BackupError` enum with `.encryptionFailed`, `.decryptionFailed`, `.authenticationRequired`. Auth gate via `authenticateForExport()`.
+- `Views/Shared/BackupPassphraseSheet.swift` — Passphrase now required for export (no "Export Without Encryption" option). Button disabled until passphrase entered.
+
+#### Clipboard Security (12 callsites across 9 files)
+
+- `Coordinators/ComposeService.swift`, `Views/Shared/CopyButton.swift`, `Views/Awareness/OutcomeCardView.swift`, `Views/Awareness/ContentDraftSheet.swift`, `Views/Awareness/SocialPromotionSheet.swift`, `Views/Events/EventDetailView.swift`, `Views/People/PersonDetailView.swift` — `ClipboardSecurity.copy(_, clearAfter: 60)`
+- `Views/Settings/PromptLabView.swift`, `Views/Awareness/GrowDashboardView.swift`, `Views/Social/ProfileAnalysisSheet.swift` — `ClipboardSecurity.copyPersistent(_:)`
+
+#### Log Privacy (73 fixes across 14 files)
+
+- All PII (names, emails, phones, social URLs, contact IDs) changed from `privacy: .public` to `privacy: .private` in: ComposeService, ContactsService, UnknownSenderTriageSection, NoteAnalysisCoordinator, NoteAnalysisService, DailyBriefingCoordinator, ContactEnrichmentCoordinator, MailService, MailImportCoordinator, LinkedInImportCoordinator, PeopleRepository, PersonDetailView, NotInContactsCapsule, FacebookImportCoordinator.
+
+### Architecture Notes
+
+- **No database encryption needed** — macOS FileVault provides full-disk encryption; app sandbox isolates data. `FileProtectionType.complete` was tested and removed — it causes `SQLITE_IOERR_AUTH` (error 6922) on macOS when SQLite tries to access WAL/SHM files.
+- **Idle detection uses lifecycle events, not polling** — A polling timer caused the app to lock during active use. The lifecycle pattern (`willResignActive` → record timestamp, `didBecomeActive` → check elapsed time) only locks when the user actually switches away.
+- **No schema version bump** — all changes are service/UI layer; no SwiftData model changes.
+- Authentication uses `.deviceOwnerAuthentication` (Touch ID with system password fallback), not `.deviceOwnerAuthenticationWithBiometrics` (which would fail if Touch ID is unavailable).
+
+---
+
 ## March 13, 2026 — Post-Meeting Capture for Unknown Attendees
 
 ### Bug Fix: Meetings with unknown participants now trigger note capture

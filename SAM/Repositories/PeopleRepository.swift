@@ -457,7 +457,7 @@ final class PeopleRepository {
         if let match = allPeople.first(where: { $0.contactIdentifier == contactIdentifier }) {
             match.isMe = true
             try modelContext.save()
-            logger.info("Set isMe flag on existing person: \(match.displayNameCache ?? match.displayName, privacy: .public)")
+            logger.info("Set isMe flag on existing person: \(match.displayNameCache ?? match.displayName, privacy: .private)")
         }
     }
 
@@ -547,7 +547,7 @@ final class PeopleRepository {
         }
 
         try modelContext.save()
-        logger.info("Upserted Me contact: \(person.displayNameCache ?? person.displayName, privacy: .public)")
+        logger.info("Upserted Me contact: \(person.displayNameCache ?? person.displayName, privacy: .private)")
     }
 
     /// Clear stale contactIdentifiers for people whose Apple Contact no longer exists.
@@ -570,7 +570,7 @@ final class PeopleRepository {
             if !validIdentifiers.contains(identifier) {
                 person.contactIdentifier = nil
                 clearedCount += 1
-                logger.info("Cleared stale contactIdentifier for \(person.displayNameCache ?? person.displayName, privacy: .public)")
+                logger.info("Cleared stale contactIdentifier for \(person.displayNameCache ?? person.displayName, privacy: .private)")
             }
         }
 
@@ -600,7 +600,7 @@ final class PeopleRepository {
             if !groupIdentifiers.contains(identifier) {
                 person.contactIdentifier = nil
                 unlinkedCount += 1
-                logger.info("Unlinked non-group contact for \(person.displayNameCache ?? person.displayName, privacy: .public)")
+                logger.info("Unlinked non-group contact for \(person.displayNameCache ?? person.displayName, privacy: .private)")
             }
         }
 

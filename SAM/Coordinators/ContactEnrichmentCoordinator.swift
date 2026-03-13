@@ -97,7 +97,7 @@ final class ContactEnrichmentCoordinator {
             do {
                 try enrichmentRepo.approve(items)
                 refresh()
-                logger.info("Applied \(items.count) enrichment(s) for \(person.displayNameCache ?? "unknown", privacy: .public)")
+                logger.info("Applied \(items.count) enrichment(s) for \(person.displayNameCache ?? "unknown", privacy: .private)")
             } catch {
                 logger.error("Failed to mark enrichments approved: \(error.localizedDescription)")
             }

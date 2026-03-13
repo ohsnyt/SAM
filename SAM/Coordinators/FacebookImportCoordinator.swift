@@ -465,7 +465,7 @@ final class FacebookImportCoordinator {
                         )
                         newContactCount += 1
                     } catch {
-                        logger.error("Failed to create SamPerson for '\(candidate.displayName, privacy: .public)': \(error)")
+                        logger.error("Failed to create SamPerson for '\(candidate.displayName, privacy: .private)': \(error)")
                     }
                 }
             }

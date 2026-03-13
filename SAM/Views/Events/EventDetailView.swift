@@ -676,8 +676,7 @@ struct ParticipantDetailView: View {
                 HStack {
                     Spacer()
                     Button("Copy & Mark Sent") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(message.body, forType: .string)
+                        ClipboardSecurity.copy(message.body, clearAfter: 60)
                         try? EventRepository.shared.markMessageSent(
                             participationID: participation.id,
                             messageID: message.id

@@ -219,7 +219,7 @@ actor NoteAnalysisService {
             """
 
         let draft = try await AIService.shared.generateNarrative(prompt: prompt, systemInstruction: instructions)
-        logger.info("Generated follow-up draft for \(personName, privacy: .public)")
+        logger.info("Generated follow-up draft for \(personName, privacy: .private)")
         return draft
     }
 

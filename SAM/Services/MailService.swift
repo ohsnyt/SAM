@@ -125,7 +125,7 @@ actor MailService {
                 name: name,
                 emailAddresses: emails
             ))
-            logger.debug("Account: '\(name, privacy: .public)' emails=\(emails, privacy: .public)")
+            logger.debug("Account: '\(name, privacy: .private)' emails=\(emails, privacy: .private)")
         }
 
         logger.info("Found \(accounts.count) Mail.app accounts")
@@ -330,7 +330,7 @@ actor MailService {
 
             let (metaResult, metaError) = executeAppleScript(metadataScript)
             if let metaError {
-                logger.warning("Metadata sweep failed for \(accountID, privacy: .public): \(metaError, privacy: .public)")
+                logger.warning("Metadata sweep failed for \(accountID, privacy: .private): \(metaError, privacy: .public)")
                 accountWarnings.append("'\(accountID)': \(metaError)")
                 continue
             }
@@ -342,20 +342,20 @@ actor MailService {
                 let acctName = metaDesc.atIndex(2)?.stringValue ?? "?"
                 switch firstItem {
                 case "__not_found__":
-                    logger.warning("No account found with email \(accountID, privacy: .public)")
+                    logger.warning("No account found with email \(accountID, privacy: .private)")
                     accountWarnings.append("No Mail account found for '\(accountID)'")
                 case "__inbox_debug__":
                     let errDetail = metaDesc.atIndex(3)?.stringValue ?? "unknown"
-                    logger.error("Account '\(acctName, privacy: .public)' matched but inbox not accessible. Errors: \(errDetail, privacy: .public)")
+                    logger.error("Account '\(acctName, privacy: .private)' matched but inbox not accessible. Errors: \(errDetail, privacy: .public)")
                     accountWarnings.append("Account '\(acctName)' inbox not accessible: \(errDetail)")
                 case "__fetch_debug__":
                     let errDetail = metaDesc.atIndex(3)?.stringValue ?? "unknown"
-                    logger.error("Account '\(acctName, privacy: .public)' inbox found but message fetch failed: \(errDetail, privacy: .public)")
+                    logger.error("Account '\(acctName, privacy: .private)' inbox found but message fetch failed: \(errDetail, privacy: .public)")
                     accountWarnings.append("Account '\(acctName)' message fetch failed: \(errDetail)")
                 case "__empty__":
-                    logger.info("Account '\(acctName, privacy: .public)' matched, no messages in date range")
+                    logger.info("Account '\(acctName, privacy: .private)' matched, no messages in date range")
                 default:
-                    logger.warning("Unknown sentinel '\(firstItem, privacy: .public)' for \(accountID, privacy: .public)")
+                    logger.warning("Unknown sentinel '\(firstItem, privacy: .public)' for \(accountID, privacy: .private)")
                 }
                 continue
             }
@@ -375,7 +375,7 @@ actor MailService {
             let count = idsDesc.numberOfItems
             if count == 0 { continue }
 
-            logger.info("Account '\(resolvedAccountName, privacy: .public)' (email: \(accountID, privacy: .public)): \(count) messages in date range")
+            logger.info("Account '\(resolvedAccountName, privacy: .private)' (email: \(accountID, privacy: .private)): \(count) messages in date range")
 
             for i in 1...count {
                 let mailID = idsDesc.atIndex(i)?.int32Value ?? 0

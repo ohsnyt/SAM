@@ -255,7 +255,7 @@ final class NoteAnalysisCoordinator {
             let commsSummaries = gatherCommunicationsSummaries(for: person)
 
             guard !noteContents.isEmpty || !commsSummaries.isEmpty else {
-                logger.debug("No notes or communications for \(displayName, privacy: .public), skipping summary")
+                logger.debug("No notes or communications for \(displayName, privacy: .private), skipping summary")
                 return
             }
 
@@ -275,7 +275,7 @@ final class NoteAnalysisCoordinator {
             person.relationshipNextSteps = summary.suggestedNextSteps
             person.summaryUpdatedAt = .now
 
-            logger.info("Updated relationship summary for \(displayName, privacy: .public)")
+            logger.info("Updated relationship summary for \(displayName, privacy: .private)")
         } catch {
             logger.debug("Relationship summary skipped for \(displayName, privacy: .public): \(error.localizedDescription)")
         }
@@ -346,7 +346,7 @@ final class NoteAnalysisCoordinator {
                 ($0.displayNameCache ?? $0.displayName).lowercased() == mention.name.lowercased()
             }) {
                 matched.matchedPersonID = person.id
-                logger.debug("Auto-matched '\(mention.name, privacy: .public)' to \(person.displayNameCache ?? person.displayName, privacy: .public)")
+                logger.debug("Auto-matched '\(mention.name, privacy: .private)' to \(person.displayNameCache ?? person.displayName, privacy: .private)")
             }
 
             return matched
@@ -365,7 +365,7 @@ final class NoteAnalysisCoordinator {
                    ($0.displayNameCache ?? $0.displayName).lowercased() == personName.lowercased()
                }) {
                 matched.linkedPersonID = person.id
-                logger.debug("Auto-matched action to \(person.displayNameCache ?? person.displayName, privacy: .public)")
+                logger.debug("Auto-matched action to \(person.displayNameCache ?? person.displayName, privacy: .private)")
             }
 
             return matched
@@ -398,9 +398,9 @@ final class NoteAnalysisCoordinator {
                 role: role
             )
             note.followUpDraft = draft
-            logger.info("Generated follow-up draft for note linked to \(personName, privacy: .public)")
+            logger.info("Generated follow-up draft for note linked to \(personName, privacy: .private)")
         } catch {
-            logger.debug("Follow-up draft skipped for \(personName, privacy: .public): \(error.localizedDescription)")
+            logger.debug("Follow-up draft skipped for \(personName, privacy: .private): \(error.localizedDescription)")
         }
     }
 
@@ -474,7 +474,7 @@ final class NoteAnalysisCoordinator {
             do {
                 try outcomeRepo.upsert(outcome: outcome)
                 createdCount += 1
-                logger.info("Auto-created outcome '\(action.description)' for \(person.displayNameCache ?? person.displayName, privacy: .public)")
+                logger.info("Auto-created outcome '\(action.description)' for \(person.displayNameCache ?? person.displayName, privacy: .private)")
             } catch {
                 logger.debug("Failed to create outcome from action: \(error.localizedDescription)")
             }

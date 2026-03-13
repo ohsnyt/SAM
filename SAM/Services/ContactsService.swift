@@ -136,10 +136,10 @@ actor ContactsService {
         do {
             let contact = try store.unifiedContact(withIdentifier: identifier, keysToFetch: keys.keys)
             logger.debug("fetchContact keys: \(self.debugKeysDescription(keys.keys), privacy: .public)")
-            logger.debug("fetchContact contact: \(self.debugDescription(for: contact), privacy: .public)")
+            logger.debug("fetchContact contact: \(self.debugDescription(for: contact), privacy: .private)")
             return ContactDTO(from: contact)
         } catch {
-            logger.error("Failed to fetch contact \(identifier): \(error.localizedDescription)")
+            logger.error("Failed to fetch contact \(identifier, privacy: .private): \(error.localizedDescription)")
             return nil
         }
     }
@@ -185,17 +185,17 @@ actor ContactsService {
         }
         
         for c in contacts {
-            logger.debug("contact: \(self.debugDescription(for: c), privacy: .public)")
+            logger.debug("contact: \(self.debugDescription(for: c), privacy: .private)")
         }
         
         logger.info("Fetched \(contacts.count) contacts")
         let results = contacts.map { ContactDTO(from: $0) }
         #if DEBUG
-        for dto in results { if dto.emailAddresses.isEmpty { let name = dto.displayName; logger.debug("Contact has no emails: \(name, privacy: .public)") } }
+        for dto in results { if dto.emailAddresses.isEmpty { let name = dto.displayName; logger.debug("Contact has no emails: \(name, privacy: .private)") } }
         #endif
         return results
     }
-    
+
     /// Fetch contacts from a specific group
     func fetchContacts(inGroupNamed groupName: String, keys: ContactDTO.KeySet) async -> [ContactDTO] {
         guard authorizationStatus() == .authorized else {
@@ -218,16 +218,16 @@ actor ContactsService {
             let contacts = try store.unifiedContacts(matching: predicate, keysToFetch: keys.keys)
             
             for c in contacts {
-                logger.debug("group contact: \(self.debugDescription(for: c), privacy: .public)")
+                logger.debug("group contact: \(self.debugDescription(for: c), privacy: .private)")
             }
             
             logger.info("Fetched \(contacts.count) contacts from group '\(groupName)'")
             let results = contacts.map { ContactDTO(from: $0) }
             #if DEBUG
-            for dto in results { if dto.emailAddresses.isEmpty { let name = dto.displayName; logger.debug("Contact has no emails: \(name, privacy: .public)") } }
+            for dto in results { if dto.emailAddresses.isEmpty { let name = dto.displayName; logger.debug("Contact has no emails: \(name, privacy: .private)") } }
             #endif
             return results
-            
+
         } catch {
             logger.error("Failed to fetch contacts from group '\(groupName)': \(error.localizedDescription)")
             return []
@@ -249,16 +249,16 @@ actor ContactsService {
             let contacts = try store.unifiedContacts(matching: predicate, keysToFetch: keys.keys)
             
             for c in contacts {
-                logger.debug("group(id) contact: \(self.debugDescription(for: c), privacy: .public)")
+                logger.debug("group(id) contact: \(self.debugDescription(for: c), privacy: .private)")
             }
             
             logger.info("Fetched \(contacts.count) contacts from group ID '\(groupIdentifier)'")
             let results = contacts.map { ContactDTO(from: $0) }
             #if DEBUG
-            for dto in results { if dto.emailAddresses.isEmpty { let name = dto.displayName; logger.debug("Contact has no emails: \(name, privacy: .public)") } }
+            for dto in results { if dto.emailAddresses.isEmpty { let name = dto.displayName; logger.debug("Contact has no emails: \(name, privacy: .private)") } }
             #endif
             return results
-            
+
         } catch {
             logger.error("Failed to fetch contacts from group ID '\(groupIdentifier)': \(error.localizedDescription)")
             return []
@@ -295,7 +295,7 @@ actor ContactsService {
 
         do {
             let me = try store.unifiedMeContactWithKeys(toFetch: keys.keys)
-            logger.info("Fetched Me contact: \(self.debugDescription(for: me), privacy: .public)")
+            logger.info("Fetched Me contact: \(self.debugDescription(for: me), privacy: .private)")
             return ContactDTO(from: me)
         } catch {
             logger.info("No Me card configured: \(error.localizedDescription)")
@@ -324,13 +324,13 @@ actor ContactsService {
             let contacts = try store.unifiedContacts(matching: predicate, keysToFetch: keys.keys)
             
             for c in contacts {
-                logger.debug("search contact: \(self.debugDescription(for: c), privacy: .public)")
+                logger.debug("search contact: \(self.debugDescription(for: c), privacy: .private)")
             }
             
-            logger.info("Found \(contacts.count) contacts matching '\(query)'")
+            logger.info("Found \(contacts.count) contacts matching '\(query, privacy: .private)'")
             let results = contacts.map { ContactDTO(from: $0) }
             #if DEBUG
-            for dto in results { if dto.emailAddresses.isEmpty { let name = dto.displayName; logger.debug("Contact has no emails: \(name, privacy: .public)") } }
+            for dto in results { if dto.emailAddresses.isEmpty { let name = dto.displayName; logger.debug("Contact has no emails: \(name, privacy: .private)") } }
             #endif
             return results
         } catch {
@@ -356,7 +356,7 @@ actor ContactsService {
             return true
         } catch {
             // Contact not found or access error
-            logger.debug("Contact \(identifier) validation failed: \(error.localizedDescription)")
+            logger.debug("Contact \(identifier, privacy: .private) validation failed: \(error.localizedDescription)")
             return false
         }
     }
@@ -528,7 +528,7 @@ actor ContactsService {
             save.add(mutable, toContainerWithIdentifier: samContainerID)
             try store.execute(save)
 
-            logger.info("Created contact: \(fullName, privacy: .public) in container: \(samContainerID ?? "default", privacy: .public)")
+            logger.info("Created contact: \(fullName, privacy: .private) in container: \(samContainerID ?? "default", privacy: .public)")
 
             // Auto-add to SAM group if configured
             addContactToSAMGroup(identifier: mutable.identifier)
@@ -536,7 +536,7 @@ actor ContactsService {
             // Fetch detail keys so the DTO includes email addresses for matching
             let keys = ContactDTO.KeySet.detail.keys
             let created = try store.unifiedContact(withIdentifier: mutable.identifier, keysToFetch: keys)
-            logger.debug("created contact: \(self.debugDescription(for: created), privacy: .public)")
+            logger.debug("created contact: \(self.debugDescription(for: created), privacy: .private)")
             return ContactDTO(from: created)
         } catch {
             logger.error("Failed to create contact: \(error.localizedDescription, privacy: .public)")
@@ -717,11 +717,11 @@ actor ContactsService {
             saveRequest.update(mutable)
             try store.execute(saveRequest)
 
-            logger.info("Updated contact \(identifier, privacy: .public): \(updates.keys.map(\.rawValue).joined(separator: ", "), privacy: .public)")
+            logger.info("Updated contact \(identifier, privacy: .private): \(updates.keys.map(\.rawValue).joined(separator: ", "), privacy: .public)")
             return true
 
         } catch {
-            logger.error("updateContact failed for \(identifier, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            logger.error("updateContact failed for \(identifier, privacy: .private): \(error.localizedDescription, privacy: .public)")
             return false
         }
     }
@@ -821,7 +821,7 @@ actor ContactsService {
             saveRequest.addMember(contact, to: samGroup)
             try store.execute(saveRequest)
 
-            logger.info("Added contact \(identifier, privacy: .public) to SAM group")
+            logger.info("Added contact \(identifier, privacy: .private) to SAM group")
         } catch {
             logger.warning("Failed to add contact to SAM group: \(error.localizedDescription)")
         }

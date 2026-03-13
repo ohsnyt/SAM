@@ -778,7 +778,7 @@ final class LinkedInImportCoordinator {
         let matching = allMessages.filter { $0.senderProfileURL.lowercased() == normalizedTarget }
 
         guard !matching.isEmpty else {
-            logger.info("reprocessForSender: no messages found for \(normalizedTarget, privacy: .public)")
+            logger.info("reprocessForSender: no messages found for \(normalizedTarget, privacy: .private)")
             return
         }
 
@@ -828,7 +828,7 @@ final class LinkedInImportCoordinator {
             try? touchRepo.attributeTouches(forProfileURL: normalizedTarget, to: personID)
         }
 
-        logger.info("reprocessForSender: \(imported) message(s) imported, \(skipped) already present for \(normalizedTarget, privacy: .public)")
+        logger.info("reprocessForSender: \(imported) message(s) imported, \(skipped) already present for \(normalizedTarget, privacy: .private)")
     }
 
     /// Cancel a pending import (when user dismisses before confirming).
@@ -1759,9 +1759,9 @@ final class LinkedInImportCoordinator {
                     try? touchRepo.attributeTouches(forProfileURL: url, to: personID)
                 }
 
-                logger.info("Add candidate '\(displayName, privacy: .public)': created standalone SamPerson")
+                logger.info("Add candidate '\(displayName, privacy: .private)': created standalone SamPerson")
             } catch {
-                logger.error("Failed to create SamPerson for '\(displayName, privacy: .public)': \(error)")
+                logger.error("Failed to create SamPerson for '\(displayName, privacy: .private)': \(error)")
             }
         }
 
@@ -1800,9 +1800,9 @@ final class LinkedInImportCoordinator {
                     // Reprocess LinkedIn messages so they link to this person
                     await reprocessForSender(profileURL: url)
                 }
-                logger.info("Merged LinkedIn candidate '\(candidate.fullName, privacy: .public)' into existing person '\(info.displayName, privacy: .public)'")
+                logger.info("Merged LinkedIn candidate '\(candidate.fullName, privacy: .private)' into existing person '\(info.displayName, privacy: .private)'")
             } catch {
-                logger.error("Failed to merge candidate '\(candidate.fullName, privacy: .public)': \(error)")
+                logger.error("Failed to merge candidate '\(candidate.fullName, privacy: .private)': \(error)")
             }
         }
     }

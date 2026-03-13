@@ -202,8 +202,7 @@ struct SocialPromotionSheet: View {
     }
 
     private func copyAndMarkPosted() {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(draftText, forType: .string)
+        ClipboardSecurity.copy(draftText, clearAfter: 60)
         try? EventRepository.shared.markSocialPromotionPosted(
             eventID: event.id,
             platform: selectedPlatform

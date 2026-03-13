@@ -10,6 +10,8 @@
 import SwiftData
 import Foundation
 import os
+import CryptoKit
+import LocalAuthentication
 
 private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "BackupCoordinator")
 
@@ -38,6 +40,8 @@ final class BackupCoordinator {
     var status: BackupStatus = .idle
     var progress: String = ""
     var pendingImport: (url: URL, preview: ImportPreview)?
+    var isEncryptedBackup: Bool = false
+    var needsPassphrase: Bool = false
 
     private init() {}
 
@@ -76,12 +80,12 @@ final class BackupCoordinator {
     // MARK: - Export
     // ─────────────────────────────────────────────────────────────────
 
-    func exportBackup(to url: URL) async {
-        await exportBackup(to: url, container: SAMModelContainer.shared)
+    func exportBackup(to url: URL, passphrase: String? = nil) async {
+        await exportBackup(to: url, container: SAMModelContainer.shared, passphrase: passphrase)
     }
 
     /// Export backup from a specific container (used by legacy migration).
-    func exportBackup(to url: URL, container: ModelContainer) async {
+    func exportBackup(to url: URL, container: ModelContainer, passphrase: String? = nil) async {
         status = .exporting
         progress = "Fetching data..."
         logger.info("Export started")
@@ -555,9 +559,16 @@ final class BackupCoordinator {
             encoder.outputFormatting = [.sortedKeys]
             encoder.dateEncodingStrategy = .iso8601
             let data = try encoder.encode(document)
-            try data.write(to: url, options: .atomic)
+            let outputData: Data
+            if let passphrase, !passphrase.isEmpty {
+                outputData = try encrypt(data, passphrase: passphrase)
+                logger.info("Backup encrypted with user passphrase")
+            } else {
+                outputData = data
+            }
+            try outputData.write(to: url, options: .atomic)
 
-            let sizeMB = Double(data.count) / 1_048_576.0
+            let sizeMB = Double(outputData.count) / 1_048_576.0
             let summary = "\(personDTOs.count) people, \(noteDTOs.count) notes, \(evidenceDTOs.count) evidence (\(String(format: "%.1f", sizeMB)) MB)"
             logger.info("Export complete: \(summary)")
             status = .success(summary)
@@ -574,7 +585,7 @@ final class BackupCoordinator {
     // MARK: - Validate
     // ─────────────────────────────────────────────────────────────────
 
-    func validateBackup(from url: URL) async throws -> ImportPreview {
+    func validateBackup(from url: URL, passphrase: String? = nil) async throws -> ImportPreview {
         status = .validating
         progress = "Reading backup file..."
 
@@ -582,9 +593,21 @@ final class BackupCoordinator {
         defer { if accessing { url.stopAccessingSecurityScopedResource() } }
 
         let data = try Data(contentsOf: url)
+        let jsonData: Data
+        if data.starts(with: Data("SAMENC1".utf8)) {
+            isEncryptedBackup = true
+            guard let passphrase, !passphrase.isEmpty else {
+                needsPassphrase = true
+                throw BackupError.authenticationRequired
+            }
+            jsonData = try decrypt(data, passphrase: passphrase)
+        } else {
+            isEncryptedBackup = false
+            jsonData = data
+        }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        let doc = try decoder.decode(BackupDocument.self, from: data)
+        let doc = try decoder.decode(BackupDocument.self, from: jsonData)
 
         guard doc.metadata.backupFormatVersion == 1 else {
             throw BackupError.unsupportedFormat(doc.metadata.backupFormatVersion)
@@ -602,7 +625,7 @@ final class BackupCoordinator {
     // MARK: - Import
     // ─────────────────────────────────────────────────────────────────
 
-    func performImport(from url: URL) async {
+    func performImport(from url: URL, passphrase: String? = nil) async {
         status = .importing
         logger.info("Import started")
 
@@ -620,9 +643,18 @@ final class BackupCoordinator {
             // 2. Decode source
             progress = "Decoding backup..."
             let data = try Data(contentsOf: url)
+            let jsonData: Data
+            if data.starts(with: Data("SAMENC1".utf8)) {
+                guard let passphrase, !passphrase.isEmpty else {
+                    throw BackupError.authenticationRequired
+                }
+                jsonData = try decrypt(data, passphrase: passphrase)
+            } else {
+                jsonData = data
+            }
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
-            let doc = try decoder.decode(BackupDocument.self, from: data)
+            let doc = try decoder.decode(BackupDocument.self, from: jsonData)
 
             // 3. Delete all existing data (individual deletes to avoid
             //    CoreData batch-delete failures on MTM nullify inverses)
@@ -1456,19 +1488,69 @@ final class BackupCoordinator {
 
         logger.info("Post-restore refresh complete")
     }
+
+    // ─────────────────────────────────────────────────────────────────
+    // MARK: - Encryption
+    // ─────────────────────────────────────────────────────────────────
+
+    /// Derive a symmetric key from a user-provided passphrase using HKDF.
+    private func deriveKey(from passphrase: String) -> SymmetricKey {
+        let inputKey = SymmetricKey(data: Data(passphrase.utf8))
+        return HKDF<SHA256>.deriveKey(
+            inputKeyMaterial: inputKey,
+            salt: "com.matthewsessions.SAM.backup".data(using: .utf8)!,
+            info: Data(),
+            outputByteCount: 32
+        )
+    }
+
+    /// Encrypt data using AES-GCM with the given passphrase.
+    private func encrypt(_ data: Data, passphrase: String) throws -> Data {
+        let key = deriveKey(from: passphrase)
+        let sealedBox = try AES.GCM.seal(data, using: key)
+        guard let combined = sealedBox.combined else {
+            throw BackupError.encryptionFailed
+        }
+        // Prepend a magic header so we can detect encrypted vs plain backups
+        var result = Data("SAMENC1".utf8)
+        result.append(combined)
+        return result
+    }
+
+    /// Decrypt data using AES-GCM with the given passphrase.
+    private func decrypt(_ data: Data, passphrase: String) throws -> Data {
+        let header = Data("SAMENC1".utf8)
+        guard data.starts(with: header) else {
+            // Not encrypted — return as-is for backward compatibility
+            return data
+        }
+        let encryptedData = data.dropFirst(header.count)
+        let key = deriveKey(from: passphrase)
+        let sealedBox = try AES.GCM.SealedBox(combined: encryptedData)
+        return try AES.GCM.open(sealedBox, using: key)
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────
 // MARK: - Errors
 // ─────────────────────────────────────────────────────────────────────
 
-enum BackupError: LocalizedError {
+enum BackupError: LocalizedError, Equatable {
     case unsupportedFormat(Int)
+    case encryptionFailed
+    case decryptionFailed
+    case authenticationRequired
 
     var errorDescription: String? {
         switch self {
         case .unsupportedFormat(let v):
             return "Unsupported backup format version \(v). This backup was created with a newer version of SAM."
+        case .encryptionFailed:
+            return "Failed to encrypt backup data"
+        case .decryptionFailed:
+            return "Failed to decrypt backup — check your passphrase"
+        case .authenticationRequired:
+            return "This backup is encrypted. Please enter the passphrase."
         }
     }
 }
