@@ -230,6 +230,13 @@ struct RelationshipGraphView: View {
                     }
                     pendingEdgeConfirmation = nil
                 }
+                Button("Incorrect", role: .destructive) {
+                    if let edge = pendingEdgeConfirmation,
+                       let relID = edge.deducedRelationID {
+                        coordinator.rejectDeducedRelation(id: relID)
+                    }
+                    pendingEdgeConfirmation = nil
+                }
                 Button("Cancel", role: .cancel) {
                     pendingEdgeConfirmation = nil
                 }
@@ -391,7 +398,7 @@ struct RelationshipGraphView: View {
                 let typeName = edgeTypeDisplayName(edge.edgeType)
                 if edge.edgeType == .deducedFamily {
                     let status = edge.isConfirmedDeduction ? "confirmed" : "unconfirmed"
-                    let hint = edge.isConfirmedDeduction ? "" : "\nDouble-click or right-click to confirm"
+                    let hint = edge.isConfirmedDeduction ? "" : "\nDouble-click or right-click to confirm or reject"
                     Text("\(typeName) (\(status))\(hint)")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
@@ -1615,18 +1622,77 @@ struct RelationshipGraphView: View {
         let threshold: CGFloat = 8.0
         let nodeMap = Dictionary(uniqueKeysWithValues: coordinator.nodes.map { ($0.id, $0) })
 
+        // Pre-compute edge group indices for parallel offset (same as drawEdges)
+        var edgeGroups: [String: [GraphEdge]] = [:]
+        for edge in coordinator.edges {
+            let key = edgePairKey(sourceID: edge.sourceID, targetID: edge.targetID)
+            edgeGroups[key, default: []].append(edge)
+        }
+        var edgeGroupIndex: [UUID: (index: Int, total: Int)] = [:]
+        for (_, group) in edgeGroups {
+            for (i, edge) in group.enumerated() {
+                edgeGroupIndex[edge.id] = (index: i, total: group.count)
+            }
+        }
+
+        var bestEdge: GraphEdge?
+        var bestDist: CGFloat = .greatestFiniteMagnitude
+
         for edge in coordinator.edges {
             guard let source = nodeMap[edge.sourceID],
                   let target = nodeMap[edge.targetID] else { continue }
 
             let sp = screenPoint(source.position, center: center)
             let tp = screenPoint(target.position, center: center)
-            let dist = distanceToLineSegment(point: screenPt, lineStart: sp, lineEnd: tp)
-            if dist <= threshold {
-                return edge
+
+            let dx = tp.x - sp.x
+            let dy = tp.y - sp.y
+            let length = hypot(dx, dy)
+            guard length > 1 else { continue }
+
+            let ux = dx / length
+            let uy = dy / length
+
+            let sourceRadius = nodeRadius(for: source) * scale * nodeScaleFactor(for: source)
+            let targetRadius = nodeRadius(for: target) * scale * nodeScaleFactor(for: target)
+            let edgeStart = CGPoint(x: sp.x + ux * sourceRadius, y: sp.y + uy * sourceRadius)
+            let edgeEnd = CGPoint(x: tp.x - ux * targetRadius, y: tp.y - uy * targetRadius)
+
+            let groupInfo = edgeGroupIndex[edge.id] ?? (index: 0, total: 1)
+            let offset = computeParallelOffset(index: groupInfo.index, total: groupInfo.total, perpX: -uy, perpY: ux)
+
+            let dist: CGFloat
+            if offset == 0 {
+                dist = distanceToLineSegment(point: screenPt, lineStart: edgeStart, lineEnd: edgeEnd)
+            } else {
+                // Hit test against the quadratic Bézier curve
+                let mid = CGPoint(x: (edgeStart.x + edgeEnd.x) / 2, y: (edgeStart.y + edgeEnd.y) / 2)
+                let controlPoint = CGPoint(x: mid.x + offset * (-uy), y: mid.y + offset * ux)
+                dist = distanceToQuadBezier(point: screenPt, start: edgeStart, control: controlPoint, end: edgeEnd)
+            }
+
+            if dist <= threshold && dist < bestDist {
+                bestDist = dist
+                bestEdge = edge
             }
         }
-        return nil
+        return bestEdge
+    }
+
+    /// Approximate minimum distance from a point to a quadratic Bézier curve by sampling.
+    private func distanceToQuadBezier(point: CGPoint, start: CGPoint, control: CGPoint, end: CGPoint, samples: Int = 16) -> CGFloat {
+        var minDist: CGFloat = .greatestFiniteMagnitude
+        for i in 0...samples {
+            let t = CGFloat(i) / CGFloat(samples)
+            let oneMinusT = 1 - t
+            let bx = oneMinusT * oneMinusT * start.x + 2 * oneMinusT * t * control.x + t * t * end.x
+            let by = oneMinusT * oneMinusT * start.y + 2 * oneMinusT * t * control.y + t * t * end.y
+            let dx = point.x - bx
+            let dy = point.y - by
+            let dist = dx * dx + dy * dy
+            if dist < minDist { minDist = dist }
+        }
+        return sqrt(minDist)
     }
 
     private func distanceToLineSegment(point: CGPoint, lineStart: CGPoint, lineEnd: CGPoint) -> CGFloat {
