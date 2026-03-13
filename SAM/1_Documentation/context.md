@@ -52,6 +52,8 @@ SAM is a **native macOS coaching assistant** for independent financial strategis
 
 **Rules**: Views never touch raw CNContact/EKEvent. All actor-boundary data is `Sendable` DTOs. One CNContactStore, one EKEventStore (never create duplicates). Repositories use `SAMModelContainer.shared`.
 
+**AppKit interop**: The architecture is SwiftUI-first, but specific window-level behaviors require AppKit where SwiftUI lacks the necessary control. The sidebar toggle button uses `NSTitlebarAccessoryViewController` (`SidebarToggleConfigurator.swift`) to pin the toggle next to the traffic lights — SwiftUI's built-in `NavigationSplitView` toggle migrates to the toolbar overflow menu when the sidebar collapses. This follows the same hybrid pattern Apple uses in its own apps (Xcode, Mail, Finder). Other AppKit interop points: NSTextView for rich text editing, AppleScript bridges, security-scoped bookmarks.
+
 ### 2.2 AI: Two Layers + RLM Orchestration
 
 **Layer 1 — Relationship Intelligence (foreground, <5s response)**:

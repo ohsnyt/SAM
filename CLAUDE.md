@@ -34,7 +34,7 @@ Favor predictable, standard Apple interaction patterns over novelty. If a native
 ### macOS Target
 
 - **macOS 26+** (Tahoe) — leverage Glass design, latest SwiftUI capabilities, Apple FoundationModels improvements
-- SwiftUI-first architecture; AppKit interop only when required for system-level behaviors (NSTextView for rich editing, AppleScript bridges, security-scoped bookmarks)
+- SwiftUI-first architecture; AppKit interop only when required for system-level behaviors (NSTextView for rich editing, AppleScript bridges, security-scoped bookmarks, sidebar toggle via NSTitlebarAccessoryViewController)
 - Respect macOS Human Interface Guidelines including Glass material, sidebar behavior, toolbar conventions
 - Full Dark Mode and accessibility support (VoiceOver, Dynamic Type, Reduce Motion)
 

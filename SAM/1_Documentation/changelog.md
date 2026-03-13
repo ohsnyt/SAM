@@ -4,6 +4,19 @@
 
 ---
 
+## March 12, 2026 — Sidebar Toggle Fix & Graph Deduced Relationship Improvements
+
+### Fix: Sidebar Toggle Pinned Next to Traffic Lights
+
+SwiftUI's built-in `NavigationSplitView` sidebar toggle migrates to the toolbar overflow menu when the sidebar collapses. Replaced with an AppKit `NSTitlebarAccessoryViewController` (`SidebarToggleConfigurator.swift`) that pins the toggle button in a fixed leading position next to the traffic lights, matching the behavior of Apple's own apps (Xcode, Mail, Finder). This is an intentional hybrid AppKit/SwiftUI pattern documented in `context.md` §2.1.
+
+### Fix: Deduced Relationship Graph Interactions
+
+- **Reject from double-click alert**: The confirmation alert now shows three options — Confirm, Incorrect (reject), and Cancel. Previously only Confirm/Cancel were available, requiring the context menu to reject.
+- **Edge hit testing for parallel edges**: When multiple edges exist between two people, hit testing now accounts for the Bézier curve offsets used during rendering. Previously it tested against straight lines, making it impossible to reliably click the deduced edge.
+
+---
+
 ## March 12, 2026 — Unknown Sender Auto-Reply, Confirmation Flow & Reminder Scheduler
 
 ### New Feature: Auto-Reply to Unknown Sender Event RSVPs

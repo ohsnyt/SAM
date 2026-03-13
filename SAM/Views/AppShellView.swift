@@ -40,6 +40,7 @@ struct AppShellView: View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             sidebar
                 .navigationSplitViewColumnWidth(min: 120, ideal: 130, max: 200)
+                .toolbar(removing: .sidebarToggle)
         } content: {
             if showPeopleList {
                 PeopleListView(selectedPersonID: $selectedPersonID, activeSpecialFilters: $peopleSpecialFilters)
@@ -54,6 +55,7 @@ struct AppShellView: View {
         .navigationTitle("SAM")
         .navigationSplitViewStyle(.balanced)
         .toolbar(removing: .sidebarToggle)
+        .background { SidebarToggleConfigurator() }
         .toolbar {
             if sidebarSelection == "people" {
                 ToolbarItem(placement: .principal) {
