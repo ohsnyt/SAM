@@ -359,4 +359,19 @@ extension EventDTO {
     var sourceUID: String {
         "eventkit:\(identifier)"
     }
+
+    /// True if at least one attendee is a non-self, non-room/resource participant.
+    /// Used to distinguish real meetings from solo calendar blocks.
+    var hasNonSelfAttendees: Bool {
+        attendees.contains { attendee in
+            !attendee.isCurrentUser
+            && attendee.participantType != .room
+            && attendee.participantType != .resource
+        }
+    }
+
+    /// True if this event looks like a real meeting (has attendees, not free, not all-day).
+    var looksLikeRealMeeting: Bool {
+        hasNonSelfAttendees && !isAllDay && availability != .free
+    }
 }

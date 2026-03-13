@@ -397,6 +397,8 @@ final class EvidenceRepository {
             existing.bodyText = event.notes
             existing.occurredAt = event.startDate
             existing.endedAt = event.endDate
+            existing.isAllDay = event.isAllDay
+            existing.calendarAvailability = event.availability.rawValue
             existing.participantHints = buildParticipantHints(from: event, knownEmails: knownEmails)
             setLinkedPeople(resolved, on: existing)
         } else {
@@ -412,6 +414,8 @@ final class EvidenceRepository {
                 snippet: event.snippet,
                 bodyText: event.notes
             )
+            evidence.isAllDay = event.isAllDay
+            evidence.calendarAvailability = event.availability.rawValue
             evidence.participantHints = buildParticipantHints(from: event, knownEmails: knownEmails)
             setLinkedPeople(resolved, on: evidence)
 
@@ -445,6 +449,8 @@ final class EvidenceRepository {
                 existing.bodyText = event.notes
                 existing.occurredAt = event.startDate
                 existing.endedAt = event.endDate
+                existing.isAllDay = event.isAllDay
+                existing.calendarAvailability = event.availability.rawValue
                 existing.participantHints = buildParticipantHints(from: event, knownEmails: knownEmails)
                 setLinkedPeople(resolved, on: existing)
 
@@ -462,6 +468,8 @@ final class EvidenceRepository {
                     snippet: event.snippet,
                     bodyText: event.notes
                 )
+                evidence.isAllDay = event.isAllDay
+                evidence.calendarAvailability = event.availability.rawValue
                 evidence.participantHints = buildParticipantHints(from: event, knownEmails: knownEmails)
                 setLinkedPeople(resolved, on: evidence)
 

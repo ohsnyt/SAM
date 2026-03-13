@@ -305,7 +305,7 @@ All models use SwiftData lightweight migration. Enum storage uses `rawValue` pat
 |-------|---------|------------|
 | **SamPerson** | Contact anchor + CRM | roleBadges, pipeline stage, social URLs, phone aliases, cadence, familyReferences |
 | **SamContext** | Households, businesses, groups | kind, members |
-| **SamEvidenceItem** | Observations from all channels | source, sourceUID, snippet, linkedPeople |
+| **SamEvidenceItem** | Observations from all channels | source, sourceUID, snippet, linkedPeople, isAllDay, calendarAvailability |
 | **SamNote** | User notes + AI analysis | action items, topics, life events, discovered relationships |
 | **SamInsight** | AI-generated per-person insights | category, content, confidence |
 | **SamOutcome** | Coaching suggestions | kind, priority, deadline, action lane, sequence info |

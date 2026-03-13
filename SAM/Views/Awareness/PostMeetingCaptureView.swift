@@ -34,6 +34,9 @@ struct CapturePayload: Identifiable, Sendable {
     let talkingPoints: [String]
     let openActionItems: [String]
     let evidenceID: UUID?
+    /// Names of attendees not yet in SAM's contacts. Pre-populates the
+    /// "extra attendees" field so the user can confirm or edit them.
+    var unknownAttendeeNames: [String] = []
 
     enum CaptureKind: Sendable {
         case meeting
@@ -216,6 +219,10 @@ struct PostMeetingCaptureView: View {
             FeatureAdoptionTracker.shared.recordUsage(.postMeetingCapture)
             // Pre-check all attendees as present
             attendancePresent = Set(payload.attendees.map(\.personID))
+            // Pre-populate unknown attendee names so the user can confirm/edit
+            if !payload.unknownAttendeeNames.isEmpty {
+                extraAttendeeNames = payload.unknownAttendeeNames
+            }
         }
     }
 

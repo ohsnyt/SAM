@@ -234,16 +234,18 @@ final class CalendarImportCoordinator {
                 throw ImportError.fetchFailed
             }
 
-            // Filter events by known participants
+            // Filter events by known participants or real meeting attendees
             let knownEmails = try peopleRepository.allKnownEmails()
             let neverInclude = try unknownSenderRepository.neverIncludeEmails()
 
             let eventsToProcess = events.filter { event in
-                // Keep events with at least one known participant
+                // Keep events with at least one known participant (existing behavior)
                 event.participantEmails.contains { knownEmails.contains($0.lowercased()) }
+                // Also keep real meetings with unknown attendees (for post-meeting capture)
+                || event.looksLikeRealMeeting
             }
 
-            logger.info("\(eventsToProcess.count) events with known participants, \(events.count - eventsToProcess.count) skipped")
+            logger.info("\(eventsToProcess.count) events to process (\(events.count - eventsToProcess.count) skipped — solo blocks, free time, or all-day)")
 
             // Collect unknown participants from ALL events for triage
             var unknownParticipants: [(email: String, displayName: String?, subject: String, date: Date, source: EvidenceSource, isLikelyMarketing: Bool)] = []

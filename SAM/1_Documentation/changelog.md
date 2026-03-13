@@ -4,6 +4,31 @@
 
 ---
 
+## March 13, 2026 — Post-Meeting Capture for Unknown Attendees
+
+### Bug Fix: Meetings with unknown participants now trigger note capture
+
+Previously, the post-meeting capture prompt only fired for calendar events where at least one attendee was already a known SAM contact. Meetings with new prospects or leads — arguably the most important ones to capture — were silently skipped.
+
+**Root cause:** `CalendarImportCoordinator` filtered out events without known-contact attendees at import time, so they never became evidence items and could never trigger the post-meeting check in `DailyBriefingCoordinator`.
+
+**Changes:**
+
+- **SamEvidenceItem** — Added `isAllDay: Bool` and `calendarAvailability: String` fields (additive, no schema version bump needed)
+- **EventDTO** — Added `hasNonSelfAttendees` and `looksLikeRealMeeting` computed helpers for filtering
+- **CalendarImportCoordinator** — Import filter now also includes events that look like real meetings (have non-self attendees, not free, not all-day) even when no attendee is a known contact
+- **DailyBriefingCoordinator.checkRecentlyEndedMeetings()** — Three guards prevent false positives:
+  - Skip `isAllDay` events (conferences, holidays)
+  - Skip `calendarAvailability == "free"` events (deep work blocks like "Research IUL options for Joey")
+  - Require at least one non-self participant (unverified hint or linked non-Me person)
+- **CapturePayload** — Added `unknownAttendeeNames: [String]` field
+- **PostMeetingCaptureView** — Pre-populates `extraAttendeeNames` with unknown attendee names on appear, so the user sees them in the attendance step ready to confirm or edit
+- **DailyBriefingCoordinator.createMeetingNoteTemplate()** — No longer force-unwraps first attendee; handles events with only unknown attendees gracefully
+
+**Guard logic for solo blocks:** Events marked as "free" availability (common for deep work, prep, research blocks) are excluded. All-day events are excluded. Events with zero non-self attendees are excluded. This means personal calendar blocks like "Take an hour to research IUL options for Joey" won't trigger prompts as long as they're marked free or have no invitees.
+
+---
+
 ## March 13, 2026 — FamilyReference System: Note-Discovered Relationships on Graph
 
 ### New Feature: FamilyReference Pipeline

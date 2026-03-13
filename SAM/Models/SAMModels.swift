@@ -701,6 +701,15 @@ public final class SamEvidenceItem {
     /// attributing RSVP language from the user's own words to a contact.
     public var isFromMe: Bool = false
 
+    // ── Calendar-specific metadata ───────────────────────────────────
+    /// True if the source calendar event was an all-day event.
+    public var isAllDay: Bool = false
+
+    /// Calendar availability for this event (busy/free/tentative/unavailable).
+    /// Stored as `EventDTO.EventAvailability.rawValue`; empty string for
+    /// non-calendar evidence.
+    public var calendarAvailability: String = ""
+
     // ── Computed signals (re-derived on every upsert) ──────────────
     /// Deterministic, explainable tags produced by `InsightGeneratorV1`.
     /// Stored as an embedded value array; not a separate table because

@@ -745,30 +745,59 @@ final class DailyBriefingCoordinator {
 
         guard let allEvidence = try? evidenceRepo.fetchAll() else { return }
 
-        // Find calendar events that ended in the last 5 minutes
+        // Find calendar events that ended in the last 5 minutes.
+        // Include events with unknown participants (no linkedPeople) — these are
+        // real meetings with people not yet in SAM's contacts.
         let recentlyEnded = allEvidence.filter { item in
             guard item.source == .calendar else { return false }
+            // Skip all-day events (conferences, holidays, etc.)
+            guard !item.isAllDay else { return false }
+            // Skip "free" time blocks (deep work, research, prep)
+            guard item.calendarAvailability != "free" else { return false }
+            // Must have at least one non-self participant (known or unknown).
+            // Unverified hints are always non-self others.
+            // For verified hints, check linkedPeople for non-Me contacts.
+            let hasUnverifiedAttendee = item.participantHints.contains(where: { !$0.isVerified })
+            let hasKnownNonSelfAttendee = item.linkedPeople.contains(where: { !$0.isMe })
+            guard hasUnverifiedAttendee || hasKnownNonSelfAttendee else { return false }
             let endTime = item.endedAt ?? item.occurredAt.addingTimeInterval(3600)
-            return endTime >= fiveMinAgo && endTime <= now && !item.linkedPeople.isEmpty
+            return endTime >= fiveMinAgo && endTime <= now
         }
 
-        for event in recentlyEnded {
-            let attendees = event.linkedPeople.filter { !$0.isMe }
-            guard !attendees.isEmpty else { continue }
+        // Compute Me emails once outside the loop
+        let meEmails: Set<String> = {
+            guard let me = try? PeopleRepository.shared.fetchMe() else { return [] }
+            var emails = Set<String>()
+            if let primary = me.emailCache?.lowercased() { emails.insert(primary) }
+            for alias in me.emailAliases { emails.insert(alias.lowercased()) }
+            return emails
+        }()
 
-            // Check if a note already exists for any attendee created after event start
-            let hasExistingNote: Bool
-            if let allNotes = try? notesRepo.fetchAll() {
-                hasExistingNote = allNotes.contains { note in
+        for event in recentlyEnded {
+            let knownAttendees = event.linkedPeople.filter { !$0.isMe }
+
+            // Gather unknown attendee names from participant hints
+            let unknownNames: [String] = event.participantHints.compactMap { hint in
+                // Skip if this hint matches a known linked person
+                if hint.isVerified { return nil }
+                // Skip if this is the user's own email
+                if let email = hint.rawEmail?.lowercased(), meEmails.contains(email) { return nil }
+                return hint.displayName
+            }
+
+            // Must have at least one attendee (known or unknown)
+            guard !knownAttendees.isEmpty || !unknownNames.isEmpty else { continue }
+
+            // Check if a note already exists for any known attendee created after event start
+            if !knownAttendees.isEmpty, let allNotes = try? notesRepo.fetchAll() {
+                let hasExistingNote = allNotes.contains { note in
                     note.createdAt >= event.occurredAt
                     && note.linkedPeople.contains(where: { person in
-                        attendees.contains(where: { $0.id == person.id })
+                        knownAttendees.contains(where: { $0.id == person.id })
                     })
                 }
-            } else {
-                hasExistingNote = false
+                guard !hasExistingNote else { continue }
             }
-            guard !hasExistingNote else { continue }
 
             // Check for duplicate template by content prefix
             let titlePrefix = "Meeting: \(event.title)"
@@ -778,22 +807,22 @@ final class DailyBriefingCoordinator {
             }
 
             // Create the template note
-            createMeetingNoteTemplate(event: event, attendees: attendees)
+            createMeetingNoteTemplate(event: event, knownAttendees: knownAttendees, unknownAttendeeNames: unknownNames)
         }
     }
 
     /// Post notification to open the structured post-meeting capture sheet.
     /// Builds a CapturePayload enriched with briefing data (talking points, pending actions).
     /// Also creates a follow-up outcome so the Action Queue tracks it.
-    private func createMeetingNoteTemplate(event: SamEvidenceItem, attendees: [SamPerson]) {
+    private func createMeetingNoteTemplate(event: SamEvidenceItem, knownAttendees: [SamPerson], unknownAttendeeNames: [String] = []) {
         // Look up existing briefing for this event to get talking points and open actions
         let matchingBriefing = MeetingPrepCoordinator.shared.briefings.first { briefing in
             briefing.title == event.title
                 && Calendar.current.isDate(briefing.startsAt, inSameDayAs: event.occurredAt)
         }
 
-        // Build CaptureAttendeeInfo from attendees + briefing profiles
-        let attendeeInfos: [CaptureAttendeeInfo] = attendees.map { person in
+        // Build CaptureAttendeeInfo from known attendees + briefing profiles
+        let attendeeInfos: [CaptureAttendeeInfo] = knownAttendees.map { person in
             let profile = matchingBriefing?.attendees.first(where: { $0.personID == person.id })
             return CaptureAttendeeInfo(
                 personID: person.id,
@@ -814,7 +843,8 @@ final class DailyBriefingCoordinator {
             attendees: attendeeInfos,
             talkingPoints: talkingPoints,
             openActionItems: openActions,
-            evidenceID: event.id
+            evidenceID: event.id,
+            unknownAttendeeNames: unknownAttendeeNames
         )
 
         NotificationCenter.default.post(
@@ -825,7 +855,6 @@ final class DailyBriefingCoordinator {
 
         // Create a follow-up outcome so it appears in the Action Queue
         do {
-            let primary = attendees.first!
             let outcome = SamOutcome(
                 title: "Complete meeting notes for \(event.title)",
                 rationale: "Meeting ended — capture discussion points and action items.",
@@ -833,14 +862,14 @@ final class DailyBriefingCoordinator {
                 deadlineDate: Calendar.current.date(byAdding: .hour, value: 24, to: .now),
                 sourceInsightSummary: "Post-meeting capture prompt",
                 suggestedNextStep: "Fill in the meeting notes capture sheet",
-                linkedPerson: primary
+                linkedPerson: knownAttendees.first  // nil if all attendees are unknown
             )
             try outcomeRepo.upsert(outcome: outcome)
         } catch {
             logger.error("Failed to create follow-up outcome: \(error.localizedDescription)")
         }
 
-        logger.info("Posted post-meeting capture for '\(event.title)' with \(attendees.count) attendees, \(talkingPoints.count) talking points")
+        logger.info("Posted post-meeting capture for '\(event.title)' with \(knownAttendees.count) known + \(unknownAttendeeNames.count) unknown attendees")
     }
 
     // MARK: - Multi-Step Sequence Trigger Evaluation
