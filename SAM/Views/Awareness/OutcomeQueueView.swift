@@ -88,6 +88,11 @@ struct OutcomeQueueView: View {
                     .id(gapRefreshToken)
                 }
 
+                TipView(TodayHeroCardTip())
+                    .tipViewStyle(SAMTipViewStyle())
+                    .padding(.horizontal)
+                    .padding(.bottom, 4)
+
                 // Active outcome cards
                 VStack(spacing: 12) {
                     ForEach(Array(visibleOutcomes.enumerated()), id: \.element.id) { index, outcome in

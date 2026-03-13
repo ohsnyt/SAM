@@ -32,6 +32,9 @@ enum SAMTipGuideMapping {
         case is ProductionTip:           return "business.production"
         case is RelationshipGraphTip:    return "people.relationship-graph"
         case is SearchTip:               return "search.overview"
+        case is EventManagerTip:         return "events.overview"
+        case is PresentationLibraryTip:  return "events.presentation-library"
+        case is GrowDashboardTip:        return "grow.lead-acquisition"
         default:                         return nil
         }
     }
@@ -69,6 +72,9 @@ enum SAMTipState {
         ProductionTip.self,
         RelationshipGraphTip.self,
         SearchTip.self,
+        EventManagerTip.self,
+        PresentationLibraryTip.self,
+        GrowDashboardTip.self,
     ]
 
     /// Turn tips on: reset eligibility for all tips so they reappear.
@@ -91,6 +97,9 @@ enum SAMTipState {
             await ProductionTip().resetEligibility()
             await RelationshipGraphTip().resetEligibility()
             await SearchTip().resetEligibility()
+            await EventManagerTip().resetEligibility()
+            await PresentationLibraryTip().resetEligibility()
+            await GrowDashboardTip().resetEligibility()
             logger.info("All tips re-enabled via resetEligibility")
         }
     }
@@ -114,6 +123,9 @@ enum SAMTipState {
         ProductionTip().invalidate(reason: .tipClosed)
         RelationshipGraphTip().invalidate(reason: .tipClosed)
         SearchTip().invalidate(reason: .tipClosed)
+        EventManagerTip().invalidate(reason: .tipClosed)
+        PresentationLibraryTip().invalidate(reason: .tipClosed)
+        GrowDashboardTip().invalidate(reason: .tipClosed)
         logger.info("All tips disabled via invalidate")
     }
 
@@ -342,6 +354,43 @@ struct RelationshipGraphTip: Tip {
         Text("Visualize your entire network. Drag to pan, scroll to zoom, and click any node to see details. Use the toolbar to filter by role, toggle overlays, and rebuild the layout.")
     }
     var image: Image? { Image(systemName: "circle.grid.cross") }
+    var actions: [Action] {
+        [Action(id: "learn-more", title: "Learn more")]
+    }
+}
+
+// MARK: - Events Tips
+
+struct EventManagerTip: Tip {
+    var title: Text { Text("Event Manager") }
+    var message: Text? {
+        Text("Plan and track client events, workshops, and seminars. Manage RSVPs, send invitations, and link presentations. Use the filter to switch between upcoming and past events.")
+    }
+    var image: Image? { Image(systemName: "calendar.badge.plus") }
+    var actions: [Action] {
+        [Action(id: "learn-more", title: "Learn more")]
+    }
+}
+
+struct PresentationLibraryTip: Tip {
+    var title: Text { Text("Presentation Library") }
+    var message: Text? {
+        Text("Store and organize your slide decks and PDFs. Drag and drop files to add them. SAM analyzes content to generate summaries and talking points you can use during events.")
+    }
+    var image: Image? { Image(systemName: "doc.richtext") }
+    var actions: [Action] {
+        [Action(id: "learn-more", title: "Learn more")]
+    }
+}
+
+// MARK: - Grow Tips
+
+struct GrowDashboardTip: Tip {
+    var title: Text { Text("Grow Your Practice") }
+    var message: Text? {
+        Text("Analyze your social media profiles for improvement opportunities and get AI-generated content ideas. Import your LinkedIn or Substack data in Settings to get started.")
+    }
+    var image: Image? { Image(systemName: "chart.line.uptrend.xyaxis") }
     var actions: [Action] {
         [Action(id: "learn-more", title: "Learn more")]
     }

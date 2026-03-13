@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import TipKit
 
 struct EventManagerView: View {
 
@@ -81,6 +82,11 @@ struct EventManagerView: View {
 
     private var eventList: some View {
         VStack(spacing: 0) {
+            TipView(EventManagerTip())
+                .tipViewStyle(SAMTipViewStyle())
+                .padding(.horizontal, 12)
+                .padding(.top, 8)
+
             HStack {
                 Text("Events")
                     .font(.title2.bold())

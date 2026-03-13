@@ -10,6 +10,7 @@
 import SwiftUI
 import SwiftData
 import UniformTypeIdentifiers
+import TipKit
 
 struct PresentationLibraryView: View {
 
@@ -53,6 +54,11 @@ struct PresentationLibraryView: View {
 
     private var presentationList: some View {
         VStack(spacing: 0) {
+            TipView(PresentationLibraryTip())
+                .tipViewStyle(SAMTipViewStyle())
+                .padding(.horizontal, 12)
+                .padding(.top, 8)
+
             HStack {
                 Text("Presentations")
                     .font(.title2.bold())

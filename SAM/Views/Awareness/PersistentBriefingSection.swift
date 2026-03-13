@@ -12,6 +12,7 @@
 //
 
 import SwiftUI
+import TipKit
 import os.log
 
 private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "PersistentBriefingSection")
@@ -23,6 +24,11 @@ struct PersistentBriefingSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            TipView(BriefingButtonTip())
+                .tipViewStyle(SAMTipViewStyle())
+                .padding(.horizontal)
+                .padding(.top, 8)
+
             // Greeting is always visible
             greetingHeader
                 .padding([.horizontal, .top])

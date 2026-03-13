@@ -6,6 +6,7 @@
 // showing a score gauge when collapsed and the full analysis when expanded.
 
 import SwiftUI
+import TipKit
 
 // MARK: - Platform Metadata
 
@@ -52,6 +53,11 @@ struct GrowDashboardView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            TipView(GrowDashboardTip())
+                .tipViewStyle(SAMTipViewStyle())
+                .padding(.horizontal)
+                .padding(.top, 12)
+
             // Segmented tab picker
             Picker("", selection: $selectedTab) {
                 Text("Profile").tag(0)
