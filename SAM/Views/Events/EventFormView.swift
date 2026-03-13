@@ -28,6 +28,7 @@ struct EventFormView: View {
     @State private var address = ""
     @State private var addressValidationMessage: String?
     @State private var isValidatingAddress = false
+    @State private var lastValidatedAddress: String?
     @State private var joinLink = ""
     @State private var targetParticipants = 20
 
@@ -171,8 +172,9 @@ struct EventFormView: View {
                         TextField("Venue name", text: $venue)
                         TextField("Street address", text: $address)
                             .onChange(of: address) {
-                                if !isValidatingAddress {
+                                if address != lastValidatedAddress {
                                     addressValidationMessage = nil
+                                    lastValidatedAddress = nil
                                 }
                             }
                         if !venueValid {
@@ -578,9 +580,11 @@ struct EventFormView: View {
                 ].compactMap { $0 }
                 let formatted = parts.joined(separator: " ")
                 if !formatted.isEmpty && formatted != trimmed {
+                    lastValidatedAddress = formatted
                     address = formatted
                     addressValidationMessage = "✓ Verified: \(formatted)"
                 } else {
+                    lastValidatedAddress = address
                     addressValidationMessage = "✓ Address verified"
                 }
             } else {
