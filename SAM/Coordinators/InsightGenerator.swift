@@ -305,7 +305,7 @@ final class InsightGenerator {
             for rel in note.discoveredRelationships where rel.status == .pending && rel.confidence >= 0.7 {
                 let insight = GeneratedInsight(
                     kind: .informational,
-                    title: "Possible relationship: \(rel.personName) may be \(rel.relationshipType.rawValue.replacingOccurrences(of: "_", with: " ")) \(rel.relatedTo)",
+                    title: "Possible relationship: \(rel.personName) may be \(rel.relationshipType.displayLabel) of \(rel.relatedTo)",
                     body: "Discovered in a note. Review and confirm if this relationship should be tracked.",
                     personID: nil,
                     sourceType: .note,

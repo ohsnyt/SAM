@@ -278,7 +278,8 @@ actor NoteAnalysisService {
           "discovered_relationships": [
             {
               "person_name": "Jane Smith",
-              "relationship_type": "spouse_of",
+              "relationship_type": "spouse",
+              "relationship_category": "family",
               "related_to": "John Smith",
               "confidence": 0.95
             }
@@ -301,7 +302,8 @@ actor NoteAnalysisService {
         - action_items[].type: one of "update_contact", "send_congratulations", "send_reminder", "schedule_meeting", "create_proposal", "update_beneficiary", "general_follow_up"
         - action_items[].urgency: one of "immediate", "soon", "standard", "low"
         - action_items[].suggested_channel: one of "sms", "email", "phone", or null
-        - discovered_relationships[].relationship_type: one of "spouse_of", "parent_of", "child_of", "referral_by", "referred_to", "business_partner"
+        - discovered_relationships[].relationship_type: freeform label describing the relationship (e.g. "sister", "father", "daughter-in-law", "business partner", "referred by", "mentor")
+        - discovered_relationships[].relationship_category: one of "family", "business"
         - life_events[].event_type: one of "new_baby", "marriage", "graduation", "job_change", "retirement", "moving", "health_issue", "promotion", "anniversary", "loss", "other"
 
         Rules:
@@ -386,6 +388,7 @@ actor NoteAnalysisService {
                     return DiscoveredRelationshipDTO(
                         personName: rel.person_name,
                         relationshipType: rel.relationship_type,
+                        relationshipCategory: rel.relationship_category ?? "family",
                         relatedTo: relatedTo,
                         confidence: rel.confidence ?? 0.5
                     )
@@ -448,6 +451,7 @@ nonisolated private struct LLMLifeEvent: Codable, Sendable {
 nonisolated private struct LLMDiscoveredRelationship: Codable, Sendable {
     let person_name: String
     let relationship_type: String
+    let relationship_category: String?   // "family" or "business"
     let related_to: String?
     let confidence: Double?
 }

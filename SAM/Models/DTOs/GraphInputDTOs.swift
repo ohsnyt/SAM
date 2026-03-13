@@ -74,6 +74,13 @@ struct DeducedFamilyLink: Sendable {
     let deducedRelationID: UUID         // For confirmation callback
 }
 
+struct FamilyReferenceLink: Sendable {
+    let ownerPersonID: UUID             // SamPerson who has the family reference
+    let referenceName: String           // Name of the referenced person
+    let relationship: String            // "brother", "daughter", "spouse", etc.
+    let linkedPersonID: UUID?           // SamPerson.id if matched, nil → ghost node
+}
+
 struct RoleRelationshipLink: Sendable {
     let meID: UUID                      // "Me" person ID
     let personID: UUID                  // Target contact ID

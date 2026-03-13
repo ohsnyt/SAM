@@ -1328,6 +1328,50 @@ struct PersonDetailView: View {
             if person.relationshipSummary != nil {
                 relationshipSummarySection
             }
+
+            // Family & Relationships (note-discovered)
+            if !person.familyReferences.isEmpty {
+                familyReferencesSection
+            }
+        }
+    }
+
+    // MARK: - Family & Relationships
+
+    private var familyReferencesSection: some View {
+        samSection(title: "Family & Relationships") {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(person.familyReferences) { ref in
+                    HStack(spacing: 8) {
+                        Image(systemName: ref.linkedPersonID != nil ? "person.fill" : "person.fill.questionmark")
+                            .font(.caption)
+                            .foregroundStyle(ref.linkedPersonID != nil ? .green : .secondary)
+                            .frame(width: 20)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(ref.name)
+                                .font(.body)
+                            Text(ref.relationship.capitalized)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Spacer()
+
+                        if ref.linkedPersonID == nil {
+                            Text("No contact")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    .padding(.vertical, 4)
+
+                    if ref.id != person.familyReferences.last?.id {
+                        Divider()
+                            .padding(.leading, 28)
+                    }
+                }
+            }
         }
     }
 

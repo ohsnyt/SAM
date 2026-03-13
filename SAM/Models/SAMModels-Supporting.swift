@@ -574,15 +574,62 @@ public struct DiscoveredRelationship: Codable, Sendable, Identifiable {
         case spouseOf = "spouse_of"
         case parentOf = "parent_of"
         case childOf = "child_of"
+        case siblingOf = "sibling_of"
         case referralBy = "referral_by"
         case referredTo = "referred_to"
         case businessPartner = "business_partner"
+
+        /// Human-readable label for display
+        var displayLabel: String {
+            switch self {
+            case .spouseOf: return "spouse"
+            case .parentOf: return "parent"
+            case .childOf: return "child"
+            case .siblingOf: return "sibling"
+            case .referralBy: return "referred by"
+            case .referredTo: return "referred to"
+            case .businessPartner: return "business partner"
+            }
+        }
     }
 
     public enum ReviewStatus: String, Codable, Sendable {
         case pending
         case accepted
         case dismissed
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// MARK: - Family References (note-discovered relationships)
+// ─────────────────────────────────────────────────────────────────────
+
+/// A family or personal relationship reference discovered from notes.
+/// Stored on SamPerson to capture relationships with people who may or
+/// may not have their own contact record (e.g. "John's brother Mike").
+/// When `linkedPersonID` is nil, the graph shows a ghost node.
+public struct FamilyReference: Codable, Sendable, Identifiable {
+    public var id: UUID
+    public var name: String                     // Name of the related person
+    public var relationship: String             // Free-text: "brother", "daughter", "spouse", etc.
+    public var linkedPersonID: UUID?            // SamPerson.id if matched, nil for ghost
+    public var discoveredAt: Date               // When this reference was first discovered
+    public var sourceNoteID: UUID?              // The note that surfaced this relationship
+
+    public init(
+        id: UUID = UUID(),
+        name: String,
+        relationship: String,
+        linkedPersonID: UUID? = nil,
+        discoveredAt: Date = .now,
+        sourceNoteID: UUID? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.relationship = relationship
+        self.linkedPersonID = linkedPersonID
+        self.discoveredAt = discoveredAt
+        self.sourceNoteID = sourceNoteID
     }
 }
 

@@ -4,6 +4,34 @@
 
 ---
 
+## March 13, 2026 — FamilyReference System: Note-Discovered Relationships on Graph
+
+### New Feature: FamilyReference Pipeline
+
+Family and personal relationships discovered during note analysis now flow through to the relationship graph and person detail view. Previously, the AI extracted `discovered_relationships` from notes but they were only stored on `SamNote` — never surfacing on the graph or the person's profile.
+
+**Architecture:**
+- **FamilyReference** (`SAMModels-Supporting.swift`) — Codable struct on `SamPerson` with freeform relationship label, optional `linkedPersonID` (for graph linking), and `sourceNoteID`
+- **AI category field** — The LLM now returns `relationship_category` ("family" or "business") alongside a freeform `relationship_type` label, eliminating brittle enum normalization
+- **DiscoveredRelationshipDTO.relationshipCategory** — New field passed through the DTO pipeline from `NoteAnalysisService` → `NoteAnalysisCoordinator`
+- **NoteAnalysisCoordinator.createFamilyReferences()** — Filters family-category DTOs, resolves owner/referenced person orientation (AI can put the note owner on either side), deduplicates, creates reciprocal references when both people exist, and generates "Review in Graph" outcomes
+- **formatRelationshipLabel()** — Simple string formatter that strips `_of` suffixes and normalizes underscores/hyphens for display
+- **GraphBuilderService** — New `familyReferenceLinks` parameter; creates `.familyReference` edges and ghost nodes for referenced people without contact records
+- **RelationshipGraphCoordinator.gatherFamilyReferenceLinks()** — Collects all family references across people for graph building
+
+**UI:**
+- **Relationship Graph** — `.familyReference` edges render as pink dashed lines; ghost nodes shown for unmatched people
+- **PersonDetailView** — "Family & Relationships" section shows each reference with linked/ghost status indicator
+- **GraphToolbarView** — "Family (Notes)" filter option in edge type menu
+- **Outcomes** — "Review in Graph" outcome created for each new family discovery with `.reviewGraph` action lane
+
+**Bug fixes:**
+- Self-reference prevention (AI returning "Albert is brother of Albert")
+- Owner orientation handling (AI can put the note owner in `personName` or `relatedTo`)
+- Hyphenated relationship types (e.g., "brother-in-law") now handled correctly
+
+---
+
 ## March 12, 2026 — Sidebar Toggle Fix & Graph Deduced Relationship Improvements
 
 ### Fix: Sidebar Toggle Pinned Next to Traffic Lights

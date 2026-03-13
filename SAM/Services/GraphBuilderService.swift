@@ -32,6 +32,7 @@ actor GraphBuilderService {
         noteMentions: [MentionPair],
         ghostMentions: [GhostMention],
         deducedFamilyLinks: [DeducedFamilyLink] = [],
+        familyReferenceLinks: [FamilyReferenceLink] = [],
         roleRelationshipLinks: [RoleRelationshipLink] = []
     ) -> (nodes: [GraphNode], edges: [GraphEdge]) {
 
@@ -238,6 +239,56 @@ actor GraphBuilderService {
                     communicationDirection: nil
                 ))
             }
+        }
+
+        // --- Family reference edges + ghost nodes (note-discovered) ---
+        var familyGhostIDs: [String: UUID] = [:]
+        for link in familyReferenceLinks {
+            guard personIDs.contains(link.ownerPersonID) else { continue }
+
+            let targetID: UUID
+            if let matched = link.linkedPersonID, personIDs.contains(matched) {
+                targetID = matched
+            } else {
+                let nameKey = link.referenceName.lowercased()
+                if let existingGhostID = familyGhostIDs[nameKey] {
+                    targetID = existingGhostID
+                } else {
+                    let ghostID = UUID()
+                    familyGhostIDs[nameKey] = ghostID
+
+                    let ghostNode = GraphNode(
+                        id: ghostID,
+                        displayName: link.referenceName,
+                        roleBadges: [],
+                        primaryRole: nil,
+                        pipelineStage: nil,
+                        relationshipHealth: .unknown,
+                        productionValue: 0,
+                        isGhost: true,
+                        isOrphaned: false,
+                        topOutcome: nil,
+                        photoThumbnail: nil,
+                        position: .zero
+                    )
+                    nodes.append(ghostNode)
+                    targetID = ghostID
+                }
+            }
+
+            let dedupKey = "\(link.ownerPersonID)-\(targetID)-\(link.relationship)"
+            guard seenFamilyPairs.insert(dedupKey).inserted else { continue }
+
+            edges.append(GraphEdge(
+                id: UUID(),
+                sourceID: link.ownerPersonID,
+                targetID: targetID,
+                edgeType: .familyReference,
+                weight: 0.6,
+                label: link.relationship,
+                isReciprocal: true,
+                communicationDirection: nil
+            ))
         }
 
         logger.info("Built graph: \(nodes.count) nodes, \(edges.count) edges")

@@ -102,7 +102,8 @@ nonisolated public struct ContactUpdateDTO: Sendable {
 nonisolated public struct DiscoveredRelationshipDTO: Sendable, Identifiable {
     public let id: UUID
     public let personName: String
-    public let relationshipType: String  // "spouse_of", "parent_of", etc.
+    public let relationshipType: String       // Freeform label: "sister", "brother-in-law", "mentor", etc.
+    public let relationshipCategory: String   // "family" or "business"
     public let relatedTo: String
     public let confidence: Double
 
@@ -110,12 +111,14 @@ nonisolated public struct DiscoveredRelationshipDTO: Sendable, Identifiable {
         id: UUID = UUID(),
         personName: String,
         relationshipType: String,
+        relationshipCategory: String = "family",
         relatedTo: String,
         confidence: Double
     ) {
         self.id = id
         self.personName = personName
         self.relationshipType = relationshipType
+        self.relationshipCategory = relationshipCategory
         self.relatedTo = relatedTo
         self.confidence = confidence
     }

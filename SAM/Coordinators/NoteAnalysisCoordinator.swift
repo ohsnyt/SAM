@@ -105,9 +105,17 @@ final class NoteAnalysisCoordinator {
             }
 
             let discoveredRelationships = analysis.discoveredRelationships.map { dto in
-                DiscoveredRelationship(
+                // Use the AI's category to classify; fall back to enum matching for legacy prompts
+                let parsedType: DiscoveredRelationship.RelationshipType
+                if dto.relationshipCategory == "business" {
+                    parsedType = DiscoveredRelationship.RelationshipType(rawValue: dto.relationshipType) ?? .businessPartner
+                } else {
+                    // Family — pick closest enum case, defaulting to siblingOf as a generic family type
+                    parsedType = DiscoveredRelationship.RelationshipType(rawValue: dto.relationshipType) ?? .siblingOf
+                }
+                return DiscoveredRelationship(
                     personName: dto.personName,
-                    relationshipType: DiscoveredRelationship.RelationshipType(rawValue: dto.relationshipType) ?? .businessPartner,
+                    relationshipType: parsedType,
                     relatedTo: dto.relatedTo,
                     confidence: dto.confidence
                 )
@@ -151,6 +159,10 @@ final class NoteAnalysisCoordinator {
                 lifeEvents: lifeEvents,
                 analysisVersion: analysis.analysisVersion
             )
+
+            // Step 6: Create family references from discovered relationships
+            let familyDTOs = analysis.discoveredRelationships.filter { $0.relationshipCategory == "family" }
+            createFamilyReferences(from: familyDTOs, note: note)
 
             // Step 7: Create evidence item from note
             try createEvidenceFromNote(note)
@@ -471,6 +483,214 @@ final class NoteAnalysisCoordinator {
         if createdCount > 0 {
             logger.info("Created \(createdCount) outcome(s) from note analysis")
         }
+    }
+
+    // MARK: - Relationship Type Normalization
+
+    /// Maps common AI-generated relationship type variants to canonical enum values.
+    /// The LLM sometimes returns gendered, hyphenated, or in-law forms.
+    /// Normalizes hyphens to underscores first so both "brother-in-law" and "brother_in_law" match.
+    private static func normalizeRelationshipType(_ raw: String) -> DiscoveredRelationship.RelationshipType? {
+        let key = raw.lowercased().replacingOccurrences(of: "-", with: "_")
+        switch key {
+        case "daughter_of", "son_of", "child_of",
+             "stepson_of", "stepdaughter_of", "stepchild_of":
+            return .childOf
+        case "father_of", "mother_of", "parent_of",
+             "stepfather_of", "stepmother_of", "stepparent_of":
+            return .parentOf
+        case "wife_of", "husband_of", "spouse_of":
+            return .spouseOf
+        case "brother_of", "sister_of", "sibling_of",
+             "half_brother_of", "half_sister_of",
+             "brother_in_law", "sister_in_law",
+             "brother_in_law_of", "sister_in_law_of":
+            return .siblingOf
+        case "father_in_law", "mother_in_law",
+             "father_in_law_of", "mother_in_law_of":
+            return .parentOf
+        case "son_in_law", "daughter_in_law",
+             "son_in_law_of", "daughter_in_law_of":
+            return .childOf
+        case "referral_by", "referred_by":
+            return .referralBy
+        case "referred_to":
+            return .referredTo
+        case "business_partner", "partner_of", "colleague_of":
+            return .businessPartner
+        default:
+            return nil
+        }
+    }
+
+    // MARK: - Family References
+
+    /// Create FamilyReference entries on SamPerson from discovered family relationships.
+    /// Uses the AI's freeform label directly — no enum mapping needed.
+    ///
+    /// The AI returns: `personName` IS `relationshipType` OF `relatedTo`.
+    /// Either name could be the note's linked person. We figure out which is the "owner"
+    /// (linked person on the note) and store a reference to the OTHER person.
+    private func createFamilyReferences(from familyDTOs: [DiscoveredRelationshipDTO], note: SamNote) {
+        guard !familyDTOs.isEmpty else { return }
+
+        let linkedPeople = note.linkedPeople.filter { !$0.isMe }
+        let allPeople = (try? peopleRepository.fetchAll()) ?? []
+
+        for dto in familyDTOs {
+            // Guard: both names identical = true self-reference
+            guard dto.personName.lowercased() != dto.relatedTo.lowercased() else {
+                logger.debug("Skipping self-reference: \(dto.personName) == \(dto.relatedTo)")
+                continue
+            }
+
+            // Determine which name is the owner (linked person on this note) and which is the "other"
+            // AI says: personName IS relationshipType OF relatedTo
+            // e.g. "Albert Vasquez is brother_of Anthony Russo"
+            let ownerFromPersonName = linkedPeople.first {
+                ($0.displayNameCache ?? $0.displayName).lowercased() == dto.personName.lowercased()
+            }
+            let ownerFromRelatedTo = linkedPeople.first {
+                ($0.displayNameCache ?? $0.displayName).lowercased() == dto.relatedTo.lowercased()
+            }
+
+            // The referenced (other) person's name and the relationship label depend on
+            // which side the owner is on.
+            let owner: SamPerson
+            let referencedName: String
+            let relationshipLabel: String
+
+            let rawType = dto.relationshipType
+
+            if let matched = ownerFromRelatedTo {
+                // Owner is relatedTo: "personName is brother_of [owner]"
+                // → store personName on owner, label = raw AI string
+                owner = matched
+                referencedName = dto.personName
+                relationshipLabel = Self.formatRelationshipLabel(rawType)
+
+            } else if let matched = ownerFromPersonName {
+                // Owner is personName: "[owner] is brother_of relatedTo"
+                // → store relatedTo on owner, label = raw AI string (describes relatedTo's role)
+                owner = matched
+                referencedName = dto.relatedTo
+                relationshipLabel = Self.formatRelationshipLabel(rawType)
+
+            } else if let fallback = linkedPeople.first {
+                owner = fallback
+                referencedName = dto.personName
+                relationshipLabel = Self.formatRelationshipLabel(rawType)
+            } else {
+                continue
+            }
+
+            // Check if this family reference already exists on the owner
+            let nameKey = referencedName.lowercased()
+            let alreadyExists = owner.familyReferences.contains {
+                $0.name.lowercased() == nameKey
+            }
+            guard !alreadyExists else { continue }
+
+            // Try to match the referenced person to an existing SamPerson
+            let matchedPerson = allPeople.first {
+                ($0.displayNameCache ?? $0.displayName).lowercased() == nameKey
+            }
+
+            let ref = FamilyReference(
+                name: referencedName,
+                relationship: relationshipLabel,
+                linkedPersonID: matchedPerson?.id,
+                discoveredAt: .now,
+                sourceNoteID: note.id
+            )
+
+            owner.familyReferences.append(ref)
+            let ownerDisplay = owner.displayNameCache ?? owner.displayName
+            logger.info("Created family reference: \(referencedName) is \(relationshipLabel) of \(ownerDisplay)")
+
+            // Create "Review in Graph" outcome
+            createGraphReviewOutcome(
+                personName: referencedName,
+                relationship: relationshipLabel,
+                owner: owner
+            )
+
+            // Also create the reciprocal reference if the referenced person exists (and is different)
+            if let matched = matchedPerson, matched.id != owner.id {
+                // Use the same label — it's freeform and describes the relationship
+                let reciprocalRel = relationshipLabel
+                let ownerName = owner.displayNameCache ?? owner.displayName
+                let reciprocalExists = matched.familyReferences.contains {
+                    $0.name.lowercased() == ownerName.lowercased()
+                }
+                if !reciprocalExists {
+                    let reciprocal = FamilyReference(
+                        name: ownerName,
+                        relationship: reciprocalRel,
+                        linkedPersonID: owner.id,
+                        discoveredAt: .now,
+                        sourceNoteID: note.id
+                    )
+                    matched.familyReferences.append(reciprocal)
+                    logger.info("Created reciprocal family reference: \(ownerName) is \(reciprocalRel) of \(matched.displayNameCache ?? matched.displayName)")
+                }
+            }
+        }
+    }
+
+    /// Create a "Review in Graph" outcome for a discovered family relationship.
+    private func createGraphReviewOutcome(personName: String, relationship: String, owner: SamPerson) {
+        let outcomeRepo = OutcomeRepository.shared
+        let ownerName = owner.displayNameCache ?? owner.displayName
+
+        // Dedup: skip if a similar graph-review outcome already exists for this person
+        if let hasSimilar = try? outcomeRepo.hasSimilarOutcome(kind: .followUp, personID: owner.id),
+           hasSimilar {
+            return
+        }
+
+        let outcome = SamOutcome(
+            title: "Confirm relationship: \(personName) is \(relationship) of \(ownerName)",
+            rationale: "A family relationship was discovered in a note. Open the Relationship Graph to review and confirm it.",
+            outcomeKind: .followUp,
+            priorityScore: 0.4,
+            sourceInsightSummary: "Family relationship discovered from note analysis",
+            suggestedNextStep: "Go to People → Graph and look for the dashed pink line connecting \(ownerName) and \(personName). Right-click or double-click to confirm.",
+            linkedPerson: owner
+        )
+        outcome.actionLane = .reviewGraph
+
+        do {
+            try outcomeRepo.upsert(outcome: outcome)
+            logger.info("Created graph review outcome for \(personName) ↔ \(ownerName)")
+        } catch {
+            logger.debug("Failed to create graph review outcome: \(error.localizedDescription)")
+        }
+    }
+
+    /// Formats a raw AI relationship_type string into a human-readable label.
+    /// Strips trailing "_of", replaces underscores with hyphens for compound words
+    /// (e.g. "brother_in_law") or spaces otherwise. No enumeration of specific labels needed.
+    private static func formatRelationshipLabel(_ raw: String) -> String {
+        var label = raw.lowercased()
+
+        // Strip trailing "_of" or "-of"
+        for suffix in ["_of", "-of"] {
+            if label.hasSuffix(suffix) {
+                label = String(label.dropLast(suffix.count))
+            }
+        }
+
+        // Compound words with "in_law" or "step" → use hyphens
+        if label.contains("_in_") || label.contains("-in-") {
+            return label
+                .replacingOccurrences(of: "_", with: "-")
+        }
+
+        // Everything else: underscores/hyphens → spaces
+        return label
+            .replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: "-", with: " ")
     }
 
     /// Create evidence item from analyzed note

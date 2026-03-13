@@ -425,6 +425,7 @@ struct RelationshipGraphView: View {
         case .communicationLink: return "Communication"
         case .mentionedTogether: return "Co-mentioned"
         case .deducedFamily:     return "Family"
+        case .familyReference:   return "Family (from notes)"
         case .roleRelationship:  return "Role relationship"
         }
     }
@@ -1595,7 +1596,7 @@ struct RelationshipGraphView: View {
 
     private func baseEdgeOpacity(for type: EdgeType) -> Double {
         switch type {
-        case .deducedFamily: return 1.0
+        case .deducedFamily, .familyReference: return 1.0
         case .referral, .recruitingTree: return 0.8
         case .business, .roleRelationship: return 0.7
         case .coAttendee, .communicationLink: return 0.5
@@ -2113,6 +2114,9 @@ struct RelationshipGraphView: View {
                 } else {
                     context.stroke(path, with: .color(color), style: StrokeStyle(lineWidth: thickness, lineCap: .round, dash: [8, 5]))
                 }
+            } else if edge.edgeType == .familyReference {
+                // Family references from notes are always dashed (not confirmable via DeducedRelation)
+                context.stroke(path, with: .color(color), style: StrokeStyle(lineWidth: thickness, lineCap: .round, dash: [8, 5]))
             } else if edge.edgeType == .mentionedTogether && scale > 0.3 {
                 context.stroke(path, with: .color(color), style: StrokeStyle(lineWidth: thickness, lineCap: .round, dash: [2, 4]))
             } else if edge.edgeType == .coAttendee {
@@ -2212,7 +2216,7 @@ struct RelationshipGraphView: View {
     /// Base thickness per edge type per visual design spec §4.1
     private func edgeBaseThickness(for type: EdgeType) -> CGFloat {
         switch type {
-        case .deducedFamily: return 2.5
+        case .deducedFamily, .familyReference: return 2.5
         case .business, .referral, .recruitingTree, .roleRelationship: return 2.0
         case .coAttendee, .communicationLink: return 1.5
         case .mentionedTogether: return 1.0
@@ -3052,6 +3056,7 @@ struct RelationshipGraphView: View {
         case .communicationLink: return Color(red: 0.553, green: 0.431, blue: 0.388)  // #8D6E63
         case .mentionedTogether: return Color(red: 0.741, green: 0.741, blue: 0.741)  // #BDBDBD
         case .deducedFamily:     return .pink
+        case .familyReference:   return .pink
         case .roleRelationship:  return .accentColor  // Fallback; overridden per-edge with target's role color
         }
     }

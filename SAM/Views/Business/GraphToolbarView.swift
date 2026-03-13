@@ -321,6 +321,7 @@ extension EdgeType {
         case .communicationLink: return "Communication"
         case .mentionedTogether: return "Mentioned Together"
         case .deducedFamily:     return "Deduced Family"
+        case .familyReference:   return "Family (Notes)"
         case .roleRelationship:  return "Role Relationship"
         }
     }

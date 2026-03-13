@@ -303,7 +303,7 @@ All models use SwiftData lightweight migration. Enum storage uses `rawValue` pat
 
 | Model | Purpose | Key Fields |
 |-------|---------|------------|
-| **SamPerson** | Contact anchor + CRM | roleBadges, pipeline stage, social URLs, phone aliases, cadence |
+| **SamPerson** | Contact anchor + CRM | roleBadges, pipeline stage, social URLs, phone aliases, cadence, familyReferences |
 | **SamContext** | Households, businesses, groups | kind, members |
 | **SamEvidenceItem** | Observations from all channels | source, sourceUID, snippet, linkedPeople |
 | **SamNote** | User notes + AI analysis | action items, topics, life events, discovered relationships |
@@ -320,6 +320,7 @@ All models use SwiftData lightweight migration. Enum storage uses `rawValue` pat
 | **BusinessGoal** | User-defined targets | type, target, start/end, progress |
 | **ComplianceAuditEntry** | Draft audit trail | channel, flags, original/final draft |
 | **DeducedRelation** | Family relationships from Contacts data | personA, personB, type, confirmed, rejected |
+| **FamilyReference** | Note-discovered family/personal relationships on SamPerson | name, relationship (freeform), linkedPersonID, sourceNoteID |
 | **PendingEnrichment** | Contact update candidates | field, proposed/current value, source, status |
 | **IntentionalTouch** | Social touch events | platform, type, direction, weight, dedup key |
 | **LinkedInImport** | Import audit record | date, counts, status |

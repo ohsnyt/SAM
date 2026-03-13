@@ -286,6 +286,12 @@ public final class SamPerson {
     /// without loading the full Context graph.
     var contextChips: [ContextChip] = []
 
+    // ── Family References (note-discovered relationships) ───────────
+    /// Family/personal relationships discovered from notes.
+    /// Used to show relationships on the graph even when the related
+    /// person has no contact record (ghost nodes).
+    var familyReferences: [FamilyReference] = []
+
     init(
         id: UUID,
         displayName: String,

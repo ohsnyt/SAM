@@ -208,6 +208,7 @@ final class RelationshipGraphCoordinator {
                 let noteMentions = try gatherNoteMentions()
                 let ghostMentions = try gatherGhostMentions()
                 let deducedFamilyLinks = try gatherDeducedFamilyLinks()
+                let familyReferenceLinks = try gatherFamilyReferenceLinks()
                 let roleRelationshipLinks = try gatherRoleRelationshipLinks()
 
                 guard !Task.isCancelled else { return }
@@ -224,6 +225,7 @@ final class RelationshipGraphCoordinator {
                     noteMentions: noteMentions,
                     ghostMentions: ghostMentions,
                     deducedFamilyLinks: deducedFamilyLinks,
+                    familyReferenceLinks: familyReferenceLinks,
                     roleRelationshipLinks: roleRelationshipLinks
                 )
 
@@ -646,6 +648,22 @@ final class RelationshipGraphCoordinator {
                 deducedRelationID: relation.id
             )
         }
+    }
+
+    private func gatherFamilyReferenceLinks() throws -> [FamilyReferenceLink] {
+        let allPeople = try peopleRepository.fetchAll()
+        var links: [FamilyReferenceLink] = []
+        for person in allPeople where !person.isArchived {
+            for ref in person.familyReferences {
+                links.append(FamilyReferenceLink(
+                    ownerPersonID: person.id,
+                    referenceName: ref.name,
+                    relationship: ref.relationship,
+                    linkedPersonID: ref.linkedPersonID
+                ))
+            }
+        }
+        return links
     }
 
     private func gatherRoleRelationshipLinks() throws -> [RoleRelationshipLink] {
