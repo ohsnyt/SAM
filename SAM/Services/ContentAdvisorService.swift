@@ -17,64 +17,67 @@ actor ContentAdvisorService {
     // MARK: - Singleton
 
     static let shared = ContentAdvisorService()
-    private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "ContentAdvisorService")
+    private let logger = Logger(
+        subsystem: "com.matthewsessions.SAM",
+        category: "ContentAdvisorService"
+    )
 
     private init() {}
 
     // MARK: - Analysis
 
     func analyze(data: String) async throws -> ContentAnalysis {
-        guard case .available = await AIService.shared.checkAvailability() else {
+        guard case .available = await AIService.shared.checkAvailability()
+        else {
             throw AnalysisError.modelUnavailable
         }
 
-        let businessContext = await BusinessProfileService.shared.fullContextBlock()
+        let businessContext = await BusinessProfileService.shared
+            .fullContextBlock()
 
         let customPrompt = await MainActor.run {
-            UserDefaults.standard.string(forKey: PromptSite.contentTopics.userDefaultsKey) ?? ""
+            UserDefaults.standard.string(
+                forKey: PromptSite.contentTopics.userDefaultsKey
+            ) ?? ""
         }
         let instructions: String
         if !customPrompt.isEmpty {
             instructions = customPrompt + "\n\n" + businessContext
         } else {
-        instructions = """
-            You suggest educational content topics for an independent financial strategist. \
-            Topics should be relevant to their client base, timely for the season, and compliant with \
-            financial services regulations. Content is for social media posts, newsletters, or client education.
+            instructions = """
+                Generate 5 social media content topics for financial professionals.
 
-            \(businessContext)
+                Rules:
+                - Educational content only, no investment advice
+                - Include compliance disclaimers
+                - Use data/examples in angles
+                - Match platform to content type
 
-            CRITICAL: You MUST respond with ONLY valid JSON.
-            - Do NOT wrap the JSON in markdown code blocks
-            - Return ONLY the raw JSON object starting with { and ending with }
+                JSON format:
+                [
+                    {
+                    "topic": "specific content idea",
+                    "platform": "linkedin|facebook|instagram|substack",
+                    "angle": "compelling hook with data or examples", 
+                    "relevance": "why timely/important now",
+                    "complianceNotes": "required disclaimers"
+                    }
+                ]
 
-            The JSON structure must be:
-            {
-              "topic_suggestions": [
-                {
-                  "topic": "Clear topic title",
-                  "key_points": ["Point 1", "Point 2", "Point 3"],
-                  "suggested_tone": "educational",
-                  "compliance_notes": "Any regulatory considerations or null"
-                }
-              ]
-            }
+                Compliance:
+                - No guarantees or return promises
+                - Add "educational content" disclaimers
+                - Follow fiduciary standards
+                - No high-pressure language
 
-            Rules:
-            - Suggest 3-5 topics, most relevant first
-            - suggested_tone options: "educational", "motivational", "seasonal", "technical"
-            - Include compliance_notes for topics touching investments, insurance, or guarantees
-            - Topics should connect to recent client conversations when possible
-            - Seasonal context matters (tax season, open enrollment, year-end planning, etc.)
-            - Never suggest specific product recommendations or guarantees
-            - Each topic must cite the specific recent meeting or discussion topic that inspired it (e.g., "Inspired by your meeting with John about retirement planning")
-            - Include one copy-paste-ready opening sentence as a key_point (e.g., "Ever wonder how much you actually need to retire comfortably?")
-            - Suggest the best platform + posting day for each topic (e.g., "Best on LinkedIn, post Tuesday morning")
-            - At least 2 topics must connect to named meeting topics from the data — do not invent meetings that aren't in the data
-            - If the user has a Substack publication, suggest content that extends existing article themes. \
-            Reference specific past articles when suggesting new topics. \
-            Maintain voice consistency with the user's established writing style.
-            """
+                Content quality:
+                - Lead with statistics when possible
+                - Use concrete examples over theory
+                - Connect to current events/seasons
+                - Address real client concerns
+
+                Return ONLY valid JSON array.
+                """
         }
 
         let prompt = """
@@ -83,7 +86,10 @@ actor ContentAdvisorService {
             \(data)
             """
 
-        let responseText = try await AIService.shared.generate(prompt: prompt, systemInstruction: instructions)
+        let responseText = try await AIService.shared.generate(
+            prompt: prompt,
+            systemInstruction: instructions
+        )
         return try parseResponse(responseText)
     }
 
@@ -97,7 +103,8 @@ actor ContentAdvisorService {
         tone: String,
         complianceNotes: String?
     ) async throws -> ContentDraft {
-        guard case .available = await AIService.shared.checkAvailability() else {
+        guard case .available = await AIService.shared.checkAvailability()
+        else {
             throw AnalysisError.modelUnavailable
         }
 
@@ -152,13 +159,18 @@ actor ContentAdvisorService {
                 """
         }
 
-        let complianceSection = complianceNotes.map { "Compliance considerations: \($0)" } ?? ""
-        let keyPointsText = keyPoints.isEmpty ? "" : "Key points to cover: \(keyPoints.joined(separator: "; "))"
-        let businessContext = await BusinessProfileService.shared.contextFragment()
+        let complianceSection =
+            complianceNotes.map { "Compliance considerations: \($0)" } ?? ""
+        let keyPointsText =
+            keyPoints.isEmpty
+            ? "" : "Key points to cover: \(keyPoints.joined(separator: "; "))"
+        let businessContext = await BusinessProfileService.shared
+            .contextFragment()
 
         let voiceBlock = await buildVoiceBlock(for: platform)
 
-        let contentType = platform == .substack ? "newsletter articles" : "social media posts"
+        let contentType =
+            platform == .substack ? "newsletter articles" : "social media posts"
         let instructions = """
             You write \(contentType) for an independent financial strategist. \
             The content must be educational and compliant with financial services regulations.
@@ -192,29 +204,50 @@ actor ContentAdvisorService {
             If there are no compliance concerns, return an empty array for compliance_flags.
             """
 
-        let formatLabel = platform == .substack ? "a Substack newsletter article (800-1000 words)" : "a social media post"
+        let formatLabel =
+            platform == .substack
+            ? "a Substack newsletter article (800-1000 words)"
+            : "a social media post"
         let prompt = "Write \(formatLabel) about: \(topic)"
-        let responseText = try await AIService.shared.generate(prompt: prompt, systemInstruction: instructions)
+        let responseText = try await AIService.shared.generate(
+            prompt: prompt,
+            systemInstruction: instructions
+        )
         return try parseDraftResponse(responseText)
     }
 
-    private func parseDraftResponse(_ jsonString: String) throws -> ContentDraft {
+    private func parseDraftResponse(_ jsonString: String) throws -> ContentDraft
+    {
         let cleaned = JSONExtraction.extractJSON(from: jsonString)
 
         // Attempt 1: direct JSON decode
         if let data = cleaned.data(using: .utf8),
-           let llm = try? JSONDecoder().decode(LLMContentDraft.self, from: data),
-           let text = llm.draftText, !text.isEmpty {
-            return ContentDraft(draftText: text, complianceFlags: llm.complianceFlags ?? [])
+            let llm = try? JSONDecoder().decode(
+                LLMContentDraft.self,
+                from: data
+            ),
+            let text = llm.draftText, !text.isEmpty
+        {
+            return ContentDraft(
+                draftText: text,
+                complianceFlags: llm.complianceFlags ?? []
+            )
         }
 
         // Attempt 2: sanitize literal newlines inside JSON string values and retry
         let sanitized = Self.sanitizeJSONNewlines(cleaned)
         if let data = sanitized.data(using: .utf8),
-           let llm = try? JSONDecoder().decode(LLMContentDraft.self, from: data),
-           let text = llm.draftText, !text.isEmpty {
+            let llm = try? JSONDecoder().decode(
+                LLMContentDraft.self,
+                from: data
+            ),
+            let text = llm.draftText, !text.isEmpty
+        {
             logger.info("Draft parsed after newline sanitization")
-            return ContentDraft(draftText: text, complianceFlags: llm.complianceFlags ?? [])
+            return ContentDraft(
+                draftText: text,
+                complianceFlags: llm.complianceFlags ?? []
+            )
         }
 
         // Attempt 3: regex extract draft_text value between quotes
@@ -224,12 +257,15 @@ actor ContentAdvisorService {
         }
 
         // Attempt 4: plain text fallback (strip JSON/markdown artifacts)
-        let plainText = cleaned
+        let plainText =
+            cleaned
             .replacingOccurrences(of: "\"draft_text\"", with: "")
             .replacingOccurrences(of: "\"compliance_flags\"", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if !plainText.isEmpty {
-            logger.info("Draft generation returned plain text, using as draft body")
+            logger.info(
+                "Draft generation returned plain text, using as draft body"
+            )
             return ContentDraft(draftText: String(plainText.prefix(5000)))
         }
 
@@ -273,24 +309,37 @@ actor ContentAdvisorService {
     /// Regex fallback: extract the value of "draft_text" from a JSON-like string.
     private static func extractDraftText(from text: String) -> String? {
         // Find "draft_text" : "..." — greedy match up to the last plausible closing pattern
-        guard let keyRange = text.range(of: "\"draft_text\"", options: .caseInsensitive) else { return nil }
+        guard
+            let keyRange = text.range(
+                of: "\"draft_text\"",
+                options: .caseInsensitive
+            )
+        else { return nil }
         let afterKey = text[keyRange.upperBound...]
         // Skip whitespace, colon, whitespace, opening quote
         guard let colonIdx = afterKey.firstIndex(of: ":") else { return nil }
-        let afterColon = afterKey[afterKey.index(after: colonIdx)...].drop(while: { $0.isWhitespace })
+        let afterColon = afterKey[afterKey.index(after: colonIdx)...].drop(
+            while: { $0.isWhitespace })
         guard afterColon.first == "\"" else { return nil }
         let contentStart = afterColon.index(after: afterColon.startIndex)
 
         // Walk forward to find the closing quote (not preceded by backslash)
         // But also handle the common case where the AI uses literal newlines
         // Look for `", ` or `"\n` followed by `"compliance` as end markers
-        if let endPattern = text.range(of: "\",\\s*\"compliance_flags\"", options: .regularExpression, range: contentStart..<text.endIndex) {
+        if let endPattern = text.range(
+            of: "\",\\s*\"compliance_flags\"",
+            options: .regularExpression,
+            range: contentStart..<text.endIndex
+        ) {
             let draft = String(text[contentStart..<endPattern.lowerBound])
             return draft.isEmpty ? nil : draft
         }
 
         // Simpler: find last `"` before `compliance_flags` or end of object
-        if let endPattern = text.range(of: "\"compliance_flags\"", range: contentStart..<text.endIndex) {
+        if let endPattern = text.range(
+            of: "\"compliance_flags\"",
+            range: contentStart..<text.endIndex
+        ) {
             // Walk backward from the match to find the preceding quote
             var idx = endPattern.lowerBound
             while idx > contentStart {
@@ -309,7 +358,8 @@ actor ContentAdvisorService {
 
     /// Build a platform-appropriate writing voice block for draft generation prompts.
     /// Uses the target platform's voice data when available, falls back to cross-platform data.
-    private func buildVoiceBlock(for platform: ContentPlatform) async -> String {
+    private func buildVoiceBlock(for platform: ContentPlatform) async -> String
+    {
         let bps = BusinessProfileService.shared
         let substackProfile = await bps.substackProfile()
         let linkedInProfile = await bps.linkedInProfile()
@@ -322,75 +372,137 @@ actor ContentAdvisorService {
             guard let profile = substackProfile else { break }
             voiceLines.append("WRITING VOICE — Match this style closely:")
             if !profile.writingVoiceSummary.isEmpty {
-                voiceLines.append("Voice analysis: \(profile.writingVoiceSummary)")
+                voiceLines.append(
+                    "Voice analysis: \(profile.writingVoiceSummary)"
+                )
             }
             if !profile.publicationName.isEmpty {
                 voiceLines.append("Publication: \"\(profile.publicationName)\"")
             }
             if !profile.publicationDescription.isEmpty {
-                voiceLines.append("Publication focus: \(profile.publicationDescription)")
+                voiceLines.append(
+                    "Publication focus: \(profile.publicationDescription)"
+                )
             }
             if !profile.topicSummary.isEmpty {
-                voiceLines.append("Core topics: \(profile.topicSummary.joined(separator: ", "))")
+                voiceLines.append(
+                    "Core topics: \(profile.topicSummary.joined(separator: ", "))"
+                )
             }
             if !profile.recentPostTitles.isEmpty {
-                let titles = profile.recentPostTitles.prefix(5).map { "\"\($0.title)\"" }
-                voiceLines.append("Recent articles for style reference: \(titles.joined(separator: "; "))")
+                let titles = profile.recentPostTitles.prefix(5).map {
+                    "\"\($0.title)\""
+                }
+                voiceLines.append(
+                    "Recent articles for style reference: \(titles.joined(separator: "; "))"
+                )
             }
-            voiceLines.append("Write as if you ARE this author continuing their publication. The reader should not notice a change in voice.")
+            voiceLines.append(
+                "Write as if you ARE this author continuing their publication. The reader should not notice a change in voice."
+            )
 
         case .linkedin:
-            if let profile = linkedInProfile, !profile.writingVoiceSummary.isEmpty {
+            if let profile = linkedInProfile,
+                !profile.writingVoiceSummary.isEmpty
+            {
                 voiceLines.append("WRITING VOICE — Match this style closely:")
-                voiceLines.append("Voice analysis: \(profile.writingVoiceSummary)")
+                voiceLines.append(
+                    "Voice analysis: \(profile.writingVoiceSummary)"
+                )
                 if !profile.headline.isEmpty {
-                    voiceLines.append("Professional headline: \(profile.headline)")
+                    voiceLines.append(
+                        "Professional headline: \(profile.headline)"
+                    )
                 }
                 if !profile.recentShareSnippets.isEmpty {
-                    let snippets = profile.recentShareSnippets.prefix(3).map { "\"\($0.prefix(100))\"" }
-                    voiceLines.append("Recent post samples: \(snippets.joined(separator: "; "))")
+                    let snippets = profile.recentShareSnippets.prefix(3).map {
+                        "\"\($0.prefix(100))\""
+                    }
+                    voiceLines.append(
+                        "Recent post samples: \(snippets.joined(separator: "; "))"
+                    )
                 }
-                voiceLines.append("Write as if you ARE this professional on LinkedIn. The reader should not notice a change in voice.")
+                voiceLines.append(
+                    "Write as if you ARE this professional on LinkedIn. The reader should not notice a change in voice."
+                )
             } else {
                 // Cross-platform fallback
-                let fallbackVoice = bestAvailableVoice(substack: substackProfile, facebook: facebookProfile)
+                let fallbackVoice = bestAvailableVoice(
+                    substack: substackProfile,
+                    facebook: facebookProfile
+                )
                 if !fallbackVoice.isEmpty {
-                    voiceLines.append("WRITING VOICE — Adapt this style for LinkedIn (professional, educational):")
-                    voiceLines.append("Voice analysis (from other platform): \(fallbackVoice)")
-                    voiceLines.append("Adjust tone to be professional and authoritative for a LinkedIn audience.")
+                    voiceLines.append(
+                        "WRITING VOICE — Adapt this style for LinkedIn (professional, educational):"
+                    )
+                    voiceLines.append(
+                        "Voice analysis (from other platform): \(fallbackVoice)"
+                    )
+                    voiceLines.append(
+                        "Adjust tone to be professional and authoritative for a LinkedIn audience."
+                    )
                 }
             }
 
         case .facebook:
-            if let profile = facebookProfile, !profile.writingVoiceSummary.isEmpty {
+            if let profile = facebookProfile,
+                !profile.writingVoiceSummary.isEmpty
+            {
                 voiceLines.append("WRITING VOICE — Match this style closely:")
-                voiceLines.append("Voice analysis: \(profile.writingVoiceSummary)")
+                voiceLines.append(
+                    "Voice analysis: \(profile.writingVoiceSummary)"
+                )
                 if !profile.recentPostSnippets.isEmpty {
-                    let snippets = profile.recentPostSnippets.prefix(3).map { "\"\($0.prefix(100))\"" }
-                    voiceLines.append("Recent post samples: \(snippets.joined(separator: "; "))")
+                    let snippets = profile.recentPostSnippets.prefix(3).map {
+                        "\"\($0.prefix(100))\""
+                    }
+                    voiceLines.append(
+                        "Recent post samples: \(snippets.joined(separator: "; "))"
+                    )
                 }
-                voiceLines.append("Write as if you ARE this person on Facebook. Keep the tone personal and authentic. The reader should not notice a change in voice.")
+                voiceLines.append(
+                    "Write as if you ARE this person on Facebook. Keep the tone personal and authentic. The reader should not notice a change in voice."
+                )
             } else {
                 // Cross-platform fallback
-                let fallbackVoice = bestAvailableVoice(substack: substackProfile, linkedIn: linkedInProfile)
+                let fallbackVoice = bestAvailableVoice(
+                    substack: substackProfile,
+                    linkedIn: linkedInProfile
+                )
                 if !fallbackVoice.isEmpty {
-                    voiceLines.append("WRITING VOICE — Adapt this style for Facebook (conversational, personal):")
-                    voiceLines.append("Voice analysis (from other platform): \(fallbackVoice)")
-                    voiceLines.append("Adjust tone to be casual, personal, and authentic for a Facebook audience.")
+                    voiceLines.append(
+                        "WRITING VOICE — Adapt this style for Facebook (conversational, personal):"
+                    )
+                    voiceLines.append(
+                        "Voice analysis (from other platform): \(fallbackVoice)"
+                    )
+                    voiceLines.append(
+                        "Adjust tone to be casual, personal, and authentic for a Facebook audience."
+                    )
                 }
             }
 
         case .instagram, .other:
             // Cross-reference best available voice data
             let fallbackVoice = bestAvailableVoice(
-                substack: substackProfile, linkedIn: linkedInProfile, facebook: facebookProfile
+                substack: substackProfile,
+                linkedIn: linkedInProfile,
+                facebook: facebookProfile
             )
             if !fallbackVoice.isEmpty {
-                let platformLabel = platform == .instagram ? "Instagram" : "general social media"
-                voiceLines.append("WRITING VOICE — Adapt this style for \(platformLabel):")
-                voiceLines.append("Voice analysis (from other platform): \(fallbackVoice)")
+                let platformLabel =
+                    platform == .instagram
+                    ? "Instagram" : "general social media"
+                voiceLines.append(
+                    "WRITING VOICE — Adapt this style for \(platformLabel):"
+                )
+                voiceLines.append(
+                    "Voice analysis (from other platform): \(fallbackVoice)"
+                )
                 if platform == .instagram {
-                    voiceLines.append("Adjust tone to be concise, visual, and hook-focused for Instagram.")
+                    voiceLines.append(
+                        "Adjust tone to be concise, visual, and hook-focused for Instagram."
+                    )
                 }
             }
         }
@@ -405,9 +517,15 @@ actor ContentAdvisorService {
         facebook: UserFacebookProfileDTO? = nil
     ) -> String {
         // Prefer Substack (richest content), then LinkedIn, then Facebook
-        if let voice = substack?.writingVoiceSummary, !voice.isEmpty { return voice }
-        if let voice = linkedIn?.writingVoiceSummary, !voice.isEmpty { return voice }
-        if let voice = facebook?.writingVoiceSummary, !voice.isEmpty { return voice }
+        if let voice = substack?.writingVoiceSummary, !voice.isEmpty {
+            return voice
+        }
+        if let voice = linkedIn?.writingVoiceSummary, !voice.isEmpty {
+            return voice
+        }
+        if let voice = facebook?.writingVoiceSummary, !voice.isEmpty {
+            return voice
+        }
         return ""
     }
 
@@ -420,7 +538,10 @@ actor ContentAdvisorService {
         }
 
         do {
-            let llm = try JSONDecoder().decode(LLMContentAnalysis.self, from: data)
+            let llm = try JSONDecoder().decode(
+                LLMContentAnalysis.self,
+                from: data
+            )
             return ContentAnalysis(
                 topicSuggestions: (llm.topicSuggestions ?? []).compactMap { t in
                     guard let topic = t.topic else { return nil }
@@ -433,14 +554,22 @@ actor ContentAdvisorService {
                 }
             )
         } catch {
-            let plainText = jsonString.trimmingCharacters(in: .whitespacesAndNewlines)
+            let plainText = jsonString.trimmingCharacters(
+                in: .whitespacesAndNewlines
+            )
             if !plainText.isEmpty && !plainText.contains("{") {
-                logger.info("Content analysis returned plain text, using as single topic")
+                logger.info(
+                    "Content analysis returned plain text, using as single topic"
+                )
                 return ContentAnalysis(
-                    topicSuggestions: [ContentTopic(topic: String(plainText.prefix(200)))]
+                    topicSuggestions: [
+                        ContentTopic(topic: String(plainText.prefix(200)))
+                    ]
                 )
             }
-            logger.error("Content analysis JSON parsing failed: \(error.localizedDescription)")
+            logger.error(
+                "Content analysis JSON parsing failed: \(error.localizedDescription)"
+            )
             throw error
         }
     }

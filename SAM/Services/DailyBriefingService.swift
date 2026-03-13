@@ -74,18 +74,15 @@ actor DailyBriefingService {
         // Visual narrative
         let visualPrompt = """
             You are a warm, professional executive assistant for a financial strategist.
-            Write a concise morning briefing (4-6 sentences) based ONLY on the data below.
+            Write a concise morning briefing (150 words or less) based ONLY on the data below.
 
             CRITICAL: Only reference people, meetings, times, and goals that appear in the data.
             Never invent names, events, or details. If a section is missing, skip it.
 
             Structure:
             1. First 1-2 sentences: overview of the day (meetings, key people, energy of the day).
-            2. Next 2-3 sentences: a suggested plan for the next 4 hours (\(currentTime)–\(endTime)).
-               Reference specific calendar blocks and gaps. Suggest what to tackle in the open time
-               between meetings — e.g. "Between your 10:00 and 11:30, you could knock out the
-               follow-up call to [Name]." Be specific about people and tasks.
-            3. If there are business goals, mention the most relevant one and what would move it forward today.
+            2. Create a new paragraph and present (with a maximum of 80 words) a suggested plan for the what to tackle in the open time between meetings based on information from the priority actions and follow-ups.
+            3. If there are business goals, create a new sentence to mention the most relevant one. 
 
             Include exact times, full names, and specific details from the data. Be data-dense but readable.
             Use a confident, forward-looking tone. No greetings or sign-offs.
@@ -228,12 +225,16 @@ actor DailyBriefingService {
         )
 
         let visualPrompt = """
-            You are a warm, professional executive assistant summarizing the day.
+            You are a warm, professional executive assistant summarizing the day for a financial strategist.
             Write a concise end-of-day summary (3-5 sentences) based ONLY on the data below.
-            Only reference accomplishments, metrics, and events that appear in the data. Never invent anything.
-            Celebrate accomplishments, note key metrics, and preview tomorrow.
-            Be encouraging but honest. No greetings or sign-offs.
 
+            CRITICAL: Only reference accomplishments, metrics, and events that appear in the data.
+            Never invent names or details. If a section is missing, skip it.
+
+            Celebrate accomplishments. Note key metrics. Preview tomorrow. Be encouraging but honest.
+
+            Respond with ONLY the narrative paragraph. No headers, bullets, or formatting.
+            
             \(dataBlock)
             """
 
