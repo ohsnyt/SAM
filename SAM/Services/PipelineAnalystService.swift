@@ -29,10 +29,11 @@ actor PipelineAnalystService {
         }
 
         let businessContext = await BusinessProfileService.shared.fullContextBlock()
-        let instructions = await buildSystemInstructions(businessContext: businessContext)
+        let persona = await BusinessProfileService.shared.personaFragment()
+        let instructions = await buildSystemInstructions(businessContext: businessContext, persona: persona)
 
         let prompt = """
-            Analyze this pipeline data for a financial strategist:
+            Analyze this pipeline data for \(persona):
 
             \(data)
             """
@@ -48,17 +49,17 @@ actor PipelineAnalystService {
     // MARK: - Prompt Construction
 
     @MainActor
-    private func buildSystemInstructions(businessContext: String) -> String {
+    private func buildSystemInstructions(businessContext: String, persona: String) -> String {
         let custom = UserDefaults.standard.string(forKey: PromptSite.pipelineAnalyst.userDefaultsKey) ?? ""
         if !custom.isEmpty {
             return custom + "\n\n" + businessContext
         }
-        return Self.defaultPrompt(businessContext: businessContext)
+        return Self.defaultPrompt(businessContext: businessContext, persona: persona)
     }
 
-    static func defaultPrompt(businessContext: String) -> String {
+    static func defaultPrompt(businessContext: String, persona: String) -> String {
         """
-        You are a pipeline analyst for an independent financial services practice. \
+        You are a pipeline analyst for \(persona). \
         Analyze the pipeline data provided and generate strategic recommendations. \
         Focus on conversion bottlenecks, stuck prospects, production gaps, and recruiting health.
 

@@ -29,10 +29,11 @@ actor TimeAnalystService {
         }
 
         let businessContext = await BusinessProfileService.shared.fullContextBlock()
-        let instructions = await buildSystemInstructions(businessContext: businessContext)
+        let persona = await BusinessProfileService.shared.personaFragment()
+        let instructions = await buildSystemInstructions(businessContext: businessContext, persona: persona)
 
         let prompt = """
-            Analyze this time allocation data for a financial strategist:
+            Analyze this time allocation data for \(persona):
 
             \(data)
             """
@@ -44,17 +45,17 @@ actor TimeAnalystService {
     // MARK: - Prompt Construction
 
     @MainActor
-    private func buildSystemInstructions(businessContext: String) -> String {
+    private func buildSystemInstructions(businessContext: String, persona: String) -> String {
         let custom = UserDefaults.standard.string(forKey: PromptSite.timeAnalyst.userDefaultsKey) ?? ""
         if !custom.isEmpty {
             return custom + "\n\n" + businessContext
         }
-        return Self.defaultPrompt(businessContext: businessContext)
+        return Self.defaultPrompt(businessContext: businessContext, persona: persona)
     }
 
-    static func defaultPrompt(businessContext: String) -> String {
+    static func defaultPrompt(businessContext: String, persona: String) -> String {
         """
-        You analyze how an independent financial strategist allocates their work time. \
+        You analyze how \(persona) allocates their work time. \
         Identify imbalances, suggest improvements, and highlight trends. \
         Common categories: Prospecting, Client Meeting, Policy Review, Recruiting, \
         Training/Mentoring, Admin, Deep Work, Personal Development, Travel, Other.

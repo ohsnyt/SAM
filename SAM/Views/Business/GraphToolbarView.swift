@@ -18,7 +18,21 @@ struct GraphToolbarView: ToolbarContent {
     @Binding var offset: CGPoint
     var fitToView: () -> Void
 
-    private let allRoles = ["Client", "Applicant", "Lead", "Agent", "External Agent", "Referral Partner", "Vendor", "Prospect"]
+    private let predefinedRoles = ["Client", "Applicant", "Lead", "Agent", "External Agent", "Referral Partner", "Vendor", "Prospect"]
+
+    /// Dynamically discovered roles from the graph data: predefined roles first (in order), then custom roles alphabetically.
+    private var allRoles: [String] {
+        let dataRoles = Set(coordinator.allNodes.flatMap(\.roleBadges))
+        var seen = Set<String>()
+        var result: [String] = []
+        for role in predefinedRoles where dataRoles.contains(role) {
+            if seen.insert(role).inserted { result.append(role) }
+        }
+        for role in dataRoles.sorted() {
+            if seen.insert(role).inserted { result.append(role) }
+        }
+        return result
+    }
 
     var body: some ToolbarContent {
 

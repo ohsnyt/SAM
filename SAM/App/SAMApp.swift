@@ -1051,7 +1051,7 @@ struct SAMApp: App {
         // Role deduction — run after imports settle
         Task(priority: .utility) {
             try? await Task.sleep(for: .seconds(8))
-            await RoleDeductionEngine.shared.deduceRoles()
+            PostImportOrchestrator.shared.importDidComplete(source: "app-launch")
 
             // Post-onboarding: create a role review outcome if suggestions were found
             let roleReviewKey = "sam.onboarding.roleReviewCreated"

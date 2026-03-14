@@ -23,6 +23,10 @@ final class InsightGenerator {
 
     static let shared = InsightGenerator()
 
+    // MARK: - Throttle
+
+    private static let lastRunDateKey = "sam.insightGenerator.lastRunDate"
+
     private init() {}
 
     // MARK: - Container
@@ -89,7 +93,15 @@ final class InsightGenerator {
 
     /// Generate insights from all available data sources
     /// Returns array of generated insights
-    func generateInsights() async -> [GeneratedInsight] {
+    /// - Parameter force: Bypass the 10-minute throttle when `true`.
+    func generateInsights(force: Bool = false) async -> [GeneratedInsight] {
+        if !force,
+           let lastRun = UserDefaults.standard.object(forKey: Self.lastRunDateKey) as? Date,
+           Date.now.timeIntervalSince(lastRun) < 600 {
+            logger.debug("Insight generation throttled — last run \(Int(Date.now.timeIntervalSince(lastRun)))s ago")
+            return []
+        }
+
         generationStatus = .generating
         lastError = nil
 
@@ -130,6 +142,7 @@ final class InsightGenerator {
             lastInsightCount = deduplicatedInsights.count
             lastGeneratedAt = .now
             generationStatus = .success
+            UserDefaults.standard.set(Date.now, forKey: Self.lastRunDateKey)
 
             logger.info("Generated \(deduplicatedInsights.count) insights (notes: \(noteInsights.count), relationships: \(relationshipInsights.count), discovered: \(discoveredInsights.count), calendar: \(calendarInsights.count), email: \(emailInsights.count), lifeEvents: \(lifeEventInsights.count))")
 
@@ -144,11 +157,12 @@ final class InsightGenerator {
     }
 
     /// Start auto-generation (triggered after imports or on schedule)
-    func startAutoGeneration() {
+    /// - Parameter force: Bypass the 10-minute throttle when `true`.
+    func startAutoGeneration(force: Bool = false) {
         guard autoGenerateEnabled else { return }
 
         Task {
-            await generateInsights()
+            await generateInsights(force: force)
         }
     }
 

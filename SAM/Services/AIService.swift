@@ -153,6 +153,18 @@ actor AIService {
         return Backend(rawValue: raw) ?? .foundationModels
     }
 
+    /// Approximate context budget in characters for the active backend.
+    /// FoundationModels ≈ 4K tokens (~12K chars); MLX models vary (Qwen 3 8B = 32K tokens ≈ 96K chars).
+    /// Returns a conservative usable budget (leaving room for response generation).
+    func contextBudgetChars() -> Int {
+        switch activeBackend() {
+        case .foundationModels:
+            return 10_000   // ~3.3K tokens, leaving room for ~700 token response
+        case .mlx, .hybrid:
+            return 60_000   // ~20K tokens input, leaving ~12K for response in a 32K window
+        }
+    }
+
     /// Check availability of the active backend.
     func checkAvailability() async -> ModelAvailability {
         let backend = activeBackend()
@@ -422,7 +434,21 @@ actor AIService {
             // Its C++ destructor runs while activeMLXStreamCount is still > 0
             // because we call release() (with yield) after this point.
 
-            let result = output.trimmingCharacters(in: .whitespacesAndNewlines)
+            var result = output.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            // Strip Qwen3-style <think>...</think> reasoning blocks from responses
+            while let thinkStart = result.range(of: "<think>", options: .caseInsensitive),
+                  let thinkEnd = result.range(of: "</think>", options: .caseInsensitive,
+                                              range: thinkStart.upperBound..<result.endIndex) {
+                result.removeSubrange(thinkStart.lowerBound...thinkEnd.upperBound)
+                result = result.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            // Strip orphaned opening <think> with no closing tag
+            if let orphanStart = result.range(of: "<think>", options: .caseInsensitive) {
+                result = String(result[..<orphanStart.lowerBound])
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+
             await release()
 
             if result.isEmpty {

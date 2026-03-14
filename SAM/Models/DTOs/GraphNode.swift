@@ -50,6 +50,8 @@ extension GraphNode {
             "Vendor": 6,
             "Prospect": 7,
         ]
-        return badges.min { (priority[$0] ?? 99) < (priority[$1] ?? 99) }
+        // Custom roles (not in predefined list) get priority 50 — above predefined roles
+        // but still selected as primary when they're the only role assigned.
+        return badges.min { (priority[$0] ?? 50) < (priority[$1] ?? 50) }
     }
 }

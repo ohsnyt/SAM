@@ -170,8 +170,10 @@ final class PresentationAnalysisCoordinator {
             - Focus on the educational/business content, not slide formatting
             """
 
+        let persona = await BusinessProfileService.shared.personaFragment()
+
         let systemInstruction = """
-            You are analyzing a financial services presentation for a CRM coaching assistant. \
+            You are analyzing a presentation for \(persona)'s CRM coaching assistant. \
             Extract the key content that would be useful for marketing, invitations, and follow-up communications. \
             Be specific and concrete — reference actual topics covered, not generic descriptions.
             """

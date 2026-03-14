@@ -870,7 +870,7 @@ final class MeetingPrepCoordinator {
         let actionSummary = openActions.prefix(3).map(\.description)
 
         let prompt = """
-            You are a relationship advisor for a financial strategist. Generate 3-5 concise talking points for an upcoming meeting.
+            You are a relationship advisor for \(await BusinessProfileService.shared.personaFragment()). Generate 3-5 concise talking points for an upcoming meeting.
 
             Meeting: \(eventTitle)
             Attendees: \(attendeeSummaries.joined(separator: "\n"))

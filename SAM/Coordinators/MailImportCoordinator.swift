@@ -33,6 +33,8 @@ final class MailImportCoordinator {
     var knownSenderCount: Int = 0
     /// Number of LinkedIn notification emails processed during the last import run.
     private(set) var linkedInNotificationCount: Int = 0
+    /// Number of Facebook notification emails processed during the last import run.
+    private(set) var facebookNotificationCount: Int = 0
 
     /// Available Mail.app accounts (loaded from service, not persisted)
     var availableAccounts: [MailAccountDTO] = []
@@ -215,15 +217,30 @@ final class MailImportCoordinator {
                 await processLinkedInNotifications(linkedInMetas)
             }
 
+            // 1c. Intercept Facebook notification emails before partitioning.
+            // Same rationale as LinkedIn — @facebookmail.com / @facebook.com senders
+            // are never in contacts and would pollute the Unknown Senders triage queue.
+            let facebookMetas = regularMetas.filter {
+                $0.senderEmail.hasSuffix("@facebookmail.com") || $0.senderEmail.hasSuffix("@facebook.com")
+            }
+            let regularMetasFiltered = regularMetas.filter {
+                !$0.senderEmail.hasSuffix("@facebookmail.com") && !$0.senderEmail.hasSuffix("@facebook.com")
+            }
+
+            if !facebookMetas.isEmpty {
+                facebookNotificationCount = 0
+                await processFacebookNotifications(facebookMetas)
+            }
+
             // 2. Build known emails set from PeopleRepository
             let knownEmails = try peopleRepository.allKnownEmails()
 
             // 3. Also exclude neverInclude senders
             let neverInclude = try UnknownSenderRepository.shared.neverIncludeEmails()
 
-            // 4. Partition metas → known vs unknown (using regularMetas, LinkedIn excluded)
+            // 4. Partition metas → known vs unknown (LinkedIn + Facebook excluded)
             let (knownMetas, unknownMetas) = partitionBySenderKnown(
-                metas: regularMetas,
+                metas: regularMetasFiltered,
                 knownEmails: knownEmails,
                 neverIncludeEmails: neverInclude
             )
@@ -255,8 +272,8 @@ final class MailImportCoordinator {
             try evidenceRepository.bulkUpsertEmails(upsertData)
 
             // Update watermark to newest email date (from all metas, not just bodies)
-            // Include LinkedIn notification dates so they advance the watermark too
-            let allDates = knownMetas.map(\.date) + unknownMetas.map(\.date) + linkedInMetas.map(\.date)
+            // Include LinkedIn + Facebook notification dates so they advance the watermark too
+            let allDates = knownMetas.map(\.date) + unknownMetas.map(\.date) + linkedInMetas.map(\.date) + facebookMetas.map(\.date)
             if let newest = allDates.max() {
                 lastMailWatermark = newest
                 UserDefaults.standard.set(newest.timeIntervalSinceReferenceDate, forKey: "mailLastWatermark")
@@ -299,8 +316,7 @@ final class MailImportCoordinator {
                         logger.warning("Background analysis failed for email \(email.messageID): \(error)")
                     }
                 }
-                InsightGenerator.shared.startAutoGeneration()
-                await RoleDeductionEngine.shared.deduceRoles()
+                PostImportOrchestrator.shared.importDidComplete(source: "mail")
             }
 
         } catch {
@@ -355,8 +371,8 @@ final class MailImportCoordinator {
             // 5. Upsert (deduplicates by sourceUID)
             try evidenceRepository.bulkUpsertEmails(analyzedEmails)
 
-            // 6. Trigger insights
-            InsightGenerator.shared.startAutoGeneration()
+            // 6. Debounced post-import work
+            PostImportOrchestrator.shared.importDidComplete(source: "mail-reprocess")
 
             logger.info("Reprocessed \(emails.count) emails for sender \(senderEmail, privacy: .private)")
 
@@ -378,7 +394,7 @@ final class MailImportCoordinator {
         // Non-actionable LinkedIn sender local-parts — skip without fetching
         let skipLocalParts: Set<String> = [
             "jobs-noreply", "news", "marketing", "promotions",
-            "invitations", "notifications-digest", "weekly-digest",
+            "invitations", "weekly-digest",
         ]
 
         var processed = 0
@@ -415,6 +431,43 @@ final class MailImportCoordinator {
         linkedInNotificationCount += processed
         if processed > 0 {
             logger.info("Processed \(processed) LinkedIn notification emails")
+        }
+    }
+
+    // MARK: - Facebook Notification Processing
+
+    /// Process a batch of Facebook notification emails (sender @facebookmail.com / @facebook.com).
+    ///
+    /// Subject-only parsing — no MIME body fetch needed (lightweight).
+    private func processFacebookNotifications(_ metas: [MessageMeta]) async {
+        // Non-actionable Facebook sender local-parts
+        let skipLocalParts: Set<String> = [
+            "noreply", "security", "ads", "support",
+        ]
+
+        var processed = 0
+
+        for meta in metas {
+            let localPart = meta.senderEmail.components(separatedBy: "@").first ?? ""
+            if skipLocalParts.contains(localPart) { continue }
+
+            // Parse from subject line only (no MIME fetch)
+            guard let event = FacebookEmailParser.parse(
+                subject: meta.subject,
+                date: meta.date,
+                sourceEmailId: String(meta.mailID)
+            ) else {
+                continue
+            }
+
+            // Route through Facebook coordinator for touch recording
+            await FacebookImportCoordinator.shared.handleNotificationEvent(event)
+            processed += 1
+        }
+
+        facebookNotificationCount += processed
+        if processed > 0 {
+            logger.info("Processed \(processed) Facebook notification emails")
         }
     }
 

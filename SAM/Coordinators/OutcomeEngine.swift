@@ -182,8 +182,11 @@ final class OutcomeEngine {
 
             // Score all new outcomes using calibrated weights
             let weights = CoachingAdvisor.shared.adjustedWeights()
+            // Pre-compute health for all linked people to avoid redundant calls in the scoring loop
+            let linkedPeople = Set(newOutcomes.compactMap { $0.linkedPerson })
+            let healthCache = Dictionary(uniqueKeysWithValues: linkedPeople.map { ($0.id, meetingPrep.computeHealth(for: $0)) })
             for outcome in newOutcomes {
-                outcome.priorityScore = computePriority(outcome: outcome, weights: weights)
+                outcome.priorityScore = computePriority(outcome: outcome, weights: weights, healthCache: healthCache)
             }
 
             // Filter muted kinds
@@ -239,8 +242,10 @@ final class OutcomeEngine {
     func reprioritize() throws {
         let weights = CoachingAdvisor.shared.adjustedWeights()
         let active = try outcomeRepo.fetchActive()
+        let linkedPeople = Set(active.compactMap { $0.linkedPerson })
+        let healthCache = Dictionary(uniqueKeysWithValues: linkedPeople.map { ($0.id, meetingPrep.computeHealth(for: $0)) })
         for outcome in active {
-            outcome.priorityScore = computePriority(outcome: outcome, weights: weights)
+            outcome.priorityScore = computePriority(outcome: outcome, weights: weights, healthCache: healthCache)
         }
     }
 
@@ -446,11 +451,13 @@ final class OutcomeEngine {
     private func scanGrowthOpportunities(people: [SamPerson]) throws -> [SamOutcome] {
         var outcomes: [SamOutcome] = []
 
+        // Pre-compute health for all people to avoid redundant calls in loops/filters below
+        let healthMap = Dictionary(uniqueKeysWithValues: people.map { ($0.id, meetingPrep.computeHealth(for: $0)) })
+
         // Find leads not contacted recently, sorted by staleness
         let leads = people.filter { $0.roleBadges.contains("Lead") }
         let staleLeads = leads.compactMap { person -> (SamPerson, Int, SamEvidenceItem?)? in
-            let health = meetingPrep.computeHealth(for: person)
-            let days = health.daysSinceLastInteraction ?? 999
+            let days = healthMap[person.id]?.daysSinceLastInteraction ?? 999
             guard days > 14 else { return nil }
             let lastEvidence = person.linkedEvidence
                 .filter { $0.source.isInteraction }
@@ -497,7 +504,7 @@ final class OutcomeEngine {
         // Suggest referral outreach if a client has been active
         let activeClients = people.filter { person in
             person.roleBadges.contains("Client")
-            && (meetingPrep.computeHealth(for: person).daysSinceLastInteraction ?? 999) <= 14
+            && (healthMap[person.id]?.daysSinceLastInteraction ?? 999) <= 14
         }
         if let client = activeClients.first {
             let name = client.displayNameCache ?? client.displayName
@@ -1082,14 +1089,16 @@ final class OutcomeEngine {
         switch goalType {
         case .newClients:
             // Find warmest leads
-            let leadNames = (try? peopleRepo.fetchAll()
-                .filter { $0.roleBadges.contains("Lead") && !$0.isArchived }
+            let allLeads = (try? peopleRepo.fetchAll()
+                .filter { $0.roleBadges.contains("Lead") && !$0.isArchived }) ?? []
+            let leadHealthMap = Dictionary(uniqueKeysWithValues: allLeads.map { ($0.id, meetingPrep.computeHealth(for: $0)) })
+            let leadNames = allLeads
                 .sorted {
-                    (meetingPrep.computeHealth(for: $0).daysSinceLastInteraction ?? 999)
-                    < (meetingPrep.computeHealth(for: $1).daysSinceLastInteraction ?? 999)
+                    (leadHealthMap[$0.id]?.daysSinceLastInteraction ?? 999)
+                    < (leadHealthMap[$1.id]?.daysSinceLastInteraction ?? 999)
                 }
                 .prefix(3)
-                .compactMap { $0.displayNameCache ?? $0.displayName }) ?? []
+                .compactMap { $0.displayNameCache ?? $0.displayName }
             let leadStr = leadNames.isEmpty ? "" : " Warmest leads: \(leadNames.joined(separator: ", "))."
             return (
                 "Review pipeline for client conversions",
@@ -1388,8 +1397,8 @@ final class OutcomeEngine {
     /// Classify an outcome into the correct action lane.
     /// Called after creation and before persisting.
     func classifyActionLane(for outcome: SamOutcome) {
-        // Preserve pre-set lanes (e.g., reviewGraph from scanDeducedRelationships)
-        if outcome.actionLane == .reviewGraph { return }
+        // Preserve pre-set lanes (e.g., reviewGraph, openURL for setup outcomes)
+        if outcome.actionLane == .reviewGraph || outcome.actionLane == .openURL { return }
 
         let title = outcome.title.lowercased()
 
@@ -1520,7 +1529,11 @@ final class OutcomeEngine {
 
     // MARK: - Priority Computation
 
-    private func computePriority(outcome: SamOutcome, weights: OutcomeWeights) -> Double {
+    private func computePriority(
+        outcome: SamOutcome,
+        weights: OutcomeWeights,
+        healthCache: [UUID: RelationshipHealth]? = nil
+    ) -> Double {
         var score = 0.0
 
         // Time urgency (deadline proximity)
@@ -1543,7 +1556,7 @@ final class OutcomeEngine {
 
         // Relationship health
         if let person = outcome.linkedPerson {
-            let health = meetingPrep.computeHealth(for: person)
+            let health = healthCache?[person.id] ?? meetingPrep.computeHealth(for: person)
             if let days = health.daysSinceLastInteraction {
                 let healthScore = min(1.0, Double(days) / 60.0)
                 score += weights.relationshipHealth * healthScore
@@ -1724,10 +1737,11 @@ final class OutcomeEngine {
         }
 
         // Stale leads but no associations/groups recorded
-        let staleLeads = (try? peopleRepo.fetchAll().filter {
-            $0.roleBadges.contains("Lead")
-            && (meetingPrep.computeHealth(for: $0).daysSinceLastInteraction ?? 999) > 14
-        }) ?? []
+        let allLeadsForGaps = (try? peopleRepo.fetchAll().filter { $0.roleBadges.contains("Lead") }) ?? []
+        let gapHealthMap = Dictionary(uniqueKeysWithValues: allLeadsForGaps.map { ($0.id, meetingPrep.computeHealth(for: $0)) })
+        let staleLeads = allLeadsForGaps.filter {
+            (gapHealthMap[$0.id]?.daysSinceLastInteraction ?? 999) > 14
+        }
         if !staleLeads.isEmpty && defaults.string(forKey: "sam.gap.associations") == nil {
             gaps.append(KnowledgeGap(
                 id: "associations",
@@ -1798,8 +1812,9 @@ final class OutcomeEngine {
                 // Generate suggested next step if missing
                 if outcome.suggestedNextStep == nil {
                     let context = buildEnrichmentContext(for: outcome)
+                    let persona = await BusinessProfileService.shared.personaFragment()
                     let prompt = """
-                        You are a coaching assistant for a financial strategist.
+                        You are a coaching assistant for \(persona).
                         Given this outcome and relationship context, suggest a concrete next step.
 
                         Outcome: \(outcome.title)
@@ -1863,7 +1878,7 @@ final class OutcomeEngine {
         let richContext = buildEnrichmentContext(for: outcome)
 
         let prompt = """
-            Draft \(channelNote) from a financial strategist to \(personName).
+            Draft \(channelNote) from \(await BusinessProfileService.shared.personaFragment()) to \(personName).
 
             Purpose: \(outcome.title)
             Context: \(outcome.rationale)

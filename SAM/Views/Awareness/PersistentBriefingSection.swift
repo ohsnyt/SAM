@@ -130,6 +130,14 @@ struct PersistentBriefingSection: View {
                 Text(narrative)
                     .font(.body)
                     .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .contextMenu {
+                        Button {
+                            ClipboardSecurity.copy(narrative, clearAfter: 120)
+                        } label: {
+                            Label("Copy Narrative", systemImage: "doc.on.doc")
+                        }
+                    }
             }
 
             // "Start your day" inline CTA when not yet viewed

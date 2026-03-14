@@ -16,6 +16,16 @@ struct BusinessDashboardView: View {
     @State private var tracker = PipelineTracker.shared
     @State private var strategic = StrategicCoordinator.shared
     @State private var selectedTab = 0  // 0 = Strategic (default)
+    @State private var isFinancial = true
+
+    /// Tab definitions that adapt to practice type.
+    private var tabs: [(label: String, tag: Int)] {
+        if isFinancial {
+            return [("Strategic", 0), ("Pipeline", 1), ("Production", 2), ("Goals", 3)]
+        } else {
+            return [("Strategic", 0), ("Pipeline", 1), ("Goals", 3)]
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -32,10 +42,9 @@ struct BusinessDashboardView: View {
                 Divider()
 
                 Picker("Section", selection: $selectedTab) {
-                    Text("Strategic").tag(0)
-                    Text("Pipeline").tag(1)
-                    Text("Production").tag(2)
-                    Text("Goals").tag(3)
+                    ForEach(tabs, id: \.tag) { tab in
+                        Text(tab.label).tag(tab.tag)
+                    }
                 }
                 .pickerStyle(.segmented)
                 .padding()
@@ -77,6 +86,9 @@ struct BusinessDashboardView: View {
                 GuideButton(articleID: "business.overview")
             }
         }
+        .task {
+            isFinancial = await BusinessProfileService.shared.isFinancialPractice()
+        }
         .onAppear {
             tracker.refresh()
             FeatureAdoptionTracker.shared.recordUsage(.businessDashboard)
@@ -90,13 +102,9 @@ struct BusinessDashboardView: View {
 
     private var businessHealthSummary: some View {
         let recruitTotal = tracker.recruitFunnel.reduce(0) { $0 + $1.count }
+        let columnCount = isFinancial ? 4 : 2
 
-        return LazyVGrid(columns: [
-            GridItem(.flexible()),
-            GridItem(.flexible()),
-            GridItem(.flexible()),
-            GridItem(.flexible())
-        ], spacing: 12) {
+        return LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: columnCount), spacing: 12) {
             BusinessMetricCard(
                 title: "Active Pipeline",
                 value: "\(tracker.clientFunnel.leadCount + tracker.clientFunnel.applicantCount)",
@@ -107,16 +115,18 @@ struct BusinessDashboardView: View {
                 value: "\(tracker.clientFunnel.clientCount)",
                 color: .green
             )
-            BusinessMetricCard(
-                title: "Recruiting",
-                value: "\(recruitTotal)",
-                color: .teal
-            )
-            BusinessMetricCard(
-                title: "This Month",
-                value: formattedProduction,
-                color: .orange
-            )
+            if isFinancial {
+                BusinessMetricCard(
+                    title: "Recruiting",
+                    value: "\(recruitTotal)",
+                    color: .teal
+                )
+                BusinessMetricCard(
+                    title: "This Month",
+                    value: formattedProduction,
+                    color: .orange
+                )
+            }
         }
     }
 

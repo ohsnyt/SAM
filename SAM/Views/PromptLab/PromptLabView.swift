@@ -31,12 +31,12 @@ struct PromptLabView: View {
             }
         }
         .frame(minWidth: 900, minHeight: 600)
-        .onAppear {
-            coordinator.ensureDefaultVariant(for: selectedSite)
+        .task {
+            await coordinator.ensureDefaultVariant(for: selectedSite)
         }
         .onChange(of: selectedSite) { _, newSite in
             sampleInput = newSite.sampleInput
-            coordinator.ensureDefaultVariant(for: newSite)
+            Task { await coordinator.ensureDefaultVariant(for: newSite) }
         }
     }
 
@@ -94,7 +94,7 @@ struct PromptLabView: View {
 
             // Import from registry
             Button {
-                importFromRegistry()
+                Task { await importFromRegistry() }
             } label: {
                 Label("Import Registry", systemImage: "square.and.arrow.down")
             }
@@ -120,7 +120,7 @@ struct PromptLabView: View {
 
     // MARK: - Registry Import
 
-    private func importFromRegistry() {
+    private func importFromRegistry() async {
         let panel = NSOpenPanel()
         panel.title = "Import Prompt Registry"
         panel.allowedContentTypes = [.json]
@@ -131,7 +131,7 @@ struct PromptLabView: View {
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
         do {
-            let result = try coordinator.importFromRegistry(at: url)
+            let result = try await coordinator.importFromRegistry(at: url)
             var message = "Imported \(result.imported) variant(s) from registry v\(result.registryVersion)."
             if result.skipped > 0 {
                 message += "\nSkipped \(result.skipped) already-imported variant(s)."
@@ -143,7 +143,7 @@ struct PromptLabView: View {
             showImportResult = true
 
             // Refresh the current site's default variant
-            coordinator.ensureDefaultVariant(for: selectedSite)
+            await coordinator.ensureDefaultVariant(for: selectedSite)
         } catch {
             importResultMessage = "Import failed: \(error.localizedDescription)"
             showImportResult = true
@@ -242,12 +242,15 @@ struct PromptLabView: View {
 
             HStack {
                 Button("From Default") {
-                    coordinator.addVariant(
-                        for: selectedSite,
-                        name: newVariantName,
-                        systemInstruction: coordinator.defaultPrompt(for: selectedSite)
-                    )
-                    showAddVariant = false
+                    Task {
+                        let defaultInstruction = await coordinator.defaultPrompt(for: selectedSite)
+                        coordinator.addVariant(
+                            for: selectedSite,
+                            name: newVariantName,
+                            systemInstruction: defaultInstruction
+                        )
+                        showAddVariant = false
+                    }
                 }
 
                 Button("Empty") {

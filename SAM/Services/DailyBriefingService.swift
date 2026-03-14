@@ -66,14 +66,11 @@ actor DailyBriefingService {
             goalProgress: goalProgress
         )
 
-        let now = Date()
-        let currentTime = now.formatted(date: .omitted, time: .shortened)
-        let fourHoursLater = Calendar.current.date(byAdding: .hour, value: 4, to: now)!
-        let endTime = fourHoursLater.formatted(date: .omitted, time: .shortened)
+        let persona = await BusinessProfileService.shared.personaFragment()
 
         // Visual narrative
         let visualPrompt = """
-            You are a warm, professional executive assistant for a financial strategist.
+            You are a warm, professional executive assistant for \(persona).
             Write a concise morning briefing (150 words or less) based ONLY on the data below.
 
             CRITICAL: Only reference people, meetings, times, and goals that appear in the data.
@@ -217,6 +214,8 @@ actor DailyBriefingService {
             return ("", "")
         }
 
+        let persona = await BusinessProfileService.shared.personaFragment()
+
         let dataBlock = buildEveningDataBlock(
             accomplishments: accomplishments,
             streakUpdates: streakUpdates,
@@ -225,7 +224,7 @@ actor DailyBriefingService {
         )
 
         let visualPrompt = """
-            You are a warm, professional executive assistant summarizing the day for a financial strategist.
+            You are a warm, professional executive assistant summarizing the day for \(persona).
             Write a concise end-of-day summary (3-5 sentences) based ONLY on the data below.
 
             CRITICAL: Only reference accomplishments, metrics, and events that appear in the data.

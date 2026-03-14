@@ -218,7 +218,7 @@ actor WhatsAppService {
             jids.append((jid: jid, partnerName: partnerName, messageCount: count))
         }
 
-        logger.info("Found \(jids.count) unique WhatsApp JIDs")
+        logger.debug("Found \(jids.count) unique WhatsApp JIDs")
         return jids
     }
 

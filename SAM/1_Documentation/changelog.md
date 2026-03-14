@@ -4,6 +4,77 @@
 
 ---
 
+## Practice Type System, Social Notifications, Performance Optimizations (March 14, 2026)
+
+**What**: Multi-purpose SAM (PracticeType on BusinessProfile), Facebook/LinkedIn email notification processing, relationship graph custom roles, copy-to-clipboard across coaching UI, Facebook import folder support, profile analyst prompt compression, and call-flow optimization.
+
+### Practice Type System
+- `PracticeType` enum (`.financialAdvisor`, `.general`) on `BusinessProfileDTO` with backwards-compatible JSON decoding
+- Settings picker controls feature visibility: Production tab, Recruiting pipeline, compliance scanning, financial goal types all hide for general practice
+- `personaFragment()` / `complianceNote()` on `BusinessProfileService` replace 40+ hardcoded "financial strategist" strings across all AI service prompts
+- `ComplianceScanner.scanWithSettings()` returns empty for non-financial practice types
+
+### Social Platform Email Notifications
+- `FacebookEmailParser` — subject-only parser (11 event types) for `@facebookmail.com` notifications; no MIME fetch needed
+- `MailImportCoordinator` intercepts Facebook emails alongside LinkedIn before known/unknown partitioning
+- `FacebookImportCoordinator.handleNotificationEvent()` records IntentionalTouch and evidence for Facebook engagement
+- LinkedIn `notifications-digest` re-enabled for engagement data processing
+
+### Relationship Graph Custom Roles
+- `GraphToolbarView` role filter menu now dynamically discovers roles from graph data (predefined first, then custom alphabetically)
+- Role picker in graph review popover includes custom roles
+- `GraphNode.primaryRole` gives custom roles reasonable priority (50 vs 99)
+- Peer edges between people sharing the same custom role create visible clusters
+
+### Copy-to-Clipboard
+- Right-click context menu on outcome cards: "Copy" (full text) and "Copy Draft Message"
+- Daily briefing: "Copy Briefing" button + right-click on narrative
+- Text selection enabled on briefing narrative in Today view and overlay
+
+### Facebook Import Folder Support
+- "Select Folder..." button alongside ZIP picker on import sheet (setup, no-ZIP-found, and failed phases)
+- `processZip()` detects folders vs files, routes accordingly
+- `loadFolder()` searches one level down for expected structure
+- ZIP extraction filters `__MACOSX` metadata folders
+
+### Profile Analyst Prompt Compression & Context Budget
+- System instructions compressed ~65% across LinkedIn, Facebook, Substack, CrossPlatform analysts
+- `compactContextBlock()` on BusinessProfileService — business profile + blocklist only (no redundant social fragments)
+- `contextBudgetChars()` on AIService — 10K for FoundationModels, 60K for MLX
+- Previous analysis JSON budget reduced to 800 chars on FoundationModels (2000 on MLX)
+
+### File System Watchers for Communications
+- `DispatchSource.makeFileSystemObjectSource` watches iMessage `chat.db`, WhatsApp `ChatStorage.sqlite`, and `CallHistory.storedata` for instant change detection
+- 1.5-second debounce coalesces rapid SQLite writes into single import
+- Replaces 60-second polling loop; ~2 second latency for new message detection
+- 5-minute fallback poll as safety net
+
+### Call-Flow Optimization
+- `PostImportOrchestrator` — 3-second debounce across all 7 import coordinators; role deduction and insight generation run once instead of N times
+- `RoleDeductionEngine.deduceRoles()` throttled to 10-minute minimum between runs
+- `InsightGenerator.startAutoGeneration()` throttled to 10-minute minimum
+- `computeHealth(for:)` cached in PersonDetailView (was called 3x), pre-computed as healthMap in OutcomeEngine sort/filter paths
+- `fullContextBlock()` cached for 5 minutes in CoachingPlannerService session lifetime
+- WhatsApp JID log downgraded from `.info` to `.debug`; TODO log replaced with actual InsightGenerator call
+
+### Bug Fixes
+- SETUP outcomes no longer misclassified as `.communicate` (preserved `.openURL` action lane)
+- Facebook import "Done" button added to complete phase body (not just toolbar)
+- LinkedIn error messages now include platform name
+- Cross-platform analysis loads Facebook profile from persisted storage (not just in-memory import state)
+- `samProfileAnalysisDidUpdate` notification posted on `@MainActor`
+
+### New Files
+| File | Description |
+|------|-------------|
+| `Services/FacebookEmailParser.swift` | Subject-only parser for Facebook notification emails |
+| `Coordinators/PostImportOrchestrator.swift` | Debounced post-import work orchestrator |
+
+### Modified Files (30+)
+Key files: `BusinessProfileDTO.swift`, `BusinessProfileService.swift`, `AIService.swift`, `ComplianceScanner.swift`, `SettingsView.swift`, `BusinessDashboardView.swift`, `PipelineDashboardView.swift`, `GoalEntryForm.swift`, `SAMModels-Goal.swift`, `GraphToolbarView.swift`, `GraphBuilderService.swift`, `RelationshipGraphView.swift`, `GraphNode.swift`, `OutcomeCardView.swift`, `DailyBriefingOverlay.swift`, `PersistentBriefingSection.swift`, `OutcomeEngine.swift`, `MailImportCoordinator.swift`, `FacebookImportCoordinator.swift`, `FacebookImportSheet.swift`, `CommunicationsImportCoordinator.swift`, `ProfileAnalystService.swift`, `FacebookProfileAnalystService.swift`, `SubstackProfileAnalystService.swift`, `CrossPlatformConsistencyService.swift`, `CoachingPlannerService.swift`, `PersonDetailView.swift`, `InsightGenerator.swift`, `ContactsImportCoordinator.swift`, `CalendarImportCoordinator.swift`, `LinkedInImportCoordinator.swift`, `GrowDashboardView.swift`, `RoleDeductionEngine.swift`, `WhatsAppService.swift`, plus 20+ service files for persona string replacement
+
+---
+
 ## Security Hardening (March 13, 2026)
 
 **What**: Mandatory authentication on every launch, mandatory backup encryption, clipboard auto-clear, log privacy audit, and keychain service.

@@ -27,115 +27,48 @@ actor SubstackProfileAnalystService {
             throw AnalysisError.modelUnavailable
         }
 
-        let businessContext = await BusinessProfileService.shared.fullContextBlock()
+        let businessContext = await BusinessProfileService.shared.compactContextBlock()
 
         let followUpClause: String
         if let prevJSON = previousAnalysisJSON {
-            followUpClause = """
-
-            A previous analysis is provided for comparison:
-            \(String(prevJSON.prefix(2000)))
-
-            In your response, populate changes_since_last to note meaningful changes \
-            (new articles published, topic shifts, cadence improvements). Acknowledge progress.
-            """
+            let budget = await AIService.shared.contextBudgetChars()
+            let prevLimit = budget > 20000 ? 2000 : 800
+            followUpClause = "\nPrior analysis (populate changes_since_last):\n\(String(prevJSON.prefix(prevLimit)))"
         } else {
             followUpClause = ""
         }
 
+        let persona = await BusinessProfileService.shared.personaFragment()
+
         let instructions = """
-            You are a Substack publication advisor for an independent financial services professional \
-            who uses their newsletter to build thought leadership, nurture client relationships, and \
-            attract warm leads. Your tone is encouraging and constructive — always lead with genuine \
-            praise before suggesting improvements. Be specific: cite actual article titles, posting \
-            frequency, and topic patterns.
-
+            Substack publication advisor for \(persona). \
+            Encouraging tone: praise first. Cite actual article titles and posting patterns. No generic advice.
             \(businessContext)
-
             \(followUpClause)
-
-            Analyze the publication across five dimensions:
-
-            1. PRAISE — What is genuinely strong about this publication? Lead with 2–4 specific \
-            strengths. Reference actual article titles and topics.
-
-            2. PUBLICATION IMPROVEMENTS — What changes would improve subscriber growth, engagement, \
-            and content quality? Prioritize high-impact items. For EVERY improvement, provide \
-            ready-to-use text in example_or_prompt — an actual article title, subtitle, or \
-            opening paragraph the user can use directly.
-
-            3. CONTENT STRATEGY — Assess topic coverage, posting frequency, and consistency. \
-            Identify gaps: topics the user should cover given their expertise and audience. \
-            Include 2–3 specific article topic suggestions with working titles.
-
-            4. AUDIENCE & REACH — Comment on the publication's positioning for the financial \
-            services audience. Assess whether the content serves existing clients (retention), \
-            attracts new leads (growth), or both. Note the subscriber value proposition.
-
-            5. EXTERNAL PROMPT — Compose a prompt the user can paste into ChatGPT, Claude, or \
-            another AI for deeper content strategy help. Make it specific to their Substack.
-
-            CRITICAL: respond with ONLY valid JSON.
-            - Do NOT wrap the JSON in markdown code blocks
-            - Return ONLY the raw JSON object starting with { and ending with }
-
-            JSON schema:
-            {
-              "overall_score": 72,
-              "praise": [
-                { "category": "Content Quality", "message": "...", "metric": "12 articles published" }
-              ],
-              "improvements": [
-                {
-                  "category": "Posting Cadence",
-                  "priority": "high",
-                  "suggestion": "...",
-                  "rationale": "...",
-                  "example_or_prompt": "..."
-                }
-              ],
-              "content_strategy": {
-                "summary": "...",
-                "posting_frequency": "...",
-                "content_mix": "...",
-                "engagement_assessment": "...",
-                "topic_suggestions": ["...", "..."]
-              },
-              "network_health": {
-                "summary": "...",
-                "growth_trend": "...",
-                "endorsement_insight": "...",
-                "recommendation_reciprocity": "..."
-              },
-              "changes_since_last": [
-                { "description": "...", "is_improvement": true }
-              ],
-              "external_prompt": {
-                "context": "...",
-                "prompt": "...",
-                "copy_button_label": "Copy Substack Strategy Prompt"
-              }
-            }
-
-            Adaptation notes for Substack context:
-            - network_health.summary → use for audience/reach assessment
-            - network_health.growth_trend → subscriber growth trajectory
-            - network_health.endorsement_insight → reader engagement signals (comments, shares)
-            - network_health.recommendation_reciprocity → cross-promotion opportunities
-
-            Rules:
-            - overall_score is 1–100 (honest assessment)
-            - priority is exactly "high", "medium", or "low"
-            - changes_since_last may be omitted if no prior analysis provided
-            - Keep each praise message to 1–2 sentences
-            - Do NOT give generic newsletter advice — be specific to this person's actual publication
-            - If posting cadence is irregular, be honest but encouraging about it
+            Respond with ONLY raw JSON (no markdown, no explanation).
+            {"overall_score":1-100,"praise":[{"category":"...","message":"1-2 sentences","metric":"..."}],\
+            "improvements":[{"category":"...","priority":"high|medium|low","suggestion":"...","rationale":"2-3 sentences",\
+            "example_or_prompt":"ready-to-use article title, subtitle, or opening paragraph"}],\
+            "content_strategy":{"summary":"...","posting_frequency":"...","content_mix":"...","engagement_assessment":"...","topic_suggestions":["..."]},\
+            "network_health":{"summary":"audience/reach","growth_trend":"subscriber trajectory","endorsement_insight":"reader engagement","recommendation_reciprocity":"cross-promotion"},\
+            "changes_since_last":[{"description":"...","is_improvement":true}],\
+            "external_prompt":{"context":"...","prompt":"...","copy_button_label":"Copy Substack Strategy Prompt"}}
+            Dimensions: 1) PRAISE: 2-4 strengths referencing actual articles. \
+            2) IMPROVEMENTS: high-impact changes; example_or_prompt = paste-ready text (titles, opening paragraphs). \
+            3) CONTENT STRATEGY: topic coverage, frequency, gaps, 2-3 specific article topic suggestions. \
+            4) AUDIENCE & REACH: does content serve retention, growth, or both? \
+            5) EXTERNAL PROMPT: AI prompt specific to their Substack. \
+            changes_since_last: omit if no prior analysis. Be specific to this publication.
             """
 
-        let prompt = """
-            Analyze this Substack publication for a financial services professional:
+        let budget = await AIService.shared.contextBudgetChars()
+        let maxDataChars = max(2000, budget - instructions.count)
+        let truncatedData = data.count > maxDataChars ? String(data.prefix(maxDataChars)) + "\n[... truncated for context limit]" : data
 
-            \(data)
+        let prompt = """
+            Analyze this Substack publication for \(persona):
+
+            \(truncatedData)
             """
 
         let systemSize = instructions.count

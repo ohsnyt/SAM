@@ -37,10 +37,12 @@ actor EventTopicAdvisorService {
         if !customPrompt.isEmpty {
             instructions = customPrompt + "\n\n" + businessContext
         } else {
+            let persona = await BusinessProfileService.shared.personaFragment()
+            let complianceNote = await BusinessProfileService.shared.complianceNote()
             instructions = """
-                You suggest workshop and event topics for an independent financial strategist \
+                You suggest workshop and event topics for \(persona) \
                 to host for their clients, leads, and professional network. Topics should be \
-                educational, compliant with financial services regulations, timely, and grounded \
+                educational, \(complianceNote), timely, and grounded \
                 in actual recent interactions.
 
                 \(businessContext)
@@ -121,10 +123,11 @@ actor EventTopicAdvisorService {
             Return ONLY the description text, nothing else.
             """
 
+        let complianceNote2 = await BusinessProfileService.shared.complianceNote()
         return try await AIService.shared.generate(
             prompt: prompt,
             systemInstruction: "You write compelling event descriptions for financial education workshops. " +
-                "Educational tone, compliant with financial services regulations, warm and inviting.",
+                "Educational tone, \(complianceNote2), warm and inviting.",
             maxTokens: 256
         )
     }

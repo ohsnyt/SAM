@@ -11,9 +11,24 @@
 
 import Foundation
 
+// MARK: - PracticeType
+
+/// Controls which features SAM surfaces and how AI prompts describe the user's role.
+public enum PracticeType: String, Codable, Sendable, CaseIterable {
+    /// Full WFG financial advisor experience — production, recruiting, compliance.
+    case financialAdvisor = "Financial Advisor"
+    /// Generic relationship coaching — hides financial-specific features.
+    case general = "General"
+}
+
 /// The user's business context profile — injected into all AI specialist system instructions.
 /// Persisted as JSON in UserDefaults via `BusinessProfileService`.
 nonisolated public struct BusinessProfile: Codable, Sendable, Equatable {
+
+    // MARK: - Practice Type
+
+    /// Controls feature visibility and AI persona. Default preserves existing behavior.
+    public var practiceType: PracticeType
 
     // MARK: - Practice Structure
 
@@ -58,9 +73,28 @@ nonisolated public struct BusinessProfile: Codable, Sendable, Equatable {
     /// E.g., "I specialize in serving military families" or "My warm market is exhausted."
     public var additionalContext: String
 
+    // MARK: - Computed Helpers
+
+    /// Whether this profile uses the financial advisor practice type.
+    public var isFinancial: Bool { practiceType == .financialAdvisor }
+
+    /// A natural-language description of the user's role for AI system instructions.
+    public var personaDescription: String {
+        if isFinancial {
+            return "an independent financial strategist"
+        }
+        // Build from available fields
+        let role = roleTitle.isEmpty ? "a professional" : roleTitle
+        if !organization.isEmpty {
+            return "\(role) at \(organization)"
+        }
+        return role
+    }
+
     // MARK: - Init
 
     public init(
+        practiceType: PracticeType = .financialAdvisor,
         isSoloPractitioner: Bool = true,
         organization: String = "World Financial Group",
         roleTitle: String = "",
@@ -73,6 +107,7 @@ nonisolated public struct BusinessProfile: Codable, Sendable, Equatable {
         communicationChannels: [String] = ["iMessage", "Email", "Phone"],
         additionalContext: String = ""
     ) {
+        self.practiceType = practiceType
         self.isSoloPractitioner = isSoloPractitioner
         self.organization = organization
         self.roleTitle = roleTitle
@@ -84,6 +119,24 @@ nonisolated public struct BusinessProfile: Codable, Sendable, Equatable {
         self.activeSocialPlatforms = activeSocialPlatforms
         self.communicationChannels = communicationChannels
         self.additionalContext = additionalContext
+    }
+
+    // MARK: - Codable (backwards-compatible)
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.practiceType = try container.decodeIfPresent(PracticeType.self, forKey: .practiceType) ?? .financialAdvisor
+        self.isSoloPractitioner = try container.decodeIfPresent(Bool.self, forKey: .isSoloPractitioner) ?? true
+        self.organization = try container.decodeIfPresent(String.self, forKey: .organization) ?? "World Financial Group"
+        self.roleTitle = try container.decodeIfPresent(String.self, forKey: .roleTitle) ?? ""
+        self.yearsExperience = try container.decodeIfPresent(Int.self, forKey: .yearsExperience) ?? 0
+        self.marketFocus = try container.decodeIfPresent([String].self, forKey: .marketFocus) ?? []
+        self.isActivelyRecruiting = try container.decodeIfPresent(Bool.self, forKey: .isActivelyRecruiting) ?? false
+        self.geographicMarket = try container.decodeIfPresent(String.self, forKey: .geographicMarket) ?? ""
+        self.samIsCRM = try container.decodeIfPresent(Bool.self, forKey: .samIsCRM) ?? true
+        self.activeSocialPlatforms = try container.decodeIfPresent([String].self, forKey: .activeSocialPlatforms) ?? ["Facebook", "LinkedIn"]
+        self.communicationChannels = try container.decodeIfPresent([String].self, forKey: .communicationChannels) ?? ["iMessage", "Email", "Phone"]
+        self.additionalContext = try container.decodeIfPresent(String.self, forKey: .additionalContext) ?? ""
     }
 
     // MARK: - System Instruction Fragment
@@ -99,21 +152,28 @@ nonisolated public struct BusinessProfile: Codable, Sendable, Equatable {
             lines.append("• The user has a team-based practice.")
         }
 
-        lines.append("• Organization: \(organization)")
+        if !organization.isEmpty {
+            lines.append("• Organization: \(organization)")
+        }
 
         if !roleTitle.isEmpty {
             lines.append("• Role: \(roleTitle)")
         }
 
         if yearsExperience > 0 {
-            lines.append("• Experience: \(yearsExperience) years in financial services")
+            if isFinancial {
+                lines.append("• Experience: \(yearsExperience) years in financial services")
+            } else {
+                lines.append("• Experience: \(yearsExperience) years")
+            }
         }
 
         if !marketFocus.isEmpty {
-            lines.append("• Market focus: \(marketFocus.joined(separator: ", "))")
+            let label = isFinancial ? "Market focus" : "Focus areas"
+            lines.append("• \(label): \(marketFocus.joined(separator: ", "))")
         }
 
-        if isActivelyRecruiting {
+        if isFinancial && isActivelyRecruiting {
             lines.append("• Actively recruiting new agents")
         }
 

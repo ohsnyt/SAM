@@ -285,11 +285,10 @@ final class CalendarImportCoordinator {
 
             logger.info("Import complete: \(events.count) events")
 
-            // Background: insights, time categorization, role deduction
+            // Background: time categorization + debounced post-import work
             Task(priority: .utility) {
-                InsightGenerator.shared.startAutoGeneration()
                 try? TimeCategorizationEngine.shared.categorizeNewCalendarEvents()
-                await RoleDeductionEngine.shared.deduceRoles()
+                PostImportOrchestrator.shared.importDidComplete(source: "calendar")
             }
 
         } catch {

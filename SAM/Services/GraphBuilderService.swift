@@ -181,6 +181,37 @@ actor GraphBuilderService {
             ))
         }
 
+        // --- Peer edges between people who share the same role ---
+        // Groups contacts by each role they hold, then connects peers within that role.
+        // This creates visible clusters (e.g., all "ABT Board" members linked together).
+        var roleGroups: [String: [UUID]] = [:]
+        for person in people {
+            for role in person.roleBadges {
+                roleGroups[role, default: []].append(person.id)
+            }
+        }
+        // Predefined roles (Client, Lead, etc.) already connect to Me via the links above;
+        // peer edges are only useful for custom/niche roles where clustering reveals a group.
+        let predefinedRoles: Set<String> = ["Client", "Applicant", "Lead", "Agent", "External Agent", "Referral Partner", "Vendor", "Prospect"]
+        for (role, memberIDs) in roleGroups where memberIDs.count >= 2 && !predefinedRoles.contains(role) {
+            // Cap at 20 members to avoid O(n²) edge explosion for large groups
+            let capped = memberIDs.prefix(20)
+            for i in capped.indices {
+                for j in capped.indices where j > i {
+                    edges.append(GraphEdge(
+                        id: UUID(),
+                        sourceID: capped[i],
+                        targetID: capped[j],
+                        edgeType: .roleRelationship,
+                        weight: 0.3,
+                        label: role,
+                        isReciprocal: true,
+                        communicationDirection: nil
+                    ))
+                }
+            }
+        }
+
         // --- Identify connected person IDs ---
         var connectedIDs = Set<UUID>()
         for edge in edges {

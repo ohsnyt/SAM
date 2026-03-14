@@ -284,16 +284,8 @@ final class ContactsImportCoordinator {
             let duration = Date().timeIntervalSince(startTime)
             logger.info("Import complete: \(created) created, \(updated) updated in \(String(format: "%.2f", duration))s")
 
-            // Trigger insight generation (Phase H)
-            Task {
-                // await InsightGenerator.shared.generateInsights()
-                logger.debug("TODO: Trigger insight generation")
-            }
-
-            // Re-run role deduction with newly imported contacts
-            Task(priority: .utility) {
-                await RoleDeductionEngine.shared.deduceRoles()
-            }
+            // Debounced post-import work (role deduction, insight generation)
+            PostImportOrchestrator.shared.importDidComplete(source: "contacts")
 
         } catch {
             logger.error("Import failed: \(error.localizedDescription)")

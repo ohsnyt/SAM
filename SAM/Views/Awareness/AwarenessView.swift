@@ -350,7 +350,7 @@ struct AwarenessView: View {
         isGenerating = true
         // Generate insights — persistence happens inside the generator;
         // @Query auto-updates the list from SwiftData.
-        _ = await generator.generateInsights()
+        _ = await generator.generateInsights(force: true)
         isGenerating = false
     }
 

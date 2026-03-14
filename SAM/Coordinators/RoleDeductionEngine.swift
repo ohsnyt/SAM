@@ -151,8 +151,18 @@ final class RoleDeductionEngine {
 
     // MARK: - Deduction
 
-    func deduceRoles() async {
+    /// Set `force` to bypass the 10-minute throttle (e.g., after a fresh data import).
+    func deduceRoles(force: Bool = false) async {
         guard deductionStatus != .running else { return }
+
+        // Throttle: skip if last run was within 10 minutes (unless forced)
+        if !force,
+           let lastRun = UserDefaults.standard.object(forKey: Self.lastRunDateKey) as? Date,
+           Date.now.timeIntervalSince(lastRun) < 600 {
+            logger.debug("Role deduction throttled — last run \(Int(Date.now.timeIntervalSince(lastRun)))s ago")
+            return
+        }
+
         deductionStatus = .running
         logger.info("Starting role deduction...")
 

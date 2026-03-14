@@ -31,7 +31,7 @@ actor LifeEventCoachingService {
         }
 
         let businessCtx = await BusinessProfileService.shared.fullContextBlock()
-        let systemInstruction = buildSystemInstruction(context: context, businessContext: businessCtx)
+        let systemInstruction = await buildSystemInstruction(context: context, businessContext: businessCtx)
 
         let prompt = """
             The user has a life event to respond to:
@@ -78,7 +78,7 @@ actor LifeEventCoachingService {
         }
 
         let businessCtx = await BusinessProfileService.shared.fullContextBlock()
-        let systemInstruction = buildSystemInstruction(context: context, businessContext: businessCtx)
+        let systemInstruction = await buildSystemInstruction(context: context, businessContext: businessCtx)
 
         // Build conversation context from recent history (last 4 messages)
         let historyWindow = recentHistory.suffix(4)
@@ -117,15 +117,17 @@ actor LifeEventCoachingService {
     // MARK: - System Instruction
 
     /// Build the system instruction with event-type-calibrated tone.
-    private func buildSystemInstruction(context: LifeEventCoachingContext, businessContext: String = "") -> String {
+    private func buildSystemInstruction(context: LifeEventCoachingContext, businessContext: String = "") async -> String {
         let toneGuidance = toneForEventType(context.event.eventType)
         let roleContext = context.personRoles.isEmpty
             ? "a contact"
             : context.personRoles.joined(separator: ", ")
 
+        let persona = await BusinessProfileService.shared.personaFragment()
+
         var instruction = """
-            You are SAM, a relationship coaching assistant for an independent financial \
-            strategist. You are helping the user respond to a \
+            You are SAM, a relationship coaching assistant for \(persona). \
+            You are helping the user respond to a \
             life event involving \(context.personName), who is \(roleContext).
 
             \(businessContext)

@@ -40,7 +40,7 @@ actor EmailAnalysisService {
         }
 
         let custom = UserDefaults.standard.string(forKey: "sam.ai.emailPrompt") ?? ""
-        let instructions = custom.isEmpty ? Self.defaultEmailPrompt : custom
+        let instructions = custom.isEmpty ? await Self.defaultEmailPrompt() : custom
 
         let prompt = """
         Subject: \(subject)
@@ -141,8 +141,10 @@ actor EmailAnalysisService {
         }
     }
 
-    static let defaultEmailPrompt = """
-        You are analyzing a professional email received by an independent financial strategist.
+    static func defaultEmailPrompt() async -> String {
+        let persona = await BusinessProfileService.shared.personaFragment()
+        return """
+        You are analyzing a professional email received by \(persona).
         Extract structured intelligence from the email.
 
         CRITICAL: Respond with ONLY valid JSON. No markdown, no explanation.
@@ -183,6 +185,7 @@ actor EmailAnalysisService {
         - If the email mentions another person is coming, include their name in additional_guest_names
         - Omit rsvp_detections if no RSVP-like language is present
         """
+    }
 }
 
 // MARK: - Internal LLM Response Types

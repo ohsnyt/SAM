@@ -179,7 +179,9 @@ actor BusinessProfileService {
             // Remove legacy single-item key once migrated
             UserDefaults.standard.removeObject(forKey: profileAnalysisKey)
             logger.info("Saved profile analyses (\(analyses.count) platforms) to UserDefaults")
-            NotificationCenter.default.post(name: .samProfileAnalysisDidUpdate, object: nil)
+            Task { @MainActor in
+                NotificationCenter.default.post(name: .samProfileAnalysisDidUpdate, object: nil)
+            }
         }
     }
 
@@ -228,6 +230,57 @@ actor BusinessProfileService {
               let decoded = try? JSONDecoder().decode(ProfileAnalysisSnapshot.self, from: data) else { return nil }
         cachedSnapshot = decoded
         return decoded
+    }
+
+    // MARK: - Practice Type Helpers
+
+    /// Returns the persona description for the current profile (e.g., "an independent financial strategist").
+    func personaFragment() -> String {
+        profile().personaDescription
+    }
+
+    /// Whether the current profile uses the financial advisor practice type.
+    func isFinancialPractice() -> Bool {
+        profile().isFinancial
+    }
+
+    /// Returns a compliance note for financial practice, or empty string for general.
+    func complianceNote() -> String {
+        if profile().isFinancial {
+            return "Ensure all content is compliant with financial services regulations."
+        }
+        return ""
+    }
+
+    // MARK: - Nonisolated Synchronous Accessors
+
+    /// Thread-safe synchronous persona fragment, reads directly from UserDefaults.
+    /// Use this from synchronous contexts (e.g., static computed properties) where `await` is unavailable.
+    nonisolated func personaFragmentSync() -> String {
+        Self.loadProfile().personaDescription
+    }
+
+    /// Thread-safe synchronous financial practice check.
+    nonisolated func isFinancialPracticeSync() -> Bool {
+        Self.loadProfile().isFinancial
+    }
+
+    /// Thread-safe synchronous compliance note.
+    nonisolated func complianceNoteSync() -> String {
+        let p = Self.loadProfile()
+        if p.isFinancial {
+            return "Ensure all content is compliant with financial services regulations."
+        }
+        return ""
+    }
+
+    /// Load the profile directly from UserDefaults without actor isolation.
+    private nonisolated static func loadProfile() -> BusinessProfile {
+        if let data = UserDefaults.standard.data(forKey: "sam.businessProfile"),
+           let decoded = try? JSONDecoder().decode(BusinessProfile.self, from: data) {
+            return decoded
+        }
+        return BusinessProfile()
     }
 
     // MARK: - System Instruction Helpers
@@ -283,7 +336,21 @@ actor BusinessProfileService {
             lines.append("• Do NOT suggest spreadsheets or databases for contact tracking — SAM handles this")
         }
 
+        // Financial-specific constraints
+        if p.isFinancial {
+            lines.append("• Never make specific financial product recommendations or promises about returns")
+            lines.append("• Never fabricate data points — if data is insufficient for analysis, say so")
+        }
+
         return lines.joined(separator: "\n")
+    }
+
+    /// Returns a compact context block with just the business profile and blocklist — no social platform
+    /// fragments, no calibration. Use this for profile analyst prompts where the platform data is already
+    /// provided as input and context budget is tight.
+    func compactContextBlock() -> String {
+        let p = profile()
+        return "\(p.systemInstructionFragment())\n\n\(blocklistFragment())"
     }
 
     /// Returns the combined business context + blocklist + calibration for injection into system instructions.

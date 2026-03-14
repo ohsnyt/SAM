@@ -9,10 +9,12 @@
 //
 
 import SwiftUI
+import AppKit
 
 struct DailyBriefingOverlay: View {
 
     private var coordinator: DailyBriefingCoordinator { DailyBriefingCoordinator.shared }
+    @State private var copiedBriefing = false
 
     var body: some View {
         ScrollView {
@@ -57,16 +59,34 @@ struct DailyBriefingOverlay: View {
                     }
                 }
 
-                // Dismiss button
-                Button(action: {
-                    coordinator.markMorningViewed()
-                }) {
-                    Text("Start My Day")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
+                // Actions
+                HStack(spacing: 12) {
+                    Button {
+                        if let briefing = coordinator.morningBriefing {
+                            ClipboardSecurity.copy(briefingTextForCopy(briefing), clearAfter: 120)
+                            copiedBriefing = true
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                                copiedBriefing = false
+                            }
+                        }
+                    } label: {
+                        Label(copiedBriefing ? "Copied" : "Copy Briefing",
+                              systemImage: copiedBriefing ? "checkmark" : "doc.on.doc")
+                            .font(.headline)
+                            .padding(.vertical, 12)
+                    }
+                    .buttonStyle(.bordered)
+
+                    Button(action: {
+                        coordinator.markMorningViewed()
+                    }) {
+                        Text("Start My Day")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                    }
+                    .buttonStyle(.borderedProminent)
                 }
-                .buttonStyle(.borderedProminent)
                 .padding(.top, 8)
             }
             .padding(32)
@@ -161,10 +181,18 @@ struct DailyBriefingOverlay: View {
             Text(text)
                 .font(.body)
                 .foregroundStyle(.primary)
+                .textSelection(.enabled)
                 .padding()
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Color.accentColor.opacity(0.08))
                 .clipShape(RoundedRectangle(cornerRadius: 10))
+                .contextMenu {
+                    Button {
+                        ClipboardSecurity.copy(text, clearAfter: 120)
+                    } label: {
+                        Label("Copy Narrative", systemImage: "doc.on.doc")
+                    }
+                }
         }
     }
 
@@ -374,5 +402,72 @@ struct DailyBriefingOverlay: View {
         case "soon":      return .orange
         default:          return .blue
         }
+    }
+
+    // MARK: - Copy Briefing
+
+    private func briefingTextForCopy(_ briefing: SamDailyBriefing) -> String {
+        var parts: [String] = []
+        parts.append("Daily Briefing — \(Date.now.formatted(date: .complete, time: .omitted))")
+
+        if let narrative = briefing.narrativeSummary, !narrative.isEmpty {
+            parts.append(narrative)
+        }
+
+        if !briefing.weeklyPriorities.isEmpty {
+            parts.append("THIS WEEK'S PRIORITIES:")
+            for (i, p) in briefing.weeklyPriorities.enumerated() {
+                var line = "\(i + 1). \(p.title)"
+                if let r = p.rationale, !r.isEmpty { line += " — \(r)" }
+                if let name = p.personName { line += " [\(name)]" }
+                parts.append(line)
+            }
+        }
+
+        if !briefing.calendarItems.isEmpty {
+            parts.append("TODAY'S SCHEDULE:")
+            for item in briefing.calendarItems {
+                let time = item.startsAt.formatted(date: .omitted, time: .shortened)
+                var line = "\(time)  \(item.eventTitle)"
+                if !item.attendeeNames.isEmpty { line += " (\(item.attendeeNames.joined(separator: ", ")))" }
+                if let prep = item.preparationNote, !prep.isEmpty { line += " — \(prep)" }
+                parts.append(line)
+            }
+        }
+
+        if !briefing.priorityActions.isEmpty {
+            parts.append("PRIORITY ACTIONS:")
+            for (i, a) in briefing.priorityActions.enumerated() {
+                var line = "\(i + 1). \(a.title)"
+                if let name = a.personName { line += " [\(name)]" }
+                parts.append(line)
+            }
+        }
+
+        if !briefing.followUps.isEmpty {
+            parts.append("FOLLOW-UPS NEEDED:")
+            for f in briefing.followUps {
+                parts.append("• \(f.personName) — \(f.reason) (\(f.daysSinceInteraction)d)")
+            }
+        }
+
+        if !briefing.lifeEventOutreach.isEmpty {
+            parts.append("LIFE EVENTS:")
+            for e in briefing.lifeEventOutreach {
+                var line = "• \(e.personName) — \(e.eventDescription)"
+                if let s = e.outreachSuggestion { line += "\n  → \(s)" }
+                parts.append(line)
+            }
+        }
+
+        if !briefing.tomorrowPreview.isEmpty {
+            parts.append("TOMORROW:")
+            for item in briefing.tomorrowPreview {
+                let time = item.startsAt.formatted(date: .omitted, time: .shortened)
+                parts.append("\(time)  \(item.eventTitle)")
+            }
+        }
+
+        return parts.joined(separator: "\n\n")
     }
 }

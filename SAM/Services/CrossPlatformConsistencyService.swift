@@ -197,10 +197,12 @@ actor CrossPlatformConsistencyService {
             throw AnalysisError.modelUnavailable
         }
 
-        let businessContext = await BusinessProfileService.shared.fullContextBlock()
+        let businessContext = await BusinessProfileService.shared.compactContextBlock()
+
+        let persona = await BusinessProfileService.shared.personaFragment()
 
         let instructions = """
-            You are a cross-platform profile consistency advisor for an independent financial services professional. \
+            You are a cross-platform profile consistency advisor for \(persona). \
             This person maintains both a LinkedIn profile (professional networking) and a Facebook profile (personal/community connections). \
             Your job is to identify inconsistencies between the two profiles and suggest corrections.
 

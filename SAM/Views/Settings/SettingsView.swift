@@ -348,6 +348,9 @@ struct AISettingsView: View {
 // MARK: - Business Settings (new tab)
 
 struct BusinessSettingsView: View {
+
+    @State private var practiceType: PracticeType = .financialAdvisor
+
     var body: some View {
         Form {
             Section {
@@ -356,19 +359,25 @@ struct BusinessSettingsView: View {
                         .font(.title2).bold()
                     Divider()
                     DisclosureGroup("Business Profile") {
-                        BusinessProfileSettingsContent()
+                        BusinessProfileSettingsContent(practiceTypeBinding: $practiceType)
                             .padding(.top, 8)
                     }
-                    Divider()
-                    DisclosureGroup("Compliance") {
-                        ComplianceSettingsContent()
-                            .padding(.top, 8)
+                    if practiceType == .financialAdvisor {
+                        Divider()
+                        DisclosureGroup("Compliance") {
+                            ComplianceSettingsContent()
+                                .padding(.top, 8)
+                        }
                     }
                 }
                 .padding()
             }
         }
         .formStyle(.grouped)
+        .task {
+            let profile = await BusinessProfileService.shared.profile()
+            practiceType = profile.practiceType
+        }
     }
 }
 
@@ -1343,6 +1352,9 @@ struct CalendarSettingsView: View {
 
 struct BusinessProfileSettingsContent: View {
 
+    /// Syncs practice type back to the parent so Compliance can hide/show.
+    @Binding var practiceTypeBinding: PracticeType
+
     @State private var profile = BusinessProfile()
     @State private var isLoaded = false
     @State private var marketFocusText: String = ""
@@ -1358,6 +1370,26 @@ struct BusinessProfileSettingsContent: View {
             Text("Tell SAM about your practice so coaching suggestions are relevant and grounded.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+            // Practice Type
+            GroupBox("Practice Type") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Picker("Type", selection: $profile.practiceType) {
+                        ForEach(PracticeType.allCases, id: \.self) { type in
+                            Text(type.rawValue).tag(type)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .onChange(of: profile.practiceType) { _, _ in saveProfile() }
+
+                    Text(profile.isFinancial
+                         ? "Full financial advisor experience with production tracking, recruiting pipeline, and compliance scanning."
+                         : "Generic relationship coaching, event management, and social media. Financial-specific features are hidden.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 4)
+            }
 
             // Practice Structure
             GroupBox("Practice Structure") {
@@ -1382,7 +1414,7 @@ struct BusinessProfileSettingsContent: View {
                     }
 
                     HStack {
-                        Text("Experience:")
+                        Text(profile.isFinancial ? "Experience:" : "Experience:")
                             .frame(width: 100, alignment: .leading)
                         Picker("", selection: $profile.yearsExperience) {
                             Text("New").tag(0)
@@ -1399,36 +1431,51 @@ struct BusinessProfileSettingsContent: View {
                 .padding(.vertical, 4)
             }
 
-            // Market Focus
-            GroupBox("Market Focus") {
+            // Market Focus / Focus Areas
+            GroupBox(profile.isFinancial ? "Market Focus" : "Focus Areas") {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Select your primary focus areas:")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    if profile.isFinancial {
+                        Text("Select your primary focus areas:")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
 
-                    FlowLayout(spacing: 6) {
-                        ForEach(commonMarketFocus, id: \.self) { focus in
-                            Toggle(focus, isOn: Binding(
-                                get: { profile.marketFocus.contains(focus) },
-                                set: { isOn in
-                                    if isOn {
-                                        if !profile.marketFocus.contains(focus) {
-                                            profile.marketFocus.append(focus)
+                        FlowLayout(spacing: 6) {
+                            ForEach(commonMarketFocus, id: \.self) { focus in
+                                Toggle(focus, isOn: Binding(
+                                    get: { profile.marketFocus.contains(focus) },
+                                    set: { isOn in
+                                        if isOn {
+                                            if !profile.marketFocus.contains(focus) {
+                                                profile.marketFocus.append(focus)
+                                            }
+                                        } else {
+                                            profile.marketFocus.removeAll { $0 == focus }
                                         }
-                                    } else {
-                                        profile.marketFocus.removeAll { $0 == focus }
+                                        saveProfile()
                                     }
-                                    saveProfile()
-                                }
-                            ))
-                            .toggleStyle(.button)
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
+                                ))
+                                .toggleStyle(.button)
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                            }
                         }
-                    }
 
-                    Toggle("Actively recruiting agents", isOn: $profile.isActivelyRecruiting)
-                        .onChange(of: profile.isActivelyRecruiting) { _, _ in saveProfile() }
+                        Toggle("Actively recruiting agents", isOn: $profile.isActivelyRecruiting)
+                            .onChange(of: profile.isActivelyRecruiting) { _, _ in saveProfile() }
+                    } else {
+                        TextField("e.g., Social media marketing, Nonprofit governance, Community outreach",
+                                  text: Binding(
+                                    get: { profile.marketFocus.joined(separator: ", ") },
+                                    set: { newValue in
+                                        profile.marketFocus = newValue
+                                            .components(separatedBy: ",")
+                                            .map { $0.trimmingCharacters(in: .whitespaces) }
+                                            .filter { !$0.isEmpty }
+                                        saveProfile()
+                                    }
+                                  ))
+                            .textFieldStyle(.roundedBorder)
+                    }
 
                     HStack {
                         Text("Geographic market:")
@@ -1511,11 +1558,13 @@ struct BusinessProfileSettingsContent: View {
     private func loadProfile() async {
         let loaded = await BusinessProfileService.shared.profile()
         profile = loaded
+        practiceTypeBinding = loaded.practiceType
         isLoaded = true
     }
 
     private func saveProfile() {
         guard isLoaded else { return }
+        practiceTypeBinding = profile.practiceType
         Task {
             await BusinessProfileService.shared.save(profile)
         }

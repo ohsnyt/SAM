@@ -28,8 +28,15 @@ actor PatternDetectorService {
             throw AnalysisError.modelUnavailable
         }
 
+        let trimmed = data.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            logger.info("Pattern detector skipped — no interaction data available")
+            return PatternAnalysis()
+        }
+
         let businessContext = await BusinessProfileService.shared.fullContextBlock()
-        let instructions = await buildSystemInstructions(businessContext: businessContext)
+        let persona = await BusinessProfileService.shared.personaFragment()
+        let instructions = await buildSystemInstructions(businessContext: businessContext, persona: persona)
 
         let prompt = """
             Identify patterns in this business relationship data:
@@ -44,18 +51,18 @@ actor PatternDetectorService {
     // MARK: - Prompt Construction
 
     @MainActor
-    private func buildSystemInstructions(businessContext: String) -> String {
+    private func buildSystemInstructions(businessContext: String, persona: String) -> String {
         let custom = UserDefaults.standard.string(forKey: PromptSite.patternDetector.userDefaultsKey) ?? ""
         if !custom.isEmpty {
             return custom + "\n\n" + businessContext
         }
-        return Self.defaultPrompt(businessContext: businessContext)
+        return Self.defaultPrompt(businessContext: businessContext, persona: persona)
     }
 
-    static func defaultPrompt(businessContext: String) -> String {
+    static func defaultPrompt(businessContext: String, persona: String) -> String {
         """
         You identify behavioral patterns and correlations in business relationship data \
-        for an independent financial strategist. \
+        for \(persona). \
         Look for patterns in engagement, referral networks, meeting quality, and role transitions.
 
         \(businessContext)

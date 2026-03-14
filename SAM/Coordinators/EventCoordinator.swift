@@ -364,10 +364,13 @@ final class EventCoordinator {
             Return only the invitation text.
             """
 
+        let persona = await BusinessProfileService.shared.personaFragment()
+        let complianceNote = await BusinessProfileService.shared.complianceNote()
+        let complianceLine = complianceNote.isEmpty ? "" : " \(complianceNote) Never promise returns, never pressure, always educate."
+
         let systemInstruction = """
-            You are a warm, professional communication assistant for an independent financial strategist. \
-            You write personalized messages that feel genuinely individual — never templated or mass-produced. \
-            You understand financial services compliance: never promise returns, never pressure, always educate.
+            You are a warm, professional communication assistant for \(persona). \
+            You write personalized messages that feel genuinely individual — never templated or mass-produced.\(complianceLine)
             """
 
         return try await AIService.shared.generate(
@@ -951,8 +954,10 @@ final class EventCoordinator {
             Return only the notification text.
             """
 
+        let persona = await BusinessProfileService.shared.personaFragment()
+
         let systemInstruction = """
-            You are a warm, professional communication assistant for an independent financial strategist. \
+            You are a warm, professional communication assistant for \(persona). \
             You write clear, considerate update messages that respect people's time and prior commitments.
             """
 
@@ -1131,9 +1136,11 @@ final class EventCoordinator {
             Return only the message text.
             """
 
+        let persona = await BusinessProfileService.shared.personaFragment()
+
         return try await AIService.shared.generate(
             prompt: prompt,
-            systemInstruction: "You write warm, genuine follow-up messages for a financial advisor. " +
+            systemInstruction: "You write warm, genuine follow-up messages for \(persona). " +
                 "You understand that post-event follow-up is about deepening relationships, not hard selling.",
             maxTokens: 512
         )
@@ -1169,7 +1176,7 @@ final class EventCoordinator {
         limit: Int = 30
     ) async throws -> [(person: SamPerson, reason: String)] {
         let allPeople = try PeopleRepository.shared.fetchAll()
-        let activePeople = allPeople.filter { $0.lifecycleStatus == .active && !($0.isMe ?? false) }
+        let activePeople = allPeople.filter { $0.lifecycleStatus == .active && !$0.isMe }
 
         // Exclude people already participating in this event
         let existingIDs = Set(event.participations.compactMap { $0.person?.id })

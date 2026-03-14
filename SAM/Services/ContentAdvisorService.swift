@@ -32,6 +32,12 @@ actor ContentAdvisorService {
             throw AnalysisError.modelUnavailable
         }
 
+        let trimmed = data.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            logger.info("Content advisor skipped — no interaction data available")
+            return ContentAnalysis()
+        }
+
         let businessContext = await BusinessProfileService.shared
             .fullContextBlock()
 
@@ -53,16 +59,21 @@ actor ContentAdvisorService {
                 - Use data/examples in angles
                 - Match platform to content type
 
-                JSON format:
-                [
+                CRITICAL: You MUST respond with ONLY valid JSON.
+                - Do NOT wrap the JSON in markdown code blocks
+                - Return ONLY the raw JSON object starting with { and ending with }
+
+                The JSON structure must be:
+                {
+                  "topic_suggestions": [
                     {
-                    "topic": "specific content idea",
-                    "platform": "linkedin|facebook|instagram|substack",
-                    "angle": "compelling hook with data or examples", 
-                    "relevance": "why timely/important now",
-                    "complianceNotes": "required disclaimers"
+                      "topic": "specific content idea",
+                      "key_points": ["point 1", "point 2", "point 3"],
+                      "suggested_tone": "educational",
+                      "compliance_notes": "required disclaimers or null"
                     }
-                ]
+                  ]
+                }
 
                 Compliance:
                 - No guarantees or return promises
@@ -75,8 +86,6 @@ actor ContentAdvisorService {
                 - Use concrete examples over theory
                 - Connect to current events/seasons
                 - Address real client concerns
-
-                Return ONLY valid JSON array.
                 """
         }
 
@@ -169,11 +178,15 @@ actor ContentAdvisorService {
 
         let voiceBlock = await buildVoiceBlock(for: platform)
 
+        let persona = await BusinessProfileService.shared.personaFragment()
+        let complianceNote = await BusinessProfileService.shared.complianceNote()
+
         let contentType =
             platform == .substack ? "newsletter articles" : "social media posts"
+        let complianceLine = complianceNote.isEmpty ? "" : " \(complianceNote)"
         let instructions = """
-            You write \(contentType) for an independent financial strategist. \
-            The content must be educational and compliant with financial services regulations.
+            You write \(contentType) for \(persona). \
+            The content must be educational.\(complianceLine)
 
             \(businessContext)
 

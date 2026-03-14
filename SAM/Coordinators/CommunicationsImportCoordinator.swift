@@ -61,6 +61,16 @@ final class CommunicationsImportCoordinator {
     /// Import interval in seconds (default: 1 minute). 0 disables periodic import.
     private(set) var importIntervalSeconds: TimeInterval = 60
 
+    // MARK: - File System Watchers
+
+    /// File descriptor + DispatchSource pairs for database file monitoring.
+    private var fileWatcherSources: [DispatchSourceFileSystemObject] = []
+    private var fileWatcherFDs: [Int32] = []
+    /// Debounce task for coalescing rapid file system events.
+    private var watcherDebounceTask: Task<Void, Never>?
+    /// Fallback poll interval when file watchers are active (safety net).
+    private static let fallbackPollInterval: TimeInterval = 300 // 5 minutes
+
     private init() {
         // Default both to true — user has already granted DB access as the gating step
         messagesEnabled = UserDefaults.standard.object(forKey: "commsMessagesEnabled") == nil
@@ -163,9 +173,113 @@ final class CommunicationsImportCoordinator {
         }
     }
 
-    // MARK: - Periodic Import
+    // MARK: - File System Watchers
+
+    /// Start file system watchers on the database files for instant change detection.
+    /// Falls back to a 5-minute poll as a safety net in case FS events are missed.
+    func startFileWatchers() {
+        guard messagesEnabled || callsEnabled || whatsAppMessagesEnabled || whatsAppCallsEnabled else { return }
+        guard fileWatcherSources.isEmpty else { return } // Already watching
+
+        var watchPaths: [(url: URL, label: String)] = []
+
+        // iMessage chat.db
+        if messagesEnabled, let resolved = bookmarkManager.resolveMessagesURL() {
+            watchPaths.append((url: resolved.database, label: "iMessage"))
+        }
+
+        // Call history
+        if callsEnabled, let resolved = bookmarkManager.resolveCallHistoryURL() {
+            watchPaths.append((url: resolved.database, label: "CallHistory"))
+        }
+
+        // WhatsApp ChatStorage.sqlite
+        if whatsAppMessagesEnabled || whatsAppCallsEnabled, let resolved = bookmarkManager.resolveWhatsAppURL() {
+            watchPaths.append((url: resolved.messagesDB, label: "WhatsApp"))
+        }
+
+        for (url, label) in watchPaths {
+            let fd = open(url.path, O_EVTONLY)
+            guard fd >= 0 else {
+                logger.warning("Could not open \(label) database for watching: \(url.path)")
+                continue
+            }
+
+            let source = DispatchSource.makeFileSystemObjectSource(
+                fileDescriptor: fd,
+                eventMask: [.write, .extend, .rename],
+                queue: .global(qos: .utility)
+            )
+
+            source.setEventHandler { [weak self] in
+                guard let self else { return }
+                Task { @MainActor in
+                    self.handleFileChange(label: label)
+                }
+            }
+
+            source.setCancelHandler {
+                close(fd)
+            }
+
+            source.resume()
+            fileWatcherSources.append(source)
+            fileWatcherFDs.append(fd)
+            logger.info("File watcher started for \(label): \(url.lastPathComponent)")
+        }
+
+        // Start fallback poll as safety net (FS events can be missed on network volumes, etc.)
+        startFallbackPoll()
+    }
+
+    /// Stop all file system watchers and the fallback poll.
+    func stopFileWatchers() {
+        for source in fileWatcherSources {
+            source.cancel()
+        }
+        fileWatcherSources.removeAll()
+        fileWatcherFDs.removeAll()
+        watcherDebounceTask?.cancel()
+        watcherDebounceTask = nil
+        stopFallbackPoll()
+        logger.info("File watchers stopped")
+    }
+
+    /// Called when a watched database file changes. Debounces rapid writes (SQLite writes
+    /// in bursts) into a single import after 1.5 seconds of quiet.
+    private func handleFileChange(label: String) {
+        watcherDebounceTask?.cancel()
+        watcherDebounceTask = Task {
+            try? await Task.sleep(for: .seconds(1.5))
+            guard !Task.isCancelled else { return }
+            logger.debug("File change detected (\(label)) — triggering import")
+            await performImport()
+        }
+    }
+
+    /// Fallback poll every 5 minutes in case file system events are missed.
+    private func startFallbackPoll() {
+        guard periodicImportTask == nil else { return }
+        periodicImportTask = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(Self.fallbackPollInterval))
+                guard !Task.isCancelled else { break }
+                logger.debug("Fallback poll — checking communications")
+                await performImport()
+            }
+        }
+    }
+
+    private func stopFallbackPoll() {
+        periodicImportTask?.cancel()
+        periodicImportTask = nil
+    }
+
+    // MARK: - Legacy Periodic Import (retained for settings compatibility)
 
     /// Start periodic background import on a repeating interval.
+    /// Prefer `startFileWatchers()` for instant detection; this is the fallback path
+    /// used when file watchers cannot be established.
     func startPeriodicImport() {
         guard importIntervalSeconds > 0 else { return }
         guard messagesEnabled || callsEnabled || whatsAppMessagesEnabled || whatsAppCallsEnabled else { return }
@@ -201,6 +315,7 @@ final class CommunicationsImportCoordinator {
     func cancelAll() {
         importTask?.cancel()
         importTask = nil
+        stopFileWatchers()
         stopPeriodicImport()
         if importStatus == .importing {
             importStatus = .idle
@@ -211,7 +326,7 @@ final class CommunicationsImportCoordinator {
     // MARK: - Public API
 
     /// Fire-and-forget import — does not block the caller.
-    /// Also starts periodic import if not already running.
+    /// Starts file system watchers for instant change detection after the initial import.
     func startImport() {
         #if DEBUG
         if UserDefaults.standard.isTestDataLoaded || UserDefaults.standard.isTestDataActive { return }
@@ -220,7 +335,7 @@ final class CommunicationsImportCoordinator {
         importTask?.cancel()
         importTask = Task {
             await performImport()
-            startPeriodicImport()
+            startFileWatchers()
         }
     }
 
@@ -339,13 +454,11 @@ final class CommunicationsImportCoordinator {
                     }
                 }
 
-                InsightGenerator.shared.startAutoGeneration()
-
                 if total > 0 {
                     await self.refreshAffectedSummaries()
                 }
 
-                await RoleDeductionEngine.shared.deduceRoles()
+                PostImportOrchestrator.shared.importDidComplete(source: "communications")
             }
 
         } catch {

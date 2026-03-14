@@ -36,8 +36,13 @@ struct GoalEntryForm: View {
     @State private var endDate: Date = Calendar.current.date(byAdding: .month, value: 3, to: .now)!
     @State private var notes: String = ""
     @State private var hasAutoTitle = true
+    @State private var isFinancial = true
 
     private var goalRepo: GoalRepository { GoalRepository.shared }
+
+    private var availableGoalTypes: [GoalType] {
+        GoalType.allCases.filter { isFinancial || !$0.requiresFinancialPractice }
+    }
 
     private var isEditing: Bool {
         if case .edit = mode { return true }
@@ -71,7 +76,7 @@ struct GoalEntryForm: View {
                 if !isEditing {
                     Section("Goal Type") {
                         Picker("Type", selection: $selectedType) {
-                            ForEach(GoalType.allCases, id: \.self) { type in
+                            ForEach(availableGoalTypes, id: \.self) { type in
                                 Label(type.displayName, systemImage: type.icon)
                                     .tag(type)
                             }
@@ -135,6 +140,9 @@ struct GoalEntryForm: View {
             .formStyle(.grouped)
         }
         .frame(width: 450, height: 520)
+        .task {
+            isFinancial = await BusinessProfileService.shared.isFinancialPractice()
+        }
         .onAppear {
             FeatureAdoptionTracker.shared.recordUsage(.goalSetting)
             if case .edit(let goal) = mode {

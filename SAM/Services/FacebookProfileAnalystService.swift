@@ -41,141 +41,52 @@ actor FacebookProfileAnalystService {
             throw AnalysisError.modelUnavailable
         }
 
-        // Step 2: Get business context
-        let businessContext = await BusinessProfileService.shared.fullContextBlock()
+        // Step 2: Get compact business context (no social profile fragments — we already have the data as input)
+        let businessContext = await BusinessProfileService.shared.compactContextBlock()
 
         // Step 3: Build system instructions
         let followUpClause: String
         if let prevJSON = previousAnalysisJSON {
-            followUpClause = """
-
-            A previous analysis is provided for comparison:
-            \(String(prevJSON.prefix(2000)))
-
-            In your response, populate changes_since_last to note meaningful changes \
-            (improvements made, new gaps that appeared). Acknowledge progress and flag \
-            any previously identified issues that remain unaddressed.
-            """
+            let budget = await AIService.shared.contextBudgetChars()
+            let prevLimit = budget > 20000 ? 2000 : 800
+            followUpClause = "\nPrior analysis (populate changes_since_last):\n\(String(prevJSON.prefix(prevLimit)))"
         } else {
             followUpClause = ""
         }
 
+        let persona = await BusinessProfileService.shared.personaFragment()
+
         let instructions = """
-            You are a Facebook presence advisor for a professional who uses Facebook primarily \
-            for personal and community relationships — not as a professional networking platform. \
-            This person works in financial services (WFG) and uses Facebook to maintain personal \
-            connections with friends, family, church community, and extended social circles.
-
-            Unlike LinkedIn (which is about professional visibility and keyword optimization), \
-            Facebook presence is about:
-            - Maintaining authentic personal connections
-            - Being approachable and trustworthy in the community
-            - Staying visible to friends and acquaintances (who may become referral sources)
-            - Sharing personal milestones and community involvement
-            - Not appearing "salesy" or overly promotional
-
+            Facebook presence advisor for \(persona). Facebook is personal/community — NOT a sales channel. \
+            Focus: authentic connections, community visibility, relationship maintenance. Never suggest business promotion. \
+            Encouraging tone: praise first. Cite actual data. No generic advice.
             \(businessContext)
-
             \(followUpClause)
-
-            Analyze the following Facebook profile data and provide:
-
-            1. CONNECTION HEALTH (maps to "praise" and "network_health"):
-               - How active is this person on Facebook? (message frequency, comment/reaction patterns)
-               - Are they maintaining a broad social circle or concentrated on a few contacts?
-               - Friend count trend — growing, stable, or stagnant?
-               - Ratio of active conversations to total friends
-
-            2. COMMUNITY VISIBILITY (maps to "content_strategy"):
-               - Is this person visible in their community on Facebook?
-               - Do they comment on and react to others' content regularly?
-               - Suggestions for low-effort ways to stay visible (reactions, brief comments, \
-                 sharing community events)
-
-            3. RELATIONSHIP MAINTENANCE (maps to "improvements"):
-               - Identify any patterns in communication frequency
-               - Are there long-dormant relationships that might be worth reviving?
-               - Suggest natural touchpoints (birthdays, anniversaries, life events) \
-                 for reconnecting
-
-            4. PROFILE COMPLETENESS (maps to "improvements"):
-               - Is the profile filled out enough to be recognizable and approachable?
-               - Current city, hometown, workplace, education — are these up to date?
-               - Website link — is it present and current?
-
-            5. CROSS-REFERRAL POTENTIAL (maps to "external_prompt"):
-               - Based on community involvement and friend circle characteristics, \
-                 identify natural opportunities where personal Facebook relationships \
-                 could generate professional referrals WITHOUT being pushy
-               - Frame suggestions as "being helpful in your community" rather than \
-                 "prospecting on Facebook"
-
-            IMPORTANT BOUNDARIES:
-            - Never suggest "posting about your business" on Facebook
-            - Never suggest turning Facebook into a sales channel
-            - Focus on authentic relationship maintenance that NATURALLY leads to trust
-            - The user's professional presence belongs on LinkedIn; Facebook is personal
-            - If data is insufficient for a section, still include the section with honest commentary
-
-            CRITICAL: respond with ONLY valid JSON.
-            - Do NOT wrap the JSON in markdown code blocks
-            - Return ONLY the raw JSON object starting with { and ending with }
-
-            JSON schema:
-            {
-              "overall_score": 72,
-              "praise": [
-                { "category": "Connection Health", "message": "...", "metric": "150 active message threads" }
-              ],
-              "improvements": [
-                {
-                  "category": "Profile Completeness",
-                  "priority": "high",
-                  "suggestion": "...",
-                  "rationale": "...",
-                  "example_or_prompt": "..."
-                }
-              ],
-              "content_strategy": {
-                "summary": "...",
-                "posting_frequency": "...",
-                "content_mix": "...",
-                "engagement_assessment": "...",
-                "topic_suggestions": ["...", "..."]
-              },
-              "network_health": {
-                "summary": "...",
-                "growth_trend": "...",
-                "endorsement_insight": "...",
-                "recommendation_reciprocity": "..."
-              },
-              "changes_since_last": [
-                { "description": "...", "is_improvement": true }
-              ],
-              "external_prompt": {
-                "context": "...",
-                "prompt": "...",
-                "copy_button_label": "Copy Community Engagement Prompt"
-              }
-            }
-
-            Rules:
-            - overall_score is 1–100 (honest assessment of Facebook presence health)
-            - For Facebook, "endorsement_insight" in network_health maps to comment/reaction engagement patterns
-            - For Facebook, "recommendation_reciprocity" in network_health maps to message reciprocity patterns
-            - priority is exactly "high", "medium", or "low"
-            - changes_since_last may be omitted (null/absent) if no prior analysis provided
-            - Keep each praise message to 1–2 sentences; each improvement rationale to 2–3 sentences
-            - Do NOT include generic Facebook advice — be specific to this person's actual data
-            - Frame all suggestions through a personal/community lens, not a professional marketing lens
-            - For Profile Completeness improvements, every example_or_prompt MUST contain ready-to-paste Facebook text (e.g., "Paste this as your Facebook bio: '[exact text]'")
+            Respond with ONLY raw JSON (no markdown, no explanation).
+            {"overall_score":1-100,"praise":[{"category":"...","message":"1-2 sentences","metric":"..."}],\
+            "improvements":[{"category":"...","priority":"high|medium|low","suggestion":"...","rationale":"2-3 sentences",\
+            "example_or_prompt":"ready-to-paste Facebook text"}],\
+            "content_strategy":{"summary":"...","posting_frequency":"...","content_mix":"...","engagement_assessment":"...","topic_suggestions":["..."]},\
+            "network_health":{"summary":"...","growth_trend":"...","endorsement_insight":"comment/reaction patterns","recommendation_reciprocity":"message reciprocity"},\
+            "changes_since_last":[{"description":"...","is_improvement":true}],\
+            "external_prompt":{"context":"...","prompt":"...","copy_button_label":"Copy Community Engagement Prompt"}}
+            Analyze: 1) CONNECTION HEALTH: activity level, social circle breadth, friend count trend, active conversation ratio. \
+            2) COMMUNITY VISIBILITY: are they visible? Comment/reaction habits? Low-effort suggestions to stay visible. \
+            3) RELATIONSHIP MAINTENANCE: communication patterns, dormant relationships, natural touchpoints. \
+            4) PROFILE COMPLETENESS: city, hometown, work, education, website — what's missing? example_or_prompt = paste-ready text. \
+            5) CROSS-REFERRAL: natural referral opportunities through community helpfulness, not prospecting. \
+            changes_since_last: omit if no prior analysis. Be specific to this person's data.
             """
 
-        // Step 4: Build user prompt
+        // Step 4: Build user prompt — truncate data to fit context window
+        let budget = await AIService.shared.contextBudgetChars()
+        let maxDataChars = max(2000, budget - instructions.count)
+        let truncatedData = data.count > maxDataChars ? String(data.prefix(maxDataChars)) + "\n[... truncated for context limit]" : data
+
         let prompt = """
             Analyze this Facebook presence for someone who uses Facebook for personal and community connections:
 
-            \(data)
+            \(truncatedData)
             """
 
         // Step 5: Log prompt sizes

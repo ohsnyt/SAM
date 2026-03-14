@@ -54,7 +54,7 @@ actor MessageAnalysisService {
             throw AnalysisError.invalidResponse
         }
 
-        let instructions = buildSystemInstructions()
+        let instructions = await buildSystemInstructions()
         let prompt = buildPrompt(messages: messages, contactName: contactName, contactRole: contactRole)
 
         let responseText = try await AIService.shared.generate(prompt: prompt, systemInstruction: instructions)
@@ -66,14 +66,16 @@ actor MessageAnalysisService {
 
     // MARK: - Prompt Construction
 
-    private func buildSystemInstructions() -> String {
+    private func buildSystemInstructions() async -> String {
         let custom = UserDefaults.standard.string(forKey: "sam.ai.messagePrompt") ?? ""
         if !custom.isEmpty { return custom }
-        return Self.defaultPrompt
+        return await Self.defaultPrompt()
     }
 
-    static let defaultPrompt = """
-        You are analyzing an iMessage conversation between a financial strategist and one of their contacts. \
+    static func defaultPrompt() async -> String {
+        let persona = await BusinessProfileService.shared.personaFragment()
+        return """
+        You are analyzing an iMessage conversation between \(persona) and one of their contacts. \
         Extract structured data about the conversation thread.
 
         CRITICAL: You MUST respond with ONLY valid JSON.
@@ -121,6 +123,7 @@ actor MessageAnalysisService {
         - Omit rsvp_detections entirely if no RSVP-like language referencing a specific event is present
         - The response MUST be raw JSON with no markdown formatting
         """
+    }
 
     private func buildPrompt(
         messages: [(text: String, date: Date, isFromMe: Bool)],

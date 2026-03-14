@@ -18,6 +18,7 @@ struct FacebookImportSheet: View {
     @State private var classifications: [UUID: FacebookClassification] = [:]
     @State private var deleteZipAfterImport: Bool = true
     @State private var showManualFilePicker = false
+    @State private var showFolderPicker = false
 
     @Environment(\.dismiss) private var dismiss
 
@@ -78,6 +79,23 @@ struct FacebookImportSheet: View {
         .fileImporter(
             isPresented: $showManualFilePicker,
             allowedContentTypes: [.zip, .archive],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                guard let url = urls.first else { return }
+                let accessing = url.startAccessingSecurityScopedResource()
+                Task {
+                    await coordinator.processZip(url: url)
+                    if accessing { url.stopAccessingSecurityScopedResource() }
+                }
+            case .failure(let error):
+                coordinator.sheetPhase = .failed(error.localizedDescription)
+            }
+        }
+        .fileImporter(
+            isPresented: $showFolderPicker,
+            allowedContentTypes: [.folder],
             allowsMultipleSelection: false
         ) { result in
             switch result {
@@ -207,7 +225,16 @@ struct FacebookImportSheet: View {
                     showManualFilePicker = true
                 }
                 .buttonStyle(.bordered)
+
+                Button("Select Folder...") {
+                    showFolderPicker = true
+                }
+                .buttonStyle(.bordered)
             }
+
+            Text("If your download was auto-unzipped, use \"Select Folder\" to choose the Facebook export folder directly.")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
         }
     }
 
@@ -368,11 +395,19 @@ struct FacebookImportSheet: View {
                 }
             }
 
-            Button("Select ZIP File...") {
-                showManualFilePicker = true
+            HStack(spacing: 8) {
+                Button("Select ZIP File...") {
+                    showManualFilePicker = true
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+                Button("Select Folder...") {
+                    showFolderPicker = true
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
             .foregroundStyle(.secondary)
         }
     }
@@ -518,6 +553,15 @@ struct FacebookImportSheet: View {
                     }
                 }
             }
+
+            Button("Done") {
+                if deleteZipAfterImport {
+                    try? coordinator.deleteSourceZip()
+                }
+                dismiss()
+            }
+            .buttonStyle(.borderedProminent)
+            .frame(maxWidth: .infinity, alignment: .trailing)
         }
     }
 
@@ -533,16 +577,20 @@ struct FacebookImportSheet: View {
                 .foregroundStyle(.secondary)
 
             HStack(spacing: 12) {
-                Button("Retry") {
-                    coordinator.beginImportFlow()
-                }
-                .buttonStyle(.borderedProminent)
-
                 Button("Select ZIP File...") {
                     showManualFilePicker = true
                 }
+                .buttonStyle(.borderedProminent)
+
+                Button("Select Folder...") {
+                    showFolderPicker = true
+                }
                 .buttonStyle(.bordered)
             }
+
+            Text("If macOS auto-unzipped your download, use \"Select Folder\" to choose the Facebook export folder directly.")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
         }
     }
 

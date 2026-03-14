@@ -62,7 +62,7 @@ actor NoteAnalysisService {
         }
 
         // Build system instructions and prompt
-        let instructions = buildSystemInstructions()
+        let instructions = await buildSystemInstructions()
         let prompt = buildPrompt(content: content, roleContext: roleContext)
 
         // Generate response via AIService
@@ -111,12 +111,14 @@ actor NoteAnalysisService {
             throw AnalysisError.modelUnavailable
         }
 
+        let persona = await BusinessProfileService.shared.personaFragment()
+
         let roleTailoring = role != nil
             ? " Tailor the summary to the person's role (e.g. coverage gaps for Clients, training progress for Agents, service quality for Vendors)."
             : ""
 
         let instructions = """
-            You are a relationship intelligence assistant for an independent financial strategist. \
+            You are a relationship intelligence assistant for \(persona). \
             Generate a concise relationship summary focused on what matters for the next interaction.\(roleTailoring)
 
             CRITICAL: You MUST respond with ONLY valid JSON.
@@ -197,13 +199,14 @@ actor NoteAnalysisService {
             throw AnalysisError.modelUnavailable
         }
 
+        let persona = await BusinessProfileService.shared.personaFragment()
         let roleLine = role.map { " Their role is \($0)." } ?? ""
 
         let instructions = """
-            You are a writing assistant for an independent financial strategist. \
+            You are a writing assistant for \(persona). \
             Generate a brief, professional follow-up message based on meeting notes. \
             Include key discussion points and any action items mentioned. \
-            Keep the tone warm but professional, appropriate for a financial advisor. \
+            Keep the tone warm but professional, appropriate for \(persona). \
             Return plain text only (no JSON, no markdown formatting). \
             Keep the message under 200 words. \
             Address the person by their first name.
@@ -225,14 +228,16 @@ actor NoteAnalysisService {
 
     // MARK: - Prompt Construction
     
-    private func buildSystemInstructions() -> String {
+    private func buildSystemInstructions() async -> String {
         let custom = UserDefaults.standard.string(forKey: "sam.ai.notePrompt") ?? ""
         if !custom.isEmpty { return custom }
-        return Self.defaultNotePrompt
+        let persona = await BusinessProfileService.shared.personaFragment()
+        return Self.defaultNotePrompt(persona: persona)
     }
 
-    static let defaultNotePrompt = """
-        You are analyzing a note written by an independent financial strategist after a client interaction.
+    static func defaultNotePrompt(persona: String) -> String {
+        """
+        You are analyzing a note written by \(persona) after a client interaction.
         Your task is to extract structured data from the note.
 
         CRITICAL: You MUST respond with ONLY valid JSON.
@@ -317,7 +322,8 @@ actor NoteAnalysisService {
         - Use null (not "null") for absent optional fields
         - The response MUST be raw JSON with no markdown formatting
         """
-    
+    }
+
     private func buildPrompt(content: String, roleContext: RoleContext? = nil) -> String {
         var contextLine = ""
         if let rc = roleContext {

@@ -68,6 +68,7 @@ final class FacebookImportCoordinator {
     private let unknownSenderRepo  = UnknownSenderRepository.shared
     // contactsService removed — Facebook import creates standalone SamPerson records, not Apple Contacts
     private let touchRepo          = IntentionalTouchRepository.shared
+    private let evidenceRepo       = EvidenceRepository.shared
 
     private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "FacebookImportCoordinator")
 
@@ -117,6 +118,15 @@ final class FacebookImportCoordinator {
 
     private(set) var profileAnalysisStatus: ProfileAnalysisStatus = .idle
     private(set) var latestProfileAnalysis: ProfileAnalysisDTO? = nil
+
+    // MARK: - Email Notification State
+
+    /// Recent notification events processed during the current mail import session.
+    /// Reset at the start of each mail import run.
+    private(set) var recentNotificationEvents: [FacebookNotificationEvent] = []
+
+    /// When the most recent notification batch was processed.
+    private(set) var lastNotificationCheckAt: Date? = nil
 
     // MARK: - Cross-Platform Consistency State (Phase FB-4)
 
@@ -307,13 +317,16 @@ final class FacebookImportCoordinator {
             return
         }
 
-        // Find extracted content directory (ZIP may contain a top-level folder)
+        // Find extracted content directory (ZIP may contain a top-level folder).
+        // macOS re-zipping often adds a __MACOSX metadata folder, so filter that out
+        // before deciding whether to descend into a single top-level folder.
         let extractedDir: URL
         let fm = FileManager.default
         let topLevelItems = (try? fm.contentsOfDirectory(at: tempDir, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])) ?? []
+        let contentItems = topLevelItems.filter { !$0.lastPathComponent.hasPrefix("__MACOSX") }
 
-        if topLevelItems.count == 1,
-           let only = topLevelItems.first,
+        if contentItems.count == 1,
+           let only = contentItems.first,
            (try? only.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true {
             extractedDir = only
         } else {
@@ -341,11 +354,27 @@ final class FacebookImportCoordinator {
         resetParsedState()
 
         do {
-            // Step 1: Validate folder structure — must contain friends list
-            let friendsFile = url.appending(path: "connections/friends/your_friends.json")
+            // Step 1: Validate folder structure — must contain friends list.
+            // Try the expected path first, then search one level down in case the user
+            // selected a parent folder or the ZIP had an extra wrapper directory.
+            let expectedPath = "connections/friends/your_friends.json"
+            var rootURL = url
+            if !FileManager.default.fileExists(atPath: rootURL.appending(path: expectedPath).path) {
+                // Search one level down for the expected structure
+                let subdirs = (try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])) ?? []
+                let match = subdirs.first { sub in
+                    let candidate = sub.appending(path: expectedPath)
+                    return FileManager.default.fileExists(atPath: candidate.path)
+                }
+                if let match { rootURL = match }
+            }
+
+            let friendsFile = rootURL.appending(path: expectedPath)
             guard FileManager.default.fileExists(atPath: friendsFile.path) else {
                 throw ImportError.invalidFolder("Could not find connections/friends/your_friends.json. Select the root of your Facebook export folder.")
             }
+            // Use the discovered root for all subsequent parsing
+            let url = rootURL
 
             // Step 2: Parse user profile
             progressMessage = "Parsing profile…"
@@ -529,7 +558,7 @@ final class FacebookImportCoordinator {
 
                 await self.runProfileAnalysis()
                 await self.runCrossPlatformAnalysis()
-                await RoleDeductionEngine.shared.deduceRoles()
+                PostImportOrchestrator.shared.importDidComplete(source: "facebook")
             }
 
         } catch {
@@ -619,12 +648,23 @@ final class FacebookImportCoordinator {
         }
     }
 
-    /// Process a ZIP file through the existing import pipeline and transition to review.
+    /// Process a ZIP file or folder through the existing import pipeline and transition to review.
     func processZip(url: URL) async {
         sheetPhase = .processing
         importedZipURL = url
-        await importFromZip(url: url)
-        // importFromZip → loadFolder → sets importStatus and sheetPhase
+
+        // Detect whether the user selected a folder (auto-unzipped) vs a ZIP file
+        var isDir: ObjCBool = false
+        if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
+            // Direct folder import — skip unzipping
+            importStatus = .parsing
+            progressMessage = "Reading JSON files…"
+            BookmarkManager.shared.saveFacebookFolderBookmark(url)
+            await loadFolder(url: url)
+        } else {
+            await importFromZip(url: url)
+        }
+        // importFromZip / loadFolder → sets importStatus and sheetPhase
     }
 
     /// Open the Facebook data export settings page in the browser.
@@ -1394,9 +1434,14 @@ final class FacebookImportCoordinator {
             return
         }
 
-        guard let fbFragment = await BusinessProfileService.shared.facebookProfileFragment(),
-              !fbFragment.isEmpty,
-              let fbProfile = pendingUserProfile else {
+        // Load Facebook profile from persisted storage (pendingUserProfile is only set during active import)
+        let fbProfile: UserFacebookProfileDTO?
+        if let pending = pendingUserProfile {
+            fbProfile = pending
+        } else {
+            fbProfile = await BusinessProfileService.shared.facebookProfile()
+        }
+        guard let fbProfile else {
             logger.info("Cross-platform analysis skipped: no Facebook profile available")
             return
         }
@@ -1458,8 +1503,14 @@ final class FacebookImportCoordinator {
     private func buildFacebookAnalysisInput(snapshot: FacebookAnalysisSnapshot) async -> String {
         var lines: [String] = []
 
-        // Identity (from profile if available, otherwise from snapshot context)
-        if let profile = pendingUserProfile {
+        // Identity (from in-memory import state, persisted profile, or snapshot context)
+        let resolvedProfile: UserFacebookProfileDTO?
+        if let pending = pendingUserProfile {
+            resolvedProfile = pending
+        } else {
+            resolvedProfile = await BusinessProfileService.shared.facebookProfile()
+        }
+        if let profile = resolvedProfile {
             lines.append("Facebook Profile for \(profile.fullName)")
             if let city = profile.currentCity { lines.append("Current city: \(city)") }
             if let hometown = profile.hometown { lines.append("Hometown: \(hometown)") }
@@ -1707,6 +1758,109 @@ final class FacebookImportCoordinator {
         tempExtractDir = nil
         try? FileManager.default.removeItem(at: dir)
         logger.info("Cleaned up temp Facebook extract directory")
+    }
+
+    // MARK: - Email Notification Handling
+
+    /// Handle a parsed Facebook notification event from email.
+    /// Records as IntentionalTouch and routes special events (DMs, birthdays).
+    ///
+    /// Called from `MailImportCoordinator.processFacebookNotifications()`.
+    ///
+    /// Flow:
+    /// 1. Match the contact by Facebook profile URL or full name.
+    /// 2. If the event type has a corresponding touch type, insert an IntentionalTouch.
+    /// 3. For direct messages from matched contacts, create a SamEvidenceItem for Today view visibility.
+    /// 4. For unmatched events with a profile URL, record to UnknownSenderRepository.
+    func handleNotificationEvent(_ event: FacebookNotificationEvent) async {
+        recentNotificationEvents.append(event)
+        lastNotificationCheckAt = Date()
+
+        // Build lookup tables for contact matching
+        let allPeople = (try? peopleRepo.fetchAll()) ?? []
+
+        // Match by Facebook profile URL
+        let byFacebookURL = Dictionary(
+            allPeople
+                .compactMap { person -> (String, SamPerson)? in
+                    guard let url = person.facebookProfileURL, !url.isEmpty else { return nil }
+                    return (url.lowercased(), person)
+                },
+            uniquingKeysWith: { first, _ in first }
+        )
+        // Match by full name
+        let byFullName = Dictionary(
+            allPeople
+                .compactMap { person -> (String, SamPerson)? in
+                    let name = person.displayName.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !name.isEmpty else { return nil }
+                    return (name, person)
+                },
+            uniquingKeysWith: { first, _ in first }
+        )
+
+        // Attempt to match the contact
+        let matchedPerson: SamPerson?
+        if let profileUrl = event.contactProfileUrl, let match = byFacebookURL[profileUrl.lowercased()] {
+            matchedPerson = match
+        } else {
+            let nameKey = event.contactName.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+            matchedPerson = byFullName[nameKey]
+        }
+
+        // Insert IntentionalTouch if this event type generates one
+        if let touchType = event.eventType.touchType {
+            let candidate = IntentionalTouchCandidate(
+                platform: .facebook,
+                touchType: touchType,
+                direction: event.eventType.touchDirection,
+                contactProfileUrl: event.contactProfileUrl,
+                samPersonID: matchedPerson?.id,
+                date: event.date,
+                snippet: event.snippet,
+                source: .emailNotification,
+                sourceEmailID: event.sourceEmailId
+            )
+            do {
+                try touchRepo.bulkInsert([candidate])
+            } catch {
+                logger.error("Failed to insert Facebook touch from notification \(event.sourceEmailId): \(error.localizedDescription)")
+            }
+        }
+
+        // Special routing: direct messages → create SamEvidenceItem for Today view visibility
+        if event.eventType == .directMessage, let person = matchedPerson {
+            do {
+                try evidenceRepo.createByIDs(
+                    sourceUID: "facebook-dm-\(event.sourceEmailId)",
+                    source: .facebook,
+                    occurredAt: event.date,
+                    title: "Facebook message from \(event.contactName)",
+                    snippet: event.snippet ?? "Facebook message",
+                    linkedPeopleIDs: [person.id]
+                )
+            } catch {
+                logger.warning("Failed to create evidence for Facebook DM \(event.sourceEmailId): \(error.localizedDescription)")
+            }
+        }
+
+        // Unmatched events: record to Unknown Senders with the Facebook profile URL
+        // so future bulk imports can retroactively match and attribute the touch
+        if matchedPerson == nil, let profileUrl = event.contactProfileUrl {
+            let key = "facebook:\(profileUrl)"
+            do {
+                try unknownSenderRepo.upsertFacebookLater(
+                    uniqueKey: key,
+                    displayName: event.contactName.isEmpty ? nil : event.contactName,
+                    touchScore: event.eventType.touchType?.baseWeight ?? 0,
+                    friendedOn: nil,
+                    messageCount: event.eventType == .directMessage ? 1 : 0,
+                    lastMessageDate: event.eventType == .directMessage ? event.date : nil
+                )
+            } catch {
+                logger.warning("Failed to record unmatched Facebook sender \(event.contactName): \(error.localizedDescription)")
+            }
+        }
     }
 
     // MARK: - Error Type

@@ -54,9 +54,16 @@ struct PersonDetailView: View {
 
     @Query(filter: #Predicate<SamPerson> { $0.lifecycleStatusRawValue == "active" })
     private var allPeople: [SamPerson]
-    
+
+    // MARK: - Cached Health
+
+    /// Computed once per view evaluation to avoid redundant `computeHealth(for:)` calls.
+    private var personHealth: RelationshipHealth {
+        MeetingPrepCoordinator.shared.computeHealth(for: person)
+    }
+
     // MARK: - Body
-    
+
     @State private var showMoreDetails = false
 
     var body: some View {
@@ -387,7 +394,7 @@ struct PersonDetailView: View {
     }
 
     private var healthStatusText: some View {
-        let health = MeetingPrepCoordinator.shared.computeHealth(for: person)
+        let health = personHealth
         return HStack(spacing: 6) {
             Circle()
                 .fill(health.statusColor)
@@ -1031,8 +1038,7 @@ struct PersonDetailView: View {
             .controlSize(.small)
 
             if person.preferredCadenceDays == nil {
-                let health = MeetingPrepCoordinator.shared.computeHealth(for: person)
-                if let computed = health.cadenceDays {
+                if let computed = personHealth.cadenceDays {
                     Text("(computed: ~\(computed)d)")
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
@@ -1660,7 +1666,7 @@ struct PersonDetailView: View {
                     // Relationship health details
                     samSection(title: "Relationship Health") {
                         RelationshipHealthView(
-                            health: MeetingPrepCoordinator.shared.computeHealth(for: person)
+                            health: personHealth
                         )
                     }
                 }

@@ -730,10 +730,8 @@ final class LinkedInImportCoordinator {
                 await prepareSyncCandidates(classifications: classifications)
             }
 
-            // 11. Re-run role deduction for newly imported people
-            Task(priority: .utility) {
-                await RoleDeductionEngine.shared.deduceRoles()
-            }
+            // 11. Debounced post-import work (role deduction, insight generation)
+            PostImportOrchestrator.shared.importDidComplete(source: "linkedin")
 
         } catch {
             logger.error("LinkedIn import failed: \(error.localizedDescription)")
@@ -2379,7 +2377,7 @@ final class LinkedInImportCoordinator {
             profileAnalysisStatus = .complete
             logger.info("Profile analysis complete: score \(result.overallScore), \(result.praise.count) praise, \(result.improvements.count) improvements")
         } catch {
-            logger.error("Profile analysis failed: \(error.localizedDescription)")
+            logger.error("LinkedIn profile analysis failed: \(error.localizedDescription)")
             profileAnalysisStatus = .failed
         }
     }

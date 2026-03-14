@@ -16,18 +16,21 @@ struct PipelineDashboardView: View {
     @Bindable var tracker: PipelineTracker
 
     @State private var selectedTab = 0  // 0 = Client, 1 = Recruiting
+    @State private var isFinancial = true
 
     var body: some View {
         VStack(spacing: 0) {
-            Picker("Pipeline", selection: $selectedTab) {
-                Text("Client").tag(0)
-                Text("Recruiting").tag(1)
-            }
-            .pickerStyle(.segmented)
-            .padding(.horizontal)
-            .padding(.vertical, 8)
+            if isFinancial {
+                Picker("Pipeline", selection: $selectedTab) {
+                    Text("Client").tag(0)
+                    Text("Recruiting").tag(1)
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal)
+                .padding(.vertical, 8)
 
-            Divider()
+                Divider()
+            }
 
             switch selectedTab {
             case 0:
@@ -37,6 +40,10 @@ struct PipelineDashboardView: View {
             default:
                 EmptyView()
             }
+        }
+        .task {
+            isFinancial = await BusinessProfileService.shared.isFinancialPractice()
+            if !isFinancial { selectedTab = 0 }
         }
     }
 }

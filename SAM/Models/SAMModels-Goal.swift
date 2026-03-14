@@ -70,6 +70,16 @@ public enum GoalType: String, Codable, Sendable, CaseIterable {
     public var isCurrency: Bool {
         self == .productionVolume
     }
+
+    /// Whether this goal type only applies to financial advisor practice.
+    public var requiresFinancialPractice: Bool {
+        switch self {
+        case .policiesSubmitted, .productionVolume, .recruiting:
+            return true
+        case .newClients, .meetingsHeld, .contentPosts, .deepWorkHours, .eventsHosted:
+            return false
+        }
+    }
 }
 
 // MARK: - GoalPace

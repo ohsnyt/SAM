@@ -625,7 +625,9 @@ struct GrowDashboardView: View {
                     isAnalyzing = true
                     async let linkedInTask: () = coordinator.runProfileAnalysis()
                     async let substackTask: () = SubstackImportCoordinator.shared.runProfileAnalysis()
-                    _ = await (linkedInTask, substackTask)
+                    async let facebookTask: () = FacebookImportCoordinator.shared.runProfileAnalysis()
+                    _ = await (linkedInTask, substackTask, facebookTask)
+                    await FacebookImportCoordinator.shared.runCrossPlatformAnalysis()
                     await loadAnalyses()
                     isAnalyzing = false
                 }

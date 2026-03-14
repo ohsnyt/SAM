@@ -166,7 +166,15 @@ enum ComplianceScanner {
     }
 
     /// Convenience: scan using current UserDefaults settings.
+    /// Returns empty for non-financial practice types.
     static func scanWithSettings(_ text: String) -> [ComplianceFlag] {
+        // Skip compliance scanning for non-financial practice types
+        if let data = UserDefaults.standard.data(forKey: "sam.businessProfile"),
+           let profile = try? JSONDecoder().decode(BusinessProfile.self, from: data),
+           !profile.isFinancial {
+            return []
+        }
+
         let enabled = UserDefaults.standard.bool(forKey: "complianceCheckingEnabled")
         guard enabled else { return [] }
 

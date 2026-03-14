@@ -64,12 +64,12 @@ final class PromptLabCoordinator {
     }
 
     /// Ensures the default variant exists for a site. Creates it from the service's default prompt if missing.
-    func ensureDefaultVariant(for site: PromptSite) {
+    func ensureDefaultVariant(for site: PromptSite) async {
         var siteVariants = store.variants[site] ?? []
         if !siteVariants.contains(where: { $0.isDefault }) {
             let defaultVariant = PromptVariant(
                 name: "Default",
-                systemInstruction: defaultPrompt(for: site),
+                systemInstruction: await defaultPrompt(for: site),
                 isDefault: true
             )
             siteVariants.insert(defaultVariant, at: 0)
@@ -135,10 +135,10 @@ final class PromptLabCoordinator {
     }
 
     /// Returns the currently deployed prompt for a site (custom override or default).
-    func deployedPrompt(for site: PromptSite) -> String {
+    func deployedPrompt(for site: PromptSite) async -> String {
         let custom = UserDefaults.standard.string(forKey: site.userDefaultsKey) ?? ""
         if !custom.isEmpty { return custom }
-        return defaultPrompt(for: site)
+        return await defaultPrompt(for: site)
     }
 
     /// Check if a non-default variant is currently deployed.
@@ -223,7 +223,7 @@ final class PromptLabCoordinator {
 
     /// Import optimized prompt variants from a sam-prompt-research registry JSON file.
     /// Skips variants whose name already exists for that site to avoid duplicates.
-    func importFromRegistry(at url: URL) throws -> RegistryImportResult {
+    func importFromRegistry(at url: URL) async throws -> RegistryImportResult {
         let data = try Data(contentsOf: url)
         let decoder = JSONDecoder()
         let registry = try decoder.decode(PromptRegistry.self, from: data)
@@ -242,7 +242,7 @@ final class PromptLabCoordinator {
             }
 
             // Ensure the default variant exists before adding research variants
-            ensureDefaultVariant(for: site)
+            await ensureDefaultVariant(for: site)
 
             let existingVariants = store.variants[site] ?? []
             let variantName = "Research: \(prompt.name) (v\(registry.metadata.version))"
@@ -279,16 +279,16 @@ final class PromptLabCoordinator {
     // MARK: - Default Prompts
 
     /// Returns the built-in default system instruction for each prompt site.
-    func defaultPrompt(for site: PromptSite) -> String {
+    func defaultPrompt(for site: PromptSite) async -> String {
         switch site {
         case .noteAnalysis:
-            return NoteAnalysisService.defaultNotePrompt
+            return NoteAnalysisService.defaultNotePrompt(persona: "an independent professional")
 
         case .emailAnalysis:
-            return EmailAnalysisService.defaultEmailPrompt
+            return await EmailAnalysisService.defaultEmailPrompt()
 
         case .messageAnalysis:
-            return MessageAnalysisService.defaultPrompt
+            return await MessageAnalysisService.defaultPrompt()
 
         case .pipelineAnalyst:
             return Self.defaultPipelinePrompt
@@ -329,10 +329,12 @@ final class PromptLabCoordinator {
             return "Analyze this conversation thread:\n\n\(input)"
 
         case .pipelineAnalyst:
-            return "Analyze this pipeline data for a financial strategist:\n\n\(input)"
+            let plPersona = BusinessProfileService.shared.personaFragmentSync()
+            return "Analyze this pipeline data for \(plPersona):\n\n\(input)"
 
         case .timeAnalyst:
-            return "Analyze this time allocation data for a financial strategist:\n\n\(input)"
+            let taPersona = BusinessProfileService.shared.personaFragmentSync()
+            return "Analyze this time allocation data for \(taPersona):\n\n\(input)"
 
         case .patternDetector:
             return "Identify patterns in this business relationship data:\n\n\(input)"
@@ -356,8 +358,10 @@ final class PromptLabCoordinator {
 
     // MARK: - Static Default Prompts (for services without static accessors)
 
-    static let defaultPipelinePrompt = """
-        You are a pipeline analyst for an independent financial services practice. \
+    static var defaultPipelinePrompt: String {
+        let persona = BusinessProfileService.shared.personaFragmentSync()
+        return """
+        You are a pipeline analyst for \(persona)'s practice. \
         Analyze the pipeline data provided and generate strategic recommendations. \
         Focus on conversion bottlenecks, stuck prospects, production gaps, and recruiting health.
 
@@ -401,9 +405,12 @@ final class PromptLabCoordinator {
         - risk_alerts must name the people involved
         - The top 3 stuck prospects each get an individual action plan in the approaches
         """
+    }
 
-    static let defaultTimePrompt = """
-        You analyze how an independent financial strategist allocates their work time. \
+    static var defaultTimePrompt: String {
+        let persona = BusinessProfileService.shared.personaFragmentSync()
+        return """
+        You analyze how \(persona) allocates their work time. \
         Identify imbalances, suggest improvements, and highlight trends. \
         Common categories: Prospecting, Client Meeting, Policy Review, Recruiting, \
         Training/Mentoring, Admin, Deep Work, Personal Development, Travel, Other.
@@ -439,7 +446,7 @@ final class PromptLabCoordinator {
         - Include 2-3 recommendations maximum
         - priority is 0.0 to 1.0 (1.0 = most urgent)
         - imbalances should be specific observations (e.g., "Only 15% client-facing time")
-        - Financial advisors should typically spend 40-60% on client-facing activities
+        - Aim for 40-60% of time on client-facing activities
         - If data is sparse, note that and keep recommendations conservative
         - Each recommendation should include 2-3 approaches (alternative ways to implement it)
         - effort is "quick" (< 30 min), "moderate" (1-2 hours), or "substantial" (half-day+)
@@ -448,10 +455,13 @@ final class PromptLabCoordinator {
         - Compare 7-day vs 30-day data to surface week-over-week trends
         - Flag categories at 0% this week but non-zero for the month
         """
+    }
 
-    static let defaultPatternPrompt = """
+    static var defaultPatternPrompt: String {
+        let persona = BusinessProfileService.shared.personaFragmentSync()
+        return """
         You identify behavioral patterns and correlations in business relationship data \
-        for an independent financial strategist. \
+        for \(persona). \
         Look for patterns in engagement, referral networks, meeting quality, and role transitions.
 
         CRITICAL: You MUST respond with ONLY valid JSON.
@@ -499,11 +509,16 @@ final class PromptLabCoordinator {
         - Reference the actual referral partner count and interaction rate from the data
         - Explain causal relationships, not just correlations
         """
+    }
 
-    static let defaultContentTopicsPrompt = """
-        You suggest educational content topics for an independent financial strategist. \
-        Topics should be relevant to their client base, timely for the season, and compliant with \
-        financial services regulations. Content is for social media posts, newsletters, or client education.
+    static var defaultContentTopicsPrompt: String {
+        let persona = BusinessProfileService.shared.personaFragmentSync()
+        let complianceNote = BusinessProfileService.shared.complianceNoteSync()
+        let complianceClause = complianceNote.isEmpty ? "" : ", and compliant with industry regulations"
+        return """
+        You suggest educational content topics for \(persona). \
+        Topics should be relevant to their client base, timely for the season\(complianceClause). \
+        Content is for social media posts, newsletters, or client education.
 
         CRITICAL: You MUST respond with ONLY valid JSON.
         - Do NOT wrap the JSON in markdown code blocks
@@ -533,35 +548,68 @@ final class PromptLabCoordinator {
         - Suggest the best platform + posting day for each topic
         - At least 2 topics must connect to named meeting topics from the data
         """
+    }
 
-    static let defaultContentDraftPrompt = """
-    You are an expert social media content writer specializing in financial services marketing. You understand financial professionals need to balance education with lead generation while maintaining strict regulatory compliance.
+    static var defaultContentDraftPrompt: String {
+        let persona = BusinessProfileService.shared.personaFragmentSync()
+        let isFinancial = BusinessProfileService.shared.isFinancialPracticeSync()
+        let industryContext: String
+        let complianceGuardrails: String
+        if isFinancial {
+            industryContext = """
 
-    FINANCIAL SERVICES CONTEXT:
-    - Your audience includes existing clients, prospects, and professional referral sources (CPAs, attorneys, realtors)
-    - Content must comply with SEC, FINRA, and state insurance regulations
-    - Educational content performs better than promotional content
-    - Trust and credibility are paramount - one compliance violation can end careers
-    - Common topics: retirement planning, tax strategies, insurance protection, market education
+            FINANCIAL SERVICES CONTEXT:
+            - Your audience includes existing clients, prospects, and professional referral sources (CPAs, attorneys, realtors)
+            - Content must comply with SEC, FINRA, and state insurance regulations
+            - Educational content performs better than promotional content
+            - Trust and credibility are paramount - one compliance violation can end careers
+            - Common topics: retirement planning, tax strategies, insurance protection, market education
 
-    HIGH-PERFORMING PATTERNS FROM FINANCIAL EDUCATORS:
-    - Open with specific statistics or concrete examples
-    - Explain complex concepts through real-world scenarios
-    - Connect financial strategies to human stories and outcomes
-    - Use conversational but authoritative tone
-    - Provide multiple ways to engage (comment, DM, schedule consultation)
-    
-    COMPLIANCE GUARDRAILS:
-    - Never promise specific returns or performance
-    - Avoid urgency tactics or pressure language
-    - Include disclaimers for investment-related content
-    - Focus on education over promotion
-    
-    Write a complete social media post that educates while positioning the advisor as a trusted resource. Return only the post text.        
-    """
+            HIGH-PERFORMING PATTERNS FROM FINANCIAL EDUCATORS:
+            - Open with specific statistics or concrete examples
+            - Explain complex concepts through real-world scenarios
+            - Connect financial strategies to human stories and outcomes
+            - Use conversational but authoritative tone
+            - Provide multiple ways to engage (comment, DM, schedule consultation)
+            """
+            complianceGuardrails = """
 
-    static let defaultMorningBriefingPrompt = """
-        You are a warm, professional executive assistant for a financial strategist.
+            COMPLIANCE GUARDRAILS:
+            - Never promise specific returns or performance
+            - Avoid urgency tactics or pressure language
+            - Include disclaimers for investment-related content
+            - Focus on education over promotion
+            """
+        } else {
+            industryContext = """
+
+            CONTENT BEST PRACTICES:
+            - Your audience includes existing clients, prospects, and professional referral sources
+            - Educational content performs better than promotional content
+            - Trust and credibility are paramount
+            - Open with specific statistics or concrete examples
+            - Use conversational but authoritative tone
+            - Provide multiple ways to engage (comment, DM, schedule consultation)
+            """
+            complianceGuardrails = """
+
+            GUARDRAILS:
+            - Avoid urgency tactics or pressure language
+            - Focus on education over promotion
+            """
+        }
+        return """
+        You are an expert social media content writer for \(persona). You understand professionals need to balance education with lead generation while maintaining credibility.
+        \(industryContext)
+        \(complianceGuardrails)
+        Write a complete social media post that educates while positioning the professional as a trusted resource. Return only the post text.
+        """
+    }
+
+    static var defaultMorningBriefingPrompt: String {
+        let persona = BusinessProfileService.shared.personaFragmentSync()
+        return """
+        You are a warm, professional executive assistant for \(persona).
         Write a concise morning briefing (4-6 sentences) based ONLY on the data below.
 
         CRITICAL: Only reference people, meetings, times, and goals that appear in the data.
@@ -579,9 +627,12 @@ final class PromptLabCoordinator {
 
         Respond with ONLY the narrative paragraph. No headers, bullets, or formatting.
         """
+    }
 
-    static let defaultEveningBriefingPrompt = """
-        You are a warm, professional executive assistant summarizing the day for a financial strategist.
+    static var defaultEveningBriefingPrompt: String {
+        let persona = BusinessProfileService.shared.personaFragmentSync()
+        return """
+        You are a warm, professional executive assistant summarizing the day for \(persona).
         Write a concise end-of-day summary (3-5 sentences) based ONLY on the data below.
 
         CRITICAL: Only reference accomplishments, metrics, and events that appear in the data.
@@ -591,11 +642,16 @@ final class PromptLabCoordinator {
 
         Respond with ONLY the narrative paragraph. No headers, bullets, or formatting.
         """
+    }
 
-    static let defaultEventTopicsPrompt = """
-        You suggest workshop and event topics for an independent financial strategist \
+    static var defaultEventTopicsPrompt: String {
+        let persona = BusinessProfileService.shared.personaFragmentSync()
+        let complianceNote = BusinessProfileService.shared.complianceNoteSync()
+        let complianceClause = complianceNote.isEmpty ? "" : ", compliant with industry regulations"
+        return """
+        You suggest workshop and event topics for \(persona) \
         to host for their clients, leads, and professional network. Topics should be \
-        educational, compliant with financial services regulations, timely, and grounded \
+        educational\(complianceClause), timely, and grounded \
         in actual recent interactions.
 
         Suggest 3-5 topics. Every rationale MUST reference specific people or meeting topics \
@@ -604,4 +660,5 @@ final class PromptLabCoordinator {
 
         Return valid JSON with a "suggestions" array.
         """
+    }
 }

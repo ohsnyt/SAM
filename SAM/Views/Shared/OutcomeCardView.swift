@@ -28,6 +28,7 @@ struct OutcomeCardView: View {
     var guideArticleID: String?
 
     @State private var copiedStep = false
+    @State private var copiedAll = false
 
     /// Compliance flags for any AI-generated draft on this outcome.
     private var draftComplianceFlags: [ComplianceFlag] {
@@ -189,6 +190,54 @@ struct OutcomeCardView: View {
                     .padding(.vertical, 6)
             }
         }
+        .overlay(alignment: .topTrailing) {
+            if copiedAll {
+                Text("Copied")
+                    .font(.caption2)
+                    .foregroundStyle(.green)
+                    .padding(6)
+                    .transition(.opacity)
+            }
+        }
+        .contextMenu {
+            Button {
+                ClipboardSecurity.copy(outcomeTextForCopy, clearAfter: 120)
+                copiedAll = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                    copiedAll = false
+                }
+            } label: {
+                Label("Copy", systemImage: "doc.on.doc")
+            }
+            if outcome.draftMessageText != nil && outcome.actionLane != .openURL {
+                Button {
+                    ClipboardSecurity.copy(outcome.draftMessageText ?? "", clearAfter: 120)
+                    copiedAll = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                        copiedAll = false
+                    }
+                } label: {
+                    Label("Copy Draft Message", systemImage: "text.bubble")
+                }
+            }
+        }
+    }
+
+    /// Assembles all visible text from the outcome for clipboard copy.
+    private var outcomeTextForCopy: String {
+        var parts: [String] = []
+        parts.append("[\(outcome.outcomeKind.displayName.uppercased())] \(outcome.title)")
+        parts.append(outcome.rationale)
+        if let step = outcome.suggestedNextStep, !step.isEmpty {
+            parts.append("Next step: \(step)")
+        }
+        if let note = outcome.encouragementNote, !note.isEmpty {
+            parts.append(note)
+        }
+        if let draft = outcome.draftMessageText, !draft.isEmpty, outcome.actionLane != .openURL {
+            parts.append("Draft message:\n\(draft)")
+        }
+        return parts.joined(separator: "\n\n")
     }
 
     // MARK: - Companion Indicator

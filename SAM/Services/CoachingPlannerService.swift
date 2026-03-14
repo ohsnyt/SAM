@@ -21,6 +21,24 @@ actor CoachingPlannerService {
 
     private init() {}
 
+    // MARK: - Context Block Cache
+
+    private var cachedContextBlock: String?
+    private var contextBlockTimestamp: Date?
+
+    /// Returns a cached business context block, refreshing every 5 minutes.
+    private func contextBlock() async -> String {
+        if let cached = cachedContextBlock,
+           let ts = contextBlockTimestamp,
+           Date.now.timeIntervalSince(ts) < 300 {
+            return cached
+        }
+        let block = await BusinessProfileService.shared.fullContextBlock()
+        cachedContextBlock = block
+        contextBlockTimestamp = .now
+        return block
+    }
+
     // MARK: - Initial Plan Generation
 
     /// Generate the initial detailed plan based on the selected approach.
@@ -35,9 +53,10 @@ actor CoachingPlannerService {
             for: context.recommendation.category,
             limit: 3
         )
-        let businessCtx = await BusinessProfileService.shared.fullContextBlock()
+        let businessCtx = await contextBlock()
+        let persona = await BusinessProfileService.shared.personaFragment()
 
-        let systemInstruction = buildSystemInstruction(context: context, practices: practices, businessContext: businessCtx)
+        let systemInstruction = buildSystemInstruction(context: context, practices: practices, businessContext: businessCtx, persona: persona)
 
         let prompt: String
         if let approach = context.approach {
@@ -104,9 +123,10 @@ actor CoachingPlannerService {
             for: context.recommendation.category,
             limit: 3
         )
-        let businessCtx = await BusinessProfileService.shared.fullContextBlock()
+        let businessCtx = await contextBlock()
+        let persona = await BusinessProfileService.shared.personaFragment()
 
-        let systemInstruction = buildSystemInstruction(context: context, practices: practices, businessContext: businessCtx)
+        let systemInstruction = buildSystemInstruction(context: context, practices: practices, businessContext: businessCtx, persona: persona)
 
         // Build conversation context from recent history (last 4 messages)
         let historyWindow = recentHistory.suffix(4)
@@ -146,9 +166,9 @@ actor CoachingPlannerService {
     // MARK: - Private Helpers
 
     /// Build the system instruction with bounded context and constraints.
-    private func buildSystemInstruction(context: CoachingSessionContext, practices: [BestPractice] = [], businessContext: String = "") -> String {
+    private func buildSystemInstruction(context: CoachingSessionContext, practices: [BestPractice] = [], businessContext: String = "", persona: String = "an independent professional") -> String {
         var instruction = """
-            You are SAM, a strategic coaching assistant for an independent financial strategist. \
+            You are SAM, a strategic coaching assistant for \(persona). \
             You help plan and implement business strategies using \
             ONLY the tools and capabilities available to the user right now.
 

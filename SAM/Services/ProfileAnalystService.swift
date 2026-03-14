@@ -33,114 +33,51 @@ actor ProfileAnalystService {
             throw AnalysisError.modelUnavailable
         }
 
-        // Step 2: Get business context
-        let businessContext = await BusinessProfileService.shared.fullContextBlock()
+        // Step 2: Get compact business context (no social profile fragments — we already have the data as input)
+        let businessContext = await BusinessProfileService.shared.compactContextBlock()
 
         // Step 3: Build system instructions
         let followUpClause: String
         if let prevJSON = previousAnalysisJSON {
-            followUpClause = """
-
-            A previous analysis is provided for comparison:
-            \(String(prevJSON.prefix(2000)))
-
-            In your response, populate changes_since_last to note meaningful changes \
-            (improvements made, new gaps that appeared). Acknowledge progress and flag \
-            any previously identified issues that remain unaddressed.
-            """
+            let budget = await AIService.shared.contextBudgetChars()
+            let prevLimit = budget > 20000 ? 2000 : 800
+            followUpClause = "\nPrior analysis (populate changes_since_last):\n\(String(prevJSON.prefix(prevLimit)))"
         } else {
             followUpClause = ""
         }
 
+        let persona = await BusinessProfileService.shared.personaFragment()
+
         let instructions = """
-            You are a LinkedIn profile optimization advisor for an independent financial services professional. \
-            Your tone is encouraging and constructive — always lead with genuine praise before suggesting improvements. \
-            Be specific: cite the user's actual data (endorsement counts, recommendation snippets, posting activity). \
-            Do not give generic advice; tailor every suggestion to their actual profile content.
-
+            LinkedIn profile advisor for \(persona). Encouraging tone: praise first, then improvements. \
+            Cite actual data (counts, snippets). No generic advice.
             \(businessContext)
-
             \(followUpClause)
-
-            Analyze the profile across five dimensions:
-
-            1. PRAISE — What is genuinely strong about this profile? Lead with 2–4 specific strengths. \
-            Include a metric where possible (e.g. "15 recommendations received").
-
-            2. PROFILE IMPROVEMENTS — What specific changes would most improve discoverability, \
-            credibility, and engagement? Prioritize high-impact items. For EVERY improvement, \
-            provide ready-to-paste LinkedIn text in example_or_prompt — complete text the user can \
-            copy and paste directly, not instructions on what to write (e.g., for a headline suggestion, \
-            write the actual headline text).
-
-            3. CONTENT STRATEGY — Assess the user's publishing activity. If they post regularly, \
-            evaluate themes and engagement. If they don't post, suggest a starting strategy specific \
-            to their audience. Include 2–3 topic suggestions.
-
-            4. NETWORK HEALTH — Comment on connection volume, growth trend, endorsement pattern, \
-            and recommendation reciprocity. Identify any gaps.
-
-            5. EXTERNAL PROMPT — Compose a prompt the user can paste into ChatGPT, Claude, or \
-            another AI for deeper content strategy help. The context field should summarize their \
-            situation; the prompt field should be ready to paste. Make copy_button_label specific, \
-            e.g. "Copy Content Strategy Prompt".
-
-            CRITICAL: respond with ONLY valid JSON.
-            - Do NOT wrap the JSON in markdown code blocks
-            - Return ONLY the raw JSON object starting with { and ending with }
-
-            JSON schema:
-            {
-              "overall_score": 72,
-              "praise": [
-                { "category": "Recommendations", "message": "...", "metric": "15 recommendations received" }
-              ],
-              "improvements": [
-                {
-                  "category": "Headline",
-                  "priority": "high",
-                  "suggestion": "...",
-                  "rationale": "...",
-                  "example_or_prompt": "..."
-                }
-              ],
-              "content_strategy": {
-                "summary": "...",
-                "posting_frequency": "...",
-                "content_mix": "...",
-                "engagement_assessment": "...",
-                "topic_suggestions": ["...", "..."]
-              },
-              "network_health": {
-                "summary": "...",
-                "growth_trend": "...",
-                "endorsement_insight": "...",
-                "recommendation_reciprocity": "..."
-              },
-              "changes_since_last": [
-                { "description": "...", "is_improvement": true }
-              ],
-              "external_prompt": {
-                "context": "...",
-                "prompt": "...",
-                "copy_button_label": "Copy Content Strategy Prompt"
-              }
-            }
-
-            Rules:
-            - overall_score is 1–100 (honest assessment — 72 is good, not perfect)
-            - priority is exactly "high", "medium", or "low"
-            - changes_since_last may be omitted (null/absent) if no prior analysis provided
-            - Keep each praise message to 1–2 sentences; each improvement rationale to 2–3 sentences
-            - Do NOT include generic LinkedIn advice ("make sure your photo is professional") — be specific to this person's actual data
-            - If a section has no meaningful data (e.g. zero posts), still include the section with honest commentary
+            Respond with ONLY raw JSON (no markdown, no explanation).
+            {"overall_score":1-100,"praise":[{"category":"...","message":"1-2 sentences","metric":"..."}],\
+            "improvements":[{"category":"...","priority":"high|medium|low","suggestion":"...","rationale":"2-3 sentences",\
+            "example_or_prompt":"ready-to-paste LinkedIn text"}],\
+            "content_strategy":{"summary":"...","posting_frequency":"...","content_mix":"...","engagement_assessment":"...","topic_suggestions":["..."]},\
+            "network_health":{"summary":"...","growth_trend":"...","endorsement_insight":"...","recommendation_reciprocity":"..."},\
+            "changes_since_last":[{"description":"...","is_improvement":true}],\
+            "external_prompt":{"context":"...","prompt":"ready-to-paste prompt for another AI","copy_button_label":"Copy Content Strategy Prompt"}}
+            Dimensions: 1) PRAISE: 2-4 specific strengths with metrics. \
+            2) IMPROVEMENTS: high-impact changes; example_or_prompt = complete paste-ready text, not instructions. \
+            3) CONTENT STRATEGY: publishing activity, 2-3 topic suggestions. \
+            4) NETWORK HEALTH: connections, growth, endorsements, recommendation reciprocity. \
+            5) EXTERNAL PROMPT: prompt for deeper AI strategy help. \
+            changes_since_last: omit if no prior analysis. Be specific to this person's data, not generic.
             """
 
-        // Step 4: Build user prompt
-        let prompt = """
-            Analyze this LinkedIn profile for a financial services professional:
+        // Step 4: Build user prompt — truncate data to fit context window
+        let budget = await AIService.shared.contextBudgetChars()
+        let maxDataChars = max(2000, budget - instructions.count)
+        let truncatedData = data.count > maxDataChars ? String(data.prefix(maxDataChars)) + "\n[... truncated for context limit]" : data
 
-            \(data)
+        let prompt = """
+            Analyze this LinkedIn profile for \(persona):
+
+            \(truncatedData)
             """
 
         // Step 5: Log prompt sizes

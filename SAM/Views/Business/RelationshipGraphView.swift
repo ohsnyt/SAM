@@ -538,7 +538,9 @@ struct RelationshipGraphView: View {
                     .font(.headline)
                     .padding(.bottom, 2)
 
-                let roles = ["Client", "Applicant", "Lead", "Agent", "External Agent", "Vendor", "Referral Partner"]
+                let predefined = ["Client", "Applicant", "Lead", "Agent", "External Agent", "Vendor", "Referral Partner"]
+                let customRoles = Set(coordinator.allNodes.flatMap(\.roleBadges)).subtracting(predefined).sorted()
+                let roles = predefined + customRoles
                 ForEach(roles, id: \.self) { role in
                     Button {
                         if role != suggestion.suggestedRole {
@@ -1464,7 +1466,6 @@ struct RelationshipGraphView: View {
         // hitTestNode would return the dragged node itself (it sits at gp),
         // so we scan for the closest non-self, non-ghost, non-Me node that overlaps.
         guard let draggedNode = coordinator.nodes.first(where: { $0.id == dragID }) else { return }
-        let dragRadius = nodeRadius(for: draggedNode)
         var closestID: UUID?
         var closestDist: CGFloat = .greatestFiniteMagnitude
         for candidate in coordinator.nodes {
