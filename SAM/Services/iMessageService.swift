@@ -30,6 +30,13 @@ actor iMessageService {
 
         let sinceTimestamp = dateToiMessageTimestamp(since)
 
+        // Check if is_spam / is_junk columns exist (available on macOS 14+)
+        let hasSpamColumns = columnExists(db: db, table: "message", column: "is_spam")
+
+        let spamFilter = hasSpamColumns
+            ? "AND COALESCE(m.is_spam, 0) = 0 AND COALESCE(m.is_junk, 0) = 0"
+            : ""
+
         let query = """
             SELECT
                 m.ROWID,
@@ -46,9 +53,13 @@ actor iMessageService {
             LEFT JOIN handle h ON m.handle_id = h.ROWID
             LEFT JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
             LEFT JOIN chat c ON cmj.chat_id = c.ROWID
-            WHERE m.date > ?1
+            WHERE m.date > ?1 \(spamFilter)
             ORDER BY m.date ASC
             """
+
+        if hasSpamColumns {
+            logger.debug("Spam/junk filtering enabled for Messages database")
+        }
 
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, query, -1, &stmt, nil) == SQLITE_OK else {
@@ -138,6 +149,45 @@ actor iMessageService {
         return handles
     }
 
+    /// Fetch handles whose messages are all flagged as junk or spam.
+    /// Returns handle IDs (phone numbers or emails) suitable for auto-tagging as never-include.
+    func fetchJunkSenderHandles(dbURL: URL) async throws -> [String] {
+        let db = try openDatabase(at: dbURL)
+        defer { sqlite3_close(db) }
+
+        guard columnExists(db: db, table: "message", column: "is_spam") else { return [] }
+
+        // Find handles where every message is junk/spam (no legitimate messages)
+        let query = """
+            SELECT h.id
+            FROM handle h
+            JOIN message m ON m.handle_id = h.ROWID
+            WHERE m.is_from_me = 0
+            GROUP BY h.id
+            HAVING COUNT(*) = SUM(CASE WHEN COALESCE(m.is_spam, 0) = 1 OR COALESCE(m.is_junk, 0) = 1 THEN 1 ELSE 0 END)
+               AND COUNT(*) > 0
+            """
+
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, query, -1, &stmt, nil) == SQLITE_OK else {
+            let error = String(cString: sqlite3_errmsg(db))
+            throw iMessageError.queryFailed(error)
+        }
+        defer { sqlite3_finalize(stmt) }
+
+        var handles: [String] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            if let handleID = columnText(stmt, 0) {
+                handles.append(handleID)
+            }
+        }
+
+        if !handles.isEmpty {
+            logger.info("Found \(handles.count) junk/spam-only sender handles")
+        }
+        return handles
+    }
+
     // MARK: - SQLite3 Helpers
 
     private func openDatabase(at url: URL) throws -> OpaquePointer {
@@ -157,6 +207,20 @@ actor iMessageService {
     private func columnText(_ stmt: OpaquePointer?, _ column: Int32) -> String? {
         guard let ptr = sqlite3_column_text(stmt, column) else { return nil }
         return String(cString: ptr)
+    }
+
+    /// Check if a column exists in a SQLite table (for schema compatibility).
+    private func columnExists(db: OpaquePointer, table: String, column: String) -> Bool {
+        var stmt: OpaquePointer?
+        let query = "PRAGMA table_info(\(table))"
+        guard sqlite3_prepare_v2(db, query, -1, &stmt, nil) == SQLITE_OK else { return false }
+        defer { sqlite3_finalize(stmt) }
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            if let name = columnText(stmt, 1), name == column {
+                return true
+            }
+        }
+        return false
     }
 
     /// Extract text from iMessage attributedBody BLOB column.

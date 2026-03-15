@@ -516,6 +516,15 @@ final class CommunicationsImportCoordinator {
             EventCoordinator.shared.autoReplyToUnknownEventRSVPs(messages: autoReplyData)
         }
 
+        // Auto-tag junk/spam senders as never-include (reuses the already-open DB)
+        let junkHandles = try? await messageService.fetchJunkSenderHandles(dbURL: resolved.database)
+        if let junkHandles, !junkHandles.isEmpty {
+            for handle in junkHandles {
+                try? UnknownSenderRepository.shared.markNeverInclude(identifier: handle, source: .iMessage)
+            }
+            logger.info("Auto-tagged \(junkHandles.count) junk/spam iMessage senders as never-include")
+        }
+
         guard !messages.isEmpty else {
             logger.info("No new messages from known contacts")
             return (0, [])

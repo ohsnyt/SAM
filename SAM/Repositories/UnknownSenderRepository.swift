@@ -149,6 +149,34 @@ final class UnknownSenderRepository {
         try modelContext.save()
     }
 
+    /// Mark a sender as never-include by identifier (email or phone handle).
+    /// Creates the UnknownSender record if it doesn't exist yet.
+    func markNeverInclude(identifier: String, source: EvidenceSource) throws {
+        guard let modelContext else { throw RepositoryError.notConfigured }
+        let canonical = identifier.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+
+        let descriptor = FetchDescriptor<UnknownSender>()
+        let all = try modelContext.fetch(descriptor)
+
+        if let existing = all.first(where: { $0.email == canonical }) {
+            guard existing.status != .added else { return } // Don't override if already added as contact
+            existing.status = .neverInclude
+            existing.lastTriagedAt = Date()
+        } else {
+            let sender = UnknownSender(
+                email: canonical,
+                status: .neverInclude,
+                latestSubject: "Auto-tagged: junk/spam",
+                source: source,
+                isLikelyMarketing: true
+            )
+            sender.lastTriagedAt = Date()
+            modelContext.insert(sender)
+        }
+
+        try modelContext.save()
+    }
+
     func markDismissed(_ sender: UnknownSender) throws {
         guard let modelContext else { throw RepositoryError.notConfigured }
         sender.status = .dismissed
