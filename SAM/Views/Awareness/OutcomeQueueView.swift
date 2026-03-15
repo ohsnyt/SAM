@@ -333,6 +333,11 @@ struct OutcomeQueueView: View {
 
         case .reviewGraph:
             return {
+                // Complete this outcome immediately — the user is taking action.
+                // When they exit the graph, OutcomeEngine will recheck and create
+                // a fresh outcome if any unconfirmed items remain.
+                markDone(outcome)
+
                 let focusMode = outcome.title.contains("suggested role")
                     ? "roleConfirmation"
                     : "deducedRelationships"

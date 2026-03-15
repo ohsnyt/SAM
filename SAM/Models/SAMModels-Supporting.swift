@@ -156,6 +156,30 @@ extension EvidenceSource {
         default: return rawValue
         }
     }
+
+    /// Whether this source type carries a communication direction.
+    public var isDirectional: Bool {
+        switch self {
+        case .mail, .iMessage, .phoneCall, .faceTime, .whatsApp, .whatsAppCall, .clipboardCapture:
+            return true
+        case .calendar:
+            return false // always bidirectional
+        case .contacts, .note, .manual, .linkedIn, .facebook, .substack:
+            return false
+        }
+    }
+}
+
+// MARK: - Communication Direction
+
+/// Direction of a communication evidence item relative to the user.
+public enum CommunicationDirection: String, Codable, Sendable {
+    /// Received from a contact (inbound email, incoming call, message from them).
+    case inbound
+    /// Sent by the user (outbound email, outgoing call, message from user).
+    case outbound
+    /// Mutual participation (calendar events, meetings).
+    case bidirectional
 }
 
 public enum EvidenceTriageState: String, Codable, Sendable {

@@ -829,9 +829,18 @@ final class RelationshipGraphCoordinator {
     }
 
     /// Clear focus mode and restore full graph.
+    /// Triggers OutcomeEngine refresh so any remaining unconfirmed items
+    /// generate a fresh outcome with an updated count.
     func clearFocusMode() {
         focusMode = nil
         applyFilters()
+
+        // Recheck after focus mode exit — if the user confirmed/rejected some
+        // but not all deduced relationships, a new outcome will be created
+        // with the remaining count.
+        Task {
+            await OutcomeEngine.shared.generateOutcomes()
+        }
     }
 
     // MARK: - Layout Caching

@@ -401,28 +401,47 @@ final class OutcomeEngine {
                 lastInteractionContext = ""
             }
 
-            // 1. Static threshold: existing behavior
+            // 1. Static threshold: existing behavior — now direction-aware
             let threshold = roleThreshold(for: person.roleBadges.first)
             if days >= threshold {
-                // Add role-specific insight
-                let roleInsight: String
-                switch role.lowercased() {
-                case "client":
-                    roleInsight = " — a policy review may be overdue."
-                case "applicant":
-                    roleInsight = " — application may stall without follow-up."
-                case "lead":
-                    roleInsight = " — lead may go cold without re-engagement."
-                default:
-                    roleInsight = "."
+                // Check if the user has recently reached out without response
+                let recentOutbound = health.outboundCount30 > 0
+                let noRecentInbound = health.inboundCount30 == 0
+
+                let title: String
+                let rationale: String
+                let insight: String
+
+                if recentOutbound && noRecentInbound {
+                    // User is reaching out but contact isn't responding
+                    let outDays = health.daysSinceLastOutbound ?? days
+                    title = "Try a different channel with \(name)"
+                    rationale = "You reached out \(outDays) day\(outDays == 1 ? "" : "s") ago but haven't heard back in \(days) days\(lastInteractionContext). Consider calling or meeting in person."
+                    insight = "Outbound with no response in \(days) days"
+                } else {
+                    // Add role-specific insight
+                    let roleInsight: String
+                    switch role.lowercased() {
+                    case "client":
+                        roleInsight = " — a policy review may be overdue."
+                    case "applicant":
+                        roleInsight = " — application may stall without follow-up."
+                    case "lead":
+                        roleInsight = " — lead may go cold without re-engagement."
+                    default:
+                        roleInsight = "."
+                    }
+                    title = "Reconnect with \(name)"
+                    rationale = "\(days) days since last interaction\(lastInteractionContext). \(role) relationship\(roleInsight)"
+                    insight = "No interaction in \(days) days (threshold: \(threshold) for \(role))"
                 }
 
                 outcomes.append(SamOutcome(
-                    title: "Reconnect with \(name)",
-                    rationale: "\(days) days since last interaction\(lastInteractionContext). \(role) relationship\(roleInsight)",
+                    title: title,
+                    rationale: rationale,
                     outcomeKind: .outreach,
                     priorityScore: 0.7,
-                    sourceInsightSummary: "No interaction in \(days) days (threshold: \(threshold) for \(role))",
+                    sourceInsightSummary: insight,
                     linkedPerson: person
                 ))
                 continue // Skip predictive if already past static threshold
@@ -1645,7 +1664,13 @@ final class OutcomeEngine {
             let items = recentEvidence.map { ev in
                 let dateStr = ev.occurredAt.formatted(date: .abbreviated, time: .omitted)
                 let snippet = ev.snippet.prefix(120)
-                return "- \(ev.source.displayName) on \(dateStr): \(snippet)"
+                let dirLabel: String
+                switch ev.direction {
+                case .outbound: dirLabel = " (sent)"
+                case .inbound:  dirLabel = " (received)"
+                default:        dirLabel = ""
+                }
+                return "- \(ev.source.displayName)\(dirLabel) on \(dateStr): \(snippet)"
             }.joined(separator: "\n")
             parts.append("Recent interactions:\n\(items)")
         }
@@ -1824,12 +1849,17 @@ final class OutcomeEngine {
 
                         The next step must be specific: name the person, reference recent interactions, \
                         and describe exactly what to do (not "follow up" but "send a text asking about \
-                        the IUL quote from your Feb 15 meeting").
+                        the project update from your last conversation").
+
+                        IMPORTANT: Your suggestion MUST be grounded in the actual evidence and topics \
+                        shown above. Only reference subjects that appear in the recent interactions or \
+                        notes. Never assume or invent topics not supported by the context.
                         """
 
                     let systemInstruction = """
                         Respond with ONLY the next step — one short, actionable sentence.
                         Do not include any preamble, formatting, or explanation.
+                        Base your suggestion strictly on the topics present in the context provided.
                         """
 
                     do {
@@ -1889,6 +1919,9 @@ final class OutcomeEngine {
             The message should feel personal, not templated.
             The sender's name is not needed — the message will be sent from their account.
             Keep the tone warm but professional.
+
+            IMPORTANT: Only reference subjects that appear in the context above. \
+            Never assume or invent topics not supported by the actual evidence.
             """
 
         let systemInstruction: String

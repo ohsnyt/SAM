@@ -873,6 +873,9 @@ struct SAMApp: App {
         // One-time migration: isArchived → lifecycleStatusRawValue (v31→v32)
         SAMModelContainer.runMigrationV32IfNeeded()
 
+        // One-time migration: backfill directionRaw on existing evidence
+        SAMModelContainer.runDirectionBackfillIfNeeded()
+
         // Prune expired compliance audit entries on launch
         let retentionDays = UserDefaults.standard.object(forKey: "complianceAuditRetentionDays") as? Int ?? 90
         try? ComplianceAuditRepository.shared.pruneExpired(retentionDays: retentionDays)

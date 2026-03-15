@@ -15,7 +15,7 @@
 //   4. Profile Completeness
 //   5. Cross-Referral Potential
 //
-// Follows the same specialist pattern as ProfileAnalystService.
+// Follows the same specialist pattern as LinkedInProfileAnalystService.
 
 import Foundation
 import os.log
@@ -92,11 +92,11 @@ actor FacebookProfileAnalystService {
         // Step 5: Log prompt sizes
         let systemSize = instructions.count
         let promptSize = prompt.count
-        logger.info("📏 FacebookProfileAnalyst prompt — system: \(systemSize)ch (~\(systemSize/4)t), user: \(promptSize)ch (~\(promptSize/4)t), total: \((systemSize+promptSize)/4)t")
+        logger.info("FacebookProfileAnalyst prompt — system: \(systemSize)ch (~\(systemSize/4)t), user: \(promptSize)ch (~\(promptSize/4)t), total: \((systemSize+promptSize)/4)t")
 
         // Step 6: Generate
         let responseText = try await AIService.shared.generate(prompt: prompt, systemInstruction: instructions)
-        logger.info("📏 FacebookProfileAnalyst response — \(responseText.count)ch (~\(responseText.count/4)t)")
+        logger.info("FacebookProfileAnalyst response — \(responseText.count)ch (~\(responseText.count/4)t)")
 
         // Step 7: Parse
         return try parseResponse(responseText)

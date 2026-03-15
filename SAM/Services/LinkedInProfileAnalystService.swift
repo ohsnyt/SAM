@@ -1,4 +1,4 @@
-// ProfileAnalystService.swift
+// LinkedInProfileAnalystService.swift
 // SAM
 //
 // Phase 7: LinkedIn Profile Analysis Agent (Spec §10)
@@ -8,16 +8,17 @@
 // Returns constructive, encouraging feedback — praise first, then improvements.
 //
 // Follows the 9-step specialist pattern (see PipelineAnalystService for reference).
+// Platform-specific siblings: FacebookProfileAnalystService, SubstackProfileAnalystService.
 
 import Foundation
 import os.log
 
-actor ProfileAnalystService {
+actor LinkedInProfileAnalystService {
 
     // MARK: - Singleton
 
-    static let shared = ProfileAnalystService()
-    private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "ProfileAnalystService")
+    static let shared = LinkedInProfileAnalystService()
+    private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "LinkedInProfileAnalystService")
 
     private init() {}
 
@@ -83,11 +84,11 @@ actor ProfileAnalystService {
         // Step 5: Log prompt sizes
         let systemSize = instructions.count
         let promptSize = prompt.count
-        logger.info("📏 ProfileAnalyst prompt — system: \(systemSize)ch (~\(systemSize/4)t), user: \(promptSize)ch (~\(promptSize/4)t), total: \((systemSize+promptSize)/4)t")
+        logger.info("LinkedInProfileAnalyst prompt — system: \(systemSize)ch (~\(systemSize/4)t), user: \(promptSize)ch (~\(promptSize/4)t), total: \((systemSize+promptSize)/4)t")
 
         // Step 6: Generate
         let responseText = try await AIService.shared.generate(prompt: prompt, systemInstruction: instructions)
-        logger.info("📏 ProfileAnalyst response — \(responseText.count)ch (~\(responseText.count/4)t)")
+        logger.info("LinkedInProfileAnalyst response — \(responseText.count)ch (~\(responseText.count/4)t)")
 
         // Step 7: Parse
         return try parseResponse(responseText)
@@ -105,7 +106,7 @@ actor ProfileAnalystService {
             // If response is plain text (model unavailable fallback), surface a minimal result
             let plainText = jsonString.trimmingCharacters(in: .whitespacesAndNewlines)
             if !plainText.isEmpty && !plainText.contains("{") {
-                logger.info("ProfileAnalyst returned plain text, wrapping as summary")
+                logger.info("LinkedInProfileAnalyst returned plain text, wrapping as summary")
                 return ProfileAnalysisDTO(
                     analysisDate: .now,
                     platform: "linkedIn",
@@ -123,7 +124,7 @@ actor ProfileAnalystService {
                     externalPrompt: nil
                 )
             }
-            logger.error("ProfileAnalyst JSON parsing failed: \(error.localizedDescription)")
+            logger.error("LinkedInProfileAnalyst JSON parsing failed: \(error.localizedDescription)")
             throw error
         }
     }

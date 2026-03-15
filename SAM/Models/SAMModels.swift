@@ -701,6 +701,17 @@ public final class SamEvidenceItem {
     /// attributing RSVP language from the user's own words to a contact.
     public var isFromMe: Bool = false
 
+    /// Communication direction relative to the user: inbound, outbound, or bidirectional.
+    /// Stored as raw string; nil for non-directional evidence (notes, contacts, social).
+    public var directionRaw: String?
+
+    /// Typed accessor for the communication direction.
+    @Transient
+    public var direction: CommunicationDirection? {
+        get { directionRaw.flatMap { CommunicationDirection(rawValue: $0) } }
+        set { directionRaw = newValue?.rawValue }
+    }
+
     // ── Calendar-specific metadata ───────────────────────────────────
     /// True if the source calendar event was an all-day event.
     public var isAllDay: Bool = false

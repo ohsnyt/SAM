@@ -2368,7 +2368,7 @@ final class LinkedInImportCoordinator {
                 return String(data: encoded, encoding: .utf8)
             }()
 
-            let result = try await ProfileAnalystService.shared.analyze(
+            let result = try await LinkedInProfileAnalystService.shared.analyze(
                 data: data,
                 previousAnalysisJSON: previousJSON
             )

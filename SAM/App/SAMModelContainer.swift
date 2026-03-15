@@ -195,5 +195,56 @@ enum SAMModelContainer {
 
         UserDefaults.standard.set(true, forKey: key)
     }
+
+    /// Backfill directionRaw on existing evidence from isFromMe / source / title.
+    /// Safe to call multiple times; uses a UserDefaults flag to run once.
+    @MainActor
+    static func runDirectionBackfillIfNeeded() {
+        let key = "sam.migration.directionBackfillDone"
+        guard !UserDefaults.standard.bool(forKey: key) else { return }
+
+        let context = ModelContext(shared)
+        do {
+            let descriptor = FetchDescriptor<SamEvidenceItem>()
+            let all = try context.fetch(descriptor)
+            var patched = 0
+            for item in all where item.directionRaw == nil {
+                switch item.source {
+                case .iMessage, .whatsApp, .clipboardCapture:
+                    item.direction = item.isFromMe ? .outbound : .inbound
+                    patched += 1
+                case .phoneCall, .faceTime:
+                    // Titles contain "to" (outgoing) or "from" (incoming)
+                    let lower = item.title.lowercased()
+                    if lower.contains(" to ") {
+                        item.direction = .outbound
+                    } else if lower.contains(" from ") {
+                        item.direction = .inbound
+                    }
+                    patched += 1
+                case .mail:
+                    // All existing mail evidence is from Inbox scanning
+                    item.direction = .inbound
+                    patched += 1
+                case .calendar:
+                    item.direction = .bidirectional
+                    patched += 1
+                case .whatsAppCall:
+                    // Missed calls are inbound; answered calls are bidirectional
+                    item.direction = item.snippet.lowercased() == "missed" ? .inbound : .bidirectional
+                    patched += 1
+                default:
+                    break // notes, contacts, social — leave nil
+                }
+            }
+            if patched > 0 {
+                try context.save()
+            }
+        } catch {
+            // Non-fatal: direction will be set on next import cycle
+        }
+
+        UserDefaults.standard.set(true, forKey: key)
+    }
 }
 

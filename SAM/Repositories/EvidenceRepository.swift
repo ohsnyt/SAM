@@ -399,6 +399,7 @@ final class EvidenceRepository {
             existing.endedAt = event.endDate
             existing.isAllDay = event.isAllDay
             existing.calendarAvailability = event.availability.rawValue
+            existing.direction = .bidirectional
             existing.participantHints = buildParticipantHints(from: event, knownEmails: knownEmails)
             setLinkedPeople(resolved, on: existing)
         } else {
@@ -416,6 +417,7 @@ final class EvidenceRepository {
             )
             evidence.isAllDay = event.isAllDay
             evidence.calendarAvailability = event.availability.rawValue
+            evidence.direction = .bidirectional
             evidence.participantHints = buildParticipantHints(from: event, knownEmails: knownEmails)
             setLinkedPeople(resolved, on: evidence)
 
@@ -451,6 +453,7 @@ final class EvidenceRepository {
                 existing.endedAt = event.endDate
                 existing.isAllDay = event.isAllDay
                 existing.calendarAvailability = event.availability.rawValue
+                existing.direction = .bidirectional
                 existing.participantHints = buildParticipantHints(from: event, knownEmails: knownEmails)
                 setLinkedPeople(resolved, on: existing)
 
@@ -470,6 +473,7 @@ final class EvidenceRepository {
                 )
                 evidence.isAllDay = event.isAllDay
                 evidence.calendarAvailability = event.availability.rawValue
+                evidence.direction = .bidirectional
                 evidence.participantHints = buildParticipantHints(from: event, knownEmails: knownEmails)
                 setLinkedPeople(resolved, on: evidence)
 
@@ -727,7 +731,9 @@ final class EvidenceRepository {
     // MARK: - Email Bulk Upsert Operations
 
     /// Bulk upsert email evidence items with optional analysis data.
-    func bulkUpsertEmails(_ emails: [(EmailDTO, EmailAnalysisDTO?)]) throws {
+    /// - Parameter direction: Communication direction for all emails in this batch.
+    ///   Defaults to `.inbound` (Inbox). Pass `.outbound` for Sent mailbox emails.
+    func bulkUpsertEmails(_ emails: [(EmailDTO, EmailAnalysisDTO?)], direction: CommunicationDirection = .inbound) throws {
         guard let context = context else { throw RepositoryError.notConfigured }
 
         var created = 0, updated = 0
@@ -771,6 +777,7 @@ final class EvidenceRepository {
                 existing.bodyText = nil  // Never store raw email body
                 existing.occurredAt = email.date
                 existing.participantHints = hints
+                existing.direction = direction
                 setLinkedPeople(resolved, on: existing)
                 existing.signals = signals
                 updated += 1
@@ -786,6 +793,7 @@ final class EvidenceRepository {
                     participantHints: hints,
                     signals: signals
                 )
+                evidence.direction = direction
                 setLinkedPeople(resolved, on: evidence)
                 context.insert(evidence)
                 created += 1
@@ -862,11 +870,14 @@ final class EvidenceRepository {
                 }
             }
 
+            let msgDirection: CommunicationDirection = message.isFromMe ? .outbound : .inbound
+
             if let existing = try fetch(sourceUID: sourceUID) {
                 existing.snippet = snippet
                 existing.bodyText = nil
                 existing.occurredAt = message.date
                 existing.isFromMe = message.isFromMe
+                existing.direction = msgDirection
                 setLinkedPeople(resolved, on: existing)
                 existing.signals = signals
                 updated += 1
@@ -889,6 +900,7 @@ final class EvidenceRepository {
                     signals: signals
                 )
                 evidence.isFromMe = message.isFromMe
+                evidence.direction = msgDirection
                 setLinkedPeople(resolved, on: evidence)
                 context.insert(evidence)
                 created += 1
@@ -1041,12 +1053,14 @@ final class EvidenceRepository {
             }
 
             let endedAt = call.wasAnswered ? call.date.addingTimeInterval(call.duration) : nil
+            let callDirection: CommunicationDirection = call.isOutgoing ? .outbound : .inbound
 
             if let existing = try fetch(sourceUID: sourceUID) {
                 existing.title = title
                 existing.snippet = snippet
                 existing.occurredAt = call.date
                 existing.endedAt = endedAt
+                existing.direction = callDirection
                 setLinkedPeople(resolved, on: existing)
                 updated += 1
             } else {
@@ -1060,6 +1074,7 @@ final class EvidenceRepository {
                     title: title,
                     snippet: snippet
                 )
+                evidence.direction = callDirection
                 setLinkedPeople(resolved, on: evidence)
                 context.insert(evidence)
                 created += 1
@@ -1108,11 +1123,14 @@ final class EvidenceRepository {
                 }
             }
 
+            let waDirection: CommunicationDirection = message.isFromMe ? .outbound : .inbound
+
             if let existing = try fetch(sourceUID: sourceUID) {
                 existing.snippet = snippet
                 existing.bodyText = nil
                 existing.occurredAt = message.date
                 existing.isFromMe = message.isFromMe
+                existing.direction = waDirection
                 setLinkedPeople(resolved, on: existing)
                 existing.signals = signals
                 updated += 1
@@ -1137,6 +1155,7 @@ final class EvidenceRepository {
                     signals: signals
                 )
                 evidence.isFromMe = message.isFromMe
+                evidence.direction = waDirection
                 setLinkedPeople(resolved, on: evidence)
                 context.insert(evidence)
                 created += 1
@@ -1186,12 +1205,15 @@ final class EvidenceRepository {
             }
 
             let endedAt = wasAnswered ? call.date.addingTimeInterval(call.duration) : nil
+            // WhatsApp calls: missed = inbound; answered = bidirectional (mutual participation)
+            let waCallDirection: CommunicationDirection = wasAnswered ? .bidirectional : .inbound
 
             if let existing = try fetch(sourceUID: sourceUID) {
                 existing.title = title
                 existing.snippet = snippet
                 existing.occurredAt = call.date
                 existing.endedAt = endedAt
+                existing.direction = waCallDirection
                 setLinkedPeople(resolved, on: existing)
                 updated += 1
             } else {
@@ -1205,6 +1227,7 @@ final class EvidenceRepository {
                     title: title,
                     snippet: snippet
                 )
+                evidence.direction = waCallDirection
                 setLinkedPeople(resolved, on: evidence)
                 context.insert(evidence)
                 created += 1

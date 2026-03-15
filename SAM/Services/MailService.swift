@@ -18,6 +18,12 @@ struct MailAccountDTO: Sendable, Identifiable {
     let emailAddresses: [String]
 }
 
+/// Which mailbox to scan within a Mail.app account.
+enum MailboxTarget: String, Sendable {
+    case inbox
+    case sent
+}
+
 /// Lightweight metadata from a Mail.app message (Phase 1 metadata sweep).
 /// Top-level so MailImportCoordinator can partition by sender before body fetch.
 struct MessageMeta: Sendable {
@@ -29,6 +35,7 @@ struct MessageMeta: Sendable {
     let date: Date
     let accountName: String       // resolved account name for body fetch
     let isLikelyMarketing: Bool   // detected from List-Unsubscribe / List-ID / Precedence headers (no body needed)
+    let mailboxTarget: MailboxTarget  // which mailbox this message came from
 }
 
 /// Actor-isolated service for reading email from Mail.app via NSAppleScript.
@@ -134,11 +141,12 @@ actor MailService {
 
     // MARK: - Fetch Metadata (Phase 1 — fast)
 
-    /// Phase 1: Fast metadata-only sweep of Mail.app inboxes.
+    /// Phase 1: Fast metadata-only sweep of a Mail.app mailbox (inbox or sent).
     /// Returns (metas, warningMessage). Warning is non-nil if accounts had errors.
     func fetchMetadata(
         accountIDs: [String],
-        since: Date
+        since: Date,
+        mailbox: MailboxTarget = .inbox
     ) async throws -> ([MessageMeta], String?) {
         guard !accountIDs.isEmpty else { return ([], nil) }
 
@@ -148,6 +156,80 @@ actor MailService {
 
         for accountID in accountIDs {
             let escapedEmail = accountID.replacingOccurrences(of: "\"", with: "\\\"")
+
+            // Build mailbox-specific AppleScript fragments
+            let mailboxResolution: String
+            let dateField: String
+            let debugLabel: String
+            switch mailbox {
+            case .inbox:
+                dateField = "date received"
+                debugLabel = "__inbox_debug__"
+                mailboxResolution = """
+                                -- Resolve inbox: try property, by-name, then iterate
+                                set mbx to missing value
+                                try
+                                    set mbx to inbox of acct
+                                end try
+                                if mbx is missing value then
+                                    try
+                                        set mbx to mailbox "INBOX" of acct
+                                    end try
+                                end if
+                                if mbx is missing value then
+                                    try
+                                        set mbx to mailbox "Inbox" of acct
+                                    end try
+                                end if
+                                if mbx is missing value then
+                                    repeat with m in every mailbox of acct
+                                        try
+                                            set mName to name of m
+                                            if mName is "INBOX" or mName is "Inbox" or mName is "inbox" then
+                                                set mbx to m
+                                                exit repeat
+                                            end if
+                                        end try
+                                    end repeat
+                                end if
+                    """
+            case .sent:
+                dateField = "date sent"
+                debugLabel = "__sent_debug__"
+                mailboxResolution = """
+                                -- Resolve sent mailbox: try common names, then iterate
+                                set mbx to missing value
+                                try
+                                    set mbx to mailbox "Sent Messages" of acct
+                                end try
+                                if mbx is missing value then
+                                    try
+                                        set mbx to mailbox "Sent" of acct
+                                    end try
+                                end if
+                                if mbx is missing value then
+                                    try
+                                        set mbx to mailbox "Sent Mail" of acct
+                                    end try
+                                end if
+                                if mbx is missing value then
+                                    try
+                                        set mbx to mailbox "[Gmail]/Sent Mail" of acct
+                                    end try
+                                end if
+                                if mbx is missing value then
+                                    repeat with m in every mailbox of acct
+                                        try
+                                            set mName to name of m
+                                            if mName contains "Sent" and mName does not contain "Junk" then
+                                                set mbx to m
+                                                exit repeat
+                                            end if
+                                        end try
+                                    end repeat
+                                end if
+                    """
+            }
 
             // Metadata sweep with per-message iteration (IMAP-safe)
             let metadataScript = """
@@ -162,37 +244,12 @@ actor MailService {
                     try
                         if (email addresses of acct) contains targetEmail then
                             set matchedName to name of acct
-                            -- Resolve inbox: try property, by-name, then iterate
-                            set mbx to missing value
-                            try
-                                set mbx to inbox of acct
-                            end try
+                            \(mailboxResolution)
                             if mbx is missing value then
-                                try
-                                    set mbx to mailbox "INBOX" of acct
-                                end try
-                            end if
-                            if mbx is missing value then
-                                try
-                                    set mbx to mailbox "Inbox" of acct
-                                end try
-                            end if
-                            if mbx is missing value then
-                                repeat with m in every mailbox of acct
-                                    try
-                                        set mName to name of m
-                                        if mName is "INBOX" or mName is "Inbox" or mName is "inbox" then
-                                            set mbx to m
-                                            exit repeat
-                                        end if
-                                    end try
-                                end repeat
-                            end if
-                            if mbx is missing value then
-                                return {"__inbox_debug__", matchedName, "all inbox methods failed"}
+                                return {"\(debugLabel)", matchedName, "all mailbox methods failed"}
                             end if
                             -- Fetch messages individually (IMAP-safe: no bulk property access)
-                            set filteredMsgs to (every message of mbx whose date received > cutoff)
+                            set filteredMsgs to (every message of mbx whose \(dateField) > cutoff)
                             set msgCount to count of filteredMsgs
                             if msgCount is 0 then return {"__empty__", matchedName}
                             if msgCount > maxMsgs then set msgCount to maxMsgs
@@ -209,7 +266,7 @@ actor MailService {
                                     set theMsgID to message id of msg
                                     set theSubject to subject of msg
                                     set theSender to sender of msg
-                                    set theDate to date received of msg
+                                    set theDate to \(dateField) of msg
                                     set isMarketing to 0
                                     try
                                         content of header "List-Unsubscribe" of msg
@@ -247,35 +304,11 @@ actor MailService {
                     try
                         if (name of acct) is targetEmail then
                             set matchedName to name of acct
-                            set mbx to missing value
-                            try
-                                set mbx to inbox of acct
-                            end try
+                            \(mailboxResolution)
                             if mbx is missing value then
-                                try
-                                    set mbx to mailbox "INBOX" of acct
-                                end try
+                                return {"\(debugLabel)", matchedName, "all mailbox methods failed"}
                             end if
-                            if mbx is missing value then
-                                try
-                                    set mbx to mailbox "Inbox" of acct
-                                end try
-                            end if
-                            if mbx is missing value then
-                                repeat with m in every mailbox of acct
-                                    try
-                                        set mName to name of m
-                                        if mName is "INBOX" or mName is "Inbox" or mName is "inbox" then
-                                            set mbx to m
-                                            exit repeat
-                                        end if
-                                    end try
-                                end repeat
-                            end if
-                            if mbx is missing value then
-                                return {"__inbox_debug__", matchedName, "all inbox methods failed"}
-                            end if
-                            set filteredMsgs to (every message of mbx whose date received > cutoff)
+                            set filteredMsgs to (every message of mbx whose \(dateField) > cutoff)
                             set msgCount to count of filteredMsgs
                             if msgCount is 0 then return {"__empty__", matchedName}
                             if msgCount > maxMsgs then set msgCount to maxMsgs
@@ -292,7 +325,7 @@ actor MailService {
                                     set theMsgID to message id of msg
                                     set theSubject to subject of msg
                                     set theSender to sender of msg
-                                    set theDate to date received of msg
+                                    set theDate to \(dateField) of msg
                                     set isMarketing to 0
                                     try
                                         content of header "List-Unsubscribe" of msg
@@ -344,10 +377,11 @@ actor MailService {
                 case "__not_found__":
                     logger.warning("No account found with email \(accountID, privacy: .private)")
                     accountWarnings.append("No Mail account found for '\(accountID)'")
-                case "__inbox_debug__":
+                case "__inbox_debug__", "__sent_debug__":
+                    let mbxLabel = firstItem == "__sent_debug__" ? "sent" : "inbox"
                     let errDetail = metaDesc.atIndex(3)?.stringValue ?? "unknown"
-                    logger.error("Account '\(acctName, privacy: .private)' matched but inbox not accessible. Errors: \(errDetail, privacy: .public)")
-                    accountWarnings.append("Account '\(acctName)' inbox not accessible: \(errDetail)")
+                    logger.error("Account '\(acctName, privacy: .private)' matched but \(mbxLabel) not accessible. Errors: \(errDetail, privacy: .public)")
+                    accountWarnings.append("Account '\(acctName)' \(mbxLabel) not accessible: \(errDetail)")
                 case "__fetch_debug__":
                     let errDetail = metaDesc.atIndex(3)?.stringValue ?? "unknown"
                     logger.error("Account '\(acctName, privacy: .private)' inbox found but message fetch failed: \(errDetail, privacy: .public)")
@@ -394,7 +428,8 @@ actor MailService {
                     senderEmail: senderEmail,
                     date: dateVal,
                     accountName: resolvedAccountName,
-                    isLikelyMarketing: isLikelyMarketing
+                    isLikelyMarketing: isLikelyMarketing,
+                    mailboxTarget: mailbox
                 ))
             }
         }
@@ -410,7 +445,8 @@ actor MailService {
     /// Apply filter rules after body/recipient data is available.
     func fetchBodies(
         for metas: [MessageMeta],
-        filterRules: [MailFilterRule]
+        filterRules: [MailFilterRule],
+        mailbox: MailboxTarget = .inbox
     ) async -> [EmailDTO] {
         guard !metas.isEmpty else { return [] }
 
@@ -423,36 +459,79 @@ actor MailService {
             let escapedAcctName = accountName.replacingOccurrences(of: "\"", with: "\\\"")
             let toFetch = Array(accountMetas.prefix(maxBodyFetches))
 
+            // Build mailbox resolution AppleScript for body fetch
+            let bodyMbxResolution: String
+            switch mailbox {
+            case .inbox:
+                bodyMbxResolution = """
+                        set mbx to missing value
+                        try
+                            set mbx to inbox of acct
+                        end try
+                        if mbx is missing value then
+                            try
+                                set mbx to mailbox "INBOX" of acct
+                            end try
+                        end if
+                        if mbx is missing value then
+                            try
+                                set mbx to mailbox "Inbox" of acct
+                            end try
+                        end if
+                        if mbx is missing value then
+                            repeat with m in every mailbox of acct
+                                try
+                                    set mName to name of m
+                                    if mName is "INBOX" or mName is "Inbox" or mName is "inbox" then
+                                        set mbx to m
+                                        exit repeat
+                                    end if
+                                end try
+                            end repeat
+                        end if
+                    """
+            case .sent:
+                bodyMbxResolution = """
+                        set mbx to missing value
+                        try
+                            set mbx to mailbox "Sent Messages" of acct
+                        end try
+                        if mbx is missing value then
+                            try
+                                set mbx to mailbox "Sent" of acct
+                            end try
+                        end if
+                        if mbx is missing value then
+                            try
+                                set mbx to mailbox "Sent Mail" of acct
+                            end try
+                        end if
+                        if mbx is missing value then
+                            try
+                                set mbx to mailbox "[Gmail]/Sent Mail" of acct
+                            end try
+                        end if
+                        if mbx is missing value then
+                            repeat with m in every mailbox of acct
+                                try
+                                    set mName to name of m
+                                    if mName contains "Sent" and mName does not contain "Junk" then
+                                        set mbx to m
+                                        exit repeat
+                                    end if
+                                end try
+                            end repeat
+                        end if
+                    """
+            }
+            let mbxErrorLabel = mailbox == .sent ? "sent mailbox" : "inbox"
+
             for meta in toFetch {
                 let bodyScript = """
                 tell application "Mail"
                     set acct to first account whose name is "\(escapedAcctName)"
-                    set mbx to missing value
-                    try
-                        set mbx to inbox of acct
-                    end try
-                    if mbx is missing value then
-                        try
-                            set mbx to mailbox "INBOX" of acct
-                        end try
-                    end if
-                    if mbx is missing value then
-                        try
-                            set mbx to mailbox "Inbox" of acct
-                        end try
-                    end if
-                    if mbx is missing value then
-                        repeat with m in every mailbox of acct
-                            try
-                                set mName to name of m
-                                if mName is "INBOX" or mName is "Inbox" or mName is "inbox" then
-                                    set mbx to m
-                                    exit repeat
-                                end if
-                            end try
-                        end repeat
-                    end if
-                    if mbx is missing value then error "No inbox found"
+                    \(bodyMbxResolution)
+                    if mbx is missing value then error "No \(mbxErrorLabel) found"
                     set m to (first message of mbx whose id is \(meta.mailID))
                     set msgContent to content of m
                     set msgRecipients to address of every to recipient of m
@@ -489,7 +568,7 @@ actor MailService {
                     bodyPlainText: body,
                     bodySnippet: snippet,
                     isRead: isRead,
-                    folderName: "INBOX"
+                    folderName: mailbox == .sent ? "Sent" : "INBOX"
                 )
                 allEmails.append(dto)
             }

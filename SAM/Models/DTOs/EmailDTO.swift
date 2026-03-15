@@ -35,4 +35,10 @@ struct EmailDTO: Sendable, Identifiable {
     var allParticipantEmails: [String] {
         [senderEmail] + recipientEmails + ccEmails
     }
+
+    /// True when this email came from a Sent/outbound mailbox.
+    var isOutbound: Bool {
+        let lower = folderName.lowercased()
+        return lower.contains("sent")
+    }
 }

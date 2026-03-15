@@ -93,6 +93,12 @@ struct RelationshipHealth: Sendable {
     let decayRisk: DecayRisk           // Overall risk assessment
     let predictiveLeadDays: Int        // Role-aware lead time for predictive alerts
 
+    // Direction-aware fields
+    let daysSinceLastOutbound: Int?    // Days since user last reached out (nil = no outbound data)
+    let daysSinceLastInbound: Int?     // Days since contact last reached out (nil = no inbound data)
+    let outboundCount30: Int           // Outbound interactions in last 30 days
+    let inboundCount30: Int            // Inbound interactions in last 30 days
+
     /// Color incorporating decay risk when velocity data is available;
     /// falls back to static role-based thresholds otherwise.
     var statusColor: Color {
@@ -231,6 +237,10 @@ final class MeetingPrepCoordinator {
     private let peopleRepository = PeopleRepository.shared
     private let deducedRelationRepository = DeducedRelationRepository.shared
 
+    /// Minimum interval between refreshes (seconds).
+    private let refreshThrottleInterval: TimeInterval = 300  // 5 minutes
+    private var lastRefreshTime: Date?
+
     private init() {}
 
     // MARK: - Public API
@@ -240,10 +250,20 @@ final class MeetingPrepCoordinator {
         do {
             briefings = try await buildBriefings()
             followUpPrompts = try buildFollowUpPrompts()
+            lastRefreshTime = Date()
             logger.info("Refresh complete: \(self.briefings.count) briefings, \(self.followUpPrompts.count) follow-ups")
         } catch {
             logger.error("Failed to refresh meeting prep: \(error.localizedDescription)")
         }
+    }
+
+    /// Throttled refresh — skips if data was refreshed recently.
+    /// Use for view appearance; `refresh()` is still available for forced updates (e.g., after calendar sync).
+    func refreshIfNeeded() async {
+        if let last = lastRefreshTime, Date().timeIntervalSince(last) < refreshThrottleInterval {
+            return
+        }
+        await refresh()
     }
 
     /// Compute health for a single person (reused by PersonDetailView, EngagementVelocitySection, etc.).
@@ -329,6 +349,21 @@ final class MeetingPrepCoordinator {
             daysSince: daysSince, role: person.roleBadges.first
         )
 
+        // --- Direction-aware fields ---
+        let outbound = evidence.filter { $0.direction == .outbound }
+        let inbound = evidence.filter { $0.direction == .inbound }
+
+        let lastOutboundDate = outbound.last?.occurredAt
+        let lastInboundDate = inbound.last?.occurredAt
+        let daysSinceLastOutbound = lastOutboundDate.map {
+            Calendar.current.dateComponents([.day], from: $0, to: now).day ?? 0
+        }
+        let daysSinceLastInbound = lastInboundDate.map {
+            Calendar.current.dateComponents([.day], from: $0, to: now).day ?? 0
+        }
+        let outboundCount30 = outbound.filter { $0.occurredAt >= thirtyDaysAgo }.count
+        let inboundCount30 = inbound.filter { $0.occurredAt >= thirtyDaysAgo }.count
+
         return RelationshipHealth(
             daysSinceLastInteraction: daysSince,
             interactionCount30: count30,
@@ -342,7 +377,11 @@ final class MeetingPrepCoordinator {
             qualityScore30: qualityScore30,
             predictedOverdueDays: predictedOverdueDays,
             decayRisk: decayRisk,
-            predictiveLeadDays: roleConfig.predictiveLeadDays
+            predictiveLeadDays: roleConfig.predictiveLeadDays,
+            daysSinceLastOutbound: daysSinceLastOutbound,
+            daysSinceLastInbound: daysSinceLastInbound,
+            outboundCount30: outboundCount30,
+            inboundCount30: inboundCount30
         )
     }
 

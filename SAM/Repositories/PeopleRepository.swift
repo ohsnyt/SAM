@@ -341,23 +341,41 @@ final class PeopleRepository {
             let canonicalPhones = contact.phoneNumbers.compactMap { canonicalizePhone($0.number) }
 
             if let existing = existingByIdentifier[contact.identifier] {
-                // Update existing
-                existing.displayNameCache = contact.displayName
-                existing.emailCache = primaryEmail
-                existing.emailAliases = canonicalEmails
-                existing.phoneAliases = canonicalPhones
-                existing.photoThumbnailCache = contact.thumbnailImageData
-                existing.lastSyncedAt = Date()
+                // Only update fields that actually changed
+                var changed = false
+
+                if existing.displayNameCache != contact.displayName {
+                    existing.displayNameCache = contact.displayName
+                    existing.displayName = contact.displayName
+                    changed = true
+                }
+                if existing.emailCache != primaryEmail {
+                    existing.emailCache = primaryEmail
+                    existing.email = primaryEmail
+                    changed = true
+                }
+                if existing.emailAliases != canonicalEmails {
+                    existing.emailAliases = canonicalEmails
+                    changed = true
+                }
+                if existing.phoneAliases != canonicalPhones {
+                    existing.phoneAliases = canonicalPhones
+                    changed = true
+                }
+                if existing.photoThumbnailCache != contact.thumbnailImageData {
+                    existing.photoThumbnailCache = contact.thumbnailImageData
+                    changed = true
+                }
                 // Reactivate only if archived (contact reappeared)
                 if existing.lifecycleStatus == .archived {
                     existing.lifecycleStatus = .active
+                    changed = true
                 }
 
-                // Update deprecated fields
-                existing.displayName = contact.displayName
-                existing.email = primaryEmail
-
-                updated += 1
+                if changed {
+                    existing.lastSyncedAt = Date()
+                    updated += 1
+                }
             } else {
                 // Create new
                 let person = SamPerson(

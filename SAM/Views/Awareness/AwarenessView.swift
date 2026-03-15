@@ -94,8 +94,8 @@ struct AwarenessView: View {
             withAnimation { showMore = true }
         }
         .task {
-            await loadInsights()
-            await meetingPrepCoordinator.refresh()
+            await loadInsightsIfNeeded()
+            await meetingPrepCoordinator.refreshIfNeeded()
         }
         .onChange(of: calendarCoordinator.importStatus) {
             if calendarCoordinator.importStatus == .success {
@@ -351,6 +351,14 @@ struct AwarenessView: View {
         // Generate insights — persistence happens inside the generator;
         // @Query auto-updates the list from SwiftData.
         _ = await generator.generateInsights(force: true)
+        isGenerating = false
+    }
+
+    /// Throttled insight load — skips if run within the last 5 minutes.
+    /// Uses the generator's built-in throttle (force: false).
+    private func loadInsightsIfNeeded() async {
+        isGenerating = true
+        _ = await generator.generateInsights(force: false)
         isGenerating = false
     }
 

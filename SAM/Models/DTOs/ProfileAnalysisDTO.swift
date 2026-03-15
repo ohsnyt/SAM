@@ -249,7 +249,7 @@ extension LLMProfileAnalysis {
     }
 }
 
-// MARK: - JSON Parsing Entry Point (used by ProfileAnalystService)
+// MARK: - JSON Parsing Entry Point (used by LinkedInProfileAnalystService, FacebookProfileAnalystService, SubstackProfileAnalystService)
 
 /// Parses a JSON string from the LLM into a `ProfileAnalysisDTO`.
 /// All fields are optional-tolerant; the mapping never throws on missing keys.

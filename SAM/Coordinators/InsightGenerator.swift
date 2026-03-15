@@ -106,6 +106,9 @@ final class InsightGenerator {
         lastError = nil
 
         do {
+            // 0. Invalidate stale insights that new evidence has resolved
+            invalidateContradicatedInsights()
+
             var generatedInsights: [GeneratedInsight] = []
 
             // 1. Generate insights from note action items
@@ -530,6 +533,57 @@ final class InsightGenerator {
             }
         } catch {
             logger.error("Failed to persist insights: \(error)")
+        }
+    }
+
+    // MARK: - Evidence-Based Invalidation
+
+    /// Auto-dismiss insights that new evidence has resolved.
+    /// For example, a "No recent contact" insight is invalidated when new interaction
+    /// evidence (inbound or outbound) arrives for that person within the threshold window.
+    private func invalidateContradicatedInsights() {
+        guard let context = context else { return }
+
+        do {
+            let descriptor = FetchDescriptor<SamInsight>(
+                predicate: #Predicate { $0.dismissedAt == nil }
+            )
+            let active = try context.fetch(descriptor)
+            var dismissed = 0
+
+            for insight in active {
+                guard let person = insight.samPerson else { continue }
+
+                switch insight.kind {
+                case .relationshipAtRisk:
+                    // Check if new evidence exists since this insight was created
+                    let recentInteraction = person.linkedEvidence
+                        .filter { $0.source.isInteraction && $0.occurredAt > insight.createdAt }
+                    if !recentInteraction.isEmpty {
+                        insight.dismissedAt = .now
+                        dismissed += 1
+                    }
+
+                case .followUpNeeded:
+                    // A follow-up insight is resolved if the user has interacted since it was created
+                    let hasOutbound = person.linkedEvidence
+                        .contains { $0.direction == .outbound && $0.occurredAt > insight.createdAt }
+                    if hasOutbound {
+                        insight.dismissedAt = .now
+                        dismissed += 1
+                    }
+
+                default:
+                    break
+                }
+            }
+
+            if dismissed > 0 {
+                try context.save()
+                logger.info("Auto-dismissed \(dismissed) insight(s) contradicted by new evidence")
+            }
+        } catch {
+            logger.warning("Insight invalidation failed: \(error.localizedDescription)")
         }
     }
 

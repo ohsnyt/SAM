@@ -3,7 +3,7 @@
 //
 // Phase 7: LinkedIn Profile Analysis — Results Sheet (Spec §10.4)
 //
-// Displays the structured output from ProfileAnalystService:
+// Displays the structured output from LinkedInProfileAnalystService:
 // score indicator, praise, improvements, content strategy,
 // network health, changes since last analysis, and deep-dive prompt.
 
