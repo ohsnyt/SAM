@@ -291,17 +291,17 @@ struct SAMApp: App {
                             }
                         }
                         .onDisappear {
-                            // When onboarding completes, trigger imports then show intro.
-                            // Imports run at .utility so they don't compete with the intro
-                            // sequence, which runs at .userInitiated.
+                            // Show intro immediately after onboarding dismisses.
+                            // Brief delay so the sheet animation completes first.
+                            Task {
+                                try? await Task.sleep(for: .milliseconds(600))
+                                IntroSequenceCoordinator.shared.checkAndShow()
+                            }
+
+                            // Imports run independently at .utility priority so they
+                            // don't block the intro sequence.
                             Task(priority: .utility) {
                                 await triggerImportsAfterOnboarding()
-                                // Brief delay so the onboarding sheet fully dismisses
-                                // before we present the intro sheet
-                                try? await Task.sleep(for: .milliseconds(600))
-                                await MainActor.run {
-                                    IntroSequenceCoordinator.shared.checkAndShow()
-                                }
                             }
                         }
                 }
