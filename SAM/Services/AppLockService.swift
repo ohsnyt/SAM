@@ -8,6 +8,7 @@
 //  Uses LocalAuthentication (Touch ID with system password fallback).
 //
 
+import AppKit
 import Foundation
 import LocalAuthentication
 import os.log
@@ -125,9 +126,10 @@ final class AppLockService {
 
     // MARK: - Lock Management
 
-    /// Immediately lock the app.
+    /// Immediately lock the app and close auxiliary windows (Settings, Guide, etc.).
     func lock() {
         isLocked = true
+        closeAuxiliaryWindows()
         logger.info("App locked")
     }
 
@@ -149,6 +151,7 @@ final class AppLockService {
         let timeout = TimeInterval(lockTimeoutMinutes * 60)
         if elapsed >= timeout {
             isLocked = true
+            closeAuxiliaryWindows()
             logger.info("App locked — inactive for \(Int(elapsed / 60)) minutes (timeout: \(self.lockTimeoutMinutes)m)")
         }
     }
@@ -159,5 +162,29 @@ final class AppLockService {
     func configureOnLaunch() {
         isLocked = true
         logger.info("App launch — awaiting authentication")
+    }
+
+    // MARK: - Private Helpers
+
+    /// Known auxiliary window identifiers that must close when the app locks.
+    /// The main WindowGroup has no explicit id, so it is excluded by omission.
+    private static let auxiliaryWindowIDs: Set<String> = [
+        "prompt-lab", "guide", "quick-note", "clipboard-capture", "compose-message"
+    ]
+
+    /// Close all auxiliary windows so they can't be read while locked.
+    /// Matches SwiftUI Settings (by Apple's internal identifier prefix) and
+    /// SAM's named windows (Prompt Lab, Guide, Quick Note, Compose, Clipboard).
+    private func closeAuxiliaryWindows() {
+        for window in NSApplication.shared.windows where window.isVisible {
+            let id = window.identifier?.rawValue ?? ""
+            let isSettings = id.contains("Settings")
+            let isAuxiliary = Self.auxiliaryWindowIDs.contains(where: { id.contains($0) })
+
+            if isSettings || isAuxiliary {
+                window.close()
+                logger.debug("Closed auxiliary window on lock: \(id)")
+            }
+        }
     }
 }
