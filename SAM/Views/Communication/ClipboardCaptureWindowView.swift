@@ -9,6 +9,7 @@
 //
 
 import SwiftUI
+import TipKit
 import os.log
 
 private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "ClipboardCaptureWindowView")
@@ -41,6 +42,7 @@ struct ClipboardCaptureWindowView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            TipView(ClipboardCaptureTip())
             header
             Divider()
 

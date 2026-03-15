@@ -290,7 +290,7 @@ struct AddParticipantsSheet: View {
             return
         }
         searchResults = ((try? PeopleRepository.shared.search(query: query)) ?? [])
-            .filter { $0.lifecycleStatus == .active && !($0.isMe ?? false) }
+            .filter { $0.lifecycleStatus == .active && !$0.isMe }
     }
 
     private func loadSuggestions() async {

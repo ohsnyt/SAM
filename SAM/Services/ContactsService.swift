@@ -339,6 +339,25 @@ actor ContactsService {
         }
     }
     
+    /// Search contacts by phone number.
+    /// Uses CNContact.predicateForContacts(matching:) with a CNPhoneNumber.
+    func searchContactsByPhone(phoneNumber: String, keys: ContactDTO.KeySet) async -> [ContactDTO] {
+        guard authorizationStatus() == .authorized else { return [] }
+        guard !phoneNumber.isEmpty else { return [] }
+
+        let cnPhone = CNPhoneNumber(stringValue: phoneNumber)
+        let predicate = CNContact.predicateForContacts(matching: cnPhone)
+
+        do {
+            let contacts = try store.unifiedContacts(matching: predicate, keysToFetch: keys.keys)
+            logger.info("Found \(contacts.count) contacts matching phone '\(phoneNumber, privacy: .private)'")
+            return contacts.map { ContactDTO(from: $0) }
+        } catch {
+            logger.error("Failed to search contacts by phone: \(error.localizedDescription)")
+            return []
+        }
+    }
+
     // MARK: - Validation Operations
     
     /// Check if a contact identifier is still valid (contact exists and is accessible)
@@ -433,26 +452,284 @@ actor ContactsService {
         }
     }
     
+    // MARK: - Container Discovery
+
+    /// Returns the identifier of the iCloud container, or nil if none exists.
+    /// iCloud containers use the `.cardDAV` type.
+    func iCloudContainerIdentifier() -> String? {
+        do {
+            let containers = try store.containers(matching: nil)
+            // iCloud containers are .cardDAV type. If multiple exist, prefer one
+            // whose name contains "iCloud" or "Card" (Apple's default naming).
+            let cardDAV = containers.filter { $0.type == .cardDAV }
+            if let icloud = cardDAV.first {
+                logger.debug("Found iCloud container: \(icloud.identifier, privacy: .private) (name: \(icloud.name, privacy: .public))")
+                return icloud.identifier
+            }
+            logger.debug("No iCloud (CardDAV) container found among \(containers.count) containers")
+            return nil
+        } catch {
+            logger.error("Failed to fetch containers: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    /// Returns the container identifier where the current SAM group lives, or nil.
+    func samGroupContainerIdentifier() -> String? {
+        let groupID = UserDefaults.standard.string(forKey: "selectedContactGroupIdentifier") ?? ""
+        guard !groupID.isEmpty else { return nil }
+        let predicate = CNContainer.predicateForContainerOfGroup(withIdentifier: groupID)
+        return try? store.containers(matching: predicate).first?.identifier
+    }
+
+    /// Whether the SAM group is in the iCloud container.
+    func isSAMGroupInICloud() -> Bool {
+        guard let groupContainer = samGroupContainerIdentifier(),
+              let icloudContainer = iCloudContainerIdentifier() else { return false }
+        return groupContainer == icloudContainer
+    }
+
+    /// Migrate the SAM group to iCloud: creates a new group in the iCloud container,
+    /// moves all members, updates the stored group identifier, and deletes the old group.
+    /// Returns the new group identifier on success, or nil on failure.
+    func migrateSAMGroupToICloud() async -> String? {
+        guard authorizationStatus() == .authorized else { return nil }
+
+        let oldGroupID = UserDefaults.standard.string(forKey: "selectedContactGroupIdentifier") ?? ""
+        guard !oldGroupID.isEmpty else {
+            logger.warning("No SAM group configured, nothing to migrate")
+            return nil
+        }
+
+        guard let icloudContainerID = iCloudContainerIdentifier() else {
+            logger.warning("No iCloud container available for migration")
+            return nil
+        }
+
+        // Check if already in iCloud
+        if let currentContainer = samGroupContainerIdentifier(), currentContainer == icloudContainerID {
+            logger.info("SAM group already in iCloud, no migration needed")
+            return oldGroupID
+        }
+
+        do {
+            // Fetch the old group to get its name
+            let groups = try store.groups(matching: nil)
+            guard let oldGroup = groups.first(where: { $0.identifier == oldGroupID }) else {
+                logger.warning("Old SAM group not found")
+                return nil
+            }
+            let groupName = oldGroup.name
+
+            // Fetch current members of the old group with name keys for re-matching
+            let memberKeys: [CNKeyDescriptor] = [
+                CNContactIdentifierKey as CNKeyDescriptor,
+                CNContactGivenNameKey as CNKeyDescriptor,
+                CNContactFamilyNameKey as CNKeyDescriptor
+            ]
+            let memberPredicate = CNContact.predicateForContactsInGroup(withIdentifier: oldGroupID)
+            let members = try store.unifiedContacts(
+                matching: memberPredicate,
+                keysToFetch: memberKeys
+            )
+
+            // Create new group in iCloud container
+            let newGroup = CNMutableGroup()
+            newGroup.name = groupName
+
+            let createRequest = CNSaveRequest()
+            createRequest.add(newGroup, toContainerWithIdentifier: icloudContainerID)
+            try store.execute(createRequest)
+
+            let newGroupID = newGroup.identifier
+            logger.info("Created new SAM group '\(groupName)' in iCloud container: \(newGroupID, privacy: .private)")
+
+            // Pre-fetch all contacts in the iCloud container for matching
+            let icloudPredicate = CNContact.predicateForContactsInContainer(withIdentifier: icloudContainerID)
+            let icloudContacts = try store.unifiedContacts(
+                matching: icloudPredicate,
+                keysToFetch: memberKeys
+            )
+            // Build lookup by full name for fallback matching
+            let icloudByName = Dictionary(
+                icloudContacts.map { contact in
+                    let name = "\(contact.givenName) \(contact.familyName)".trimmingCharacters(in: .whitespaces).lowercased()
+                    return (name, contact)
+                },
+                uniquingKeysWith: { first, _ in first }
+            )
+            let icloudIDs = Set(icloudContacts.map(\.identifier))
+
+            // Add members to the new iCloud group
+            var migratedCount = 0
+            var skippedCount = 0
+            for member in members {
+                // Check if this unified contact is in the iCloud container
+                let contactInICloud = icloudIDs.contains(member.identifier)
+
+                let contactToAdd: CNContact
+                if contactInICloud {
+                    contactToAdd = member
+                } else {
+                    // Try to find the iCloud counterpart by name
+                    let name = "\(member.givenName) \(member.familyName)".trimmingCharacters(in: .whitespaces).lowercased()
+                    if let icloudMatch = icloudByName[name] {
+                        contactToAdd = icloudMatch
+                        logger.debug("Matched local contact '\(name, privacy: .private)' to iCloud counterpart")
+                    } else {
+                        logger.debug("Skipping member '\(name, privacy: .private)' — no iCloud counterpart found")
+                        skippedCount += 1
+                        continue
+                    }
+                }
+
+                do {
+                    let addRequest = CNSaveRequest()
+                    addRequest.addMember(contactToAdd, to: newGroup)
+                    try store.execute(addRequest)
+                    migratedCount += 1
+                } catch {
+                    logger.debug("Failed to add member \(contactToAdd.identifier, privacy: .private) to new group: \(error.localizedDescription)")
+                    skippedCount += 1
+                }
+            }
+
+            // Only delete the old group if we migrated at least some members
+            // (or it was empty to begin with)
+            if migratedCount > 0 || members.isEmpty {
+                let mutableOld = oldGroup.mutableCopy() as! CNMutableGroup
+                let deleteRequest = CNSaveRequest()
+                deleteRequest.delete(mutableOld)
+                try store.execute(deleteRequest)
+                logger.info("Deleted old SAM group")
+            } else if skippedCount > 0 {
+                logger.warning("Kept old SAM group — no members could be migrated to iCloud")
+            }
+
+            // Update the stored group identifier
+            UserDefaults.standard.set(newGroupID, forKey: "selectedContactGroupIdentifier")
+
+            logger.info("SAM group migration complete: \(migratedCount) migrated, \(skippedCount) skipped")
+            return newGroupID
+
+        } catch {
+            logger.error("SAM group migration failed: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    // MARK: - Cross-Container Contact Operations
+
+    /// Copy a contact's data into a new contact in the iCloud container.
+    /// Returns the new contact's DTO, or nil on failure.
+    /// If `deleteOriginal` is true, the source contact is removed after copy (move).
+    func copyContactToICloud(identifier: String, deleteOriginal: Bool) async -> ContactDTO? {
+        guard authorizationStatus() == .authorized else { return nil }
+
+        guard let icloudContainerID = iCloudContainerIdentifier() else {
+            logger.warning("No iCloud container available for contact copy")
+            return nil
+        }
+
+        do {
+            // Fetch with all copyable keys (superset of ContactDTO.KeySet.detail)
+            let copyKeys: [CNKeyDescriptor] = [
+                CNContactGivenNameKey, CNContactFamilyNameKey, CNContactMiddleNameKey,
+                CNContactNamePrefixKey, CNContactNameSuffixKey, CNContactNicknameKey,
+                CNContactOrganizationNameKey, CNContactDepartmentNameKey, CNContactJobTitleKey,
+                CNContactPhoneNumbersKey, CNContactEmailAddressesKey, CNContactPostalAddressesKey,
+                CNContactBirthdayKey, CNContactDatesKey, CNContactImageDataKey,
+                CNContactSocialProfilesKey, CNContactInstantMessageAddressesKey,
+                CNContactUrlAddressesKey, CNContactRelationsKey,
+                CNContactIdentifierKey, CNContactThumbnailImageDataKey
+            ] as [CNKeyDescriptor]
+            let source = try store.unifiedContact(withIdentifier: identifier, keysToFetch: copyKeys)
+
+            // Build a new mutable contact with all the same fields
+            let copy = CNMutableContact()
+            copy.namePrefix = source.namePrefix
+            copy.givenName = source.givenName
+            copy.middleName = source.middleName
+            copy.familyName = source.familyName
+            copy.nameSuffix = source.nameSuffix
+            copy.nickname = source.nickname
+            copy.organizationName = source.organizationName
+            copy.departmentName = source.departmentName
+            copy.jobTitle = source.jobTitle
+            copy.phoneNumbers = source.phoneNumbers.map { CNLabeledValue(label: $0.label, value: $0.value) }
+            copy.emailAddresses = source.emailAddresses.map { CNLabeledValue(label: $0.label, value: $0.value) }
+            copy.postalAddresses = source.postalAddresses.map { CNLabeledValue(label: $0.label, value: $0.value) }
+            copy.birthday = source.birthday
+            copy.dates = source.dates.map { CNLabeledValue(label: $0.label, value: $0.value) }
+            copy.socialProfiles = source.socialProfiles.map { CNLabeledValue(label: $0.label, value: $0.value) }
+            copy.instantMessageAddresses = source.instantMessageAddresses.map { CNLabeledValue(label: $0.label, value: $0.value) }
+            copy.urlAddresses = source.urlAddresses.map { CNLabeledValue(label: $0.label, value: $0.value) }
+            copy.contactRelations = source.contactRelations.map { CNLabeledValue(label: $0.label, value: $0.value) }
+            if let imageData = source.imageData {
+                copy.imageData = imageData
+            }
+
+            // Save to iCloud container
+            let saveRequest = CNSaveRequest()
+            saveRequest.add(copy, toContainerWithIdentifier: icloudContainerID)
+            try store.execute(saveRequest)
+
+            logger.info("Copied contact to iCloud: \(source.givenName, privacy: .private) \(source.familyName, privacy: .private) (deleteOriginal: \(deleteOriginal))")
+
+            // Add to SAM group
+            addContactToSAMGroup(identifier: copy.identifier)
+
+            // Delete original if requested (move)
+            if deleteOriginal {
+                // Re-fetch as mutable for deletion
+                let originalKeys: [CNKeyDescriptor] = [CNContactIdentifierKey as CNKeyDescriptor]
+                let original = try store.unifiedContact(withIdentifier: identifier, keysToFetch: originalKeys)
+                let mutableOriginal = original.mutableCopy() as! CNMutableContact
+                let deleteRequest = CNSaveRequest()
+                deleteRequest.delete(mutableOriginal)
+                try store.execute(deleteRequest)
+                logger.info("Deleted original contact after move: \(identifier, privacy: .private)")
+            }
+
+            // Return DTO for the new contact (use detail keys for the DTO)
+            let dtoKeys = ContactDTO.KeySet.detail.keys
+            let created = try store.unifiedContact(withIdentifier: copy.identifier, keysToFetch: dtoKeys)
+            return ContactDTO(from: created)
+
+        } catch {
+            logger.error("Failed to copy contact to iCloud: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
     // MARK: - Write Operations
-    
-    /// Create a new contact group
-    /// Returns true if successful
+
+    /// Create a new contact group in the iCloud container (preferred) or default container.
+    /// Returns true if successful.
     func createGroup(named name: String) async -> Bool {
         guard authorizationStatus() == .authorized else {
             logger.warning("Attempted to create group without authorization")
             return false
         }
-        
+
         do {
             let newGroup = CNMutableGroup()
             newGroup.name = name
-            
+
+            // Prefer iCloud container so the group syncs across devices
+            let containerID = iCloudContainerIdentifier()
+            if containerID != nil {
+                logger.info("Creating group '\(name)' in iCloud container")
+            } else {
+                logger.warning("No iCloud container found — creating group '\(name)' in default container")
+            }
+
             let saveRequest = CNSaveRequest()
-            saveRequest.add(newGroup, toContainerWithIdentifier: nil)
-            
+            saveRequest.add(newGroup, toContainerWithIdentifier: containerID)
+
             try store.execute(saveRequest)
-            
-            logger.info("Successfully created group '\(name)'")
+
+            logger.info("Successfully created group '\(name)' (id: \(newGroup.identifier, privacy: .private))")
             return true
         } catch {
             logger.error("Failed to create group '\(name)': \(error.localizedDescription)")
@@ -793,13 +1070,29 @@ actor ContactsService {
         }
     }
 
+    /// Result of attempting to add a contact to the SAM group.
+    enum AddToGroupResult: Sendable {
+        case added
+        case alreadyMember
+        case noGroupConfigured
+        case containerMismatch
+        case failed(String)
+    }
+
     /// Add a contact to the configured SAM group in Apple Contacts.
     /// Called automatically when SAM creates a contact so it appears in future imports.
-    func addContactToSAMGroup(identifier: String) {
+    @discardableResult
+    func addContactToSAMGroup(identifier: String) -> AddToGroupResult {
         let groupID = UserDefaults.standard.string(forKey: "selectedContactGroupIdentifier") ?? ""
         guard !groupID.isEmpty else {
             logger.debug("No SAM group configured, skipping group assignment")
-            return
+            return .noGroupConfigured
+        }
+
+        // Check if already a member first
+        if isContactInSAMGroup(identifier: identifier) {
+            logger.debug("Contact \(identifier, privacy: .private) already in SAM group")
+            return .alreadyMember
         }
 
         do {
@@ -807,14 +1100,35 @@ actor ContactsService {
             let groups = try store.groups(matching: nil)
             guard let samGroup = groups.first(where: { $0.identifier == groupID }) else {
                 logger.warning("SAM group not found for identifier: \(groupID, privacy: .public)")
-                return
+                return .failed("SAM group not found")
             }
 
+            // Resolve the container the SAM group lives in
+            let groupContainerPredicate = CNContainer.predicateForContainerOfGroup(withIdentifier: groupID)
+            let groupContainer = try store.containers(matching: groupContainerPredicate).first
+
             // Fetch the contact
-            let contact = try store.unifiedContact(
-                withIdentifier: identifier,
+            let predicate = CNContact.predicateForContacts(withIdentifiers: [identifier])
+            let contacts = try store.unifiedContacts(
+                matching: predicate,
                 keysToFetch: [CNContactIdentifierKey as CNKeyDescriptor]
             )
+            guard let contact = contacts.first else {
+                logger.warning("Contact not found for identifier: \(identifier, privacy: .private)")
+                return .failed("Contact not found")
+            }
+
+            // Check if the contact is in the same container as the SAM group.
+            // addMember requires contact and group share a container.
+            if let groupContainerID = groupContainer?.identifier {
+                let contactContainerPredicate = CNContainer.predicateForContainerOfContact(withIdentifier: identifier)
+                let contactContainers = try store.containers(matching: contactContainerPredicate)
+                let sameContainer = contactContainers.contains { $0.identifier == groupContainerID }
+                if !sameContainer {
+                    logger.warning("Contact is in a different container than SAM group — cannot add to group")
+                    return .containerMismatch
+                }
+            }
 
             // Add to group
             let saveRequest = CNSaveRequest()
@@ -822,8 +1136,10 @@ actor ContactsService {
             try store.execute(saveRequest)
 
             logger.info("Added contact \(identifier, privacy: .private) to SAM group")
+            return .added
         } catch {
             logger.warning("Failed to add contact to SAM group: \(error.localizedDescription)")
+            return .failed(error.localizedDescription)
         }
     }
 }

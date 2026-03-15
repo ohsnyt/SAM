@@ -158,6 +158,7 @@ struct ProductionDashboardView: View {
                 Text("60 days").tag(60)
                 Text("90 days").tag(90)
                 Text("180 days").tag(180)
+                Text("1 year").tag(365)
             }
             .pickerStyle(.segmented)
             .frame(maxWidth: 400)

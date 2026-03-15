@@ -885,6 +885,8 @@ struct ContactsSettingsContent: View {
     @State private var availableGroups: [ContactGroupDTO] = []
     @State private var isLoadingGroups = false
     @State private var isCreatingGroup = false
+    @State private var isMigrating = false
+    @State private var samGroupInICloud = true
     @State private var errorMessage: String?
     @State private var authorizationStatus: CNAuthorizationStatus = .notDetermined
 
@@ -971,6 +973,52 @@ struct ContactsSettingsContent: View {
                 .padding(.vertical, 4)
             }
 
+            // iCloud migration warning
+            if !samGroupInICloud && !selectedGroupIdentifier.isEmpty && authorizationStatus == .authorized {
+                GroupBox {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("SAM group is not in iCloud", systemImage: "exclamationmark.icloud")
+                            .font(.headline)
+                            .foregroundStyle(.orange)
+
+                        Text("Your SAM group is stored locally. Contacts in other accounts (like iCloud) can't be added to it, and it won't sync to other devices. Migrate to iCloud to fix this.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        Button {
+                            Task {
+                                isMigrating = true
+                                if let _ = await ContactsService.shared.migrateSAMGroupToICloud() {
+                                    samGroupInICloud = true
+                                    await loadGroups()
+                                    // Update the picker to reflect the new group ID
+                                    let newID = UserDefaults.standard.string(forKey: "selectedContactGroupIdentifier") ?? ""
+                                    if !newID.isEmpty {
+                                        selectedGroupIdentifier = newID
+                                        ContactsImportCoordinator.shared.selectedGroupDidChange()
+                                    }
+                                } else {
+                                    errorMessage = "Migration failed. Check that you have an iCloud account configured in Contacts."
+                                }
+                                isMigrating = false
+                            }
+                        } label: {
+                            if isMigrating {
+                                HStack(spacing: 6) {
+                                    ProgressView().scaleEffect(0.7)
+                                    Text("Migrating...")
+                                }
+                            } else {
+                                Text("Move SAM Group to iCloud")
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(isMigrating)
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+
             Divider()
 
             // Auto-import toggle
@@ -1032,6 +1080,10 @@ struct ContactsSettingsContent: View {
 
         if status == .authorized {
             await loadGroups()
+            let inICloud = await ContactsService.shared.isSAMGroupInICloud()
+            await MainActor.run {
+                samGroupInICloud = inICloud
+            }
         }
     }
 

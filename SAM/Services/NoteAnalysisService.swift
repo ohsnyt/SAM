@@ -309,7 +309,8 @@ actor NoteAnalysisService {
         - action_items[].suggested_channel: one of "sms", "email", "phone", or null
         - discovered_relationships[].relationship_type: freeform label describing the relationship (e.g. "sister", "father", "daughter-in-law", "business partner", "referred by", "mentor")
         - discovered_relationships[].relationship_category: one of "family", "business"
-        - life_events[].event_type: one of "new_baby", "marriage", "graduation", "job_change", "retirement", "moving", "health_issue", "promotion", "anniversary", "loss", "other"
+        - life_events[].event_type: one of "new_baby", "marriage", "graduation", "job_change", "retirement", "moving", "health_issue", "promotion", "anniversary", "loss", "death", "other"
+        - Use "death" when the note indicates the person themselves has passed away. Use "loss" when they experienced the death of someone else (family member, friend, etc.).
 
         Rules:
         - Only extract information explicitly stated or strongly implied in the note
@@ -317,6 +318,7 @@ actor NoteAnalysisService {
         - For send_congratulations/send_reminder, draft a warm, professional message in suggested_text
         - For discovered_relationships, flag spousal, familial, referral, or business connections mentioned in the note
         - For life_events, extract any mentioned life milestones, transitions, or personal events. Include an outreach suggestion.
+        - IMPORTANT: If the note indicates that the person themselves has died or passed away, use event_type "death" with their name as person_name. Use "loss" only when the person experienced someone else's death.
         - Confidence reflects how certain you are (0.5 = implied, 0.9 = explicit)
         - If the note is too short or ambiguous, return empty arrays - do not hallucinate
         - Use null (not "null") for absent optional fields

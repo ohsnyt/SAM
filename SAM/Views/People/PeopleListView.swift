@@ -68,6 +68,7 @@ struct PeopleListView: View {
 
     @State private var searchText = ""
     @State private var sortOrder: PeopleSortOrder = .firstName
+    @State private var personToDelete: SamPerson?
 
     /// Role filters are shared with the graph coordinator so switching between
     /// Contacts and Graph views preserves the active filter.
@@ -436,15 +437,51 @@ struct PeopleListView: View {
                         Button("Archive", systemImage: "archivebox") {
                             applyLifecycleChange(.archived, for: person)
                         }
+                        Button("Do Not Contact", systemImage: "hand.raised") {
+                            applyLifecycleChange(.dnc, for: person)
+                        }
+                        Button("Mark as Deceased", systemImage: "heart.slash") {
+                            applyLifecycleChange(.deceased, for: person)
+                        }
                     } else {
                         Button("Reactivate", systemImage: "arrow.uturn.backward") {
                             applyLifecycleChange(.active, for: person)
                         }
                     }
+
+                    Divider()
+
+                    Button("Delete", systemImage: "trash", role: .destructive) {
+                        personToDelete = person
+                    }
                 }
             }
         }
         .listStyle(.sidebar)
+        .alert(
+            "Delete Person?",
+            isPresented: Binding(
+                get: { personToDelete != nil },
+                set: { if !$0 { personToDelete = nil } }
+            )
+        ) {
+            Button("Delete", role: .destructive) {
+                if let person = personToDelete {
+                    if selectedPersonID == person.id {
+                        selectedPersonID = nil
+                    }
+                    try? PeopleRepository.shared.delete(person: person)
+                    personToDelete = nil
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                personToDelete = nil
+            }
+        } message: {
+            if let person = personToDelete {
+                Text("Permanently delete \(person.displayNameCache ?? person.displayName)? This removes them from SAM but not from Apple Contacts.")
+            }
+        }
     }
 
     // MARK: - No Match State

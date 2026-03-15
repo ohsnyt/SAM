@@ -55,7 +55,11 @@ final class OutcomeRepository {
     /// Returns the highest-priority active outcome for the person, or nil.
     func fetchTopActiveOutcome(forPersonID personID: UUID) -> SamOutcome? {
         guard let active = try? fetchActive() else { return nil }
-        return active.first { $0.linkedPerson?.id == personID }
+        return active.first { outcome in
+            guard let person = outcome.linkedPerson,
+                  !person.isDeleted else { return false }
+            return person.id == personID
+        }
     }
 
     /// Fetch completed outcomes, most recent first.

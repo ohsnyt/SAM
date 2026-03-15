@@ -79,7 +79,10 @@ final class UnknownSenderRepository {
         // Fetch all existing unknown senders for lookup
         let descriptor = FetchDescriptor<UnknownSender>()
         let existing = try modelContext.fetch(descriptor)
-        let existingByEmail = Dictionary(uniqueKeysWithValues: existing.map { ($0.email, $0) })
+        let existingByEmail = Dictionary(
+            existing.map { ($0.email, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
 
         var created = 0
         var updated = 0

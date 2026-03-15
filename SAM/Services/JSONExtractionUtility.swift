@@ -16,6 +16,19 @@ enum JSONExtraction {
     nonisolated static func extractJSON(from rawResponse: String) -> String {
         var text = rawResponse.trimmingCharacters(in: .whitespacesAndNewlines)
 
+        // Strip Qwen3-style <think>...</think> reasoning blocks
+        while let thinkStart = text.range(of: "<think>", options: .caseInsensitive),
+              let thinkEnd = text.range(of: "</think>", options: .caseInsensitive,
+                                        range: thinkStart.upperBound..<text.endIndex) {
+            text.removeSubrange(thinkStart.lowerBound...thinkEnd.upperBound)
+            text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        // Also strip an orphaned opening <think> with no closing tag
+        if let orphanStart = text.range(of: "<think>", options: .caseInsensitive) {
+            text = String(text[..<orphanStart.lowerBound])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
         // Sanitize common Unicode characters that break JSON parsing
         text = text
             .replacingOccurrences(of: "\u{2013}", with: "-")  // en-dash

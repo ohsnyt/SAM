@@ -11,6 +11,7 @@
 
 import SwiftUI
 import SwiftData
+import TipKit
 
 struct CommandPaletteView: View {
 
@@ -29,6 +30,7 @@ struct CommandPaletteView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            TipView(CommandPaletteTip())
             // Search field
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")

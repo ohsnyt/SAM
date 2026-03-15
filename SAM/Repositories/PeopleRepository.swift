@@ -321,17 +321,24 @@ final class PeopleRepository {
         var created = 0
         var updated = 0
 
-        // Fetch all existing people with contactIdentifiers
-        let descriptor = FetchDescriptor<SamPerson>(
-            predicate: #Predicate { $0.contactIdentifier != nil }
-        )
-        let existingPeople = try modelContext.fetch(descriptor)
+        // Fetch ALL existing people (not just those with contactIdentifiers)
+        let descriptor = FetchDescriptor<SamPerson>()
+        let allExistingPeople = try modelContext.fetch(descriptor)
 
-        // Create lookup dictionary for fast matching
+        // Create lookup by contactIdentifier (keep first if duplicates exist)
         let existingByIdentifier = Dictionary(
-            uniqueKeysWithValues: existingPeople.compactMap { person in
+            allExistingPeople.compactMap { person in
                 person.contactIdentifier.map { ($0, person) }
-            }
+            },
+            uniquingKeysWith: { first, _ in first }
+        )
+
+        // Create lookup by lowercased display name for standalone (no contactIdentifier) matching
+        let standaloneByName = Dictionary(
+            allExistingPeople
+                .filter { $0.contactIdentifier == nil }
+                .map { ((($0.displayNameCache ?? $0.displayName).lowercased()), $0) },
+            uniquingKeysWith: { first, _ in first }
         )
 
         // Process each contact
@@ -340,9 +347,18 @@ final class PeopleRepository {
             let primaryEmail = canonicalEmails.first
             let canonicalPhones = contact.phoneNumbers.compactMap { canonicalizePhone($0.number) }
 
-            if let existing = existingByIdentifier[contact.identifier] {
-                // Only update fields that actually changed
+            // First try exact contactIdentifier match, then fall back to name match
+            // for standalone SamPerson records (e.g. from social imports)
+            let existing: SamPerson? = existingByIdentifier[contact.identifier]
+                ?? standaloneByName[contact.displayName.lowercased()]
+
+            if let existing {
+                // Link standalone SamPerson to this contact if not yet linked
                 var changed = false
+                if existing.contactIdentifier != contact.identifier {
+                    existing.contactIdentifier = contact.identifier
+                    changed = true
+                }
 
                 if existing.displayNameCache != contact.displayName {
                     existing.displayNameCache = contact.displayName
@@ -402,6 +418,131 @@ final class PeopleRepository {
         logger.info("Bulk upsert complete: \(created) created, \(updated) updated")
 
         return (created, updated)
+    }
+
+    /// Merge duplicate SamPerson records that share the same contactIdentifier
+    /// or the same display name (when at least one has a contactIdentifier).
+    /// Keeps the record with the most linked data and moves relationships from duplicates.
+    /// Returns the number of duplicates removed.
+    func mergeDuplicateContacts() throws -> Int {
+        guard let modelContext = modelContext else {
+            throw RepositoryError.notConfigured
+        }
+
+        let allDescriptor = FetchDescriptor<SamPerson>(
+            predicate: #Predicate { $0.isMe == false }
+        )
+        let allPeople = try modelContext.fetch(allDescriptor)
+
+        // Build duplicate groups: same contactIdentifier OR same display name
+        var grouped: [String: [SamPerson]] = [:]
+
+        // Group by contactIdentifier first
+        for person in allPeople {
+            guard let cid = person.contactIdentifier else { continue }
+            grouped["cid:\(cid)", default: []].append(person)
+        }
+
+        // Group by display name — only merge name-based duplicates when at least
+        // one has a contactIdentifier (avoids merging two unknowns with similar names)
+        var byName: [String: [SamPerson]] = [:]
+        for person in allPeople {
+            let name = (person.displayNameCache ?? person.displayName).lowercased()
+            guard !name.isEmpty else { continue }
+            byName[name, default: []].append(person)
+        }
+        for (name, people) in byName where people.count > 1 {
+            let hasLinked = people.contains { $0.contactIdentifier != nil }
+            if hasLinked {
+                // Merge into the "name:" group — dedup with contactIdentifier groups below
+                grouped["name:\(name)", default: []].append(contentsOf: people)
+            }
+        }
+
+        // Flatten: collect all unique people per duplicate group, dedup across groups
+        var processed = Set<UUID>()
+        var mergeGroups: [[SamPerson]] = []
+        for (_, people) in grouped {
+            let unique = people.filter { !processed.contains($0.id) }
+            if unique.count > 1 {
+                mergeGroups.append(unique)
+                for p in unique { processed.insert(p.id) }
+            }
+        }
+
+        var mergedCount = 0
+        for people in mergeGroups {
+            // Keep the one with more linked data; prefer one with a contactIdentifier
+            let sorted = people.sorted { (a: SamPerson, b: SamPerson) -> Bool in
+                // Prefer the one with a contactIdentifier
+                let aHasContact = a.contactIdentifier != nil
+                let bHasContact = b.contactIdentifier != nil
+                if aHasContact != bHasContact { return aHasContact }
+                let aWeight = a.linkedNotes.count + a.linkedEvidence.count + a.stageTransitions.count
+                let bWeight = b.linkedNotes.count + b.linkedEvidence.count + b.stageTransitions.count
+                if aWeight != bWeight { return aWeight > bWeight }
+                return (a.lastSyncedAt ?? .distantPast) < (b.lastSyncedAt ?? .distantPast)
+            }
+
+            let primary = sorted[0]
+            let duplicates = sorted.dropFirst()
+
+            for dup in duplicates {
+                // Copy contactIdentifier to primary if it doesn't have one
+                if primary.contactIdentifier == nil, let cid = dup.contactIdentifier {
+                    primary.contactIdentifier = cid
+                }
+
+                // Move nullify relationships to primary
+                for note in dup.linkedNotes where !primary.linkedNotes.contains(where: { $0.id == note.id }) {
+                    primary.linkedNotes.append(note)
+                }
+                for evidence in dup.linkedEvidence where !primary.linkedEvidence.contains(where: { $0.id == evidence.id }) {
+                    primary.linkedEvidence.append(evidence)
+                }
+                for participation in dup.participations {
+                    participation.person = primary
+                }
+                for insight in dup.insights {
+                    insight.samPerson = primary
+                }
+                for transition in dup.stageTransitions {
+                    transition.person = primary
+                }
+                for stage in dup.recruitingStages {
+                    stage.person = primary
+                }
+                for record in dup.productionRecords {
+                    record.person = primary
+                }
+                // Move referrals
+                for referral in dup.referrals {
+                    referral.referredBy = primary
+                }
+                if let referrer = dup.referredBy, primary.referredBy == nil {
+                    primary.referredBy = referrer
+                }
+
+                // Preserve richer metadata on primary
+                if primary.relationshipSummary == nil, let summary = dup.relationshipSummary {
+                    primary.relationshipSummary = summary
+                    primary.relationshipKeyThemes = dup.relationshipKeyThemes
+                    primary.relationshipNextSteps = dup.relationshipNextSteps
+                }
+
+                logger.info("Merging duplicate SamPerson '\(dup.displayNameCache ?? dup.displayName, privacy: .private)' into primary")
+                modelContext.delete(dup)
+                mergedCount += 1
+            }
+        }
+
+        if mergedCount > 0 {
+            try modelContext.save()
+            logger.info("Merged \(mergedCount) duplicate SamPerson records")
+            NotificationCenter.default.post(name: .samPersonDidChange, object: nil)
+        }
+
+        return mergedCount
     }
 
     /// Delete a person

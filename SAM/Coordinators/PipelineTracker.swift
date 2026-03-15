@@ -45,9 +45,9 @@ final class PipelineTracker {
     var productionPendingCount: Int = 0
     var productionPendingAging: [PendingAgingItem] = []
     var productionAllRecords: [ProductionRecordItem] = []
-    var productionWindowDays: Int = 90
+    var productionWindowDays: Int = 365
 
-    var configWindowDays: Int = 90
+    var configWindowDays: Int = 365
 
     // MARK: - Refresh
 

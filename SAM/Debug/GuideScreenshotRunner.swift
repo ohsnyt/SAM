@@ -297,6 +297,8 @@ final class GuideScreenshotRunner {
           Goals view (business/images/bi-02.png)
           Client pipeline funnel (business/images/bi-03.png)
           Strategic insights (business/images/bi-04.png)
+          Recruiting pipeline (business/images/bi-05.png)
+          Production dashboard (business/images/bi-06.png)
           Content drafts (grow/images/gr-02.png)
           Social promotion sheet (events/images/05-01.png)
           Presentations tab (events/images/06-01.png)

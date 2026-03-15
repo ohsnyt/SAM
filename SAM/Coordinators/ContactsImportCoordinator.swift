@@ -242,6 +242,12 @@ final class ContactsImportCoordinator {
                 }
             }
 
+            // Merge any duplicate SamPerson records sharing the same contactIdentifier
+            let merged = try peopleRepo.mergeDuplicateContacts()
+            if merged > 0 {
+                logger.info("Merged \(merged) duplicate SamPerson record(s)")
+            }
+
             // Detect and clear stale contactIdentifiers (deleted Apple Contacts)
             let allPeopleWithContacts = try peopleRepo.fetchAll().compactMap { $0.contactIdentifier }
             if !allPeopleWithContacts.isEmpty {
@@ -302,10 +308,13 @@ final class ContactsImportCoordinator {
 
         // Build lookup: all people indexed by contactIdentifier
         guard let allPeople = try? peopleRepo.fetchAll() else { return }
-        let byContactID = Dictionary(uniqueKeysWithValues: allPeople.compactMap { person -> (String, SamPerson)? in
-            guard let cid = person.contactIdentifier else { return nil }
-            return (cid, person)
-        })
+        let byContactID = Dictionary(
+            allPeople.compactMap { person -> (String, SamPerson)? in
+                guard let cid = person.contactIdentifier else { return nil }
+                return (cid, person)
+            },
+            uniquingKeysWith: { first, _ in first }
+        )
 
         // Build name lookup for fuzzy matching: lowercased first name → [SamPerson]
         var byGivenName: [String: [SamPerson]] = [:]

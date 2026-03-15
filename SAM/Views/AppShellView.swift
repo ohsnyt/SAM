@@ -25,6 +25,7 @@ struct AppShellView: View {
     @State private var capturePayload: CapturePayload?
     @State private var showCommandPalette = false
     @State private var introCoordinator = IntroSequenceCoordinator.shared
+    @State private var noteAnalysisCoordinator = NoteAnalysisCoordinator.shared
     @State private var peopleMode: PeopleMode = .contacts
     @State private var peopleSpecialFilters: Set<PeopleSpecialFilter> = []
     @State private var eventSection: EventManagerView.EventSection = .events
@@ -93,6 +94,26 @@ struct AppShellView: View {
         }
         .overlay(alignment: .bottom) {
             UndoToastView()
+        }
+        .alert(
+            "Mark as Deceased?",
+            isPresented: Binding(
+                get: { noteAnalysisCoordinator.deceasedCandidate != nil },
+                set: { if !$0 { noteAnalysisCoordinator.dismissDeceasedCandidate() } }
+            )
+        ) {
+            Button("Mark as Deceased", role: .destructive) {
+                if let candidate = noteAnalysisCoordinator.deceasedCandidate {
+                    noteAnalysisCoordinator.confirmDeceased(candidate)
+                }
+            }
+            Button("Not Now", role: .cancel) {
+                noteAnalysisCoordinator.dismissDeceasedCandidate()
+            }
+        } message: {
+            if let candidate = noteAnalysisCoordinator.deceasedCandidate {
+                Text("SAM detected that \(candidate.person.displayName) may have passed away: \"\(candidate.eventDescription)\"\n\nWould you like to mark them as deceased? This will stop all coaching and outreach suggestions for this person.")
+            }
         }
         .sheet(isPresented: Binding(
             get: { introCoordinator.showIntroSequence },

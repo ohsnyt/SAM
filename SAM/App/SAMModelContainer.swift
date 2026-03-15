@@ -12,6 +12,10 @@
 import SwiftData
 import Foundation
 import Combine
+import SQLite3
+import os.log
+
+private let containerLogger = Logger(subsystem: "com.matthewsessions.SAM", category: "SAMModelContainer")
 
 // ─────────────────────────────────────────────────────────────────────
 // MARK: - Schema
@@ -80,9 +84,34 @@ enum SAMModelContainer {
     // a SchemaMigrationPlan.
     static let schemaVersion = "SAM_v34"
 
+    /// Force a WAL checkpoint on the SQLite store to flush pending deletes.
+    /// Prevents SwiftData crashes when accessing deleted-but-not-checkpointed records.
+    private nonisolated static func checkpointStoreIfNeeded() {
+        let url = defaultStoreURL
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+
+        var db: OpaquePointer?
+        guard sqlite3_open_v2(url.path, &db, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK else { return }
+        defer { sqlite3_close(db) }
+
+        // TRUNCATE mode: checkpoint WAL and truncate the WAL file
+        var logSize: Int32 = 0
+        var checkpointCount: Int32 = 0
+        let rc = sqlite3_wal_checkpoint_v2(db, nil, SQLITE_CHECKPOINT_TRUNCATE, &logSize, &checkpointCount)
+        if rc == SQLITE_OK {
+            containerLogger.info("WAL checkpoint complete: \(checkpointCount) pages checkpointed")
+        } else {
+            containerLogger.warning("WAL checkpoint returned \(rc)")
+        }
+    }
+
     #if DEBUG
     // Backing storage for mutable shared container in DEBUG builds.
     nonisolated(unsafe) private static var _shared: ModelContainer = {
+        // Flush pending WAL changes and fix orphaned references before opening
+        checkpointStoreIfNeeded()
+        cleanupOrphanedReferences()
+
         let schema     = Schema(SAMSchema.allModels)
         let config     = ModelConfiguration(
             schemaVersion,
@@ -142,6 +171,10 @@ enum SAMModelContainer {
     #else
     /// Immutable shared container for production.
     nonisolated static let shared: ModelContainer = {
+        // Flush pending WAL changes and fix orphaned references before opening
+        checkpointStoreIfNeeded()
+        cleanupOrphanedReferences()
+
         let schema     = Schema(SAMSchema.allModels)
         let config     = ModelConfiguration(
             schemaVersion,
@@ -163,6 +196,82 @@ enum SAMModelContainer {
     /// created it.
     nonisolated static func newContext() -> ModelContext {
         ModelContext(shared)
+    }
+
+    // MARK: - Startup Cleanup
+
+    /// Clean up orphaned references to deleted SamPerson records.
+    /// SwiftData's .nullify delete rule doesn't always fire reliably,
+    /// so we use raw SQL to nil out stale linkedPerson foreign keys.
+    /// Runs before SwiftData opens the store to prevent faulting crashes.
+    private nonisolated static func cleanupOrphanedReferences() {
+        let url = defaultStoreURL
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+
+        var db: OpaquePointer?
+        guard sqlite3_open_v2(url.path, &db, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK else { return }
+        defer { sqlite3_close(db) }
+
+        // Find all tables that have a ZLINKEDPERSON column pointing to ZSAMPERSON
+        // and null out any that reference deleted rows.
+        // Also handle other relationship columns that point to SamPerson.
+        let fkColumns = ["ZLINKEDPERSON", "ZLINKEDCONTEXT"]
+        let personTable = "ZSAMPERSON"
+
+        // First verify the person table exists
+        var tableCheck: OpaquePointer?
+        let checkSQL = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='\(personTable)'"
+        guard sqlite3_prepare_v2(db, checkSQL, -1, &tableCheck, nil) == SQLITE_OK,
+              sqlite3_step(tableCheck) == SQLITE_ROW,
+              sqlite3_column_int(tableCheck, 0) > 0 else {
+            sqlite3_finalize(tableCheck)
+            return
+        }
+        sqlite3_finalize(tableCheck)
+
+        // Find all tables and check which ones have FK columns to person
+        var tables: OpaquePointer?
+        let tablesSQL = "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'Z%'"
+        guard sqlite3_prepare_v2(db, tablesSQL, -1, &tables, nil) == SQLITE_OK else { return }
+
+        var totalCleaned = 0
+        while sqlite3_step(tables) == SQLITE_ROW {
+            guard let tableNameC = sqlite3_column_text(tables, 0) else { continue }
+            let tableName = String(cString: tableNameC)
+
+            for col in fkColumns {
+                // Check if this table has the column
+                let colCheckSQL = "SELECT COUNT(*) FROM pragma_table_info('\(tableName)') WHERE name='\(col)'"
+                var colCheck: OpaquePointer?
+                guard sqlite3_prepare_v2(db, colCheckSQL, -1, &colCheck, nil) == SQLITE_OK,
+                      sqlite3_step(colCheck) == SQLITE_ROW,
+                      sqlite3_column_int(colCheck, 0) > 0 else {
+                    sqlite3_finalize(colCheck)
+                    continue
+                }
+                sqlite3_finalize(colCheck)
+
+                // Null out orphaned references
+                let cleanSQL = """
+                    UPDATE \(tableName) SET \(col) = NULL
+                    WHERE \(col) IS NOT NULL
+                    AND \(col) NOT IN (SELECT Z_PK FROM \(personTable))
+                    """
+                var cleanStmt: OpaquePointer?
+                if sqlite3_prepare_v2(db, cleanSQL, -1, &cleanStmt, nil) == SQLITE_OK {
+                    if sqlite3_step(cleanStmt) == SQLITE_DONE {
+                        let changes = Int(sqlite3_changes(db))
+                        totalCleaned += changes
+                    }
+                }
+                sqlite3_finalize(cleanStmt)
+            }
+        }
+        sqlite3_finalize(tables)
+
+        if totalCleaned > 0 {
+            containerLogger.info("Orphan cleanup: nullified \(totalCleaned) stale person references")
+        }
     }
 
     // MARK: - One-Time Migrations

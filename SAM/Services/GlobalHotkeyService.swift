@@ -82,7 +82,7 @@ final class GlobalHotkeyService {
     func registerHotkey() {
         guard globalMonitor == nil else { return }
 
-        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { event in
             // ⌃⇧V: control + shift + keyCode 9 (V key)
             guard event.modifierFlags.contains([.control, .shift]),
                   event.keyCode == 9 else { return }

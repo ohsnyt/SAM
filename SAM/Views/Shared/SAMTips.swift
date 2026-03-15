@@ -35,6 +35,8 @@ enum SAMTipGuideMapping {
         case is EventManagerTip:         return "events.overview"
         case is PresentationLibraryTip:  return "events.presentation-library"
         case is GrowDashboardTip:        return "grow.lead-acquisition"
+        case is ClipboardCaptureTip:     return "getting-started.clipboard-capture"
+        case is CommandPaletteTip:       return "search.overview"
         default:                         return nil
         }
     }
@@ -75,6 +77,8 @@ enum SAMTipState {
         EventManagerTip.self,
         PresentationLibraryTip.self,
         GrowDashboardTip.self,
+        ClipboardCaptureTip.self,
+        CommandPaletteTip.self,
     ]
 
     /// Turn tips on: reset eligibility for all tips so they reappear.
@@ -100,6 +104,8 @@ enum SAMTipState {
             await EventManagerTip().resetEligibility()
             await PresentationLibraryTip().resetEligibility()
             await GrowDashboardTip().resetEligibility()
+            await ClipboardCaptureTip().resetEligibility()
+            await CommandPaletteTip().resetEligibility()
             logger.info("All tips re-enabled via resetEligibility")
         }
     }
@@ -126,6 +132,8 @@ enum SAMTipState {
         EventManagerTip().invalidate(reason: .tipClosed)
         PresentationLibraryTip().invalidate(reason: .tipClosed)
         GrowDashboardTip().invalidate(reason: .tipClosed)
+        ClipboardCaptureTip().invalidate(reason: .tipClosed)
+        CommandPaletteTip().invalidate(reason: .tipClosed)
         logger.info("All tips disabled via invalidate")
     }
 
@@ -391,6 +399,30 @@ struct GrowDashboardTip: Tip {
         Text("Analyze your social media profiles for improvement opportunities and get AI-generated content ideas. Import your LinkedIn or Substack data in Settings to get started.")
     }
     var image: Image? { Image(systemName: "chart.line.uptrend.xyaxis") }
+    var actions: [Action] {
+        [Action(id: "learn-more", title: "Learn more")]
+    }
+}
+
+// MARK: - Cross-Cutting Tips
+
+struct ClipboardCaptureTip: Tip {
+    var title: Text { Text("Clipboard Capture") }
+    var message: Text? {
+        Text("Press \u{2303}\u{21E7}V anywhere to capture a copied conversation. SAM parses it, matches senders to your contacts, and saves it as evidence.")
+    }
+    var image: Image? { Image(systemName: "doc.on.clipboard") }
+    var actions: [Action] {
+        [Action(id: "learn-more", title: "Learn more")]
+    }
+}
+
+struct CommandPaletteTip: Tip {
+    var title: Text { Text("Quick Commands") }
+    var message: Text? {
+        Text("Press \u{2318}K to open the command palette. Jump to any section, search for people, or start a quick note \u{2014} all without leaving your keyboard.")
+    }
+    var image: Image? { Image(systemName: "command") }
     var actions: [Action] {
         [Action(id: "learn-more", title: "Learn more")]
     }

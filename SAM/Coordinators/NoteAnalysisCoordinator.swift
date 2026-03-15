@@ -47,6 +47,16 @@ final class NoteAnalysisCoordinator {
     /// Error message if analysis failed
     var lastError: String?
 
+    /// Person detected as deceased from note analysis, pending user confirmation
+    var deceasedCandidate: DeceasedCandidate?
+
+    /// Holds a person detected as deceased so the UI can prompt the user
+    struct DeceasedCandidate: Identifiable {
+        let id = UUID()
+        let person: SamPerson
+        let eventDescription: String
+    }
+
     // MARK: - Model Availability
 
     /// Check if on-device LLM is available
@@ -178,6 +188,9 @@ final class NoteAnalysisCoordinator {
             // Step 10: Auto-create outcomes from extracted action items
             await createOutcomesFromAnalysis(note)
 
+            // Step 11: Detect death events and prompt to mark as deceased
+            detectDeceasedFromLifeEvents(lifeEvents, linkedPeople: note.linkedPeople)
+
             // Update state
             analysisStatus = .success
             lastAnalyzedAt = .now
@@ -225,6 +238,59 @@ final class NoteAnalysisCoordinator {
             lastError = error.localizedDescription
             logger.error("Batch analysis failed: \(error)")
         }
+    }
+
+    // MARK: - Deceased Detection
+
+    /// Check life events for a "death" event matching a linked person and surface a prompt
+    private func detectDeceasedFromLifeEvents(_ lifeEvents: [LifeEvent], linkedPeople: [SamPerson]) {
+        guard !lifeEvents.isEmpty, !linkedPeople.isEmpty else { return }
+
+        for event in lifeEvents where event.eventType == "death" {
+            // Match by name against linked people who are still active
+            if let match = linkedPeople.first(where: {
+                $0.lifecycleStatus == .active &&
+                $0.displayName.localizedCaseInsensitiveContains(event.personName)
+            }) {
+                deceasedCandidate = DeceasedCandidate(
+                    person: match,
+                    eventDescription: event.eventDescription
+                )
+                logger.info("Detected death event for \(match.displayName), prompting user")
+                return // Only one prompt at a time
+            }
+        }
+    }
+
+    /// User confirmed: mark the person as deceased
+    func confirmDeceased(_ candidate: DeceasedCandidate) {
+        let previousStatus = candidate.person.lifecycleStatusRawValue
+        let personName = candidate.person.displayNameCache ?? candidate.person.displayName
+
+        let snapshot = LifecycleChangeSnapshot(
+            personID: candidate.person.id,
+            personName: personName,
+            previousStatusRawValue: previousStatus,
+            newStatusRawValue: ContactLifecycleStatus.deceased.rawValue
+        )
+        if let entry = try? UndoRepository.shared.capture(
+            operation: .statusChanged,
+            entityType: .person,
+            entityID: candidate.person.id,
+            entityDisplayName: personName,
+            snapshot: snapshot
+        ) {
+            UndoCoordinator.shared.showToast(for: entry)
+        }
+
+        try? PeopleRepository.shared.setLifecycleStatus(.deceased, for: candidate.person)
+        NotificationCenter.default.post(name: .samPersonDidChange, object: nil)
+        deceasedCandidate = nil
+    }
+
+    /// User dismissed the deceased prompt
+    func dismissDeceasedCandidate() {
+        deceasedCandidate = nil
     }
 
     // MARK: - Relationship Summary

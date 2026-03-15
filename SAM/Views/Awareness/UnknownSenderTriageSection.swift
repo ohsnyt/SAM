@@ -482,15 +482,37 @@ struct UnknownSenderTriageSection: View {
                         logger.error("Failed to create SamPerson for \(sender.email, privacy: .private): \(error)")
                     }
                 } else {
-                    // Email/calendar senders → search ALL Apple Contacts for a match
-                    let existingMatches = await contactsService.searchContacts(
-                        query: displayName,
-                        keys: .detail
-                    )
-                    let existingContact: ContactDTO? = existingMatches.first { match in
-                        let nameMatch = match.displayName.lowercased() == displayName.lowercased()
-                        let emailMatch = match.emailAddresses.contains { $0.lowercased() == sender.email.lowercased() }
-                        return nameMatch || emailMatch
+                    // Email/calendar/iMessage senders → search ALL Apple Contacts for a match
+                    // Determine if this sender is phone-based (iMessage phone handle)
+                    let senderIsPhone = !sender.email.contains("@") && sender.email.filter(\.isNumber).count >= 7
+
+                    var existingContact: ContactDTO?
+
+                    if senderIsPhone {
+                        // Search by phone number
+                        let phoneMatches = await contactsService.searchContactsByPhone(
+                            phoneNumber: sender.email,
+                            keys: .detail
+                        )
+                        existingContact = phoneMatches.first
+                    }
+
+                    // Also search by name (works for email senders and as a fallback)
+                    if existingContact == nil {
+                        let nameMatches = await contactsService.searchContacts(
+                            query: displayName,
+                            keys: .detail
+                        )
+                        existingContact = nameMatches.first { match in
+                            let nameMatch = match.displayName.lowercased() == displayName.lowercased()
+                            let emailMatch = match.emailAddresses.contains { $0.lowercased() == sender.email.lowercased() }
+                            let phoneMatch: Bool = {
+                                guard senderIsPhone else { return false }
+                                let senderDigits = String(sender.email.filter(\.isNumber).suffix(10))
+                                return match.phoneNumbers.contains { String($0.number.filter(\.isNumber).suffix(10)) == senderDigits }
+                            }()
+                            return nameMatch || emailMatch || phoneMatch
+                        }
                     }
 
                     if let existing = existingContact {
@@ -512,10 +534,11 @@ struct UnknownSenderTriageSection: View {
                             )
                         }
                     } else {
-                        // No match → create new contact (existing behavior)
+                        // No match → create new contact
+                        // Don't pass phone numbers as email addresses
                         guard let created = await contactsService.createContact(
                             fullName: displayName,
-                            email: sender.email,
+                            email: senderIsPhone ? nil : sender.email,
                             note: nil
                         ) else {
                             logger.error("Failed to create contact for \(sender.email, privacy: .private)")

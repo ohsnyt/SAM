@@ -63,6 +63,24 @@ actor MLXModelManager {
             sizeGB: 4.0,
             isDownloaded: false
         ),
+        ModelInfo(
+            id: "mlx-community/Qwen3-8B-4bit",
+            displayName: "Qwen 3 8B",
+            sizeGB: 4.5,
+            isDownloaded: false
+        ),
+        ModelInfo(
+            id: "mlx-community/DeepSeek-R1-Distill-Qwen-7B-MLX",
+            displayName: "DeepSeek R1 Distill Qwen 7B",
+            sizeGB: 4.5,
+            isDownloaded: false
+        ),
+        ModelInfo(
+            id: "Qwen/Qwen3-14B-MLX-4bit",
+            displayName: "Qwen 3 14B",
+            sizeGB: 12.0,
+            isDownloaded: false
+        ),
     ]
 
     /// Currently selected model ID (UserDefaults-backed).
