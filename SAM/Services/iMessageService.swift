@@ -30,12 +30,14 @@ actor iMessageService {
 
         let sinceTimestamp = dateToiMessageTimestamp(since)
 
-        // Check if is_spam / is_junk columns exist (available on macOS 14+)
-        let hasSpamColumns = columnExists(db: db, table: "message", column: "is_spam")
+        // Check which spam/junk columns exist (availability varies by macOS version)
+        let hasSpam = columnExists(db: db, table: "message", column: "is_spam")
+        let hasJunk = columnExists(db: db, table: "message", column: "is_junk")
 
-        let spamFilter = hasSpamColumns
-            ? "AND COALESCE(m.is_spam, 0) = 0 AND COALESCE(m.is_junk, 0) = 0"
-            : ""
+        var spamClauses: [String] = []
+        if hasSpam { spamClauses.append("COALESCE(m.is_spam, 0) = 0") }
+        if hasJunk { spamClauses.append("COALESCE(m.is_junk, 0) = 0") }
+        let spamFilter = spamClauses.isEmpty ? "" : "AND " + spamClauses.joined(separator: " AND ")
 
         let query = """
             SELECT
@@ -57,8 +59,8 @@ actor iMessageService {
             ORDER BY m.date ASC
             """
 
-        if hasSpamColumns {
-            logger.debug("Spam/junk filtering enabled for Messages database")
+        if hasSpam || hasJunk {
+            logger.debug("Spam/junk filtering enabled (is_spam: \(hasSpam), is_junk: \(hasJunk))")
         }
 
         var stmt: OpaquePointer?
@@ -155,7 +157,15 @@ actor iMessageService {
         let db = try openDatabase(at: dbURL)
         defer { sqlite3_close(db) }
 
-        guard columnExists(db: db, table: "message", column: "is_spam") else { return [] }
+        let hasSpam = columnExists(db: db, table: "message", column: "is_spam")
+        let hasJunk = columnExists(db: db, table: "message", column: "is_junk")
+        guard hasSpam || hasJunk else { return [] }
+
+        // Build junk detection expression from available columns
+        var junkCases: [String] = []
+        if hasSpam { junkCases.append("COALESCE(m.is_spam, 0) = 1") }
+        if hasJunk { junkCases.append("COALESCE(m.is_junk, 0) = 1") }
+        let junkExpr = junkCases.joined(separator: " OR ")
 
         // Find handles where every message is junk/spam (no legitimate messages)
         let query = """
@@ -164,7 +174,7 @@ actor iMessageService {
             JOIN message m ON m.handle_id = h.ROWID
             WHERE m.is_from_me = 0
             GROUP BY h.id
-            HAVING COUNT(*) = SUM(CASE WHEN COALESCE(m.is_spam, 0) = 1 OR COALESCE(m.is_junk, 0) = 1 THEN 1 ELSE 0 END)
+            HAVING COUNT(*) = SUM(CASE WHEN \(junkExpr) THEN 1 ELSE 0 END)
                AND COUNT(*) > 0
             """
 
