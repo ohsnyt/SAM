@@ -657,8 +657,7 @@ final class FacebookImportCoordinator {
         var isDir: ObjCBool = false
         if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
             // Direct folder import — skip unzipping
-            importStatus = .parsing
-            progressMessage = "Reading JSON files…"
+            // Note: don't set importStatus here — loadFolder sets it and guards against re-entry
             BookmarkManager.shared.saveFacebookFolderBookmark(url)
             await loadFolder(url: url)
         } else {

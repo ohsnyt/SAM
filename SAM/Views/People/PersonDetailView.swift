@@ -13,6 +13,7 @@ import SwiftUI
 import SwiftData
 import Contacts
 import TipKit
+import UniformTypeIdentifiers
 import os.log
 
 private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "PersonDetailView")
@@ -51,6 +52,10 @@ struct PersonDetailView: View {
     @State private var showingLifecycleConfirm = false
     @State private var pendingLifecycleStatus: ContactLifecycleStatus?
     @State private var roleDeductionEngine = RoleDeductionEngine.shared
+    @State private var photoCoordinator = ContactPhotoCoordinator.shared
+    @State private var isPhotoDropTargeted = false
+    @State private var photoViewScreenOrigin: CGPoint?
+    @State private var photoLinks = ContactPhotoCoordinator.ProfileLinks(linkedIn: nil, facebook: nil)
 
     @Query(filter: #Predicate<SamPerson> { $0.lifecycleStatusRawValue == "active" })
     private var allPeople: [SamPerson]
@@ -177,6 +182,8 @@ struct PersonDetailView: View {
             }
         }
         .task(id: person.id) {
+            // Set initial links from SamPerson fields (available immediately)
+            photoLinks = photoCoordinator.profileLinks(for: person)
             await loadFullContact()
             loadNotes()
             recruitingStage = try? PipelineRepository.shared.fetchRecruitingStage(forPerson: person.id)
@@ -282,6 +289,124 @@ struct PersonDetailView: View {
 
     // MARK: - Header Section (Above the Fold)
 
+    // MARK: - Contact Photo (Drop Target)
+
+    private var contactPhotoView: some View {
+        let links = photoLinks
+        let hasPhoto = person.photoThumbnailCache != nil
+        let isClickable = !hasPhoto && !links.isEmpty
+
+        return Group {
+            if let photoData = person.photoThumbnailCache,
+               let nsImage = NSImage(data: photoData) {
+                Image(nsImage: nsImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: 96, height: 96)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+            } else {
+                let initials = personInitials
+                let color = person.roleBadges.first.map { RoleBadgeStyle.forBadge($0).color } ?? .secondary
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(color.opacity(0.15))
+                        .frame(width: 96, height: 96)
+                    VStack(spacing: 4) {
+                        Text(initials)
+                            .font(.system(size: 36, weight: .semibold))
+                            .foregroundStyle(color)
+                        if !links.isEmpty {
+                            Image(systemName: "photo.badge.plus")
+                                .font(.caption2)
+                                .foregroundStyle(color.opacity(0.6))
+                        }
+                    }
+                }
+            }
+        }
+        .contentShape(RoundedRectangle(cornerRadius: 12))
+        .background {
+            GeometryReader { geo in
+                Color.clear.onAppear {
+                    // Convert to screen coordinates (flipped: top-left origin for AppleScript)
+                    if let window = NSApp.keyWindow {
+                        let frameInWindow = geo.frame(in: .global)
+                        let windowOrigin = window.frame.origin
+                        let screenFrame = window.screen?.frame ?? NSScreen.main!.frame
+                        // SwiftUI .global is window-relative with flipped Y; convert to screen top-left
+                        let screenX = windowOrigin.x + frameInWindow.minX
+                        let screenY = screenFrame.height - (windowOrigin.y + window.frame.height) + frameInWindow.minY
+                        photoViewScreenOrigin = CGPoint(x: screenX, y: screenY)
+                    }
+                }
+            }
+        }
+        .onTapGesture {
+            if isClickable {
+                photoCoordinator.openProfileForPhotoGrab(person: person, photoScreenOrigin: photoViewScreenOrigin)
+            }
+        }
+        .help(isClickable ? "Click to open profile for photo" : "Drag & drop a photo here")
+        .overlay {
+            if isPhotoDropTargeted {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(.ultraThinMaterial)
+                    .overlay {
+                        VStack(spacing: 4) {
+                            Image(systemName: "photo.badge.plus")
+                                .font(.title2)
+                            Text("Drop")
+                                .font(.caption)
+                        }
+                        .foregroundStyle(.primary)
+                    }
+            }
+            if photoCoordinator.isSaving {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(.ultraThinMaterial)
+                    .overlay { ProgressView() }
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if let error = photoCoordinator.errorMessage {
+                Text(error)
+                    .font(.caption2)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(.red.opacity(0.85), in: Capsule())
+                    .offset(y: 20)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.default, value: photoCoordinator.errorMessage != nil)
+        .animation(.default, value: isPhotoDropTargeted)
+        .onDrop(of: [.image, .url], isTargeted: $isPhotoDropTargeted) { providers in
+            photoCoordinator.handleDrop(providers: providers, for: person)
+            return true
+        }
+        .contextMenu {
+            if ImagePasteUtility.pasteboardHasImageOnly() {
+                Button("Paste Photo") {
+                    Task { await photoCoordinator.handlePaste(for: person) }
+                }
+            }
+            if !links.isEmpty {
+                Divider()
+                if let li = links.linkedIn {
+                    Button("Open LinkedIn for Photo") {
+                        photoCoordinator.openURL(url: li, photoScreenOrigin: photoViewScreenOrigin)
+                    }
+                }
+                if let fb = links.facebook {
+                    Button("Open Facebook for Photo") {
+                        photoCoordinator.openURL(url: fb, photoScreenOrigin: photoViewScreenOrigin)
+                    }
+                }
+            }
+        }
+    }
+
     private var headerSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             TipView(personCoachingTip)
@@ -289,27 +414,8 @@ struct PersonDetailView: View {
 
             // Row 1: Photo + Name + Company + Role Badges
             HStack(alignment: .top, spacing: 16) {
-                // Photo (96pt, full opacity, rounded corners)
-                if let photoData = person.photoThumbnailCache,
-                   let nsImage = NSImage(data: photoData) {
-                    Image(nsImage: nsImage)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(width: 96, height: 96)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                } else {
-                    // Initials fallback
-                    let initials = personInitials
-                    let color = person.roleBadges.first.map { RoleBadgeStyle.forBadge($0).color } ?? .secondary
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(color.opacity(0.15))
-                            .frame(width: 96, height: 96)
-                        Text(initials)
-                            .font(.system(size: 36, weight: .semibold))
-                            .foregroundStyle(color)
-                    }
-                }
+                // Photo (96pt, full opacity, rounded corners) — drop target for contact photo
+                contactPhotoView
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(person.displayNameCache ?? person.displayName)
@@ -447,17 +553,34 @@ struct PersonDetailView: View {
     }
 
     private var contactLinkedInURL: String? {
-        fullContact?.socialProfiles.first(where: {
+        guard let profile = fullContact?.socialProfiles.first(where: {
             $0.service.lowercased() == "linkedin" ||
             ($0.urlString ?? "").lowercased().contains("linkedin.com/in/")
-        })?.urlString
+        }) else { return nil }
+        if let url = profile.urlString, !url.isEmpty { return url }
+        if !profile.username.isEmpty {
+            // username may already be a URL path like "www.linkedin.com/in/jsmith"
+            if profile.username.lowercased().contains("linkedin.com/in/") {
+                return profile.username
+            }
+            return "https://www.linkedin.com/in/\(profile.username)"
+        }
+        return nil
     }
 
     private var contactFacebookURL: String? {
-        fullContact?.socialProfiles.first(where: {
+        guard let profile = fullContact?.socialProfiles.first(where: {
             $0.service.lowercased() == "facebook" ||
             ($0.urlString ?? "").lowercased().contains("facebook.com/")
-        })?.urlString
+        }) else { return nil }
+        if let url = profile.urlString, !url.isEmpty { return url }
+        if !profile.username.isEmpty {
+            if profile.username.lowercased().contains("facebook.com/") {
+                return profile.username
+            }
+            return "https://www.facebook.com/\(profile.username)"
+        }
+        return nil
     }
 
     private var quickActionsRow: some View {
@@ -2163,6 +2286,27 @@ struct PersonDetailView: View {
         
         if let contact = contact {
             fullContact = contact
+            // Resolve photo links now that social profiles and URL addresses are available.
+            // Check all sources: SamPerson fields, social profiles, and URL addresses.
+            let liFromSocial = contact.socialProfiles.first(where: {
+                $0.service.lowercased() == "linkedin" ||
+                ($0.urlString ?? "").lowercased().contains("linkedin.com/in/")
+            })
+            let liFromURL = contact.urlAddresses.first(where: { $0.lowercased().contains("linkedin.com/in/") })
+            let resolvedLI = liFromSocial.flatMap({ $0.urlString?.isEmpty == false ? $0.urlString : $0.username }) ?? liFromURL
+
+            let fbFromSocial = contact.socialProfiles.first(where: {
+                $0.service.lowercased() == "facebook" ||
+                ($0.urlString ?? "").lowercased().contains("facebook.com/")
+            })
+            let fbFromURL = contact.urlAddresses.first(where: { $0.lowercased().contains("facebook.com/") })
+            let resolvedFB = fbFromSocial.flatMap({ $0.urlString?.isEmpty == false ? $0.urlString : $0.username }) ?? fbFromURL
+
+            photoLinks = photoCoordinator.profileLinks(
+                for: person,
+                contactLinkedInURL: resolvedLI,
+                contactFacebookURL: resolvedFB
+            )
         } else {
             logger.error("Failed to load contact for identifier: \(identifier, privacy: .private)")
             errorMessage = "Could not load contact details. The contact may have been deleted from Apple Contacts."
