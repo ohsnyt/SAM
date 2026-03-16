@@ -539,6 +539,7 @@ struct UnknownSenderTriageSection: View {
                         guard let created = await contactsService.createContact(
                             fullName: displayName,
                             email: senderIsPhone ? nil : sender.email,
+                            phone: senderIsPhone ? sender.email : nil,
                             note: nil
                         ) else {
                             logger.error("Failed to create contact for \(sender.email, privacy: .private)")
@@ -610,9 +611,11 @@ struct UnknownSenderTriageSection: View {
                 case .differentPerson:
                     // Create a brand-new Apple Contact + add to SAM group
                     logger.info("Triage confirm: creating new contact for '\(displayName, privacy: .private)' (rejected match)")
+                    let senderIsPhone = !sender.email.contains("@") && sender.email.filter(\.isNumber).count >= 7
                     guard let created = await contactsService.createContact(
                         fullName: displayName,
-                        email: sender.email,
+                        email: senderIsPhone ? nil : sender.email,
+                        phone: senderIsPhone ? sender.email : nil,
                         note: nil
                     ) else {
                         logger.error("Failed to create contact for \(sender.email, privacy: .private)")

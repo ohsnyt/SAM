@@ -321,9 +321,13 @@ actor iMessageService {
 
     // MARK: - Date Conversion
 
-    /// iMessage stores dates as nanoseconds since 2001-01-01 (Core Data epoch)
+    /// iMessage stores dates as nanoseconds since 2001-01-01 (Core Data epoch).
+    /// Clamps to 0 for dates before the reference date (e.g. `.distantPast`)
+    /// to avoid Int64 overflow.
     private func dateToiMessageTimestamp(_ date: Date) -> Int64 {
-        Int64(date.timeIntervalSinceReferenceDate * 1_000_000_000)
+        let seconds = date.timeIntervalSinceReferenceDate
+        guard seconds > 0 else { return 0 }
+        return Int64(seconds * 1_000_000_000)
     }
 
     private func iMessageTimestampToDate(_ timestamp: Int64) -> Date {

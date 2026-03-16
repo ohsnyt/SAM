@@ -31,6 +31,7 @@ final class BookmarkManager {
     var hasLinkedInFolderAccess: Bool { linkedInFolderBookmarkData != nil }
     var hasFacebookFolderAccess: Bool { facebookFolderBookmarkData != nil }
     var hasWhatsAppAccess: Bool { whatsAppDirBookmarkData != nil }
+    var hasMailDirAccess: Bool { mailDirBookmarkData != nil }
 
     // MARK: - Private
 
@@ -39,12 +40,14 @@ final class BookmarkManager {
     private var linkedInFolderBookmarkData: Data?
     private var facebookFolderBookmarkData: Data?
     private var whatsAppDirBookmarkData: Data?
+    private var mailDirBookmarkData: Data?
 
     private let messagesKey = "messagesDirBookmark"
     private let callHistoryKey = "callHistoryDirBookmark"
     private let linkedInFolderKey = "linkedInFolderBookmark"
     private let facebookFolderKey = "facebookFolderBookmark"
     private let whatsAppDirKey = "whatsAppDirBookmark"
+    private let mailDirKey = "mailDirBookmark"
 
     private init() {
         messagesBookmarkData = UserDefaults.standard.data(forKey: messagesKey)
@@ -52,6 +55,7 @@ final class BookmarkManager {
         linkedInFolderBookmarkData = UserDefaults.standard.data(forKey: linkedInFolderKey)
         facebookFolderBookmarkData = UserDefaults.standard.data(forKey: facebookFolderKey)
         whatsAppDirBookmarkData = UserDefaults.standard.data(forKey: whatsAppDirKey)
+        mailDirBookmarkData = UserDefaults.standard.data(forKey: mailDirKey)
 
         // Migrate from old file-level bookmark keys if present
         if messagesBookmarkData == nil, UserDefaults.standard.data(forKey: "messagesDBBookmark") != nil {
@@ -272,6 +276,68 @@ final class BookmarkManager {
         return (directory: dirURL, messagesDB: messagesDB, callsDB: callsDB)
     }
 
+    /// Present NSOpenPanel for user to select the Mail data directory.
+    /// The Mail data store lives under ~/Library/Mail/V{version}/ (e.g. V10, V11).
+    /// We ask the user to select ~/Library/Mail so we can discover the version folder.
+    @discardableResult
+    func requestMailDirAccess() -> URL? {
+        let panel = NSOpenPanel()
+        panel.title = "Select Mail Data Folder"
+        panel.message = "Select the Mail folder to allow SAM to read email metadata directly.\nNavigate to: ~/Library/Mail"
+        panel.prompt = "Grant Access"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+
+        let mailDir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Mail")
+        panel.directoryURL = mailDir
+
+        guard panel.runModal() == .OK, let url = panel.url else {
+            logger.info("User cancelled Mail directory selection")
+            return nil
+        }
+
+        // Verify this looks like a Mail data directory (contains V* subfolder)
+        let fm = FileManager.default
+        let contents = (try? fm.contentsOfDirectory(at: url, includingPropertiesForKeys: nil)) ?? []
+        let hasVersionFolder = contents.contains { $0.lastPathComponent.hasPrefix("V") }
+        if !hasVersionFolder {
+            logger.error("Selected directory does not appear to be ~/Library/Mail: \(url.path, privacy: .public)")
+            return nil
+        }
+
+        do {
+            let bookmarkData = try url.bookmarkData(
+                options: .withSecurityScope,
+                includingResourceValuesForKeys: nil,
+                relativeTo: nil
+            )
+            mailDirBookmarkData = bookmarkData
+            UserDefaults.standard.set(bookmarkData, forKey: mailDirKey)
+            logger.info("Mail directory bookmark saved for: \(url.path, privacy: .public)")
+            return url
+        } catch {
+            logger.error("Failed to create Mail directory bookmark: \(error)")
+            return nil
+        }
+    }
+
+    /// Resolve saved Mail directory bookmark.
+    /// Returns the Mail root directory URL (e.g. ~/Library/Mail).
+    /// Caller must call `startAccessingSecurityScopedResource()` on the URL
+    /// and `stopAccessing(_:)` in a defer block.
+    func resolveMailDirURL() -> URL? {
+        resolveDirectory(bookmarkData: mailDirBookmarkData, key: mailDirKey, label: "Mail directory")
+    }
+
+    /// Revoke saved Mail directory access.
+    func revokeMailDirAccess() {
+        mailDirBookmarkData = nil
+        UserDefaults.standard.removeObject(forKey: mailDirKey)
+        logger.info("Mail directory bookmark revoked")
+    }
+
     /// Stop accessing a security-scoped resource.
     func stopAccessing(_ url: URL) {
         url.stopAccessingSecurityScopedResource()
@@ -333,6 +399,8 @@ final class BookmarkManager {
                         callHistoryBookmarkData = newData
                     } else if key == whatsAppDirKey {
                         whatsAppDirBookmarkData = newData
+                    } else if key == mailDirKey {
+                        mailDirBookmarkData = newData
                     } else {
                         linkedInFolderBookmarkData = newData
                     }

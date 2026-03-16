@@ -27,6 +27,7 @@ enum PeopleSortOrder: String, CaseIterable, Identifiable {
 enum PeopleSpecialFilter: String, CaseIterable {
     case pendingRoleSuggestions = "Pending Role Suggestions"
     case needsContactUpdate = "Needs Contact Update"
+    case notInSAM = "Not in SAM"
     case notInContacts = "Not in Contacts"
     case archived = "Archived"
     case dnc = "Do Not Contact"
@@ -37,6 +38,7 @@ enum PeopleSpecialFilter: String, CaseIterable {
         switch self {
         case .pendingRoleSuggestions: return "sparkles"
         case .needsContactUpdate:    return "arrow.up.circle.fill"
+        case .notInSAM:              return "person.crop.circle.badge.questionmark"
         case .notInContacts:         return "person.crop.circle.badge.exclamationmark"
         case .archived:              return "archivebox"
         case .dnc:                   return "hand.raised"
@@ -45,7 +47,7 @@ enum PeopleSpecialFilter: String, CaseIterable {
     }
 
     /// "Needs attention" group — filters for active contacts needing action.
-    static let attentionGroup: Set<PeopleSpecialFilter> = [.pendingRoleSuggestions, .needsContactUpdate, .notInContacts]
+    static let attentionGroup: Set<PeopleSpecialFilter> = [.pendingRoleSuggestions, .needsContactUpdate, .notInSAM, .notInContacts]
     /// "Excluded" group — contacts removed from active consideration.
     static let excludedGroup: Set<PeopleSpecialFilter> = [.archived, .dnc, .deceased]
 }
@@ -69,6 +71,8 @@ struct PeopleListView: View {
     @State private var searchText = ""
     @State private var sortOrder: PeopleSortOrder = .firstName
     @State private var personToDelete: SamPerson?
+    /// Tracks allPeople count to re-trigger batch contact match check only when new people appear.
+    @State private var lastCheckedPeopleCount: Int = 0
 
     /// Role filters are shared with the graph coordinator so switching between
     /// Contacts and Graph views preserves the active filter.
@@ -146,8 +150,11 @@ struct PeopleListView: View {
         if activeSpecialFilters.contains(.needsContactUpdate) {
             list = list.filter { enrichmentCoordinator.peopleWithEnrichment.contains($0.id) }
         }
+        if activeSpecialFilters.contains(.notInSAM) {
+            list = list.filter { $0.contactIdentifier == nil && !$0.isMe && $0.hasAppleContactMatch == true }
+        }
         if activeSpecialFilters.contains(.notInContacts) {
-            list = list.filter { $0.contactIdentifier == nil && !$0.isMe }
+            list = list.filter { $0.contactIdentifier == nil && !$0.isMe && $0.hasAppleContactMatch == false }
         }
 
         // Sort
@@ -257,6 +264,19 @@ struct PeopleListView: View {
                 GuideButton(articleID: "people.contact-list")
             }
         }
+        .onChange(of: allPeople.count) { _, newCount in
+            if newCount != lastCheckedPeopleCount {
+                lastCheckedPeopleCount = newCount
+                Task { await batchCheckContactMatchStatus() }
+            }
+        }
+        .task {
+            // Initial check on first appear only for unchecked people
+            if lastCheckedPeopleCount == 0 {
+                lastCheckedPeopleCount = allPeople.count
+                await batchCheckContactMatchStatus()
+            }
+        }
         .onChange(of: activeSpecialFilters) { _, newValue in
             // Sync pending suggestions filter to graph coordinator
             if newValue.contains(.pendingRoleSuggestions) {
@@ -332,6 +352,7 @@ struct PeopleListView: View {
                 // Needs Attention group
                 specialFilterButton(.pendingRoleSuggestions)
                 specialFilterButton(.needsContactUpdate)
+                specialFilterButton(.notInSAM)
                 specialFilterButton(.notInContacts)
                 Divider()
                 // Excluded group
@@ -552,6 +573,66 @@ struct PeopleListView: View {
 
         try? PeopleRepository.shared.setLifecycleStatus(newStatus, for: person)
         NotificationCenter.default.post(name: .samPersonDidChange, object: nil)
+    }
+
+    // MARK: - Batch Contact Match Check
+
+    /// Pre-populate `hasAppleContactMatch` for all unlinked people so filters work immediately.
+    private func batchCheckContactMatchStatus() async {
+        let unchecked = allPeople.filter { $0.contactIdentifier == nil && $0.hasAppleContactMatch == nil && !$0.isMe }
+        guard !unchecked.isEmpty else { return }
+
+        let contactsService = ContactsService.shared
+
+        for person in unchecked {
+            // Yield periodically to avoid blocking the UI
+            await Task.yield()
+
+            let name = person.displayNameCache ?? person.displayName
+            let email = person.emailCache ?? person.email
+
+            // Extract phone from aliases or from name/email if it looks like a phone number
+            let phone: String? = person.phoneAliases.first ?? {
+                let candidates = [name, email].compactMap { $0 }
+                for candidate in candidates {
+                    let digits = candidate.filter(\.isNumber)
+                    if digits.count >= 10, !candidate.contains("@") {
+                        return candidate
+                    }
+                }
+                return nil
+            }()
+
+            // Try phone search first
+            if let phone, !phone.isEmpty {
+                let phoneMatches = await contactsService.searchContactsByPhone(phoneNumber: phone, keys: .detail)
+                if !phoneMatches.isEmpty {
+                    person.hasAppleContactMatch = true
+                    continue
+                }
+                // Retry with +1 prefix
+                if !phone.hasPrefix("+") {
+                    let e164 = "+1" + phone
+                    let e164Matches = await contactsService.searchContactsByPhone(phoneNumber: e164, keys: .detail)
+                    if !e164Matches.isEmpty {
+                        person.hasAppleContactMatch = true
+                        continue
+                    }
+                }
+            }
+
+            // Fall back to name/email search
+            let matches = await contactsService.searchContacts(query: name, keys: .detail)
+            let hasMatch = matches.contains { match in
+                let nameMatch = match.displayName.lowercased() == name.lowercased()
+                let emailMatch: Bool = {
+                    guard let email else { return false }
+                    return match.emailAddresses.contains { $0.lowercased() == email.lowercased() }
+                }()
+                return nameMatch || emailMatch
+            }
+            person.hasAppleContactMatch = hasMatch
+        }
     }
 
     // MARK: - Import Status Badge

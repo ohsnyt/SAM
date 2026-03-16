@@ -20,9 +20,14 @@ final class MailImportCoordinator {
 
     // Dependencies
     private let mailService = MailService.shared
+    private let mailDBService = MailDatabaseService.shared
     private let analysisService = EmailAnalysisService.shared
     private let evidenceRepository = EvidenceRepository.shared
     private let peopleRepository = PeopleRepository.shared
+
+    /// Whether direct database access is available (bookmark granted for ~/Library/Mail).
+    /// When true, imports bypass AppleScript entirely for metadata + body fetches.
+    var hasDirectAccess: Bool { BookmarkManager.shared.hasMailDirAccess }
 
     // Observable state
     var importStatus: ImportStatus = .idle
@@ -192,6 +197,7 @@ final class MailImportCoordinator {
 
         importStatus = .importing
         lastError = nil
+        EvidenceRepository.shared.invalidateResolutionCache()
 
         do {
             let lookbackDate: Date = lookbackDays == 0
@@ -199,14 +205,69 @@ final class MailImportCoordinator {
                 : (Calendar.current.date(byAdding: .day, value: -lookbackDays, to: Date()) ?? Date())
             let since = lastMailWatermark ?? lookbackDate
 
+            // Strategy: prefer direct database access (no AppleScript, Mail stays responsive)
+            let useDirectAccess = hasDirectAccess
+            var mailDirURL: URL?
+            var versionDirURL: URL?
+            var envelopeURL: URL?
+
+            if useDirectAccess {
+                mailDirURL = BookmarkManager.shared.resolveMailDirURL()
+                if let dirURL = mailDirURL {
+                    _ = dirURL.startAccessingSecurityScopedResource()
+                    versionDirURL = await mailDBService.findMailDataDir(rootURL: dirURL)
+                    if let vDir = versionDirURL {
+                        envelopeURL = await mailDBService.findEnvelopeIndex(in: vDir)
+                    }
+                }
+            }
+            // Release security-scoped resource when import completes (success or failure)
+            defer {
+                if let dirURL = mailDirURL {
+                    BookmarkManager.shared.stopAccessing(dirURL)
+                }
+            }
+
+            // When direct DB access is available, skip osascript entirely.
+            // The pre-flight osascript check itself can hang if Mail is unresponsive,
+            // and we don't need it — metadata comes from the DB, bodies from .emlx files.
+            // Osascript fallback is only used when there's NO direct DB access.
+            let osascriptAvailable = (envelopeURL == nil)
+            if envelopeURL != nil {
+                logger.info("[mail-import] Direct DB access available — skipping osascript entirely")
+            }
+
             // 1. Fast metadata sweep (all messages)
-            let (allMetas, fetchWarnings) = try await mailService.fetchMetadata(
-                accountIDs: selectedAccountIDs, since: since
-            )
+            let allMetas: [MessageMeta]
+            let fetchWarnings: String?
+
+            if let envURL = envelopeURL {
+                // Direct database access — zero AppleScript, Mail never touched
+                logger.info("Using direct database access for metadata sweep")
+                allMetas = try await mailDBService.fetchMetadata(
+                    dbURL: envURL,
+                    since: since,
+                    accountEmails: selectedAccountIDs,
+                    maxResults: 200
+                )
+                fetchWarnings = nil
+            } else {
+                // Fallback: AppleScript via osascript subprocess
+                if useDirectAccess {
+                    logger.warning("Direct access bookmark exists but database not found — falling back to AppleScript")
+                }
+                let (metas, warnings) = try await mailService.fetchMetadata(
+                    accountIDs: selectedAccountIDs, since: since
+                )
+                allMetas = metas
+                fetchWarnings = warnings
+            }
 
             if allMetas.isEmpty, let warning = fetchWarnings {
                 lastError = warning
             }
+
+            logger.info("[mail-import] Metadata sweep done: \(allMetas.count) messages")
 
             // 1b. Intercept LinkedIn notification emails before partitioning.
             // LinkedIn notification addresses (e.g. notifications-noreply@linkedin.com) are
@@ -218,7 +279,7 @@ final class MailImportCoordinator {
 
             if !linkedInMetas.isEmpty {
                 linkedInNotificationCount = 0
-                await processLinkedInNotifications(linkedInMetas)
+                await processLinkedInNotifications(linkedInMetas, versionDir: versionDirURL, osascriptAvailable: osascriptAvailable)
             }
 
             // 1c. Intercept Facebook notification emails before partitioning.
@@ -268,8 +329,40 @@ final class MailImportCoordinator {
                 try UnknownSenderRepository.shared.bulkRecordUnknownSenders(senderData)
             }
 
-            // 6. Fetch bodies only for known senders (the expensive part)
-            let emails = await mailService.fetchBodies(for: knownMetas, filterRules: filterRules)
+            logger.info("[mail-import] Partitioned: \(knownMetas.count) known, \(unknownMetas.count) unknown, \(linkedInMetas.count) LinkedIn, \(facebookMetas.count) Facebook")
+
+            // 6. Fetch bodies only for known senders
+            // Hybrid strategy: try .emlx files first (instant, no Mail impact),
+            // then fall back to osascript for messages without local files (IMAP).
+            var emails: [EmailDTO] = []
+            var metasNeedingFallback = knownMetas
+
+            if let vDir = versionDirURL, let mDir = mailDirURL {
+                let directEmails = await mailDBService.fetchBodies(
+                    mailRootURL: mDir,
+                    versionDir: vDir,
+                    metas: knownMetas,
+                    filterRules: filterRules
+                )
+                emails.append(contentsOf: directEmails)
+
+                // Determine which metas weren't found via .emlx
+                let foundIDs = Set(directEmails.map { $0.id })
+                metasNeedingFallback = knownMetas.filter { !foundIDs.contains(String($0.mailID)) }
+
+                if !metasNeedingFallback.isEmpty {
+                    logger.info("\(directEmails.count) bodies from .emlx, \(metasNeedingFallback.count) need osascript fallback")
+                }
+            }
+
+            // Osascript fallback for messages without local .emlx files
+            if !metasNeedingFallback.isEmpty, osascriptAvailable {
+                guard !Task.isCancelled else { return }
+                let fallbackEmails = await mailService.fetchBodies(
+                    for: metasNeedingFallback, filterRules: filterRules
+                )
+                emails.append(contentsOf: fallbackEmails)
+            }
 
             // 7. Upsert into EvidenceRepository WITHOUT analysis (fast persist)
             let upsertData: [(EmailDTO, EmailAnalysisDTO?)] = emails.map { ($0, nil) }
@@ -288,9 +381,26 @@ final class MailImportCoordinator {
             // This fills the direction gap: SAM can now see both sides of email communication.
             let sentSince = lastSentMailWatermark ?? lookbackDate
 
-            let (sentMetas, sentWarnings) = try await mailService.fetchMetadata(
-                accountIDs: selectedAccountIDs, since: sentSince, mailbox: .sent
-            )
+            let sentMetas: [MessageMeta]
+            let sentWarnings: String?
+            if let envURL = envelopeURL {
+                sentMetas = try await mailDBService.fetchMetadata(
+                    dbURL: envURL,
+                    since: sentSince,
+                    accountEmails: selectedAccountIDs,
+                    maxResults: 50,
+                    mailbox: .sent
+                )
+                sentWarnings = nil
+            } else {
+                try? await Task.sleep(for: .seconds(3))
+                guard !Task.isCancelled else { return }
+                let (sm, sw) = try await mailService.fetchMetadata(
+                    accountIDs: selectedAccountIDs, since: sentSince, mailbox: .sent
+                )
+                sentMetas = sm
+                sentWarnings = sw
+            }
 
             if let sentWarnings { logger.info("Sent mailbox warnings: \(sentWarnings)") }
 
@@ -300,9 +410,30 @@ final class MailImportCoordinator {
             )
 
             if !knownSentMetas.isEmpty {
-                let sentEmails = await mailService.fetchBodies(
-                    for: knownSentMetas, filterRules: [], mailbox: .sent
-                )
+                // Hybrid: try .emlx first, osascript fallback for IMAP messages
+                var sentEmails: [EmailDTO] = []
+                var sentNeedingFallback = knownSentMetas
+
+                if let vDir = versionDirURL, let mDir = mailDirURL {
+                    let directSent = await mailDBService.fetchBodies(
+                        mailRootURL: mDir,
+                        versionDir: vDir,
+                        metas: knownSentMetas,
+                        filterRules: [],
+                        mailbox: .sent
+                    )
+                    sentEmails.append(contentsOf: directSent)
+                    let foundIDs = Set(directSent.map { $0.id })
+                    sentNeedingFallback = knownSentMetas.filter { !foundIDs.contains(String($0.mailID)) }
+                }
+
+                if !sentNeedingFallback.isEmpty, osascriptAvailable, !Task.isCancelled {
+                    let fallbackSent = await mailService.fetchBodies(
+                        for: sentNeedingFallback, filterRules: [], mailbox: .sent
+                    )
+                    sentEmails.append(contentsOf: fallbackSent)
+                }
+
                 if !sentEmails.isEmpty {
                     let sentUpsertData: [(EmailDTO, EmailAnalysisDTO?)] = sentEmails.map { ($0, nil) }
                     try evidenceRepository.bulkUpsertEmails(sentUpsertData, direction: .outbound)
@@ -427,7 +558,7 @@ final class MailImportCoordinator {
     /// 2. Fetch the MIME source to get the HTML body
     /// 3. Parse the HTML into a LinkedInNotificationEvent
     /// 4. Route the event through LinkedInImportCoordinator.handleNotificationEvent()
-    private func processLinkedInNotifications(_ metas: [MessageMeta]) async {
+    private func processLinkedInNotifications(_ metas: [MessageMeta], versionDir: URL?, osascriptAvailable: Bool) async {
         // Non-actionable LinkedIn sender local-parts — skip without fetching
         let skipLocalParts: Set<String> = [
             "jobs-noreply", "news", "marketing", "promotions",
@@ -436,13 +567,26 @@ final class MailImportCoordinator {
 
         var processed = 0
 
-        for meta in metas {
+        for (index, meta) in metas.enumerated() {
+            guard !Task.isCancelled else { break }
+
             // Check sender local-part (before the @)
             let localPart = meta.senderEmail.components(separatedBy: "@").first ?? ""
             if skipLocalParts.contains(localPart) { continue }
 
-            // Fetch MIME source for HTML extraction
-            guard let mimeSource = await mailService.fetchMIMESource(for: meta) else {
+            // Fetch MIME source: try .emlx first, then osascript fallback
+            var mimeSource: String?
+            if let vDir = versionDir {
+                mimeSource = await mailDBService.fetchMIMESource(versionDir: vDir, meta: meta)
+            }
+            // Fallback to osascript only if permission is available
+            if mimeSource == nil, osascriptAvailable {
+                if index > 0 {
+                    try? await Task.sleep(for: .seconds(1.0))
+                }
+                mimeSource = await mailService.fetchMIMESource(for: meta)
+            }
+            guard let mimeSource else {
                 logger.debug("Skipping LinkedIn notification \(meta.mailID) — no MIME source")
                 continue
             }
@@ -533,8 +677,19 @@ final class MailImportCoordinator {
         return (known, unknown)
     }
 
+    /// Cap on sent-mail body fetches per import cycle.
+    /// Sent mail metadata doesn't include recipients, so we can't pre-filter by
+    /// known contacts at the metadata stage. This cap limits the AppleScript
+    /// body-fetch work and avoids hammering Mail.app. Emails beyond this cap
+    /// will be picked up in subsequent import cycles via the sent watermark.
+    private let maxSentBodyFetches = 50
+
     /// Partition sent-mail metas by whether any **recipient** is a known contact.
     /// For sent mail the user is the sender, so we match on recipients instead.
+    ///
+    /// Because recipient data isn't available at the metadata stage, this returns
+    /// all non-marketing metas as "known" (capped at `maxSentBodyFetches`).
+    /// The actual recipient filtering happens post-body-fetch via `bulkUpsertEmails`.
     private func partitionSentByRecipientKnown(
         metas: [MessageMeta],
         knownEmails: Set<String>
@@ -543,13 +698,7 @@ final class MailImportCoordinator {
         var unknown: [MessageMeta] = []
 
         for meta in metas {
-            // Sent emails have the user as sender. We don't have recipient data at
-            // the metadata stage, but the sender field contains the user's own address.
-            // At this stage, we can only check if the subject/messageID matches a known
-            // thread. However, for simplicity, we include all sent metas — the body fetch
-            // will give us actual recipients, and the upsert resolves people by all
-            // participant emails. Filter out marketing-flagged sent items.
-            if !meta.isLikelyMarketing {
+            if !meta.isLikelyMarketing && known.count < maxSentBodyFetches {
                 known.append(meta)
             } else {
                 unknown.append(meta)

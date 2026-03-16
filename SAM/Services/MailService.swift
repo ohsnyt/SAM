@@ -50,82 +50,95 @@ actor MailService {
 
     // MARK: - Access Check
 
+    /// Result of a Mail.app access check, distinguishing permanent permission
+    /// loss from transient failures (Mail busy, not running, timeout).
+    enum AccessCheckResult: Sendable {
+        /// Mail.app responded successfully.
+        case ok
+        /// Automation permission has been revoked — onboarding should re-run.
+        case permissionDenied(String)
+        /// Transient failure (Mail not running, busy, timeout) — do NOT reset onboarding.
+        case transientError(String)
+    }
+
     /// Check if Mail.app is available and we have automation permission.
     /// Returns nil on success, error message on failure.
     func checkAccess() async -> String? {
+        switch await checkAccessDetailed() {
+        case .ok: return nil
+        case .permissionDenied(let msg): return msg
+        case .transientError(let msg): return msg
+        }
+    }
+
+    /// Detailed access check that distinguishes permission denial from transient errors.
+    func checkAccessDetailed() async -> AccessCheckResult {
         let script = """
         tell application "Mail"
-            return name of first account
+            with timeout of 10 seconds
+                return name of first account
+            end timeout
         end tell
         """
-        let (result, error) = executeAppleScript(script)
+        let (stdout, error) = await executeOsascript(script, timeout: 15)
         if let error {
             if error.contains("-1743") || error.contains("not allowed") {
-                return "SAM does not have permission to control Mail.app. Please grant access in System Settings → Privacy & Security → Automation."
+                return .permissionDenied("SAM does not have permission to control Mail.app. Please grant access in System Settings → Privacy & Security → Automation.")
             }
-            if error.contains("-600") || error.contains("not running") || error.contains("isn't running") {
-                return "Mail.app is not responding. Ensure Mail.app is running and that SAM has Automation access in System Settings → Privacy & Security → Automation."
-            }
-            return "Cannot access Mail.app: \(error)"
+            // -600 = app not running, -609 = connection invalid, -1712 = timeout
+            // These are transient — Mail may be busy, not launched, or overwhelmed
+            return .transientError("Cannot access Mail.app: \(error)")
         }
-        if result == nil {
-            return "No Mail accounts found. Configure an account in Mail.app first."
+        if stdout == nil || stdout?.isEmpty == true {
+            return .transientError("No Mail accounts found. Configure an account in Mail.app first.")
         }
-        return nil
+        return .ok
     }
 
     // MARK: - Fetch Accounts
 
     /// Fetch available Mail.app accounts.
+    /// Output format: one line per account: "accountName \t email1,email2,..."
     func fetchAccounts() async -> [MailAccountDTO] {
         let script = """
         tell application "Mail"
-            set acctNames to name of every account
-            set acctEmails to email addresses of every account
-            return {acctNames, acctEmails}
+            with timeout of 15 seconds
+                set output to ""
+                set lineFeed to ASCII character 10
+                repeat with acct in every account
+                    set acctName to name of acct
+                    set acctEmails to email addresses of acct
+                    set emailStr to ""
+                    repeat with e in acctEmails
+                        if emailStr is not "" then set emailStr to emailStr & ","
+                        set emailStr to emailStr & e
+                    end repeat
+                    set output to output & acctName & tab & emailStr & lineFeed
+                end repeat
+                return output
+            end timeout
         end tell
         """
-        let (result, error) = executeAppleScript(script)
-        if let error {
-            logger.error("Failed to fetch accounts: \(error, privacy: .public)")
+        let (stdout, osError) = await executeOsascript(script, timeout: 20)
+        if let osError {
+            logger.error("Failed to fetch accounts: \(osError, privacy: .public)")
             return []
         }
-        guard let descriptor = result else { return [] }
+        guard let output = stdout, !output.isEmpty else { return [] }
 
-        // Result is a list of two lists: {names, emailLists}
-        guard descriptor.numberOfItems >= 2 else { return [] }
-
-        let namesDesc = descriptor.atIndex(1)
-        let emailsDesc = descriptor.atIndex(2)
-        guard let namesDesc, let emailsDesc else { return [] }
-
-        let count = namesDesc.numberOfItems
         var accounts: [MailAccountDTO] = []
-
-        for i in 1...count {
-            guard let nameDesc = namesDesc.atIndex(i),
-                  let name = nameDesc.stringValue else { continue }
-
-            var emails: [String] = []
-            if let emailListDesc = emailsDesc.atIndex(i) {
-                // Could be a single string or a list of strings
-                if emailListDesc.numberOfItems > 0 {
-                    for j in 1...emailListDesc.numberOfItems {
-                        if let e = emailListDesc.atIndex(j)?.stringValue {
-                            emails.append(e)
-                        }
-                    }
-                } else if let single = emailListDesc.stringValue {
-                    emails.append(single)
-                }
+        for line in output.components(separatedBy: "\n") where !line.isEmpty {
+            let parts = line.components(separatedBy: "\t")
+            let name = parts[0]
+            let emails: [String]
+            if parts.count > 1 && !parts[1].isEmpty {
+                emails = parts[1].split(separator: ",").map { String($0) }
+            } else if name.contains("@") {
+                emails = [name]
+            } else {
+                emails = []
             }
 
-            // If no email addresses but name looks like an email, use it
-            if emails.isEmpty && name.contains("@") {
-                emails.append(name)
-            }
-
-            // Use first email as ID for lookups
             let accountID = emails.first ?? name
             accounts.append(MailAccountDTO(
                 id: accountID,
@@ -143,6 +156,11 @@ actor MailService {
 
     /// Phase 1: Fast metadata-only sweep of a Mail.app mailbox (inbox or sent).
     /// Returns (metas, warningMessage). Warning is non-nil if accounts had errors.
+    ///
+    /// Runs via `osascript` subprocess with a hard kill timeout so Mail.app hangs
+    /// can't block SAM indefinitely. Outputs tab-delimited rows (one per message)
+    /// which is far lighter for Mail to produce than nested AppleScript lists.
+    /// Marketing detection uses Swift-side heuristics instead of per-message header checks.
     func fetchMetadata(
         accountIDs: [String],
         since: Date,
@@ -154,271 +172,136 @@ actor MailService {
         var allMetas: [MessageMeta] = []
         var accountWarnings: [String] = []
 
+        let dateField = mailbox == .inbox ? "date received" : "date sent"
+        let debugLabel = mailbox == .inbox ? "__inbox_debug__" : "__sent_debug__"
+
         for accountID in accountIDs {
+            guard !Task.isCancelled else { break }
+
             let escapedEmail = accountID.replacingOccurrences(of: "\"", with: "\\\"")
+            let mbxResolution = mailboxResolutionScript(for: mailbox)
 
-            // Build mailbox-specific AppleScript fragments
-            let mailboxResolution: String
-            let dateField: String
-            let debugLabel: String
-            switch mailbox {
-            case .inbox:
-                dateField = "date received"
-                debugLabel = "__inbox_debug__"
-                mailboxResolution = """
-                                -- Resolve inbox: try property, by-name, then iterate
-                                set mbx to missing value
-                                try
-                                    set mbx to inbox of acct
-                                end try
-                                if mbx is missing value then
-                                    try
-                                        set mbx to mailbox "INBOX" of acct
-                                    end try
-                                end if
-                                if mbx is missing value then
-                                    try
-                                        set mbx to mailbox "Inbox" of acct
-                                    end try
-                                end if
-                                if mbx is missing value then
-                                    repeat with m in every mailbox of acct
-                                        try
-                                            set mName to name of m
-                                            if mName is "INBOX" or mName is "Inbox" or mName is "inbox" then
-                                                set mbx to m
-                                                exit repeat
-                                            end if
-                                        end try
-                                    end repeat
-                                end if
-                    """
-            case .sent:
-                dateField = "date sent"
-                debugLabel = "__sent_debug__"
-                mailboxResolution = """
-                                -- Resolve sent mailbox: try common names, then iterate
-                                set mbx to missing value
-                                try
-                                    set mbx to mailbox "Sent Messages" of acct
-                                end try
-                                if mbx is missing value then
-                                    try
-                                        set mbx to mailbox "Sent" of acct
-                                    end try
-                                end if
-                                if mbx is missing value then
-                                    try
-                                        set mbx to mailbox "Sent Mail" of acct
-                                    end try
-                                end if
-                                if mbx is missing value then
-                                    try
-                                        set mbx to mailbox "[Gmail]/Sent Mail" of acct
-                                    end try
-                                end if
-                                if mbx is missing value then
-                                    repeat with m in every mailbox of acct
-                                        try
-                                            set mName to name of m
-                                            if mName contains "Sent" and mName does not contain "Junk" then
-                                                set mbx to m
-                                                exit repeat
-                                            end if
-                                        end try
-                                    end repeat
-                                end if
-                    """
-            }
-
-            // Metadata sweep with per-message iteration (IMAP-safe)
+            // Tab-delimited output: one line per message, fields separated by \t
+            // This is much lighter for Mail to produce than nested AppleScript lists.
+            // Format: id \t messageID \t subject \t sender \t dateString
             let metadataScript = """
             tell application "Mail"
-                set targetEmail to "\(escapedEmail)"
-                set cutoff to (current date) - (\(days) * days)
-                set matchedName to ""
-                set maxMsgs to \(maxBodyFetches)
+                with timeout of 90 seconds
+                    set targetEmail to "\(escapedEmail)"
+                    set cutoff to (current date) - (\(days) * days)
+                    set matchedName to ""
+                    set maxMsgs to \(maxBodyFetches)
+                    set lineFeed to ASCII character 10
 
-                -- First pass: match by email addresses
-                repeat with acct in every account
-                    try
-                        if (email addresses of acct) contains targetEmail then
-                            set matchedName to name of acct
-                            \(mailboxResolution)
-                            if mbx is missing value then
-                                return {"\(debugLabel)", matchedName, "all mailbox methods failed"}
+                    repeat with acct in every account
+                        try
+                            set acctMatch to false
+                            if (email addresses of acct) contains targetEmail then
+                                set acctMatch to true
+                            else if (name of acct) is targetEmail then
+                                set acctMatch to true
                             end if
-                            -- Fetch messages individually (IMAP-safe: no bulk property access)
-                            set filteredMsgs to (every message of mbx whose \(dateField) > cutoff)
-                            set msgCount to count of filteredMsgs
-                            if msgCount is 0 then return {"__empty__", matchedName}
-                            if msgCount > maxMsgs then set msgCount to maxMsgs
-                            set msgIDs to {}
-                            set msgMessageIDs to {}
-                            set msgSubjects to {}
-                            set msgSenders to {}
-                            set msgDates to {}
-                            set msgMarketing to {}
-                            repeat with i from 1 to msgCount
-                                try
-                                    set msg to item i of filteredMsgs
-                                    set theID to id of msg
-                                    set theMsgID to message id of msg
-                                    set theSubject to subject of msg
-                                    set theSender to sender of msg
-                                    set theDate to \(dateField) of msg
-                                    set isMarketing to 0
+                            if acctMatch then
+                                set matchedName to name of acct
+                                \(mbxResolution)
+                                if mbx is missing value then
+                                    return "\(debugLabel)" & tab & matchedName & tab & "all mailbox methods failed"
+                                end if
+                                set filteredMsgs to (every message of mbx whose \(dateField) > cutoff)
+                                set msgCount to count of filteredMsgs
+                                if msgCount is 0 then
+                                    return "__empty__" & tab & matchedName
+                                end if
+                                -- Cap the result set
+                                if msgCount > maxMsgs then
+                                    set filteredMsgs to items 1 thru maxMsgs of filteredMsgs
+                                    set msgCount to maxMsgs
+                                end if
+                                -- Build tab-delimited output, one message per line
+                                set output to "__data__" & tab & matchedName & tab & (msgCount as text) & lineFeed
+                                repeat with i from 1 to msgCount
                                     try
-                                        content of header "List-Unsubscribe" of msg
-                                        set isMarketing to 1
+                                        set msg to item i of filteredMsgs
+                                        set msgID to id of msg
+                                        set msgMsgID to message id of msg
+                                        set msgSubj to subject of msg
+                                        set msgSender to sender of msg
+                                        set msgDate to \(dateField) of msg
+                                        -- Format date as Unix timestamp for reliable parsing
+                                        set epochRef to current date
+                                        set year of epochRef to 2001
+                                        set month of epochRef to 1
+                                        set day of epochRef to 1
+                                        set time of epochRef to 0
+                                        set unixDate to (msgDate - epochRef)
+                                        set output to output & (msgID as text) & tab & msgMsgID & tab & msgSubj & tab & msgSender & tab & (unixDate as text) & lineFeed
                                     end try
-                                    if isMarketing is 0 then
-                                        try
-                                            content of header "List-ID" of msg
-                                            set isMarketing to 1
-                                        end try
-                                    end if
-                                    if isMarketing is 0 then
-                                        try
-                                            set p to content of header "Precedence" of msg
-                                            if p contains "bulk" or p contains "list" then
-                                                set isMarketing to 1
-                                            end if
-                                        end try
-                                    end if
-                                    set end of msgIDs to theID
-                                    set end of msgMessageIDs to theMsgID
-                                    set end of msgSubjects to theSubject
-                                    set end of msgSenders to theSender
-                                    set end of msgDates to theDate
-                                    set end of msgMarketing to isMarketing
-                                end try
-                            end repeat
-                            return {matchedName, msgIDs, msgMessageIDs, msgSubjects, msgSenders, msgDates, msgMarketing}
-                        end if
-                    end try
-                end repeat
-
-                -- Fallback: match by account name (some accounts store email as name)
-                repeat with acct in every account
-                    try
-                        if (name of acct) is targetEmail then
-                            set matchedName to name of acct
-                            \(mailboxResolution)
-                            if mbx is missing value then
-                                return {"\(debugLabel)", matchedName, "all mailbox methods failed"}
+                                end repeat
+                                return output
                             end if
-                            set filteredMsgs to (every message of mbx whose \(dateField) > cutoff)
-                            set msgCount to count of filteredMsgs
-                            if msgCount is 0 then return {"__empty__", matchedName}
-                            if msgCount > maxMsgs then set msgCount to maxMsgs
-                            set msgIDs to {}
-                            set msgMessageIDs to {}
-                            set msgSubjects to {}
-                            set msgSenders to {}
-                            set msgDates to {}
-                            set msgMarketing to {}
-                            repeat with i from 1 to msgCount
-                                try
-                                    set msg to item i of filteredMsgs
-                                    set theID to id of msg
-                                    set theMsgID to message id of msg
-                                    set theSubject to subject of msg
-                                    set theSender to sender of msg
-                                    set theDate to \(dateField) of msg
-                                    set isMarketing to 0
-                                    try
-                                        content of header "List-Unsubscribe" of msg
-                                        set isMarketing to 1
-                                    end try
-                                    if isMarketing is 0 then
-                                        try
-                                            content of header "List-ID" of msg
-                                            set isMarketing to 1
-                                        end try
-                                    end if
-                                    if isMarketing is 0 then
-                                        try
-                                            set p to content of header "Precedence" of msg
-                                            if p contains "bulk" or p contains "list" then
-                                                set isMarketing to 1
-                                            end if
-                                        end try
-                                    end if
-                                    set end of msgIDs to theID
-                                    set end of msgMessageIDs to theMsgID
-                                    set end of msgSubjects to theSubject
-                                    set end of msgSenders to theSender
-                                    set end of msgDates to theDate
-                                    set end of msgMarketing to isMarketing
-                                end try
-                            end repeat
-                            return {matchedName, msgIDs, msgMessageIDs, msgSubjects, msgSenders, msgDates, msgMarketing}
-                        end if
-                    end try
-                end repeat
-                return {"__not_found__"}
+                        end try
+                    end repeat
+                    return "__not_found__"
+                end timeout
             end tell
             """
 
-            let (metaResult, metaError) = executeAppleScript(metadataScript)
-            if let metaError {
-                logger.warning("Metadata sweep failed for \(accountID, privacy: .private): \(metaError, privacy: .public)")
-                accountWarnings.append("'\(accountID)': \(metaError)")
+            let (stdout, osError) = await executeOsascript(metadataScript, timeout: 120)
+            if let osError {
+                logger.warning("Metadata sweep failed for \(accountID, privacy: .private): \(osError, privacy: .public)")
+                accountWarnings.append("'\(accountID)': \(osError)")
                 continue
             }
-            guard let metaDesc = metaResult else { continue }
+            guard let output = stdout, !output.isEmpty else { continue }
 
-            // Check for sentinel values (status reports, not data)
-            let firstItem = metaDesc.atIndex(1)?.stringValue ?? ""
-            if firstItem.hasPrefix("__") {
-                let acctName = metaDesc.atIndex(2)?.stringValue ?? "?"
-                switch firstItem {
-                case "__not_found__":
-                    logger.warning("No account found with email \(accountID, privacy: .private)")
-                    accountWarnings.append("No Mail account found for '\(accountID)'")
-                case "__inbox_debug__", "__sent_debug__":
-                    let mbxLabel = firstItem == "__sent_debug__" ? "sent" : "inbox"
-                    let errDetail = metaDesc.atIndex(3)?.stringValue ?? "unknown"
-                    logger.error("Account '\(acctName, privacy: .private)' matched but \(mbxLabel) not accessible. Errors: \(errDetail, privacy: .public)")
-                    accountWarnings.append("Account '\(acctName)' \(mbxLabel) not accessible: \(errDetail)")
-                case "__fetch_debug__":
-                    let errDetail = metaDesc.atIndex(3)?.stringValue ?? "unknown"
-                    logger.error("Account '\(acctName, privacy: .private)' inbox found but message fetch failed: \(errDetail, privacy: .public)")
-                    accountWarnings.append("Account '\(acctName)' message fetch failed: \(errDetail)")
-                case "__empty__":
-                    logger.info("Account '\(acctName, privacy: .private)' matched, no messages in date range")
-                default:
-                    logger.warning("Unknown sentinel '\(firstItem, privacy: .public)' for \(accountID, privacy: .private)")
+            // Parse sentinel responses (single-line)
+            if output.hasPrefix("__not_found__") {
+                logger.warning("No account found with email \(accountID, privacy: .private)")
+                accountWarnings.append("No Mail account found for '\(accountID)'")
+                continue
+            }
+            if output.hasPrefix("__empty__") {
+                let parts = output.split(separator: "\t", maxSplits: 1)
+                let acctName = parts.count > 1 ? String(parts[1]) : "?"
+                logger.info("Account '\(acctName, privacy: .private)' matched, no messages in date range")
+                continue
+            }
+            if output.hasPrefix(debugLabel) {
+                let parts = output.split(separator: "\t", maxSplits: 2)
+                let acctName = parts.count > 1 ? String(parts[1]) : "?"
+                let errDetail = parts.count > 2 ? String(parts[2]) : "unknown"
+                let mbxLabel = mailbox == .sent ? "sent" : "inbox"
+                logger.error("Account '\(acctName, privacy: .private)' matched but \(mbxLabel) not accessible: \(errDetail, privacy: .public)")
+                accountWarnings.append("Account '\(acctName)' \(mbxLabel) not accessible: \(errDetail)")
+                continue
+            }
+
+            // Parse __data__ response: first line is header, subsequent lines are messages
+            let lines = output.components(separatedBy: "\n").filter { !$0.isEmpty }
+            guard let headerLine = lines.first, headerLine.hasPrefix("__data__") else { continue }
+
+            let headerParts = headerLine.split(separator: "\t", maxSplits: 2)
+            let resolvedAccountName = headerParts.count > 1 ? String(headerParts[1]) : accountID
+
+            logger.info("Account '\(resolvedAccountName, privacy: .private)' (email: \(accountID, privacy: .private)): \(lines.count - 1) messages in date range")
+
+            for line in lines.dropFirst() {
+                let fields = line.components(separatedBy: "\t")
+                guard fields.count >= 5 else { continue }
+
+                let mailID = Int32(fields[0]) ?? 0
+                let messageID = fields[1]
+                let subject = fields[2].isEmpty ? "(No Subject)" : fields[2]
+                let sender = fields[3]
+                // Parse Unix timestamp (seconds since 2001-01-01, AppleScript epoch)
+                let dateVal: Date
+                if let interval = TimeInterval(fields[4]) {
+                    dateVal = Date(timeIntervalSinceReferenceDate: interval)
+                } else {
+                    dateVal = Date()
                 }
-                continue
-            }
-
-            guard metaDesc.numberOfItems >= 6,
-                  let acctNameDesc = metaDesc.atIndex(1),
-                  let idsDesc = metaDesc.atIndex(2),
-                  let messageIDsDesc = metaDesc.atIndex(3),
-                  let subjectsDesc = metaDesc.atIndex(4),
-                  let sendersDesc = metaDesc.atIndex(5),
-                  let datesDesc = metaDesc.atIndex(6) else { continue }
-
-            // Index 7 is marketing flags (0/1 integers) — optional for forward compatibility
-            let marketingDesc = metaDesc.atIndex(7)
-
-            let resolvedAccountName = acctNameDesc.stringValue ?? accountID
-            let count = idsDesc.numberOfItems
-            if count == 0 { continue }
-
-            logger.info("Account '\(resolvedAccountName, privacy: .private)' (email: \(accountID, privacy: .private)): \(count) messages in date range")
-
-            for i in 1...count {
-                let mailID = idsDesc.atIndex(i)?.int32Value ?? 0
-                let messageID = messageIDsDesc.atIndex(i)?.stringValue ?? ""
-                let subject = subjectsDesc.atIndex(i)?.stringValue ?? "(No Subject)"
-                let sender = sendersDesc.atIndex(i)?.stringValue ?? ""
-                let dateVal = datesDesc.atIndex(i)?.dateValue ?? Date()
                 let senderEmail = Self.extractEmail(from: sender)
-                let isLikelyMarketing = (marketingDesc?.atIndex(i)?.int32Value ?? 0) != 0
+                let isLikelyMarketing = Self.isLikelyMarketingSender(email: senderEmail)
 
                 allMetas.append(MessageMeta(
                     mailID: mailID,
@@ -439,10 +322,84 @@ actor MailService {
         return (allMetas, warning)
     }
 
+    // MARK: - Marketing Detection (Swift-side)
+
+    /// Common local-parts used by marketing/bulk senders.
+    private static let marketingLocalParts: Set<String> = [
+        "noreply", "no-reply", "no_reply",
+        "newsletter", "newsletters",
+        "marketing", "promotions", "promo",
+        "info", "updates", "news",
+        "notifications", "notification",
+        "mailer", "mailer-daemon",
+        "bounce", "bounces",
+        "donotreply", "do-not-reply", "do_not_reply",
+        "unsubscribe",
+        "digest", "weekly", "daily",
+        "campaign", "campaigns",
+        "announce", "announcements",
+        "bulk", "blast",
+        "support", "feedback",
+    ]
+
+    /// Common domains used exclusively for marketing/transactional bulk email.
+    private static let marketingDomains: Set<String> = [
+        "mailchimp.com", "mandrillapp.com",
+        "sendgrid.net", "sendgrid.com",
+        "constantcontact.com", "ctctmail.com",
+        "mailgun.org", "mailgun.com",
+        "amazonses.com",
+        "salesforce.com", "exacttarget.com",
+        "hubspot.com", "hubspotmail.com",
+        "marketo.com", "mktomail.com",
+        "klaviyo.com",
+        "postmarkapp.com",
+        "sendinblue.com", "brevo.com",
+        "campaignmonitor.com", "cmail1.com", "cmail2.com",
+        "substack.com", "substackmail.com",
+        "beehiiv.com",
+        "convertkit.com",
+        "drip.com",
+        "getresponse.com",
+        "aweber.com",
+        "infusionsoft.com",
+        "activecampaign.com",
+        "intercom.io", "intercom-mail.com",
+        "zendesk.com",
+    ]
+
+    /// Detect likely marketing/bulk email by sender address heuristics.
+    /// Replaces per-message AppleScript header checks (List-Unsubscribe, List-ID, Precedence)
+    /// to avoid hammering Mail.app with individual Apple Events.
+    static func isLikelyMarketingSender(email: String) -> Bool {
+        let parts = email.split(separator: "@", maxSplits: 1)
+        guard parts.count == 2 else { return false }
+        let localPart = String(parts[0]).lowercased()
+        let domain = String(parts[1]).lowercased()
+
+        // Check domain against known bulk-email infrastructure
+        if marketingDomains.contains(domain) { return true }
+
+        // Check if the domain is a subdomain of a known marketing domain
+        for mktDomain in marketingDomains {
+            if domain.hasSuffix(".\(mktDomain)") { return true }
+        }
+
+        // Check local-part against common marketing sender patterns
+        if marketingLocalParts.contains(localPart) { return true }
+
+        return false
+    }
+
     // MARK: - Fetch Bodies (Phase 2 — slow)
 
-    /// Phase 2: Fetch message bodies + recipients for a given subset of MessageMetas.
-    /// Apply filter rules after body/recipient data is available.
+    /// Seconds to pause between single-message body fetches so Mail.app can
+    /// service its own UI events and IMAP work.
+    private let interBodyDelay: TimeInterval = 1.0
+
+    /// Phase 2: Fetch message bodies + recipients one at a time via osascript.
+    /// Each fetch runs in a subprocess with a hard 30s kill timeout.
+    /// A delay between fetches lets Mail.app stay responsive.
     func fetchBodies(
         for metas: [MessageMeta],
         filterRules: [MailFilterRule],
@@ -451,107 +408,84 @@ actor MailService {
         guard !metas.isEmpty else { return [] }
 
         var allEmails: [EmailDTO] = []
+        let toFetch = Array(metas.prefix(maxBodyFetches))
 
-        // Group metas by account to minimize AppleScript overhead
-        let byAccount = Dictionary(grouping: metas, by: \.accountName)
+        // Group metas by account
+        let byAccount = Dictionary(grouping: toFetch, by: \.accountName)
 
         for (accountName, accountMetas) in byAccount {
             let escapedAcctName = accountName.replacingOccurrences(of: "\"", with: "\\\"")
-            let toFetch = Array(accountMetas.prefix(maxBodyFetches))
-
-            // Build mailbox resolution AppleScript for body fetch
-            let bodyMbxResolution: String
-            switch mailbox {
-            case .inbox:
-                bodyMbxResolution = """
-                        set mbx to missing value
-                        try
-                            set mbx to inbox of acct
-                        end try
-                        if mbx is missing value then
-                            try
-                                set mbx to mailbox "INBOX" of acct
-                            end try
-                        end if
-                        if mbx is missing value then
-                            try
-                                set mbx to mailbox "Inbox" of acct
-                            end try
-                        end if
-                        if mbx is missing value then
-                            repeat with m in every mailbox of acct
-                                try
-                                    set mName to name of m
-                                    if mName is "INBOX" or mName is "Inbox" or mName is "inbox" then
-                                        set mbx to m
-                                        exit repeat
-                                    end if
-                                end try
-                            end repeat
-                        end if
-                    """
-            case .sent:
-                bodyMbxResolution = """
-                        set mbx to missing value
-                        try
-                            set mbx to mailbox "Sent Messages" of acct
-                        end try
-                        if mbx is missing value then
-                            try
-                                set mbx to mailbox "Sent" of acct
-                            end try
-                        end if
-                        if mbx is missing value then
-                            try
-                                set mbx to mailbox "Sent Mail" of acct
-                            end try
-                        end if
-                        if mbx is missing value then
-                            try
-                                set mbx to mailbox "[Gmail]/Sent Mail" of acct
-                            end try
-                        end if
-                        if mbx is missing value then
-                            repeat with m in every mailbox of acct
-                                try
-                                    set mName to name of m
-                                    if mName contains "Sent" and mName does not contain "Junk" then
-                                        set mbx to m
-                                        exit repeat
-                                    end if
-                                end try
-                            end repeat
-                        end if
-                    """
-            }
+            let mbxResolution = mailboxResolutionScript(for: mailbox)
             let mbxErrorLabel = mailbox == .sent ? "sent mailbox" : "inbox"
 
-            for meta in toFetch {
+            for (index, meta) in accountMetas.enumerated() {
+                guard !Task.isCancelled else { break }
+
+                // Throttle between fetches
+                if index > 0 {
+                    try? await Task.sleep(for: .seconds(interBodyDelay))
+                }
+
+                // Fetch one message body via osascript with hard timeout.
+                // Output format: recipientEmails \t ccEmails \t readStatus \n body
+                // Recipients/CCs are comma-separated within their field.
                 let bodyScript = """
                 tell application "Mail"
-                    set acct to first account whose name is "\(escapedAcctName)"
-                    \(bodyMbxResolution)
-                    if mbx is missing value then error "No \(mbxErrorLabel) found"
-                    set m to (first message of mbx whose id is \(meta.mailID))
-                    set msgContent to content of m
-                    set msgRecipients to address of every to recipient of m
-                    set msgCC to address of every cc recipient of m
-                    set msgRead to read status of m
-                    return {msgContent, msgRecipients, msgCC, msgRead}
+                    with timeout of 30 seconds
+                        set acct to first account whose name is "\(escapedAcctName)"
+                        \(mbxResolution)
+                        if mbx is missing value then error "No \(mbxErrorLabel) found"
+                        set m to (first message of mbx whose id is \(meta.mailID))
+                        set msgContent to content of m
+                        set toAddrs to address of every to recipient of m
+                        set ccAddrs to address of every cc recipient of m
+                        set isRead to read status of m
+                        -- Build comma-separated recipient lists
+                        set toStr to ""
+                        repeat with a in toAddrs
+                            if toStr is not "" then set toStr to toStr & ","
+                            set toStr to toStr & a
+                        end repeat
+                        set ccStr to ""
+                        repeat with a in ccAddrs
+                            if ccStr is not "" then set ccStr to ccStr & ","
+                            set ccStr to ccStr & a
+                        end repeat
+                        set readStr to "true"
+                        if not isRead then set readStr to "false"
+                        -- First line: metadata; remaining lines: body
+                        return toStr & tab & ccStr & tab & readStr & (ASCII character 10) & msgContent
+                    end timeout
                 end tell
                 """
 
-                let (bodyResult, bodyError) = executeAppleScript(bodyScript)
-                if let bodyError {
-                    logger.warning("Body fetch failed for message \(meta.mailID): \(bodyError, privacy: .public)")
+                let (stdout, osError) = await executeOsascript(bodyScript, timeout: 45)
+                if let osError {
+                    logger.warning("Body fetch failed for message \(meta.mailID): \(osError, privacy: .public)")
+                    // Bail out entirely on privilege violation — all subsequent calls will fail too
+                    if osError.contains("-10004") || osError.contains("privilege violation") {
+                        logger.error("Mail automation permission denied — skipping remaining body fetches")
+                        return allEmails
+                    }
                     continue
                 }
-                guard let bodyDesc = bodyResult, bodyDesc.numberOfItems >= 4 else { continue }
+                guard let output = stdout, !output.isEmpty else { continue }
 
-                let body = bodyDesc.atIndex(1)?.stringValue ?? ""
-                let recipients = Self.extractStringList(from: bodyDesc.atIndex(2))
-                let cc = Self.extractStringList(from: bodyDesc.atIndex(3))
-                let isRead = bodyDesc.atIndex(4)?.booleanValue ?? true
+                // Parse: first line is "recipients\tcc\treadStatus", rest is body
+                let firstNewline = output.firstIndex(of: "\n") ?? output.endIndex
+                let headerLine = String(output[output.startIndex..<firstNewline])
+                let body = firstNewline < output.endIndex
+                    ? String(output[output.index(after: firstNewline)...])
+                    : ""
+
+                let headerFields = headerLine.components(separatedBy: "\t")
+                let recipients = headerFields.count > 0
+                    ? headerFields[0].split(separator: ",").map { String($0) }
+                    : []
+                let cc = headerFields.count > 1
+                    ? headerFields[1].split(separator: ",").map { String($0) }
+                    : []
+                let isRead = headerFields.count > 2 ? headerFields[2] == "true" : true
 
                 let senderName = Self.extractName(from: meta.sender)
                 let snippet = String(body.prefix(200))
@@ -587,6 +521,73 @@ actor MailService {
         return allEmails
     }
 
+    /// Shared mailbox resolution AppleScript fragment (avoids duplication between body fetch and MIME fetch).
+    private func mailboxResolutionScript(for mailbox: MailboxTarget) -> String {
+        switch mailbox {
+        case .inbox:
+            return """
+                    set mbx to missing value
+                    try
+                        set mbx to inbox of acct
+                    end try
+                    if mbx is missing value then
+                        try
+                            set mbx to mailbox "INBOX" of acct
+                        end try
+                    end if
+                    if mbx is missing value then
+                        try
+                            set mbx to mailbox "Inbox" of acct
+                        end try
+                    end if
+                    if mbx is missing value then
+                        repeat with m in every mailbox of acct
+                            try
+                                set mName to name of m
+                                if mName is "INBOX" or mName is "Inbox" or mName is "inbox" then
+                                    set mbx to m
+                                    exit repeat
+                                end if
+                            end try
+                        end repeat
+                    end if
+                """
+        case .sent:
+            return """
+                    set mbx to missing value
+                    try
+                        set mbx to mailbox "Sent Messages" of acct
+                    end try
+                    if mbx is missing value then
+                        try
+                            set mbx to mailbox "Sent" of acct
+                        end try
+                    end if
+                    if mbx is missing value then
+                        try
+                            set mbx to mailbox "Sent Mail" of acct
+                        end try
+                    end if
+                    if mbx is missing value then
+                        try
+                            set mbx to mailbox "[Gmail]/Sent Mail" of acct
+                        end try
+                    end if
+                    if mbx is missing value then
+                        repeat with m in every mailbox of acct
+                            try
+                                set mName to name of m
+                                if mName contains "Sent" and mName does not contain "Junk" then
+                                    set mbx to m
+                                    exit repeat
+                                end if
+                            end try
+                        end repeat
+                    end if
+                """
+        }
+    }
+
     // MARK: - Fetch MIME Source (for LinkedIn HTML parsing)
 
     /// Fetch the raw MIME source of a single message via AppleScript (`source of m`).
@@ -598,46 +599,25 @@ actor MailService {
     /// - Returns: The raw MIME source string, or nil if the message cannot be located.
     func fetchMIMESource(for meta: MessageMeta) async -> String? {
         let escapedAcctName = meta.accountName.replacingOccurrences(of: "\"", with: "\\\"")
+        let mbxResolution = mailboxResolutionScript(for: .inbox)
         let script = """
         tell application "Mail"
-            set acct to first account whose name is "\(escapedAcctName)"
-            set mbx to missing value
-            try
-                set mbx to inbox of acct
-            end try
-            if mbx is missing value then
-                try
-                    set mbx to mailbox "INBOX" of acct
-                end try
-            end if
-            if mbx is missing value then
-                try
-                    set mbx to mailbox "Inbox" of acct
-                end try
-            end if
-            if mbx is missing value then
-                repeat with m in every mailbox of acct
-                    try
-                        set mName to name of m
-                        if mName is "INBOX" or mName is "Inbox" or mName is "inbox" then
-                            set mbx to m
-                            exit repeat
-                        end if
-                    end try
-                end repeat
-            end if
-            if mbx is missing value then error "No inbox found"
-            set m to (first message of mbx whose id is \(meta.mailID))
-            return source of m
+            with timeout of 30 seconds
+                set acct to first account whose name is "\(escapedAcctName)"
+                \(mbxResolution)
+                if mbx is missing value then error "No inbox found"
+                set m to (first message of mbx whose id is \(meta.mailID))
+                return source of m
+            end timeout
         end tell
         """
 
-        let (result, error) = executeAppleScript(script)
-        if let error {
-            logger.warning("MIME source fetch failed for message \(meta.mailID): \(error, privacy: .public)")
+        let (stdout, osError) = await executeOsascript(script, timeout: 45)
+        if let osError {
+            logger.warning("MIME source fetch failed for message \(meta.mailID): \(osError, privacy: .public)")
             return nil
         }
-        return result?.stringValue
+        return stdout
     }
 
     /// Extract the decoded HTML body from a raw RFC 2822 MIME source string.
@@ -849,6 +829,7 @@ actor MailService {
 
     // MARK: - AppleScript Execution
 
+    /// Execute AppleScript via NSAppleScript (used for small, fast queries like checkAccess).
     private func executeAppleScript(_ source: String) -> (NSAppleEventDescriptor?, String?) {
         var errorDict: NSDictionary?
         let script = NSAppleScript(source: source)
@@ -859,6 +840,103 @@ actor MailService {
             return (nil, message)
         }
         return (result, nil)
+    }
+
+    /// Execute AppleScript via `/usr/bin/osascript` subprocess with a hard timeout.
+    ///
+    /// Advantages over `NSAppleScript`:
+    /// - Hard kill timeout prevents infinite hangs (the Process is terminated)
+    /// - Runs in a separate process, isolating SAM from Mail.app event loop issues
+    /// - Returns plain text (stdout) which avoids NSAppleEventDescriptor memory accumulation
+    /// - Does not block the actor's executor (uses `terminationHandler`)
+    ///
+    /// - Parameters:
+    ///   - source: The AppleScript source code
+    ///   - timeout: Maximum seconds to wait before killing the subprocess (default 30)
+    /// - Returns: (stdout, errorMessage) — stdout is nil on failure
+    private func executeOsascript(_ source: String, timeout: TimeInterval = 30) async -> (String?, String?) {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = ["-e", source]
+
+        let stdoutPipe = Pipe()
+        let stderrPipe = Pipe()
+        process.standardOutput = stdoutPipe
+        process.standardError = stderrPipe
+
+        // Read pipes on background threads BEFORE waiting for process exit.
+        // This prevents deadlock when stdout/stderr exceed the 64KB pipe buffer
+        // (e.g. large email bodies). Without concurrent reading, the process blocks
+        // on write, but we wait for exit before reading → deadlock.
+        let stdoutBox = PipeReader(pipe: stdoutPipe)
+        let stderrBox = PipeReader(pipe: stderrPipe)
+
+        // Use a continuation so we don't block the actor's executor
+        let terminationStatus: (Int32, Process.TerminationReason) = await withCheckedContinuation { continuation in
+            process.terminationHandler = { proc in
+                continuation.resume(returning: (proc.terminationStatus, proc.terminationReason))
+            }
+
+            do {
+                try process.run()
+            } catch {
+                continuation.resume(returning: (-1, .exit))
+                return
+            }
+
+            // Hard timeout: kill the process if it exceeds the limit
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(timeout))
+                if process.isRunning {
+                    self?.logger.warning("osascript exceeded \(timeout)s timeout — terminating")
+                    process.terminate()
+                }
+            }
+        }
+
+        // Wait for pipe readers to finish (they complete once the pipe closes after process exit)
+        let stdoutData = await stdoutBox.result()
+        let stderrData = await stderrBox.result()
+
+        if terminationStatus.0 != 0 {
+            let errStr = String(data: stderrData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "Unknown error"
+            if terminationStatus.1 == .uncaughtSignal {
+                return (nil, "osascript timed out after \(Int(timeout))s")
+            }
+            if terminationStatus.0 == -1 {
+                return (nil, "Failed to launch osascript")
+            }
+            return (nil, errStr)
+        }
+
+        let output = String(data: stdoutData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (output, nil)
+    }
+
+    /// Reads from a Pipe on a GCD thread to prevent deadlock.
+    /// Must be created before the process starts writing to the pipe.
+    /// Uses GCD + async continuation (NOT Task.detached) because
+    /// readDataToEndOfFile() is blocking I/O that must not run on
+    /// the cooperative thread pool.
+    private final class PipeReader: Sendable {
+        private let _result: Task<Data, Never>
+
+        init(pipe: Pipe) {
+            let fileHandle = pipe.fileHandleForReading
+            // Bridge blocking I/O to async via GCD
+            _result = Task {
+                await withUnsafeContinuation { cont in
+                    DispatchQueue.global(qos: .utility).async {
+                        let data = fileHandle.readDataToEndOfFile()
+                        cont.resume(returning: data)
+                    }
+                }
+            }
+        }
+
+        func result() async -> Data {
+            await _result.value
+        }
     }
 
     // MARK: - Parsing Helpers

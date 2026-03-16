@@ -954,11 +954,18 @@ struct SAMApp: App {
         }
 
         // Check mail if it was enabled (AppleScript automation permission)
+        // Only treat explicit permission denial as lost — transient errors
+        // (Mail busy, not running, timeout) should NOT reset onboarding.
         if mailEnabled {
-            let mailError = await MailService.shared.checkAccess()
-            if mailError != nil {
-                logger.warning("Mail was enabled but automation permission is now revoked")
+            let mailCheck = await MailService.shared.checkAccessDetailed()
+            switch mailCheck {
+            case .ok:
+                break
+            case .permissionDenied(let msg):
+                logger.warning("Mail was enabled but permission is now revoked: \(msg)")
                 permissionsLost = true
+            case .transientError(let msg):
+                logger.info("Mail access check returned transient error (not resetting onboarding): \(msg)")
             }
         }
 

@@ -358,6 +358,9 @@ final class CommunicationsImportCoordinator {
         importStatus = .importing
         lastError = nil
 
+        // Invalidate resolution caches so they rebuild with fresh contact data
+        EvidenceRepository.shared.invalidateResolutionCache()
+
         let lookbackDate: Date = lookbackDays == 0
             ? .distantPast
             : (Calendar.current.date(byAdding: .day, value: -lookbackDays, to: Date()) ?? Date())
@@ -374,38 +377,50 @@ final class CommunicationsImportCoordinator {
 
         do {
             // Build known identifier sets
+            logger.info("[comms-import] Building known identifier sets…")
             let knownEmails = try peopleRepository.allKnownEmails()
             let knownPhones = try peopleRepository.allKnownPhones()
             let knownIdentifiers = knownEmails.union(knownPhones)
+            logger.info("[comms-import] Known: \(knownEmails.count) emails, \(knownPhones.count) phones")
 
             // --- iMessage ---
             if messagesEnabled, bookmarkManager.hasMessagesAccess {
+                logger.info("[comms-import] Starting iMessage import (since \(messageSince))…")
                 let result = try await importMessages(since: messageSince, knownIdentifiers: knownIdentifiers)
                 totalMessages = result.count
                 deferredIMThreads = result.deferred
+                logger.info("[comms-import] iMessage import done: \(result.count) messages, \(result.deferred.count) threads for analysis")
             }
 
             // --- Call History ---
             if callsEnabled, bookmarkManager.hasCallHistoryAccess {
+                logger.info("[comms-import] Starting call history import…")
                 totalCalls = try await importCallHistory(since: callSince, knownPhones: knownPhones)
+                logger.info("[comms-import] Call history done: \(totalCalls) calls")
             }
 
             // --- WhatsApp Messages ---
             if whatsAppMessagesEnabled, bookmarkManager.hasWhatsAppAccess {
+                logger.info("[comms-import] Starting WhatsApp messages import…")
                 let result = try await importWhatsAppMessages(since: waMessageSince, knownPhones: knownPhones)
                 totalWAMessages = result.count
                 deferredWAThreads = result.deferred
+                logger.info("[comms-import] WhatsApp messages done: \(result.count)")
             }
 
             // --- WhatsApp Calls ---
             if whatsAppCallsEnabled, bookmarkManager.hasWhatsAppAccess {
+                logger.info("[comms-import] Starting WhatsApp calls import…")
                 totalWACalls = try await importWhatsAppCalls(since: waCallSince, knownPhones: knownPhones)
+                logger.info("[comms-import] WhatsApp calls done: \(totalWACalls)")
             }
 
             // --- WhatsApp Unknown Sender Discovery ---
             if (whatsAppMessagesEnabled || whatsAppCallsEnabled), bookmarkManager.hasWhatsAppAccess {
+                logger.info("[comms-import] Starting WhatsApp unknown sender discovery…")
                 await discoverWhatsAppUnknownSenders(knownPhones: knownPhones)
                 await generateWhatsAppEnrichments(knownPhones: knownPhones)
+                logger.info("[comms-import] WhatsApp discovery done")
             }
 
             lastImportedAt = Date()
@@ -491,11 +506,13 @@ final class CommunicationsImportCoordinator {
         defer { bookmarkManager.stopAccessing(resolved.directory) }
 
         // Fetch messages from known contacts (and capture unknown senders)
+        logger.info("[comms-import] Querying iMessage database…")
         let (messages, unknownMessages) = try await messageService.fetchMessages(
             since: since,
             dbURL: resolved.database,
             knownIdentifiers: knownIdentifiers
         )
+        logger.info("[comms-import] Fetched \(messages.count) known + \(unknownMessages.count) unknown messages")
 
         // Record unknown senders for triage + event RSVP detection
         if !unknownMessages.isEmpty {
@@ -526,16 +543,19 @@ final class CommunicationsImportCoordinator {
         }
 
         guard !messages.isEmpty else {
-            logger.info("No new messages from known contacts")
+            logger.info("[comms-import] No new messages from known contacts")
             return (0, [])
         }
 
         // Group messages by (handle, day) for analysis
+        logger.info("[comms-import] Grouping \(messages.count) messages by handle+day…")
         let grouped = groupMessagesByHandleAndDay(messages)
 
         // Upsert all messages WITHOUT analysis (fast persist)
+        logger.info("[comms-import] Upserting \(messages.count) messages into SwiftData…")
         let upsertData: [(MessageDTO, MessageAnalysisDTO?)] = messages.map { ($0, nil) }
         try evidenceRepository.bulkUpsertMessages(upsertData)
+        logger.info("[comms-import] Upsert complete")
 
         // Update watermark to newest message date
         if let newest = messages.max(by: { $0.date < $1.date })?.date {

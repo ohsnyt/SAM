@@ -49,6 +49,14 @@ public final class SamPerson {
 
     /// All known canonical phone numbers for matching (last 10 digits, digits only)
     public var phoneAliases: [String] = []
+
+    /// Cached result of Apple Contacts lookup for unlinked people.
+    /// - `nil` = not yet checked
+    /// - `true` = Apple Contact exists but not in SAM group ("Not in SAM")
+    /// - `false` = no Apple Contact found ("Not in Contacts")
+    /// Set by NotInContactsCapsule when it performs its async check.
+    /// Cleared when the person is linked (contactIdentifier set).
+    public var hasAppleContactMatch: Bool?
     
     /// Thumbnail image cached from CNContact.thumbnailImageData
     public var photoThumbnailCache: Data?

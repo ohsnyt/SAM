@@ -91,15 +91,37 @@ final class EvidenceRepository {
         return allItems.first { $0.id == id }
     }
 
-    /// Fetch evidence item by sourceUID (for idempotent upsert).
-    func fetch(sourceUID: String) throws -> SamEvidenceItem? {
-        guard let context = context else {
-            throw RepositoryError.notConfigured
-        }
+    /// Cached sourceUID → SamEvidenceItem lookup, built on first use per import cycle.
+    private var sourceUIDCache: [String: SamEvidenceItem]?
+
+    /// Build or return the cached sourceUID lookup table.
+    private func getSourceUIDLookup() throws -> [String: SamEvidenceItem] {
+        if let cache = sourceUIDCache { return cache }
+        guard let context = context else { throw RepositoryError.notConfigured }
 
         let descriptor = FetchDescriptor<SamEvidenceItem>()
         let allItems = try context.fetch(descriptor)
-        return allItems.first { $0.sourceUID == sourceUID }
+        var lookup: [String: SamEvidenceItem] = [:]
+        lookup.reserveCapacity(allItems.count)
+        for item in allItems {
+            if let uid = item.sourceUID {
+                lookup[uid] = item
+            }
+        }
+        sourceUIDCache = lookup
+        logger.info("Built sourceUID lookup cache: \(lookup.count) evidence items")
+        return lookup
+    }
+
+    /// Invalidate the sourceUID cache (call after bulk inserts to pick up new items).
+    private func invalidateSourceUIDCache() {
+        sourceUIDCache = nil
+    }
+
+    /// Fetch evidence item by sourceUID (for idempotent upsert).
+    func fetch(sourceUID: String) throws -> SamEvidenceItem? {
+        let lookup = try getSourceUIDLookup()
+        return lookup[sourceUID]
     }
 
     // MARK: - Search
@@ -300,27 +322,21 @@ final class EvidenceRepository {
         return email.lowercased()
     }
 
-    /// Resolve SamPerson records by a list of email addresses (case-insensitive) using emailCache.
+    /// Resolve SamPerson records by a list of email addresses using cached lookup table.
     private func resolvePeople(byEmails emails: [String]) -> [SamPerson] {
-        guard let context = context else { return [] }
-        do {
-            let descriptor = FetchDescriptor<SamPerson>()
-            let allPeople = try context.fetch(descriptor)
-            let emailSet = Set(emails.compactMap { canonicalizeEmail($0) })
-            logger.debug("Resolving people by emails: \(Array(emailSet))")
-            let matches = allPeople.filter { person in
-                let primary = canonicalizeEmail(person.emailCache)
-                if let primary, emailSet.contains(primary) { return true }
-                // Check aliases
-                let aliases = person.emailAliases.map { $0.lowercased() }
-                return !Set(aliases).isDisjoint(with: emailSet)
+        let emailSet = Set(emails.compactMap { canonicalizeEmail($0) })
+        guard !emailSet.isEmpty else { return [] }
+        let lookup = getEmailLookup()
+        var seen = Set<PersistentIdentifier>()
+        var matches: [SamPerson] = []
+        for email in emailSet {
+            if let people = lookup[email] {
+                for person in people where seen.insert(person.persistentModelID).inserted {
+                    matches.append(person)
+                }
             }
-            logger.debug("Matched \(matches.count) people")
-            return matches
-        } catch {
-            logger.error("Failed to resolve people by emails: \(error)")
-            return []
         }
+        return matches
     }
 
     // MARK: - Phone-Based Resolution
@@ -333,25 +349,88 @@ final class EvidenceRepository {
         return String(digits.suffix(10))
     }
 
-    /// Resolve SamPerson records by phone numbers using phoneAliases.
-    private func resolvePeople(byPhones phones: [String]) -> [SamPerson] {
-        guard let context = context else { return [] }
+    // MARK: - Cached Lookup Tables
+
+    /// Cached phone → [SamPerson] lookup, built once per import cycle.
+    private var phoneLookupCache: [String: [SamPerson]]?
+    /// Cached email → [SamPerson] lookup, built once per import cycle.
+    private var emailLookupCache: [String: [SamPerson]]?
+
+    /// Invalidate cached lookup tables. Call at the start of each import cycle
+    /// or when contacts change.
+    func invalidateResolutionCache() {
+        phoneLookupCache = nil
+        emailLookupCache = nil
+        sourceUIDCache = nil
+    }
+
+    /// Build or return the cached phone → people lookup table.
+    private func getPhoneLookup() -> [String: [SamPerson]] {
+        if let cache = phoneLookupCache { return cache }
+        guard let context = context else { return [:] }
         do {
             let descriptor = FetchDescriptor<SamPerson>()
             let allPeople = try context.fetch(descriptor)
-            let phoneSet = Set(phones.compactMap { canonicalizePhone($0) })
-            guard !phoneSet.isEmpty else { return [] }
-            logger.debug("Resolving people by phones: \(Array(phoneSet))")
-            let matches = allPeople.filter { person in
-                let aliases = Set(person.phoneAliases.compactMap { self.canonicalizePhone($0) })
-                return !aliases.isDisjoint(with: phoneSet)
+            var lookup: [String: [SamPerson]] = [:]
+            for person in allPeople {
+                for alias in person.phoneAliases {
+                    if let canonical = canonicalizePhone(alias) {
+                        lookup[canonical, default: []].append(person)
+                    }
+                }
             }
-            logger.debug("Matched \(matches.count) people by phone")
-            return matches
+            phoneLookupCache = lookup
+            logger.info("Built phone lookup cache: \(lookup.count) canonical phones → \(allPeople.count) people")
+            return lookup
         } catch {
-            logger.error("Failed to resolve people by phones: \(error)")
-            return []
+            logger.error("Failed to build phone lookup: \(error)")
+            return [:]
         }
+    }
+
+    /// Build or return the cached email → people lookup table.
+    private func getEmailLookup() -> [String: [SamPerson]] {
+        if let cache = emailLookupCache { return cache }
+        guard let context = context else { return [:] }
+        do {
+            let descriptor = FetchDescriptor<SamPerson>()
+            let allPeople = try context.fetch(descriptor)
+            var lookup: [String: [SamPerson]] = [:]
+            for person in allPeople {
+                if let primary = canonicalizeEmail(person.emailCache) {
+                    lookup[primary, default: []].append(person)
+                }
+                for alias in person.emailAliases {
+                    let lower = alias.lowercased()
+                    if !lower.isEmpty {
+                        lookup[lower, default: []].append(person)
+                    }
+                }
+            }
+            emailLookupCache = lookup
+            logger.info("Built email lookup cache: \(lookup.count) canonical emails → \(allPeople.count) people")
+            return lookup
+        } catch {
+            logger.error("Failed to build email lookup: \(error)")
+            return [:]
+        }
+    }
+
+    /// Resolve SamPerson records by phone numbers using cached lookup table.
+    private func resolvePeople(byPhones phones: [String]) -> [SamPerson] {
+        let phoneSet = Set(phones.compactMap { canonicalizePhone($0) })
+        guard !phoneSet.isEmpty else { return [] }
+        let lookup = getPhoneLookup()
+        var seen = Set<PersistentIdentifier>()
+        var matches: [SamPerson] = []
+        for phone in phoneSet {
+            if let people = lookup[phone] {
+                for person in people where seen.insert(person.persistentModelID).inserted {
+                    matches.append(person)
+                }
+            }
+        }
+        return matches
     }
 
     /// Reliably set linkedPeople on an evidence item.

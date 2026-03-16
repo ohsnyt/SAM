@@ -345,15 +345,30 @@ actor ContactsService {
         guard authorizationStatus() == .authorized else { return [] }
         guard !phoneNumber.isEmpty else { return [] }
 
+        let debugTrace = phoneNumber.contains("816")
+
         let cnPhone = CNPhoneNumber(stringValue: phoneNumber)
         let predicate = CNContact.predicateForContacts(matching: cnPhone)
 
+        if debugTrace {
+            logger.notice("[PhoneSearch] Searching for '\(phoneNumber, privacy: .public)' → CNPhoneNumber.stringValue='\(cnPhone.stringValue, privacy: .public)'")
+        }
+
         do {
             let contacts = try store.unifiedContacts(matching: predicate, keysToFetch: keys.keys)
+            if debugTrace {
+                for c in contacts {
+                    let phones = c.phoneNumbers.map { "\($0.label ?? "?"): \($0.value.stringValue)" }
+                    logger.notice("[PhoneSearch] Matched: '\(c.givenName, privacy: .public) \(c.familyName, privacy: .public)' id=\(c.identifier, privacy: .public) phones=\(phones, privacy: .public)")
+                }
+                if contacts.isEmpty {
+                    logger.notice("[PhoneSearch] No matches for '\(phoneNumber, privacy: .public)' in any container")
+                }
+            }
             logger.info("Found \(contacts.count) contacts matching phone '\(phoneNumber, privacy: .private)'")
             return contacts.map { ContactDTO(from: $0) }
         } catch {
-            logger.error("Failed to search contacts by phone: \(error.localizedDescription)")
+            logger.error("Failed to search contacts by phone '\(phoneNumber, privacy: .public)': \(error.localizedDescription)")
             return []
         }
     }
@@ -737,10 +752,10 @@ actor ContactsService {
         }
     }
     
-    /// Create a new contact with minimal fields (name, email, optional LinkedIn URL).
+    /// Create a new contact with minimal fields (name, email/phone, optional LinkedIn URL).
     /// The LinkedIn URL is stored as a social profile on the contact (visible in Contacts.app).
     /// Returns the created ContactDTO on success, or nil on failure.
-    func createContact(fullName: String, email: String?, note: String?, linkedInProfileURL: String? = nil, facebookProfileURL: String? = nil) async -> ContactDTO? {
+    func createContact(fullName: String, email: String?, phone: String? = nil, note: String?, linkedInProfileURL: String? = nil, facebookProfileURL: String? = nil) async -> ContactDTO? {
         guard authorizationStatus() == .authorized else {
             logger.warning("Attempted to create contact without authorization")
             return nil
@@ -761,6 +776,11 @@ actor ContactsService {
             if let email = email, !email.isEmpty {
                 let labeled = CNLabeledValue(label: CNLabelWork, value: NSString(string: email))
                 mutable.emailAddresses = [labeled]
+            }
+
+            if let phone = phone, !phone.isEmpty {
+                let labeled = CNLabeledValue(label: CNLabelPhoneNumberMobile, value: CNPhoneNumber(stringValue: phone))
+                mutable.phoneNumbers = [labeled]
             }
 
             var socialProfiles: [CNLabeledValue<CNSocialProfile>] = []

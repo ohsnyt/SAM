@@ -16,6 +16,7 @@ private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "Mai
 
 struct MailSettingsContent: View {
     @State private var coordinator = MailImportCoordinator.shared
+    @State private var bookmarkManager = BookmarkManager.shared
 
     @State private var accessError: String?
     @State private var meEmailAliases: [String] = []
@@ -87,6 +88,40 @@ struct MailSettingsContent: View {
                     Text("1 hour").tag(3600.0)
                 }
 
+            }
+
+            Divider()
+
+            // ── Direct Access (Performance) ──
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Direct Access")
+                    .font(.headline)
+
+                if bookmarkManager.hasMailDirAccess {
+                    Label("Direct database access enabled", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+
+                    Text("SAM reads Mail's database files directly — Mail.app is never blocked during imports.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Button("Revoke Access") {
+                        bookmarkManager.revokeMailDirAccess()
+                    }
+                    .foregroundStyle(.red)
+                } else {
+                    Text("Grant SAM direct access to Mail's data files for faster imports that don't slow down Mail.app.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+
+                    Button("Grant Mail Data Access") {
+                        bookmarkManager.requestMailDirAccess()
+                    }
+
+                    Text("You'll be asked to select ~/Library/Mail. This gives SAM read-only access to email metadata and message files. Mail.app is never touched.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Divider()

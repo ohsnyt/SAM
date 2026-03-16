@@ -38,12 +38,17 @@ final class PostImportOrchestrator {
     private func runPostImportWork() async {
         logger.info("Running debounced post-import work")
 
-        // Role deduction (already has its own 10-minute throttle)
-        await RoleDeductionEngine.shared.deduceRoles()
+        // Dispatch AI-heavy work to background so it doesn't block the main actor.
+        // Both engines are @MainActor @Observable, but their heavy lifting (LLM calls,
+        // SwiftData queries) should yield back to the main actor between steps.
+        // By not awaiting them here, the UI stays responsive during processing.
+        Task(priority: .utility) {
+            await RoleDeductionEngine.shared.deduceRoles()
+        }
+        Task(priority: .utility) {
+            InsightGenerator.shared.startAutoGeneration()
+        }
 
-        // Insight generation (already has its own throttle after our fix)
-        InsightGenerator.shared.startAutoGeneration()
-
-        logger.info("Post-import work complete")
+        logger.info("Post-import work dispatched")
     }
 }

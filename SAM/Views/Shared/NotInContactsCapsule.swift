@@ -36,6 +36,7 @@ struct NotInContactsCapsule: View {
     @State private var errorMessage: String?
     @State private var didCreate = false
     @State private var matchStatus: MatchStatus = .unknown
+    @State private var matchedContactName: String?
     @State private var containerMismatch = false
     @State private var mismatchedContactIdentifier: String?
 
@@ -53,7 +54,26 @@ struct NotInContactsCapsule: View {
         self.person = person
         self.displayName = person.displayNameCache ?? person.displayName
         self.email = person.emailCache ?? person.email
-        self.phone = person.phoneAliases.first
+        // Use phoneAliases if available; otherwise extract from displayName/email
+        // when they look like phone numbers (e.g. iMessage handles stored as "+18165551234")
+        self.phone = person.phoneAliases.first ?? Self.extractPhone(from: person)
+    }
+
+    /// Extract a phone number from displayName or email when phoneAliases is empty.
+    /// Handles iMessage contacts where the phone handle was stored in email fields.
+    private static func extractPhone(from person: SamPerson) -> String? {
+        let candidates = [
+            person.displayNameCache ?? person.displayName,
+            person.emailCache ?? person.email
+        ].compactMap { $0 }
+
+        for candidate in candidates {
+            let digits = candidate.filter(\.isNumber)
+            if digits.count >= 10, !candidate.contains("@") {
+                return candidate  // Return full string (e.g. "+18165551234") for CNPhoneNumber
+            }
+        }
+        return nil
     }
 
     /// For an unmatched participant (no SamPerson exists yet).
@@ -83,7 +103,7 @@ struct NotInContactsCapsule: View {
             }
             .buttonStyle(.plain)
             .help(matchStatus == .notInSAMGroup
-                  ? "Add \(displayName) to SAM group"
+                  ? "Add \(matchedContactName ?? displayName) to SAM group"
                   : "Add \(displayName) to Apple Contacts")
             .popover(isPresented: $showingConfirmation) {
                 confirmationPopover
@@ -164,12 +184,23 @@ struct NotInContactsCapsule: View {
                     .font(.headline)
 
                 VStack(spacing: 4) {
-                    Text(matchStatus == .notInSAMGroup
-                         ? "\"\(displayName)\" is in your Contacts but not in the SAM group."
-                         : "Create \"\(displayName)\" in Apple Contacts.")
-                        .font(.body)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
+                    if matchStatus == .notInSAMGroup, let contactName = matchedContactName, contactName != displayName {
+                        // Phone-number entry matched to a named contact
+                        Text("Match found: \"\(contactName)\"")
+                            .font(.body)
+                            .multilineTextAlignment(.center)
+                        Text("This contact is not yet in the SAM group.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    } else {
+                        Text(matchStatus == .notInSAMGroup
+                             ? "\"\(displayName)\" is in your Contacts but not in the SAM group."
+                             : "Create \"\(displayName)\" in Apple Contacts.")
+                            .font(.body)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
 
                     if let email {
                         Text(email)
@@ -209,19 +240,47 @@ struct NotInContactsCapsule: View {
     /// Check whether the person exists in Apple Contacts (outside SAM group)
     private func checkMatchStatus() async {
         let contactsService = ContactsService.shared
+        let debugTrace = displayName.hasPrefix("+1816")
+
+        if debugTrace {
+            logger.notice("[MatchTrace] checkMatchStatus for '\(displayName, privacy: .public)' phone='\(phone ?? "nil", privacy: .public)' email='\(email ?? "nil", privacy: .public)' phoneAliases=\(person?.phoneAliases ?? [], privacy: .public)")
+        }
 
         // Try phone search first if we have a phone number
         if let phone, !phone.isEmpty {
             let phoneMatches = await contactsService.searchContactsByPhone(phoneNumber: phone, keys: .detail)
-            if !phoneMatches.isEmpty {
+            if debugTrace {
+                logger.notice("[MatchTrace] Phone search with '\(phone, privacy: .public)' → \(phoneMatches.count) results: \(phoneMatches.map { "\($0.displayName) phones=\($0.phoneNumbers.map(\.number))" }, privacy: .public)")
+            }
+            if let first = phoneMatches.first {
+                matchedContactName = first.displayName
                 matchStatus = .notInSAMGroup
+                person?.hasAppleContactMatch = true
                 return
+            }
+
+            // Also try with +1 prefix in case 10-digit canonical form doesn't match
+            if !phone.hasPrefix("+") {
+                let e164 = "+1" + phone
+                let e164Matches = await contactsService.searchContactsByPhone(phoneNumber: e164, keys: .detail)
+                if debugTrace {
+                    logger.notice("[MatchTrace] E.164 retry with '\(e164, privacy: .public)' → \(e164Matches.count) results: \(e164Matches.map { "\($0.displayName) phones=\($0.phoneNumbers.map(\.number))" }, privacy: .public)")
+                }
+                if let first = e164Matches.first {
+                    matchedContactName = first.displayName
+                    matchStatus = .notInSAMGroup
+                    person?.hasAppleContactMatch = true
+                    return
+                }
             }
         }
 
         // Fall back to name/email search
         let matches = await contactsService.searchContacts(query: displayName, keys: .detail)
-        let hasMatch = matches.contains { match in
+        if debugTrace {
+            logger.notice("[MatchTrace] Name/email search with '\(displayName, privacy: .public)' → \(matches.count) results: \(matches.map { $0.displayName }, privacy: .public)")
+        }
+        let matched = matches.first { match in
             let nameMatch = match.displayName.lowercased() == displayName.lowercased()
             let emailMatch: Bool = {
                 guard let email else { return false }
@@ -229,7 +288,17 @@ struct NotInContactsCapsule: View {
             }()
             return nameMatch || emailMatch
         }
-        matchStatus = hasMatch ? .notInSAMGroup : .notInContacts
+        if debugTrace {
+            logger.notice("[MatchTrace] Final result: \(matched != nil ? "notInSAMGroup" : "notInContacts", privacy: .public)")
+        }
+        if let matched {
+            matchedContactName = matched.displayName
+            matchStatus = .notInSAMGroup
+            person?.hasAppleContactMatch = true
+        } else {
+            matchStatus = .notInContacts
+            person?.hasAppleContactMatch = false
+        }
     }
 
     private func addToContacts() async {
@@ -238,6 +307,9 @@ struct NotInContactsCapsule: View {
 
         let contactsService = ContactsService.shared
         let peopleRepo = PeopleRepository.shared
+
+        // Detect if displayName/email is really a phone number
+        let isPhoneBased = phone != nil && email == phone
 
         // Search for an existing Apple Contact before creating a new one
         var existingContact: ContactDTO?
@@ -257,7 +329,14 @@ struct NotInContactsCapsule: View {
                     guard let email else { return false }
                     return match.emailAddresses.contains { $0.lowercased() == email.lowercased() }
                 }()
-                return nameMatch || emailMatch
+                // Also check phone numbers in case displayName is a phone handle
+                let phoneMatch: Bool = {
+                    guard let phone else { return false }
+                    let phoneDigits = String(phone.filter(\.isNumber).suffix(10))
+                    guard phoneDigits.count >= 7 else { return false }
+                    return match.phoneNumbers.contains { String($0.number.filter(\.isNumber).suffix(10)) == phoneDigits }
+                }()
+                return nameMatch || emailMatch || phoneMatch
             }
         }
 
@@ -277,7 +356,8 @@ struct NotInContactsCapsule: View {
             // No match — create new Apple Contact (auto-adds to SAM group)
             guard let created = await contactsService.createContact(
                 fullName: displayName,
-                email: email,
+                email: isPhoneBased ? nil : email,
+                phone: isPhoneBased ? phone : nil,
                 note: nil
             ) else {
                 errorMessage = "Failed to create contact"
