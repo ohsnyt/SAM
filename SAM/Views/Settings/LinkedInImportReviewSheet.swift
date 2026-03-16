@@ -17,25 +17,25 @@ import SwiftUI
 /// Designed to be embedded inside any parent (LinkedInImportSheet or LinkedInImportReviewSheet).
 struct LinkedInReviewContent: View {
 
-    let coordinator: LinkedInImportCoordinator
+    let candidates: [LinkedInImportCandidate]
     @Binding var classifications: [UUID: LinkedInClassification]
 
     // MARK: - Partitioned candidates
 
     private var probableMatches: [LinkedInImportCandidate] {
-        coordinator.importCandidates
+        candidates
             .filter { $0.matchStatus.isProbable }
             .sorted { ($0.touchScore?.totalScore ?? 0) > ($1.touchScore?.totalScore ?? 0) }
     }
 
     private var recommendedToAdd: [LinkedInImportCandidate] {
-        coordinator.importCandidates
+        candidates
             .filter { $0.matchStatus == .noMatch && ($0.touchScore?.totalScore ?? 0) > 0 }
             .sorted { ($0.touchScore?.totalScore ?? 0) > ($1.touchScore?.totalScore ?? 0) }
     }
 
     private var noInteraction: [LinkedInImportCandidate] {
-        coordinator.importCandidates
+        candidates
             .filter { $0.matchStatus == .noMatch && ($0.touchScore?.totalScore ?? 0) == 0 }
             .sorted { ($0.connectedOn ?? .distantPast) > ($1.connectedOn ?? .distantPast) }
     }
@@ -43,18 +43,18 @@ struct LinkedInReviewContent: View {
     // MARK: - Summary counts
 
     var addCount: Int {
-        coordinator.importCandidates.filter {
+        candidates.filter {
             let c = classifications[$0.id] ?? $0.defaultClassification
             return c == .add || c == .skip
         }.count
     }
     var mergeCount: Int {
-        coordinator.importCandidates.filter {
+        candidates.filter {
             (classifications[$0.id] ?? $0.defaultClassification) == .merge
         }.count
     }
     var laterCount: Int {
-        coordinator.importCandidates.filter {
+        candidates.filter {
             (classifications[$0.id] ?? $0.defaultClassification) == .later
         }.count
     }
@@ -128,7 +128,7 @@ struct LinkedInReviewContent: View {
                         }
                     }
 
-                    if coordinator.importCandidates.isEmpty {
+                    if candidates.isEmpty {
                         VStack(spacing: 8) {
                             Image(systemName: "checkmark.circle")
                                 .font(.largeTitle)
@@ -196,7 +196,7 @@ struct LinkedInReviewContent: View {
     // MARK: - Helpers
 
     func seedClassifications() {
-        for candidate in coordinator.importCandidates {
+        for candidate in candidates {
             if classifications[candidate.id] == nil {
                 classifications[candidate.id] = candidate.defaultClassification
             }
@@ -289,7 +289,7 @@ struct LinkedInImportReviewSheet: View {
                 Spacer()
             } else {
                 LinkedInReviewContent(
-                    coordinator: coordinator,
+                    candidates: coordinator.importCandidates,
                     classifications: $classifications
                 )
             }
@@ -460,6 +460,18 @@ struct CandidateRow: View {
                         }
                     }
 
+                    if let info = candidate.matchedPersonInfo {
+                        HStack(spacing: 4) {
+                            Text("matched to")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text(info.displayName)
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .foregroundStyle(.blue)
+                        }
+                    }
+
                     if let company = candidate.company, !company.isEmpty {
                         HStack(spacing: 4) {
                             if let position = candidate.position, !position.isEmpty {
@@ -473,6 +485,12 @@ struct CandidateRow: View {
                     }
 
                     HStack(spacing: 8) {
+                        if let email = candidate.email, !email.isEmpty,
+                           candidate.touchScore == nil {
+                            Text(email)
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                        }
                         if let score = candidate.touchScore, !score.touchSummary.isEmpty {
                             Text(score.touchSummary)
                                 .font(.caption)
@@ -554,6 +572,59 @@ struct AppleContactsSyncConfirmationSheet: View {
         }
         .padding(24)
         .frame(width: 440)
+    }
+}
+
+// MARK: - PDF Import Review Sheet
+
+struct LinkedInPDFImportReviewSheet: View {
+    @State private var coordinator = LinkedInImportCoordinator.shared
+    @State private var classifications: [UUID: LinkedInClassification] = [:]
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                VStack(alignment: .leading) {
+                    Text("LinkedIn PDF Import Review")
+                        .font(.headline)
+                    Text("\(coordinator.pdfImportCandidates.count) profile(s) to review")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Cancel") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+            }
+            .padding()
+
+            Divider()
+
+            LinkedInReviewContent(
+                candidates: coordinator.pdfImportCandidates,
+                classifications: $classifications
+            )
+
+            Divider()
+
+            // Footer with confirm button
+            HStack {
+                Spacer()
+                Button("Confirm Import") {
+                    Task {
+                        await coordinator.confirmPDFImport(classifications: classifications)
+                        dismiss()
+                        // Close the parent import sheet too
+                        NotificationCenter.default.post(name: .samDismissLinkedInImportSheet, object: nil)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.regular)
+            }
+            .padding()
+        }
+        .frame(width: 600, height: 500)
     }
 }
 

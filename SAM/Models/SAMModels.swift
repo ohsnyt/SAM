@@ -1225,6 +1225,9 @@ extension Notification.Name {
     /// Posted to open the Clipboard Capture window (global hotkey or menu command).
     static let samOpenClipboardCapture = Notification.Name("samOpenClipboardCapture")
 
+    /// Posted after a LinkedIn PDF import completes to dismiss the parent import sheet.
+    static let samDismissLinkedInImportSheet = Notification.Name("samDismissLinkedInImportSheet")
+
     /// Posted to open the Prompt Lab window.
     static let samOpenPromptLab = Notification.Name("samOpenPromptLab")
 

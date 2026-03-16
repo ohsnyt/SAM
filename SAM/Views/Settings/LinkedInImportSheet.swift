@@ -17,9 +17,16 @@ struct LinkedInImportSheet: View {
     @State private var coordinator = LinkedInImportCoordinator.shared
     @State private var classifications: [UUID: LinkedInClassification] = [:]
     @State private var deleteZipAfterImport: Bool = true
+    @State private var selectedTab: ImportTab = .profilePDFs
     @State private var showManualFilePicker = false
+    @State private var showPDFReviewSheet = false
     @State private var showSyncConfirmation = false
     @State private var syncCandidatesSnapshot: [AppleContactsSyncCandidate] = []
+
+    private enum ImportTab: String, CaseIterable {
+        case profilePDFs = "Profile PDFs"
+        case dataExport = "Data Export"
+    }
 
     @Environment(\.dismiss) private var dismiss
 
@@ -30,42 +37,66 @@ struct LinkedInImportSheet: View {
 
             Divider()
 
-            // Phase-dependent content
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    // Description
-                    Text("Import connections, messages, and interaction data from a LinkedIn data export.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-
-                    // Last import info
-                    if let lastImport = coordinator.lastConnectionImportAt {
-                        HStack(spacing: 4) {
-                            Image(systemName: "clock")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            Text("Last import:")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            Text(lastImport, style: .relative)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            Text("ago")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-
-                    Divider()
-
-                    phaseContent
+            // Tab picker
+            Picker("Import Type", selection: $selectedTab) {
+                ForEach(ImportTab.allCases, id: \.self) { tab in
+                    Text(tab.rawValue).tag(tab)
                 }
-                .padding()
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+
+            // Tab content
+            switch selectedTab {
+            case .profilePDFs:
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        pdfImportSection
+                    }
+                    .padding()
+                }
+
+            case .dataExport:
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        // Description
+                        Text("Import connections, messages, and interaction data from a LinkedIn data export.")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+
+                        // Last import info
+                        if let lastImport = coordinator.lastConnectionImportAt {
+                            HStack(spacing: 4) {
+                                Image(systemName: "clock")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Text("Last import:")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Text(lastImport, style: .relative)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Text("ago")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+
+                        Divider()
+
+                        phaseContent
+                    }
+                    .padding()
+                }
             }
         }
-        .frame(width: 580, height: phaseHeight)
+        .frame(width: 580, height: 500)
         .onAppear {
             coordinator.beginImportFlow()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .samDismissLinkedInImportSheet)) { _ in
+            dismiss()
         }
         .fileImporter(
             isPresented: $showManualFilePicker,
@@ -227,6 +258,144 @@ struct LinkedInImportSheet: View {
         }
     }
 
+    // MARK: - Profile PDF Import Section
+
+    private var pdfImportSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("Profile PDFs", systemImage: "doc.text")
+                .font(.subheadline)
+                .fontWeight(.semibold)
+
+            Text("Scan your Downloads folder for LinkedIn Profile PDFs. Matched contacts are auto-enriched; new profiles are shown for review.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Toggle(isOn: Binding(
+                get: { coordinator.pdfDeleteAfterImport },
+                set: { coordinator.pdfDeleteAfterImport = $0 }
+            )) {
+                Text("Delete PDFs after importing")
+                    .font(.caption)
+            }
+
+            HStack {
+                pdfStatusView
+                Spacer()
+            }
+        }
+        .sheet(isPresented: $showPDFReviewSheet) {
+            LinkedInPDFImportReviewSheet()
+        }
+    }
+
+    @ViewBuilder
+    private var pdfStatusView: some View {
+        switch coordinator.pdfScanStatus {
+        case .idle:
+            Button("Scan Downloads for Profiles") {
+                Task { await coordinator.scanFolderForProfilePDFs() }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+
+        case .scanning:
+            HStack(spacing: 8) {
+                ProgressView()
+                    .controlSize(.small)
+                Text(coordinator.pdfScanProgress ?? "Scanning…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+        case .awaitingReview:
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 4) {
+                    if coordinator.pdfAutoEnrichedCount > 0 {
+                        Text("\(coordinator.pdfAutoEnrichedCount) matched and enriched.")
+                            .font(.caption)
+                            .foregroundStyle(.green)
+                    }
+                    Text("\(coordinator.pdfImportCandidates.count) need review.")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+                Button("Review & Import") {
+                    showPDFReviewSheet = true
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            }
+
+        case .importing:
+            HStack(spacing: 8) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Importing…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+        case .complete(let count):
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 4) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                        .font(.caption)
+                    Text("\(count) profile(s) imported successfully.")
+                        .font(.caption)
+                        .foregroundStyle(.green)
+                }
+                Button("Scan Again") {
+                    Task { await coordinator.scanFolderForProfilePDFs() }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+
+        case .needsFolderAccess:
+            VStack(alignment: .leading, spacing: 4) {
+                Text("SAM needs access to your Downloads folder to scan for Profile PDFs.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button("Choose Downloads Folder…") {
+                    pickFolderForPDFScan()
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            }
+
+        case .failed(let message):
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 4) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                        .font(.caption)
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Button("Try Again") {
+                    Task { await coordinator.scanFolderForProfilePDFs() }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+        }
+    }
+
+    private func pickFolderForPDFScan() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+        panel.prompt = "Scan"
+        panel.message = "Select the folder containing LinkedIn Profile PDFs"
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        Task { await coordinator.scanFolderForProfilePDFs(folderURL: url) }
+    }
+
     private var scanningPhase: some View {
         VStack(spacing: 12) {
             ProgressView("Checking Downloads folder...")
@@ -324,7 +493,7 @@ struct LinkedInImportSheet: View {
 
             // Inline review content
             LinkedInReviewContent(
-                coordinator: coordinator,
+                candidates: coordinator.importCandidates,
                 classifications: $classifications
             )
             .frame(minHeight: 300)

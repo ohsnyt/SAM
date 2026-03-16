@@ -69,7 +69,11 @@ enum LinkedInPDFParserService {
             throw ParseError.cannotLoadPDF
         }
 
-        // Extract all text from all pages
+        // Step 1: Extract name from font size on page 1.
+        // LinkedIn PDFs always render the person's name in the largest font (~26pt).
+        let fontExtracted = extractNameFromFont(document: document)
+
+        // Step 2: Extract all text from all pages
         var allText = ""
         for i in 0..<document.pageCount {
             if let page = document.page(at: i), let text = page.string {
@@ -111,7 +115,84 @@ enum LinkedInPDFParserService {
             throw ParseError.notLinkedInProfile
         }
 
-        return parseLines(cleanedLines)
+        return parseLines(cleanedLines, fontExtractedName: fontExtracted.name,
+                          fontExtractedHeadline: fontExtracted.headline,
+                          fontExtractedLocation: fontExtracted.location)
+    }
+
+    // MARK: - Font-Based Name Extraction
+
+    /// Extract the person's name from PDF font attributes. LinkedIn PDFs always render
+    /// the name in the largest font on page 1 (~26pt). The headline and location follow
+    /// immediately after in the plain text.
+    private static func extractNameFromFont(document: PDFDocument) -> (name: String?, headline: String?, location: String?) {
+        guard let page = document.page(at: 0),
+              let attrString = page.attributedString else { return (nil, nil, nil) }
+
+        // Find the text rendered in the largest font — that's the name
+        var maxFontSize: CGFloat = 0
+        var nameText = ""
+        attrString.enumerateAttributes(in: NSRange(location: 0, length: attrString.length)) { attrs, range, _ in
+            let text = (attrString.string as NSString).substring(with: range)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return }
+            if let font = attrs[.font] as? NSFont, font.pointSize > maxFontSize {
+                maxFontSize = font.pointSize
+                nameText = text
+            }
+        }
+
+        guard !nameText.isEmpty, maxFontSize > 20 else { return (nil, nil, nil) }
+
+        // Find headline and location: lines immediately after the name in the plain text.
+        // Headline may wrap across multiple lines. Location is typically the last line
+        // before the next section header (Summary, Experience, etc.).
+        let plainString = attrString.string
+        guard let nameRange = plainString.range(of: nameText) else { return (nameText, nil, nil) }
+
+        let afterName = String(plainString[nameRange.upperBound...])
+        let lines = afterName.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+
+        // Collect lines until we hit a section header
+        let stopHeaders: Set<String> = ["Summary", "About", "Experience", "Education",
+                                         "Top Skills", "Languages", "Contact", "Certifications",
+                                         "Honors & Awards", "Honors-Awards", "Skills"]
+        var contentLines: [String] = []
+        for line in lines {
+            if stopHeaders.contains(line) { break }
+            contentLines.append(line)
+        }
+
+        // Last content line is location if it looks like a place (contains comma or known suffixes)
+        var headline: String?
+        var location: String?
+
+        if contentLines.count >= 2 {
+            let lastLine = contentLines.last!
+            // Location heuristics
+            if lastLine.contains(",") || lastLine.contains("Area") ||
+               lastLine.hasSuffix("States") || lastLine.hasSuffix("Canada") ||
+               lastLine.hasSuffix("Kingdom") || lastLine.hasSuffix("Guinea") ||
+               lastLine.hasSuffix("Metroplex") || lastLine.contains("Greater") {
+                location = lastLine
+                let headlineLines = contentLines.dropLast()
+                headline = headlineLines.joined(separator: " ")
+            } else {
+                // No clear location — all lines are headline
+                headline = contentLines.joined(separator: " ")
+            }
+        } else if contentLines.count == 1 {
+            headline = contentLines[0]
+        }
+
+        // Clean up placeholder headlines
+        if let h = headline, h.trimmingCharacters(in: CharacterSet(charactersIn: "- ")).isEmpty {
+            headline = nil
+        }
+
+        return (nameText, headline, location)
     }
 
     // MARK: - Section Detection
@@ -164,7 +245,10 @@ enum LinkedInPDFParserService {
 
     // MARK: - Line-by-Line Parsing
 
-    private static func parseLines(_ lines: [String]) -> LinkedInPDFProfileDTO {
+    private static func parseLines(_ lines: [String],
+                                    fontExtractedName: String? = nil,
+                                    fontExtractedHeadline: String? = nil,
+                                    fontExtractedLocation: String? = nil) -> LinkedInPDFProfileDTO {
         // Phase 1: Split lines into sections
         var sections: [(section: Section?, lines: [String])] = []
         var currentSection: Section? = nil
@@ -198,9 +282,10 @@ enum LinkedInPDFParserService {
         var summary: String?
         var positions: [LinkedInPDFPosition] = []
         var education: [LinkedInPDFEducation] = []
-        var name: String?
-        var headline: String?
-        var location: String?
+        // Font-based extraction is the primary source for name/headline/location
+        var name: String? = fontExtractedName
+        var headline: String? = fontExtractedHeadline
+        var location: String? = fontExtractedLocation
 
         for (section, sectionLines) in sections {
             switch section {
@@ -211,16 +296,15 @@ enum LinkedInPDFParserService {
                 phone = parsed.phone
                 websiteURL = parsed.websiteURL
 
-                // The name/headline/location may be at the tail of the Contact section
-                // (PDFKit sometimes extracts sidebar + main header contiguously).
-                // Strip contact data lines and take the last 3 remaining as name/headline/location.
-                let nonContactLines = sectionLines.filter { !$0.isEmpty && !isContactDataLine($0) }
-                if nonContactLines.count >= 1 {
-                    let tail = Array(nonContactLines.suffix(3))
-                    let extracted = extractNameHeadlineLocation(tail)
-                    name = extracted.name
-                    headline = extracted.headline
-                    location = extracted.location
+                // Fallback: if font-based extraction didn't find a name, try text heuristics
+                if name == nil {
+                    let nonContactLines = sectionLines.filter { !$0.isEmpty && !isContactDataLine($0) }
+                    if !nonContactLines.isEmpty {
+                        let extracted = extractNameHeadlineLocation(nonContactLines)
+                        name = extracted.name
+                        headline = extracted.headline
+                        location = extracted.location
+                    }
                 }
 
             case .topSkills:
@@ -280,10 +364,8 @@ enum LinkedInPDFParserService {
 
                 // The name block is at the tail of this section's lines
                 let candidateLines = entry.lines.filter { !$0.isEmpty && !isContactDataLine($0) }
-                // Name is typically 2-3 lines from the end: Name, Headline, Location
-                let tail = Array(candidateLines.suffix(3))
-                if !tail.isEmpty {
-                    let extracted = extractNameHeadlineLocation(tail)
+                if !candidateLines.isEmpty {
+                    let extracted = extractNameHeadlineLocation(candidateLines)
                     name = extracted.name
                     headline = extracted.headline
                     location = extracted.location
@@ -460,22 +542,77 @@ enum LinkedInPDFParserService {
         return false
     }
 
+    /// Detect whether a line looks like a person name: short, mostly letters, 2-5 words,
+    /// no special characters typical of headlines (|, /, ·, @, •), and no common title/role words.
+    private static func looksLikePersonName(_ line: String) -> Bool {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return false }
+        // Too long for a name
+        if trimmed.count > 40 { return false }
+        // Contains headline/title indicators or punctuation unusual in names
+        if trimmed.contains("|") || trimmed.contains("/") || trimmed.contains("·") ||
+           trimmed.contains("•") || trimmed.contains("@") || trimmed.contains(",") ||
+           trimmed.contains("(") || trimmed.contains(")") { return false }
+        // Placeholder
+        if trimmed.trimmingCharacters(in: CharacterSet(charactersIn: "- ")).isEmpty { return false }
+        // Word count: names are typically 2-5 words
+        let words = trimmed.split(separator: " ").map(String.init)
+        if words.count < 2 || words.count > 5 { return false }
+        // Mostly alphabetic (allow periods, hyphens for "Jr.", "Mary-Jane")
+        let letterCount = trimmed.filter(\.isLetter).count
+        if Double(letterCount) / Double(trimmed.count) < 0.7 { return false }
+        // Reject lines containing common title/role/organization words
+        let lower = trimmed.lowercased()
+        let titleWords = ["director", "manager", "president", "ceo", "cfo", "coo", "cto",
+                          "officer", "pastor", "advisor", "consultant", "associate", "analyst",
+                          "engineer", "specialist", "coordinator", "facilitator", "founder",
+                          "professional", "certified", "church", "charities", "international",
+                          "insurance", "financial", "ministry", "university", "institute",
+                          "at ", "of ", "for "]
+        if titleWords.contains(where: { lower.contains($0) }) { return false }
+        return true
+    }
+
     private static func extractNameHeadlineLocation(_ lines: [String]) -> (name: String?, headline: String?, location: String?) {
-        // LinkedIn PDFs have: Name, Headline, Location in the unnamed section.
-        // But contact data (phone, email, URL) may leak into this section due to PDF text extraction order.
-        // Filter those out before extracting name/headline/location.
+        // LinkedIn PDFs have: Name, Headline, Location — but these may be mixed with
+        // other content (addresses, company names). Find the person name by heuristic.
         let meaningful = lines.filter { !$0.isEmpty && !isContactDataLine($0) }
         guard !meaningful.isEmpty else { return (nil, nil, nil) }
 
-        let name = meaningful[0]
-
-        // Headline: skip placeholder values like "--"
-        var headline = meaningful.count > 1 ? meaningful[1] : nil
-        if let h = headline, h.trimmingCharacters(in: CharacterSet(charactersIn: "- ")).isEmpty {
-            headline = nil
+        // Find the first line that looks like a person name
+        guard let nameIndex = meaningful.firstIndex(where: { looksLikePersonName($0) }) else {
+            // Fallback: first line
+            return (meaningful[0], meaningful.count > 1 ? meaningful[1] : nil, meaningful.count > 2 ? meaningful[2] : nil)
         }
 
-        let location = meaningful.count > 2 ? meaningful[2] : nil
+        let name = meaningful[nameIndex]
+
+        // Headline: lines after the name until we hit a location-looking line.
+        // The location is typically the last line and contains a place name.
+        // Join remaining lines as headline, with the last one as location.
+        let afterName = Array(meaningful.suffix(from: meaningful.index(after: nameIndex)))
+
+        var headline: String?
+        var location: String?
+
+        if afterName.count >= 2 {
+            // Last line is location, everything between is headline
+            location = afterName.last
+            let headlineLines = afterName.dropLast()
+            let joined = headlineLines.joined(separator: " ").trimmingCharacters(in: .whitespaces)
+            if !joined.isEmpty && joined.trimmingCharacters(in: CharacterSet(charactersIn: "- ")).isEmpty == false {
+                headline = joined
+            }
+        } else if afterName.count == 1 {
+            // Could be headline or location — check if it looks like a location
+            let candidate = afterName[0]
+            if candidate.contains(",") || candidate.contains("Area") || candidate.contains("United States") ||
+               candidate.contains("Canada") || candidate.contains("Kingdom") || candidate.contains("Guinea") {
+                location = candidate
+            } else {
+                headline = candidate
+            }
+        }
 
         return (name, headline, location)
     }

@@ -242,6 +242,34 @@ final class LinkedInImportCoordinator {
     /// Only populated after loadFolder completes successfully.
     private(set) var importCandidates: [LinkedInImportCandidate] = []
 
+    // MARK: - PDF Import State
+
+    private(set) var pdfImportCandidates: [LinkedInImportCandidate] = []
+    private(set) var pdfScanStatus: PDFScanStatus = .idle
+    private(set) var pdfScanProgress: String?
+    private(set) var pdfAutoEnrichedCount: Int = 0
+
+    enum PDFScanStatus: Equatable {
+        case idle
+        case scanning
+        case awaitingReview
+        case importing
+        case complete(imported: Int)
+        case needsFolderAccess
+        case failed(String)
+    }
+
+    @ObservationIgnored
+    var pdfDeleteAfterImport: Bool {
+        get { UserDefaults.standard.bool(forKey: "sam.linkedin.pdfDeleteAfterImport") }
+        set { UserDefaults.standard.set(newValue, forKey: "sam.linkedin.pdfDeleteAfterImport") }
+    }
+
+    /// Cached PDF profiles keyed by candidate ID for enrichment during confirmPDFImport.
+    private var pdfCandidateProfiles: [UUID: LinkedInPDFProfileDTO] = [:]
+    /// Cached PDF file URLs keyed by candidate ID for deletion during confirmPDFImport.
+    private var pdfCandidateFileURLs: [UUID: URL] = [:]
+
     // MARK: - Convenience counts (exposed for preview / settings UI)
 
     var pendingConnectionCount: Int { pendingConnections.count }
@@ -255,6 +283,11 @@ final class LinkedInImportCoordinator {
     // MARK: - Initialization
 
     private init() {
+        // Default PDF delete toggle to true on first launch
+        if UserDefaults.standard.object(forKey: "sam.linkedin.pdfDeleteAfterImport") == nil {
+            UserDefaults.standard.set(true, forKey: "sam.linkedin.pdfDeleteAfterImport")
+        }
+
         // Load cached profile analysis from prior import session
         Task { @MainActor in
             self.latestProfileAnalysis = await BusinessProfileService.shared.profileAnalysis(for: "linkedIn")
@@ -739,6 +772,402 @@ final class LinkedInImportCoordinator {
             progressMessage = nil
             lastError       = error.localizedDescription
         }
+    }
+
+    // MARK: - PDF Profile Import
+
+    /// Internal result from scanning a single PDF.
+    private struct PDFScanResult {
+        let fileURL: URL
+        let profile: LinkedInPDFProfileDTO
+    }
+
+    /// Scan a folder for LinkedIn Profile PDFs, parse them, match to existing contacts,
+    /// and build import candidates for unmatched profiles.
+    func scanFolderForProfilePDFs(folderURL: URL? = nil) async {
+        // Use provided URL, or fall back to ~/Downloads.
+        // If ~/Downloads fails due to sandbox, pdfScanStatus will signal the UI to show a folder picker.
+        let folder: URL
+        if let folderURL {
+            folder = folderURL
+        } else {
+            // Try ~/Downloads — may fail in sandbox even with entitlement
+            let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+                ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Downloads")
+            folder = downloadsURL
+        }
+
+        pdfScanStatus = .scanning
+        pdfImportCandidates = []
+        pdfAutoEnrichedCount = 0
+        pdfScanProgress = "Scanning folder\u{2026}"
+        pdfCandidateProfiles = [:]
+        pdfCandidateFileURLs = [:]
+
+        do {
+            // Find all Profile*.pdf files
+            let contents = try FileManager.default.contentsOfDirectory(
+                at: folder,
+                includingPropertiesForKeys: [.isRegularFileKey],
+                options: [.skipsHiddenFiles]
+            )
+            let pdfFiles = contents.filter { url in
+                url.pathExtension.lowercased() == "pdf" &&
+                url.lastPathComponent.lowercased().hasPrefix("profile")
+            }.sorted { $0.lastPathComponent < $1.lastPathComponent }
+
+            guard !pdfFiles.isEmpty else {
+                pdfScanStatus = .failed("No Profile PDFs found in \(folder.lastPathComponent)")
+                pdfScanProgress = nil
+                return
+            }
+
+            // Parse each PDF
+            var scanResults: [PDFScanResult] = []
+            for (index, fileURL) in pdfFiles.enumerated() {
+                pdfScanProgress = "Parsing \(index + 1) of \(pdfFiles.count)\u{2026}"
+                await Task.yield()
+
+                do {
+                    let data = try Data(contentsOf: fileURL)
+                    let profile = try LinkedInPDFParserService.parse(data: data)
+                    scanResults.append(PDFScanResult(fileURL: fileURL, profile: profile))
+                } catch {
+                    logger.debug("Skipping \(fileURL.lastPathComponent): \(error.localizedDescription)")
+                }
+            }
+
+            guard !scanResults.isEmpty else {
+                pdfScanStatus = .failed("No valid LinkedIn Profile PDFs found")
+                pdfScanProgress = nil
+                return
+            }
+
+            pdfScanProgress = "Matching contacts\u{2026}"
+
+            // Build candidates and auto-enrich matched contacts
+            await buildPDFImportCandidates(from: scanResults)
+
+            if pdfImportCandidates.isEmpty {
+                // All profiles matched existing contacts — auto-enriched, nothing to review
+                pdfScanStatus = .complete(imported: pdfAutoEnrichedCount)
+
+                // Delete PDFs if enabled
+                if pdfDeleteAfterImport {
+                    for result in scanResults {
+                        try? FileManager.default.removeItem(at: result.fileURL)
+                    }
+                }
+            } else {
+                pdfScanStatus = .awaitingReview
+            }
+
+            pdfScanProgress = nil
+            logger.info("PDF scan complete: \(scanResults.count) profiles, \(self.pdfAutoEnrichedCount) auto-enriched, \(self.pdfImportCandidates.count) need review")
+
+        } catch {
+            logger.error("Failed to scan ~/Downloads: \(error.localizedDescription)")
+            // Any failure reading the folder — offer folder picker as fallback
+            pdfScanStatus = .needsFolderAccess
+            pdfScanProgress = nil
+        }
+    }
+
+    /// Match parsed PDF profiles against existing contacts and build import candidates.
+    private func buildPDFImportCandidates(from results: [PDFScanResult]) async {
+        let allPeople = (try? peopleRepo.fetchAll()) ?? []
+
+        // Build lookup indexes
+        let linkedInIndex: [String: SamPerson] = {
+            var index: [String: SamPerson] = [:]
+            for person in allPeople {
+                if let url = person.linkedInProfileURL, !url.isEmpty {
+                    index[normalizeLinkedInURL(url)] = person
+                }
+            }
+            return index
+        }()
+
+        let emailIndex: [String: SamPerson] = {
+            var index: [String: SamPerson] = [:]
+            for person in allPeople {
+                if let email = person.emailCache?.lowercased(), !email.isEmpty {
+                    index[email] = person
+                }
+                for alias in person.emailAliases {
+                    index[alias.lowercased()] = person
+                }
+            }
+            return index
+        }()
+
+        var candidates: [LinkedInImportCandidate] = []
+        var processedFileURLs: [URL] = []
+
+        for result in results {
+            let profile = result.profile
+
+            // Priority 1: LinkedIn URL match (exact, auto-enrich)
+            if let liURL = profile.linkedInURL, !liURL.isEmpty {
+                let normalized = normalizeLinkedInURL(liURL)
+                if let matchedPerson = linkedInIndex[normalized] {
+                    // Auto-enrich this person
+                    await enrichPersonFromPDF(person: matchedPerson, profile: profile)
+                    pdfAutoEnrichedCount += 1
+                    processedFileURLs.append(result.fileURL)
+                    continue
+                }
+            }
+
+            // Priority 2: Email match (probable, needs confirmation)
+            if let email = profile.email?.lowercased(), !email.isEmpty,
+               let matchedPerson = emailIndex[email] {
+                let (firstName, lastName) = splitName(profile.name)
+                let candidate = LinkedInImportCandidate(
+                    firstName: firstName,
+                    lastName: lastName,
+                    profileURL: profile.linkedInURL ?? "",
+                    email: profile.email,
+                    company: profile.positions.first?.company,
+                    position: profile.positions.first?.title,
+                    matchStatus: .probableMatchEmail,
+                    defaultClassification: .merge,
+                    matchedPersonInfo: MatchedPersonInfo(
+                        personID: matchedPerson.id,
+                        displayName: matchedPerson.displayNameCache ?? matchedPerson.displayName,
+                        email: profile.email,
+                        linkedInURL: matchedPerson.linkedInProfileURL
+                    )
+                )
+                pdfCandidateProfiles[candidate.id] = profile
+                pdfCandidateFileURLs[candidate.id] = result.fileURL
+                candidates.append(candidate)
+                continue
+            }
+
+            // Priority 3: No match — user must decide
+            let (firstName, lastName) = splitName(profile.name)
+            let candidate = LinkedInImportCandidate(
+                firstName: firstName,
+                lastName: lastName,
+                profileURL: profile.linkedInURL ?? "",
+                email: profile.email,
+                company: profile.positions.first?.company,
+                position: profile.positions.first?.title,
+                matchStatus: .noMatch,
+                defaultClassification: .add
+            )
+            pdfCandidateProfiles[candidate.id] = profile
+            pdfCandidateFileURLs[candidate.id] = result.fileURL
+            candidates.append(candidate)
+        }
+
+        // Delete auto-enriched PDFs if enabled
+        if pdfDeleteAfterImport {
+            for url in processedFileURLs {
+                try? FileManager.default.removeItem(at: url)
+            }
+        }
+
+        pdfImportCandidates = candidates
+    }
+
+    /// Split a full name into (firstName, lastName). Splits on the last space
+    /// so "Mary Jane Watson" becomes ("Mary Jane", "Watson").
+    private func splitName(_ name: String) -> (String, String) {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard let lastSpace = trimmed.lastIndex(of: " ") else {
+            return (trimmed, "")
+        }
+        let first = String(trimmed[..<lastSpace])
+        let last = String(trimmed[trimmed.index(after: lastSpace)...])
+        return (first, last)
+    }
+
+    /// Enrich an already-matched person with data from a parsed PDF profile.
+    private func enrichPersonFromPDF(person: SamPerson, profile: LinkedInPDFProfileDTO) async {
+        do {
+            func normalizeURL(_ url: String) -> String {
+                url.lowercased()
+                    .replacingOccurrences(of: "https://", with: "")
+                    .replacingOccurrences(of: "http://", with: "")
+                    .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            }
+
+            var candidates: [EnrichmentCandidate] = []
+
+            if let email = profile.email, !email.isEmpty,
+               email.lowercased() != (person.emailCache ?? "").lowercased() {
+                candidates.append(EnrichmentCandidate(
+                    personID: person.id, field: .email, proposedValue: email,
+                    currentValue: person.emailCache, source: .linkedInProfilePDF,
+                    sourceDetail: "LinkedIn Profile PDF"
+                ))
+            }
+
+            if let linkedInURL = profile.linkedInURL, !linkedInURL.isEmpty,
+               normalizeURL(person.linkedInProfileURL ?? "") != normalizeURL(linkedInURL) {
+                candidates.append(EnrichmentCandidate(
+                    personID: person.id, field: .linkedInURL, proposedValue: linkedInURL,
+                    currentValue: person.linkedInProfileURL, source: .linkedInProfilePDF,
+                    sourceDetail: "LinkedIn Profile PDF"
+                ))
+            }
+
+            // Fetch existing company/jobTitle from Apple Contacts
+            var existingCompany: String?
+            var existingJobTitle: String?
+            if let contactID = person.contactIdentifier {
+                let contact = await ContactsService.shared.fetchContact(identifier: contactID, keys: .detail)
+                existingCompany = contact?.organizationName
+                existingJobTitle = contact?.jobTitle
+            }
+
+            if let pos = profile.positions.first {
+                if !pos.company.isEmpty, pos.company != "Unknown",
+                   pos.company.lowercased() != (existingCompany ?? "").lowercased() {
+                    candidates.append(EnrichmentCandidate(
+                        personID: person.id, field: .company, proposedValue: pos.company,
+                        currentValue: existingCompany, source: .linkedInProfilePDF,
+                        sourceDetail: "LinkedIn Profile PDF \u{2014} \(pos.title)"
+                    ))
+                }
+                if !pos.title.isEmpty, pos.title != "Unknown",
+                   pos.title.lowercased() != (existingJobTitle ?? "").lowercased() {
+                    candidates.append(EnrichmentCandidate(
+                        personID: person.id, field: .jobTitle, proposedValue: pos.title,
+                        currentValue: existingJobTitle, source: .linkedInProfilePDF,
+                        sourceDetail: "LinkedIn Profile PDF \u{2014} \(pos.company)"
+                    ))
+                }
+            }
+
+            if let phone = profile.phone, !phone.isEmpty {
+                candidates.append(EnrichmentCandidate(
+                    personID: person.id, field: .phone, proposedValue: phone,
+                    currentValue: nil, source: .linkedInProfilePDF,
+                    sourceDetail: "LinkedIn Profile PDF"
+                ))
+            }
+
+            if !candidates.isEmpty {
+                try enrichmentRepo.bulkRecord(candidates)
+                ContactEnrichmentCoordinator.shared.refresh()
+            }
+
+            // Create a concise note
+            var noteLines: [String] = []
+            if let summary = profile.summary, !summary.isEmpty {
+                let trimmed = summary.count > 500 ? String(summary.prefix(500)) + "\u{2026}" : summary
+                noteLines.append(trimmed)
+            }
+            if let current = profile.positions.first {
+                noteLines.append("")
+                noteLines.append("Current: \(current.title) at \(current.company)")
+            }
+            if let topEdu = profile.education.first {
+                let degree = topEdu.degree ?? ""
+                noteLines.append(degree.isEmpty ? "Education: \(topEdu.school)" : "Education: \(degree), \(topEdu.school)")
+            }
+            if !profile.topSkills.isEmpty {
+                noteLines.append("Skills: \(profile.topSkills.joined(separator: ", "))")
+            }
+            if !profile.honors.isEmpty {
+                noteLines.append("Honors: \(profile.honors.joined(separator: ", "))")
+            }
+            if !profile.languages.isEmpty {
+                noteLines.append("Languages: \(profile.languages.joined(separator: ", "))")
+            }
+            if let website = profile.websiteURL, !website.isEmpty {
+                noteLines.append("Website: \(website)")
+            }
+
+            if !noteLines.isEmpty {
+                let note = try NotesRepository.shared.create(
+                    content: noteLines.joined(separator: "\n"),
+                    sourceType: .typed,
+                    linkedPeopleIDs: [person.id]
+                )
+                Task { await NoteAnalysisCoordinator.shared.analyzeNote(note) }
+            }
+        } catch {
+            logger.error("PDF enrichment failed for \(person.displayName, privacy: .private): \(error)")
+        }
+    }
+
+    /// Look up the cached PDF profile for a given import candidate.
+    private func findPDFProfile(for candidate: LinkedInImportCandidate) -> LinkedInPDFProfileDTO? {
+        pdfCandidateProfiles[candidate.id]
+    }
+
+    /// Confirm the PDF import after user review of candidates.
+    func confirmPDFImport(classifications: [UUID: LinkedInClassification]) async {
+        pdfScanStatus = .importing
+        var importedCount = 0
+
+        for candidate in pdfImportCandidates {
+            let classification = classifications[candidate.id] ?? candidate.defaultClassification
+
+            switch classification {
+            case .add, .skip:
+                // Create new contact
+                do {
+                    let displayName = candidate.fullName.isEmpty ? "LinkedIn Contact" : candidate.fullName
+                    let profileURL = candidate.profileURL.isEmpty ? nil : candidate.profileURL
+                    let personID = try peopleRepo.upsertFromSocialImport(
+                        displayName: displayName,
+                        linkedInProfileURL: profileURL,
+                        linkedInEmail: candidate.email,
+                        linkedInCompany: candidate.company,
+                        linkedInPosition: candidate.position
+                    )
+                    // Enrich from the parsed PDF data
+                    if let profile = findPDFProfile(for: candidate),
+                       let person = try? peopleRepo.fetch(id: personID) {
+                        await enrichPersonFromPDF(person: person, profile: profile)
+                    }
+                    importedCount += 1
+                } catch {
+                    logger.error("Failed to create contact for \(candidate.fullName, privacy: .private): \(error)")
+                }
+
+            case .merge:
+                // Merge into existing matched person
+                if let info = candidate.matchedPersonInfo,
+                   let person = try? peopleRepo.fetch(id: info.personID) {
+                    // Stamp LinkedIn URL
+                    if !candidate.profileURL.isEmpty {
+                        person.linkedInProfileURL = normalizeLinkedInURL(candidate.profileURL)
+                    }
+                    if let profile = findPDFProfile(for: candidate) {
+                        await enrichPersonFromPDF(person: person, profile: profile)
+                    }
+                    try? peopleRepo.save()
+                    importedCount += 1
+                }
+
+            case .later:
+                break // Skip
+            }
+        }
+
+        // Delete remaining PDF files if enabled
+        if pdfDeleteAfterImport {
+            for candidate in pdfImportCandidates {
+                let classification = classifications[candidate.id] ?? candidate.defaultClassification
+                guard classification != .later else { continue }
+                if let fileURL = pdfCandidateFileURLs[candidate.id] {
+                    try? FileManager.default.removeItem(at: fileURL)
+                }
+            }
+        }
+
+        pdfScanStatus = .complete(imported: importedCount + pdfAutoEnrichedCount)
+        pdfImportCandidates = []
+        pdfCandidateProfiles = [:]
+        pdfCandidateFileURLs = [:]
+
+        PostImportOrchestrator.shared.importDidComplete(source: "linkedin-pdf")
     }
 
     /// Reset the message watermark so the next import re-processes all available messages.
