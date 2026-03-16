@@ -432,6 +432,10 @@ Bookmark the **directory** (not file) for SQLite to cover WAL/SHM companions. `.
 
 ### ~~Priority 8 — Security Hardening~~ ✅ Completed (Mar 13, 2026)
 
+### Near-Term Polish
+
+- **LinkedIn Data Export tab**: Review and simplify the multi-step instructions in File → Import → LinkedIn → Data Export tab. The current flow (request data, watch for email, detect ZIP, parse, review) should be streamlined for the user.
+
 ### Priority 9+ — Future
 
 - iOS companion app (read-only)
