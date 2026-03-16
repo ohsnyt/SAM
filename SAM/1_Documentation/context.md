@@ -370,6 +370,11 @@ Never use pipe-separated options as JSON example values — LLMs echo them liter
 ### Security-Scoped Bookmarks
 Bookmark the **directory** (not file) for SQLite to cover WAL/SHM companions. `.fileImporter` URLs require `startAccessingSecurityScopedResource()` / `stopAccessingSecurityScopedResource()`.
 
+### Contact Photo Management
+- **Drop/paste → resize → write to Apple Contacts** flow: `PersonDetailView` (drop target + paste handler) → `ContactPhotoCoordinator` (orchestration) → `ContactPhotoService` actor (CNContactStore write). `ImageResizeUtility` center-crops to square, resizes to 600×600 max, compresses to JPEG (0.85 quality).
+- **Safari profile opener**: `SafariBrowserHelper` uses AppleScript to open LinkedIn/Facebook profiles in a sized, positioned Safari window for photo dragging. Tracks window IDs and closes them after successful drop. Requires `com.apple.Safari` in `temporary-exception.apple-events` entitlement.
+- **Profile URL resolution**: checks `SamPerson.linkedInProfileURL` / `facebookProfileURL`, then Apple Contacts `socialProfiles`, then `urlAddresses`. `sanitizeProfileURL()` strips service prefixes (e.g., `linkedin:www.linkedin.com/...`) that Apple Contacts sometimes includes. Falls back to Facebook people search for confirmed friends without a stored profile URL.
+
 ### App Security
 - **Authentication is mandatory** — SAM always locks on launch and after idle timeout. Uses `LocalAuthentication` framework (`deviceOwnerAuthentication` = Touch ID + system password fallback). No opt-out setting.
 - **Backup encryption is mandatory** — All exports require a user-supplied passphrase. AES-256-GCM encryption with HKDF-SHA256 key derivation. `SAMENC1` header for format detection.
@@ -435,5 +440,5 @@ Bookmark the **directory** (not file) for SQLite to cover WAL/SHM companions. `.
 
 ---
 
-**Document Version**: 41
-**Last Updated**: March 13, 2026 — Security hardening: mandatory auth, encrypted backups, clipboard security, log privacy, keychain service.
+**Document Version**: 42
+**Last Updated**: March 15, 2026 — Contact photo drag-and-drop with Safari profile opener, Facebook import fix.

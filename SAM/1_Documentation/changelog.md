@@ -4,6 +4,47 @@
 
 ---
 
+## Contact Photo Drag-and-Drop, Facebook Import Fix (March 15, 2026)
+
+**What**: Drag-and-drop / paste photo onto contact avatars with one-click Safari profile opener for LinkedIn and Facebook, plus fix for Facebook folder import hang.
+
+### Contact Photo Management
+- Drag an image from Safari or any source onto a contact's photo area in PersonDetailView — image is center-cropped to square, resized to 600×600 max, compressed to JPEG (0.85 quality), and written to Apple Contacts via `CNContactStore`
+- Paste an image via right-click context menu when clipboard has an image
+- One-click profile opener: clicking an empty photo placeholder opens the person's LinkedIn/Facebook profile in a compact 500×500 Safari window positioned next to the drop target for easy dragging
+- Safari windows tracked by ID and auto-closed after successful photo drop; login sessions preserved
+- LinkedIn photos can be dragged directly from the profile page; Facebook requires clicking the friend's photo to enlarge it first, then dragging
+- For confirmed Facebook friends without a stored profile URL, falls back to a Facebook people search by name
+- Visual feedback: frosted glass overlay with icon on drag hover, progress spinner during save, auto-dismissing inline error capsule
+
+### Profile URL Resolution
+- Checks all sources: `SamPerson.linkedInProfileURL` / `facebookProfileURL`, Apple Contacts `socialProfiles`, Apple Contacts `urlAddresses`
+- `sanitizeProfileURL()` strips service-name prefixes (`linkedin:`, `facebook:`, etc.) that Apple Contacts sometimes stores in the username field
+- Constructs profile URLs from usernames when `urlString` is nil (e.g., `linkedin` service with username `jsmith` → `https://www.linkedin.com/in/jsmith`)
+
+### Facebook Import Fix
+- **Bug**: `processZip()` set `importStatus = .parsing` before calling `loadFolder()`, which then hit its own re-entry guard (`guard importStatus != .parsing`) and returned immediately — silently doing nothing
+- **Fix**: Removed the premature status set from `processZip()`; `loadFolder()` manages its own status transitions
+
+### Entitlement Update
+- Added `com.apple.Safari` to `temporary-exception.apple-events` in both entitlement files for AppleScript Safari control
+
+### New Files
+| File | Purpose |
+|------|---------|
+| `Utilities/ImageResizeUtility.swift` | Center-crop, resize, JPEG compression for contact photos |
+| `Utilities/SafariBrowserHelper.swift` | AppleScript: open/close/position Safari windows by ID |
+| `Services/ContactPhotoService.swift` | Actor: write processed JPEG to CNContactStore |
+| `Coordinators/ContactPhotoCoordinator.swift` | Orchestrates drop/paste/Safari-open flow |
+
+### Modified Files (4)
+- `Views/People/PersonDetailView.swift` — Photo drop target, paste handler, click-to-open, profile URL resolution from all sources
+- `Coordinators/FacebookImportCoordinator.swift` — Fixed re-entry guard bug in `processZip()`
+- `SAM/SAM_crm.entitlements` — Added Safari to Apple Events exceptions
+- `SAM_crm.entitlements` (project root copy) — Same entitlement update
+
+---
+
 ## Practice Type System, Social Notifications, Performance Optimizations (March 14, 2026)
 
 **What**: Multi-purpose SAM (PracticeType on BusinessProfile), Facebook/LinkedIn email notification processing, relationship graph custom roles, copy-to-clipboard across coaching UI, Facebook import folder support, profile analyst prompt compression, and call-flow optimization.

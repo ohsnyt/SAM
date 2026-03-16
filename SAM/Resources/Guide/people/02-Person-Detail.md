@@ -7,6 +7,12 @@ Select a person to see their complete profile, coaching summary, interaction his
 The top of the detail view shows at a glance:
 
 - **Photo and name** with organization and job title (from Apple Contacts)
+  - **Drag & drop a photo** from Safari or any source onto the photo area to set it — the image is automatically cropped to square, resized, and saved to Apple Contacts
+  - **Paste a photo** via right-click > Paste Photo when an image is on the clipboard
+  - **One-click profile photo grab** — if no photo exists and the person has a LinkedIn or Facebook profile, click the photo placeholder to open their profile in a compact Safari window positioned next to SAM for easy dragging
+    - **LinkedIn**: You can drag the profile photo directly from the page
+    - **Facebook**: Click the friend's profile photo first to enlarge it, then drag the enlarged version
+  - After a successful drop, the Safari window closes automatically while preserving your login session
 - **Role badges** — click to edit, add custom roles, or remove roles
 - **Health status** — "Healthy — last spoke 3 days ago" or "At risk — 28 days since last contact"
 - **SAM Recommends** card — if there's an active coaching outcome for this person, it appears here with a direct link
