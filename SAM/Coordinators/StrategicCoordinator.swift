@@ -86,7 +86,7 @@ final class StrategicCoordinator {
             ? true
             : UserDefaults.standard.bool(forKey: "strategicDigestEnabled")
         guard enabled else {
-            logger.info("Strategic digest disabled — skipping")
+            logger.debug("Strategic digest disabled — skipping")
             return
         }
         guard generationStatus != .generating else { return }
@@ -95,7 +95,7 @@ final class StrategicCoordinator {
         let backend = UserDefaults.standard.string(forKey: "aiBackend") ?? "foundationModels"
         let modelID = UserDefaults.standard.string(forKey: "mlxSelectedModelID") ?? "none"
         let modelLabel = backend == "foundationModels" ? "Apple Intelligence" : "\(backend)/\(modelID)"
-        logger.info("⏱ Strategic digest starting — backend: \(modelLabel)")
+        logger.debug("⏱ Strategic digest starting — backend: \(modelLabel)")
         let digestClock = ContinuousClock()
         let digestStart = digestClock.now
 
@@ -106,7 +106,7 @@ final class StrategicCoordinator {
         let contentData = gatherContentData()
         let eventHistoryData = gatherEventHistory()
         // Log context sizes — chars ÷ 4 ≈ tokens; helps identify which specialist has the largest input
-        logger.info("📏 Context sizes — pipeline: \(pipelineData.count)ch (~\(pipelineData.count/4)t), time: \(timeData.count)ch (~\(timeData.count/4)t), pattern: \(patternData.count)ch (~\(patternData.count/4)t), content: \(contentData.count)ch (~\(contentData.count/4)t)")
+        logger.debug("📏 Context sizes — pipeline: \(pipelineData.count)ch (~\(pipelineData.count/4)t), time: \(timeData.count)ch (~\(timeData.count/4)t), pattern: \(patternData.count)ch (~\(patternData.count/4)t), content: \(contentData.count)ch (~\(contentData.count/4)t)")
 
         // Dispatch 4 specialists in parallel at background priority
         let now = Date.now
@@ -214,7 +214,7 @@ final class StrategicCoordinator {
         }
 
         try? context?.save()
-        logger.info("Feedback recorded: \(feedback.rawValue) for \(recommendationID)")
+        logger.debug("Feedback recorded: \(feedback.rawValue) for \(recommendationID)")
     }
 
     // MARK: - Data Gathering (Deterministic Swift)
@@ -495,7 +495,7 @@ final class StrategicCoordinator {
         let start = clock.now
         do {
             let result = try await PipelineAnalystService.shared.analyze(data: data)
-            logger.info("⏱ Pipeline Health: \((clock.now - start).formatted(.units(allowed: [.seconds, .milliseconds], width: .abbreviated)))")
+            logger.debug("⏱ Pipeline Health: \((clock.now - start).formatted(.units(allowed: [.seconds, .milliseconds], width: .abbreviated)))")
             return result
         } catch {
             logger.error("Pipeline analyst failed: \(error.localizedDescription)")
@@ -508,7 +508,7 @@ final class StrategicCoordinator {
         let start = clock.now
         do {
             let result = try await TimeAnalystService.shared.analyze(data: data)
-            logger.info("⏱ Time Balance: \((clock.now - start).formatted(.units(allowed: [.seconds, .milliseconds], width: .abbreviated)))")
+            logger.debug("⏱ Time Balance: \((clock.now - start).formatted(.units(allowed: [.seconds, .milliseconds], width: .abbreviated)))")
             return result
         } catch {
             logger.error("Time analyst failed: \(error.localizedDescription)")
@@ -521,7 +521,7 @@ final class StrategicCoordinator {
         let start = clock.now
         do {
             let result = try await PatternDetectorService.shared.analyze(data: data)
-            logger.info("⏱ Patterns: \((clock.now - start).formatted(.units(allowed: [.seconds, .milliseconds], width: .abbreviated)))")
+            logger.debug("⏱ Patterns: \((clock.now - start).formatted(.units(allowed: [.seconds, .milliseconds], width: .abbreviated)))")
             return result
         } catch {
             logger.error("Pattern detector failed: \(error.localizedDescription)")
@@ -534,7 +534,7 @@ final class StrategicCoordinator {
         let start = clock.now
         do {
             let result = try await ContentAdvisorService.shared.analyze(data: data)
-            logger.info("⏱ Content Ideas: \((clock.now - start).formatted(.units(allowed: [.seconds, .milliseconds], width: .abbreviated)))")
+            logger.debug("⏱ Content Ideas: \((clock.now - start).formatted(.units(allowed: [.seconds, .milliseconds], width: .abbreviated)))")
             return result
         } catch {
             logger.error("Content advisor failed: \(error.localizedDescription)")
@@ -547,7 +547,7 @@ final class StrategicCoordinator {
         let start = clock.now
         do {
             let result = try await EventTopicAdvisorService.shared.analyze(data: data, eventHistory: eventHistory)
-            logger.info("⏱ Event Topics: \((clock.now - start).formatted(.units(allowed: [.seconds, .milliseconds], width: .abbreviated)))")
+            logger.debug("⏱ Event Topics: \((clock.now - start).formatted(.units(allowed: [.seconds, .milliseconds], width: .abbreviated)))")
             return result
         } catch {
             logger.error("Event topic advisor failed: \(error.localizedDescription)")

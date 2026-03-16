@@ -80,22 +80,22 @@ actor FamilyInferenceService {
     /// Analyze a family cluster after a relationship confirmation and create inferred relations/enrichments.
     /// Best-effort — silently skips on AI unavailability or parse failures.
     func inferFromCluster(confirmedRelation: DeducedRelation) async {
-        logger.info("Starting family inference for relation \(confirmedRelation.id)")
+        logger.debug("Starting family inference for relation \(confirmedRelation.id)")
 
         // Gather cluster data (requires MainActor for SwiftData + Contacts access)
         guard let cluster = await Self.gatherClusterData(for: confirmedRelation) else {
-            logger.info("Could not gather cluster data — skipping inference")
+            logger.debug("Could not gather cluster data — skipping inference")
             return
         }
 
         guard cluster.members.count >= 2 else {
-            logger.info("Cluster too small (\(cluster.members.count) members) — skipping inference")
+            logger.debug("Cluster too small (\(cluster.members.count) members) — skipping inference")
             return
         }
 
         // Check AI availability
         guard case .available = await AIService.shared.checkAvailability() else {
-            logger.info("AI unavailable — skipping family inference")
+            logger.debug("AI unavailable — skipping family inference")
             return
         }
 
@@ -378,7 +378,7 @@ actor FamilyInferenceService {
             do {
                 let inserted = try enrichmentRepo.bulkRecord(enrichmentCandidates)
                 if inserted > 0 {
-                    logger.info("Queued \(inserted) anniversary enrichment(s) from family inference")
+                    logger.debug("Queued \(inserted) anniversary enrichment(s) from family inference")
                 }
             } catch {
                 logger.error("Failed to queue date propagation enrichments: \(error.localizedDescription)")
@@ -386,7 +386,7 @@ actor FamilyInferenceService {
         }
 
         if newRelationCount > 0 {
-            logger.info("Created \(newRelationCount) inferred family relation(s)")
+            logger.debug("Created \(newRelationCount) inferred family relation(s)")
             NotificationCenter.default.post(name: .samDeducedRelationsDidChange, object: nil)
         }
 

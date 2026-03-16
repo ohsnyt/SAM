@@ -562,7 +562,7 @@ final class BackupCoordinator {
             let outputData: Data
             if let passphrase, !passphrase.isEmpty {
                 outputData = try encrypt(data, passphrase: passphrase)
-                logger.info("Backup encrypted with user passphrase")
+                logger.debug("Backup encrypted with user passphrase")
             } else {
                 outputData = data
             }
@@ -638,7 +638,7 @@ final class BackupCoordinator {
             let safetyURL = FileManager.default.temporaryDirectory
                 .appendingPathComponent("SAM-pre-import-safety.sambackup")
             await exportSafetyBackup(to: safetyURL)
-            logger.info("Safety backup saved to \(safetyURL.path)")
+            logger.debug("Safety backup saved to \(safetyURL.path)")
 
             // 2. Decode source
             progress = "Decoding backup..."
@@ -690,7 +690,7 @@ final class BackupCoordinator {
                 try deleteAll(modelType, from: context)
             }
             try context.save()
-            logger.info("All existing data deleted")
+            logger.debug("All existing data deleted")
 
             // 4. Insert in dependency order
 
@@ -868,7 +868,7 @@ final class BackupCoordinator {
             }
 
             try context.save()
-            logger.info("Pass 1 complete: \(doc.people.count) people, \(doc.contexts.count) contexts")
+            logger.debug("Pass 1 complete: \(doc.people.count) people, \(doc.contexts.count) contexts")
 
             // ── Pass 2: Entities needing people/contexts ──────────────
             progress = "Importing participations & products..."
@@ -1007,7 +1007,7 @@ final class BackupCoordinator {
             }
 
             try context.save()
-            logger.info("Pass 2 complete: products, participations, coverages, etc.")
+            logger.debug("Pass 2 complete: products, participations, coverages, etc.")
 
             // ── Pass 3: Cross-referencing entities ────────────────────
             progress = "Importing evidence & notes..."
@@ -1115,7 +1115,7 @@ final class BackupCoordinator {
             }
 
             try context.save()
-            logger.info("Pass 3 complete: evidence, notes, images, artifacts")
+            logger.debug("Pass 3 complete: evidence, notes, images, artifacts")
 
             // ── Pass 4: Deferred self-references ──────────────────────
             progress = "Wiring referrals..."
@@ -1127,7 +1127,7 @@ final class BackupCoordinator {
                 }
             }
             try context.save()
-            logger.info("Pass 4 complete: referral links")
+            logger.debug("Pass 4 complete: referral links")
 
             // 5. Apply preferences
             progress = "Applying preferences..."
@@ -1458,7 +1458,7 @@ final class BackupCoordinator {
     /// After restoring from backup, clear stale date gates and regenerate
     /// outcomes, briefings, and other derived data from the restored dataset.
     private func refreshAfterRestore() async {
-        logger.info("Post-restore refresh starting")
+        logger.debug("Post-restore refresh starting")
 
         // Clear briefing date gate so a new briefing generates from restored data
         UserDefaults.standard.removeObject(forKey: "lastBriefingDate")
@@ -1486,7 +1486,7 @@ final class BackupCoordinator {
         // Refresh meeting prep from restored evidence
         await MeetingPrepCoordinator.shared.refresh()
 
-        logger.info("Post-restore refresh complete")
+        logger.debug("Post-restore refresh complete")
     }
 
     // ─────────────────────────────────────────────────────────────────

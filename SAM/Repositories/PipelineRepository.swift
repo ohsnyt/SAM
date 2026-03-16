@@ -61,7 +61,7 @@ final class PipelineRepository {
         )
         context.insert(transition)
         try context.save()
-        logger.info("Recorded transition: \(fromStage.isEmpty ? "(new)" : fromStage) → \(toStage) for person \(personID)")
+        logger.debug("Recorded transition: \(fromStage.isEmpty ? "(new)" : fromStage) → \(toStage) for person \(personID)")
         return transition
     }
 
@@ -161,7 +161,7 @@ final class PipelineRepository {
         )
         context.insert(record)
         try context.save()
-        logger.info("Created recruiting stage \(stage.rawValue) for person \(personID)")
+        logger.debug("Created recruiting stage \(stage.rawValue) for person \(personID)")
         return record
     }
 
@@ -200,7 +200,7 @@ final class PipelineRepository {
         }
         stage.mentoringLastContact = .now
         try context.save()
-        logger.info("Updated mentoring contact for person \(personID)")
+        logger.debug("Updated mentoring contact for person \(personID)")
     }
 
     // MARK: - Backfill
@@ -259,7 +259,7 @@ final class PipelineRepository {
 
         if count > 0 {
             try context.save()
-            logger.info("Backfilled \(count) initial pipeline transitions")
+            logger.debug("Backfilled \(count) initial pipeline transitions")
         }
 
         return count

@@ -140,7 +140,7 @@ final class CommunicationsImportCoordinator {
         UserDefaults.standard.removeObject(forKey: "commsLastCallWatermark")
         UserDefaults.standard.removeObject(forKey: "commsLastWhatsAppMessageWatermark")
         UserDefaults.standard.removeObject(forKey: "commsLastWhatsAppCallWatermark")
-        logger.info("Watermarks reset — next import will scan full lookback window")
+        logger.debug("Watermarks reset — next import will scan full lookback window")
     }
 
     func setAnalyzeMessages(_ value: Bool) {
@@ -225,7 +225,7 @@ final class CommunicationsImportCoordinator {
             source.resume()
             fileWatcherSources.append(source)
             fileWatcherFDs.append(fd)
-            logger.info("File watcher started for \(label): \(url.lastPathComponent)")
+            logger.debug("File watcher started for \(label): \(url.lastPathComponent)")
         }
 
         // Start fallback poll as safety net (FS events can be missed on network volumes, etc.)
@@ -242,7 +242,7 @@ final class CommunicationsImportCoordinator {
         watcherDebounceTask?.cancel()
         watcherDebounceTask = nil
         stopFallbackPoll()
-        logger.info("File watchers stopped")
+        logger.debug("File watchers stopped")
     }
 
     /// Called when a watched database file changes. Debounces rapid writes (SQLite writes
@@ -289,18 +289,18 @@ final class CommunicationsImportCoordinator {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(importIntervalSeconds))
                 guard !Task.isCancelled else { break }
-                logger.info("Periodic communications import triggered")
+                logger.debug("Periodic communications import triggered")
                 await performImport()
             }
         }
-        logger.info("Periodic communications import started (interval: \(Int(self.importIntervalSeconds))s)")
+        logger.debug("Periodic communications import started (interval: \(Int(self.importIntervalSeconds))s)")
     }
 
     /// Stop periodic background import.
     func stopPeriodicImport() {
         periodicImportTask?.cancel()
         periodicImportTask = nil
-        logger.info("Periodic communications import stopped")
+        logger.debug("Periodic communications import stopped")
     }
 
     // MARK: - Import Status
@@ -320,7 +320,7 @@ final class CommunicationsImportCoordinator {
         if importStatus == .importing {
             importStatus = .idle
         }
-        logger.info("All tasks cancelled")
+        logger.debug("All tasks cancelled")
     }
 
     // MARK: - Public API
@@ -377,50 +377,50 @@ final class CommunicationsImportCoordinator {
 
         do {
             // Build known identifier sets
-            logger.info("[comms-import] Building known identifier sets…")
+            logger.debug("[comms-import] Building known identifier sets…")
             let knownEmails = try peopleRepository.allKnownEmails()
             let knownPhones = try peopleRepository.allKnownPhones()
             let knownIdentifiers = knownEmails.union(knownPhones)
-            logger.info("[comms-import] Known: \(knownEmails.count) emails, \(knownPhones.count) phones")
+            logger.debug("[comms-import] Known: \(knownEmails.count) emails, \(knownPhones.count) phones")
 
             // --- iMessage ---
             if messagesEnabled, bookmarkManager.hasMessagesAccess {
-                logger.info("[comms-import] Starting iMessage import (since \(messageSince))…")
+                logger.debug("[comms-import] Starting iMessage import (since \(messageSince))…")
                 let result = try await importMessages(since: messageSince, knownIdentifiers: knownIdentifiers)
                 totalMessages = result.count
                 deferredIMThreads = result.deferred
-                logger.info("[comms-import] iMessage import done: \(result.count) messages, \(result.deferred.count) threads for analysis")
+                logger.debug("[comms-import] iMessage import done: \(result.count) messages, \(result.deferred.count) threads for analysis")
             }
 
             // --- Call History ---
             if callsEnabled, bookmarkManager.hasCallHistoryAccess {
-                logger.info("[comms-import] Starting call history import…")
+                logger.debug("[comms-import] Starting call history import…")
                 totalCalls = try await importCallHistory(since: callSince, knownPhones: knownPhones)
-                logger.info("[comms-import] Call history done: \(totalCalls) calls")
+                logger.debug("[comms-import] Call history done: \(totalCalls) calls")
             }
 
             // --- WhatsApp Messages ---
             if whatsAppMessagesEnabled, bookmarkManager.hasWhatsAppAccess {
-                logger.info("[comms-import] Starting WhatsApp messages import…")
+                logger.debug("[comms-import] Starting WhatsApp messages import…")
                 let result = try await importWhatsAppMessages(since: waMessageSince, knownPhones: knownPhones)
                 totalWAMessages = result.count
                 deferredWAThreads = result.deferred
-                logger.info("[comms-import] WhatsApp messages done: \(result.count)")
+                logger.debug("[comms-import] WhatsApp messages done: \(result.count)")
             }
 
             // --- WhatsApp Calls ---
             if whatsAppCallsEnabled, bookmarkManager.hasWhatsAppAccess {
-                logger.info("[comms-import] Starting WhatsApp calls import…")
+                logger.debug("[comms-import] Starting WhatsApp calls import…")
                 totalWACalls = try await importWhatsAppCalls(since: waCallSince, knownPhones: knownPhones)
-                logger.info("[comms-import] WhatsApp calls done: \(totalWACalls)")
+                logger.debug("[comms-import] WhatsApp calls done: \(totalWACalls)")
             }
 
             // --- WhatsApp Unknown Sender Discovery ---
             if (whatsAppMessagesEnabled || whatsAppCallsEnabled), bookmarkManager.hasWhatsAppAccess {
-                logger.info("[comms-import] Starting WhatsApp unknown sender discovery…")
+                logger.debug("[comms-import] Starting WhatsApp unknown sender discovery…")
                 await discoverWhatsAppUnknownSenders(knownPhones: knownPhones)
                 await generateWhatsAppEnrichments(knownPhones: knownPhones)
-                logger.info("[comms-import] WhatsApp discovery done")
+                logger.debug("[comms-import] WhatsApp discovery done")
             }
 
             lastImportedAt = Date()
@@ -506,13 +506,13 @@ final class CommunicationsImportCoordinator {
         defer { bookmarkManager.stopAccessing(resolved.directory) }
 
         // Fetch messages from known contacts (and capture unknown senders)
-        logger.info("[comms-import] Querying iMessage database…")
+        logger.debug("[comms-import] Querying iMessage database…")
         let (messages, unknownMessages) = try await messageService.fetchMessages(
             since: since,
             dbURL: resolved.database,
             knownIdentifiers: knownIdentifiers
         )
-        logger.info("[comms-import] Fetched \(messages.count) known + \(unknownMessages.count) unknown messages")
+        logger.debug("[comms-import] Fetched \(messages.count) known + \(unknownMessages.count) unknown messages")
 
         // Record unknown senders for triage + event RSVP detection
         if !unknownMessages.isEmpty {
@@ -524,7 +524,7 @@ final class CommunicationsImportCoordinator {
                     return (email: handle, displayName: nil, subject: preview, date: msg.date, source: .iMessage, isLikelyMarketing: false)
                 }
             try? UnknownSenderRepository.shared.bulkRecordUnknownSenders(unknownSenderData)
-            logger.info("Recorded \(unknownMessages.count) messages from unknown iMessage senders")
+            logger.debug("Recorded \(unknownMessages.count) messages from unknown iMessage senders")
 
             // Check for event-matching RSVPs from unknown senders
             let autoReplyData = unknownMessages.map { msg in
@@ -539,23 +539,23 @@ final class CommunicationsImportCoordinator {
             for handle in junkHandles {
                 try? UnknownSenderRepository.shared.markNeverInclude(identifier: handle, source: .iMessage)
             }
-            logger.info("Auto-tagged \(junkHandles.count) junk/spam iMessage senders as never-include")
+            logger.debug("Auto-tagged \(junkHandles.count) junk/spam iMessage senders as never-include")
         }
 
         guard !messages.isEmpty else {
-            logger.info("[comms-import] No new messages from known contacts")
+            logger.debug("[comms-import] No new messages from known contacts")
             return (0, [])
         }
 
         // Group messages by (handle, day) for analysis
-        logger.info("[comms-import] Grouping \(messages.count) messages by handle+day…")
+        logger.debug("[comms-import] Grouping \(messages.count) messages by handle+day…")
         let grouped = groupMessagesByHandleAndDay(messages)
 
         // Upsert all messages WITHOUT analysis (fast persist)
-        logger.info("[comms-import] Upserting \(messages.count) messages into SwiftData…")
+        logger.debug("[comms-import] Upserting \(messages.count) messages into SwiftData…")
         let upsertData: [(MessageDTO, MessageAnalysisDTO?)] = messages.map { ($0, nil) }
         try evidenceRepository.bulkUpsertMessages(upsertData)
-        logger.info("[comms-import] Upsert complete")
+        logger.debug("[comms-import] Upsert complete")
 
         // Update watermark to newest message date
         if let newest = messages.max(by: { $0.date < $1.date })?.date {
@@ -623,7 +623,7 @@ final class CommunicationsImportCoordinator {
         )
 
         guard !calls.isEmpty else {
-            logger.info("No new call records from known contacts")
+            logger.debug("No new call records from known contacts")
             return 0
         }
 
@@ -659,11 +659,11 @@ final class CommunicationsImportCoordinator {
         let people = (try? peopleRepository.fetchAll()) ?? []
         let toRefresh = people.filter { affectedPeople.contains($0.id) && !$0.isMe }
 
-        logger.info("Refreshing relationship summaries for \(toRefresh.count) people with communications")
+        logger.debug("Refreshing relationship summaries for \(toRefresh.count) people with communications")
 
         for person in toRefresh.prefix(10) {
             guard !Task.isCancelled else {
-                logger.info("Summary refresh cancelled")
+                logger.debug("Summary refresh cancelled")
                 break
             }
             await NoteAnalysisCoordinator.shared.refreshRelationshipSummary(for: person)
@@ -807,7 +807,7 @@ final class CommunicationsImportCoordinator {
 
             if !unknownSenders.isEmpty {
                 try UnknownSenderRepository.shared.bulkRecordUnknownSenders(unknownSenders)
-                logger.info("Recorded \(unknownSenders.count) unknown WhatsApp senders for triage")
+                logger.debug("Recorded \(unknownSenders.count) unknown WhatsApp senders for triage")
             }
         } catch {
             logger.warning("WhatsApp unknown sender discovery failed: \(error)")
@@ -864,7 +864,7 @@ final class CommunicationsImportCoordinator {
 
             if !candidates.isEmpty {
                 let inserted = try EnrichmentRepository.shared.bulkRecord(candidates)
-                logger.info("Generated \(inserted) WhatsApp phone enrichment candidates")
+                logger.debug("Generated \(inserted) WhatsApp phone enrichment candidates")
             }
         } catch {
             logger.warning("WhatsApp enrichment generation failed: \(error)")

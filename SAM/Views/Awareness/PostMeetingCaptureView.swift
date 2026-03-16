@@ -931,7 +931,7 @@ struct PostMeetingCaptureView: View {
                 linkedPeopleIDs: linkedIDs
             )
 
-            logger.info("Created capture note for '\(payload.eventTitle)' with \(linkedIDs.count) linked people")
+            logger.debug("Created capture note for '\(payload.eventTitle)' with \(linkedIDs.count) linked people")
 
             Task {
                 await NoteAnalysisCoordinator.shared.analyzeNote(note)

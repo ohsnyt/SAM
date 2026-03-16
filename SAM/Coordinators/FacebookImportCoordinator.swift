@@ -270,7 +270,7 @@ final class FacebookImportCoordinator {
 
         // Soft validation — Facebook exports are typically named "facebook-username-yyyy-mm-dd-*.zip"
         if !filename.contains("facebook") && !filename.contains("fb") {
-            logger.info("Facebook ZIP filename doesn't contain 'facebook': \(url.lastPathComponent, privacy: .public) — proceeding anyway")
+            logger.debug("Facebook ZIP filename doesn't contain 'facebook': \(url.lastPathComponent, privacy: .public) — proceeding anyway")
         }
 
         // Create temp directory
@@ -385,7 +385,7 @@ final class FacebookImportCoordinator {
             progressMessage = "Parsing friends list…"
             pendingFriends = await facebookService.parseFriends(in: url)
             parsedFriendCount = pendingFriends.count
-            logger.info("Parsed \(self.parsedFriendCount) friends")
+            logger.debug("Parsed \(self.parsedFriendCount) friends")
 
             // Step 4: Parse all Messenger threads
             progressMessage = "Parsing Messenger threads…"
@@ -395,7 +395,7 @@ final class FacebookImportCoordinator {
             // Count unique threads
             let uniqueThreads = Set(pendingMessages.map(\.threadId))
             parsedMessageThreadCount = uniqueThreads.count
-            logger.info("Parsed \(self.parsedMessageCount) messages across \(self.parsedMessageThreadCount) threads")
+            logger.debug("Parsed \(self.parsedMessageCount) messages across \(self.parsedMessageThreadCount) threads")
 
             // Step 5: Parse comments, reactions, friend requests
             progressMessage = "Parsing comments and reactions…"
@@ -409,7 +409,7 @@ final class FacebookImportCoordinator {
             progressMessage = "Parsing posts…"
             pendingPosts = await facebookService.parsePosts(in: url)
             parsedPostCount = pendingPosts.count
-            logger.info("Parsed \(self.parsedPostCount) text posts")
+            logger.debug("Parsed \(self.parsedPostCount) text posts")
 
             // Step 6: Compute touch scores
             progressMessage = "Computing touch scores…"
@@ -427,7 +427,7 @@ final class FacebookImportCoordinator {
             importStatus = .awaitingReview
             sheetPhase = .awaitingReview
             progressMessage = nil
-            logger.info("Facebook import ready for review: \(self.exactMatchCount) exact, \(self.probableMatchCount) probable, \(self.noMatchCount) no match")
+            logger.debug("Facebook import ready for review: \(self.exactMatchCount) exact, \(self.probableMatchCount) probable, \(self.noMatchCount) no match")
 
             // Notify observers (SAMApp listens to present the review sheet from the File menu flow)
             NotificationCenter.default.post(name: .samFacebookAwaitingReview, object: nil)
@@ -542,7 +542,7 @@ final class FacebookImportCoordinator {
                 // Build and cache Facebook analysis snapshot
                 let snapshot = self.buildFacebookAnalysisSnapshot()
                 await BusinessProfileService.shared.saveFacebookSnapshot(snapshot)
-                logger.info("Facebook analysis snapshot cached: \(snapshot.friendCount) friends, \(snapshot.messageThreadCount) threads")
+                logger.debug("Facebook analysis snapshot cached: \(snapshot.friendCount) friends, \(snapshot.messageThreadCount) threads")
 
                 // Run voice analysis on posts and store Facebook profile
                 if var fbProfile = profileForAnalysis {
@@ -687,7 +687,7 @@ final class FacebookImportCoordinator {
         emailWatcherStartDate = .now
         sheetPhase = .watchingEmail
         scheduleEmailPolling()
-        logger.info("Facebook email watcher started")
+        logger.debug("Facebook email watcher started")
     }
 
     /// Stop the email watcher.
@@ -696,7 +696,7 @@ final class FacebookImportCoordinator {
         emailPollingTimer = nil
         emailWatcherActive = false
         emailWatcherStartDate = nil
-        logger.info("Facebook email watcher stopped")
+        logger.debug("Facebook email watcher stopped")
     }
 
     private func scheduleEmailPolling() {
@@ -757,7 +757,7 @@ final class FacebookImportCoordinator {
                 await SystemNotificationService.shared.postFacebookExportReady(downloadURL: fallbackURL)
             }
 
-            logger.info("Facebook export email detected")
+            logger.debug("Facebook export email detected")
 
         } catch {
             logger.error("Facebook email poll failed: \(error.localizedDescription)")
@@ -782,7 +782,7 @@ final class FacebookImportCoordinator {
         fileWatcherStartDate = .now
         sheetPhase = .watchingFile
         scheduleFilePolling()
-        logger.info("Facebook file watcher started")
+        logger.debug("Facebook file watcher started")
     }
 
     /// Stop the file watcher.
@@ -791,7 +791,7 @@ final class FacebookImportCoordinator {
         filePollingTimer = nil
         fileWatcherActive = false
         fileWatcherStartDate = nil
-        logger.info("Facebook file watcher stopped")
+        logger.debug("Facebook file watcher stopped")
     }
 
     private func scheduleFilePolling() {
@@ -882,7 +882,7 @@ final class FacebookImportCoordinator {
             downloadURL: downloadURL,
             triggerDate: reminderDate
         )
-        logger.info("Facebook reminder scheduled for \(reminderDate.formatted())")
+        logger.debug("Facebook reminder scheduled for \(reminderDate.formatted())")
     }
 
     // MARK: - Watcher Persistence
@@ -894,7 +894,7 @@ final class FacebookImportCoordinator {
                Date.now.timeIntervalSince(startDate) < 2 * 24 * 3600 {
                 sheetPhase = .watchingEmail
                 scheduleEmailPolling()
-                logger.info("Resumed Facebook email watcher from previous session")
+                logger.debug("Resumed Facebook email watcher from previous session")
             } else {
                 emailWatcherActive = false
                 emailWatcherStartDate = nil
@@ -906,7 +906,7 @@ final class FacebookImportCoordinator {
                Date.now.timeIntervalSince(startDate) < 2 * 24 * 3600 {
                 sheetPhase = .watchingFile
                 scheduleFilePolling()
-                logger.info("Resumed Facebook file watcher from previous session")
+                logger.debug("Resumed Facebook file watcher from previous session")
             } else {
                 fileWatcherActive = false
                 fileWatcherStartDate = nil
@@ -921,7 +921,7 @@ final class FacebookImportCoordinator {
         guard let url = importedZipURL else { return }
         try FileManager.default.removeItem(at: url)
         importedZipURL = nil
-        logger.info("Deleted Facebook export ZIP: \(url.lastPathComponent)")
+        logger.debug("Deleted Facebook export ZIP: \(url.lastPathComponent)")
     }
 
     // MARK: - Cancellation (Sheet Flow)
@@ -1391,7 +1391,7 @@ final class FacebookImportCoordinator {
     func runProfileAnalysis() async {
         guard profileAnalysisStatus != .analyzing else { return }
         guard let snapshot = await BusinessProfileService.shared.facebookSnapshot() else {
-            logger.info("Facebook profile analysis skipped: no analysis snapshot available")
+            logger.debug("Facebook profile analysis skipped: no analysis snapshot available")
             return
         }
 
@@ -1429,7 +1429,7 @@ final class FacebookImportCoordinator {
 
         // Need both LinkedIn and Facebook profiles
         guard let linkedInProfile = await BusinessProfileService.shared.linkedInProfile() else {
-            logger.info("Cross-platform analysis skipped: no LinkedIn profile available")
+            logger.debug("Cross-platform analysis skipped: no LinkedIn profile available")
             return
         }
 
@@ -1441,7 +1441,7 @@ final class FacebookImportCoordinator {
             fbProfile = await BusinessProfileService.shared.facebookProfile()
         }
         guard let fbProfile else {
-            logger.info("Cross-platform analysis skipped: no Facebook profile available")
+            logger.debug("Cross-platform analysis skipped: no Facebook profile available")
             return
         }
 
@@ -1756,7 +1756,7 @@ final class FacebookImportCoordinator {
         guard let dir = tempExtractDir else { return }
         tempExtractDir = nil
         try? FileManager.default.removeItem(at: dir)
-        logger.info("Cleaned up temp Facebook extract directory")
+        logger.debug("Cleaned up temp Facebook extract directory")
     }
 
     // MARK: - Email Notification Handling

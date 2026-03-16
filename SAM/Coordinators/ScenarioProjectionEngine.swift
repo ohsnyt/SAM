@@ -130,7 +130,7 @@ final class ScenarioProjectionEngine {
 
         projections = results
         lastComputedAt = now
-        logger.info("Refreshed scenario projections: \(results.count) categories")
+        logger.debug("Refreshed scenario projections: \(results.count) categories")
     }
 
     // MARK: - Category Computations

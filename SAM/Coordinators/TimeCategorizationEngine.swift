@@ -81,7 +81,7 @@ final class TimeCategorizationEngine {
         }
 
         if created > 0 || updated > 0 {
-            logger.info("Time categorization: \(created) created, \(updated) updated")
+            logger.debug("Time categorization: \(created) created, \(updated) updated")
         }
     }
 

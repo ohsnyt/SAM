@@ -151,7 +151,7 @@ final class TimeTrackingRepository {
         )
         context.insert(entry)
         try context.save()
-        logger.info("Created manual time entry: \(title)")
+        logger.debug("Created manual time entry: \(title)")
         return entry
     }
 
@@ -168,7 +168,7 @@ final class TimeTrackingRepository {
         entry.categoryRawValue = newCategory.rawValue
         entry.isManualOverride = true
         try context.save()
-        logger.info("Category updated to \(newCategory.rawValue) for: \(entry.title)")
+        logger.debug("Category updated to \(newCategory.rawValue) for: \(entry.title)")
     }
 
     // MARK: - Delete
@@ -182,7 +182,7 @@ final class TimeTrackingRepository {
 
         context.delete(entry)
         try context.save()
-        logger.info("Deleted time entry: \(entry.title)")
+        logger.debug("Deleted time entry: \(entry.title)")
     }
 
     // MARK: - Errors

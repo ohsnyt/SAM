@@ -54,7 +54,7 @@ final class UndoCoordinator {
         do {
             try UndoRepository.shared.restore(entry: entry)
             NotificationCenter.default.post(name: .samUndoDidRestore, object: nil)
-            logger.info("Undo performed: \(entry.entityType.rawValue) '\(entry.entityDisplayName)'")
+            logger.debug("Undo performed: \(entry.entityType.rawValue) '\(entry.entityDisplayName)'")
         } catch {
             logger.error("Undo failed: \(error.localizedDescription)")
         }

@@ -68,7 +68,7 @@ final class ProductionRepository {
         )
         context.insert(record)
         try context.save()
-        logger.info("Created production record for \(person?.displayName ?? "unknown"): \(productType.displayName)")
+        logger.debug("Created production record for \(person?.displayName ?? "unknown"): \(productType.displayName)")
         return record
     }
 
@@ -95,7 +95,7 @@ final class ProductionRepository {
         record.updatedAt = .now
 
         try context.save()
-        logger.info("Updated production record \(recordID): status=\(record.status.displayName)")
+        logger.debug("Updated production record \(recordID): status=\(record.status.displayName)")
     }
 
     /// Advance a record's status to the next happy-path stage.
@@ -119,7 +119,7 @@ final class ProductionRepository {
         }
 
         try context.save()
-        logger.info("Advanced production record \(recordID) to \(nextStatus.displayName)")
+        logger.debug("Advanced production record \(recordID) to \(nextStatus.displayName)")
     }
 
     /// Delete a production record.
@@ -134,7 +134,7 @@ final class ProductionRepository {
 
         context.delete(record)
         try context.save()
-        logger.info("Deleted production record \(recordID)")
+        logger.debug("Deleted production record \(recordID)")
     }
 
     // MARK: - Fetch

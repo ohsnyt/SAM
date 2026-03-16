@@ -157,9 +157,9 @@ final class LegacyStoreMigrationService {
         status = .idle
 
         if result.isEmpty {
-            logger.info("No legacy stores found")
+            logger.debug("No legacy stores found")
         } else {
-            logger.info("Found \(result.count) legacy stores (\(result.formattedSize)), most recent: \(result.mostRecent?.version ?? "none")")
+            logger.debug("Found \(result.count) legacy stores (\(result.formattedSize)), most recent: \(result.mostRecent?.version ?? "none")")
         }
     }
 
@@ -184,7 +184,7 @@ final class LegacyStoreMigrationService {
         // Try stores from most recent to oldest
         for source in disc.stores {
             status = .migrating("Trying \(source.version)...")
-            logger.info("Attempting migration from \(source.version)")
+            logger.debug("Attempting migration from \(source.version)")
 
             // 1. Copy store files to a temp directory to protect originals
             //    from CoreData's in-place migration attempt.
@@ -250,7 +250,7 @@ final class LegacyStoreMigrationService {
             }
 
             if personCount == 0 {
-                logger.info("\(source.version) is empty — skipping")
+                logger.debug("\(source.version) is empty — skipping")
                 try? fm.removeItem(at: tempDir)
                 continue
             }
@@ -390,7 +390,7 @@ final class LegacyStoreMigrationService {
         // Try stores from most recent to oldest
         for source in disc.stores {
             status = .migrating("Extracting roles from \(source.version)...")
-            logger.info("Attempting role extraction from \(source.version) via SQLite3")
+            logger.debug("Attempting role extraction from \(source.version) via SQLite3")
 
             guard let result = await extractAndApplyRoles(from: source) else {
                 continue // Try next store
@@ -491,11 +491,11 @@ final class LegacyStoreMigrationService {
         let withRoles = legacyRoles.filter { !$0.roleBadges.isEmpty }
 
         if withRoles.isEmpty {
-            logger.info("\(source.version): found \(totalPersons) persons but none have roles")
+            logger.debug("\(source.version): found \(totalPersons) persons but none have roles")
             return nil
         }
 
-        logger.info("\(source.version): found \(withRoles.count) persons with roles out of \(totalPersons)")
+        logger.debug("\(source.version): found \(withRoles.count) persons with roles out of \(totalPersons)")
         status = .migrating("Found \(withRoles.count) contacts with roles...")
 
         // 4. Match against current store and apply roles
@@ -543,7 +543,7 @@ final class LegacyStoreMigrationService {
             if !newRoles.isEmpty {
                 person.roleBadges.append(contentsOf: newRoles)
                 applied += 1
-                logger.info("Applied roles \(newRoles) to \(person.displayNameCache ?? "unknown")")
+                logger.debug("Applied roles \(newRoles) to \(person.displayNameCache ?? "unknown")")
             }
         }
 

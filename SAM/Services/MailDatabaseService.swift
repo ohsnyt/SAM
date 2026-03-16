@@ -52,7 +52,7 @@ actor MailDatabaseService {
             return nil
         }
 
-        logger.info("Using Mail data directory: \(best.lastPathComponent, privacy: .public)")
+        logger.debug("Using Mail data directory: \(best.lastPathComponent, privacy: .public)")
         return best
     }
 
@@ -197,7 +197,7 @@ actor MailDatabaseService {
             ))
         }
 
-        logger.info("Database metadata sweep: \(metas.count) messages since \(since, privacy: .public)")
+        logger.debug("Database metadata sweep: \(metas.count) messages since \(since, privacy: .public)")
         return metas
     }
 
@@ -276,10 +276,10 @@ actor MailDatabaseService {
                 let allRecipients = email.recipientEmails + email.ccEmails
                 return filterRules.contains { $0.matches(recipientEmails: allRecipients) }
             }
-            logger.info("After recipient filtering: \(results.count) emails")
+            logger.debug("After recipient filtering: \(results.count) emails")
         }
 
-        logger.info("Body fetch complete: \(results.count) emails from .emlx files")
+        logger.debug("Body fetch complete: \(results.count) emails from .emlx files")
         return results
     }
 
@@ -435,7 +435,7 @@ actor MailDatabaseService {
             }
         }
 
-        logger.info("Discovered \(dirs.count) Messages/ directories in Mail data store")
+        logger.debug("Discovered \(dirs.count) Messages/ directories in Mail data store")
         messagesDirs = dirs
         return dirs
     }

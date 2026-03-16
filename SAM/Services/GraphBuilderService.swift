@@ -322,7 +322,7 @@ actor GraphBuilderService {
             ))
         }
 
-        logger.info("Built graph: \(nodes.count) nodes, \(edges.count) edges")
+        logger.debug("Built graph: \(nodes.count) nodes, \(edges.count) edges")
         return (nodes, edges)
     }
 
@@ -406,7 +406,7 @@ actor GraphBuilderService {
             iterations: 50
         )
 
-        logger.info("Multi-phase layout complete: \(mutableNodes.count) nodes")
+        logger.debug("Multi-phase layout complete: \(mutableNodes.count) nodes")
         return mutableNodes
     }
 
@@ -474,7 +474,7 @@ actor GraphBuilderService {
             nodes[i].isPinned = pinned
         }
 
-        logger.info("Incremental layout complete: \(hotIndices.count) hot nodes")
+        logger.debug("Incremental layout complete: \(hotIndices.count) hot nodes")
     }
 
     // MARK: - Phase 2: Stress Majorization
@@ -575,7 +575,7 @@ actor GraphBuilderService {
             }
         }
 
-        logger.info("Stress majorization complete: \(iterations) iterations")
+        logger.debug("Stress majorization complete: \(iterations) iterations")
     }
 
     // MARK: - Phase 4: PrEd Edge-Crossing Reduction
@@ -633,7 +633,7 @@ actor GraphBuilderService {
             }
         }
 
-        logger.info("PrEd crossing reduction complete: \(iterations) iterations")
+        logger.debug("PrEd crossing reduction complete: \(iterations) iterations")
     }
 
     /// Find closest point on a line segment to a given point, and the distance.

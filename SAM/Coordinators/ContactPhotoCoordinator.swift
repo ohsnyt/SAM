@@ -23,6 +23,9 @@ final class ContactPhotoCoordinator {
     /// Non-nil while an error should be shown inline.
     private(set) var errorMessage: String?
 
+    /// Non-nil while a LinkedIn PDF import success/info message should be shown.
+    private(set) var linkedInImportMessage: String?
+
     /// True while a photo is being processed/saved.
     private(set) var isSaving = false
 
@@ -162,7 +165,7 @@ final class ContactPhotoCoordinator {
             person.photoThumbnailCache = jpegData
             // Protect this photo from being overwritten by sync before Apple generates the thumbnail
             recentPhotoWrites[contactID] = Date()
-            logger.info("Photo set for \(person.displayName, privacy: .private)")
+            logger.debug("Photo set for \(person.displayName, privacy: .private)")
             // Close Safari windows that were opened for this grab
             closeSafariWindows()
         } catch {
@@ -249,6 +252,172 @@ final class ContactPhotoCoordinator {
     /// Clear the error message.
     func dismissError() {
         errorMessage = nil
+    }
+
+    // MARK: - LinkedIn PDF Import
+
+    /// Process a dropped LinkedIn profile PDF: parse it, create enrichment candidates, and save a note.
+    func handleLinkedInPDFDrop(data: Data, for person: SamPerson) async {
+        do {
+            let profile = try LinkedInPDFParserService.parse(data: data)
+
+            // Build enrichment candidates — skip values that already match existing data
+            var candidates: [EnrichmentCandidate] = []
+
+            // Helper: normalize URLs for comparison (strip scheme, trailing slash, lowercase)
+            func normalizeURL(_ url: String) -> String {
+                url.lowercased()
+                    .replacingOccurrences(of: "https://", with: "")
+                    .replacingOccurrences(of: "http://", with: "")
+                    .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            }
+
+            if let email = profile.email, !email.isEmpty {
+                let existingEmail = person.emailCache?.lowercased() ?? ""
+                if existingEmail != email.lowercased() {
+                    candidates.append(EnrichmentCandidate(
+                        personID: person.id,
+                        field: .email,
+                        proposedValue: email,
+                        currentValue: person.emailCache,
+                        source: .linkedInProfilePDF,
+                        sourceDetail: "LinkedIn Profile PDF"
+                    ))
+                }
+            }
+
+            if let linkedInURL = profile.linkedInURL, !linkedInURL.isEmpty {
+                let existingLI = person.linkedInProfileURL ?? ""
+                if normalizeURL(existingLI) != normalizeURL(linkedInURL) {
+                    candidates.append(EnrichmentCandidate(
+                        personID: person.id,
+                        field: .linkedInURL,
+                        proposedValue: linkedInURL,
+                        currentValue: person.linkedInProfileURL,
+                        source: .linkedInProfilePDF,
+                        sourceDetail: "LinkedIn Profile PDF"
+                    ))
+                }
+            }
+
+            // Fetch current Apple Contact data to avoid proposing identical values
+            var existingCompany: String?
+            var existingJobTitle: String?
+            if let contactID = person.contactIdentifier {
+                let contact = await ContactsService.shared.fetchContact(identifier: contactID, keys: .detail)
+                existingCompany = contact?.organizationName
+                existingJobTitle = contact?.jobTitle
+            }
+
+            if let firstPosition = profile.positions.first {
+                if !firstPosition.company.isEmpty, firstPosition.company != "Unknown",
+                   firstPosition.company.lowercased() != (existingCompany ?? "").lowercased() {
+                    candidates.append(EnrichmentCandidate(
+                        personID: person.id,
+                        field: .company,
+                        proposedValue: firstPosition.company,
+                        currentValue: existingCompany,
+                        source: .linkedInProfilePDF,
+                        sourceDetail: "LinkedIn Profile PDF — \(firstPosition.title)"
+                    ))
+                }
+                if !firstPosition.title.isEmpty, firstPosition.title != "Unknown",
+                   firstPosition.title.lowercased() != (existingJobTitle ?? "").lowercased() {
+                    candidates.append(EnrichmentCandidate(
+                        personID: person.id,
+                        field: .jobTitle,
+                        proposedValue: firstPosition.title,
+                        currentValue: existingJobTitle,
+                        source: .linkedInProfilePDF,
+                        sourceDetail: "LinkedIn Profile PDF — \(firstPosition.company)"
+                    ))
+                }
+            }
+
+            if let phone = profile.phone, !phone.isEmpty {
+                candidates.append(EnrichmentCandidate(
+                    personID: person.id,
+                    field: .phone,
+                    proposedValue: phone,
+                    currentValue: nil,
+                    source: .linkedInProfilePDF,
+                    sourceDetail: "LinkedIn Profile PDF"
+                ))
+            }
+
+            if !candidates.isEmpty {
+                try EnrichmentRepository.shared.bulkRecord(candidates)
+            }
+
+            // Build a concise note — only new information not already visible in the detail header.
+            // Name, headline, and location are already shown in the person view — skip them.
+            var noteLines: [String] = []
+
+            if let summary = profile.summary, !summary.isEmpty {
+                let trimmed = summary.count > 500 ? String(summary.prefix(500)) + "…" : summary
+                noteLines.append(trimmed)
+            }
+
+            if let current = profile.positions.first {
+                noteLines.append("")
+                noteLines.append("Current: \(current.title) at \(current.company)")
+            }
+
+            // Highest education only
+            if let topEdu = profile.education.first {
+                let degree = topEdu.degree ?? ""
+                if !degree.isEmpty {
+                    noteLines.append("Education: \(degree), \(topEdu.school)")
+                } else {
+                    noteLines.append("Education: \(topEdu.school)")
+                }
+            }
+
+            if !profile.topSkills.isEmpty {
+                noteLines.append("Skills: \(profile.topSkills.joined(separator: ", "))")
+            }
+
+            if !profile.honors.isEmpty {
+                noteLines.append("Honors: \(profile.honors.joined(separator: ", "))")
+            }
+
+            if !profile.languages.isEmpty {
+                noteLines.append("Languages: \(profile.languages.joined(separator: ", "))")
+            }
+
+            if let website = profile.websiteURL, !website.isEmpty {
+                noteLines.append("Website: \(website)")
+            }
+
+            let noteContent = noteLines.joined(separator: "\n")
+            let note = try NotesRepository.shared.create(
+                content: noteContent,
+                sourceType: .typed,
+                linkedPeopleIDs: [person.id]
+            )
+
+            Task {
+                await NoteAnalysisCoordinator.shared.analyzeNote(note)
+            }
+
+            let enrichmentCount = candidates.count
+            linkedInImportMessage = "Imported LinkedIn profile for \(profile.name). \(enrichmentCount) enrichment candidate\(enrichmentCount == 1 ? "" : "s") queued."
+            scheduleDismissLinkedInMessage()
+
+            logger.info("LinkedIn PDF imported for \(person.displayName, privacy: .private): \(enrichmentCount) enrichments, note created")
+        } catch {
+            errorMessage = "LinkedIn PDF import failed: \(error.localizedDescription)"
+            scheduleDismissError()
+            logger.error("LinkedIn PDF import failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// Dismiss the LinkedIn import message after a delay.
+    private func scheduleDismissLinkedInMessage() {
+        Task {
+            try? await Task.sleep(for: .seconds(5))
+            linkedInImportMessage = nil
+        }
     }
 
     // MARK: - Private

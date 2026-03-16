@@ -89,7 +89,7 @@ final class ContactsImportCoordinator {
     // MARK: - Initialization
 
     private init() {
-        logger.info("ContactsImportCoordinator initialized")
+        logger.debug("ContactsImportCoordinator initialized")
         setupObservers()
 
         // Attempt an immediate import if conditions are already satisfied at init
@@ -121,7 +121,7 @@ final class ContactsImportCoordinator {
             return
         }
         #endif
-        logger.info("Manual import triggered")
+        logger.debug("Manual import triggered")
         await performImport()
     }
     
@@ -206,7 +206,7 @@ final class ContactsImportCoordinator {
         lastError = nil
 
         let startTime = Date()
-        logger.info("Starting import from group ID '\(self.selectedGroupIdentifier)'")
+        logger.debug("Starting import from group ID '\(self.selectedGroupIdentifier)'")
 
         do {
             // Fetch contacts from ContactsService
@@ -223,7 +223,7 @@ final class ContactsImportCoordinator {
                 return
             }
 
-            logger.info("Fetched \(contacts.count) contacts from ContactsService")
+            logger.debug("Fetched \(contacts.count) contacts from ContactsService")
 
             // Upsert into PeopleRepository
             let (created, updated) = try peopleRepo.bulkUpsert(contacts: contacts)
@@ -245,7 +245,7 @@ final class ContactsImportCoordinator {
             // Merge any duplicate SamPerson records sharing the same contactIdentifier
             let merged = try peopleRepo.mergeDuplicateContacts()
             if merged > 0 {
-                logger.info("Merged \(merged) duplicate SamPerson record(s)")
+                logger.debug("Merged \(merged) duplicate SamPerson record(s)")
             }
 
             // Detect and clear stale contactIdentifiers (deleted Apple Contacts)
@@ -254,7 +254,7 @@ final class ContactsImportCoordinator {
                 let validIDs = await contactsService.validateIdentifiers(allPeopleWithContacts)
                 let cleared = try peopleRepo.clearStaleContactIdentifiers(validIdentifiers: validIDs)
                 if cleared > 0 {
-                    logger.info("Cleared \(cleared) stale contact identifier(s)")
+                    logger.debug("Cleared \(cleared) stale contact identifier(s)")
                 }
             }
 
@@ -265,7 +265,7 @@ final class ContactsImportCoordinator {
                 if !groupIDs.isEmpty {
                     let pruned = try peopleRepo.unlinkNonGroupContacts(groupIdentifiers: groupIDs)
                     if pruned > 0 {
-                        logger.info("Unlinked \(pruned) contact(s) not in SAM group")
+                        logger.debug("Unlinked \(pruned) contact(s) not in SAM group")
                     }
                 }
             }
@@ -376,7 +376,7 @@ final class ContactsImportCoordinator {
         }
 
         if deducedCount > 0 {
-            logger.info("Deduced \(deducedCount) relationship(s) from contact relations")
+            logger.debug("Deduced \(deducedCount) relationship(s) from contact relations")
         }
     }
 
@@ -407,7 +407,7 @@ final class ContactsImportCoordinator {
         if importStatus == .importing {
             importStatus = .idle
         }
-        logger.info("All tasks cancelled")
+        logger.debug("All tasks cancelled")
     }
 
     // MARK: - Observers

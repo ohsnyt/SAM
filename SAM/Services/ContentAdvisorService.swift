@@ -34,7 +34,7 @@ actor ContentAdvisorService {
 
         let trimmed = data.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
-            logger.info("Content advisor skipped — no interaction data available")
+            logger.debug("Content advisor skipped — no interaction data available")
             return ContentAnalysis()
         }
 
@@ -256,7 +256,7 @@ actor ContentAdvisorService {
             ),
             let text = llm.draftText, !text.isEmpty
         {
-            logger.info("Draft parsed after newline sanitization")
+            logger.debug("Draft parsed after newline sanitization")
             return ContentDraft(
                 draftText: text,
                 complianceFlags: llm.complianceFlags ?? []
@@ -265,7 +265,7 @@ actor ContentAdvisorService {
 
         // Attempt 3: regex extract draft_text value between quotes
         if let extracted = Self.extractDraftText(from: cleaned) {
-            logger.info("Draft extracted via regex fallback")
+            logger.debug("Draft extracted via regex fallback")
             return ContentDraft(draftText: extracted)
         }
 
@@ -276,7 +276,7 @@ actor ContentAdvisorService {
             .replacingOccurrences(of: "\"compliance_flags\"", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if !plainText.isEmpty {
-            logger.info(
+            logger.debug(
                 "Draft generation returned plain text, using as draft body"
             )
             return ContentDraft(draftText: String(plainText.prefix(5000)))
@@ -571,7 +571,7 @@ actor ContentAdvisorService {
                 in: .whitespacesAndNewlines
             )
             if !plainText.isEmpty && !plainText.contains("{") {
-                logger.info(
+                logger.debug(
                     "Content analysis returned plain text, using as single topic"
                 )
                 return ContentAnalysis(

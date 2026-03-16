@@ -38,7 +38,7 @@ final class AppLockService {
         }
         set {
             UserDefaults.standard.set(newValue, forKey: timeoutKey)
-            logger.info("Lock timeout updated to \(newValue) minutes")
+            logger.debug("Lock timeout updated to \(newValue) minutes")
         }
     }
 
@@ -93,7 +93,7 @@ final class AppLockService {
                 let laError = error as? LAError
                 switch laError?.code {
                 case .userCancel, .appCancel, .systemCancel:
-                    logger.info("Authentication cancelled by user or system")
+                    logger.debug("Authentication cancelled by user or system")
                     authError = nil
                 default:
                     authError = error.localizedDescription
@@ -115,7 +115,7 @@ final class AppLockService {
                 localizedReason: "Authenticate to access SAM backup data"
             )
             if success {
-                logger.info("Export authentication successful")
+                logger.debug("Export authentication successful")
             }
             return success
         } catch {
@@ -152,7 +152,7 @@ final class AppLockService {
         if elapsed >= timeout {
             isLocked = true
             closeAuxiliaryWindows()
-            logger.info("App locked — inactive for \(Int(elapsed / 60)) minutes (timeout: \(self.lockTimeoutMinutes)m)")
+            logger.debug("App locked — inactive for \(Int(elapsed / 60)) minutes (timeout: \(self.lockTimeoutMinutes)m)")
         }
     }
 
@@ -161,7 +161,7 @@ final class AppLockService {
     /// Configure lock state on app launch. Always starts locked.
     func configureOnLaunch() {
         isLocked = true
-        logger.info("App launch — awaiting authentication")
+        logger.debug("App launch — awaiting authentication")
     }
 
     // MARK: - Private Helpers

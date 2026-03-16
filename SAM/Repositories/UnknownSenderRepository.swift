@@ -139,7 +139,7 @@ final class UnknownSenderRepository {
 
         try modelContext.save()
         if created > 0 || updated > 0 {
-            logger.info("Unknown senders: \(created) new, \(updated) updated")
+            logger.debug("Unknown senders: \(created) new, \(updated) updated")
         }
     }
 

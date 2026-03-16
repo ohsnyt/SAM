@@ -48,7 +48,7 @@ final class ContentPostRepository {
         )
         context.insert(post)
         try context.save()
-        logger.info("Logged post on \(platform.rawValue): \(topic)")
+        logger.debug("Logged post on \(platform.rawValue): \(topic)")
         return post
     }
 
@@ -138,7 +138,7 @@ final class ContentPostRepository {
         guard let post = all.first(where: { $0.id == id }) else { return }
         context.delete(post)
         try context.save()
-        logger.info("Deleted content post \(id)")
+        logger.debug("Deleted content post \(id)")
     }
 
     // MARK: - Errors

@@ -130,7 +130,7 @@ final class SubstackImportCoordinator {
 
         importStatus = .importing
         statusMessage = "Fetching RSS feed..."
-        logger.info("Starting Substack feed fetch: \(urlString)")
+        logger.debug("Starting Substack feed fetch: \(urlString)")
 
         do {
             let (profile, posts) = try await SubstackService.shared.fetchAndParseFeed(url: url)
@@ -207,7 +207,7 @@ final class SubstackImportCoordinator {
     func loadSubscriberCSV(url: URL) async {
         importStatus = .importing
         statusMessage = "Parsing subscriber CSV..."
-        logger.info("Starting Substack subscriber import")
+        logger.debug("Starting Substack subscriber import")
 
         let accessing = url.startAccessingSecurityScopedResource()
         defer { if accessing { url.stopAccessingSecurityScopedResource() } }
@@ -259,7 +259,7 @@ final class SubstackImportCoordinator {
             importStatus = .awaitingReview
             let matched = candidates.filter { if case .exactMatchEmail = $0.matchStatus { return true }; return false }.count
             statusMessage = "\(subscribers.count) subscribers (\(matched) matched)"
-            logger.info("Subscriber parse complete: \(subscribers.count) total, \(matched) matched")
+            logger.debug("Subscriber parse complete: \(subscribers.count) total, \(matched) matched")
 
         } catch {
             importStatus = .failed(error.localizedDescription)
@@ -274,7 +274,7 @@ final class SubstackImportCoordinator {
 
         importStatus = .importing
         statusMessage = "Processing subscribers..."
-        logger.info("Confirming Substack subscriber import")
+        logger.debug("Confirming Substack subscriber import")
 
         do {
             guard let container else { throw SubstackError.invalidFeedURL }
@@ -526,7 +526,7 @@ final class SubstackImportCoordinator {
         emailWatcherStartDate = .now
         sheetPhase = .watchingEmail
         scheduleEmailPolling()
-        logger.info("Substack email watcher started")
+        logger.debug("Substack email watcher started")
     }
 
     /// Stop the email watcher.
@@ -535,7 +535,7 @@ final class SubstackImportCoordinator {
         emailPollingTimer = nil
         emailWatcherActive = false
         emailWatcherStartDate = nil
-        logger.info("Substack email watcher stopped")
+        logger.debug("Substack email watcher stopped")
     }
 
     private func scheduleEmailPolling() {
@@ -601,7 +601,7 @@ final class SubstackImportCoordinator {
                 )
             }
 
-            logger.info("Substack export email detected")
+            logger.debug("Substack export email detected")
 
         } catch {
             logger.error("Email poll failed: \(error.localizedDescription)")
@@ -627,7 +627,7 @@ final class SubstackImportCoordinator {
         fileWatcherStartDate = .now
         sheetPhase = .watchingFile
         scheduleFilePolling()
-        logger.info("Substack file watcher started")
+        logger.debug("Substack file watcher started")
     }
 
     /// Stop the file watcher.
@@ -636,7 +636,7 @@ final class SubstackImportCoordinator {
         filePollingTimer = nil
         fileWatcherActive = false
         fileWatcherStartDate = nil
-        logger.info("Substack file watcher stopped")
+        logger.debug("Substack file watcher stopped")
     }
 
     private func scheduleFilePolling() {
@@ -731,7 +731,7 @@ final class SubstackImportCoordinator {
             downloadURL: downloadURL,
             triggerDate: reminderDate
         )
-        logger.info("Substack reminder scheduled for \(reminderDate.formatted())")
+        logger.debug("Substack reminder scheduled for \(reminderDate.formatted())")
     }
 
     // MARK: - Watcher Persistence
@@ -744,7 +744,7 @@ final class SubstackImportCoordinator {
                Date.now.timeIntervalSince(startDate) < 2 * 24 * 3600 {
                 sheetPhase = .watchingEmail
                 scheduleEmailPolling()
-                logger.info("Resumed Substack email watcher from previous session")
+                logger.debug("Resumed Substack email watcher from previous session")
             } else {
                 emailWatcherActive = false
                 emailWatcherStartDate = nil
@@ -756,7 +756,7 @@ final class SubstackImportCoordinator {
                Date.now.timeIntervalSince(startDate) < 2 * 24 * 3600 {
                 sheetPhase = .watchingFile
                 scheduleFilePolling()
-                logger.info("Resumed Substack file watcher from previous session")
+                logger.debug("Resumed Substack file watcher from previous session")
             } else {
                 fileWatcherActive = false
                 fileWatcherStartDate = nil
@@ -771,7 +771,7 @@ final class SubstackImportCoordinator {
         guard let url = importedZipURL else { return }
         try FileManager.default.removeItem(at: url)
         importedZipURL = nil
-        logger.info("Deleted Substack export ZIP: \(url.lastPathComponent)")
+        logger.debug("Deleted Substack export ZIP: \(url.lastPathComponent)")
     }
 
     // MARK: - Cancellation
@@ -820,7 +820,7 @@ final class SubstackImportCoordinator {
                 previousAnalysisJSON: previousJSON
             )
             await BusinessProfileService.shared.saveProfileAnalysis(result)
-            logger.info("Substack profile analysis complete: score \(result.overallScore)")
+            logger.debug("Substack profile analysis complete: score \(result.overallScore)")
         } catch {
             logger.error("Substack profile analysis failed: \(error.localizedDescription)")
         }

@@ -379,7 +379,7 @@ struct CorrectionSheetView: View {
                 try notesRepository.addImages(to: note, images: extractedImages)
             }
 
-            logger.info("Created correction note for \(personName)")
+            logger.debug("Created correction note for \(personName)")
 
             // Fire analysis (will also refresh relationship summary)
             Task {

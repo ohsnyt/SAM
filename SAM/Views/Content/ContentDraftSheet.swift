@@ -313,7 +313,7 @@ struct ContentDraftSheet: View {
                 topic: topic,
                 sourceOutcomeID: sourceOutcomeID
             )
-            logger.info("Logged content post on \(selectedPlatform.rawValue): \(topic)")
+            logger.debug("Logged content post on \(selectedPlatform.rawValue): \(topic)")
             onPosted()
         } catch {
             errorMessage = "Could not log post: \(error.localizedDescription)"

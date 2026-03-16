@@ -154,7 +154,7 @@ final class NoteAnalysisCoordinator {
                         note: note,
                         peopleIDs: Array(matchedPersonIDs)
                     )
-                    logger.info("Auto-linked note to \(matchedPersonIDs.count) people from extracted mentions")
+                    logger.debug("Auto-linked note to \(matchedPersonIDs.count) people from extracted mentions")
                 }
             }
 
@@ -256,7 +256,7 @@ final class NoteAnalysisCoordinator {
                     person: match,
                     eventDescription: event.eventDescription
                 )
-                logger.info("Detected death event for \(match.displayName), prompting user")
+                logger.debug("Detected death event for \(match.displayName), prompting user")
                 return // Only one prompt at a time
             }
         }
@@ -341,7 +341,7 @@ final class NoteAnalysisCoordinator {
             person.relationshipNextSteps = summary.suggestedNextSteps
             person.summaryUpdatedAt = .now
 
-            logger.info("Updated relationship summary for \(displayName, privacy: .private)")
+            logger.debug("Updated relationship summary for \(displayName, privacy: .private)")
         } catch {
             logger.debug("Relationship summary skipped for \(displayName, privacy: .public): \(error.localizedDescription)")
         }
@@ -464,7 +464,7 @@ final class NoteAnalysisCoordinator {
                 role: role
             )
             note.followUpDraft = draft
-            logger.info("Generated follow-up draft for note linked to \(personName, privacy: .private)")
+            logger.debug("Generated follow-up draft for note linked to \(personName, privacy: .private)")
         } catch {
             logger.debug("Follow-up draft skipped for \(personName, privacy: .private): \(error.localizedDescription)")
         }
@@ -540,7 +540,7 @@ final class NoteAnalysisCoordinator {
             do {
                 try outcomeRepo.upsert(outcome: outcome)
                 createdCount += 1
-                logger.info("Auto-created outcome '\(action.description)' for \(person.displayNameCache ?? person.displayName, privacy: .private)")
+                logger.debug("Auto-created outcome '\(action.description)' for \(person.displayNameCache ?? person.displayName, privacy: .private)")
             } catch {
                 logger.debug("Failed to create outcome from action: \(error.localizedDescription)")
             }
@@ -672,7 +672,7 @@ final class NoteAnalysisCoordinator {
 
             owner.familyReferences.append(ref)
             let ownerDisplay = owner.displayNameCache ?? owner.displayName
-            logger.info("Created family reference: \(referencedName) is \(relationshipLabel) of \(ownerDisplay)")
+            logger.debug("Created family reference: \(referencedName) is \(relationshipLabel) of \(ownerDisplay)")
 
             // Create "Review in Graph" outcome
             createGraphReviewOutcome(
@@ -698,7 +698,7 @@ final class NoteAnalysisCoordinator {
                         sourceNoteID: note.id
                     )
                     matched.familyReferences.append(reciprocal)
-                    logger.info("Created reciprocal family reference: \(ownerName) is \(reciprocalRel) of \(matched.displayNameCache ?? matched.displayName)")
+                    logger.debug("Created reciprocal family reference: \(ownerName) is \(reciprocalRel) of \(matched.displayNameCache ?? matched.displayName)")
                 }
             }
         }
@@ -728,7 +728,7 @@ final class NoteAnalysisCoordinator {
 
         do {
             try outcomeRepo.upsert(outcome: outcome)
-            logger.info("Created graph review outcome for \(personName) ↔ \(ownerName)")
+            logger.debug("Created graph review outcome for \(personName) ↔ \(ownerName)")
         } catch {
             logger.debug("Failed to create graph review outcome: \(error.localizedDescription)")
         }

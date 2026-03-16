@@ -41,7 +41,7 @@ final class PresentationAnalysisCoordinator {
 
         currentPresentationTitle = presentation.title
         analysisStatus = .extracting
-        logger.info("Starting analysis of presentation: \(presentation.title)")
+        logger.debug("Starting analysis of presentation: \(presentation.title)")
 
         do {
             // Step 1: Extract text from all attached files
@@ -130,9 +130,9 @@ final class PresentationAnalysisCoordinator {
 
             if !pageTexts.isEmpty {
                 allText.append("File: \(file.fileName)\n\(pageTexts.joined(separator: "\n\n"))")
-                logger.info("Extracted text from \(document.pageCount) pages in \(file.fileName)")
+                logger.debug("Extracted text from \(document.pageCount) pages in \(file.fileName)")
             } else {
-                logger.info("No extractable text in \(file.fileName) (may be image-only slides)")
+                logger.debug("No extractable text in \(file.fileName) (may be image-only slides)")
             }
         }
 

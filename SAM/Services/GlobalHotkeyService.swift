@@ -90,13 +90,13 @@ final class GlobalHotkeyService {
             Task { @MainActor in
                 NSApp.activate(ignoringOtherApps: true)
                 NotificationCenter.default.post(name: .samOpenClipboardCapture, object: nil)
-                logger.info("Global hotkey ⌃⇧V triggered — opening clipboard capture")
+                logger.debug("Global hotkey ⌃⇧V triggered — opening clipboard capture")
             }
         }
 
         isRegistered = globalMonitor != nil
         if isRegistered {
-            logger.info("Global hotkey ⌃⇧V registered")
+            logger.debug("Global hotkey ⌃⇧V registered")
         } else {
             logger.warning("Failed to register global hotkey")
         }
@@ -107,7 +107,7 @@ final class GlobalHotkeyService {
             NSEvent.removeMonitor(monitor)
             globalMonitor = nil
             isRegistered = false
-            logger.info("Global hotkey ⌃⇧V unregistered")
+            logger.debug("Global hotkey ⌃⇧V unregistered")
         }
     }
 }

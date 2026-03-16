@@ -60,11 +60,11 @@ final class BookmarkManager {
         // Migrate from old file-level bookmark keys if present
         if messagesBookmarkData == nil, UserDefaults.standard.data(forKey: "messagesDBBookmark") != nil {
             UserDefaults.standard.removeObject(forKey: "messagesDBBookmark")
-            logger.info("Removed stale file-level messages bookmark — please re-grant directory access")
+            logger.debug("Removed stale file-level messages bookmark — please re-grant directory access")
         }
         if callHistoryBookmarkData == nil, UserDefaults.standard.data(forKey: "callHistoryDBBookmark") != nil {
             UserDefaults.standard.removeObject(forKey: "callHistoryDBBookmark")
-            logger.info("Removed stale file-level call history bookmark — please re-grant directory access")
+            logger.debug("Removed stale file-level call history bookmark — please re-grant directory access")
         }
     }
 
@@ -87,7 +87,7 @@ final class BookmarkManager {
         panel.directoryURL = libraryDir
 
         guard panel.runModal() == .OK, let url = panel.url else {
-            logger.info("User cancelled messages directory selection")
+            logger.debug("User cancelled messages directory selection")
             return nil
         }
 
@@ -106,7 +106,7 @@ final class BookmarkManager {
             )
             messagesBookmarkData = bookmarkData
             UserDefaults.standard.set(bookmarkData, forKey: messagesKey)
-            logger.info("Messages directory bookmark saved for: \(url.path, privacy: .public)")
+            logger.debug("Messages directory bookmark saved for: \(url.path, privacy: .public)")
             return url
         } catch {
             logger.error("Failed to create messages bookmark: \(error)")
@@ -130,7 +130,7 @@ final class BookmarkManager {
         panel.directoryURL = callHistoryDir
 
         guard panel.runModal() == .OK, let url = panel.url else {
-            logger.info("User cancelled call history directory selection")
+            logger.debug("User cancelled call history directory selection")
             return nil
         }
 
@@ -149,7 +149,7 @@ final class BookmarkManager {
             )
             callHistoryBookmarkData = bookmarkData
             UserDefaults.standard.set(bookmarkData, forKey: callHistoryKey)
-            logger.info("Call history directory bookmark saved for: \(url.path, privacy: .public)")
+            logger.debug("Call history directory bookmark saved for: \(url.path, privacy: .public)")
             return url
         } catch {
             logger.error("Failed to create call history bookmark: \(error)")
@@ -169,7 +169,7 @@ final class BookmarkManager {
             )
             linkedInFolderBookmarkData = bookmarkData
             UserDefaults.standard.set(bookmarkData, forKey: linkedInFolderKey)
-            logger.info("LinkedIn folder bookmark saved for: \(url.path, privacy: .public)")
+            logger.debug("LinkedIn folder bookmark saved for: \(url.path, privacy: .public)")
         } catch {
             logger.error("Failed to create LinkedIn folder bookmark: \(error)")
         }
@@ -186,7 +186,7 @@ final class BookmarkManager {
             )
             facebookFolderBookmarkData = bookmarkData
             UserDefaults.standard.set(bookmarkData, forKey: facebookFolderKey)
-            logger.info("Facebook folder bookmark saved for: \(url.path, privacy: .public)")
+            logger.debug("Facebook folder bookmark saved for: \(url.path, privacy: .public)")
         } catch {
             logger.error("Failed to create Facebook folder bookmark: \(error)")
         }
@@ -208,7 +208,7 @@ final class BookmarkManager {
         panel.directoryURL = whatsAppDir
 
         guard panel.runModal() == .OK, let url = panel.url else {
-            logger.info("User cancelled WhatsApp directory selection")
+            logger.debug("User cancelled WhatsApp directory selection")
             return nil
         }
 
@@ -227,7 +227,7 @@ final class BookmarkManager {
             )
             whatsAppDirBookmarkData = bookmarkData
             UserDefaults.standard.set(bookmarkData, forKey: whatsAppDirKey)
-            logger.info("WhatsApp directory bookmark saved for: \(url.path, privacy: .public)")
+            logger.debug("WhatsApp directory bookmark saved for: \(url.path, privacy: .public)")
             return url
         } catch {
             logger.error("Failed to create WhatsApp bookmark: \(error)")
@@ -294,7 +294,7 @@ final class BookmarkManager {
         panel.directoryURL = mailDir
 
         guard panel.runModal() == .OK, let url = panel.url else {
-            logger.info("User cancelled Mail directory selection")
+            logger.debug("User cancelled Mail directory selection")
             return nil
         }
 
@@ -315,7 +315,7 @@ final class BookmarkManager {
             )
             mailDirBookmarkData = bookmarkData
             UserDefaults.standard.set(bookmarkData, forKey: mailDirKey)
-            logger.info("Mail directory bookmark saved for: \(url.path, privacy: .public)")
+            logger.debug("Mail directory bookmark saved for: \(url.path, privacy: .public)")
             return url
         } catch {
             logger.error("Failed to create Mail directory bookmark: \(error)")
@@ -335,7 +335,7 @@ final class BookmarkManager {
     func revokeMailDirAccess() {
         mailDirBookmarkData = nil
         UserDefaults.standard.removeObject(forKey: mailDirKey)
-        logger.info("Mail directory bookmark revoked")
+        logger.debug("Mail directory bookmark revoked")
     }
 
     /// Stop accessing a security-scoped resource.
@@ -347,28 +347,28 @@ final class BookmarkManager {
     func revokeMessagesAccess() {
         messagesBookmarkData = nil
         UserDefaults.standard.removeObject(forKey: messagesKey)
-        logger.info("Messages bookmark revoked")
+        logger.debug("Messages bookmark revoked")
     }
 
     /// Revoke saved call history access.
     func revokeCallHistoryAccess() {
         callHistoryBookmarkData = nil
         UserDefaults.standard.removeObject(forKey: callHistoryKey)
-        logger.info("Call history bookmark revoked")
+        logger.debug("Call history bookmark revoked")
     }
 
     /// Revoke saved WhatsApp access.
     func revokeWhatsAppAccess() {
         whatsAppDirBookmarkData = nil
         UserDefaults.standard.removeObject(forKey: whatsAppDirKey)
-        logger.info("WhatsApp bookmark revoked")
+        logger.debug("WhatsApp bookmark revoked")
     }
 
     /// Revoke saved LinkedIn folder access.
     func revokeLinkedInFolderAccess() {
         linkedInFolderBookmarkData = nil
         UserDefaults.standard.removeObject(forKey: linkedInFolderKey)
-        logger.info("LinkedIn folder bookmark revoked")
+        logger.debug("LinkedIn folder bookmark revoked")
     }
 
     // MARK: - Private Helpers
@@ -385,7 +385,7 @@ final class BookmarkManager {
             )
 
             if isStale {
-                logger.info("Bookmark for \(label) is stale — refreshing")
+                logger.debug("Bookmark for \(label) is stale — refreshing")
                 do {
                     let newData = try url.bookmarkData(
                         options: .withSecurityScope,

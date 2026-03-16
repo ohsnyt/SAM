@@ -448,7 +448,7 @@ struct ComposeWindowView: View {
             try? ComplianceAuditRepository.shared.markSent(entryID: auditID, finalDraft: finalText)
         }
         try? outcomeRepo.markCompleted(id: payload.outcomeID)
-        logger.info("Compose completed — outcome \(payload.outcomeID) marked done")
+        logger.debug("Compose completed — outcome \(payload.outcomeID) marked done")
         dismiss()
     }
 

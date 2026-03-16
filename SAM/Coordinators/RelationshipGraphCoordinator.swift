@@ -237,7 +237,7 @@ final class RelationshipGraphCoordinator {
 
                 if restoreCachedLayout() {
                     progress = "Restored from cache..."
-                    logger.info("Using cached layout for \(result.nodes.count) nodes")
+                    logger.debug("Using cached layout for \(result.nodes.count) nodes")
                 } else {
                     progress = "Computing layout..."
 
@@ -272,7 +272,7 @@ final class RelationshipGraphCoordinator {
                 applyFilters()
                 graphStatus = .ready
                 progress = "\(nodeCount) people, \(edgeCount) connections"
-                logger.info("Graph ready: \(nodeCount) nodes, \(edgeCount) edges")
+                logger.debug("Graph ready: \(nodeCount) nodes, \(edgeCount) edges")
 
             } catch {
                 guard !Task.isCancelled else { return }
@@ -293,7 +293,7 @@ final class RelationshipGraphCoordinator {
                 ghostName: ghostName,
                 intoPersonID: personID
             )
-            logger.info("Ghost merge: '\(ghostName)' → person \(personID), \(affected) note(s) updated")
+            logger.debug("Ghost merge: '\(ghostName)' → person \(personID), \(affected) note(s) updated")
         } catch {
             logger.error("Ghost merge failed: \(error)")
         }
@@ -317,7 +317,7 @@ final class RelationshipGraphCoordinator {
                 snapshot: snapshot
             )
             UndoCoordinator.shared.showToast(for: entry)
-            logger.info("Person merge complete: '\(snapshot.sourceDisplayName)' → target \(snapshot.targetPersonID)")
+            logger.debug("Person merge complete: '\(snapshot.sourceDisplayName)' → target \(snapshot.targetPersonID)")
         } catch {
             logger.error("Person merge failed: \(error)")
         }
@@ -747,7 +747,7 @@ final class RelationshipGraphCoordinator {
                 applyFilters()
             }
 
-            logger.info("Incrementally updated node for person \(personID)")
+            logger.debug("Incrementally updated node for person \(personID)")
         } catch {
             logger.error("Incremental node update failed: \(error)")
         }
@@ -794,7 +794,7 @@ final class RelationshipGraphCoordinator {
             ContactEnrichmentCoordinator.shared.queueDeducedRelationshipEnrichments(for: unconfirmed)
             refreshUnconfirmedCount()
             invalidateLayoutCache()
-            logger.info("Confirmed all \(count) deduced relations and queued enrichments")
+            logger.debug("Confirmed all \(count) deduced relations and queued enrichments")
             Task { await buildGraph() }
             // Fire-and-forget family inference — deduplicate by unique clusters
             // Use the first relation as seed; the service walks the full cluster
@@ -855,7 +855,7 @@ final class RelationshipGraphCoordinator {
         guard let data = try? JSONEncoder().encode(positions) else { return }
         UserDefaults.standard.set(data, forKey: Self.cacheKey)
         UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: Self.cacheTimestampKey)
-        logger.info("Cached layout for \(positions.count) nodes")
+        logger.debug("Cached layout for \(positions.count) nodes")
     }
 
     /// Restore cached positions onto existing nodes. Returns true if cache was applied.
@@ -884,7 +884,7 @@ final class RelationshipGraphCoordinator {
         }
 
         applyFilters()
-        logger.info("Restored cached layout for \(restored)/\(totalCount) nodes")
+        logger.debug("Restored cached layout for \(restored)/\(totalCount) nodes")
         return true
     }
 
@@ -1114,7 +1114,7 @@ final class RelationshipGraphCoordinator {
         }
 
         activePulls[bridgeNodeID] = distantIDs
-        logger.info("Pulled \(distantIDs.count) distant connections toward bridge node \(bridgeNodeID)")
+        logger.debug("Pulled \(distantIDs.count) distant connections toward bridge node \(bridgeNodeID)")
     }
 
     /// Release pulled connections, returning them to original positions.
@@ -1129,7 +1129,7 @@ final class RelationshipGraphCoordinator {
         }
 
         activePulls.removeValue(forKey: bridgeNodeID)
-        logger.info("Released pulled connections from bridge node \(bridgeNodeID)")
+        logger.debug("Released pulled connections from bridge node \(bridgeNodeID)")
     }
 
     /// Release all active pulls.

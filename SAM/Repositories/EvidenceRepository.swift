@@ -109,7 +109,7 @@ final class EvidenceRepository {
             }
         }
         sourceUIDCache = lookup
-        logger.info("Built sourceUID lookup cache: \(lookup.count) evidence items")
+        logger.debug("Built sourceUID lookup cache: \(lookup.count) evidence items")
         return lookup
     }
 
@@ -380,7 +380,7 @@ final class EvidenceRepository {
                 }
             }
             phoneLookupCache = lookup
-            logger.info("Built phone lookup cache: \(lookup.count) canonical phones → \(allPeople.count) people")
+            logger.debug("Built phone lookup cache: \(lookup.count) canonical phones → \(allPeople.count) people")
             return lookup
         } catch {
             logger.error("Failed to build phone lookup: \(error)")
@@ -408,7 +408,7 @@ final class EvidenceRepository {
                 }
             }
             emailLookupCache = lookup
-            logger.info("Built email lookup cache: \(lookup.count) canonical emails → \(allPeople.count) people")
+            logger.debug("Built email lookup cache: \(lookup.count) canonical emails → \(allPeople.count) people")
             return lookup
         } catch {
             logger.error("Failed to build email lookup: \(error)")
@@ -563,7 +563,7 @@ final class EvidenceRepository {
 
         try context.save()
 
-        logger.info("Bulk upsert complete: \(created) created, \(updated) updated")
+        logger.debug("Bulk upsert complete: \(created) created, \(updated) updated")
     }
 
     // MARK: - Update Operations
@@ -643,7 +643,7 @@ final class EvidenceRepository {
         try context.save()
 
         if deleted > 0 {
-            logger.info("Pruned \(deleted) orphaned evidence items")
+            logger.debug("Pruned \(deleted) orphaned evidence items")
         }
     }
 
@@ -716,7 +716,7 @@ final class EvidenceRepository {
 
         if updated > 0 {
             try context.save()
-            logger.info("Refreshed participant resolution for \(updated) evidence items")
+            logger.debug("Refreshed participant resolution for \(updated) evidence items")
         }
     }
 
@@ -880,7 +880,7 @@ final class EvidenceRepository {
         }
 
         try context.save()
-        logger.info("Mail bulk upsert: \(created) created, \(updated) updated")
+        logger.debug("Mail bulk upsert: \(created) created, \(updated) updated")
     }
 
     /// Build participant hints from email DTO.
@@ -987,7 +987,7 @@ final class EvidenceRepository {
         }
 
         try context.save()
-        logger.info("iMessage bulk upsert: \(created) created, \(updated) updated")
+        logger.debug("iMessage bulk upsert: \(created) created, \(updated) updated")
     }
 
     // MARK: - Post-Hoc Analysis Patching
@@ -1161,7 +1161,7 @@ final class EvidenceRepository {
         }
 
         try context.save()
-        logger.info("Call record bulk upsert: \(created) created, \(updated) updated")
+        logger.debug("Call record bulk upsert: \(created) created, \(updated) updated")
     }
 
     // MARK: - WhatsApp Bulk Upsert
@@ -1242,7 +1242,7 @@ final class EvidenceRepository {
         }
 
         try context.save()
-        logger.info("WhatsApp message bulk upsert: \(created) created, \(updated) updated")
+        logger.debug("WhatsApp message bulk upsert: \(created) created, \(updated) updated")
     }
 
     /// Bulk upsert WhatsApp call evidence items (metadata only, no LLM analysis).
@@ -1314,7 +1314,7 @@ final class EvidenceRepository {
         }
 
         try context.save()
-        logger.info("WhatsApp call bulk upsert: \(created) created, \(updated) updated")
+        logger.debug("WhatsApp call bulk upsert: \(created) created, \(updated) updated")
     }
 
     /// Convert a WhatsApp JID to canonicalized phone (last 10 digits).
@@ -1369,7 +1369,7 @@ final class EvidenceRepository {
 
         try context.save()
         if deleted > 0 {
-            logger.info("Pruned \(deleted) orphaned mail evidence items")
+            logger.debug("Pruned \(deleted) orphaned mail evidence items")
         }
     }
 

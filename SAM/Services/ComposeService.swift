@@ -53,7 +53,7 @@ final class ComposeService {
 
         let opened = NSWorkspace.shared.open(url)
         if opened {
-            logger.info("Opened Messages.app for \(recipient, privacy: .private)")
+            logger.debug("Opened Messages.app for \(recipient, privacy: .private)")
         } else {
             logger.warning("sms: URL scheme failed — copying draft to clipboard")
             copyToClipboard(body)
@@ -75,7 +75,7 @@ final class ComposeService {
 
         // NSSharingService expects the body as the first item
         service.perform(withItems: [body])
-        logger.info("Opened Mail.app compose for \(recipient, privacy: .private)")
+        logger.debug("Opened Mail.app compose for \(recipient, privacy: .private)")
         return true
     }
 
@@ -90,7 +90,7 @@ final class ComposeService {
 
         let opened = NSWorkspace.shared.open(url)
         if opened {
-            logger.info("Initiated call to \(recipient, privacy: .private)")
+            logger.debug("Initiated call to \(recipient, privacy: .private)")
         }
         return opened
     }
@@ -106,7 +106,7 @@ final class ComposeService {
 
         let opened = NSWorkspace.shared.open(url)
         if opened {
-            logger.info("Initiated FaceTime to \(recipient, privacy: .private)")
+            logger.debug("Initiated FaceTime to \(recipient, privacy: .private)")
         }
         return opened
     }
@@ -176,14 +176,14 @@ final class ComposeService {
         let urlString = "https://wa.me/\(digits)?text=\(encoded)"
 
         if let url = URL(string: urlString), NSWorkspace.shared.open(url) {
-            logger.info("Opened WhatsApp for \(digits, privacy: .private)")
+            logger.debug("Opened WhatsApp for \(digits, privacy: .private)")
             return true
         }
 
         // Fallback: try whatsapp:// scheme (desktop app)
         let appURLString = "whatsapp://send?phone=\(digits)&text=\(encoded)"
         if let url = URL(string: appURLString), NSWorkspace.shared.open(url) {
-            logger.info("Opened WhatsApp desktop app for \(digits, privacy: .private)")
+            logger.debug("Opened WhatsApp desktop app for \(digits, privacy: .private)")
             return true
         }
 
@@ -205,7 +205,7 @@ final class ComposeService {
         let messagingString = "\(withScheme)/overlay/new-message/"
 
         if let url = URL(string: messagingString), NSWorkspace.shared.open(url) {
-            logger.info("Opened LinkedIn messaging for \(profileURL, privacy: .private)")
+            logger.debug("Opened LinkedIn messaging for \(profileURL, privacy: .private)")
             return true
         }
         // Fallback: open profile page directly
@@ -224,7 +224,7 @@ final class ComposeService {
     func openSocialProfile(url: String) -> Bool {
         let withScheme = url.hasPrefix("http") ? url : "https://\(url)"
         if let parsed = URL(string: withScheme), NSWorkspace.shared.open(parsed) {
-            logger.info("Opened social profile: \(url, privacy: .private)")
+            logger.debug("Opened social profile: \(url, privacy: .private)")
             return true
         }
         logger.error("Failed to open social profile URL: \(url, privacy: .private)")
@@ -235,7 +235,7 @@ final class ComposeService {
 
     func copyToClipboard(_ text: String) {
         ClipboardSecurity.copy(text, clearAfter: 60)
-        logger.info("Draft copied to clipboard (auto-clear in 60s)")
+        logger.debug("Draft copied to clipboard (auto-clear in 60s)")
     }
 
     private func runAppleScript(_ source: String, label: String) async -> Bool {
@@ -252,7 +252,7 @@ final class ComposeService {
             return false
         }
 
-        logger.info("AppleScript succeeded: \(label, privacy: .public)")
+        logger.debug("AppleScript succeeded: \(label, privacy: .public)")
         return true
     }
 }

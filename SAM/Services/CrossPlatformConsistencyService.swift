@@ -178,7 +178,7 @@ actor CrossPlatformConsistencyService {
             }
         }
 
-        logger.info("Cross-platform overlap: \(matches.count) contacts on both LinkedIn and Facebook")
+        logger.debug("Cross-platform overlap: \(matches.count) contacts on both LinkedIn and Facebook")
         return matches
     }
 
@@ -270,10 +270,10 @@ actor CrossPlatformConsistencyService {
 
         let systemSize = instructions.count
         let promptSize = prompt.count
-        logger.info("📏 CrossPlatformConsistency prompt — system: \(systemSize)ch, user: \(promptSize)ch, total: \((systemSize+promptSize)/4)t")
+        logger.debug("📏 CrossPlatformConsistency prompt — system: \(systemSize)ch, user: \(promptSize)ch, total: \((systemSize+promptSize)/4)t")
 
         let responseText = try await AIService.shared.generate(prompt: prompt, systemInstruction: instructions)
-        logger.info("📏 CrossPlatformConsistency response — \(responseText.count)ch")
+        logger.debug("📏 CrossPlatformConsistency response — \(responseText.count)ch")
 
         return try parseResponse(responseText)
     }

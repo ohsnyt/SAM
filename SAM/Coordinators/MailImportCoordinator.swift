@@ -113,7 +113,7 @@ final class MailImportCoordinator {
     func resetMailWatermark() {
         lastMailWatermark = nil
         UserDefaults.standard.removeObject(forKey: "mailLastWatermark")
-        logger.info("Mail watermark reset — next import will scan full lookback window")
+        logger.debug("Mail watermark reset — next import will scan full lookback window")
     }
 
     func setFilterRules(_ value: [MailFilterRule]) {
@@ -132,7 +132,7 @@ final class MailImportCoordinator {
         if importStatus == .importing {
             importStatus = .idle
         }
-        logger.info("All tasks cancelled")
+        logger.debug("All tasks cancelled")
     }
 
     // MARK: - Public API
@@ -234,7 +234,7 @@ final class MailImportCoordinator {
             // Osascript fallback is only used when there's NO direct DB access.
             let osascriptAvailable = (envelopeURL == nil)
             if envelopeURL != nil {
-                logger.info("[mail-import] Direct DB access available — skipping osascript entirely")
+                logger.debug("[mail-import] Direct DB access available — skipping osascript entirely")
             }
 
             // 1. Fast metadata sweep (all messages)
@@ -243,7 +243,7 @@ final class MailImportCoordinator {
 
             if let envURL = envelopeURL {
                 // Direct database access — zero AppleScript, Mail never touched
-                logger.info("Using direct database access for metadata sweep")
+                logger.debug("Using direct database access for metadata sweep")
                 allMetas = try await mailDBService.fetchMetadata(
                     dbURL: envURL,
                     since: since,
@@ -267,7 +267,7 @@ final class MailImportCoordinator {
                 lastError = warning
             }
 
-            logger.info("[mail-import] Metadata sweep done: \(allMetas.count) messages")
+            logger.debug("[mail-import] Metadata sweep done: \(allMetas.count) messages")
 
             // 1b. Intercept LinkedIn notification emails before partitioning.
             // LinkedIn notification addresses (e.g. notifications-noreply@linkedin.com) are
@@ -313,7 +313,7 @@ final class MailImportCoordinator {
             knownSenderCount = knownMetas.count
             unknownSenderCount = unknownMetas.count
 
-            logger.info("\(knownMetas.count) emails from known senders, \(unknownMetas.count) unknown skipped")
+            logger.debug("\(knownMetas.count) emails from known senders, \(unknownMetas.count) unknown skipped")
 
             // 5. Record unknown senders for triage (excluding neverInclude)
             let unknownToRecord = unknownMetas.filter { !neverInclude.contains($0.senderEmail) }
@@ -329,7 +329,7 @@ final class MailImportCoordinator {
                 try UnknownSenderRepository.shared.bulkRecordUnknownSenders(senderData)
             }
 
-            logger.info("[mail-import] Partitioned: \(knownMetas.count) known, \(unknownMetas.count) unknown, \(linkedInMetas.count) LinkedIn, \(facebookMetas.count) Facebook")
+            logger.debug("[mail-import] Partitioned: \(knownMetas.count) known, \(unknownMetas.count) unknown, \(linkedInMetas.count) LinkedIn, \(facebookMetas.count) Facebook")
 
             // 6. Fetch bodies only for known senders
             // Hybrid strategy: try .emlx files first (instant, no Mail impact),
@@ -351,7 +351,7 @@ final class MailImportCoordinator {
                 metasNeedingFallback = knownMetas.filter { !foundIDs.contains(String($0.mailID)) }
 
                 if !metasNeedingFallback.isEmpty {
-                    logger.info("\(directEmails.count) bodies from .emlx, \(metasNeedingFallback.count) need osascript fallback")
+                    logger.debug("\(directEmails.count) bodies from .emlx, \(metasNeedingFallback.count) need osascript fallback")
                 }
             }
 
@@ -402,7 +402,7 @@ final class MailImportCoordinator {
                 sentWarnings = sw
             }
 
-            if let sentWarnings { logger.info("Sent mailbox warnings: \(sentWarnings)") }
+            if let sentWarnings { logger.debug("Sent mailbox warnings: \(sentWarnings)") }
 
             // For sent mail, the user is the sender. Match by recipient → known contact.
             let (knownSentMetas, _) = partitionSentByRecipientKnown(
@@ -437,7 +437,7 @@ final class MailImportCoordinator {
                 if !sentEmails.isEmpty {
                     let sentUpsertData: [(EmailDTO, EmailAnalysisDTO?)] = sentEmails.map { ($0, nil) }
                     try evidenceRepository.bulkUpsertEmails(sentUpsertData, direction: .outbound)
-                    logger.info("Sent mail import: \(sentEmails.count) outbound emails from known recipients")
+                    logger.debug("Sent mail import: \(sentEmails.count) outbound emails from known recipients")
                 }
             }
 
@@ -513,7 +513,7 @@ final class MailImportCoordinator {
             // 2. Filter to just this sender's emails
             let senderMetas = allMetas.filter { $0.senderEmail == senderEmail.lowercased() }
             guard !senderMetas.isEmpty else {
-                logger.info("No emails found for sender \(senderEmail, privacy: .private) to reprocess")
+                logger.debug("No emails found for sender \(senderEmail, privacy: .private) to reprocess")
                 return
             }
 
@@ -542,7 +542,7 @@ final class MailImportCoordinator {
             // 6. Debounced post-import work
             PostImportOrchestrator.shared.importDidComplete(source: "mail-reprocess")
 
-            logger.info("Reprocessed \(emails.count) emails for sender \(senderEmail, privacy: .private)")
+            logger.debug("Reprocessed \(emails.count) emails for sender \(senderEmail, privacy: .private)")
 
         } catch {
             logger.error("Reprocess failed for \(senderEmail, privacy: .private): \(error)")
@@ -611,7 +611,7 @@ final class MailImportCoordinator {
 
         linkedInNotificationCount += processed
         if processed > 0 {
-            logger.info("Processed \(processed) LinkedIn notification emails")
+            logger.debug("Processed \(processed) LinkedIn notification emails")
         }
     }
 
@@ -648,7 +648,7 @@ final class MailImportCoordinator {
 
         facebookNotificationCount += processed
         if processed > 0 {
-            logger.info("Processed \(processed) Facebook notification emails")
+            logger.debug("Processed \(processed) Facebook notification emails")
         }
     }
 

@@ -62,7 +62,7 @@ final class EventRepository {
         )
         context.insert(event)
         try context.save()
-        logger.info("Created event: \(title) on \(startDate)")
+        logger.debug("Created event: \(title) on \(startDate)")
         return event
     }
 
@@ -142,7 +142,7 @@ final class EventRepository {
         event.updatedAt = .now
 
         try context?.save()
-        logger.info("Updated event \(id): \(event.title)")
+        logger.debug("Updated event \(id): \(event.title)")
     }
 
     /// Update auto-acknowledgment settings for an event.
@@ -162,7 +162,7 @@ final class EventRepository {
         event.updatedAt = .now
 
         try context?.save()
-        logger.info("Updated auto-ack settings for event \(eventID): enabled=\(enabled)")
+        logger.debug("Updated auto-ack settings for event \(eventID): enabled=\(enabled)")
     }
 
     /// Delete an event and cascade-delete its participations. Captures undo snapshot.
@@ -203,7 +203,7 @@ final class EventRepository {
             UndoCoordinator.shared.showToast(for: entry)
         }
 
-        logger.info("Deleted event \(id)")
+        logger.debug("Deleted event \(id)")
     }
 
     // MARK: - Social Promotion
@@ -270,7 +270,7 @@ final class EventRepository {
         )
         context.insert(participation)
         try context.save()
-        logger.info("Added \(person.displayNameCache ?? "participant") to event \(event.title)")
+        logger.debug("Added \(person.displayNameCache ?? "participant") to event \(event.title)")
         return participation
     }
 
@@ -283,7 +283,7 @@ final class EventRepository {
         }
         context.delete(participation)
         try context.save()
-        logger.info("Removed participant \(participationID) from event \(event.title)")
+        logger.debug("Removed participant \(participationID) from event \(event.title)")
     }
 
     /// Fetch all participations for an event, sorted by priority (VIP first) then name.
@@ -357,7 +357,7 @@ final class EventRepository {
 
         try context.save()
         let name = participation.person?.displayNameCache ?? participationID.uuidString
-        logger.info("RSVP update: \(name) → \(status.displayName)")
+        logger.debug("RSVP update: \(name) → \(status.displayName)")
     }
 
     /// Confirm a SAM-detected RSVP classification.

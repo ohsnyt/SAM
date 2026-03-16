@@ -116,7 +116,7 @@ final class CalendarImportCoordinator {
         if importStatus == .importing {
             importStatus = .idle
         }
-        logger.info("All tasks cancelled")
+        logger.debug("All tasks cancelled")
     }
 
     // MARK: - Public API
@@ -245,7 +245,7 @@ final class CalendarImportCoordinator {
                 || event.looksLikeRealMeeting
             }
 
-            logger.info("\(eventsToProcess.count) events to process (\(events.count - eventsToProcess.count) skipped — solo blocks, free time, or all-day)")
+            logger.debug("\(eventsToProcess.count) events to process (\(events.count - eventsToProcess.count) skipped — solo blocks, free time, or all-day)")
 
             // Collect unknown participants from ALL events for triage
             var unknownParticipants: [(email: String, displayName: String?, subject: String, date: Date, source: EvidenceSource, isLikelyMarketing: Bool)] = []

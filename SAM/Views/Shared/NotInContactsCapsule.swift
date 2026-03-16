@@ -351,7 +351,7 @@ struct NotInContactsCapsule: View {
                 isCreating = false
                 return
             }
-            logger.info("Linked to existing Apple Contact for \(displayName, privacy: .private)")
+            logger.debug("Linked to existing Apple Contact for \(displayName, privacy: .private)")
         } else {
             // No match — create new Apple Contact (auto-adds to SAM group)
             guard let created = await contactsService.createContact(
@@ -365,7 +365,7 @@ struct NotInContactsCapsule: View {
                 return
             }
             contactDTO = created
-            logger.info("Created new Apple Contact for \(displayName, privacy: .private)")
+            logger.debug("Created new Apple Contact for \(displayName, privacy: .private)")
         }
 
         do {

@@ -36,7 +36,7 @@ actor ContactPhotoService {
         saveRequest.update(mutable)
         try store.execute(saveRequest)
 
-        logger.info("Photo updated for contact \(identifier, privacy: .private)")
+        logger.debug("Photo updated for contact \(identifier, privacy: .private)")
     }
 
     /// Download image from a URL, process it, and write to the contact.

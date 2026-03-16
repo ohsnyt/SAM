@@ -651,7 +651,7 @@ final class OutcomeEngine {
         // Fall back to direct ContentAdvisorService call (skip if no digest —
         // avoid blocking outcome generation with a slow LLM call on first run)
         if topics.isEmpty {
-            logger.info("No cached content topics from StrategicCoordinator; skipping AI fallback to avoid stalling outcome generation")
+            logger.debug("No cached content topics from StrategicCoordinator; skipping AI fallback to avoid stalling outcome generation")
             return []
         }
 
@@ -1350,7 +1350,7 @@ final class OutcomeEngine {
         }
 
         if !outcomes.isEmpty {
-            logger.info("Generated role transition outcomes for \(name): added=\(addedRoles), removed=\(removedRoles)")
+            logger.debug("Generated role transition outcomes for \(name): added=\(addedRoles), removed=\(removedRoles)")
         }
     }
 
@@ -1829,7 +1829,7 @@ final class OutcomeEngine {
 
             let availability = await AIService.shared.checkAvailability()
             guard case .available = availability else {
-                logger.info("AI not available — skipping enrichment")
+                logger.debug("AI not available — skipping enrichment")
                 return
             }
 

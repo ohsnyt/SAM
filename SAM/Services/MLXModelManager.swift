@@ -138,7 +138,7 @@ actor MLXModelManager {
             return
         }
 
-        logger.info("Starting MLX model download: \(id)")
+        logger.debug("Starting MLX model download: \(id)")
         downloadProgress = 0
 
         let task = Task {
@@ -160,7 +160,7 @@ actor MLXModelManager {
             downloadProgress = nil
             activeDownloadTask = nil
             if Task.isCancelled || error is CancellationError {
-                logger.info("MLX model download cancelled: \(id)")
+                logger.debug("MLX model download cancelled: \(id)")
                 throw CancellationError()
             }
             logger.error("MLX model download failed: \(id) — \(error.localizedDescription)")
@@ -173,7 +173,7 @@ actor MLXModelManager {
         activeDownloadTask?.cancel()
         activeDownloadTask = nil
         downloadProgress = nil
-        logger.info("Download cancelled by user")
+        logger.debug("Download cancelled by user")
     }
 
     // MARK: - Delete
@@ -185,7 +185,7 @@ actor MLXModelManager {
 
         if FileManager.default.fileExists(atPath: localDir.path) {
             try FileManager.default.removeItem(at: localDir)
-            logger.info("Deleted MLX model files: \(id)")
+            logger.debug("Deleted MLX model files: \(id)")
         }
 
         markDownloaded(id: id, downloaded: false)
@@ -202,7 +202,7 @@ actor MLXModelManager {
     func addCustomModel(id: String, displayName: String, sizeGB: Double) {
         guard !availableModels.contains(where: { $0.id == id }) else { return }
         availableModels.append(ModelInfo(id: id, displayName: displayName, sizeGB: sizeGB, isDownloaded: false))
-        logger.info("Added custom MLX model: \(id)")
+        logger.debug("Added custom MLX model: \(id)")
     }
 
     // MARK: - Model Configuration

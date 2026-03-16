@@ -126,7 +126,7 @@ actor EmailAnalysisService {
             // MLX models may return plain text — use as summary
             let plainText = jsonString.trimmingCharacters(in: .whitespacesAndNewlines)
             if !plainText.isEmpty {
-                logger.info("Email analysis returned plain text, using as summary")
+                logger.debug("Email analysis returned plain text, using as summary")
                 return EmailAnalysisDTO(
                     summary: String(plainText.prefix(500)),
                     namedEntities: [],

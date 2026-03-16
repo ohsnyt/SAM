@@ -4,8 +4,8 @@
 //
 //  Global Clipboard Capture Hotkey
 //
-//  Auxiliary window for capturing copied conversations from any app.
-//  Four phases: parsing → review → saving → error.
+//  Auxiliary window for capturing copied conversations or profile info from any app.
+//  Phases: parsing → review (conversation or profile) → saving → error.
 //
 
 import SwiftUI
@@ -25,15 +25,22 @@ struct ClipboardCaptureWindowView: View {
 
     @State private var phase: Phase = .parsing
     @State private var conversation: ClipboardConversationDTO?
+    @State private var profileContent: ClipboardProfileDTO?
     @State private var title = ""
     @State private var conversationDate = Date()
     @State private var senderMatches: [String: SenderMatch] = [:]
+    @State private var profileMatch: SamPerson?
+    @State private var profileSearchText = ""
+    @State private var profileSearchResults: [SamPerson] = []
+    @State private var showProfileSearchPopover = false
+    @State private var profileNoteText = ""
     @State private var errorMessage: String?
     @State private var isSaving = false
 
     private enum Phase {
         case parsing
-        case review
+        case review            // Conversation review
+        case profileReview     // Profile/bio content review
         case saving
         case error
     }
@@ -50,7 +57,9 @@ struct ClipboardCaptureWindowView: View {
             case .parsing:
                 parsingPhase
             case .review:
-                reviewPhase
+                conversationReviewPhase
+            case .profileReview:
+                profileReviewPhase
             case .saving:
                 savingPhase
             case .error:
@@ -75,7 +84,7 @@ struct ClipboardCaptureWindowView: View {
 
             Spacer()
 
-            if let platform = conversation?.detectedPlatform {
+            if let platform = conversation?.detectedPlatform ?? profileContent?.platform {
                 Text(platform)
                     .font(.caption)
                     .padding(.horizontal, 8)
@@ -100,9 +109,9 @@ struct ClipboardCaptureWindowView: View {
         .frame(maxWidth: .infinity)
     }
 
-    // MARK: - Review Phase
+    // MARK: - Conversation Review Phase
 
-    private var reviewPhase: some View {
+    private var conversationReviewPhase: some View {
         VStack(spacing: 0) {
             // Title & Date
             VStack(alignment: .leading, spacing: 8) {
@@ -176,7 +185,133 @@ struct ClipboardCaptureWindowView: View {
                     Task { await saveEvidence() }
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(!canSave)
+                .disabled(!canSaveConversation)
+            }
+            .padding()
+        }
+    }
+
+    // MARK: - Profile Review Phase
+
+    private var profileReviewPhase: some View {
+        VStack(spacing: 0) {
+            // Title
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Title")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 60, alignment: .leading)
+                    TextField("Note title", text: $title)
+                        .textFieldStyle(.roundedBorder)
+                }
+            }
+            .padding()
+
+            Divider()
+
+            // Person matching
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Link to Contact")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+
+                if let person = profileMatch {
+                    HStack(spacing: 6) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                            .font(.caption)
+                        Text(person.displayName)
+                            .font(.subheadline)
+                        if let role = person.roleBadges.first {
+                            Text(role)
+                                .font(.caption2)
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(Color.accentColor.opacity(0.15), in: Capsule())
+                        }
+                        Button {
+                            profileMatch = nil
+                        } label: {
+                            Image(systemName: "xmark.circle")
+                                .font(.caption)
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                } else {
+                    HStack(spacing: 6) {
+                        TextField("Search contacts…", text: $profileSearchText)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 250)
+                            .onChange(of: profileSearchText) { _, query in
+                                if query.count >= 2 {
+                                    profileSearchResults = (try? PeopleRepository.shared.search(query: query)) ?? []
+                                    showProfileSearchPopover = !profileSearchResults.isEmpty
+                                } else {
+                                    profileSearchResults = []
+                                    showProfileSearchPopover = false
+                                }
+                            }
+                            .popover(isPresented: $showProfileSearchPopover, arrowEdge: .bottom) {
+                                VStack(alignment: .leading, spacing: 0) {
+                                    ForEach(profileSearchResults.prefix(5)) { person in
+                                        Button {
+                                            profileMatch = person
+                                            profileSearchText = ""
+                                            showProfileSearchPopover = false
+                                        } label: {
+                                            HStack {
+                                                Text(person.displayName)
+                                                    .font(.subheadline)
+                                                if let role = person.roleBadges.first {
+                                                    Text(role)
+                                                        .font(.caption2)
+                                                        .padding(.horizontal, 4)
+                                                        .padding(.vertical, 1)
+                                                        .background(Color.accentColor.opacity(0.15), in: Capsule())
+                                                }
+                                            }
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 4)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                                .frame(width: 280)
+                                .padding(.vertical, 4)
+                            }
+
+                        Image(systemName: "questionmark.circle")
+                            .foregroundStyle(.orange)
+                            .font(.caption)
+                    }
+                }
+            }
+            .padding()
+
+            Divider()
+
+            // Profile content preview (editable)
+            TextEditor(text: $profileNoteText)
+                .font(.callout)
+                .padding(8)
+                .scrollContentBackground(.hidden)
+
+            Divider()
+
+            // Actions
+            HStack {
+                Button("Cancel") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+
+                Spacer()
+
+                Button("Save as Note") {
+                    saveProfileAsNote()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(profileMatch == nil)
             }
             .padding()
         }
@@ -189,7 +324,7 @@ struct ClipboardCaptureWindowView: View {
             Spacer()
             ProgressView()
                 .controlSize(.large)
-            Text("Saving evidence…")
+            Text("Saving…")
                 .foregroundStyle(.secondary)
             Spacer()
         }
@@ -217,7 +352,7 @@ struct ClipboardCaptureWindowView: View {
                 }
 
                 Button("Save as Note") {
-                    saveAsNote()
+                    saveAsRawNote()
                 }
 
                 Button("Cancel") { dismiss() }
@@ -242,7 +377,7 @@ struct ClipboardCaptureWindowView: View {
         return result
     }
 
-    private var canSave: Bool {
+    private var canSaveConversation: Bool {
         // At least one non-Me sender must be matched
         senderMatches.values.contains { match in
             if case .matched(let person) = match, !person.isMe {
@@ -257,18 +392,45 @@ struct ClipboardCaptureWindowView: View {
     private func parseClipboard() async {
         do {
             let result = try await ClipboardParsingService.shared.parseClipboard()
-            conversation = result
-            conversationDate = result.conversationDate
 
-            // Generate default title
-            let platform = result.detectedPlatform ?? "Conversation"
-            let senderNames = uniqueSendersFrom(result.messages)
-            title = "\(platform) with \(senderNames)"
+            switch result {
+            case .conversation(let conv):
+                conversation = conv
+                conversationDate = conv.conversationDate
 
-            // Auto-match senders
-            await autoMatchSenders(result.messages)
+                // Generate default title
+                let platform = conv.detectedPlatform ?? "Conversation"
+                let senderNames = uniqueSendersFrom(conv.messages)
+                title = "\(platform) with \(senderNames)"
 
-            phase = .review
+                // Auto-match senders (URL-based matching first, then name search)
+                await autoMatchSenders(conv.messages, sourceURL: conv.sourceURL)
+
+                phase = .review
+
+            case .profileContent(let profile):
+                profileContent = profile
+
+                // Build title and note text
+                let platform = profile.platform ?? "Profile"
+                title = "\(platform) — \(profile.personName)"
+
+                var noteLines: [String] = []
+                noteLines.append(profile.personName)
+                if let headline = profile.headline {
+                    noteLines.append(headline)
+                }
+                if !profile.details.isEmpty {
+                    noteLines.append("")
+                    noteLines.append(profile.details)
+                }
+                profileNoteText = noteLines.joined(separator: "\n")
+
+                // Auto-match person by LinkedIn slug or name search
+                await autoMatchProfile(profile)
+
+                phase = .profileReview
+            }
         } catch {
             errorMessage = error.localizedDescription
             phase = .error
@@ -287,10 +449,19 @@ struct ClipboardCaptureWindowView: View {
         return names.isEmpty ? "Unknown" : names.joined(separator: ", ")
     }
 
-    private func autoMatchSenders(_ messages: [ClipboardMessageDTO]) async {
+    private func autoMatchSenders(_ messages: [ClipboardMessageDTO], sourceURL: URL?) async {
         // Try to match "Me"/"You" senders to the Me contact
         let mePerson = try? PeopleRepository.shared.fetchMe()
         let meNames = Set(["You", "Me", "me", "you"])
+
+        // If the source URL is a LinkedIn profile, try to match by profile slug
+        var linkedInMatch: SamPerson?
+        if let slug = ClipboardParsingService.linkedInProfileSlug(from: sourceURL) {
+            linkedInMatch = try? PeopleRepository.shared.findByLinkedInSlug(slug)
+            if linkedInMatch != nil {
+                logger.debug("Auto-matched LinkedIn profile slug '\(slug)' to \(linkedInMatch!.displayName, privacy: .private)")
+            }
+        }
 
         var seen = Set<String>()
         for msg in messages {
@@ -303,14 +474,33 @@ struct ClipboardCaptureWindowView: View {
                     senderMatches[msg.senderName] = .isMe
                 }
             } else {
-                // Try name search
-                if let people = try? PeopleRepository.shared.search(query: msg.senderName),
+                // Try LinkedIn profile match first, then name search
+                if let match = linkedInMatch {
+                    senderMatches[msg.senderName] = .matched(match)
+                } else if let people = try? PeopleRepository.shared.search(query: msg.senderName),
                    let firstMatch = people.first {
                     senderMatches[msg.senderName] = .matched(firstMatch)
                 } else {
                     senderMatches[msg.senderName] = .unmatched
                 }
             }
+        }
+    }
+
+    private func autoMatchProfile(_ profile: ClipboardProfileDTO) async {
+        // Try LinkedIn profile slug match first
+        if let slug = ClipboardParsingService.linkedInProfileSlug(from: profile.sourceURL),
+           let match = try? PeopleRepository.shared.findByLinkedInSlug(slug) {
+            profileMatch = match
+            logger.debug("Profile auto-matched by LinkedIn slug '\(slug)' to \(match.displayName, privacy: .private)")
+            return
+        }
+
+        // Fall back to name search
+        if let people = try? PeopleRepository.shared.search(query: profile.personName),
+           let firstMatch = people.first {
+            profileMatch = firstMatch
+            logger.debug("Profile auto-matched by name '\(profile.personName)' to \(firstMatch.displayName, privacy: .private)")
         }
     }
 
@@ -375,7 +565,7 @@ struct ClipboardCaptureWindowView: View {
                     linkedPeopleIDs: [personID]
                 )
 
-                logger.info("Created clipboard evidence for person \(personID): \(analysis.summary.prefix(60))")
+                logger.debug("Created clipboard evidence for person \(personID): \(analysis.summary.prefix(60))")
             }
 
             dismiss()
@@ -388,11 +578,25 @@ struct ClipboardCaptureWindowView: View {
         isSaving = false
     }
 
-    private func saveAsNote() {
+    private func saveProfileAsNote() {
+        guard let person = profileMatch else { return }
+
         let notePayload = QuickNotePayload(
             outcomeID: UUID(),
-            personID: nil,
-            personName: nil,
+            personID: person.id,
+            personName: person.displayName,
+            contextTitle: title.isEmpty ? "Profile Capture" : title,
+            prefillText: profileNoteText
+        )
+        openWindow(id: "quick-note", value: notePayload)
+        dismiss()
+    }
+
+    private func saveAsRawNote() {
+        let notePayload = QuickNotePayload(
+            outcomeID: UUID(),
+            personID: profileMatch?.id,
+            personName: profileMatch?.displayName,
             contextTitle: title.isEmpty ? "Clipboard Capture" : title,
             prefillText: nil
         )

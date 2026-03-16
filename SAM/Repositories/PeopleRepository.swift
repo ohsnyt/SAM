@@ -148,7 +148,7 @@ final class PeopleRepository {
 
         modelContext.insert(person)
         try modelContext.save()
-        logger.info("Inserted standalone SamPerson '\(displayName)' (no Apple Contact)")
+        logger.debug("Inserted standalone SamPerson '\(displayName)' (no Apple Contact)")
         return person
     }
 
@@ -424,7 +424,7 @@ final class PeopleRepository {
         }
 
         try modelContext.save()
-        logger.info("Bulk upsert complete: \(created) created, \(updated) updated")
+        logger.debug("Bulk upsert complete: \(created) created, \(updated) updated")
 
         return (created, updated)
     }
@@ -539,7 +539,7 @@ final class PeopleRepository {
                     primary.relationshipNextSteps = dup.relationshipNextSteps
                 }
 
-                logger.info("Merging duplicate SamPerson '\(dup.displayNameCache ?? dup.displayName, privacy: .private)' into primary")
+                logger.debug("Merging duplicate SamPerson '\(dup.displayNameCache ?? dup.displayName, privacy: .private)' into primary")
                 modelContext.delete(dup)
                 mergedCount += 1
             }
@@ -547,7 +547,7 @@ final class PeopleRepository {
 
         if mergedCount > 0 {
             try modelContext.save()
-            logger.info("Merged \(mergedCount) duplicate SamPerson records")
+            logger.debug("Merged \(mergedCount) duplicate SamPerson records")
             NotificationCenter.default.post(name: .samPersonDidChange, object: nil)
         }
 
@@ -588,6 +588,24 @@ final class PeopleRepository {
         }
     }
 
+    /// Find a person by LinkedIn profile slug (e.g. "clark-teders-b7b462113").
+    /// Matches against the stored `linkedInProfileURL` field.
+    func findByLinkedInSlug(_ slug: String) throws -> SamPerson? {
+        guard let modelContext = modelContext else {
+            throw RepositoryError.notConfigured
+        }
+
+        let lowercaseSlug = slug.lowercased()
+        let descriptor = FetchDescriptor<SamPerson>(
+            predicate: #Predicate { $0.linkedInProfileURL != nil }
+        )
+        let candidates = try modelContext.fetch(descriptor)
+        return candidates.first { person in
+            guard let url = person.linkedInProfileURL?.lowercased() else { return false }
+            return url.contains("/in/\(lowercaseSlug)")
+        }
+    }
+
     // MARK: - Me Contact
 
     /// Fetch the person marked as the user's "Me" contact
@@ -625,7 +643,7 @@ final class PeopleRepository {
         if let match = allPeople.first(where: { $0.contactIdentifier == contactIdentifier }) {
             match.isMe = true
             try modelContext.save()
-            logger.info("Set isMe flag on existing person: \(match.displayNameCache ?? match.displayName, privacy: .private)")
+            logger.debug("Set isMe flag on existing person: \(match.displayNameCache ?? match.displayName, privacy: .private)")
         }
     }
 
@@ -688,7 +706,7 @@ final class PeopleRepository {
             existing.isMe = true
             // Update contactIdentifier if it was a fallback match (different unified ID)
             if existing.contactIdentifier != contact.identifier {
-                logger.info("Me contact identifier updated: \(existing.contactIdentifier ?? "nil") → \(contact.identifier)")
+                logger.debug("Me contact identifier updated: \(existing.contactIdentifier ?? "nil") → \(contact.identifier)")
                 existing.contactIdentifier = contact.identifier
             }
             existing.displayName = contact.displayName
@@ -715,7 +733,7 @@ final class PeopleRepository {
         }
 
         try modelContext.save()
-        logger.info("Upserted Me contact: \(person.displayNameCache ?? person.displayName, privacy: .private)")
+        logger.debug("Upserted Me contact: \(person.displayNameCache ?? person.displayName, privacy: .private)")
     }
 
     /// Clear stale contactIdentifiers for people whose Apple Contact no longer exists.
@@ -738,7 +756,7 @@ final class PeopleRepository {
             if !validIdentifiers.contains(identifier) {
                 person.contactIdentifier = nil
                 clearedCount += 1
-                logger.info("Cleared stale contactIdentifier for \(person.displayNameCache ?? person.displayName, privacy: .private)")
+                logger.debug("Cleared stale contactIdentifier for \(person.displayNameCache ?? person.displayName, privacy: .private)")
             }
         }
 
@@ -768,7 +786,7 @@ final class PeopleRepository {
             if !groupIdentifiers.contains(identifier) {
                 person.contactIdentifier = nil
                 unlinkedCount += 1
-                logger.info("Unlinked non-group contact for \(person.displayNameCache ?? person.displayName, privacy: .private)")
+                logger.debug("Unlinked non-group contact for \(person.displayNameCache ?? person.displayName, privacy: .private)")
             }
         }
 
@@ -1214,7 +1232,7 @@ final class PeopleRepository {
         modelContext.delete(source)
         try modelContext.save()
 
-        logger.info("Merged person '\(snapshot.sourceDisplayName)' → '\(target.displayNameCache ?? target.displayName)'")
+        logger.debug("Merged person '\(snapshot.sourceDisplayName)' → '\(target.displayNameCache ?? target.displayName)'")
         return snapshot
     }
 

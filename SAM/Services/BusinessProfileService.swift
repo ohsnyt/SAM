@@ -51,7 +51,7 @@ actor BusinessProfileService {
         if let data = UserDefaults.standard.data(forKey: profileKey),
            let decoded = try? JSONDecoder().decode(BusinessProfile.self, from: data) {
             cachedProfile = decoded
-            logger.info("Loaded business profile from UserDefaults")
+            logger.debug("Loaded business profile from UserDefaults")
             return decoded
         }
 
@@ -66,7 +66,7 @@ actor BusinessProfileService {
         cachedProfile = profile
         if let data = try? JSONEncoder().encode(profile) {
             UserDefaults.standard.set(data, forKey: profileKey)
-            logger.info("Saved business profile to UserDefaults")
+            logger.debug("Saved business profile to UserDefaults")
         }
     }
 
@@ -77,7 +77,7 @@ actor BusinessProfileService {
         cachedLinkedInProfile = profile
         if let data = try? JSONEncoder().encode(profile) {
             UserDefaults.standard.set(data, forKey: linkedInProfileKey)
-            logger.info("Saved user LinkedIn profile to UserDefaults")
+            logger.debug("Saved user LinkedIn profile to UserDefaults")
         }
     }
 
@@ -97,7 +97,7 @@ actor BusinessProfileService {
         cachedFacebookProfile = profile
         if let data = try? JSONEncoder().encode(profile) {
             UserDefaults.standard.set(data, forKey: facebookProfileKey)
-            logger.info("Saved user Facebook profile to UserDefaults")
+            logger.debug("Saved user Facebook profile to UserDefaults")
         }
     }
 
@@ -129,7 +129,7 @@ actor BusinessProfileService {
         cachedSubstackProfile = profile
         if let data = try? JSONEncoder().encode(profile) {
             UserDefaults.standard.set(data, forKey: substackProfileKey)
-            logger.info("Saved user Substack profile to UserDefaults")
+            logger.debug("Saved user Substack profile to UserDefaults")
         }
     }
 
@@ -149,7 +149,7 @@ actor BusinessProfileService {
         cachedFacebookSnapshot = snapshot
         if let data = try? JSONEncoder().encode(snapshot) {
             UserDefaults.standard.set(data, forKey: facebookSnapshotKey)
-            logger.info("Saved Facebook analysis snapshot to UserDefaults")
+            logger.debug("Saved Facebook analysis snapshot to UserDefaults")
         }
     }
 
@@ -178,7 +178,7 @@ actor BusinessProfileService {
             UserDefaults.standard.set(data, forKey: profileAnalysesKey)
             // Remove legacy single-item key once migrated
             UserDefaults.standard.removeObject(forKey: profileAnalysisKey)
-            logger.info("Saved profile analyses (\(analyses.count) platforms) to UserDefaults")
+            logger.debug("Saved profile analyses (\(analyses.count) platforms) to UserDefaults")
             Task { @MainActor in
                 NotificationCenter.default.post(name: .samProfileAnalysisDidUpdate, object: nil)
             }
@@ -208,7 +208,7 @@ actor BusinessProfileService {
         // Migrate legacy single-item entry
         if let data = UserDefaults.standard.data(forKey: profileAnalysisKey),
            let legacy = try? JSONDecoder().decode(ProfileAnalysisDTO.self, from: data) {
-            logger.info("Migrating legacy profileAnalysis to array store")
+            logger.debug("Migrating legacy profileAnalysis to array store")
             return [legacy]
         }
         return []
@@ -219,7 +219,7 @@ actor BusinessProfileService {
         cachedSnapshot = snapshot
         if let data = try? JSONEncoder().encode(snapshot) {
             UserDefaults.standard.set(data, forKey: profileSnapshotKey)
-            logger.info("Saved profile analysis snapshot to UserDefaults")
+            logger.debug("Saved profile analysis snapshot to UserDefaults")
         }
     }
 

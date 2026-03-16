@@ -74,7 +74,7 @@ final class IntentionalTouchRepository {
 
         if insertCount > 0 {
             try context.save()
-            logger.info("Inserted \(insertCount) IntentionalTouch records")
+            logger.debug("Inserted \(insertCount) IntentionalTouch records")
         }
 
         return insertCount
@@ -144,7 +144,7 @@ final class IntentionalTouchRepository {
             touch.samPersonID = personID
         }
         try context.save()
-        logger.info("Attributed \(touches.count) touches to person \(personID)")
+        logger.debug("Attributed \(touches.count) touches to person \(personID)")
     }
 
     // MARK: - Email Notification Type Detection (Phase 6)

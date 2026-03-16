@@ -113,7 +113,7 @@ final class ComplianceAuditRepository {
             ctx.delete(entry)
         }
         try ctx.save()
-        logger.info("Pruned \(expired.count) expired audit entries (>\(retentionDays)d)")
+        logger.debug("Pruned \(expired.count) expired audit entries (>\(retentionDays)d)")
     }
 
     /// Clear all audit entries.
@@ -125,6 +125,6 @@ final class ComplianceAuditRepository {
             ctx.delete(entry)
         }
         try ctx.save()
-        logger.info("Cleared all \(all.count) audit entries")
+        logger.debug("Cleared all \(all.count) audit entries")
     }
 }

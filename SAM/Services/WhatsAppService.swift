@@ -91,7 +91,7 @@ actor WhatsAppService {
             ))
         }
 
-        logger.info("Fetched \(messages.count) WhatsApp messages from known contacts since \(since, privacy: .public)")
+        logger.debug("Fetched \(messages.count) WhatsApp messages from known contacts since \(since, privacy: .public)")
         return messages
     }
 
@@ -103,7 +103,7 @@ actor WhatsAppService {
 
         // Check if the calls table exists — not all WhatsApp versions have it
         guard tableExists("ZWACDCALLEVENT", in: db) else {
-            logger.info("ZWACDCALLEVENT table not found — WhatsApp call history not available in this version")
+            logger.debug("ZWACDCALLEVENT table not found — WhatsApp call history not available in this version")
             return []
         }
 
@@ -184,7 +184,7 @@ actor WhatsAppService {
 
         calls.sort { $0.date < $1.date }
 
-        logger.info("Fetched \(calls.count) WhatsApp call events from known contacts since \(since, privacy: .public)")
+        logger.debug("Fetched \(calls.count) WhatsApp call events from known contacts since \(since, privacy: .public)")
         return calls
     }
 

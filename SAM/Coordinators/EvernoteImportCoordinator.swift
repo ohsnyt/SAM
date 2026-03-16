@@ -79,7 +79,7 @@ final class EvernoteImportCoordinator {
         for task in analysisTasks { task.cancel() }
         analysisTasks.removeAll()
         analysisTaskCount = 0
-        logger.info("EvernoteImportCoordinator: cancelled \(count) analysis task(s)")
+        logger.debug("EvernoteImportCoordinator: cancelled \(count) analysis task(s)")
     }
 
     // MARK: - Public API
@@ -144,7 +144,7 @@ final class EvernoteImportCoordinator {
             duplicateCount = dupes
             importStatus = .previewing
 
-            logger.info("ENEX preview: \(newNotes) new, \(dupes) duplicates out of \(notes.count) total")
+            logger.debug("ENEX preview: \(newNotes) new, \(dupes) duplicates out of \(notes.count) total")
 
         } catch {
             importStatus = .failed
@@ -185,7 +185,7 @@ final class EvernoteImportCoordinator {
             }
 
             fileCount = enexFiles.count
-            logger.info("Found \(enexFiles.count) .enex files in directory")
+            logger.debug("Found \(enexFiles.count) .enex files in directory")
 
             var allNotes: [EvernoteNoteDTO] = []
             var totalExpanded = 0
@@ -201,7 +201,7 @@ final class EvernoteImportCoordinator {
                 totalExpanded += expandedCount
                 allNotes.append(contentsOf: notes)
                 processedFileCount += 1
-                logger.info("Parsed \(fileURL.lastPathComponent): \(raw.count) notes (\(notes.count) after split)")
+                logger.debug("Parsed \(fileURL.lastPathComponent): \(raw.count) notes (\(notes.count) after split)")
             }
 
             splitCount = totalExpanded
@@ -223,7 +223,7 @@ final class EvernoteImportCoordinator {
             duplicateCount = dupes
             importStatus = .previewing
 
-            logger.info("Directory preview: \(newNotes) new, \(dupes) duplicates out of \(allNotes.count) total from \(enexFiles.count) files")
+            logger.debug("Directory preview: \(newNotes) new, \(dupes) duplicates out of \(allNotes.count) total from \(enexFiles.count) files")
 
         } catch {
             importStatus = .failed
@@ -259,12 +259,12 @@ final class EvernoteImportCoordinator {
                 }
 
                 if matchedPeopleIDs.isEmpty {
-                    logger.info("Note '\(dto.title)': no tags matched to people (tags: \(dto.tags.joined(separator: ", ")))")
+                    logger.debug("Note '\(dto.title)': no tags matched to people (tags: \(dto.tags.joined(separator: ", ")))")
                 } else {
                     let matchedNames = matchedPeopleIDs.compactMap { id in
                         allPeople.first { $0.id == id }.map { $0.displayNameCache ?? $0.displayName }
                     }
-                    logger.info("Note '\(dto.title)': linked to \(matchedNames.joined(separator: ", "))")
+                    logger.debug("Note '\(dto.title)': linked to \(matchedNames.joined(separator: ", "))")
                 }
 
                 // Build content: title + body
@@ -300,7 +300,7 @@ final class EvernoteImportCoordinator {
 
                 if !imageData.isEmpty {
                     let positioned = imageData.filter { $0.2 != Int.max }.count
-                    logger.info("Saved \(dto.resources.count) image(s) for '\(dto.title)': \(positioned) inline, \(dto.resources.count - positioned) at end")
+                    logger.debug("Saved \(dto.resources.count) image(s) for '\(dto.title)': \(positioned) inline, \(dto.resources.count - positioned) at end")
                 }
 
                 createdNotes.append(note)
@@ -342,12 +342,12 @@ final class EvernoteImportCoordinator {
             }
 
             guard !unlinked.isEmpty else {
-                logger.info("Re-link: no unlinked Evernote notes found")
+                logger.debug("Re-link: no unlinked Evernote notes found")
                 return 0
             }
 
             let allPeople = try peopleRepository.fetchAll()
-            logger.info("Re-link: found \(unlinked.count) unlinked Evernote notes, matching against \(allPeople.count) people")
+            logger.debug("Re-link: found \(unlinked.count) unlinked Evernote notes, matching against \(allPeople.count) people")
 
             var linkedCount = 0
 
@@ -366,7 +366,7 @@ final class EvernoteImportCoordinator {
                     let names = matchedIDs.compactMap { id in
                         allPeople.first { $0.id == id }.map { $0.displayNameCache ?? $0.displayName }
                     }
-                    logger.info("Re-link: linked '\(note.content.prefix(40))...' to \(names.joined(separator: ", "))")
+                    logger.debug("Re-link: linked '\(note.content.prefix(40))...' to \(names.joined(separator: ", "))")
                 }
 
                 // Mark for re-analysis so AI can also process
@@ -574,7 +574,7 @@ final class EvernoteImportCoordinator {
             ))
         }
 
-        logger.info("Split note '\(note.title)' into \(subNotes.count) date entries")
+        logger.debug("Split note '\(note.title)' into \(subNotes.count) date entries")
         return subNotes
     }
 }

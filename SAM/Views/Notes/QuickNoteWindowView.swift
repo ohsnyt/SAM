@@ -312,7 +312,7 @@ struct QuickNoteWindowView: View {
             // Mark the outcome as completed
             try? outcomeRepo.markCompleted(id: payload.outcomeID)
 
-            logger.info("Quick note saved and outcome \(payload.outcomeID) completed")
+            logger.debug("Quick note saved and outcome \(payload.outcomeID) completed")
 
             // Background analysis
             Task {

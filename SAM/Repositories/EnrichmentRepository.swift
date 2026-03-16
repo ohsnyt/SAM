@@ -119,7 +119,7 @@ final class EnrichmentRepository {
 
         if inserted > 0 {
             try modelContext.save()
-            logger.info("EnrichmentRepository: inserted \(inserted) new enrichment candidates")
+            logger.debug("EnrichmentRepository: inserted \(inserted) new enrichment candidates")
         }
         return inserted
     }

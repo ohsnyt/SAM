@@ -168,7 +168,7 @@ final class SystemNotificationService: NSObject, UNUserNotificationCenterDelegat
         )
 
         center.setNotificationCategories([planCategory, meetingCategory, substackCategory, linkedInCategory, facebookCategory, unknownSenderCategory, eventReminderCategory])
-        logger.info("System notification categories configured")
+        logger.debug("System notification categories configured")
     }
 
     // MARK: - Permission
@@ -219,7 +219,7 @@ final class SystemNotificationService: NSObject, UNUserNotificationCenterDelegat
 
         do {
             try await UNUserNotificationCenter.current().add(request)
-            logger.info("Plan ready notification posted for: \(title)")
+            logger.debug("Plan ready notification posted for: \(title)")
         } catch {
             logger.error("Failed to post notification: \(error.localizedDescription)")
         }
@@ -258,7 +258,7 @@ final class SystemNotificationService: NSObject, UNUserNotificationCenterDelegat
 
         do {
             try await UNUserNotificationCenter.current().add(request)
-            logger.info("Meeting prep notification posted for: \(briefing.title)")
+            logger.debug("Meeting prep notification posted for: \(briefing.title)")
         } catch {
             logger.error("Failed to post meeting prep notification: \(error.localizedDescription)")
         }
@@ -292,7 +292,7 @@ final class SystemNotificationService: NSObject, UNUserNotificationCenterDelegat
 
         do {
             try await UNUserNotificationCenter.current().add(request)
-            logger.info("Substack export notification posted (scheduled: \(triggerDate != nil))")
+            logger.debug("Substack export notification posted (scheduled: \(triggerDate != nil))")
         } catch {
             logger.error("Failed to post Substack export notification: \(error.localizedDescription)")
         }
@@ -326,7 +326,7 @@ final class SystemNotificationService: NSObject, UNUserNotificationCenterDelegat
 
         do {
             try await UNUserNotificationCenter.current().add(request)
-            logger.info("LinkedIn export notification posted (scheduled: \(triggerDate != nil))")
+            logger.debug("LinkedIn export notification posted (scheduled: \(triggerDate != nil))")
         } catch {
             logger.error("Failed to post LinkedIn export notification: \(error.localizedDescription)")
         }
@@ -360,7 +360,7 @@ final class SystemNotificationService: NSObject, UNUserNotificationCenterDelegat
 
         do {
             try await UNUserNotificationCenter.current().add(request)
-            logger.info("Facebook export notification posted (scheduled: \(triggerDate != nil))")
+            logger.debug("Facebook export notification posted (scheduled: \(triggerDate != nil))")
         } catch {
             logger.error("Failed to post Facebook export notification: \(error.localizedDescription)")
         }
@@ -389,7 +389,7 @@ final class SystemNotificationService: NSObject, UNUserNotificationCenterDelegat
 
         do {
             try await UNUserNotificationCenter.current().add(request)
-            logger.info("Unknown sender RSVP notification posted for event: \(eventTitle)")
+            logger.debug("Unknown sender RSVP notification posted for event: \(eventTitle)")
         } catch {
             logger.error("Failed to post unknown sender RSVP notification: \(error.localizedDescription)")
         }
@@ -420,7 +420,7 @@ final class SystemNotificationService: NSObject, UNUserNotificationCenterDelegat
 
         do {
             try await UNUserNotificationCenter.current().add(request)
-            logger.info("Event reminder notification posted for: \(eventTitle)")
+            logger.debug("Event reminder notification posted for: \(eventTitle)")
         } catch {
             logger.error("Failed to post event reminder notification: \(error.localizedDescription)")
         }

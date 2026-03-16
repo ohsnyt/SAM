@@ -47,13 +47,13 @@ actor DailyBriefingService {
         let totalItems = calendarItems.count + priorityActions.count
             + followUps.count + lifeEvents.count + goalProgress.count
         guard sectionCount >= 2 || totalItems >= 3 else {
-            logger.info("Insufficient briefing data (\(sectionCount) sections, \(totalItems) items) — skipping narrative to prevent hallucination")
+            logger.debug("Insufficient briefing data (\(sectionCount) sections, \(totalItems) items) — skipping narrative to prevent hallucination")
             return ("", "")
         }
 
         let availability = await AIService.shared.checkAvailability()
         guard case .available = availability else {
-            logger.info("AI unavailable — skipping morning narrative")
+            logger.debug("AI unavailable — skipping morning narrative")
             return ("", "")
         }
 
@@ -204,13 +204,13 @@ actor DailyBriefingService {
         // Guard: require meaningful data to prevent hallucination
         let totalItems = accomplishments.count + streakUpdates.count + tomorrowHighlights.count
         guard totalItems >= 2 else {
-            logger.info("Insufficient evening data (\(totalItems) items) — skipping narrative to prevent hallucination")
+            logger.debug("Insufficient evening data (\(totalItems) items) — skipping narrative to prevent hallucination")
             return ("", "")
         }
 
         let availability = await AIService.shared.checkAvailability()
         guard case .available = availability else {
-            logger.info("AI unavailable — skipping evening narrative")
+            logger.debug("AI unavailable — skipping evening narrative")
             return ("", "")
         }
 

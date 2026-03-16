@@ -30,7 +30,7 @@ actor PatternDetectorService {
 
         let trimmed = data.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
-            logger.info("Pattern detector skipped — no interaction data available")
+            logger.debug("Pattern detector skipped — no interaction data available")
             return PatternAnalysis()
         }
 
@@ -148,7 +148,7 @@ actor PatternDetectorService {
         } catch {
             let plainText = jsonString.trimmingCharacters(in: .whitespacesAndNewlines)
             if !plainText.isEmpty && !plainText.contains("{") {
-                logger.info("Pattern analysis returned plain text, treating as single pattern")
+                logger.debug("Pattern analysis returned plain text, treating as single pattern")
                 return PatternAnalysis(
                     patterns: [DiscoveredPattern(description: String(plainText.prefix(500)))]
                 )

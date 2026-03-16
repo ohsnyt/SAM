@@ -87,7 +87,7 @@ final class RSVPMatchingService {
                             responseQuote: bestDetection.responseText,
                             confidence: bestDetection.confidence
                         )
-                        logger.info("RSVP matched: \(person.displayNameCache ?? "unknown") → \(rsvpStatus.displayName) for event \(participation.event?.title ?? "unknown")")
+                        logger.debug("RSVP matched: \(person.displayNameCache ?? "unknown") → \(rsvpStatus.displayName) for event \(participation.event?.title ?? "unknown")")
                     } catch {
                         logger.error("Failed to process RSVP for \(person.displayNameCache ?? "unknown"): \(error.localizedDescription)")
                     }
@@ -154,7 +154,7 @@ final class RSVPMatchingService {
                 detection: detection
             )
 
-            logger.info("Auto-added \(personName) to event '\(targetEvent.title)' with RSVP: \(rsvpStatus.displayName)")
+            logger.debug("Auto-added \(personName) to event '\(targetEvent.title)' with RSVP: \(rsvpStatus.displayName)")
 
             // Auto-transition draft → inviting on RSVP activity
             if targetEvent.status == .draft {
@@ -179,7 +179,7 @@ final class RSVPMatchingService {
                                 body: holdingReply,
                                 isDraft: false
                             )
-                            self.logger.info("Sent holding reply to \(personName) for event '\(targetEvent.title)'")
+                            self.logger.debug("Sent holding reply to \(personName) for event '\(targetEvent.title)'")
                         }
                     }
                 }
@@ -333,7 +333,7 @@ final class RSVPMatchingService {
                                 additionalGuestNames: []
                             )
                         )
-                        logger.info("Auto-added guest '\(trimmed)' (matched to \(matched.displayNameCache ?? "unknown")) to '\(event.title)'")
+                        logger.debug("Auto-added guest '\(trimmed)' (matched to \(matched.displayNameCache ?? "unknown")) to '\(event.title)'")
 
                         NotificationCenter.default.post(
                             name: .samRSVPAutoAdded,
@@ -349,7 +349,7 @@ final class RSVPMatchingService {
                     }
                 } else {
                     // No matching contact — log for awareness
-                    logger.info("Guest '\(trimmed)' mentioned for '\(event.title)' but no matching contact found")
+                    logger.debug("Guest '\(trimmed)' mentioned for '\(event.title)' but no matching contact found")
                 }
             } catch {
                 logger.error("Failed to search for guest '\(trimmed)': \(error.localizedDescription)")
@@ -359,7 +359,7 @@ final class RSVPMatchingService {
         // Log unnamed additional guests for awareness
         let unnamedCount = detection.additionalGuestCount - detection.additionalGuestNames.count
         if unnamedCount > 0 {
-            logger.info("\(unnamedCount) unnamed additional guest(s) expected for '\(event.title)'")
+            logger.debug("\(unnamedCount) unnamed additional guest(s) expected for '\(event.title)'")
         }
     }
 

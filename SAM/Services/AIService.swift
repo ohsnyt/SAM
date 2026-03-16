@@ -233,7 +233,7 @@ actor AIService {
                     logger.warning("MLX generation failed (\(error.localizedDescription)) — circuit open, falling back to FoundationModels for this session")
                 }
             } else if !mlxReady {
-                logger.info("MLX model not ready — falling back to FoundationModels")
+                logger.debug("MLX model not ready — falling back to FoundationModels")
             }
             return try await generateWithFoundationModels(prompt: prompt, systemInstruction: effectiveSystem)
 
@@ -273,9 +273,9 @@ actor AIService {
                     logger.warning("MLX generation failed (\(error.localizedDescription)) — circuit open, falling back to FoundationModels for this session")
                 }
             } else if mlxCircuitOpen {
-                logger.info("MLX circuit open — using FoundationModels")
+                logger.debug("MLX circuit open — using FoundationModels")
             } else {
-                logger.info("MLX model not ready — narrative falling back to FoundationModels")
+                logger.debug("MLX model not ready — narrative falling back to FoundationModels")
             }
             return try await generateWithFoundationModels(prompt: prompt, systemInstruction: effectiveSystem)
         }
@@ -355,7 +355,7 @@ actor AIService {
         mlxLoadWaiters = []
 
         do {
-            logger.info("Loading MLX model: \(selectedID)")
+            logger.debug("Loading MLX model: \(selectedID)")
             MLX.Memory.cacheLimit = 20 * 1024 * 1024
 
             let configuration = await MLXModelManager.shared.modelConfiguration(for: selectedID)
@@ -366,7 +366,7 @@ actor AIService {
 
             mlxModelContainer = container
             loadedModelID = selectedID
-            logger.info("MLX model loaded: \(selectedID)")
+            logger.debug("MLX model loaded: \(selectedID)")
 
             // Resume all waiters successfully
             let waiters = mlxLoadWaiters ?? []
@@ -466,7 +466,7 @@ actor AIService {
     func unloadMLXModel() {
         mlxModelContainer = nil
         loadedModelID = nil
-        logger.info("MLX model unloaded")
+        logger.debug("MLX model unloaded")
     }
 
     /// Open the circuit breaker and release the MLX model container.
@@ -476,7 +476,7 @@ actor AIService {
         mlxCircuitOpen = true
         mlxModelContainer = nil
         loadedModelID = nil
-        logger.info("AIService: circuit open and MLX container released for termination")
+        logger.debug("AIService: circuit open and MLX container released for termination")
     }
 }
 

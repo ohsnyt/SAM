@@ -159,7 +159,7 @@ final class OutcomeRepository {
 
         if dismissed > 0 {
             try context.save()
-            logger.info("Dismissed \(dismissed) remaining sequence steps for sequence \(sequenceID)")
+            logger.debug("Dismissed \(dismissed) remaining sequence steps for sequence \(sequenceID)")
         }
     }
 
@@ -256,7 +256,7 @@ final class OutcomeRepository {
         outcome.completedAt = .now
         outcome.wasActedOn = true
         try context.save()
-        logger.info("Outcome completed: \(outcome.title)")
+        logger.debug("Outcome completed: \(outcome.title)")
 
         if let entry = try? UndoRepository.shared.capture(
             operation: .statusChanged,
@@ -289,7 +289,7 @@ final class OutcomeRepository {
         outcome.statusRawValue = OutcomeStatus.dismissed.rawValue
         outcome.dismissedAt = .now
         try context.save()
-        logger.info("Outcome dismissed: \(outcome.title)")
+        logger.debug("Outcome dismissed: \(outcome.title)")
 
         // Auto-dismiss subsequent sequence steps
         if let seqID = outcome.sequenceID {
@@ -323,7 +323,7 @@ final class OutcomeRepository {
 
         outcome.userRating = max(1, min(5, rating))
         try context.save()
-        logger.info("Outcome rated \(rating): \(outcome.title)")
+        logger.debug("Outcome rated \(rating): \(outcome.title)")
     }
 
     /// Update the lastSurfacedAt timestamp for an outcome.
@@ -355,7 +355,7 @@ final class OutcomeRepository {
 
         if expiredCount > 0 {
             try context.save()
-            logger.info("Pruned \(expiredCount) expired outcomes")
+            logger.debug("Pruned \(expiredCount) expired outcomes")
         }
     }
 
@@ -378,7 +378,7 @@ final class OutcomeRepository {
 
         if purgedCount > 0 {
             try context.save()
-            logger.info("Purged \(purgedCount) old outcomes")
+            logger.debug("Purged \(purgedCount) old outcomes")
         }
     }
 

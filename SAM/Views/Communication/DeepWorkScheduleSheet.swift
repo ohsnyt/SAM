@@ -188,7 +188,7 @@ struct DeepWorkScheduleSheet: View {
             )
 
             if eventID != nil {
-                logger.info("Created deep work task block: \(payload.title)")
+                logger.debug("Created deep work task block: \(payload.title)")
                 onScheduled()
             } else {
                 errorMessage = "Could not create calendar event. Check Calendar permissions in Settings."

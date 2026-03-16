@@ -4,6 +4,56 @@
 
 ---
 
+## Log Level Cleanup, LinkedIn PDF Import, Clipboard Capture, Note Context Menu (March 16, 2026)
+
+**What**: Massive log noise reduction, LinkedIn profile PDF drag-and-drop import with deterministic parsing, clipboard capture intelligence improvements, and right-click edit/delete on notes.
+
+### Log Level Cleanup (~560 calls across 70+ files)
+- Downgraded ~560 `logger.info()` calls to `logger.debug()` across 70+ files
+- Only ~47 `.info` calls remain, limited to: final completion summaries, permission results, security events, significant state changes, and one-time setup events
+- Dramatically reduces log noise in Console.app during normal operation while preserving all diagnostic detail at debug level
+
+### LinkedIn Profile PDF Import
+- Drag a LinkedIn-generated profile PDF onto the "Add a note..." bar in PersonDetailView
+- `LinkedInPDFParserService` performs deterministic PDF parsing (no AI) — extracts structured sections: summary, experience, education, skills, honors, languages, contact info
+- Creates `PendingEnrichment` records (`.linkedInProfilePDF` source) for email, phone, company, job title, and LinkedIn URL
+- Generates a concise note combining summary, current position, education highlights, top skills, honors, and languages
+- The created note triggers standard AI analysis, enabling family/relationship discovery from the profile content
+- `EnrichmentSource.linkedInProfilePDF` added to distinguish PDF-sourced enrichment from CSV import enrichment
+- `PeopleRepository.findByLinkedInSlug()` added for matching contacts by LinkedIn URL slug
+- `PersonDetailView` photo drop target reverted to image-only; PDF drops route to the note capture bar instead
+
+### Clipboard Capture Improvements
+- **Source URL detection**: `ClipboardParsingService` now reads the pasteboard source URL to determine content origin
+- **LinkedIn profile page detection**: When clipboard content comes from a LinkedIn profile URL, routes to a profile review phase instead of conversation parsing — prevents misinterpreting profile page content as a conversation
+- **Auto-matching by LinkedIn slug**: Profile review phase automatically matches the profile to existing contacts by extracting the LinkedIn slug from the source URL
+- **UI noise filtering**: Strips web page chrome (navigation elements, sidebars, footers) from pasted web content before analysis
+- **Anti-hallucination improvements**: `MessageAnalysisService` adds grounding rules to prevent fabricating conversation participants or message content from ambiguous clipboard input
+
+### Note Context Menu
+- Right-click on any note in `NotesJournalView` now shows Edit and Delete options
+- Delete includes a confirmation dialog before removal
+- Deletion uses existing undo history infrastructure (30-day undo)
+
+### New Files
+| File | Purpose |
+|------|---------|
+| `Services/LinkedInPDFParserService.swift` | Deterministic LinkedIn profile PDF parser — extracts structured data without AI |
+
+### Modified Files (10 + 70 log cleanup)
+- `Coordinators/ContactPhotoCoordinator.swift` — LinkedIn PDF import handler: enrichment creation + note generation
+- `Services/ClipboardParsingService.swift` — Source URL detection, LinkedIn profile vs conversation routing, UI noise filtering
+- `Views/Communication/ClipboardCaptureWindowView.swift` — Profile review phase, auto-matching by LinkedIn slug
+- `Views/Notes/InlineNoteCaptureView.swift` — PDF drop target on "Add a note..." bar
+- `Views/Notes/NotesJournalView.swift` — Context menu with Edit and Delete on notes
+- `Views/People/PersonDetailView.swift` — Photo drop reverted to image-only (PDFs route to note bar)
+- `Models/SAMModels-Enrichment.swift` — Added `EnrichmentSource.linkedInProfilePDF`
+- `Repositories/PeopleRepository.swift` — Added `findByLinkedInSlug()` method
+- `Services/MessageAnalysisService.swift` — Anti-hallucination grounding rule for clipboard content
+- 70+ files — `logger.info` → `logger.debug` downgrade
+
+---
+
 ## Contact Photo Drag-and-Drop, LinkedIn Enrichment, Facebook Import Fix (March 15–16, 2026)
 
 **What**: Drag-and-drop / paste photo onto contact avatars with one-click Safari profile opener for LinkedIn and Facebook, plus fix for Facebook folder import hang.

@@ -75,7 +75,7 @@ actor CallHistoryService {
             ))
         }
 
-        logger.info("Fetched \(records.count) call records from known contacts since \(since, privacy: .public)")
+        logger.debug("Fetched \(records.count) call records from known contacts since \(since, privacy: .public)")
         return records
     }
 
@@ -107,7 +107,7 @@ actor CallHistoryService {
             addresses.append((address: address, callCount: count))
         }
 
-        logger.info("Found \(addresses.count) unique call addresses")
+        logger.debug("Found \(addresses.count) unique call addresses")
         return addresses
     }
 

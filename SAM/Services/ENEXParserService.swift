@@ -26,7 +26,7 @@ enum ENEXParserService {
             throw ENEXParseError.unknownError
         }
 
-        logger.info("Parsed \(delegate.notes.count) notes from ENEX file")
+        logger.debug("Parsed \(delegate.notes.count) notes from ENEX file")
         return delegate.notes
     }
 
@@ -113,7 +113,7 @@ enum ENEXParserService {
         let finalText = text.trimmingCharacters(in: .whitespacesAndNewlines)
 
         if !positions.isEmpty {
-            logger.info("ENML conversion: \(positions.count) image position(s) extracted from \(matches.count) <en-media> tag(s)")
+            logger.debug("ENML conversion: \(positions.count) image position(s) extracted from \(matches.count) <en-media> tag(s)")
         }
 
         return (finalText, positions)
@@ -282,7 +282,7 @@ private class ENEXParserDelegate: NSObject, XMLParserDelegate {
                 let resources = self.currentResources
                 let resourceHashes = resources.map { $0.md5Hash }
                 let matchedCount = resourceHashes.filter { imagePositions[$0] != nil }.count
-                self.logger.info("Note '\(title)': \(resources.count) image(s), \(imagePositions.count) <en-media> tag(s), \(matchedCount) matched by hash")
+                self.logger.debug("Note '\(title)': \(resources.count) image(s), \(imagePositions.count) <en-media> tag(s), \(matchedCount) matched by hash")
                 for resource in resources {
                     let hash = resource.md5Hash
                     if let pos = imagePositions[hash] {

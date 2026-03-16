@@ -164,7 +164,7 @@ final class RoleDeductionEngine {
         }
 
         deductionStatus = .running
-        logger.info("Starting role deduction...")
+        logger.debug("Starting role deduction...")
 
         do {
             let allPeople = try peopleRepo.fetchAll()
@@ -172,7 +172,7 @@ final class RoleDeductionEngine {
                 person.roleBadges.isEmpty && !person.isMe && !person.isArchived
             }
 
-            logger.info("Found \(candidates.count) candidates for role deduction")
+            logger.debug("Found \(candidates.count) candidates for role deduction")
 
             var suggestions: [RoleSuggestion] = []
 

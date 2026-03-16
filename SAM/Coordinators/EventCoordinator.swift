@@ -130,7 +130,7 @@ final class EventCoordinator {
         // letting the user review/edit before sending. Auto-acking here would
         // send a duplicate.
 
-        logger.info("Added unknown sender \(sender.email) to event \(event.title) as \(displayName)")
+        logger.debug("Added unknown sender \(sender.email) to event \(event.title) as \(displayName)")
         return participation
     }
 
@@ -160,7 +160,7 @@ final class EventCoordinator {
             joinLink: joinLink,
             targetParticipantCount: targetParticipants
         )
-        logger.info("Event created: \(title)")
+        logger.debug("Event created: \(title)")
 
         // Create a matching Apple Calendar event
         Task.detached(priority: .utility) {
@@ -225,7 +225,7 @@ final class EventCoordinator {
         )
 
         if let eventID {
-            logger.info("Apple Calendar event created: \(eventID)")
+            logger.debug("Apple Calendar event created: \(eventID)")
         } else {
             logger.warning("Could not create Apple Calendar event — calendar access may not be authorized")
         }
@@ -246,7 +246,7 @@ final class EventCoordinator {
             )
             participations.append(participation)
         }
-        logger.info("Added \(participations.count) participants to \(event.title)")
+        logger.debug("Added \(participations.count) participants to \(event.title)")
         return participations
     }
 
@@ -291,7 +291,7 @@ final class EventCoordinator {
             try EventRepository.shared.updateEvent(id: event.id, status: .inviting)
         }
 
-        logger.info("Generated \(draftCount) invitation drafts for \(event.title)")
+        logger.debug("Generated \(draftCount) invitation drafts for \(event.title)")
         return draftCount
     }
 
@@ -509,7 +509,7 @@ final class EventCoordinator {
         )
 
         participation.inviteStatus = .draftReady
-        logger.info("Regenerated invitation for \(person.displayNameCache ?? "participant")")
+        logger.debug("Regenerated invitation for \(person.displayNameCache ?? "participant")")
     }
 
     // MARK: - Social Promotion
@@ -574,7 +574,7 @@ final class EventCoordinator {
     private func transitionFromDraftIfNeeded(event: SamEvent) {
         guard event.status == .draft else { return }
         event.status = .inviting
-        logger.info("Event '\(event.title)' auto-transitioned from Draft → Inviting")
+        logger.debug("Event '\(event.title)' auto-transitioned from Draft → Inviting")
     }
 
     /// Confirm a SAM-detected RSVP and trigger auto-acknowledgment if eligible.
@@ -635,7 +635,7 @@ final class EventCoordinator {
         }
 
         if needsConfirmation {
-            logger.info("Low-confidence RSVP detected (confidence: \(String(format: "%.0f%%", confidence * 100))) — needs user confirmation")
+            logger.debug("Low-confidence RSVP detected (confidence: \(String(format: "%.0f%%", confidence * 100))) — needs user confirmation")
         } else {
             logger.info("RSVP detected: \(detectedStatus.displayName) (confidence: \(String(format: "%.0f%%", confidence * 100)))")
 
@@ -732,7 +732,7 @@ final class EventCoordinator {
                 }
             }
 
-            logger.info("Auto-acknowledgment \(delivered ? "sent directly" : "handed off") to \(name) for \(event.title)")
+            logger.debug("Auto-acknowledgment \(delivered ? "sent directly" : "handed off") to \(name) for \(event.title)")
         }
 
         try repo.markAcknowledgmentSent(participationID: participationID, wasAuto: true)
@@ -998,7 +998,7 @@ final class EventCoordinator {
             count += 1
         }
 
-        logger.info("Generated \(count) reminder drafts (\(minutesBefore) min before) for \(event.title)")
+        logger.debug("Generated \(count) reminder drafts (\(minutesBefore) min before) for \(event.title)")
         return count
     }
 
@@ -1082,7 +1082,7 @@ final class EventCoordinator {
             count += 1
         }
 
-        logger.info("Generated \(count) follow-up drafts for \(event.title)")
+        logger.debug("Generated \(count) follow-up drafts for \(event.title)")
         return count
     }
 
@@ -1434,7 +1434,7 @@ final class EventCoordinator {
                             body: holdingReply
                         )
                         if sent {
-                            self.logger.info("Auto-replied to unknown sender \(message.handleID) for event \(event.title)")
+                            self.logger.debug("Auto-replied to unknown sender \(message.handleID) for event \(event.title)")
                         }
                     }
                     autoReplied = true
@@ -1486,14 +1486,14 @@ final class EventCoordinator {
                 await self.checkAndSendReminders()
             }
         }
-        logger.info("Reminder scheduler started (5-minute interval)")
+        logger.debug("Reminder scheduler started (5-minute interval)")
     }
 
     /// Stop the reminder scheduler.
     func stopReminderScheduler() {
         reminderSchedulerTask?.cancel()
         reminderSchedulerTask = nil
-        logger.info("Reminder scheduler stopped")
+        logger.debug("Reminder scheduler stopped")
     }
 
     /// Check all upcoming events for reminder windows and generate/send as needed.
@@ -1568,7 +1568,7 @@ final class EventCoordinator {
                     attendeeCount: sentCount,
                     autoSent: true
                 )
-                logger.info("Auto-sent \(sentCount) reminders for \(event.title) (\(windowLabel))")
+                logger.debug("Auto-sent \(sentCount) reminders for \(event.title) (\(windowLabel))")
             } else {
                 // Drafts only — notify user to review
                 await SystemNotificationService.shared.postEventReminder(
@@ -1577,7 +1577,7 @@ final class EventCoordinator {
                     attendeeCount: count,
                     autoSent: false
                 )
-                logger.info("Generated \(count) reminder drafts for \(event.title) (\(windowLabel))")
+                logger.debug("Generated \(count) reminder drafts for \(event.title) (\(windowLabel))")
             }
         } catch {
             logger.error("Failed to generate/send reminders for \(event.title): \(error)")

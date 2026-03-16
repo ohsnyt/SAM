@@ -64,7 +64,7 @@ final class FeatureAdoptionTracker {
         let key = "sam.feature.\(feature.rawValue).firstUsedAt"
         guard defaults.double(forKey: key) == 0 else { return }
         defaults.set(Date.now.timeIntervalSince1970, forKey: key)
-        logger.info("Feature first use recorded: \(feature.rawValue)")
+        logger.debug("Feature first use recorded: \(feature.rawValue)")
     }
 
     /// Whether a feature has been used at least once.

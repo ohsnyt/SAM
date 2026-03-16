@@ -36,7 +36,7 @@ final class PostImportOrchestrator {
     }
 
     private func runPostImportWork() async {
-        logger.info("Running debounced post-import work")
+        logger.debug("Running debounced post-import work")
 
         // Dispatch AI-heavy work to background so it doesn't block the main actor.
         // Both engines are @MainActor @Observable, but their heavy lifting (LLM calls,
@@ -49,6 +49,6 @@ final class PostImportOrchestrator {
             InsightGenerator.shared.startAutoGeneration()
         }
 
-        logger.info("Post-import work dispatched")
+        logger.debug("Post-import work dispatched")
     }
 }

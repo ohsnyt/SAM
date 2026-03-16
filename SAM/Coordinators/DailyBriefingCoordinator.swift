@@ -396,7 +396,7 @@ final class DailyBriefingCoordinator {
 
         if meetingInProgress {
             // Hard postpone 15 min
-            logger.info("Meeting in progress — postponing evening recap 15 min")
+            logger.debug("Meeting in progress — postponing evening recap 15 min")
             postponeEvening(minutes: 15)
             return
         }
@@ -413,7 +413,7 @@ final class DailyBriefingCoordinator {
 
         if recentNote {
             // Soft postpone 10 min
-            logger.info("Recent note activity — postponing evening recap 10 min")
+            logger.debug("Recent note activity — postponing evening recap 10 min")
             postponeEvening(minutes: 10)
             return
         }
@@ -507,7 +507,7 @@ final class DailyBriefingCoordinator {
                 startActivityMonitor()
             }
 
-            logger.info("Evening briefing pre-compiled")
+            logger.debug("Evening briefing pre-compiled")
         } catch {
             generationStatus = .failed
             eveningState = .idle
@@ -616,7 +616,7 @@ final class DailyBriefingCoordinator {
     private func recompileEveningBriefing() {
         guard !isRecompilingEvening else { return }
         isRecompilingEvening = true
-        logger.info("New activity detected — recompiling evening briefing")
+        logger.debug("New activity detected — recompiling evening briefing")
 
         Task {
             do {
@@ -705,7 +705,7 @@ final class DailyBriefingCoordinator {
                 self.beginEveningCheck()
             }
         }
-        logger.info("Evening check scheduled in \(Int(interval / 60)) minutes")
+        logger.debug("Evening check scheduled in \(Int(interval / 60)) minutes")
     }
 
     // MARK: - Pre-Meeting Notifications
@@ -901,7 +901,7 @@ final class DailyBriefingCoordinator {
                     // Activate unconditionally
                     step.isAwaitingTrigger = false
                     try context?.save()
-                    logger.info("Sequence step activated (always): \(step.title)")
+                    logger.debug("Sequence step activated (always): \(step.title)")
 
                 case .noResponse:
                     // Check if the person has communicated since the previous step completed
@@ -921,12 +921,12 @@ final class DailyBriefingCoordinator {
                         if let seqID = step.sequenceID {
                             try outcomeRepo.dismissRemainingSteps(sequenceID: seqID, fromIndex: step.sequenceIndex)
                         }
-                        logger.info("Sequence step auto-dismissed (response received): \(step.title)")
+                        logger.debug("Sequence step auto-dismissed (response received): \(step.title)")
                     } else {
                         // No response — activate the step
                         step.isAwaitingTrigger = false
                         try context?.save()
-                        logger.info("Sequence step activated (no response): \(step.title)")
+                        logger.debug("Sequence step activated (no response): \(step.title)")
                     }
                 }
             }

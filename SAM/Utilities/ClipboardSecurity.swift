@@ -42,7 +42,7 @@ enum ClipboardSecurity {
             // Only clear if the pasteboard hasn't changed since our copy
             if NSPasteboard.general.changeCount == lastChangeCount {
                 NSPasteboard.general.clearContents()
-                logger.info("Clipboard auto-cleared after \(Int(seconds))s")
+                logger.debug("Clipboard auto-cleared after \(Int(seconds))s")
             }
         }
     }

@@ -148,7 +148,7 @@ actor MailService {
             logger.debug("Account: '\(name, privacy: .private)' emails=\(emails, privacy: .private)")
         }
 
-        logger.info("Found \(accounts.count) Mail.app accounts")
+        logger.debug("Found \(accounts.count) Mail.app accounts")
         return accounts
     }
 
@@ -263,7 +263,7 @@ actor MailService {
             if output.hasPrefix("__empty__") {
                 let parts = output.split(separator: "\t", maxSplits: 1)
                 let acctName = parts.count > 1 ? String(parts[1]) : "?"
-                logger.info("Account '\(acctName, privacy: .private)' matched, no messages in date range")
+                logger.debug("Account '\(acctName, privacy: .private)' matched, no messages in date range")
                 continue
             }
             if output.hasPrefix(debugLabel) {
@@ -283,7 +283,7 @@ actor MailService {
             let headerParts = headerLine.split(separator: "\t", maxSplits: 2)
             let resolvedAccountName = headerParts.count > 1 ? String(headerParts[1]) : accountID
 
-            logger.info("Account '\(resolvedAccountName, privacy: .private)' (email: \(accountID, privacy: .private)): \(lines.count - 1) messages in date range")
+            logger.debug("Account '\(resolvedAccountName, privacy: .private)' (email: \(accountID, privacy: .private)): \(lines.count - 1) messages in date range")
 
             for line in lines.dropFirst() {
                 let fields = line.components(separatedBy: "\t")
@@ -317,7 +317,7 @@ actor MailService {
             }
         }
 
-        logger.info("Metadata sweep complete: \(allMetas.count) messages from \(accountIDs.count) accounts")
+        logger.debug("Metadata sweep complete: \(allMetas.count) messages from \(accountIDs.count) accounts")
         let warning = accountWarnings.isEmpty ? nil : accountWarnings.joined(separator: "\n")
         return (allMetas, warning)
     }
@@ -514,10 +514,10 @@ actor MailService {
                 let allRecipients = email.recipientEmails + email.ccEmails
                 return filterRules.contains { $0.matches(recipientEmails: allRecipients) }
             }
-            logger.info("After recipient filtering: \(allEmails.count) emails")
+            logger.debug("After recipient filtering: \(allEmails.count) emails")
         }
 
-        logger.info("Body fetch complete: \(allEmails.count) emails")
+        logger.debug("Body fetch complete: \(allEmails.count) emails")
         return allEmails
     }
 

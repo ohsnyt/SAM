@@ -60,7 +60,7 @@ final class UndoRepository {
 
         modelContext.insert(entry)
         try modelContext.save()
-        logger.info("Captured undo: \(operation.rawValue) \(entityType.rawValue) '\(entityDisplayName)'")
+        logger.debug("Captured undo: \(operation.rawValue) \(entityType.rawValue) '\(entityDisplayName)'")
         return entry
     }
 
@@ -88,7 +88,7 @@ final class UndoRepository {
         entry.isRestored = true
         entry.restoredAt = .now
         try modelContext?.save()
-        logger.info("Restored undo: \(entry.entityType.rawValue) '\(entry.entityDisplayName)'")
+        logger.debug("Restored undo: \(entry.entityType.rawValue) '\(entry.entityDisplayName)'")
     }
 
     // MARK: - Queries
@@ -122,7 +122,7 @@ final class UndoRepository {
 
         if pruned > 0 {
             try modelContext.save()
-            logger.info("Pruned \(pruned) expired undo entries")
+            logger.debug("Pruned \(pruned) expired undo entries")
         }
     }
 
@@ -152,7 +152,7 @@ final class UndoRepository {
             linkedEvidenceIDs: snapshot.linkedEvidenceIDs
         )
 
-        logger.info("Restored note '\(snapshot.content.prefix(40))…'")
+        logger.debug("Restored note '\(snapshot.content.prefix(40))…'")
     }
 
     private func restoreOutcomeStatus(_ data: Data) throws {
@@ -175,7 +175,7 @@ final class UndoRepository {
         outcome.wasActedOn = snapshot.previousWasActedOn
         try modelContext.save()
 
-        logger.info("Restored outcome status: '\(snapshot.title)'")
+        logger.debug("Restored outcome status: '\(snapshot.title)'")
     }
 
     private func restoreContext(_ data: Data) throws {
@@ -224,7 +224,7 @@ final class UndoRepository {
         }
 
         try modelContext.save()
-        logger.info("Restored context '\(snapshot.name)' with \(snapshot.participations.count) participations")
+        logger.debug("Restored context '\(snapshot.name)' with \(snapshot.participations.count) participations")
     }
 
     private func restoreParticipation(_ data: Data) throws {
@@ -259,7 +259,7 @@ final class UndoRepository {
             note: snapshot.note
         )
 
-        logger.info("Restored participation: \(snapshot.personDisplayName) in \(snapshot.contextName)")
+        logger.debug("Restored participation: \(snapshot.personDisplayName) in \(snapshot.contextName)")
     }
 
     private func restoreInsight(_ data: Data) throws {
@@ -279,7 +279,7 @@ final class UndoRepository {
         insight.dismissedAt = nil
         try modelContext.save()
 
-        logger.info("Restored insight: '\(snapshot.title)'")
+        logger.debug("Restored insight: '\(snapshot.title)'")
     }
 
     /// Dispatch person undo: lifecycle change or merge, based on snapshot type.
@@ -308,7 +308,7 @@ final class UndoRepository {
         person.lifecycleStatusRawValue = snapshot.previousStatusRawValue
         try modelContext.save()
 
-        logger.info("Restored lifecycle status for '\(snapshot.personName)' to \(snapshot.previousStatusRawValue)")
+        logger.debug("Restored lifecycle status for '\(snapshot.personName)' to \(snapshot.previousStatusRawValue)")
     }
 
     private func restorePersonMerge(_ data: Data) throws {
@@ -446,7 +446,7 @@ final class UndoRepository {
         target.roleBadges.removeAll { snapshot.unionedRoleBadges.contains($0) }
 
         try modelContext.save()
-        logger.info("Restored person merge: re-created '\(snapshot.sourceDisplayName)'")
+        logger.debug("Restored person merge: re-created '\(snapshot.sourceDisplayName)'")
     }
 
     private func restoreEvent(_ data: Data) throws {
@@ -481,7 +481,7 @@ final class UndoRepository {
             }
         }
 
-        logger.info("Restored event '\(snapshot.title)' with \(snapshot.participantPersonIDs.count) participants")
+        logger.debug("Restored event '\(snapshot.title)' with \(snapshot.participantPersonIDs.count) participants")
     }
 
     // MARK: - Errors

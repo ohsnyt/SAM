@@ -114,7 +114,7 @@ final class GuideContentService: @unchecked Sendable {
             let manifest = try JSONDecoder().decode(GuideManifest.self, from: data)
             sections = manifest.sections.sorted { $0.sortOrder < $1.sortOrder }
             articles = manifest.articles.sorted { $0.sortOrder < $1.sortOrder }
-            logger.info("Loaded guide manifest: \(manifest.sections.count) sections, \(manifest.articles.count) articles")
+            logger.debug("Loaded guide manifest: \(manifest.sections.count) sections, \(manifest.articles.count) articles")
         } catch {
             logger.error("Failed to decode GuideManifest: \(error)")
         }
@@ -131,7 +131,7 @@ final class GuideContentService: @unchecked Sendable {
 
             searchIndex[article.id] = text
         }
-        logger.info("Search index built for \(self.searchIndex.count) articles")
+        logger.debug("Search index built for \(self.searchIndex.count) articles")
     }
 }
 

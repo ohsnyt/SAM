@@ -71,7 +71,7 @@ actor NoteAnalysisService {
         // Parse JSON response
         let analysis = try parseResponse(responseText)
 
-        logger.info("Analyzed note: \(analysis.people.count) people, \(analysis.actionItems.count) actions")
+        logger.debug("Analyzed note: \(analysis.people.count) people, \(analysis.actionItems.count) actions")
         return analysis
     }
     
@@ -179,7 +179,7 @@ actor NoteAnalysisService {
             // MLX models may return plain text instead of JSON — use it as the overview
             let plainText = jsonString.trimmingCharacters(in: .whitespacesAndNewlines)
             if !plainText.isEmpty {
-                logger.info("Relationship summary returned as plain text, using as overview")
+                logger.debug("Relationship summary returned as plain text, using as overview")
                 return RelationshipSummaryDTO(
                     overview: plainText,
                     keyThemes: [],
@@ -222,7 +222,7 @@ actor NoteAnalysisService {
             """
 
         let draft = try await AIService.shared.generateNarrative(prompt: prompt, systemInstruction: instructions)
-        logger.info("Generated follow-up draft for \(personName, privacy: .private)")
+        logger.debug("Generated follow-up draft for \(personName, privacy: .private)")
         return draft
     }
 
@@ -416,7 +416,7 @@ actor NoteAnalysisService {
             // MLX models may return plain text — only use as summary if it doesn't contain JSON artifacts
             let plainText = jsonString.trimmingCharacters(in: .whitespacesAndNewlines)
             if !plainText.isEmpty && !looksLikeJSON(plainText) {
-                logger.info("Note analysis returned plain text instead of JSON, using as summary")
+                logger.debug("Note analysis returned plain text instead of JSON, using as summary")
                 return NoteAnalysisDTO(
                     summary: String(plainText.prefix(500)),
                     people: [],

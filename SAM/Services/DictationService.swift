@@ -112,15 +112,15 @@ final class DictationService {
 
         // Log speech recognition auth status
         let speechAuthStatus = SFSpeechRecognizer.authorizationStatus()
-        logger.info("Speech recognition auth status: \(String(describing: speechAuthStatus))")
+        logger.debug("Speech recognition auth status: \(String(describing: speechAuthStatus))")
 
         // Check and request microphone permission if needed
         let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
-        logger.info("Microphone permission status: \(String(describing: micStatus))")
+        logger.debug("Microphone permission status: \(String(describing: micStatus))")
 
         switch micStatus {
         case .notDetermined:
-            logger.info("Requesting microphone permission...")
+            logger.debug("Requesting microphone permission...")
             let granted = await AVCaptureDevice.requestAccess(for: .audio)
             if !granted {
                 logger.error("Microphone permission denied by user")
@@ -128,7 +128,7 @@ final class DictationService {
             }
             logger.info("Microphone permission granted")
         case .authorized:
-            logger.info("Microphone permission: authorized")
+            logger.debug("Microphone permission: authorized")
         case .denied:
             logger.error("Microphone permission: DENIED — user must enable in System Settings")
             throw DictationError.notAuthorized
@@ -146,7 +146,7 @@ final class DictationService {
         request.shouldReportPartialResults = true
         request.requiresOnDeviceRecognition = recognizer.supportsOnDeviceRecognition
 
-        logger.info("On-device recognition supported: \(recognizer.supportsOnDeviceRecognition)")
+        logger.debug("On-device recognition supported: \(recognizer.supportsOnDeviceRecognition)")
 
         self.recognitionRequest = request
 
@@ -154,7 +154,7 @@ final class DictationService {
         let nativeFormat = inputNode.outputFormat(forBus: 0)
 
         // Log detailed audio format info
-        logger.info("Native input format — sampleRate: \(nativeFormat.sampleRate), channels: \(nativeFormat.channelCount), interleaved: \(nativeFormat.isInterleaved)")
+        logger.debug("Native input format — sampleRate: \(nativeFormat.sampleRate), channels: \(nativeFormat.channelCount), interleaved: \(nativeFormat.isInterleaved)")
 
         // Validate format — zero channels or zero sample rate means no input device
         guard nativeFormat.channelCount > 0, nativeFormat.sampleRate > 0 else {
@@ -167,7 +167,7 @@ final class DictationService {
         let recordingFormat: AVAudioFormat
         if nativeFormat.channelCount > 1 {
             if let monoFormat = AVAudioFormat(standardFormatWithSampleRate: nativeFormat.sampleRate, channels: 1) {
-                logger.info("Converting from \(nativeFormat.channelCount) channels to mono for speech recognition")
+                logger.debug("Converting from \(nativeFormat.channelCount) channels to mono for speech recognition")
                 recordingFormat = monoFormat
             } else {
                 logger.warning("Could not create mono format, using native format")
@@ -177,7 +177,7 @@ final class DictationService {
             recordingFormat = nativeFormat
         }
 
-        logger.info("Recording format — sampleRate: \(recordingFormat.sampleRate), channels: \(recordingFormat.channelCount)")
+        logger.debug("Recording format — sampleRate: \(recordingFormat.sampleRate), channels: \(recordingFormat.channelCount)")
 
         let logger = self.logger
         var bufferCount = 0
@@ -193,7 +193,7 @@ final class DictationService {
         let framesPerBuffer: Double = 4800
         let secondsPerBuffer = framesPerBuffer / sampleRate
         let silentBuffersForTimeout = Int(silenceTimeout / secondsPerBuffer)
-        logger.info("Silence auto-stop: \(silenceTimeout)s = \(silentBuffersForTimeout) silent buffers")
+        logger.debug("Silence auto-stop: \(silenceTimeout)s = \(silentBuffersForTimeout) silent buffers")
 
         return AsyncStream { continuation in
             self.recognitionTask = recognizer.recognitionTask(with: request) { result, error in
@@ -239,7 +239,7 @@ final class DictationService {
 
                 // Log first few buffers
                 if bufferCount <= 3 {
-                    logger.info("Audio buffer #\(bufferCount): frames=\(frameLength), maxAmplitude=\(maxAmplitude), time=\(time.sampleTime)")
+                    logger.debug("Audio buffer #\(bufferCount): frames=\(frameLength), maxAmplitude=\(maxAmplitude), time=\(time.sampleTime)")
                 }
 
                 // Silence detection
@@ -252,7 +252,7 @@ final class DictationService {
 
                 // Auto-stop after silence timeout (only if we've received some speech first)
                 if hasReceivedSpeech && consecutiveSilentBuffers >= silentBuffersForTimeout {
-                    logger.info("Auto-stopping after \(String(format: "%.1f", Double(consecutiveSilentBuffers) * secondsPerBuffer))s of silence")
+                    logger.debug("Auto-stopping after \(String(format: "%.1f", Double(consecutiveSilentBuffers) * secondsPerBuffer))s of silence")
                     didEndAudio = true
                     request.endAudio()
                     return
@@ -264,7 +264,7 @@ final class DictationService {
             audioEngine.prepare()
             do {
                 try audioEngine.start()
-                logger.info("Audio engine started for dictation (bufferSize=4096, format=\(recordingFormat.sampleRate)Hz/\(recordingFormat.channelCount)ch)")
+                logger.debug("Audio engine started for dictation (bufferSize=4096, format=\(recordingFormat.sampleRate)Hz/\(recordingFormat.channelCount)ch)")
             } catch {
                 logger.error("Audio engine failed to start: \(error.localizedDescription)")
                 continuation.finish()
@@ -273,7 +273,7 @@ final class DictationService {
     }
 
     func stopRecognition() {
-        logger.info("Stopping recognition — engine running: \(self.audioEngine.isRunning)")
+        logger.debug("Stopping recognition — engine running: \(self.audioEngine.isRunning)")
         if audioEngine.isRunning {
             audioEngine.stop()
         }
@@ -282,7 +282,7 @@ final class DictationService {
         recognitionTask?.cancel()
         recognitionRequest = nil
         recognitionTask = nil
-        logger.info("Recognition stopped and cleaned up")
+        logger.debug("Recognition stopped and cleaned up")
     }
 
     // MARK: - Errors

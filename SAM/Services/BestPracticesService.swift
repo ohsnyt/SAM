@@ -33,7 +33,7 @@ actor BestPracticesService {
            let data = try? Data(contentsOf: url),
            let decoded = try? JSONDecoder().decode([BestPractice].self, from: data) {
             bundledPractices = decoded
-            logger.info("Loaded \(decoded.count) bundled best practices")
+            logger.debug("Loaded \(decoded.count) bundled best practices")
         } else {
             logger.warning("Could not load BestPractices.json from bundle")
         }
@@ -42,7 +42,7 @@ actor BestPracticesService {
         if let data = UserDefaults.standard.data(forKey: "userBestPractices"),
            let decoded = try? JSONDecoder().decode([BestPractice].self, from: data) {
             userPractices = decoded
-            logger.info("Loaded \(decoded.count) user best practices")
+            logger.debug("Loaded \(decoded.count) user best practices")
         }
 
         isLoaded = true

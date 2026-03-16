@@ -42,7 +42,7 @@ final class PromptLabCoordinator {
         do {
             let data = try Data(contentsOf: storeURL)
             store = try JSONDecoder().decode(PromptLabStore.self, from: data)
-            logger.info("Loaded prompt lab store: \(self.store.variants.values.flatMap { $0 }.count) variants, \(self.store.testRuns.count) runs")
+            logger.debug("Loaded prompt lab store: \(self.store.variants.values.flatMap { $0 }.count) variants, \(self.store.testRuns.count) runs")
         } catch {
             logger.error("Failed to load prompt lab store: \(error.localizedDescription)")
         }
@@ -127,10 +127,10 @@ final class PromptLabCoordinator {
         if variant.isDefault {
             // Revert to default — remove custom override
             UserDefaults.standard.removeObject(forKey: site.userDefaultsKey)
-            logger.info("Reverted \(site.rawValue) to default prompt")
+            logger.debug("Reverted \(site.rawValue) to default prompt")
         } else {
             UserDefaults.standard.set(variant.systemInstruction, forKey: site.userDefaultsKey)
-            logger.info("Deployed variant '\(variant.name)' for \(site.rawValue)")
+            logger.debug("Deployed variant '\(variant.name)' for \(site.rawValue)")
         }
     }
 
@@ -206,7 +206,7 @@ final class PromptLabCoordinator {
             )
             store.testRuns.append(run)
             saveStore()
-            logger.info("Test run complete for '\(variant.name)' on \(site.rawValue) — \(String(format: "%.1f", duration))s")
+            logger.debug("Test run complete for '\(variant.name)' on \(site.rawValue) — \(String(format: "%.1f", duration))s")
         } catch {
             lastError = "Failed to run '\(variant.name)': \(error.localizedDescription)"
             logger.error("Test run failed for '\(variant.name)': \(error.localizedDescription)")
@@ -250,7 +250,7 @@ final class PromptLabCoordinator {
             // Skip if a variant with this name already exists
             if existingVariants.contains(where: { $0.name == variantName }) {
                 skipped += 1
-                logger.info("Skipped duplicate: \(variantName) for \(site.rawValue)")
+                logger.debug("Skipped duplicate: \(variantName) for \(site.rawValue)")
                 continue
             }
 
@@ -262,11 +262,11 @@ final class PromptLabCoordinator {
             siteVariants.append(variant)
             store.variants[site] = siteVariants
             imported += 1
-            logger.info("Imported \(variantName) for \(site.rawValue) (avg score: \(String(format: "%.1f", prompt.avgScore)))")
+            logger.debug("Imported \(variantName) for \(site.rawValue) (avg score: \(String(format: "%.1f", prompt.avgScore)))")
         }
 
         saveStore()
-        logger.info("Registry v\(registry.metadata.version) import complete: \(imported) imported, \(skipped) skipped, \(unrecognizedSites.count) unrecognized sites")
+        logger.debug("Registry v\(registry.metadata.version) import complete: \(imported) imported, \(skipped) skipped, \(unrecognizedSites.count) unrecognized sites")
 
         return RegistryImportResult(
             imported: imported,

@@ -529,7 +529,7 @@ final class InsightGenerator {
 
             try context.save()
             if created > 0 {
-                logger.info("Persisted \(created) new insights to SwiftData")
+                logger.debug("Persisted \(created) new insights to SwiftData")
             }
         } catch {
             logger.error("Failed to persist insights: \(error)")
@@ -580,7 +580,7 @@ final class InsightGenerator {
 
             if dismissed > 0 {
                 try context.save()
-                logger.info("Auto-dismissed \(dismissed) insight(s) contradicted by new evidence")
+                logger.debug("Auto-dismissed \(dismissed) insight(s) contradicted by new evidence")
             }
         } catch {
             logger.warning("Insight invalidation failed: \(error.localizedDescription)")

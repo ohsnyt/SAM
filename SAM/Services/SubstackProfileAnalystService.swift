@@ -73,10 +73,10 @@ actor SubstackProfileAnalystService {
 
         let systemSize = instructions.count
         let promptSize = prompt.count
-        logger.info("SubstackProfileAnalyst prompt — system: \(systemSize)ch, user: \(promptSize)ch")
+        logger.debug("SubstackProfileAnalyst prompt — system: \(systemSize)ch, user: \(promptSize)ch")
 
         let responseText = try await AIService.shared.generate(prompt: prompt, systemInstruction: instructions)
-        logger.info("SubstackProfileAnalyst response — \(responseText.count)ch")
+        logger.debug("SubstackProfileAnalyst response — \(responseText.count)ch")
 
         return try parseResponse(responseText)
     }
@@ -91,7 +91,7 @@ actor SubstackProfileAnalystService {
         } catch {
             let plainText = jsonString.trimmingCharacters(in: .whitespacesAndNewlines)
             if !plainText.isEmpty && !plainText.contains("{") {
-                logger.info("SubstackProfileAnalyst returned plain text, wrapping as summary")
+                logger.debug("SubstackProfileAnalyst returned plain text, wrapping as summary")
                 return ProfileAnalysisDTO(
                     analysisDate: .now,
                     platform: "substack",

@@ -48,6 +48,10 @@ struct NotesJournalView: View {
     @State private var showUnsavedAlert = false
     @State private var pendingNoteToSave: SamNote?
 
+    // Delete confirmation
+    @State private var noteToDelete: SamNote?
+    @State private var showDeleteConfirmation = false
+
     // MARK: - Body
 
     var body: some View {
@@ -68,6 +72,22 @@ struct NotesJournalView: View {
 
                             noteCell(note)
                                 .id(note.id)
+                                .contextMenu {
+                                    Button {
+                                        beginEditing(note: note)
+                                    } label: {
+                                        Label("Edit", systemImage: "pencil")
+                                    }
+
+                                    Divider()
+
+                                    Button(role: .destructive) {
+                                        noteToDelete = note
+                                        showDeleteConfirmation = true
+                                    } label: {
+                                        Label("Delete Note", systemImage: "trash")
+                                    }
+                                }
                         }
                     }
                     .padding(.vertical, 4)
@@ -115,6 +135,24 @@ struct NotesJournalView: View {
                     }
                 } message: {
                     Text("You have unsaved changes to this note. Would you like to save them?")
+                }
+                .alert("Delete Note?", isPresented: $showDeleteConfirmation) {
+                    Button("Delete", role: .destructive) {
+                        if let note = noteToDelete {
+                            do {
+                                try repository.delete(note: note)
+                                onUpdated()
+                            } catch {
+                                logger.error("Failed to delete note: \(error)")
+                            }
+                        }
+                        noteToDelete = nil
+                    }
+                    Button("Cancel", role: .cancel) {
+                        noteToDelete = nil
+                    }
+                } message: {
+                    Text("This note will be moved to the undo history and can be restored for 30 days.")
                 }
             }
         }
@@ -366,7 +404,7 @@ struct NotesJournalView: View {
             // Diagnostic logging — runs async, not during layout
             if imageCount > 0 {
                 let withData = note.images.filter { $0.imageData != nil }.count
-                logger.info("Note '\(note.content.prefix(40))': \(imageCount) image(s), \(withData) with data, \(imageCount - withData) nil data")
+                logger.debug("Note '\(note.content.prefix(40))': \(imageCount) image(s), \(withData) with data, \(imageCount - withData) nil data")
             }
         }
     }

@@ -66,7 +66,7 @@ enum SafariBrowserHelper {
         }
 
         let windowID = Int(result.int32Value)
-        logger.info("Opened Safari window with ID \(windowID)")
+        logger.debug("Opened Safari window with ID \(windowID)")
         return windowID
     }
 

@@ -192,7 +192,7 @@ actor CalibrationService {
     func resetAll() {
         ledger = CalibrationLedger()
         save()
-        logger.info("Calibration ledger reset")
+        logger.debug("Calibration ledger reset")
     }
 
     // MARK: - Ledger Access
@@ -252,7 +252,7 @@ actor CalibrationService {
             ledger.sessionFeedback[cat] = stat
         }
 
-        logger.info("Calibration ledger pruned (90+ days since last update)")
+        logger.debug("Calibration ledger pruned (90+ days since last update)")
     }
 
     // MARK: - Persistence

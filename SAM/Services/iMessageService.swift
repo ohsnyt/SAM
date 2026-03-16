@@ -115,7 +115,7 @@ actor iMessageService {
             }
         }
 
-        logger.info("Fetched \(messages.count) messages from known senders, \(unknownMessages.count) from unknown senders since \(since, privacy: .public)")
+        logger.debug("Fetched \(messages.count) messages from known senders, \(unknownMessages.count) from unknown senders since \(since, privacy: .public)")
         return (known: messages, unknown: unknownMessages)
     }
 
@@ -147,7 +147,7 @@ actor iMessageService {
             handles.append((handleID: handleID, messageCount: count))
         }
 
-        logger.info("Found \(handles.count) unique message handles")
+        logger.debug("Found \(handles.count) unique message handles")
         return handles
     }
 
@@ -193,7 +193,7 @@ actor iMessageService {
         }
 
         if !handles.isEmpty {
-            logger.info("Found \(handles.count) junk/spam-only sender handles")
+            logger.debug("Found \(handles.count) junk/spam-only sender handles")
         }
         return handles
     }

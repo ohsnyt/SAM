@@ -374,6 +374,7 @@ Bookmark the **directory** (not file) for SQLite to cover WAL/SHM companions. `.
 - **Drop/paste → resize → write to Apple Contacts** flow: `PersonDetailView` (drop target + paste handler) → `ContactPhotoCoordinator` (orchestration) → `ContactPhotoService` actor (CNContactStore write). `ImageResizeUtility` center-crops to square, resizes to 600×600 max, compresses to JPEG (0.85 quality).
 - **Safari profile opener**: `SafariBrowserHelper` uses AppleScript to open LinkedIn/Facebook profiles in a sized, positioned Safari window for photo dragging. Tracks window IDs and closes them after successful drop. Requires `com.apple.Safari` in `temporary-exception.apple-events` entitlement.
 - **Profile URL resolution**: checks `SamPerson.linkedInProfileURL` / `facebookProfileURL`, then Apple Contacts `socialProfiles`, then `urlAddresses`. `sanitizeProfileURL()` strips service prefixes (e.g., `linkedin:www.linkedin.com/...`) that Apple Contacts sometimes includes. Falls back to Facebook people search for confirmed friends without a stored profile URL.
+- **LinkedIn PDF import**: Drag a LinkedIn-generated profile PDF onto the "Add a note..." bar in PersonDetailView. `LinkedInPDFParserService` (deterministic, no AI) extracts structured data. Creates `PendingEnrichment` records for email, phone, company, job title, and LinkedIn URL. Generates a concise note with summary, current position, education, skills, honors, and languages — the note triggers AI analysis for family/relationship discovery.
 
 ### App Security
 - **Authentication is mandatory** — SAM always locks on launch and after idle timeout. Uses `LocalAuthentication` framework (`deviceOwnerAuthentication` = Touch ID + system password fallback). No opt-out setting.
@@ -440,5 +441,5 @@ Bookmark the **directory** (not file) for SQLite to cover WAL/SHM companions. `.
 
 ---
 
-**Document Version**: 43
-**Last Updated**: March 16, 2026 — Contact photo drag-and-drop with Safari profile opener, LinkedIn company/position enrichment, photo sync protection, Facebook import fix.
+**Document Version**: 44
+**Last Updated**: March 16, 2026 — LinkedIn PDF import, log level cleanup, clipboard capture improvements, note context menu.

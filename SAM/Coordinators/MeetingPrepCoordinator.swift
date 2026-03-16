@@ -251,7 +251,7 @@ final class MeetingPrepCoordinator {
             briefings = try await buildBriefings()
             followUpPrompts = try buildFollowUpPrompts()
             lastRefreshTime = Date()
-            logger.info("Refresh complete: \(self.briefings.count) briefings, \(self.followUpPrompts.count) follow-ups")
+            logger.debug("Refresh complete: \(self.briefings.count) briefings, \(self.followUpPrompts.count) follow-ups")
         } catch {
             logger.error("Failed to refresh meeting prep: \(error.localizedDescription)")
         }

@@ -106,7 +106,7 @@ enum SAMTipState {
             await GrowDashboardTip().resetEligibility()
             await ClipboardCaptureTip().resetEligibility()
             await CommandPaletteTip().resetEligibility()
-            logger.info("All tips re-enabled via resetEligibility")
+            logger.debug("All tips re-enabled via resetEligibility")
         }
     }
 
@@ -134,7 +134,7 @@ enum SAMTipState {
         GrowDashboardTip().invalidate(reason: .tipClosed)
         ClipboardCaptureTip().invalidate(reason: .tipClosed)
         CommandPaletteTip().invalidate(reason: .tipClosed)
-        logger.info("All tips disabled via invalidate")
+        logger.debug("All tips disabled via invalidate")
     }
 
     /// Full reset: wipe TipKit datastore and reconfigure. Use for "Reset All Tips".
@@ -146,7 +146,7 @@ enum SAMTipState {
                 .displayFrequency(.immediate)
             ])
             guidanceEnabled = true
-            logger.info("TipKit datastore reset and reconfigured")
+            logger.debug("TipKit datastore reset and reconfigured")
         } catch {
             logger.error("TipKit reset failed: \(error)")
         }

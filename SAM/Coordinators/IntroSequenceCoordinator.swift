@@ -38,10 +38,10 @@ final class IntroSequenceCoordinator {
     /// Check if the intro should be shown and trigger it.
     func checkAndShow() {
         guard !hasSeenIntro else {
-            logger.info("Intro already seen — skipping")
+            logger.debug("Intro already seen — skipping")
             return
         }
-        logger.info("First launch — showing welcome sequence")
+        logger.debug("First launch — showing welcome sequence")
         currentPage = 0
         showIntroSequence = true
 
@@ -51,7 +51,7 @@ final class IntroSequenceCoordinator {
 
     /// Show the welcome sequence again (e.g., from Settings "Replay Welcome").
     func replay() {
-        logger.info("Replaying welcome sequence")
+        logger.debug("Replaying welcome sequence")
         currentPage = 0
         UserDefaults.standard.set(false, forKey: Self.hasSeenKey)
         showIntroSequence = true
@@ -75,7 +75,7 @@ final class IntroSequenceCoordinator {
 
     /// Skip the welcome sequence and mark as complete.
     func skip() {
-        logger.info("Welcome skipped by user")
+        logger.debug("Welcome skipped by user")
         markComplete()
     }
 

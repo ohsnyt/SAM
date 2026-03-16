@@ -166,7 +166,7 @@ final class NotesRepository {
         }
 
         try modelContext.save()
-        logger.info("Restored note (undo) with ID \(id)")
+        logger.debug("Restored note (undo) with ID \(id)")
         return note
     }
 
@@ -452,7 +452,7 @@ final class NotesRepository {
 
         if count > 0 {
             try modelContext.save()
-            logger.info("Sanitized \(count) JSON-contaminated summaries")
+            logger.debug("Sanitized \(count) JSON-contaminated summaries")
         }
         return count
     }
@@ -487,7 +487,7 @@ final class NotesRepository {
             let matched = allPeople.filter { linkedPeopleIDs.contains($0.id) }
             note.linkedPeople.removeAll()
             note.linkedPeople.append(contentsOf: matched)
-            logger.info("Import note linked to \(matched.count) people")
+            logger.debug("Import note linked to \(matched.count) people")
         }
 
         try modelContext.save()
@@ -524,7 +524,7 @@ final class NotesRepository {
             let matched = allPeople.filter { linkedPeopleIDs.contains($0.id) }
             note.linkedPeople.removeAll()
             note.linkedPeople.append(contentsOf: matched)
-            logger.info("Import note linked to \(matched.count) people")
+            logger.debug("Import note linked to \(matched.count) people")
         }
 
         // Create images in the SAME save as the note
@@ -544,7 +544,7 @@ final class NotesRepository {
         // Single atomic save — note + all images + relationships
         try modelContext.save()
 
-        logger.info("Created import note with \(images.count) image(s) in single save")
+        logger.debug("Created import note with \(images.count) image(s) in single save")
         return note
     }
 
@@ -597,7 +597,7 @@ final class NotesRepository {
 
         if affectedCount > 0 {
             try modelContext.save()
-            logger.info("Merged ghost '\(ghostName)' into person \(personID) across \(affectedCount) note(s)")
+            logger.debug("Merged ghost '\(ghostName)' into person \(personID) across \(affectedCount) note(s)")
         }
 
         return affectedCount

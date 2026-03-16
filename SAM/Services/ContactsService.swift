@@ -31,7 +31,7 @@ actor ContactsService {
     
     private init() {
         self.store = CNContactStore()
-        logger.info("ContactsService initialized with dedicated CNContactStore")
+        logger.debug("ContactsService initialized with dedicated CNContactStore")
     }
     
     // MARK: - Debug Helpers
@@ -95,11 +95,11 @@ actor ContactsService {
         
         switch status {
         case .authorized:
-            logger.info("Contacts access already authorized")
+            logger.debug("Contacts access already authorized")
             return true
             
         case .notDetermined:
-            logger.info("Requesting contacts access...")
+            logger.debug("Requesting contacts access...")
             do {
                 let granted = try await store.requestAccess(for: .contacts)
                 logger.info("Contacts access \(granted ? "granted" : "denied")")
@@ -188,7 +188,7 @@ actor ContactsService {
             logger.debug("contact: \(self.debugDescription(for: c), privacy: .private)")
         }
         
-        logger.info("Fetched \(contacts.count) contacts")
+        logger.debug("Fetched \(contacts.count) contacts")
         let results = contacts.map { ContactDTO(from: $0) }
         #if DEBUG
         for dto in results { if dto.emailAddresses.isEmpty { let name = dto.displayName; logger.debug("Contact has no emails: \(name, privacy: .private)") } }
@@ -221,7 +221,7 @@ actor ContactsService {
                 logger.debug("group contact: \(self.debugDescription(for: c), privacy: .private)")
             }
             
-            logger.info("Fetched \(contacts.count) contacts from group '\(groupName)'")
+            logger.debug("Fetched \(contacts.count) contacts from group '\(groupName)'")
             let results = contacts.map { ContactDTO(from: $0) }
             #if DEBUG
             for dto in results { if dto.emailAddresses.isEmpty { let name = dto.displayName; logger.debug("Contact has no emails: \(name, privacy: .private)") } }
@@ -252,7 +252,7 @@ actor ContactsService {
                 logger.debug("group(id) contact: \(self.debugDescription(for: c), privacy: .private)")
             }
             
-            logger.info("Fetched \(contacts.count) contacts from group ID '\(groupIdentifier)'")
+            logger.debug("Fetched \(contacts.count) contacts from group ID '\(groupIdentifier)'")
             let results = contacts.map { ContactDTO(from: $0) }
             #if DEBUG
             for dto in results { if dto.emailAddresses.isEmpty { let name = dto.displayName; logger.debug("Contact has no emails: \(name, privacy: .private)") } }
@@ -295,10 +295,10 @@ actor ContactsService {
 
         do {
             let me = try store.unifiedMeContactWithKeys(toFetch: keys.keys)
-            logger.info("Fetched Me contact: \(self.debugDescription(for: me), privacy: .private)")
+            logger.debug("Fetched Me contact: \(self.debugDescription(for: me), privacy: .private)")
             return ContactDTO(from: me)
         } catch {
-            logger.info("No Me card configured: \(error.localizedDescription)")
+            logger.debug("No Me card configured: \(error.localizedDescription)")
             return nil
         }
     }
@@ -327,7 +327,7 @@ actor ContactsService {
                 logger.debug("search contact: \(self.debugDescription(for: c), privacy: .private)")
             }
             
-            logger.info("Found \(contacts.count) contacts matching '\(query, privacy: .private)'")
+            logger.debug("Found \(contacts.count) contacts matching '\(query, privacy: .private)'")
             let results = contacts.map { ContactDTO(from: $0) }
             #if DEBUG
             for dto in results { if dto.emailAddresses.isEmpty { let name = dto.displayName; logger.debug("Contact has no emails: \(name, privacy: .private)") } }
@@ -365,7 +365,7 @@ actor ContactsService {
                     logger.notice("[PhoneSearch] No matches for '\(phoneNumber, privacy: .public)' in any container")
                 }
             }
-            logger.info("Found \(contacts.count) contacts matching phone '\(phoneNumber, privacy: .private)'")
+            logger.debug("Found \(contacts.count) contacts matching phone '\(phoneNumber, privacy: .private)'")
             return contacts.map { ContactDTO(from: $0) }
         } catch {
             logger.error("Failed to search contacts by phone '\(phoneNumber, privacy: .public)': \(error.localizedDescription)")
@@ -432,7 +432,7 @@ actor ContactsService {
             let keys: [CNKeyDescriptor] = [CNContactIdentifierKey as CNKeyDescriptor]
             let contacts = try store.unifiedContacts(matching: predicate, keysToFetch: keys)
             let ids = Set(contacts.map { $0.identifier })
-            logger.info("Group '\(groupIdentifier)' contains \(ids.count) contact identifier(s)")
+            logger.debug("Group '\(groupIdentifier)' contains \(ids.count) contact identifier(s)")
             return ids
         } catch {
             logger.error("Failed to fetch identifiers for group '\(groupIdentifier)': \(error.localizedDescription)")
@@ -523,7 +523,7 @@ actor ContactsService {
 
         // Check if already in iCloud
         if let currentContainer = samGroupContainerIdentifier(), currentContainer == icloudContainerID {
-            logger.info("SAM group already in iCloud, no migration needed")
+            logger.debug("SAM group already in iCloud, no migration needed")
             return oldGroupID
         }
 
@@ -616,7 +616,7 @@ actor ContactsService {
                 let deleteRequest = CNSaveRequest()
                 deleteRequest.delete(mutableOld)
                 try store.execute(deleteRequest)
-                logger.info("Deleted old SAM group")
+                logger.debug("Deleted old SAM group")
             } else if skippedCount > 0 {
                 logger.warning("Kept old SAM group — no members could be migrated to iCloud")
             }
@@ -689,7 +689,7 @@ actor ContactsService {
             saveRequest.add(copy, toContainerWithIdentifier: icloudContainerID)
             try store.execute(saveRequest)
 
-            logger.info("Copied contact to iCloud: \(source.givenName, privacy: .private) \(source.familyName, privacy: .private) (deleteOriginal: \(deleteOriginal))")
+            logger.debug("Copied contact to iCloud: \(source.givenName, privacy: .private) \(source.familyName, privacy: .private) (deleteOriginal: \(deleteOriginal))")
 
             // Add to SAM group
             addContactToSAMGroup(identifier: copy.identifier)
@@ -703,7 +703,7 @@ actor ContactsService {
                 let deleteRequest = CNSaveRequest()
                 deleteRequest.delete(mutableOriginal)
                 try store.execute(deleteRequest)
-                logger.info("Deleted original contact after move: \(identifier, privacy: .private)")
+                logger.debug("Deleted original contact after move: \(identifier, privacy: .private)")
             }
 
             // Return DTO for the new contact (use detail keys for the DTO)
@@ -734,7 +734,7 @@ actor ContactsService {
             // Prefer iCloud container so the group syncs across devices
             let containerID = iCloudContainerIdentifier()
             if containerID != nil {
-                logger.info("Creating group '\(name)' in iCloud container")
+                logger.debug("Creating group '\(name)' in iCloud container")
             } else {
                 logger.warning("No iCloud container found — creating group '\(name)' in default container")
             }
@@ -744,7 +744,7 @@ actor ContactsService {
 
             try store.execute(saveRequest)
 
-            logger.info("Successfully created group '\(name)' (id: \(newGroup.identifier, privacy: .private))")
+            logger.debug("Successfully created group '\(name)' (id: \(newGroup.identifier, privacy: .private))")
             return true
         } catch {
             logger.error("Failed to create group '\(name)': \(error.localizedDescription)")
@@ -825,7 +825,7 @@ actor ContactsService {
             save.add(mutable, toContainerWithIdentifier: samContainerID)
             try store.execute(save)
 
-            logger.info("Created contact: \(fullName, privacy: .private) in container: \(samContainerID ?? "default", privacy: .public)")
+            logger.debug("Created contact: \(fullName, privacy: .private) in container: \(samContainerID ?? "default", privacy: .public)")
 
             // Auto-add to SAM group if configured
             addContactToSAMGroup(identifier: mutable.identifier)

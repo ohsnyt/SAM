@@ -54,12 +54,12 @@ actor CalendarService {
     /// Request authorization (Settings-only, never call from background).
     /// Returns true if authorized.
     func requestAuthorization() async -> Bool {
-        logger.info("Requesting calendar authorization")
+        logger.debug("Requesting calendar authorization")
 
         if #available(macOS 14.0, *) {
             do {
                 let granted = try await eventStore.requestFullAccessToEvents()
-                logger.info("Authorization result: \(granted)")
+                logger.debug("Authorization result: \(granted)")
                 return granted
             } catch {
                 logger.error("Authorization error: \(error)")

@@ -331,7 +331,7 @@ final class LinkedInImportCoordinator {
         if FileManager.default.fileExists(atPath: connectionsURL.path) {
             pendingConnections = await linkedInService.parseConnections(at: connectionsURL)
         } else {
-            logger.info("No Connections.csv found in folder")
+            logger.debug("No Connections.csv found in folder")
         }
 
         // Parse touch-related CSVs (silently skip if not present)
@@ -400,8 +400,8 @@ final class LinkedInImportCoordinator {
         let invCount  = pendingInvitations.count
         let shrCount  = pendingShares.count
         let connCount = pendingConnections.count
-        logger.info("Folder parsed: \(allMessages.count) msgs (\(newMessages.count) new), \(connCount) connections, \(erCount) endorse rcvd, \(egCount) endorse given, \(recCount) rec given, \(rrCount) rec rcvd, \(rxCount) reactions, \(cmCount) comments, \(invCount) invitations, \(shrCount) shares")
-        logger.info("Import candidates: \(self.importCandidates.count) (\(self.recommendedToAddCount) to add, \(self.noInteractionCount) later)")
+        logger.debug("Folder parsed: \(allMessages.count) msgs (\(newMessages.count) new), \(connCount) connections, \(erCount) endorse rcvd, \(egCount) endorse given, \(recCount) rec given, \(rrCount) rec rcvd, \(rxCount) reactions, \(cmCount) comments, \(invCount) invitations, \(shrCount) shares")
+        logger.debug("Import candidates: \(self.importCandidates.count) (\(self.recommendedToAddCount) to add, \(self.noInteractionCount) later)")
 
         // Notify observers (SAMApp listens to present the review sheet from the File menu flow)
         NotificationCenter.default.post(name: .samLinkedInAwaitingReview, object: nil)
@@ -547,7 +547,7 @@ final class LinkedInImportCoordinator {
                 unmatchedConnections = result.unmatched
                 lastConnectionImportAt = Date()
                 if !unmatchedConnections.isEmpty {
-                    logger.info("\(unmatchedConnections.count) LinkedIn connection(s) unmatched — building candidates")
+                    logger.debug("\(unmatchedConnections.count) LinkedIn connection(s) unmatched — building candidates")
                 }
             }
 
@@ -624,7 +624,7 @@ final class LinkedInImportCoordinator {
             let touchCandidates = buildTouchCandidates()
             if !touchCandidates.isEmpty {
                 let inserted = try touchRepo.bulkInsert(touchCandidates)
-                logger.info("Persisted \(inserted) IntentionalTouch records")
+                logger.debug("Persisted \(inserted) IntentionalTouch records")
             }
 
             // 4. Generate enrichment candidates for matched connections
@@ -707,13 +707,13 @@ final class LinkedInImportCoordinator {
                     profile.writingVoiceSummary = voiceSummary
                 }
                 await BusinessProfileService.shared.saveLinkedInProfile(profile)
-                logger.info("LinkedIn user profile saved: \(profile.firstName) \(profile.lastName), \(profile.positions.count) positions, voice: \(!profile.writingVoiceSummary.isEmpty)")
+                logger.debug("LinkedIn user profile saved: \(profile.firstName) \(profile.lastName), \(profile.positions.count) positions, voice: \(!profile.writingVoiceSummary.isEmpty)")
             }
 
             // 8. Build and cache profile analysis snapshot (before clearing pending state)
             let snapshot = buildAnalysisSnapshot()
             await BusinessProfileService.shared.saveAnalysisSnapshot(snapshot)
-            logger.info("Profile analysis snapshot cached: \(snapshot.endorsementsReceivedCount) endorsements, \(snapshot.shareCount) shares, \(snapshot.connectionCount) connections")
+            logger.debug("Profile analysis snapshot cached: \(snapshot.endorsementsReceivedCount) endorsements, \(snapshot.shareCount) shares, \(snapshot.connectionCount) connections")
 
             clearPendingState()
             logger.info("LinkedIn import complete: \(importedCount) messages, \(matched) connections matched")
@@ -744,7 +744,7 @@ final class LinkedInImportCoordinator {
     /// Reset the message watermark so the next import re-processes all available messages.
     func resetWatermark() {
         lastMessageImportAt = nil
-        logger.info("LinkedIn message watermark reset")
+        logger.debug("LinkedIn message watermark reset")
     }
 
     /// Re-read messages.csv from the last-imported folder and import any messages
@@ -753,7 +753,7 @@ final class LinkedInImportCoordinator {
     func reprocessForSender(profileURL: String) async {
         let bookmarkManager = BookmarkManager.shared
         guard let folderURL = bookmarkManager.resolveLinkedInFolderURL() else {
-            logger.info("reprocessForSender: no LinkedIn folder bookmark — skipping")
+            logger.debug("reprocessForSender: no LinkedIn folder bookmark — skipping")
             return
         }
 
@@ -768,7 +768,7 @@ final class LinkedInImportCoordinator {
 
         let messagesURL = folderURL.appendingPathComponent("messages.csv")
         guard FileManager.default.fileExists(atPath: messagesURL.path) else {
-            logger.info("reprocessForSender: messages.csv not found in bookmarked folder")
+            logger.debug("reprocessForSender: messages.csv not found in bookmarked folder")
             return
         }
 
@@ -776,7 +776,7 @@ final class LinkedInImportCoordinator {
         let matching = allMessages.filter { $0.senderProfileURL.lowercased() == normalizedTarget }
 
         guard !matching.isEmpty else {
-            logger.info("reprocessForSender: no messages found for \(normalizedTarget, privacy: .private)")
+            logger.debug("reprocessForSender: no messages found for \(normalizedTarget, privacy: .private)")
             return
         }
 
@@ -826,7 +826,7 @@ final class LinkedInImportCoordinator {
             try? touchRepo.attributeTouches(forProfileURL: normalizedTarget, to: personID)
         }
 
-        logger.info("reprocessForSender: \(imported) message(s) imported, \(skipped) already present for \(normalizedTarget, privacy: .private)")
+        logger.debug("reprocessForSender: \(imported) message(s) imported, \(skipped) already present for \(normalizedTarget, privacy: .private)")
     }
 
     /// Cancel a pending import (when user dismisses before confirming).
@@ -947,7 +947,7 @@ final class LinkedInImportCoordinator {
         emailWatcherStartDate = .now
         sheetPhase = .watchingEmail
         scheduleEmailPolling()
-        logger.info("LinkedIn email watcher started")
+        logger.debug("LinkedIn email watcher started")
     }
 
     /// Stop the email watcher.
@@ -956,7 +956,7 @@ final class LinkedInImportCoordinator {
         emailPollingTimer = nil
         emailWatcherActive = false
         emailWatcherStartDate = nil
-        logger.info("LinkedIn email watcher stopped")
+        logger.debug("LinkedIn email watcher stopped")
     }
 
     private func scheduleEmailPolling() {
@@ -1018,7 +1018,7 @@ final class LinkedInImportCoordinator {
                 await SystemNotificationService.shared.postLinkedInExportReady(downloadURL: fallbackURL)
             }
 
-            logger.info("LinkedIn export email detected")
+            logger.debug("LinkedIn export email detected")
 
         } catch {
             logger.error("LinkedIn email poll failed: \(error.localizedDescription)")
@@ -1043,7 +1043,7 @@ final class LinkedInImportCoordinator {
         fileWatcherStartDate = .now
         sheetPhase = .watchingFile
         scheduleFilePolling()
-        logger.info("LinkedIn file watcher started")
+        logger.debug("LinkedIn file watcher started")
     }
 
     /// Stop the file watcher.
@@ -1052,7 +1052,7 @@ final class LinkedInImportCoordinator {
         filePollingTimer = nil
         fileWatcherActive = false
         fileWatcherStartDate = nil
-        logger.info("LinkedIn file watcher stopped")
+        logger.debug("LinkedIn file watcher stopped")
     }
 
     private func scheduleFilePolling() {
@@ -1145,7 +1145,7 @@ final class LinkedInImportCoordinator {
             downloadURL: downloadURL,
             triggerDate: reminderDate
         )
-        logger.info("LinkedIn reminder scheduled for \(reminderDate.formatted())")
+        logger.debug("LinkedIn reminder scheduled for \(reminderDate.formatted())")
     }
 
     // MARK: - Watcher Persistence
@@ -1157,7 +1157,7 @@ final class LinkedInImportCoordinator {
                Date.now.timeIntervalSince(startDate) < 2 * 24 * 3600 {
                 sheetPhase = .watchingEmail
                 scheduleEmailPolling()
-                logger.info("Resumed LinkedIn email watcher from previous session")
+                logger.debug("Resumed LinkedIn email watcher from previous session")
             } else {
                 emailWatcherActive = false
                 emailWatcherStartDate = nil
@@ -1169,7 +1169,7 @@ final class LinkedInImportCoordinator {
                Date.now.timeIntervalSince(startDate) < 2 * 24 * 3600 {
                 sheetPhase = .watchingFile
                 scheduleFilePolling()
-                logger.info("Resumed LinkedIn file watcher from previous session")
+                logger.debug("Resumed LinkedIn file watcher from previous session")
             } else {
                 fileWatcherActive = false
                 fileWatcherStartDate = nil
@@ -1184,7 +1184,7 @@ final class LinkedInImportCoordinator {
         guard let url = importedZipURL else { return }
         try FileManager.default.removeItem(at: url)
         importedZipURL = nil
-        logger.info("Deleted LinkedIn export ZIP: \(url.lastPathComponent)")
+        logger.debug("Deleted LinkedIn export ZIP: \(url.lastPathComponent)")
     }
 
     // MARK: - Cancellation (Sheet Flow)
@@ -1310,7 +1310,7 @@ final class LinkedInImportCoordinator {
             )
         }
         appleContactsSyncCandidates = []
-        logger.info("§13 Apple Contacts sync: wrote LinkedIn URLs to \(candidates.count) contact(s)")
+        logger.debug("Apple Contacts sync: wrote LinkedIn URLs to \(candidates.count) contact(s)")
     }
 
     /// Clears the pending sync candidates without writing (user chose "Not Now").
@@ -1759,7 +1759,7 @@ final class LinkedInImportCoordinator {
                     try? touchRepo.attributeTouches(forProfileURL: url, to: personID)
                 }
 
-                logger.info("Add candidate '\(displayName, privacy: .private)': created standalone SamPerson")
+                logger.debug("Add candidate '\(displayName, privacy: .private)': created standalone SamPerson")
             } catch {
                 logger.error("Failed to create SamPerson for '\(displayName, privacy: .private)': \(error)")
             }
@@ -1800,7 +1800,7 @@ final class LinkedInImportCoordinator {
                     // Reprocess LinkedIn messages so they link to this person
                     await reprocessForSender(profileURL: url)
                 }
-                logger.info("Merged LinkedIn candidate '\(candidate.fullName, privacy: .private)' into existing person '\(info.displayName, privacy: .private)'")
+                logger.debug("Merged LinkedIn candidate '\(candidate.fullName, privacy: .private)' into existing person '\(info.displayName, privacy: .private)'")
             } catch {
                 logger.error("Failed to merge candidate '\(candidate.fullName, privacy: .private)': \(error)")
             }
@@ -2328,11 +2328,11 @@ final class LinkedInImportCoordinator {
     func runProfileAnalysis() async {
         guard profileAnalysisStatus != .analyzing else { return }
         guard var profile = await BusinessProfileService.shared.linkedInProfile() else {
-            logger.info("Profile analysis skipped: no LinkedIn profile available")
+            logger.debug("Profile analysis skipped: no LinkedIn profile available")
             return
         }
         guard let snapshot = await BusinessProfileService.shared.analysisSnapshot() else {
-            logger.info("Profile analysis skipped: no analysis snapshot available")
+            logger.debug("Profile analysis skipped: no analysis snapshot available")
             return
         }
 
@@ -2359,7 +2359,7 @@ final class LinkedInImportCoordinator {
                 profile.writingVoiceSummary = voiceSummary
                 profile.recentShareSnippets = snippets
                 await BusinessProfileService.shared.saveLinkedInProfile(profile)
-                logger.info("LinkedIn voice analysis completed during re-analysis (\(snippets.count) snippets)")
+                logger.debug("LinkedIn voice analysis completed during re-analysis (\(snippets.count) snippets)")
             }
         }
 
@@ -2483,7 +2483,7 @@ final class LinkedInImportCoordinator {
 
         // 1. Bookmarked folder
         if let result = await tryParse(in: folderURL) {
-            logger.info(" Found Shares.csv in bookmarked folder")
+            logger.debug("Found Shares.csv in bookmarked folder")
             return result
         }
 
@@ -2501,7 +2501,7 @@ final class LinkedInImportCoordinator {
             }
         }
 
-        logger.info(" No readable Shares.csv found anywhere")
+        logger.debug("No readable Shares.csv found anywhere")
         return []
     }
 
@@ -2519,7 +2519,7 @@ final class LinkedInImportCoordinator {
             let name = item.lastPathComponent.lowercased()
             guard name.contains("linkedin") else { continue }
             if let result = await tryParse(item) {
-                logger.info(" Found Shares.csv in: \(item.lastPathComponent)")
+                logger.debug("Found Shares.csv in: \(item.lastPathComponent)")
                 return result
             }
         }
@@ -2533,7 +2533,7 @@ final class LinkedInImportCoordinator {
             .sorted { $0.shareDate > $1.shareDate }
             .prefix(5)
             .compactMap { $0.shareComment.map { $0.count > 500 ? String($0.prefix(500)) + "…" : $0 } }
-        logger.info(" Parsed \(shares.count) shares, \(snippets.count) with comments")
+        logger.debug("Parsed \(shares.count) shares, \(snippets.count) with comments")
         return Array(snippets)
     }
 
@@ -2592,6 +2592,6 @@ final class LinkedInImportCoordinator {
         guard let dir = tempExtractDir else { return }
         tempExtractDir = nil
         try? FileManager.default.removeItem(at: dir)
-        logger.info("Cleaned up temp LinkedIn extract directory")
+        logger.debug("Cleaned up temp LinkedIn extract directory")
     }
 }

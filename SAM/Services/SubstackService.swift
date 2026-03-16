@@ -55,7 +55,7 @@ actor SubstackService {
     /// Fetch and parse a Substack RSS feed.
     /// Returns the publication profile and all posts found in the feed.
     func fetchAndParseFeed(url: URL) async throws -> (profile: SubstackProfileDTO, posts: [SubstackPostDTO]) {
-        logger.info("Fetching Substack RSS feed: \(url.absoluteString)")
+        logger.debug("Fetching Substack RSS feed: \(url.absoluteString)")
 
         let (data, response) = try await URLSession.shared.data(from: url)
 
@@ -66,7 +66,7 @@ actor SubstackService {
         let parser = RSSFeedParser(data: data, feedURL: url.absoluteString)
         let result = parser.parse()
 
-        logger.info("Parsed \(result.posts.count) posts from '\(result.profile.publicationName)'")
+        logger.debug("Parsed \(result.posts.count) posts from '\(result.profile.publicationName)'")
         return result
     }
 
@@ -75,7 +75,7 @@ actor SubstackService {
     /// Parse a Substack subscriber CSV file.
     /// Expected columns: email, created_at, plan_type, is_active (or similar Substack export format).
     func parseSubscriberCSV(at url: URL) throws -> [SubstackSubscriberDTO] {
-        logger.info("Parsing Substack subscriber CSV: \(url.lastPathComponent)")
+        logger.debug("Parsing Substack subscriber CSV: \(url.lastPathComponent)")
 
         let content = try String(contentsOf: url, encoding: .utf8)
         let lines = content.components(separatedBy: .newlines).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
@@ -143,7 +143,7 @@ actor SubstackService {
             ))
         }
 
-        logger.info("Parsed \(subscribers.count) subscribers from CSV")
+        logger.debug("Parsed \(subscribers.count) subscribers from CSV")
         return subscribers
     }
 

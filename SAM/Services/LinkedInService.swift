@@ -147,7 +147,7 @@ actor LinkedInService {
             ))
         }
 
-        logger.info("Parsed \(messages.count) LinkedIn messages (after watermark filter)")
+        logger.debug("Parsed \(messages.count) LinkedIn messages (after watermark filter)")
         return messages
     }
 
@@ -220,7 +220,7 @@ actor LinkedInService {
             ))
         }
 
-        logger.info("Parsed \(connections.count) LinkedIn connections")
+        logger.debug("Parsed \(connections.count) LinkedIn connections")
         return connections
     }
 
@@ -382,7 +382,7 @@ actor LinkedInService {
             ))
         }
 
-        logger.info("Parsed \(results.count) accepted endorsements received")
+        logger.debug("Parsed \(results.count) accepted endorsements received")
         return results
     }
 
@@ -438,7 +438,7 @@ actor LinkedInService {
             ))
         }
 
-        logger.info("Parsed \(results.count) accepted endorsements given")
+        logger.debug("Parsed \(results.count) accepted endorsements given")
         return results
     }
 
@@ -482,7 +482,7 @@ actor LinkedInService {
             ))
         }
 
-        logger.info("Parsed \(results.count) recommendations given")
+        logger.debug("Parsed \(results.count) recommendations given")
         return results
     }
 
@@ -572,7 +572,7 @@ actor LinkedInService {
             ))
         }
 
-        logger.info("Parsed \(results.count) invitations")
+        logger.debug("Parsed \(results.count) invitations")
         return results
     }
 
@@ -658,7 +658,7 @@ actor LinkedInService {
             ))
         }
 
-        logger.info("Parsed \(results.count) positions")
+        logger.debug("Parsed \(results.count) positions")
         return results
     }
 
@@ -700,7 +700,7 @@ actor LinkedInService {
             ))
         }
 
-        logger.info("Parsed \(results.count) education entries")
+        logger.debug("Parsed \(results.count) education entries")
         return results
     }
 
@@ -727,7 +727,7 @@ actor LinkedInService {
             return skill.isEmpty ? nil : skill
         }
 
-        logger.info("Parsed \(skills.count) skills")
+        logger.debug("Parsed \(skills.count) skills")
         return skills
     }
 
@@ -771,7 +771,7 @@ actor LinkedInService {
             ))
         }
 
-        logger.info("Parsed \(results.count) certifications")
+        logger.debug("Parsed \(results.count) certifications")
         return results
     }
 
@@ -782,7 +782,7 @@ actor LinkedInService {
     /// The "Received" file (inbound) complements Recommendations_Given.csv (outbound).
     func parseRecommendationsReceived(at url: URL) async -> [LinkedInRecommendationReceivedDTO] {
         guard let content = try? String(contentsOf: url, encoding: .utf8) else {
-            logger.info("Recommendations_Received.csv not found at \(url.path) — skipping")
+            logger.debug("Recommendations_Received.csv not found at \(url.path) — skipping")
             return []
         }
 
@@ -863,7 +863,7 @@ actor LinkedInService {
             ))
         }
 
-        logger.info("Parsed \(results.count) recommendations received")
+        logger.debug("Parsed \(results.count) recommendations received")
         return results
     }
 
@@ -873,7 +873,7 @@ actor LinkedInService {
     /// Columns: Date, Type, Link
     func parseReactionsGiven(at url: URL) async -> [LinkedInReactionDTO] {
         guard let content = try? String(contentsOf: url, encoding: .utf8) else {
-            logger.info("Reactions.csv not found at \(url.path) — skipping")
+            logger.debug("Reactions.csv not found at \(url.path) — skipping")
             return []
         }
 
@@ -920,7 +920,7 @@ actor LinkedInService {
             ))
         }
 
-        logger.info("Parsed \(results.count) reactions given")
+        logger.debug("Parsed \(results.count) reactions given")
         return results
     }
 
@@ -930,7 +930,7 @@ actor LinkedInService {
     /// Columns: Date, Message (or Comment), Link
     func parseCommentsGiven(at url: URL) async -> [LinkedInCommentDTO] {
         guard let content = try? String(contentsOf: url, encoding: .utf8) else {
-            logger.info("Comments.csv not found at \(url.path) — skipping")
+            logger.debug("Comments.csv not found at \(url.path) — skipping")
             return []
         }
 
@@ -976,7 +976,7 @@ actor LinkedInService {
             ))
         }
 
-        logger.info("Parsed \(results.count) comments given")
+        logger.debug("Parsed \(results.count) comments given")
         return results
     }
 
@@ -986,7 +986,7 @@ actor LinkedInService {
     /// Columns: Date, ShareCommentary (or Share Comment), SharedUrl (or Share Link), Visibility
     func parseShares(at url: URL) async -> [LinkedInShareDTO] {
         guard let content = try? String(contentsOf: url, encoding: .utf8) else {
-            logger.info("Shares.csv not found at \(url.path) — skipping")
+            logger.debug("Shares.csv not found at \(url.path) — skipping")
             return []
         }
 
@@ -1040,7 +1040,7 @@ actor LinkedInService {
             ))
         }
 
-        logger.info("Parsed \(results.count) shares")
+        logger.debug("Parsed \(results.count) shares")
         return results
     }
 
@@ -1056,7 +1056,7 @@ actor LinkedInService {
         let certificationsURL = folder.appendingPathComponent("Certifications.csv")
 
         guard let profileBase = await parseProfile(at: profileURL) else {
-            logger.info("Profile.csv not found or empty — skipping user profile parse")
+            logger.debug("Profile.csv not found or empty — skipping user profile parse")
             return nil
         }
 

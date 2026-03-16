@@ -60,7 +60,7 @@ actor MessageAnalysisService {
         let responseText = try await AIService.shared.generate(prompt: prompt, systemInstruction: instructions)
         let analysis = try parseResponse(responseText)
 
-        logger.info("Analyzed conversation with \(messages.count) messages: \(analysis.topics.count) topics")
+        logger.debug("Analyzed conversation with \(messages.count) messages: \(analysis.topics.count) topics")
         return analysis
     }
 
@@ -105,6 +105,7 @@ actor MessageAnalysisService {
 
         Rules:
         - Summary should focus on what was discussed and any outcomes/decisions
+        - ONLY reference people, topics, and events that are explicitly present in the conversation text — never invent or infer names, topics, or actions not stated
         - Topics should be business-relevant (insurance, financial planning, meetings, etc.)
         - Only include temporal_events for dates/deadlines explicitly mentioned
         - Sentiment reflects the overall tone of the conversation
@@ -219,7 +220,7 @@ actor MessageAnalysisService {
             // MLX models may return plain text — use as summary
             let plainText = jsonString.trimmingCharacters(in: .whitespacesAndNewlines)
             if !plainText.isEmpty {
-                logger.info("Message analysis returned plain text, using as summary")
+                logger.debug("Message analysis returned plain text, using as summary")
                 return MessageAnalysisDTO(
                     summary: String(plainText.prefix(500)),
                     topics: [],

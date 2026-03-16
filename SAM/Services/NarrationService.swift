@@ -67,7 +67,7 @@ final class NarrationService {
     private init() {
         synthesizer.delegate = speechDelegate
         if let v = Self.preferredVoice {
-            logger.info("Narration voice: \(v.name) (\(v.identifier), quality \(v.quality.rawValue))")
+            logger.debug("Narration voice: \(v.name) (\(v.identifier), quality \(v.quality.rawValue))")
         }
     }
 
@@ -114,7 +114,7 @@ final class NarrationService {
         speechDelegate.onFinish = { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
-                self.logger.info("Delegate: didFinish fired")
+                self.logger.debug("Delegate: didFinish fired")
                 self.isSpeaking = false
                 let cb = self.onFinishCallback
                 self.onFinishCallback = nil
@@ -125,17 +125,17 @@ final class NarrationService {
 
         self.isSpeaking = true
         synthesizer.speak(utterance)
-        logger.info("Speaking: \"\(text.prefix(50))...\"")
+        logger.debug("Speaking: \"\(text.prefix(50))...\"")
     }
 
     func pause() {
         synthesizer.pauseSpeaking(at: .word)
-        logger.info("Narration paused")
+        logger.debug("Narration paused")
     }
 
     func resume() {
         synthesizer.continueSpeaking()
-        logger.info("Narration resumed")
+        logger.debug("Narration resumed")
     }
 
     func stop() {
@@ -158,12 +158,12 @@ private final class SpeechDelegate: NSObject, AVSpeechSynthesizerDelegate, @unch
     private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "SpeechDelegate")
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didStart utterance: AVSpeechUtterance) {
-        logger.info("didStart: \"\(utterance.speechString.prefix(40))...\"")
+        logger.debug("didStart: \"\(utterance.speechString.prefix(40))...\"")
         onStart?()
     }
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-        logger.info("didFinish: \"\(utterance.speechString.prefix(40))...\"")
+        logger.debug("didFinish: \"\(utterance.speechString.prefix(40))...\"")
         onFinish?()
     }
 
@@ -171,7 +171,7 @@ private final class SpeechDelegate: NSObject, AVSpeechSynthesizerDelegate, @unch
         // Intentionally NOT calling onFinish here.
         // When we cancel speech (via stop() or starting a new utterance),
         // we've already cleared onFinish to prevent double-advance.
-        logger.info("didCancel: \"\(utterance.speechString.prefix(40))...\"")
+        logger.debug("didCancel: \"\(utterance.speechString.prefix(40))...\"")
     }
 }
 

@@ -155,7 +155,7 @@ struct CoachingSettingsContent: View {
             .pickerStyle(.radioGroup)
             .onChange(of: selectedBackend) { _, newValue in
                 UserDefaults.standard.set(newValue, forKey: "aiBackend")
-                logger.info("AI backend changed to: \(newValue)")
+                logger.debug("AI backend changed to: \(newValue)")
                 if newValue == "foundationModels" {
                     Task { await AIService.shared.unloadMLXModel() }
                 }
@@ -726,10 +726,10 @@ struct CoachingSettingsContent: View {
                 if selectedBackend == "foundationModels" {
                     selectedBackend = "hybrid"
                     UserDefaults.standard.set("hybrid", forKey: "aiBackend")
-                    logger.info("Auto-switched backend to hybrid after MLX model download")
+                    logger.debug("Auto-switched backend to hybrid after MLX model download")
                 }
 
-                logger.info("Model downloaded and selected: \(modelID)")
+                logger.debug("Model downloaded and selected: \(modelID)")
             } catch is CancellationError {
                 downloadingModelID = nil
             } catch {
@@ -757,7 +757,7 @@ struct CoachingSettingsContent: View {
                 if selectedModelID == id {
                     selectedModelID = ""
                 }
-                logger.info("Model deleted: \(id)")
+                logger.debug("Model deleted: \(id)")
             } catch {
                 downloadError = "Delete failed: \(error.localizedDescription)"
                 logger.error("Model delete failed: \(error.localizedDescription)")
@@ -780,7 +780,7 @@ struct CoachingSettingsContent: View {
                 reanalyzeStatus = "Re-analyzing \(count) notes…"
                 await NoteAnalysisCoordinator.shared.analyzeUnanalyzedNotes()
                 reanalyzeStatus = "Done — \(count) notes re-analyzed with current backend."
-                logger.info("Re-analyzed \(count) notes")
+                logger.debug("Re-analyzed \(count) notes")
             } catch {
                 reanalyzeStatus = "Failed: \(error.localizedDescription)"
                 logger.error("Re-analyze failed: \(error.localizedDescription)")
@@ -802,7 +802,7 @@ struct CoachingSettingsContent: View {
                 profile.avgRating = 0
                 profile.updatedAt = .now
             }
-            logger.info("Coaching profile reset")
+            logger.debug("Coaching profile reset")
         }
     }
 

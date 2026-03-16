@@ -108,7 +108,7 @@ struct SAMApp: App {
         // each triggering imports, LLM inference, and SwiftData I/O
         // — enough to exhaust system resources.
         guard !Self.isTestHost else {
-            logger.info("Running as test host — skipping data layer configuration")
+            logger.debug("Running as test host — skipping data layer configuration")
             return
         }
 
@@ -965,7 +965,7 @@ struct SAMApp: App {
                 logger.warning("Mail was enabled but permission is now revoked: \(msg)")
                 permissionsLost = true
             case .transientError(let msg):
-                logger.info("Mail access check returned transient error (not resetting onboarding): \(msg)")
+                logger.debug("Mail access check returned transient error (not resetting onboarding): \(msg)")
             }
         }
 
@@ -1080,7 +1080,7 @@ struct SAMApp: App {
                     outcome.actionLaneRawValue = ActionLane.reviewGraph.rawValue
                     try? OutcomeRepository.shared.upsert(outcome: outcome)
                     UserDefaults.standard.set(true, forKey: roleReviewKey)
-                    logger.info("Created post-onboarding role review outcome")
+                    logger.debug("Created post-onboarding role review outcome")
                 }
             }
         }
@@ -1091,7 +1091,7 @@ struct SAMApp: App {
                 let allPeople = try PeopleRepository.shared.fetchAll()
                 let count = try PipelineRepository.shared.backfillInitialTransitions(allPeople: allPeople)
                 UserDefaults.standard.set(true, forKey: "pipelineBackfillComplete")
-                logger.info("Pipeline backfill complete: \(count) transitions created")
+                logger.debug("Pipeline backfill complete: \(count) transitions created")
             } catch {
                 logger.error("Pipeline backfill failed: \(error)")
             }

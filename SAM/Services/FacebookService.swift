@@ -29,7 +29,7 @@ actor FacebookService {
     func parseFriends(in folder: URL) async -> [FacebookFriendDTO] {
         let url = folder.appending(path: "connections/friends/your_friends.json")
         guard let data = try? Data(contentsOf: url) else {
-            logger.info("No friends file found at \(url.path)")
+            logger.debug("No friends file found at \(url.path)")
             return []
         }
 
@@ -51,7 +51,7 @@ actor FacebookService {
     func parseUserProfile(in folder: URL) async -> UserFacebookProfileDTO? {
         let url = folder.appending(path: "personal_information/profile_information/profile_information.json")
         guard let data = try? Data(contentsOf: url) else {
-            logger.info("No profile_information file found at \(url.path)")
+            logger.debug("No profile_information file found at \(url.path)")
             return nil
         }
 
@@ -152,7 +152,7 @@ actor FacebookService {
             }
         }
 
-        logger.info("Parsed \(allMessages.count) messages across all threads")
+        logger.debug("Parsed \(allMessages.count) messages across all threads")
         return allMessages
     }
 
@@ -161,7 +161,7 @@ actor FacebookService {
     func parseComments(in folder: URL) async -> [FacebookCommentDTO] {
         let url = folder.appending(path: "your_facebook_activity/comments_and_reactions/comments.json")
         guard let data = try? Data(contentsOf: url) else {
-            logger.info("No comments file found at \(url.path)")
+            logger.debug("No comments file found at \(url.path)")
             return []
         }
 
@@ -188,7 +188,7 @@ actor FacebookService {
     func parseReactions(in folder: URL) async -> [FacebookReactionDTO] {
         let url = folder.appending(path: "your_facebook_activity/comments_and_reactions/likes_and_reactions.json")
         guard let data = try? Data(contentsOf: url) else {
-            logger.info("No reactions file found at \(url.path)")
+            logger.debug("No reactions file found at \(url.path)")
             return []
         }
 
@@ -255,7 +255,7 @@ actor FacebookService {
     func parsePosts(in folder: URL) async -> [FacebookPostDTO] {
         let url = folder.appending(path: "your_facebook_activity/posts/your_posts__check_ins__photos_and_videos_1.json")
         guard let data = try? Data(contentsOf: url) else {
-            logger.info("No posts file found at \(url.path)")
+            logger.debug("No posts file found at \(url.path)")
             return []
         }
 
@@ -273,7 +273,7 @@ actor FacebookService {
                 )
             }
             let sorted = posts.sorted { $0.timestamp > $1.timestamp }
-            logger.info("Parsed \(sorted.count) text posts from Facebook export")
+            logger.debug("Parsed \(sorted.count) text posts from Facebook export")
             return sorted
         } catch {
             logger.error("Failed to parse posts JSON: \(error)")

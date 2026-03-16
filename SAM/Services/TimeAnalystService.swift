@@ -131,7 +131,7 @@ actor TimeAnalystService {
         } catch {
             let plainText = jsonString.trimmingCharacters(in: .whitespacesAndNewlines)
             if !plainText.isEmpty && !plainText.contains("{") {
-                logger.info("Time analysis returned plain text, using as summary")
+                logger.debug("Time analysis returned plain text, using as summary")
                 return TimeAnalysis(balanceSummary: String(plainText.prefix(500)))
             }
             logger.error("Time analysis JSON parsing failed: \(error.localizedDescription)")

@@ -54,6 +54,10 @@ struct InlineNoteCaptureView: View {
     @State private var accumulatedSegments: [String] = []
     @State private var lastSegmentPeakLength = 0
 
+    // LinkedIn PDF drop
+    @State private var isPDFDropTargeted = false
+    @State private var photoCoordinator = ContactPhotoCoordinator.shared
+
     // MARK: - Body
 
     var body: some View {
@@ -102,6 +106,49 @@ struct InlineNoteCaptureView: View {
             )
         }
         .buttonStyle(.plain)
+        .overlay {
+            if isPDFDropTargeted {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(.ultraThinMaterial)
+                    .overlay {
+                        HStack(spacing: 6) {
+                            Image(systemName: "doc.text.fill")
+                                .font(.body)
+                            Text("Import LinkedIn Profile")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                        }
+                        .foregroundStyle(.blue)
+                    }
+            }
+        }
+        .overlay {
+            if let msg = photoCoordinator.linkedInImportMessage {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(.green.opacity(0.12))
+                    .overlay {
+                        Text(msg)
+                            .font(.caption)
+                            .foregroundStyle(.green)
+                    }
+            }
+        }
+        .animation(.default, value: isPDFDropTargeted)
+        .animation(.default, value: photoCoordinator.linkedInImportMessage != nil)
+        .onDrop(of: [.pdf], isTargeted: $isPDFDropTargeted) { providers in
+            guard let person = linkedPerson,
+                  let provider = providers.first,
+                  provider.hasItemConformingToTypeIdentifier(UTType.pdf.identifier) else { return false }
+            provider.loadDataRepresentation(forTypeIdentifier: UTType.pdf.identifier) { data, error in
+                Task { @MainActor in
+                    if let data {
+                        await photoCoordinator.handleLinkedInPDFDrop(data: data, for: person)
+                        onSaved() // refresh notes list
+                    }
+                }
+            }
+            return true
+        }
     }
 
     // MARK: - Expanded Editor

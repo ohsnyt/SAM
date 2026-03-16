@@ -84,11 +84,11 @@ actor LinkedInProfileAnalystService {
         // Step 5: Log prompt sizes
         let systemSize = instructions.count
         let promptSize = prompt.count
-        logger.info("LinkedInProfileAnalyst prompt — system: \(systemSize)ch (~\(systemSize/4)t), user: \(promptSize)ch (~\(promptSize/4)t), total: \((systemSize+promptSize)/4)t")
+        logger.debug("LinkedInProfileAnalyst prompt — system: \(systemSize)ch (~\(systemSize/4)t), user: \(promptSize)ch (~\(promptSize/4)t), total: \((systemSize+promptSize)/4)t")
 
         // Step 6: Generate
         let responseText = try await AIService.shared.generate(prompt: prompt, systemInstruction: instructions)
-        logger.info("LinkedInProfileAnalyst response — \(responseText.count)ch (~\(responseText.count/4)t)")
+        logger.debug("LinkedInProfileAnalyst response — \(responseText.count)ch (~\(responseText.count/4)t)")
 
         // Step 7: Parse
         return try parseResponse(responseText)
@@ -106,7 +106,7 @@ actor LinkedInProfileAnalystService {
             // If response is plain text (model unavailable fallback), surface a minimal result
             let plainText = jsonString.trimmingCharacters(in: .whitespacesAndNewlines)
             if !plainText.isEmpty && !plainText.contains("{") {
-                logger.info("LinkedInProfileAnalyst returned plain text, wrapping as summary")
+                logger.debug("LinkedInProfileAnalyst returned plain text, wrapping as summary")
                 return ProfileAnalysisDTO(
                     analysisDate: .now,
                     platform: "linkedIn",

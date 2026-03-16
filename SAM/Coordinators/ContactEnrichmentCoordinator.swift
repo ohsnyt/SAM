@@ -97,7 +97,7 @@ final class ContactEnrichmentCoordinator {
             do {
                 try enrichmentRepo.approve(items)
                 refresh()
-                logger.info("Applied \(items.count) enrichment(s) for \(person.displayNameCache ?? "unknown", privacy: .private)")
+                logger.debug("Applied \(items.count) enrichment(s) for \(person.displayNameCache ?? "unknown", privacy: .private)")
             } catch {
                 logger.error("Failed to mark enrichments approved: \(error.localizedDescription)")
             }
@@ -201,7 +201,7 @@ final class ContactEnrichmentCoordinator {
             let inserted = try enrichmentRepo.bulkRecord(candidates)
             if inserted > 0 {
                 refresh()
-                logger.info("Queued \(inserted) deduced relationship enrichment(s)")
+                logger.debug("Queued \(inserted) deduced relationship enrichment(s)")
             }
         } catch {
             logger.error("Failed to queue deduced relationship enrichments: \(error.localizedDescription)")

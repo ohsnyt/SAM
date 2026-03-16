@@ -129,7 +129,7 @@ final class CoachingAdvisor {
         profile.updatedAt = .now
 
         try context.save()
-        logger.info("Coaching profile updated: \(totalActedOn) acted, \(totalDismissed) dismissed, avg rating \(profile.avgRating)")
+        logger.debug("Coaching profile updated: \(totalActedOn) acted, \(totalDismissed) dismissed, avg rating \(profile.avgRating)")
     }
 
     // MARK: - Encouragement Generation

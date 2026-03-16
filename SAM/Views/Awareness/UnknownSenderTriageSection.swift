@@ -381,7 +381,7 @@ struct UnknownSenderTriageSection: View {
     func loadPendingSenders() {
         do {
             let fetched = try repository.fetchPending()
-            logger.info("loadPendingSenders: fetched \(fetched.count) pending senders")
+            logger.debug("loadPendingSenders: fetched \(fetched.count) pending senders")
             pendingSenders = fetched
             // Set default choice for any new senders:
             // marketing senders default to Never; personal senders default to Later.
@@ -450,7 +450,7 @@ struct UnknownSenderTriageSection: View {
 
         if toAdd.isEmpty {
             isSaving = false
-            logger.info("Triage complete: \(toNever.count) blocked, \(notNowCount) deferred")
+            logger.debug("Triage complete: \(toNever.count) blocked, \(notNowCount) deferred")
             return
         }
 
@@ -519,7 +519,7 @@ struct UnknownSenderTriageSection: View {
                         // Check if already in SAM group → auto-link directly
                         let inSAMGroup = await contactsService.isContactInSAMGroup(identifier: existing.identifier)
                         if inSAMGroup {
-                            logger.info("Triage: auto-linking '\(displayName, privacy: .private)' (already in SAM group)")
+                            logger.debug("Triage: auto-linking '\(displayName, privacy: .private)' (already in SAM group)")
                             do {
                                 try peopleRepository.upsert(contact: existing)
                                 addedEmails.append(sender.email)
@@ -528,7 +528,7 @@ struct UnknownSenderTriageSection: View {
                             }
                         } else {
                             // Match found but NOT in SAM group → needs user confirmation
-                            logger.info("Triage: match found for '\(displayName, privacy: .private)' outside SAM group — queuing for confirmation")
+                            logger.debug("Triage: match found for '\(displayName, privacy: .private)' outside SAM group — queuing for confirmation")
                             matchesNeedingConfirmation.append(
                                 TriageMatchCandidate(sender: sender, matchedContact: existing)
                             )
@@ -583,7 +583,7 @@ struct UnknownSenderTriageSection: View {
 
             isSaving = false
 
-            logger.info("Triage complete: \(toAdd.count) processed, \(toNever.count) blocked, \(notNowCount) deferred, \(matchesNeedingConfirmation.count) pending confirmation")
+            logger.debug("Triage complete: \(toAdd.count) processed, \(toNever.count) blocked, \(notNowCount) deferred, \(matchesNeedingConfirmation.count) pending confirmation")
         }
     }
 
@@ -599,7 +599,7 @@ struct UnknownSenderTriageSection: View {
                 switch match.resolution {
                 case .samePerson:
                     // Link to existing contact + add to SAM group
-                    logger.info("Triage confirm: linking '\(displayName, privacy: .private)' to existing contact \(match.matchedContact.identifier, privacy: .private)")
+                    logger.debug("Triage confirm: linking '\(displayName, privacy: .private)' to existing contact \(match.matchedContact.identifier, privacy: .private)")
                     do {
                         try peopleRepository.upsert(contact: match.matchedContact)
                         addedEmails.append(sender.email)
@@ -610,7 +610,7 @@ struct UnknownSenderTriageSection: View {
 
                 case .differentPerson:
                     // Create a brand-new Apple Contact + add to SAM group
-                    logger.info("Triage confirm: creating new contact for '\(displayName, privacy: .private)' (rejected match)")
+                    logger.debug("Triage confirm: creating new contact for '\(displayName, privacy: .private)' (rejected match)")
                     let senderIsPhone = !sender.email.contains("@") && sender.email.filter(\.isNumber).count >= 7
                     guard let created = await contactsService.createContact(
                         fullName: displayName,
@@ -645,7 +645,7 @@ struct UnknownSenderTriageSection: View {
                 }
             }
 
-            logger.info("Match confirmation complete: \(addedEmails.count) contacts processed")
+            logger.debug("Match confirmation complete: \(addedEmails.count) contacts processed")
         }
     }
 }

@@ -40,9 +40,9 @@ actor PipelineAnalystService {
 
         let systemSize = instructions.count
         let promptSize = prompt.count
-        logger.info("📏 Pipeline prompt — system: \(systemSize)ch (~\(systemSize/4)t), user: \(promptSize)ch (~\(promptSize/4)t), total: \((systemSize+promptSize)/4)t")
+        logger.debug("📏 Pipeline prompt — system: \(systemSize)ch (~\(systemSize/4)t), user: \(promptSize)ch (~\(promptSize/4)t), total: \((systemSize+promptSize)/4)t")
         let responseText = try await AIService.shared.generate(prompt: prompt, systemInstruction: instructions)
-        logger.info("📏 Pipeline response — \(responseText.count)ch (~\(responseText.count/4)t)")
+        logger.debug("📏 Pipeline response — \(responseText.count)ch (~\(responseText.count/4)t)")
         return try parseResponse(responseText)
     }
 
@@ -134,7 +134,7 @@ actor PipelineAnalystService {
         } catch {
             let plainText = jsonString.trimmingCharacters(in: .whitespacesAndNewlines)
             if !plainText.isEmpty && !plainText.contains("{") {
-                logger.info("Pipeline analysis returned plain text, using as summary")
+                logger.debug("Pipeline analysis returned plain text, using as summary")
                 return PipelineAnalysis(healthSummary: String(plainText.prefix(500)))
             }
             logger.error("Pipeline analysis JSON parsing failed: \(error.localizedDescription)")

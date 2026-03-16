@@ -58,7 +58,7 @@ final class GoalRepository {
         )
         context.insert(goal)
         try context.save()
-        logger.info("Created goal: \(title) — \(goalType.displayName) target \(targetValue)")
+        logger.debug("Created goal: \(title) — \(goalType.displayName) target \(targetValue)")
         return goal
     }
 
@@ -112,7 +112,7 @@ final class GoalRepository {
         goal.updatedAt = .now
 
         try context.save()
-        logger.info("Updated goal \(id): \(goal.title)")
+        logger.debug("Updated goal \(id): \(goal.title)")
     }
 
     // MARK: - Archive / Delete
@@ -130,7 +130,7 @@ final class GoalRepository {
         goal.isActive = false
         goal.updatedAt = .now
         try context.save()
-        logger.info("Archived goal \(id): \(goal.title)")
+        logger.debug("Archived goal \(id): \(goal.title)")
     }
 
     /// Permanently delete a goal.
@@ -143,7 +143,7 @@ final class GoalRepository {
 
         context.delete(goal)
         try context.save()
-        logger.info("Deleted goal \(id)")
+        logger.debug("Deleted goal \(id)")
     }
 
     // MARK: - Errors

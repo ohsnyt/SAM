@@ -123,7 +123,7 @@ final class DeducedRelationRepository {
         )
         context.insert(relation)
         try context.save()
-        logger.info("Created deduced relation: \(sourceLabel) between \(personAID) and \(personBID)")
+        logger.debug("Created deduced relation: \(sourceLabel) between \(personAID) and \(personBID)")
         return relation
     }
 
@@ -156,7 +156,7 @@ final class DeducedRelationRepository {
         relation.isConfirmed = true
         relation.confirmedAt = .now
         try context.save()
-        logger.info("Confirmed deduced relation \(id)")
+        logger.debug("Confirmed deduced relation \(id)")
     }
 
     /// Confirm all unconfirmed deduced relations at once. Returns the number confirmed.
@@ -170,7 +170,7 @@ final class DeducedRelationRepository {
             relation.confirmedAt = .now
         }
         try context.save()
-        logger.info("Confirmed all \(unconfirmed.count) deduced relations")
+        logger.debug("Confirmed all \(unconfirmed.count) deduced relations")
         return unconfirmed.count
     }
 
@@ -186,7 +186,7 @@ final class DeducedRelationRepository {
         relation.isConfirmed = false
         relation.confirmedAt = nil
         try context.save()
-        logger.info("Rejected deduced relation \(id)")
+        logger.debug("Rejected deduced relation \(id)")
     }
 
     // MARK: - Delete
@@ -198,7 +198,7 @@ final class DeducedRelationRepository {
             context.delete(relation)
         }
         try context.save()
-        logger.info("Deleted all deduced relations")
+        logger.debug("Deleted all deduced relations")
     }
 
     // MARK: - Error
