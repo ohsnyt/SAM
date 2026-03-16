@@ -196,6 +196,8 @@ struct PersonDetailView: View {
         }
         .sheet(isPresented: $showingEnrichmentSheet, onDismiss: {
             pendingEnrichments = enrichmentCoordinator.pendingEnrichments(for: person.id)
+            // Re-fetch contact data so updated company/job title appear immediately
+            Task { await loadFullContact() }
         }) {
             EnrichmentReviewSheet(person: person, enrichments: pendingEnrichments)
         }

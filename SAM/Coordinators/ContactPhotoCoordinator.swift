@@ -29,6 +29,10 @@ final class ContactPhotoCoordinator {
     /// Safari window IDs opened for photo grabbing; closed after successful drop.
     private(set) var openSafariWindowIDs: [Int] = []
 
+    /// Contact identifiers with a recent photo write — protected from sync overwrite
+    /// for a short grace period while Apple Contacts generates the thumbnail.
+    private(set) var recentPhotoWrites: [String: Date] = [:]
+
     // MARK: - Dependencies
 
     private let photoService = ContactPhotoService.shared
@@ -156,6 +160,8 @@ final class ContactPhotoCoordinator {
             try await photoService.updatePhoto(identifier: contactID, jpegData: jpegData)
             // Update local cache so SwiftUI refreshes immediately
             person.photoThumbnailCache = jpegData
+            // Protect this photo from being overwritten by sync before Apple generates the thumbnail
+            recentPhotoWrites[contactID] = Date()
             logger.info("Photo set for \(person.displayName, privacy: .private)")
             // Close Safari windows that were opened for this grab
             closeSafariWindows()
@@ -231,6 +237,13 @@ final class ContactPhotoCoordinator {
             return
         }
         await setPhoto(data: data, for: person)
+    }
+
+    /// Returns true if the contact had a photo written recently (within grace period)
+    /// and the sync should not overwrite the thumbnail cache.
+    static func isPhotoWriteRecent(for contactIdentifier: String, gracePeriod: TimeInterval = 30) -> Bool {
+        guard let writeDate = shared.recentPhotoWrites[contactIdentifier] else { return false }
+        return Date().timeIntervalSince(writeDate) < gracePeriod
     }
 
     /// Clear the error message.

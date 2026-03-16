@@ -4,7 +4,7 @@
 
 ---
 
-## Contact Photo Drag-and-Drop, Facebook Import Fix (March 15, 2026)
+## Contact Photo Drag-and-Drop, LinkedIn Enrichment, Facebook Import Fix (March 15–16, 2026)
 
 **What**: Drag-and-drop / paste photo onto contact avatars with one-click Safari profile opener for LinkedIn and Facebook, plus fix for Facebook folder import hang.
 
@@ -26,6 +26,22 @@
 - **Bug**: `processZip()` set `importStatus = .parsing` before calling `loadFolder()`, which then hit its own re-entry guard (`guard importStatus != .parsing`) and returned immediately — silently doing nothing
 - **Fix**: Removed the premature status set from `processZip()`; `loadFolder()` manages its own status transitions
 
+### LinkedIn Import: Company & Position Enrichment
+- `Connections.csv` Company, Position, and Email columns were parsed but never written to contacts during import
+- `enrichPeopleFromConnections` now passes `company` and `position` to `updateLinkedInData`
+- `updateLinkedInData` / `applyLinkedIn` now create `PendingEnrichment` records for company (`.company`) and job title (`.jobTitle`) from LinkedIn data
+- `upsertFromSocialImport` accepts new `linkedInCompany` / `linkedInPosition` parameters and queues enrichment records for both existing and new standalone contacts
+- `createContactsForAddCandidates` now passes `candidate.company` and `candidate.position` through to the upsert
+- Enrichment records appear as the blue "contact update(s) available" banner on PersonDetailView for user review
+
+### Photo Sync Protection
+- After writing a photo via drag-and-drop, the `CNContactStoreDidChange` notification triggers a background sync that would overwrite `photoThumbnailCache` with stale/nil data (Apple Contacts hasn't generated the thumbnail yet)
+- `ContactPhotoCoordinator.recentPhotoWrites` tracks contact IDs with recent photo writes
+- `PeopleRepository` incremental sync skips thumbnail overwrite for 30 seconds after a photo write, giving Apple Contacts time to generate the thumbnail
+
+### Detail View Refresh After Enrichment
+- `PersonDetailView` enrichment sheet `onDismiss` now calls `loadFullContact()` to re-fetch updated company/job title from Apple Contacts immediately
+
 ### Entitlement Update
 - Added `com.apple.Safari` to `temporary-exception.apple-events` in both entitlement files for AppleScript Safari control
 
@@ -35,11 +51,14 @@
 | `Utilities/ImageResizeUtility.swift` | Center-crop, resize, JPEG compression for contact photos |
 | `Utilities/SafariBrowserHelper.swift` | AppleScript: open/close/position Safari windows by ID |
 | `Services/ContactPhotoService.swift` | Actor: write processed JPEG to CNContactStore |
-| `Coordinators/ContactPhotoCoordinator.swift` | Orchestrates drop/paste/Safari-open flow |
+| `Coordinators/ContactPhotoCoordinator.swift` | Orchestrates drop/paste/Safari-open flow, photo write protection |
 
-### Modified Files (4)
-- `Views/People/PersonDetailView.swift` — Photo drop target, paste handler, click-to-open, profile URL resolution from all sources
+### Modified Files (7)
+- `Views/People/PersonDetailView.swift` — Photo drop target, paste handler, click-to-open, profile URL resolution from all sources, enrichment refresh
 - `Coordinators/FacebookImportCoordinator.swift` — Fixed re-entry guard bug in `processZip()`
+- `Coordinators/LinkedInImportCoordinator.swift` — Pass company/position through enrichment and add-candidate paths
+- `Repositories/PeopleRepository.swift` — LinkedIn data enrichment with company/position, photo sync protection grace period
+- `Resources/Guide/people/02-Person-Detail.md` — Photo drag-and-drop usage guide
 - `SAM/SAM_crm.entitlements` — Added Safari to Apple Events exceptions
 - `SAM_crm.entitlements` (project root copy) — Same entitlement update
 

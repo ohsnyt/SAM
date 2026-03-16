@@ -1749,7 +1749,9 @@ final class LinkedInImportCoordinator {
                     displayName: displayName,
                     linkedInProfileURL: profileURL,
                     linkedInConnectedOn: candidate.connectedOn,
-                    linkedInEmail: candidate.email
+                    linkedInEmail: candidate.email,
+                    linkedInCompany: candidate.company,
+                    linkedInPosition: candidate.position
                 )
 
                 // Attribute any existing IntentionalTouch records to this new SamPerson
@@ -1891,7 +1893,9 @@ final class LinkedInImportCoordinator {
                 profileURL: conn.profileURL,
                 connectedOn: conn.connectedOn,
                 email: conn.email,
-                fullName: "\(conn.firstName) \(conn.lastName)"
+                fullName: "\(conn.firstName) \(conn.lastName)",
+                company: conn.company,
+                position: conn.position
             )
             if updated {
                 enrichedCount += 1

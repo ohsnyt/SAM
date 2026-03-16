@@ -440,5 +440,5 @@ Bookmark the **directory** (not file) for SQLite to cover WAL/SHM companions. `.
 
 ---
 
-**Document Version**: 42
-**Last Updated**: March 15, 2026 — Contact photo drag-and-drop with Safari profile opener, Facebook import fix.
+**Document Version**: 43
+**Last Updated**: March 16, 2026 — Contact photo drag-and-drop with Safari profile opener, LinkedIn company/position enrichment, photo sync protection, Facebook import fix.

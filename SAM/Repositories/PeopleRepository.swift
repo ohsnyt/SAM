@@ -222,6 +222,8 @@ final class PeopleRepository {
         linkedInProfileURL: String? = nil,
         linkedInConnectedOn: Date? = nil,
         linkedInEmail: String? = nil,
+        linkedInCompany: String? = nil,
+        linkedInPosition: String? = nil,
         facebookFriendedOn: Date? = nil,
         facebookMessageCount: Int = 0,
         facebookLastMessageDate: Date? = nil,
@@ -281,6 +283,8 @@ final class PeopleRepository {
                     person.emailAliases.append(canonicalizeEmail(email) ?? email.lowercased())
                 }
             }
+            // Queue company/position enrichment for contacts linked to Apple Contacts
+            queueLinkedInEnrichment(personID: person.id, contactIdentifier: person.contactIdentifier, company: linkedInCompany, position: linkedInPosition, context: modelContext)
             person.lastSyncedAt = Date()
             try modelContext.save()
             return person.id
@@ -307,6 +311,8 @@ final class PeopleRepository {
             person.lastSyncedAt = Date()
 
             modelContext.insert(person)
+            // Queue company/position enrichment (will surface when linked to an Apple Contact)
+            queueLinkedInEnrichment(personID: person.id, contactIdentifier: nil, company: linkedInCompany, position: linkedInPosition, context: modelContext)
             try modelContext.save()
             return person.id
         }
@@ -378,7 +384,10 @@ final class PeopleRepository {
                     existing.phoneAliases = canonicalPhones
                     changed = true
                 }
-                if existing.photoThumbnailCache != contact.thumbnailImageData {
+                // Skip thumbnail overwrite if we recently wrote a photo — Apple may not have
+                // generated the thumbnail yet, and the sync would erase our local cache.
+                let photoProtected = existing.contactIdentifier.map { ContactPhotoCoordinator.isPhotoWriteRecent(for: $0) } ?? false
+                if !photoProtected, existing.photoThumbnailCache != contact.thumbnailImageData {
                     existing.photoThumbnailCache = contact.thumbnailImageData
                     changed = true
                 }
@@ -823,7 +832,9 @@ final class PeopleRepository {
         profileURL: String,
         connectedOn: Date?,
         email: String?,
-        fullName: String
+        fullName: String,
+        company: String? = nil,
+        position: String? = nil
     ) throws -> Bool {
         guard let modelContext = modelContext else {
             throw RepositoryError.notConfigured
@@ -838,7 +849,7 @@ final class PeopleRepository {
 
         // 1. Exact LinkedIn URL match
         if let match = allPeople.first(where: { ($0.linkedInProfileURL ?? "").lowercased() == normalizedURL && !normalizedURL.isEmpty }) {
-            applyLinkedIn(match, profileURL: profileURL, connectedOn: connectedOn)
+            applyLinkedIn(match, profileURL: profileURL, connectedOn: connectedOn, company: company, position: position)
             try modelContext.save()
             return true
         }
@@ -849,7 +860,7 @@ final class PeopleRepository {
                 p.emailCache?.lowercased() == em || p.emailAliases.contains { $0.lowercased() == em }
             }
             if let match = emailMatch {
-                applyLinkedIn(match, profileURL: profileURL, connectedOn: connectedOn)
+                applyLinkedIn(match, profileURL: profileURL, connectedOn: connectedOn, company: company, position: position)
                 try modelContext.save()
                 return true
             }
@@ -861,7 +872,7 @@ final class PeopleRepository {
                 ($0.displayNameCache ?? $0.displayName).lowercased() == normalizedName
             }
             if let match = nameMatch {
-                applyLinkedIn(match, profileURL: profileURL, connectedOn: connectedOn)
+                applyLinkedIn(match, profileURL: profileURL, connectedOn: connectedOn, company: company, position: position)
                 try modelContext.save()
                 return true
             }
@@ -870,12 +881,40 @@ final class PeopleRepository {
         return false
     }
 
-    private func applyLinkedIn(_ person: SamPerson, profileURL: String, connectedOn: Date?) {
+    /// Queue company and position as PendingEnrichment records from LinkedIn import.
+    private func queueLinkedInEnrichment(personID: UUID, contactIdentifier: String?, company: String?, position: String?, context: ModelContext) {
+        // Only queue if there's actually data to enrich
+        guard company != nil || position != nil else { return }
+        if let company, !company.isEmpty {
+            let enrichment = PendingEnrichment(
+                personID: personID,
+                field: .company,
+                proposedValue: company,
+                source: .linkedInConnections
+            )
+            context.insert(enrichment)
+        }
+        if let position, !position.isEmpty {
+            let enrichment = PendingEnrichment(
+                personID: personID,
+                field: .jobTitle,
+                proposedValue: position,
+                source: .linkedInConnections
+            )
+            context.insert(enrichment)
+        }
+    }
+
+    private func applyLinkedIn(_ person: SamPerson, profileURL: String, connectedOn: Date?, company: String? = nil, position: String? = nil) {
         if person.linkedInProfileURL != profileURL {
             person.linkedInProfileURL = profileURL
         }
         if let date = connectedOn, person.linkedInConnectedOn == nil {
             person.linkedInConnectedOn = date
+        }
+        // Queue company/position enrichment for contacts linked to Apple Contacts
+        if let context = modelContext {
+            queueLinkedInEnrichment(personID: person.id, contactIdentifier: person.contactIdentifier, company: company, position: position, context: context)
         }
     }
 
