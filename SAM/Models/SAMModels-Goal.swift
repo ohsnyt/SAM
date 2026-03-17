@@ -16,7 +16,7 @@ import SwiftUI
 // MARK: - GoalType
 
 /// The kind of business metric a goal tracks.
-public enum GoalType: String, Codable, Sendable, CaseIterable {
+nonisolated public enum GoalType: String, Codable, Sendable, CaseIterable {
     case newClients       = "New Clients"
     case policiesSubmitted = "Policies Submitted"
     case productionVolume = "Production Volume"
@@ -85,7 +85,7 @@ public enum GoalType: String, Codable, Sendable, CaseIterable {
 // MARK: - GoalPace
 
 /// How a goal is pacing relative to its expected progress.
-public enum GoalPace: String, Codable, Sendable {
+nonisolated public enum GoalPace: String, Codable, Sendable {
     case ahead   = "Ahead"
     case onTrack = "On Track"
     case behind  = "Behind"

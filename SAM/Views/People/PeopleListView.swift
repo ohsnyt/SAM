@@ -188,9 +188,48 @@ struct PeopleListView: View {
     }
 
     /// Extract "LastName, FirstName..." style key for last-name sorting.
+    ///
+    /// Strips trailing suffixes and credentials so that
+    /// "Neil Byce IV" sorts as "Byce Neil", "Pat Murdock, MBA" sorts as
+    /// "Murdock Pat", and "Sally Hendrickson, RN LCSW" sorts as "Hendrickson Sally".
     private func lastNameSort(_ fullName: String) -> String {
-        let parts = fullName.split(separator: " ")
+        // Known name suffixes (generational / honorific)
+        let nameSuffixes: Set<String> = [
+            "jr", "jr.", "sr", "sr.", "ii", "iii", "iv", "v",
+            "esq", "esq.", "phd", "ph.d.", "md", "m.d."
+        ]
+        // Professional credentials / designations that follow the name
+        let credentials: Set<String> = [
+            "mba", "m.b.a.", "cpa", "cfa", "cfp", "chfc", "clc", "clf", "clu",
+            "rn", "r.n.", "lpn", "lcsw", "lmft", "lpc", "msw", "psyd",
+            "jd", "j.d.", "llm", "dds", "dmd", "do", "od", "dpt",
+            "pe", "p.e.", "ra", "aia", "faia", "pmp",
+            "csp", "sphr", "shrm-cp", "shrm-scp",
+            "casp", "cissp", "ccna", "ccnp",
+            "lutcf", "ricp", "wmcp", "aams", "awma"
+        ]
+
+        // Strip commas then split into words
+        let cleaned = fullName.replacingOccurrences(of: ",", with: "")
+        var parts = cleaned.split(separator: " ").map(String.init)
         guard parts.count > 1 else { return fullName }
+
+        // Remove trailing suffixes and credentials from the end
+        while parts.count > 1 {
+            let candidate = parts.last!.lowercased()
+                .trimmingCharacters(in: .punctuationCharacters)
+            if nameSuffixes.contains(candidate)
+                || credentials.contains(candidate)
+                || nameSuffixes.contains(parts.last!.lowercased())
+                || credentials.contains(parts.last!.lowercased()) {
+                parts.removeLast()
+            } else {
+                break
+            }
+        }
+
+        guard parts.count > 1 else { return fullName }
+
         let last = parts.last!
         let rest = parts.dropLast().joined(separator: " ")
         return "\(last) \(rest)"

@@ -7,7 +7,7 @@
 //
 
 import SwiftUI
-import CoreLocation
+import MapKit
 
 struct EventFormView: View {
 
@@ -566,27 +566,21 @@ struct EventFormView: View {
         isValidatingAddress = true
 
         do {
-            let geocoder = CLGeocoder()
-            let placemarks = try await geocoder.geocodeAddressString(trimmed)
-            if let placemark = placemarks.first,
-               let _ = placemark.location {
-                // Build a formatted address from the placemark
-                let parts = [
-                    placemark.subThoroughfare,
-                    placemark.thoroughfare,
-                    placemark.locality,
-                    placemark.administrativeArea,
-                    placemark.postalCode
-                ].compactMap { $0 }
-                let formatted = parts.joined(separator: " ")
-                if !formatted.isEmpty && formatted != trimmed {
-                    lastValidatedAddress = formatted
-                    address = formatted
-                    addressValidationMessage = "✓ Verified: \(formatted)"
-                } else {
-                    lastValidatedAddress = address
-                    addressValidationMessage = "✓ Address verified"
-                }
+            guard let request = MKGeocodingRequest(addressString: trimmed) else {
+                addressValidationMessage = "Could not verify this address. Please check it."
+                isValidatingAddress = false
+                return
+            }
+            let items = try await request.mapItems
+            if let item = items.first,
+               let formatted = item.addressRepresentations?.fullAddress(includingRegion: false, singleLine: true),
+               !formatted.isEmpty, formatted != trimmed {
+                lastValidatedAddress = formatted
+                address = formatted
+                addressValidationMessage = "✓ Verified: \(formatted)"
+            } else if items.first != nil {
+                lastValidatedAddress = address
+                addressValidationMessage = "✓ Address verified"
             } else {
                 addressValidationMessage = "Could not verify this address. Please check it."
             }

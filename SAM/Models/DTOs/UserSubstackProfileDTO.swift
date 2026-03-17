@@ -10,7 +10,7 @@
 import Foundation
 
 /// The user's Substack publication profile, assembled from RSS feed data.
-public struct UserSubstackProfileDTO: Codable, Sendable {
+nonisolated public struct UserSubstackProfileDTO: Codable, Sendable {
     public var publicationName: String
     public var publicationDescription: String
     public var authorName: String

@@ -636,24 +636,6 @@ struct PersonDetailView: View {
                 .controlSize(.small)
             }
 
-            Button {
-                let payload = QuickNotePayload(
-                    outcomeID: UUID(),
-                    personID: person.id,
-                    personName: person.displayNameCache ?? person.displayName,
-                    contextTitle: "Quick Note"
-                )
-                NotificationCenter.default.post(
-                    name: .samOpenQuickNote,
-                    object: nil,
-                    userInfo: ["payload": payload]
-                )
-            } label: {
-                Label("Add Note", systemImage: "square.and.pencil")
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-
             Spacer()
         }
     }

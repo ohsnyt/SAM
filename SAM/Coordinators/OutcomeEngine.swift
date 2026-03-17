@@ -184,7 +184,7 @@ final class OutcomeEngine {
             let weights = CoachingAdvisor.shared.adjustedWeights()
             // Pre-compute health for all linked people to avoid redundant calls in the scoring loop
             let linkedPeople = Set(newOutcomes.compactMap { $0.linkedPerson })
-            let healthCache = Dictionary(uniqueKeysWithValues: linkedPeople.map { ($0.id, meetingPrep.computeHealth(for: $0)) })
+            let healthCache = Dictionary(linkedPeople.map { ($0.id, meetingPrep.computeHealth(for: $0)) }, uniquingKeysWith: { first, _ in first })
             for outcome in newOutcomes {
                 outcome.priorityScore = computePriority(outcome: outcome, weights: weights, healthCache: healthCache)
             }
@@ -1034,7 +1034,7 @@ final class OutcomeEngine {
 
         // Check email aliases and linked evidence for substack.com references
         let hasSubstackURL = me.emailAliases.contains { $0.lowercased().contains("substack.com") }
-            || me.linkedEvidence.contains { ($0.snippet ?? "").lowercased().contains("substack.com") }
+            || me.linkedEvidence.contains { $0.snippet.lowercased().contains("substack.com") }
 
         guard hasSubstackURL else { return [] }
 
@@ -1890,9 +1890,6 @@ final class OutcomeEngine {
     private func generateDraftMessage(for outcome: SamOutcome) async {
         let person = outcome.linkedPerson
         let personName = person?.displayNameCache ?? person?.displayName ?? "the contact"
-        let role = person?.roleBadges.first ?? "contact"
-        let summary = person?.relationshipSummary ?? ""
-
         let channel = outcome.suggestedChannel ?? .iMessage
         let category = outcome.messageCategory ?? outcome.outcomeKind.messageCategory
         let channelNote: String

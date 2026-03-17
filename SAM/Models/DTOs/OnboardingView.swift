@@ -1480,7 +1480,8 @@ struct OnboardingView: View {
     private func checkMailPermission() async {
         isCheckingMail = true
         mailAccessError = nil
-        let error = await MailImportCoordinator.shared.checkMailAccess()
+        // Prefer direct database access (folder bookmark) over AppleScript
+        let error = MailImportCoordinator.shared.requestDirectMailAccess()
         isCheckingMail = false
         if let error {
             mailAccessError = error

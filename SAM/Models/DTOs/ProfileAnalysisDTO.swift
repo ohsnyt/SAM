@@ -14,7 +14,7 @@ import Foundation
 // MARK: - Public DTOs
 
 /// Top-level result of a LinkedIn profile analysis.
-public struct ProfileAnalysisDTO: Codable, Sendable {
+nonisolated public struct ProfileAnalysisDTO: Codable, Sendable {
     public var analysisDate: Date
     public var platform: String                             // "linkedIn"
     public var overallScore: Int                            // 1–100
@@ -27,7 +27,7 @@ public struct ProfileAnalysisDTO: Codable, Sendable {
 }
 
 /// A genuine strength identified in the profile.
-public struct PraiseItemDTO: Codable, Sendable, Identifiable {
+nonisolated public struct PraiseItemDTO: Codable, Sendable, Identifiable {
     public var id: UUID
     public var category: String                             // "Recommendations", "Content", etc.
     public var message: String
@@ -42,7 +42,7 @@ public struct PraiseItemDTO: Codable, Sendable, Identifiable {
 }
 
 /// A concrete improvement suggestion with priority and rationale.
-public struct ImprovementSuggestionDTO: Codable, Sendable, Identifiable {
+nonisolated public struct ImprovementSuggestionDTO: Codable, Sendable, Identifiable {
     public var id: UUID
     public var category: String
     public var priority: String                             // "high", "medium", "low"
@@ -62,7 +62,7 @@ public struct ImprovementSuggestionDTO: Codable, Sendable, Identifiable {
 }
 
 /// Assessment of the user's content publishing activity.
-public struct ContentStrategyAssessmentDTO: Codable, Sendable {
+nonisolated public struct ContentStrategyAssessmentDTO: Codable, Sendable {
     public var summary: String
     public var postingFrequency: String?
     public var contentMix: String?
@@ -71,7 +71,7 @@ public struct ContentStrategyAssessmentDTO: Codable, Sendable {
 }
 
 /// Assessment of the user's LinkedIn network health.
-public struct NetworkHealthAssessmentDTO: Codable, Sendable {
+nonisolated public struct NetworkHealthAssessmentDTO: Codable, Sendable {
     public var summary: String
     public var growthTrend: String?
     public var endorsementInsight: String?
@@ -79,7 +79,7 @@ public struct NetworkHealthAssessmentDTO: Codable, Sendable {
 }
 
 /// A note comparing this analysis to a previous one.
-public struct ChangeNoteDTO: Codable, Sendable, Identifiable {
+nonisolated public struct ChangeNoteDTO: Codable, Sendable, Identifiable {
     public var id: UUID
     public var description: String
     public var isImprovement: Bool
@@ -92,7 +92,7 @@ public struct ChangeNoteDTO: Codable, Sendable, Identifiable {
 }
 
 /// A pre-composed prompt the user can paste into an external AI for deeper help.
-public struct ExternalAIPromptDTO: Codable, Sendable {
+nonisolated public struct ExternalAIPromptDTO: Codable, Sendable {
     public var context: String
     public var prompt: String
     public var copyButtonLabel: String
@@ -102,7 +102,7 @@ public struct ExternalAIPromptDTO: Codable, Sendable {
 
 /// Lightweight snapshot of import-time endorsement/recommendation/share data.
 /// Cached in UserDefaults at import time so re-analysis never requires folder access.
-public struct ProfileAnalysisSnapshot: Codable, Sendable {
+nonisolated public struct ProfileAnalysisSnapshot: Codable, Sendable {
     public var endorsementsReceivedCount: Int
     public var topEndorsedSkills: [String]                  // top 5 by endorsement frequency
     public var uniqueEndorsers: Int
@@ -123,7 +123,7 @@ public struct ProfileAnalysisSnapshot: Codable, Sendable {
 // MARK: - Private LLM Types
 
 /// All fields Optional; keys match the JSON schema sent to the AI.
-private struct LLMProfileAnalysis: Codable {
+nonisolated private struct LLMProfileAnalysis: Codable {
     var overall_score: Int?
     var praise: [LLMPraiseItem]?
     var improvements: [LLMImprovementSuggestion]?
@@ -133,13 +133,13 @@ private struct LLMProfileAnalysis: Codable {
     var external_prompt: LLMExternalAIPrompt?
 }
 
-private struct LLMPraiseItem: Codable {
+nonisolated private struct LLMPraiseItem: Codable {
     var category: String?
     var message: String?
     var metric: String?
 }
 
-private struct LLMImprovementSuggestion: Codable {
+nonisolated private struct LLMImprovementSuggestion: Codable {
     var category: String?
     var priority: String?
     var suggestion: String?
@@ -147,7 +147,7 @@ private struct LLMImprovementSuggestion: Codable {
     var example_or_prompt: String?
 }
 
-private struct LLMContentStrategyAssessment: Codable {
+nonisolated private struct LLMContentStrategyAssessment: Codable {
     var summary: String?
     var posting_frequency: String?
     var content_mix: String?
@@ -155,19 +155,19 @@ private struct LLMContentStrategyAssessment: Codable {
     var topic_suggestions: [String]?
 }
 
-private struct LLMNetworkHealthAssessment: Codable {
+nonisolated private struct LLMNetworkHealthAssessment: Codable {
     var summary: String?
     var growth_trend: String?
     var endorsement_insight: String?
     var recommendation_reciprocity: String?
 }
 
-private struct LLMChangeNote: Codable {
+nonisolated private struct LLMChangeNote: Codable {
     var description: String?
     var is_improvement: Bool?
 }
 
-private struct LLMExternalAIPrompt: Codable {
+nonisolated private struct LLMExternalAIPrompt: Codable {
     var context: String?
     var prompt: String?
     var copy_button_label: String?
@@ -175,7 +175,7 @@ private struct LLMExternalAIPrompt: Codable {
 
 // MARK: - LLM → DTO Mapping
 
-extension LLMProfileAnalysis {
+nonisolated extension LLMProfileAnalysis {
     func toDTO(analysisDate: Date = .now, platform: String = "linkedIn") -> ProfileAnalysisDTO {
         let praiseItems = (praise ?? []).compactMap { item -> PraiseItemDTO? in
             guard let message = item.message, !message.isEmpty else { return nil }
@@ -253,7 +253,7 @@ extension LLMProfileAnalysis {
 
 /// Parses a JSON string from the LLM into a `ProfileAnalysisDTO`.
 /// All fields are optional-tolerant; the mapping never throws on missing keys.
-func parseProfileAnalysisJSON(_ jsonString: String, platform: String = "linkedIn") throws -> ProfileAnalysisDTO {
+nonisolated func parseProfileAnalysisJSON(_ jsonString: String, platform: String = "linkedIn") throws -> ProfileAnalysisDTO {
     guard let data = jsonString.data(using: .utf8) else {
         throw ProfileAnalysisParseError.invalidUTF8
     }
@@ -262,7 +262,7 @@ func parseProfileAnalysisJSON(_ jsonString: String, platform: String = "linkedIn
     return llm.toDTO(platform: platform)
 }
 
-enum ProfileAnalysisParseError: Error {
+nonisolated enum ProfileAnalysisParseError: Error {
     case invalidUTF8
     case decodingFailed(String)
 }

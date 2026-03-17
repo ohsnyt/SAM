@@ -17,7 +17,7 @@ private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "Goa
 // MARK: - GoalProgress
 
 /// Snapshot of a goal's current progress and pacing.
-struct GoalProgress: Sendable, Identifiable {
+nonisolated struct GoalProgress: Sendable, Identifiable {
     let goalID: UUID
     let goalType: GoalType
     let title: String

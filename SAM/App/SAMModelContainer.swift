@@ -82,7 +82,7 @@ enum SAMModelContainer {
     // creates a NEW empty store, abandoning all existing data.
     // Only change schemaVersion for destructive migrations that require
     // a SchemaMigrationPlan.
-    static let schemaVersion = "SAM_v34"
+    nonisolated static let schemaVersion = "SAM_v34"
 
     /// Force a WAL checkpoint on the SQLite store to flush pending deletes.
     /// Prevents SwiftData crashes when accessing deleted-but-not-checkpointed records.
@@ -103,6 +103,14 @@ enum SAMModelContainer {
         } else {
             containerLogger.warning("WAL checkpoint returned \(rc)")
         }
+    }
+
+    /// The default on-disk URL that ModelConfiguration(schemaVersion) uses.
+    /// Computed without touching shared so it is safe to call before the
+    /// container is ever initialized (e.g. during a launch-time wipe).
+    nonisolated static var defaultStoreURL: URL {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        return appSupport.appendingPathComponent("\(schemaVersion).store")
     }
 
     #if DEBUG
@@ -128,14 +136,6 @@ enum SAMModelContainer {
 
     /// DEBUG-only mutable shared container for reset flows.
     nonisolated static var shared: ModelContainer { _shared }
-
-    /// The default on-disk URL that ModelConfiguration(schemaVersion) uses.
-    /// Computed without touching _shared so it is safe to call before the
-    /// container is ever initialized (e.g. during a launch-time wipe).
-    nonisolated static var defaultStoreURL: URL {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        return appSupport.appendingPathComponent("\(schemaVersion).store")
-    }
 
     /// Delete the on-disk SQLite store files (main + -shm + -wal).
     /// MUST be called before _shared is first accessed; once any ModelContainer

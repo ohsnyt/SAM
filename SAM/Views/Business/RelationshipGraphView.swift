@@ -1465,7 +1465,7 @@ struct RelationshipGraphView: View {
     private func handlePersonDragDetection(dragID: UUID, gp: CGPoint) {
         // hitTestNode would return the dragged node itself (it sits at gp),
         // so we scan for the closest non-self, non-ghost, non-Me node that overlaps.
-        guard let draggedNode = coordinator.nodes.first(where: { $0.id == dragID }) else { return }
+        guard coordinator.nodes.contains(where: { $0.id == dragID }) else { return }
         var closestID: UUID?
         var closestDist: CGFloat = .greatestFiniteMagnitude
         for candidate in coordinator.nodes {

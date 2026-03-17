@@ -181,12 +181,17 @@ final class ContactPhotoCoordinator {
     func handleDrop(providers: [NSItemProvider], for person: SamPerson) {
         guard let provider = providers.first else { return }
 
+        // Capture person reference safely for use in @Sendable closures.
+        // SamPerson is a SwiftData @Model (non-Sendable) but is only accessed
+        // on @MainActor inside Task { @MainActor in }, which is safe.
+        nonisolated(unsafe) let personRef = person
+
         // Try loading image data directly
         if provider.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
             provider.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { data, error in
                 Task { @MainActor in
                     if let data {
-                        await self.setPhoto(data: data, for: person)
+                        await self.setPhoto(data: data, for: personRef)
                     } else {
                         self.errorMessage = error?.localizedDescription ?? "Could not read image data."
                         self.scheduleDismissError()
@@ -205,7 +210,7 @@ final class ContactPhotoCoordinator {
                         self.scheduleDismissError()
                         return
                     }
-                    guard let contactID = person.contactIdentifier else {
+                    guard let contactID = personRef.contactIdentifier else {
                         self.errorMessage = "This person is not linked to an Apple Contact."
                         self.scheduleDismissError()
                         return
@@ -215,7 +220,7 @@ final class ContactPhotoCoordinator {
                         let jpegData = try await self.photoService.downloadAndUpdatePhoto(
                             identifier: contactID, url: url
                         )
-                        person.photoThumbnailCache = jpegData
+                        personRef.photoThumbnailCache = jpegData
                         self.closeSafariWindows()
                     } catch {
                         self.errorMessage = error.localizedDescription

@@ -2489,7 +2489,7 @@ final class LinkedInImportCoordinator {
         do {
             let inserted = try enrichmentRepo.bulkRecord(candidates)
             if inserted > 0 {
-                await ContactEnrichmentCoordinator.shared.refresh()
+                ContactEnrichmentCoordinator.shared.refresh()
             }
             return inserted
         } catch {
@@ -2833,8 +2833,8 @@ final class LinkedInImportCoordinator {
         if !profile.positions.isEmpty {
             lines.append("\nPositions:")
             for p in profile.positions {
-                let end = p.isCurrent ? "Present" : (p.finishedOn ?? "")
-                lines.append("- \(p.title) at \(p.companyName) (\(p.startedOn ?? "") – \(end))")
+                let end = p.isCurrent ? "Present" : p.finishedOn
+                lines.append("- \(p.title) at \(p.companyName) (\(p.startedOn) – \(end))")
             }
         }
 

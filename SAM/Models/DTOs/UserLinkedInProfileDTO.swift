@@ -12,7 +12,7 @@ import Foundation
 // MARK: - Top-level user profile
 
 /// The user's own LinkedIn profile, assembled from multiple CSV files.
-public struct UserLinkedInProfileDTO: Codable, Sendable {
+nonisolated public struct UserLinkedInProfileDTO: Codable, Sendable {
     public var firstName: String
     public var lastName: String
     public var headline: String
@@ -59,12 +59,12 @@ public struct UserLinkedInProfileDTO: Codable, Sendable {
     }
 
     /// The most recent position (started most recently, or no finish date).
-    public nonisolated var currentPosition: LinkedInPositionDTO? {
+    public var currentPosition: LinkedInPositionDTO? {
         positions.first(where: { $0.isCurrent }) ?? positions.first
     }
 
     /// A compact coaching context fragment for injection into AI system prompts.
-    public nonisolated var coachingContextFragment: String {
+    public var coachingContextFragment: String {
         var lines: [String] = []
 
         if !headline.isEmpty {
@@ -105,7 +105,7 @@ public struct UserLinkedInProfileDTO: Codable, Sendable {
 
 // MARK: - Position
 
-public struct LinkedInPositionDTO: Codable, Sendable {
+nonisolated public struct LinkedInPositionDTO: Codable, Sendable {
     public var companyName: String
     public var title: String
     public var description: String
@@ -113,7 +113,7 @@ public struct LinkedInPositionDTO: Codable, Sendable {
     public var startedOn: String       // Raw string from CSV e.g. "Aug 2021"
     public var finishedOn: String      // Empty string = current
 
-    public nonisolated var isCurrent: Bool { finishedOn.isEmpty }
+    public var isCurrent: Bool { finishedOn.isEmpty }
 
     public init(
         companyName: String,
@@ -134,7 +134,7 @@ public struct LinkedInPositionDTO: Codable, Sendable {
 
 // MARK: - Education
 
-public struct LinkedInEducationDTO: Codable, Sendable {
+nonisolated public struct LinkedInEducationDTO: Codable, Sendable {
     public var schoolName: String
     public var startDate: String
     public var endDate: String
@@ -161,7 +161,7 @@ public struct LinkedInEducationDTO: Codable, Sendable {
 
 // MARK: - Certification
 
-public struct LinkedInCertificationDTO: Codable, Sendable {
+nonisolated public struct LinkedInCertificationDTO: Codable, Sendable {
     public var name: String
     public var url: String
     public var authority: String

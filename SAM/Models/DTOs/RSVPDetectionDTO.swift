@@ -10,7 +10,7 @@ import Foundation
 
 /// Detected RSVP signal from a message or email.
 /// Crosses actor boundary from analysis services → import coordinators → EventCoordinator.
-struct RSVPDetectionDTO: Sendable, Identifiable {
+nonisolated struct RSVPDetectionDTO: Sendable, Identifiable {
     let id: UUID
     let responseText: String          // The actual text that triggered detection
     let detectedStatus: RSVPResponse  // What SAM thinks the response means

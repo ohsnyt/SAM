@@ -10,7 +10,7 @@
 
 import Foundation
 
-struct MessageAnalysisDTO: Sendable {
+nonisolated struct MessageAnalysisDTO: Sendable {
     let summary: String
     let topics: [String]
     let temporalEvents: [TemporalEventDTO]

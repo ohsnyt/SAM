@@ -477,7 +477,7 @@ final class UndoRepository {
         let personMap = Dictionary(uniqueKeysWithValues: allPeople.map { ($0.id, $0) })
         for personID in snapshot.participantPersonIDs {
             if let person = personMap[personID] {
-                try? EventRepository.shared.addParticipant(event: event, person: person)
+                _ = try? EventRepository.shared.addParticipant(event: event, person: person)
             }
         }
 

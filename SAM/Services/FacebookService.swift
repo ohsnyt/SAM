@@ -335,13 +335,13 @@ actor FacebookService {
 // MARK: - DTOs (Public, Sendable)
 
 /// A friend from the Facebook friend roster.
-public struct FacebookFriendDTO: Sendable {
+nonisolated public struct FacebookFriendDTO: Sendable {
     public let name: String
     public let friendedOn: Date
 }
 
 /// A single message from a Messenger thread.
-public struct FacebookMessageDTO: Sendable {
+nonisolated public struct FacebookMessageDTO: Sendable {
     public let senderName: String
     public let content: String?
     public let timestampMs: Int
@@ -358,7 +358,7 @@ public struct FacebookMessageDTO: Sendable {
 }
 
 /// Classification of a Messenger thread location in the export.
-public enum FacebookMessageCategory: String, Sendable {
+nonisolated public enum FacebookMessageCategory: String, Sendable {
     case inbox    = "inbox"
     case e2ee     = "e2ee"
     case archived = "archived"
@@ -376,28 +376,28 @@ public enum FacebookMessageCategory: String, Sendable {
 }
 
 /// A comment the user made on someone else's content.
-public struct FacebookCommentDTO: Sendable {
+nonisolated public struct FacebookCommentDTO: Sendable {
     public let targetName: String
     public let commentText: String?
     public let timestamp: Date
 }
 
 /// A reaction the user gave to someone's content.
-public struct FacebookReactionDTO: Sendable {
+nonisolated public struct FacebookReactionDTO: Sendable {
     public let targetName: String
     public let reactionType: String
     public let timestamp: Date
 }
 
 /// A friend request sent or received.
-public struct FacebookFriendRequestDTO: Sendable {
+nonisolated public struct FacebookFriendRequestDTO: Sendable {
     public let name: String
     public let timestamp: Date
     public let direction: FacebookFriendRequestDirection
 }
 
 /// Direction of a friend request.
-public enum FacebookFriendRequestDirection: String, Sendable {
+nonisolated public enum FacebookFriendRequestDirection: String, Sendable {
     case sent
     case received
 }
@@ -406,22 +406,22 @@ public enum FacebookFriendRequestDirection: String, Sendable {
 
 // -- Friends --
 
-private struct FBFriendsWrapper: Decodable, Sendable {
+nonisolated private struct FBFriendsWrapper: Decodable, Sendable {
     let friends_v2: [FBFriendRaw]
 }
 
-private struct FBFriendRaw: Decodable, Sendable {
+nonisolated private struct FBFriendRaw: Decodable, Sendable {
     let name: String
     let timestamp: Int
 }
 
 // -- Profile --
 
-private struct FBProfileWrapper: Decodable, Sendable {
+nonisolated private struct FBProfileWrapper: Decodable, Sendable {
     let profile_v2: FBProfileRaw
 }
 
-private struct FBProfileRaw: Decodable, Sendable {
+nonisolated private struct FBProfileRaw: Decodable, Sendable {
     let name: FBProfileName
     let emails: FBProfileEmails?
     let birthday: FBBirthday?
@@ -436,60 +436,60 @@ private struct FBProfileRaw: Decodable, Sendable {
     let profile_uri: String?
 }
 
-private struct FBProfileName: Decodable, Sendable {
+nonisolated private struct FBProfileName: Decodable, Sendable {
     let full_name: String
     let first_name: String
     let middle_name: String?
     let last_name: String
 }
 
-private struct FBProfileEmails: Decodable, Sendable {
+nonisolated private struct FBProfileEmails: Decodable, Sendable {
     let emails: [String]?
 }
 
-private struct FBBirthday: Decodable, Sendable {
+nonisolated private struct FBBirthday: Decodable, Sendable {
     let year: Int
     let month: Int
     let day: Int
 }
 
-private struct FBGender: Decodable, Sendable {
+nonisolated private struct FBGender: Decodable, Sendable {
     let gender_option: String?
 }
 
-private struct FBLocation: Decodable, Sendable {
+nonisolated private struct FBLocation: Decodable, Sendable {
     let name: String
 }
 
-private struct FBRelationship: Decodable, Sendable {
+nonisolated private struct FBRelationship: Decodable, Sendable {
     let status: String
     let partner: String?
 }
 
-private struct FBFamilyMember: Decodable, Sendable {
+nonisolated private struct FBFamilyMember: Decodable, Sendable {
     let name: String
     let relation: String
 }
 
-private struct FBEducation: Decodable, Sendable {
+nonisolated private struct FBEducation: Decodable, Sendable {
     let name: String
     let school_type: String?
     let concentrations: [String]?
 }
 
-private struct FBWork: Decodable, Sendable {
+nonisolated private struct FBWork: Decodable, Sendable {
     let employer: String
     let title: String?
     let location: String?
 }
 
-private struct FBWebsite: Decodable, Sendable {
+nonisolated private struct FBWebsite: Decodable, Sendable {
     let address: String
 }
 
 // -- Messenger Threads --
 
-private struct FBMessageThread: Decodable, Sendable {
+nonisolated private struct FBMessageThread: Decodable, Sendable {
     let participants: [FBParticipant]
     let messages: [FBMessage]
     let title: String
@@ -497,11 +497,11 @@ private struct FBMessageThread: Decodable, Sendable {
     let thread_path: String?
 }
 
-private struct FBParticipant: Decodable, Sendable {
+nonisolated private struct FBParticipant: Decodable, Sendable {
     let name: String
 }
 
-private struct FBMessage: Decodable, Sendable {
+nonisolated private struct FBMessage: Decodable, Sendable {
     let sender_name: String
     let timestamp_ms: Int
     let content: String?
@@ -510,21 +510,21 @@ private struct FBMessage: Decodable, Sendable {
 
 // -- Comments --
 
-private struct FBCommentsWrapper: Decodable, Sendable {
+nonisolated private struct FBCommentsWrapper: Decodable, Sendable {
     let comments_v2: [FBCommentRaw]
 }
 
-private struct FBCommentRaw: Decodable, Sendable {
+nonisolated private struct FBCommentRaw: Decodable, Sendable {
     let timestamp: Int
     let title: String
     let data: [FBCommentData]?
 }
 
-private struct FBCommentData: Decodable, Sendable {
+nonisolated private struct FBCommentData: Decodable, Sendable {
     let comment: FBCommentContent?
 }
 
-private struct FBCommentContent: Decodable, Sendable {
+nonisolated private struct FBCommentContent: Decodable, Sendable {
     let timestamp: Int?
     let comment: String?
     let author: String?
@@ -532,39 +532,39 @@ private struct FBCommentContent: Decodable, Sendable {
 
 // -- Reactions --
 
-private struct FBReactionItem: Decodable, Sendable {
+nonisolated private struct FBReactionItem: Decodable, Sendable {
     let timestamp: Int
     let label_values: [FBLabelValue]?
 }
 
-private struct FBLabelValue: Decodable, Sendable {
+nonisolated private struct FBLabelValue: Decodable, Sendable {
     let label: String
     let value: String
 }
 
 // -- Friend Requests --
 
-private struct FBSentRequestsWrapper: Decodable, Sendable {
+nonisolated private struct FBSentRequestsWrapper: Decodable, Sendable {
     let sent_requests_v2: [FBFriendRequestRaw]
 }
 
-private struct FBReceivedRequestsWrapper: Decodable, Sendable {
+nonisolated private struct FBReceivedRequestsWrapper: Decodable, Sendable {
     let received_requests_v2: [FBFriendRequestRaw]
 }
 
-private struct FBFriendRequestRaw: Decodable, Sendable {
+nonisolated private struct FBFriendRequestRaw: Decodable, Sendable {
     let name: String
     let timestamp: Int
 }
 
 // -- Posts --
 
-private struct FBPostItem: Decodable, Sendable {
+nonisolated private struct FBPostItem: Decodable, Sendable {
     let timestamp: Int
     let data: [FBPostData]?
     let title: String?
 }
 
-private struct FBPostData: Decodable, Sendable {
+nonisolated private struct FBPostData: Decodable, Sendable {
     let post: String?
 }

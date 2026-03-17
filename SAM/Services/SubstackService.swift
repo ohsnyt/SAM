@@ -13,7 +13,7 @@ import os.log
 // MARK: - DTOs
 
 /// A single Substack post parsed from RSS.
-struct SubstackPostDTO: Sendable {
+nonisolated struct SubstackPostDTO: Sendable {
     let title: String
     let link: String
     let pubDate: Date
@@ -24,7 +24,7 @@ struct SubstackPostDTO: Sendable {
 }
 
 /// The user's Substack publication profile parsed from RSS.
-struct SubstackProfileDTO: Sendable {
+nonisolated struct SubstackProfileDTO: Sendable {
     let publicationName: String
     let publicationDescription: String
     let authorName: String
@@ -33,7 +33,7 @@ struct SubstackProfileDTO: Sendable {
 }
 
 /// A single subscriber from the Substack export CSV.
-struct SubstackSubscriberDTO: Sendable {
+nonisolated struct SubstackSubscriberDTO: Sendable {
     let email: String
     let createdAt: Date
     let planType: String       // "free" or "paid"
@@ -188,7 +188,7 @@ actor SubstackService {
 
 // MARK: - Errors
 
-enum SubstackError: LocalizedError {
+nonisolated enum SubstackError: LocalizedError {
     case feedFetchFailed(Int)
     case csvMissingEmailColumn
     case invalidFeedURL
@@ -208,7 +208,7 @@ enum SubstackError: LocalizedError {
 // MARK: - RSS XML Parser
 
 /// XMLParser delegate that extracts RSS 2.0 channel info and items.
-private final class RSSFeedParser: NSObject, XMLParserDelegate {
+nonisolated private final class RSSFeedParser: NSObject, XMLParserDelegate {
 
     private let data: Data
     private let feedURL: String

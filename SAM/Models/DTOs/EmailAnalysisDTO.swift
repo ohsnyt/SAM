@@ -12,7 +12,7 @@ import Foundation
 
 /// Sendable results from on-device LLM analysis of an email body.
 /// Crosses actor boundary from EmailAnalysisService → MailImportCoordinator.
-struct EmailAnalysisDTO: Sendable {
+nonisolated struct EmailAnalysisDTO: Sendable {
     let summary: String                  // 1-2 sentence summary
     let namedEntities: [EmailEntityDTO]  // People, orgs, products mentioned
     let topics: [String]                 // Financial topics detected
@@ -26,7 +26,7 @@ struct EmailAnalysisDTO: Sendable {
     }
 }
 
-struct EmailEntityDTO: Sendable, Identifiable {
+nonisolated struct EmailEntityDTO: Sendable, Identifiable {
     let id: UUID
     let name: String
     let kind: EntityKind
@@ -40,7 +40,7 @@ struct EmailEntityDTO: Sendable, Identifiable {
     }
 }
 
-struct TemporalEventDTO: Sendable, Identifiable {
+nonisolated struct TemporalEventDTO: Sendable, Identifiable {
     let id: UUID
     let description: String    // "Annual review meeting"
     let dateString: String     // "March 15, 2026" (raw from email)

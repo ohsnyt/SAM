@@ -349,7 +349,7 @@ public enum EventFormat: String, Codable, Sendable, CaseIterable {
     case virtual
     case hybrid
 
-    public var displayName: String {
+    public nonisolated var displayName: String {
         switch self {
         case .inPerson: return "In Person"
         case .virtual:  return "Virtual"

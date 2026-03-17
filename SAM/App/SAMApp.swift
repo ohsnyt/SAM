@@ -953,19 +953,23 @@ struct SAMApp: App {
             }
         }
 
-        // Check mail if it was enabled (AppleScript automation permission)
-        // Only treat explicit permission denial as lost — transient errors
-        // (Mail busy, not running, timeout) should NOT reset onboarding.
+        // Check mail if it was enabled.
+        // Prefer direct database access (bookmark) — only fall back to AppleScript check
+        // if no bookmark exists. Direct access never triggers privilege violations.
         if mailEnabled {
-            let mailCheck = await MailService.shared.checkAccessDetailed()
-            switch mailCheck {
-            case .ok:
-                break
-            case .permissionDenied(let msg):
-                logger.warning("Mail was enabled but permission is now revoked: \(msg)")
-                permissionsLost = true
-            case .transientError(let msg):
-                logger.debug("Mail access check returned transient error (not resetting onboarding): \(msg)")
+            if BookmarkManager.shared.hasMailDirAccess {
+                // Direct DB access is available — no AppleScript needed
+            } else {
+                let mailCheck = await MailService.shared.checkAccessDetailed()
+                switch mailCheck {
+                case .ok:
+                    break
+                case .permissionDenied(let msg):
+                    logger.warning("Mail was enabled but permission is now revoked: \(msg)")
+                    permissionsLost = true
+                case .transientError(let msg):
+                    logger.debug("Mail access check returned transient error (not resetting onboarding): \(msg)")
+                }
             }
         }
 
@@ -1067,7 +1071,7 @@ struct SAMApp: App {
             let roleReviewKey = "sam.onboarding.roleReviewCreated"
             if !UserDefaults.standard.bool(forKey: roleReviewKey) {
                 try? await Task.sleep(for: .seconds(4))
-                let hasSuggestions = await RoleDeductionEngine.shared.pendingSuggestions.count > 0
+                let hasSuggestions = RoleDeductionEngine.shared.pendingSuggestions.count > 0
                 if hasSuggestions {
                     let outcome = SamOutcome(
                         title: "Review roles SAM suggested for your contacts",
@@ -1078,7 +1082,7 @@ struct SAMApp: App {
                         suggestedNextStep: "Open People → Graph to review role suggestions"
                     )
                     outcome.actionLaneRawValue = ActionLane.reviewGraph.rawValue
-                    try? OutcomeRepository.shared.upsert(outcome: outcome)
+                    _ = try? OutcomeRepository.shared.upsert(outcome: outcome)
                     UserDefaults.standard.set(true, forKey: roleReviewKey)
                     logger.debug("Created post-onboarding role review outcome")
                 }

@@ -1424,7 +1424,7 @@ final class EventCoordinator {
                 guard attendKeywords.contains(where: { textLower.contains($0) }) else { continue }
 
                 // This message matches an event RSVP
-                var autoReplied = false
+                let didAutoReply: Bool
 
                 if (event.autoReplyUnknownSenders || event.autoAcknowledgeEnabled) && ComposeService.shared.directSendEnabled {
                     let holdingReply = "Got your message — I'll get back to you soon!"
@@ -1437,7 +1437,9 @@ final class EventCoordinator {
                             self.logger.debug("Auto-replied to unknown sender \(message.handleID) for event \(event.title)")
                         }
                     }
-                    autoReplied = true
+                    didAutoReply = true
+                } else {
+                    didAutoReply = false
                 }
 
                 // Post OS notification
@@ -1446,7 +1448,7 @@ final class EventCoordinator {
                         senderHandle: message.handleID,
                         eventTitle: event.title,
                         eventID: event.id,
-                        autoReplied: autoReplied
+                        autoReplied: didAutoReply
                     )
                 }
             }
@@ -1524,9 +1526,6 @@ final class EventCoordinator {
         // Dedup: skip if reminders already exist for this window
         let windowLabel = minutesBefore >= 1440 ? "1day" : "\(minutesBefore)min"
         for participation in accepted {
-            let hasExisting = participation.messageLog.contains { msg in
-                msg.kind == .reminder && msg.body.contains(windowLabel) == false
-            }
             // More robust dedup: check if any reminder was sent/drafted in the last hour
             let recentCutoff = Date.now.addingTimeInterval(-3600)
             let hasRecentReminder = participation.messageLog.contains { msg in

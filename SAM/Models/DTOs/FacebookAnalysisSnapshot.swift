@@ -10,7 +10,7 @@ import Foundation
 /// Snapshot of Facebook activity data captured at import time.
 /// Used by FacebookProfileAnalystService for on-demand re-analysis
 /// without needing access to the original export folder.
-public struct FacebookAnalysisSnapshot: Codable, Sendable {
+nonisolated public struct FacebookAnalysisSnapshot: Codable, Sendable {
 
     // MARK: - Friend Network
 

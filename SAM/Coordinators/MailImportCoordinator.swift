@@ -177,9 +177,27 @@ final class MailImportCoordinator {
         await importTask?.value
     }
 
-    /// Check if Mail.app is accessible. Returns nil on success.
+    /// Check if mail is accessible. Returns nil on success.
+    /// Prefers direct database access (security-scoped bookmark) over AppleScript.
     func checkMailAccess() async -> String? {
-        await mailService.checkAccess()
+        // Direct database access is the primary path — no AppleScript needed
+        if hasDirectAccess {
+            return nil
+        }
+        // Fall back to AppleScript check only if no bookmark
+        return await mailService.checkAccess()
+    }
+
+    /// Request direct database access to Mail's data store via folder bookmark.
+    /// Returns nil on success, error message on failure/cancellation.
+    @MainActor
+    func requestDirectMailAccess() -> String? {
+        if hasDirectAccess { return nil }
+        let url = BookmarkManager.shared.requestMailDirAccess()
+        if url != nil {
+            return nil
+        }
+        return "Mail folder access was not granted. Please select ~/Library/Mail to enable email integration."
     }
 
     // MARK: - Private

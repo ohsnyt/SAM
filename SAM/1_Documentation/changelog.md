@@ -4,6 +4,37 @@
 
 ---
 
+## Archive Build Fixes, Warning Cleanup, UX Polish, Mail Onboarding Fix (March 17, 2026)
+
+**What**: Fixed archive (Release) build failure, eliminated ~60 compiler warnings, improved last-name sorting, removed redundant UI, fixed Mail onboarding to use direct database access, fixed OutcomeEngine crash, and migrated EventFormView to MapKit geocoding.
+
+### Archive Build Fix
+- `defaultStoreURL` was inside `#if DEBUG` but referenced by `checkpointStoreIfNeeded()` and `cleanupOrphanedReferences()` which run in all configurations — moved it above the `#if DEBUG` block
+
+### Compiler Warning Cleanup (~60 warnings eliminated)
+- Added `nonisolated` to ~25 pure-data DTO structs/enums to opt out of project-wide `@MainActor` default (`UserLinkedInProfileDTO`, `UserFacebookProfileDTO`, `ProfileAnalysisDTO`, `RSVPDetectionDTO`, Facebook/Substack DTOs, `GoalType`, `GoalPace`, `GoalProgress`, `ImageResizeUtility`, etc.)
+- Removed unused variables (`hasExisting`, `role`, `summary`), unnecessary `await`, redundant `?? ""` on non-optional strings, unused `try?` results
+- Fixed `SamPerson` capture in `@Sendable` closures (`ContactPhotoCoordinator`) and mutable-after-capture (`EventCoordinator.autoReplied`)
+- Added `nonisolated(unsafe)` to file-scope Logger constants where needed for cross-actor access
+- Added `nonisolated` to `SAMModelContainer.schemaVersion` for access from `nonisolated static` functions
+
+### Mail Onboarding Fix
+- Onboarding "Enable Email" now requests a folder bookmark for `~/Library/Mail` (direct DB access) instead of triggering AppleScript automation — eliminates the "privilege violation (-10004)" error
+- `MailImportCoordinator.checkMailAccess()` returns success immediately when direct DB access bookmark exists, only falling back to AppleScript when no bookmark is available
+- SAMApp launch permission check skips AppleScript when `hasMailDirAccess` is true
+
+### UX Polish
+- Last-name sorting now strips generational suffixes (Jr, Sr, II–V) and professional credentials (MBA, RN, LCSW, CPA, CFP, etc.) before identifying the sort key
+- Removed redundant "Add Note" button from Person Detail top section (Notes section below has its own input)
+
+### Bug Fixes
+- Fixed `OutcomeEngine.generateOutcomes()` crash: `Dictionary(uniqueKeysWithValues:)` fatal assertion when multiple `SamPerson` instances shared the same `.id` — switched to `uniquingKeysWith` merge
+
+### API Migration
+- `EventFormView` address validation: replaced deprecated `CLGeocoder` with `MKGeocodingRequest` and `MKAddressRepresentations.fullAddress(includingRegion:singleLine:)` (macOS 26)
+
+---
+
 ## Log Level Cleanup, LinkedIn PDF Import, Clipboard Capture, Note Context Menu (March 16, 2026)
 
 **What**: Massive log noise reduction, LinkedIn profile PDF drag-and-drop import with deterministic parsing, clipboard capture intelligence improvements, and right-click edit/delete on notes.

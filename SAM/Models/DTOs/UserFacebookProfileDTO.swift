@@ -12,7 +12,7 @@ import Foundation
 
 /// The user's own Facebook profile data, extracted from the data export.
 /// Used for the Facebook Profile Analysis Agent and cross-platform consistency checks.
-public struct UserFacebookProfileDTO: Codable, Sendable {
+nonisolated public struct UserFacebookProfileDTO: Codable, Sendable {
 
     public var fullName: String
     public var firstName: String

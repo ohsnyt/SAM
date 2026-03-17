@@ -14,7 +14,7 @@ import os.log
 
 // MARK: - DTOs
 
-struct ClipboardMessageDTO: Sendable, Identifiable {
+nonisolated struct ClipboardMessageDTO: Sendable, Identifiable {
     let id: UUID
     var senderName: String
     var text: String
@@ -30,7 +30,7 @@ struct ClipboardMessageDTO: Sendable, Identifiable {
     }
 }
 
-struct ClipboardConversationDTO: Sendable {
+nonisolated struct ClipboardConversationDTO: Sendable {
     var messages: [ClipboardMessageDTO]
     var detectedPlatform: String?
     var conversationDate: Date
@@ -39,13 +39,13 @@ struct ClipboardConversationDTO: Sendable {
 }
 
 /// Result type for clipboard parsing — either a conversation or non-conversation content (profile, bio, etc.)
-enum ClipboardParseResult: Sendable {
+nonisolated enum ClipboardParseResult: Sendable {
     case conversation(ClipboardConversationDTO)
     case profileContent(ClipboardProfileDTO)
 }
 
 /// Extracted profile/bio content from a web page (not a conversation).
-struct ClipboardProfileDTO: Sendable {
+nonisolated struct ClipboardProfileDTO: Sendable {
     var personName: String
     var headline: String?
     var details: String      // The cleaned-up profile text

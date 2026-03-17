@@ -8,7 +8,7 @@
 import AppKit
 import Foundation
 
-enum ImageResizeUtility {
+nonisolated enum ImageResizeUtility {
 
     /// Process an image for contact photo use: center-crop to square, resize to
     /// maxDimension, and compress to JPEG at the given quality.
