@@ -66,28 +66,38 @@ actor DailyBriefingService {
             goalProgress: goalProgress
         )
 
-        let persona = await BusinessProfileService.shared.personaFragment()
+        // Use Prompt Lab deployed variant if available, otherwise fall back to default
+        let deployedSystemPrompt = UserDefaults.standard.string(forKey: "sam.promptLab.morningBriefing") ?? ""
 
-        // Visual narrative
-        let visualPrompt = """
-            You are a warm, professional executive assistant for \(persona).
-            Write a concise morning briefing (150 words or less) based ONLY on the data below.
+        let visualPrompt: String
+        let visualSystem: String
 
-            CRITICAL: Only reference people, meetings, times, and goals that appear in the data.
-            Never invent names, events, or details. If a section is missing, skip it.
+        if !deployedSystemPrompt.isEmpty {
+            // Prompt Lab custom variant is deployed — use it as the system instruction
+            visualPrompt = dataBlock
+            visualSystem = deployedSystemPrompt
+        } else {
+            let persona = await BusinessProfileService.shared.personaFragment()
+            visualPrompt = """
+                You are a warm, professional executive assistant for \(persona).
+                Write a concise morning briefing (150 words or less) based ONLY on the data below.
 
-            Structure:
-            1. First 1-2 sentences: overview of the day (meetings, key people, energy of the day).
-            2. Create a new paragraph and present (with a maximum of 80 words) a suggested plan for the what to tackle in the open time between meetings based on information from the priority actions and follow-ups.
-            3. If there are business goals, create a new sentence to mention the most relevant one. 
+                CRITICAL: Only reference people, meetings, times, and goals that appear in the data.
+                Never invent names, events, or details. If a section is missing, skip it.
 
-            Include exact times, full names, and specific details from the data. Be data-dense but readable.
-            Use a confident, forward-looking tone. No greetings or sign-offs.
+                Structure:
+                1. First 1-2 sentences: overview of the day based ONLY on data present. If TODAY'S CALENDAR is empty, say the calendar is open — NEVER invent meetings or times.
+                2. Create a new paragraph and present (with a maximum of 80 words) a suggested plan for what to tackle based on information from the priority actions and follow-ups.
+                3. If there are business goals, create a new sentence to mention the most relevant one.
 
-            \(dataBlock)
-            """
+                Include exact times, full names, and specific details from the data. Be data-dense but readable.
+                NEVER fabricate meetings, times, or events that do not appear in the data.
+                Use a confident, forward-looking tone. No greetings or sign-offs.
 
-        let visualSystem = "Respond with ONLY the narrative paragraph. No headers, bullets, or formatting."
+                \(dataBlock)
+                """
+            visualSystem = "Respond with ONLY the narrative paragraph. No headers, bullets, or formatting."
+        }
 
         // TTS narrative
         let ttsPrompt = """
@@ -214,8 +224,6 @@ actor DailyBriefingService {
             return ("", "")
         }
 
-        let persona = await BusinessProfileService.shared.personaFragment()
-
         let dataBlock = buildEveningDataBlock(
             accomplishments: accomplishments,
             streakUpdates: streakUpdates,
@@ -223,21 +231,32 @@ actor DailyBriefingService {
             tomorrowHighlights: tomorrowHighlights
         )
 
-        let visualPrompt = """
-            You are a warm, professional executive assistant summarizing the day for \(persona).
-            Write a concise end-of-day summary (3-5 sentences) based ONLY on the data below.
+        // Use Prompt Lab deployed variant if available, otherwise fall back to default
+        let deployedEveningPrompt = UserDefaults.standard.string(forKey: "sam.promptLab.eveningBriefing") ?? ""
 
-            CRITICAL: Only reference accomplishments, metrics, and events that appear in the data.
-            Never invent names or details. If a section is missing, skip it.
+        let visualPrompt: String
+        let visualSystem: String
 
-            Celebrate accomplishments. Note key metrics. Preview tomorrow. Be encouraging but honest.
+        if !deployedEveningPrompt.isEmpty {
+            visualPrompt = dataBlock
+            visualSystem = deployedEveningPrompt
+        } else {
+            let persona = await BusinessProfileService.shared.personaFragment()
+            visualPrompt = """
+                You are a warm, professional executive assistant summarizing the day for \(persona).
+                Write a concise end-of-day summary (3-5 sentences) based ONLY on the data below.
 
-            Respond with ONLY the narrative paragraph. No headers, bullets, or formatting.
-            
-            \(dataBlock)
-            """
+                CRITICAL: Only reference accomplishments, metrics, and events that appear in the data.
+                Never invent names or details. If a section is missing, skip it.
 
-        let visualSystem = "Respond with ONLY the narrative paragraph. No headers, bullets, or formatting."
+                Celebrate accomplishments. Note key metrics. Preview tomorrow. Be encouraging but honest.
+
+                Respond with ONLY the narrative paragraph. No headers, bullets, or formatting.
+
+                \(dataBlock)
+                """
+            visualSystem = "Respond with ONLY the narrative paragraph. No headers, bullets, or formatting."
+        }
 
         let ttsPrompt = """
             You are a warm, professional executive assistant giving a spoken evening summary.

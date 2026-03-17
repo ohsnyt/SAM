@@ -223,7 +223,8 @@ actor MailDatabaseService {
             versionDir: versionDir,
             rowID: meta.mailID
         ) else {
-            logger.debug("No .emlx file found for message \(meta.mailID)")
+            let dirCount = discoverMessageDirs(versionDir: versionDir).count
+            logger.debug("No .emlx file found for message \(meta.mailID) (\(meta.subject, privacy: .private)) in \(dirCount) dirs")
             return nil
         }
 
@@ -281,6 +282,147 @@ actor MailDatabaseService {
 
         logger.debug("Body fetch complete: \(results.count) emails from .emlx files")
         return results
+    }
+
+    // MARK: - Database-Only Body Fetch (no .emlx required)
+
+    /// Create EmailDTOs from metadata + recipients queried from the Envelope Index.
+    /// Used when .emlx files aren't available (IMAP-only messages, especially sent mail).
+    /// Body text will be empty, but recipients/CC are extracted from the database.
+    func fetchMetadataOnly(
+        dbURL: URL,
+        metas: [MessageMeta],
+        mailbox: MailboxTarget = .sent
+    ) throws -> [EmailDTO] {
+        let db = try openDatabase(at: dbURL)
+        defer { sqlite3_close(db) }
+
+        var results: [EmailDTO] = []
+
+        for meta in metas {
+            // Query recipients for this message from the recipients table
+            let (toAddrs, ccAddrs) = queryRecipients(db: db, messageRowID: meta.mailID)
+
+            // Skip messages with no recipients (can't link to contacts)
+            guard !toAddrs.isEmpty || !ccAddrs.isEmpty else { continue }
+
+            // Try to get a snippet/summary from the database
+            let snippet = querySnippet(db: db, messageRowID: meta.mailID)
+
+            // Build a descriptive fallback if no snippet is available
+            let allRecipients = toAddrs + ccAddrs
+            let recipientList = allRecipients.prefix(3).joined(separator: ", ")
+                + (allRecipients.count > 3 ? " +\(allRecipients.count - 3) more" : "")
+            let fallback = "Sent to \(recipientList)"
+
+            let dto = EmailDTO(
+                id: String(meta.mailID),
+                messageID: meta.messageID,
+                subject: meta.subject,
+                senderName: MailService.extractName(from: meta.sender),
+                senderEmail: meta.senderEmail,
+                recipientEmails: toAddrs,
+                ccEmails: ccAddrs,
+                date: meta.date,
+                bodyPlainText: snippet ?? fallback,
+                bodySnippet: snippet ?? fallback,
+                isRead: true,
+                folderName: mailbox == .sent ? "Sent" : "INBOX"
+            )
+            results.append(dto)
+        }
+
+        logger.debug("Metadata-only fetch: \(results.count)/\(metas.count) messages with recipients from DB")
+        return results
+    }
+
+    /// Query To and CC recipients for a message from the Envelope Index.
+    /// Returns (toEmails, ccEmails).
+    private func queryRecipients(db: OpaquePointer, messageRowID: Int32) -> ([String], [String]) {
+        // First, discover the actual column names in the recipients table
+        var columnNames: [String] = []
+        var pragmaStmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, "PRAGMA table_info(recipients)", -1, &pragmaStmt, nil) == SQLITE_OK {
+            while sqlite3_step(pragmaStmt) == SQLITE_ROW {
+                if let name = sqlite3_column_text(pragmaStmt, 1) {
+                    columnNames.append(String(cString: name))
+                }
+            }
+            sqlite3_finalize(pragmaStmt)
+        }
+
+        // Determine the correct column names for message FK and address FK
+        let msgCol = columnNames.first(where: { $0.lowercased().contains("message") }) ?? "message_id"
+        let addrCol = columnNames.first(where: { $0.lowercased().contains("address") }) ?? "address_id"
+        let typeCol = columnNames.first(where: { $0.lowercased() == "type" }) ?? "type"
+
+        let recipientQuery = """
+            SELECT a.address, r.\(typeCol)
+            FROM recipients r
+            JOIN addresses a ON r.\(addrCol) = a.ROWID
+            WHERE r.\(msgCol) = ?1
+            """
+
+        var stmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, recipientQuery, -1, &stmt, nil) == SQLITE_OK {
+            defer { sqlite3_finalize(stmt) }
+            sqlite3_bind_int(stmt, 1, messageRowID)
+
+            var toAddrs: [String] = []
+            var ccAddrs: [String] = []
+
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                guard let addr = columnString(stmt, 0), !addr.isEmpty else { continue }
+                let type = sqlite3_column_int(stmt, 1)
+                switch type {
+                case 0: toAddrs.append(addr.lowercased())
+                case 1: ccAddrs.append(addr.lowercased())
+                default: toAddrs.append(addr.lowercased())
+                }
+            }
+
+            if !toAddrs.isEmpty || !ccAddrs.isEmpty {
+                return (toAddrs, ccAddrs)
+            }
+        } else {
+            let err = String(cString: sqlite3_errmsg(db))
+            logger.warning("[recipients] Query failed: \(err, privacy: .public) — columns: \(columnNames.joined(separator: ", "), privacy: .public)")
+        }
+
+        return ([], [])
+    }
+
+    /// Try to extract a message snippet/preview from the database.
+    /// Returns nil if no meaningful text is found.
+    private func querySnippet(db: OpaquePointer, messageRowID: Int32) -> String? {
+        // Try the summaries table — column names vary by macOS version,
+        // so discover them dynamically. Silently return nil if unavailable.
+        var pragmaStmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "PRAGMA table_info(summaries)", -1, &pragmaStmt, nil) == SQLITE_OK else {
+            return nil
+        }
+        var columns: [String] = []
+        while sqlite3_step(pragmaStmt) == SQLITE_ROW {
+            if let name = sqlite3_column_text(pragmaStmt, 1) {
+                columns.append(String(cString: name))
+            }
+        }
+        sqlite3_finalize(pragmaStmt)
+
+        let msgCol = columns.first(where: { $0.lowercased().contains("message") })
+        let textCol = columns.first(where: { $0.lowercased().contains("summary") || $0.lowercased().contains("text") || $0.lowercased().contains("content") })
+        guard let msgCol, let textCol else { return nil }
+
+        let query = "SELECT \(textCol) FROM summaries WHERE \(msgCol) = ?1 LIMIT 1"
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, query, -1, &stmt, nil) == SQLITE_OK else { return nil }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_int(stmt, 1, messageRowID)
+        if sqlite3_step(stmt) == SQLITE_ROW, let text = columnString(stmt, 0),
+           !text.isEmpty, text.count > 10 {
+            return text
+        }
+        return nil
     }
 
     // MARK: - MIME Source (for LinkedIn HTML parsing)
@@ -404,19 +546,21 @@ actor MailDatabaseService {
     private var messagesDirs: [URL]?
 
     /// Find all Messages/ directories within the Mail version directory.
-    /// These are the directories that contain .emlx files:
-    ///   V{n}/{account-uuid}/{mailbox}.mbox/Messages/
-    ///   V{n}/{account-uuid}/{mailbox}.mbox/{sub}.mbox/Messages/
+    /// Mail stores .emlx files in sharded directory trees:
+    ///   V{n}/{account}/{mailbox}.mbox/Messages/          (flat)
+    ///   V{n}/{account}/{mailbox}.mbox/Data/{0-9}/Messages/  (sharded)
+    ///   V{n}/{account}/{mailbox}.mbox/Data/{0-9}/{0-9}/Messages/  (double-sharded)
     private func discoverMessageDirs(versionDir: URL) -> [URL] {
         if let cached = messagesDirs { return cached }
 
         let fm = FileManager.default
         var dirs: [URL] = []
 
+        // Don't skip package descendants — .mbox directories are macOS packages
         guard let enumerator = fm.enumerator(
             at: versionDir,
             includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles, .skipsPackageDescendants]
+            options: [.skipsHiddenFiles]
         ) else { return [] }
 
         while let url = enumerator.nextObject() as? URL {
@@ -426,11 +570,19 @@ actor MailDatabaseService {
             if url.lastPathComponent == "Messages" {
                 dirs.append(url)
                 enumerator.skipDescendants() // Don't go deeper inside Messages/
+                continue
             }
 
-            // Don't go deeper than 6 levels from version dir
+            // Skip Attachments directories — no .emlx files there
+            if url.lastPathComponent == "Attachments" {
+                enumerator.skipDescendants()
+                continue
+            }
+
+            // Don't go deeper than 8 levels from version dir
+            // (account/mailbox.mbox/Data/X/Y/Messages = 6 levels)
             let depth = url.pathComponents.count - versionDir.pathComponents.count
-            if depth > 5 {
+            if depth > 7 {
                 enumerator.skipDescendants()
             }
         }
@@ -442,22 +594,54 @@ actor MailDatabaseService {
 
     /// Search for a .emlx file by ROWID within the Mail version directory.
     /// Checks all known Messages/ directories for {ROWID}.emlx.
+    /// Falls back to a recursive search within the version directory.
     private func findEmlxFile(versionDir: URL, rowID: Int32) -> URL? {
         let filename = "\(rowID).emlx"
+        let partialFilename = "\(rowID).partial.emlx"
         let dirs = discoverMessageDirs(versionDir: versionDir)
 
+        // Fast path: check known Messages/ directories
         for dir in dirs {
             let candidate = dir.appendingPathComponent(filename)
             if FileManager.default.fileExists(atPath: candidate.path) {
                 return candidate
             }
-            // Also check for partial downloads
-            let partial = dir.appendingPathComponent("\(rowID).partial.emlx")
+            let partial = dir.appendingPathComponent(partialFilename)
             if FileManager.default.fileExists(atPath: partial.path) {
                 return partial
             }
         }
 
+        // Slow path: recursive search using shell find (catches sharded/nested structures)
+        // Only runs once per missing message — results get picked up by the DB-only fallback
+        if let result = findEmlxRecursive(versionDir: versionDir, filename: filename) {
+            // Cache this directory for future lookups
+            let parent = result.deletingLastPathComponent()
+            if !(messagesDirs ?? []).contains(parent) {
+                messagesDirs?.append(parent)
+                logger.debug("Discovered new .emlx directory: \(parent.lastPathComponent, privacy: .public) (via recursive search for \(rowID))")
+            }
+            return result
+        }
+
+        return nil
+    }
+
+    /// Recursive file search for a specific .emlx filename within the version directory.
+    /// Used as fallback when the standard Messages/ directory scan doesn't find the file.
+    private func findEmlxRecursive(versionDir: URL, filename: String) -> URL? {
+        let fm = FileManager.default
+        guard let enumerator = fm.enumerator(
+            at: versionDir,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]  // Don't skip package descendants — .mbox are packages
+        ) else { return nil }
+
+        while let url = enumerator.nextObject() as? URL {
+            if url.lastPathComponent == filename {
+                return url
+            }
+        }
         return nil
     }
 
@@ -555,7 +739,7 @@ actor MailDatabaseService {
 
     /// Log the schema of key tables so we can diagnose column mismatches across macOS versions.
     private func logSchema(db: OpaquePointer) {
-        for table in ["messages", "subjects", "addresses", "mailboxes"] {
+        for table in ["messages", "subjects", "addresses", "mailboxes", "recipients", "associations"] {
             var stmt: OpaquePointer?
             let query = "PRAGMA table_info(\(table))"
             guard sqlite3_prepare_v2(db, query, -1, &stmt, nil) == SQLITE_OK else { continue }

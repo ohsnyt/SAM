@@ -181,10 +181,17 @@ actor ContentAdvisorService {
         let persona = await BusinessProfileService.shared.personaFragment()
         let complianceNote = await BusinessProfileService.shared.complianceNote()
 
+        // Use Prompt Lab deployed variant if available
+        let customDraftPrompt = await MainActor.run { UserDefaults.standard.string(forKey: PromptSite.contentDraft.userDefaultsKey) ?? "" }
+
         let contentType =
             platform == .substack ? "newsletter articles" : "social media posts"
         let complianceLine = complianceNote.isEmpty ? "" : " \(complianceNote)"
-        let instructions = """
+        let instructions: String
+        if !customDraftPrompt.isEmpty {
+            instructions = customDraftPrompt
+        } else {
+        instructions = """
             You write \(contentType) for \(persona). \
             The content must be educational.\(complianceLine)
 
@@ -216,6 +223,7 @@ actor ContentAdvisorService {
 
             If there are no compliance concerns, return an empty array for compliance_flags.
             """
+        }
 
         let formatLabel =
             platform == .substack

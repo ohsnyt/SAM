@@ -57,6 +57,7 @@ final class MailImportCoordinator {
 
     private var lastImportTime: Date?
     private var importTask: Task<Void, Never>?
+    private var periodicImportTask: Task<Void, Never>?
 
     private init() {
         mailEnabled = UserDefaults.standard.bool(forKey: "mailImportEnabled")
@@ -78,6 +79,14 @@ final class MailImportCoordinator {
         }
         if let ts = UserDefaults.standard.object(forKey: "mailLastSentWatermark") as? Double {
             lastSentMailWatermark = Date(timeIntervalSinceReferenceDate: ts)
+        }
+
+        // One-time migration: reset sent watermark to recover emails skipped by the
+        // bug where watermark advanced on metadata-found rather than body-fetched.
+        if !UserDefaults.standard.bool(forKey: "mailSentWatermarkFixApplied") {
+            lastSentMailWatermark = nil
+            UserDefaults.standard.removeObject(forKey: "mailLastSentWatermark")
+            UserDefaults.standard.set(true, forKey: "mailSentWatermarkFixApplied")
         }
     }
 
@@ -101,6 +110,11 @@ final class MailImportCoordinator {
     func setImportInterval(_ value: TimeInterval) {
         importIntervalSeconds = value
         UserDefaults.standard.set(value, forKey: "mailImportInterval")
+        // Restart periodic import with new interval
+        if periodicImportTask != nil {
+            stopPeriodicImport()
+            startPeriodicImport()
+        }
     }
 
     func setLookbackDays(_ value: Int) {
@@ -112,8 +126,10 @@ final class MailImportCoordinator {
 
     func resetMailWatermark() {
         lastMailWatermark = nil
+        lastSentMailWatermark = nil
         UserDefaults.standard.removeObject(forKey: "mailLastWatermark")
-        logger.debug("Mail watermark reset — next import will scan full lookback window")
+        UserDefaults.standard.removeObject(forKey: "mailLastSentWatermark")
+        logger.debug("Mail watermarks reset — next import will scan full lookback window")
     }
 
     func setFilterRules(_ value: [MailFilterRule]) {
@@ -127,6 +143,7 @@ final class MailImportCoordinator {
 
     /// Cancel all background tasks. Called by AppDelegate on app termination.
     func cancelAll() {
+        stopPeriodicImport()
         importTask?.cancel()
         importTask = nil
         if importStatus == .importing {
@@ -154,14 +171,38 @@ final class MailImportCoordinator {
         Task { await importNow() }
     }
 
-    /// Fire-and-forget import — does not block the caller.
+    /// Fire-and-forget import with periodic re-import.
     func startImport() {
         #if DEBUG
         if UserDefaults.standard.isTestDataLoaded || UserDefaults.standard.isTestDataActive { return }
         #endif
-        guard importStatus != .importing, isConfigured else { return }
-        importTask?.cancel()
-        importTask = Task { await performImport(force: true) }
+        guard isConfigured else { return }
+        // Run an immediate import
+        if importStatus != .importing {
+            importTask?.cancel()
+            importTask = Task { await performImport(force: true) }
+        }
+        // Start periodic re-import if not already running
+        startPeriodicImport()
+    }
+
+    /// Start periodic background mail import.
+    private func startPeriodicImport() {
+        guard periodicImportTask == nil else { return }
+        periodicImportTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(self?.importIntervalSeconds ?? 600))
+                guard !Task.isCancelled else { break }
+                guard let self, self.mailEnabled, self.isConfigured else { continue }
+                await self.performImport()
+            }
+        }
+    }
+
+    /// Stop periodic import.
+    private func stopPeriodicImport() {
+        periodicImportTask?.cancel()
+        periodicImportTask = nil
     }
 
     func importNow() async {
@@ -373,8 +414,22 @@ final class MailImportCoordinator {
                 }
             }
 
-            // Osascript fallback for messages without local .emlx files
-            if !metasNeedingFallback.isEmpty, osascriptAvailable {
+            // Fallback for messages without local .emlx files: try DB-only recipient query first,
+            // then osascript if needed. IMAP messages may not have local .emlx.
+            if !metasNeedingFallback.isEmpty, let envURL = envelopeURL {
+                logger.debug("[mail-import] \(metasNeedingFallback.count) inbox messages without .emlx — querying recipients from DB")
+                if let dbOnlyEmails = try? await mailDBService.fetchMetadataOnly(
+                    dbURL: envURL, metas: metasNeedingFallback, mailbox: .inbox
+                ) {
+                    let emailData: [(EmailDTO, EmailAnalysisDTO?)] = dbOnlyEmails.map { ($0, nil) }
+                    try evidenceRepository.bulkUpsertEmails(emailData, direction: .inbound)
+                    logger.debug("[mail-import] DB-only inbox fallback: \(dbOnlyEmails.count) emails")
+                    // Remove successfully fetched from fallback list
+                    let fetchedIDs = Set(dbOnlyEmails.map { $0.id })
+                    metasNeedingFallback = metasNeedingFallback.filter { !fetchedIDs.contains(String($0.mailID)) }
+                }
+            }
+            if !metasNeedingFallback.isEmpty {
                 guard !Task.isCancelled else { return }
                 let fallbackEmails = await mailService.fetchBodies(
                     for: metasNeedingFallback, filterRules: filterRules
@@ -386,12 +441,13 @@ final class MailImportCoordinator {
             let upsertData: [(EmailDTO, EmailAnalysisDTO?)] = emails.map { ($0, nil) }
             try evidenceRepository.bulkUpsertEmails(upsertData, direction: .inbound)
 
-            // Update watermark to newest email date (from all metas, not just bodies)
-            // Include LinkedIn + Facebook notification dates so they advance the watermark too
+            // Update watermark to newest email date (from all metas, not just bodies).
+            // Subtract 1 second so the strict `>` comparison doesn't skip same-second messages.
             let allDates = knownMetas.map(\.date) + unknownMetas.map(\.date) + linkedInMetas.map(\.date) + facebookMetas.map(\.date)
             if let newest = allDates.max() {
-                lastMailWatermark = newest
-                UserDefaults.standard.set(newest.timeIntervalSinceReferenceDate, forKey: "mailLastWatermark")
+                let watermark = newest.addingTimeInterval(-1)
+                lastMailWatermark = watermark
+                UserDefaults.standard.set(watermark.timeIntervalSinceReferenceDate, forKey: "mailLastWatermark")
             }
 
             // ── Sent Mail Pipeline ──────────────────────────────────────────
@@ -422,14 +478,19 @@ final class MailImportCoordinator {
 
             if let sentWarnings { logger.debug("Sent mailbox warnings: \(sentWarnings)") }
 
+            logger.debug("[sent-mail] Found \(sentMetas.count) sent messages since \(sentSince, privacy: .public)")
+            for meta in sentMetas.prefix(5) {
+                logger.debug("[sent-mail]   \(meta.subject, privacy: .private) → \(meta.date, privacy: .public)")
+            }
+
             // For sent mail, the user is the sender. Match by recipient → known contact.
             let (knownSentMetas, _) = partitionSentByRecipientKnown(
                 metas: sentMetas, knownEmails: knownEmails
             )
 
+            var sentEmails: [EmailDTO] = []
             if !knownSentMetas.isEmpty {
                 // Hybrid: try .emlx first, osascript fallback for IMAP messages
-                var sentEmails: [EmailDTO] = []
                 var sentNeedingFallback = knownSentMetas
 
                 if let vDir = versionDirURL, let mDir = mailDirURL {
@@ -445,11 +506,26 @@ final class MailImportCoordinator {
                     sentNeedingFallback = knownSentMetas.filter { !foundIDs.contains(String($0.mailID)) }
                 }
 
-                if !sentNeedingFallback.isEmpty, osascriptAvailable, !Task.isCancelled {
-                    let fallbackSent = await mailService.fetchBodies(
-                        for: sentNeedingFallback, filterRules: [], mailbox: .sent
-                    )
-                    sentEmails.append(contentsOf: fallbackSent)
+                // For messages without .emlx files (common with IMAP sent mail),
+                // fall back to querying recipients from the Envelope Index database.
+                // This avoids AppleScript entirely — no automation permission needed.
+                if !sentNeedingFallback.isEmpty, !Task.isCancelled, let envURL = envelopeURL {
+                    logger.debug("[sent-mail] \(sentNeedingFallback.count) messages without .emlx — querying recipients from DB")
+                    do {
+                        let dbOnlyEmails = try await mailDBService.fetchMetadataOnly(
+                            dbURL: envURL,
+                            metas: sentNeedingFallback,
+                            mailbox: .sent
+                        )
+                        sentEmails.append(contentsOf: dbOnlyEmails)
+                    } catch {
+                        logger.warning("[sent-mail] DB-only recipient fetch failed: \(error.localizedDescription)")
+                    }
+                }
+
+                logger.debug("[sent-mail] \(sentEmails.count) bodies fetched (\(sentNeedingFallback.count) needed fallback)")
+                for email in sentEmails.prefix(3) {
+                    logger.debug("[sent-mail]   Body: \(email.subject, privacy: .private) to=\(email.recipientEmails.joined(separator: ","), privacy: .private) cc=\(email.ccEmails.joined(separator: ","), privacy: .private)")
                 }
 
                 if !sentEmails.isEmpty {
@@ -459,10 +535,19 @@ final class MailImportCoordinator {
                 }
             }
 
-            // Update sent watermark
-            if let newestSent = sentMetas.map(\.date).max() {
-                lastSentMailWatermark = newestSent
-                UserDefaults.standard.set(newestSent.timeIntervalSinceReferenceDate, forKey: "mailLastSentWatermark")
+            // Update sent watermark — only advance to the newest *successfully fetched* email,
+            // minus 1 second to ensure the `>` comparison doesn't skip same-second messages.
+            // If we advance based on metadata alone, messages whose bodies couldn't be fetched
+            // (e.g., IMAP-only with no local .emlx) get permanently skipped.
+            if !sentEmails.isEmpty, let newestUpserted = sentEmails.map(\.date).max() {
+                let watermark = newestUpserted.addingTimeInterval(-1)
+                lastSentMailWatermark = watermark
+                UserDefaults.standard.set(watermark.timeIntervalSinceReferenceDate, forKey: "mailLastSentWatermark")
+            } else if sentMetas.isEmpty {
+                // No metadata at all — leave watermark unchanged
+            } else {
+                // Metadata found but no bodies fetched — don't advance watermark
+                logger.debug("[sent-mail] \(sentMetas.count) metas found but 0 bodies — watermark NOT advanced to allow retry")
             }
 
             // 8. Prune orphaned mail evidence — only for known senders

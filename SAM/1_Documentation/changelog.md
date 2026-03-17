@@ -4,6 +4,36 @@
 
 ---
 
+## Mail Import Overhaul, Prompt Lab Wiring, Briefing Fixes (March 17, 2026)
+
+**What**: Complete overhaul of sent mail import pipeline, wired all 11 Prompt Lab sites to production, fixed briefing hallucination, added periodic mail import.
+
+### Sent Mail Import — Full Direct DB Pipeline
+- **Root cause**: `.skipsPackageDescendants` in the file enumerator prevented descending into `.mbox` packages, so `.emlx` files in `Data/{0-9}/Messages/` sharded directories were never found
+- Fixed `discoverMessageDirs` to remove `.skipsPackageDescendants` — now finds 500+ `Messages/` directories vs 9 before
+- Added recursive `.emlx` fallback search with self-healing cache for undiscovered directory structures
+- Added DB-only recipient query from `recipients` table when `.emlx` isn't available (covers IMAP edge cases)
+- Watermark now only advances on successful body fetch (not metadata-found) to prevent permanently skipping messages
+- Added 1-second watermark buffer to prevent `>` comparison from skipping same-timestamp messages
+- One-time migration resets sent watermark to recover previously skipped emails
+- Descriptive "Sent to ..." fallback snippet when body unavailable (with recipient list)
+
+### Periodic Mail Import
+- Mail import now runs on a recurring timer (default 600s), matching communications importer behavior
+- Previously only ran once at app launch — new emails required restart or manual Debug menu trigger
+
+### Prompt Lab → Production Wiring
+- All 11 Prompt Lab sites now connected: "Deploy as Active" variants are used by actual services
+- Morning/evening briefing services read deployed variants from UserDefaults
+- Content Draft (`ContentAdvisorService.generateDraft`) was the last unwired site — now reads custom prompt
+
+### Morning Briefing Anti-Hallucination
+- Fixed prompt that caused AI to fabricate meetings when calendar was empty
+- "overview of the day (meetings, key people)" → "If TODAY'S CALENDAR is empty, say the calendar is open — NEVER invent meetings"
+- Applied to both `DailyBriefingService` and `PromptLabCoordinator` default prompts
+
+---
+
 ## Archive Build Fixes, Warning Cleanup, UX Polish, Mail Onboarding Fix (March 17, 2026)
 
 **What**: Fixed archive (Release) build failure, eliminated ~60 compiler warnings, improved last-name sorting, removed redundant UI, fixed Mail onboarding to use direct database access, fixed OutcomeEngine crash, and migrated EventFormView to MapKit geocoding.

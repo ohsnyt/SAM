@@ -616,13 +616,12 @@ final class PromptLabCoordinator {
         Never invent names, events, or details. If a section is missing, skip it.
 
         Structure:
-        1. First 1-2 sentences: overview of the day (meetings, key people, energy of the day).
-        2. Next 2-3 sentences: a suggested plan for the next 4 hours.
-           Reference specific calendar blocks and gaps. Suggest what to tackle in the open time
-           between meetings.
+        1. First 1-2 sentences: overview of the day based ONLY on data present. If TODAY'S CALENDAR is empty, say the calendar is open — NEVER invent meetings or times.
+        2. Next 2-3 sentences: a suggested plan for the next 4 hours based on priority actions and follow-ups.
         3. If there are business goals, mention the most relevant one and what would move it forward today.
 
         Include exact times, full names, and specific details from the data. Be data-dense but readable.
+        NEVER fabricate meetings, times, or events that do not appear in the data.
         Use a confident, forward-looking tone. No greetings or sign-offs.
 
         Respond with ONLY the narrative paragraph. No headers, bullets, or formatting.
