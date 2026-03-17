@@ -548,12 +548,7 @@ struct GrowDashboardView: View {
                             .multilineTextAlignment(.center)
                             .frame(maxWidth: 380)
 
-                        Button {
-                            Task { await StrategicCoordinator.shared.generateDigest(type: .onDemand) }
-                        } label: {
-                            Label("Generate Ideas", systemImage: "sparkles")
-                        }
-                        .disabled(StrategicCoordinator.shared.generationStatus == .generating)
+                        generateContentIdeasButton
                     }
                     .frame(maxWidth: .infinity)
                     .padding()
@@ -572,6 +567,8 @@ struct GrowDashboardView: View {
             HStack {
                 Image(systemName: "doc.text.fill").foregroundStyle(.purple)
                 Text("Content Ideas").font(.headline)
+                Spacer()
+                generateContentIdeasButton
             }
 
             if let topics = structuredTopics {
@@ -616,6 +613,16 @@ struct GrowDashboardView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
         .background(.fill.quaternary, in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var generateContentIdeasButton: some View {
+        Button {
+            StrategicCoordinator.shared.invalidateContentCache()
+            Task { await StrategicCoordinator.shared.generateDigest(type: .onDemand) }
+        } label: {
+            Label("Generate Ideas", systemImage: "sparkles")
+        }
+        .disabled(StrategicCoordinator.shared.generationStatus == .generating)
     }
 
     // MARK: - Toolbar Button

@@ -146,11 +146,14 @@ final class StrategicCoordinator {
         let eventTopics = await eventTopicResult
         onProgress?("Synthesizing recommendations...")
 
-        // Update caches
+        // Update caches — but don't cache empty results (so they retry next time)
         if needsPipeline { cachedPipelineAnalysis = pipeline; lastPipelineAnalyzed = now }
         if needsTime { cachedTimeAnalysis = time; lastTimeAnalyzed = now }
         if needsPattern { cachedPatternAnalysis = pattern; lastPatternAnalyzed = now }
-        if needsContent { cachedContentAnalysis = content; lastContentAnalyzed = now }
+        if needsContent {
+            cachedContentAnalysis = content
+            lastContentAnalyzed = content.topicSuggestions.isEmpty ? nil : now
+        }
         if needsEventTopics { cachedEventTopicAnalysis = eventTopics; lastEventTopicsAnalyzed = now }
 
         // Update observable event topics
@@ -182,6 +185,12 @@ final class StrategicCoordinator {
     func hasFreshDigest(maxAge: TimeInterval = 4 * 60 * 60) -> Bool {
         guard let last = lastGeneratedAt else { return false }
         return Date.now.timeIntervalSince(last) < maxAge
+    }
+
+    /// Invalidate content cache so the next digest generation re-runs the content advisor.
+    func invalidateContentCache() {
+        lastContentAnalyzed = nil
+        cachedContentAnalysis = nil
     }
 
     // MARK: - Feedback
