@@ -73,14 +73,6 @@ struct AwarenessView: View {
         .navigationTitle("Today")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button(action: {
-                    refreshInsights()
-                }) {
-                    Label("Refresh", systemImage: "arrow.clockwise")
-                }
-                .disabled(isGenerating)
-            }
-            ToolbarItem(placement: .primaryAction) {
                 GuideButton(articleID: "today.daily-briefing")
             }
         }

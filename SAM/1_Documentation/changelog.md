@@ -4,6 +4,34 @@
 
 ---
 
+## Parallelize Briefing Generation, Improve Progress UX, Remove Duplicated Sections (March 17, 2026)
+
+**What**: Parallelized AI narrative and strategic analysis in daily briefing generation, replaced numeric progress bar with descriptive stage labels and indeterminate progress, moved refresh button inline, removed duplicated follow-up/life-event sections from the briefing card (already shown as outcome cards in Zone 2), and removed overzealous hallucination-detection filter that was discarding valid narratives.
+
+### Parallel Briefing Generation
+- AI narrative (visual + TTS) and strategic digest now run concurrently via `async let` / `Task`, cutting briefing generation wall-clock time roughly in half
+- `StrategicCoordinator.generateDigest` accepts an `onProgress` callback so callers receive per-specialist stage updates in real time
+
+### Progress UX Overhaul
+- Replaced deterministic `ProgressView(value:)` with indeterminate `ProgressView()` — the old numeric progress was misleading because AI inference time is unpredictable
+- Stage labels now describe what SAM is doing in human-readable terms ("Reviewing priority actions...", "Running AI specialists...", etc.) instead of silent percentage jumps
+- Added `Task.yield()` between data-gathering stages so SwiftUI renders label updates promptly
+- Stage label transitions use a subtle ease-in-out animation
+
+### Refresh Button Relocated
+- Removed toolbar "Refresh" button from `AwarenessView`; replaced with an inline `arrow.clockwise` button next to the greeting in `PersistentBriefingSection`
+- Button spins continuously while generating (via `rotationEffect` + `repeatForever` animation)
+
+### Briefing Card Cleanup
+- Removed "Follow-ups" and "Life Events" subsections from the briefing card — these were duplicating content already rendered as outcome cards in Zone 2
+- Simplified view state logic: generating → briefing content → generate CTA (previously had overlapping conditions)
+
+### Hallucination Filter Removed
+- Removed `detectHallucinatedNames` from `DailyBriefingService` — it used a brittle heuristic (mid-sentence capitalized words not in input) that frequently rejected valid narratives containing proper nouns the filter didn't anticipate (place names, organization names, product names)
+- The anti-hallucination prompt fix from earlier today is more effective and doesn't discard valid output
+
+---
+
 ## Mail Import Overhaul, Prompt Lab Wiring, Briefing Fixes (March 17, 2026)
 
 **What**: Complete overhaul of sent mail import pipeline, wired all 11 Prompt Lab sites to production, fixed briefing hallucination, added periodic mail import.

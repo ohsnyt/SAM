@@ -248,28 +248,28 @@ final class DailyBriefingCoordinator {
         guard generationStatus != .generating else { return }
         generationStatus = .generating
         generationProgress = 0
-        generationStageLabel = "Gathering schedule..."
+        generationStageLabel = "Gathering your schedule..."
 
         do {
             let todayKey = Calendar.current.startOfDay(for: .now)
 
-            // Stage 1: Gather data (0.0 → 0.2)
+            // Stage 1: Gather data
             let calendarItems = gatherCalendarItems()
-            generationProgress = 0.05
+            generationStageLabel = "Reviewing priority actions..."
+            await Task.yield()
             let priorityActions = gatherPriorityActions()
-            generationProgress = 0.08
+            generationStageLabel = "Checking follow-ups..."
+            await Task.yield()
             let followUps = gatherFollowUps()
-            generationProgress = 0.12
-            generationStageLabel = "Checking life events..."
+            generationStageLabel = "Scanning life events..."
+            await Task.yield()
             let lifeEvents = gatherLifeEvents()
-            generationProgress = 0.15
             let tomorrowPreview = gatherTomorrowPreview()
-            generationProgress = 0.2
 
-            // Stage 2: Goal progress (0.2 → 0.3)
-            generationStageLabel = "Checking goal progress..."
+            // Stage 2: Goal progress
+            generationStageLabel = "Calculating goal progress..."
+            await Task.yield()
             let goalProgress = GoalProgressEngine.shared.computeAllProgress()
-            generationProgress = 0.3
 
             // Create briefing
             let briefing = SamDailyBriefing(
@@ -283,15 +283,21 @@ final class DailyBriefingCoordinator {
             )
             briefing.meetingCount = calendarItems.count
 
-            // Stage 3: AI narrative (0.3 → 0.7) — the slow part
+            // Stage 3+4: AI narrative and strategic analysis run in PARALLEL
             let narrativeEnabled = UserDefaults.standard.object(forKey: "briefingNarrativeEnabled") == nil
                 ? true
                 : UserDefaults.standard.bool(forKey: "briefingNarrativeEnabled")
+            let strategicEnabled = UserDefaults.standard.object(forKey: "strategicBriefingIntegration") == nil
+                ? true
+                : UserDefaults.standard.bool(forKey: "strategicBriefingIntegration")
 
-            if narrativeEnabled {
-                generationStageLabel = "Writing your briefing..."
-                generationProgress = 0.35
-                let narrative = await DailyBriefingService.shared.generateMorningNarrative(
+            generationStageLabel = "Generating narrative and analyzing strategy..."
+            await Task.yield()  // Let SwiftUI render the label
+
+            // Fire both in parallel — they're independent
+            async let narrativeTask: (visual: String, tts: String) = {
+                guard narrativeEnabled else { return ("", "") }
+                return await DailyBriefingService.shared.generateMorningNarrative(
                     calendarItems: calendarItems,
                     priorityActions: priorityActions,
                     followUps: followUps,
@@ -299,23 +305,18 @@ final class DailyBriefingCoordinator {
                     tomorrowPreview: tomorrowPreview,
                     goalProgress: goalProgress
                 )
-                briefing.narrativeSummary = narrative.visual.isEmpty ? nil : narrative.visual
-                briefing.ttsNarrative = narrative.tts.isEmpty ? nil : narrative.tts
-            }
-            generationProgress = 0.7
+            }()
 
-            // Stage 4: Strategic highlights (0.7 → 0.9)
-            generationStageLabel = "Analyzing strategy..."
-            let strategicEnabled = UserDefaults.standard.object(forKey: "strategicBriefingIntegration") == nil
-                ? true
-                : UserDefaults.standard.bool(forKey: "strategicBriefingIntegration")
-            if strategicEnabled {
+            // Strategic digest — run concurrently with narrative but on MainActor
+            let strategicTask = Task { @MainActor [weak self] () -> [BriefingAction] in
+                guard strategicEnabled else { return [] }
                 let strategicCoord = StrategicCoordinator.shared
                 if !strategicCoord.hasFreshDigest(maxAge: 4 * 60 * 60) {
-                    await strategicCoord.generateDigest(type: .morning)
+                    await strategicCoord.generateDigest(type: .morning) { stage in
+                        Task { @MainActor in self?.generationStageLabel = stage }
+                    }
                 }
-                let topRecs = Array(strategicCoord.strategicRecommendations.prefix(3))
-                briefing.strategicHighlights = topRecs.map { rec in
+                return Array(strategicCoord.strategicRecommendations.prefix(3)).map { rec in
                     BriefingAction(
                         title: rec.title,
                         rationale: rec.rationale,
@@ -324,6 +325,18 @@ final class DailyBriefingCoordinator {
                     )
                 }
             }
+
+            let narrative = await narrativeTask
+            briefing.narrativeSummary = narrative.visual.isEmpty ? nil : narrative.visual
+            briefing.ttsNarrative = narrative.tts.isEmpty ? nil : narrative.tts
+            if narrativeEnabled, narrative.visual.isEmpty {
+                logger.warning("Morning narrative returned empty — check DailyBriefingService logs for details")
+            }
+
+            briefing.strategicHighlights = await strategicTask.value
+
+            generationStageLabel = "Finalizing..."
+            await Task.yield()
             generationProgress = 0.85
 
             // Goal pacing alerts
@@ -353,8 +366,8 @@ final class DailyBriefingCoordinator {
 
             generationProgress = 0.9
 
-            // Stage 5: Persist (0.9 → 1.0)
-            generationStageLabel = "Finishing up..."
+            // Stage 5: Persist
+            generationStageLabel = "Saving your briefing..."
             context?.insert(briefing)
             try context?.save()
 

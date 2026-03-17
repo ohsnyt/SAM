@@ -81,7 +81,7 @@ final class StrategicCoordinator {
 
     // MARK: - Digest Generation
 
-    func generateDigest(type: DigestType = .onDemand) async {
+    func generateDigest(type: DigestType = .onDemand, onProgress: ((String) -> Void)? = nil) async {
         let enabled = UserDefaults.standard.object(forKey: "strategicDigestEnabled") == nil
             ? true
             : UserDefaults.standard.bool(forKey: "strategicDigestEnabled")
@@ -107,6 +107,8 @@ final class StrategicCoordinator {
         let eventHistoryData = gatherEventHistory()
         // Log context sizes — chars ÷ 4 ≈ tokens; helps identify which specialist has the largest input
         logger.debug("📏 Context sizes — pipeline: \(pipelineData.count)ch (~\(pipelineData.count/4)t), time: \(timeData.count)ch (~\(timeData.count/4)t), pattern: \(patternData.count)ch (~\(patternData.count/4)t), content: \(contentData.count)ch (~\(contentData.count/4)t)")
+
+        onProgress?("Running AI specialists...")
 
         // Dispatch 4 specialists in parallel at background priority
         let now = Date.now
@@ -134,10 +136,15 @@ final class StrategicCoordinator {
             : cachedEventTopicAnalysis ?? EventTopicAnalysis()
 
         let pipeline = await pipelineResult
+        onProgress?("Analyzing time allocation...")
         let time = await timeResult
+        onProgress?("Detecting patterns...")
         let pattern = await patternResult
+        onProgress?("Reviewing content strategy...")
         let content = await contentResult
+        onProgress?("Evaluating event topics...")
         let eventTopics = await eventTopicResult
+        onProgress?("Synthesizing recommendations...")
 
         // Update caches
         if needsPipeline { cachedPipelineAnalysis = pipeline; lastPipelineAnalyzed = now }

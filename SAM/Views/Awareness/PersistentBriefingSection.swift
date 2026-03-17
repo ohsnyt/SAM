@@ -34,13 +34,12 @@ struct PersistentBriefingSection: View {
                 .padding([.horizontal, .top])
                 .padding(.bottom, 8)
 
-            if coordinator.generationStatus == .generating {
+            if isGenerating {
+                // Show progress bar and stage label in the briefing area
                 progressSection
                     .padding(.horizontal)
                     .padding(.bottom, 12)
-            }
-
-            if let briefing = coordinator.morningBriefing {
+            } else if let briefing = coordinator.morningBriefing {
                 if briefing.wasViewed {
                     // Collapsible toggle for already-viewed briefings
                     Button(action: { withAnimation { isBriefingExpanded.toggle() } }) {
@@ -71,8 +70,8 @@ struct PersistentBriefingSection: View {
                         .padding(.horizontal)
                         .padding(.bottom, 12)
                 }
-            } else if coordinator.generationStatus != .generating {
-                // No briefing — show generate button
+            } else {
+                // No briefing and not generating — show generate button
                 generateBriefingCTA
                     .padding(.horizontal)
                     .padding(.bottom, 12)
@@ -82,11 +81,28 @@ struct PersistentBriefingSection: View {
 
     // MARK: - Greeting (always visible)
 
+    private var isGenerating: Bool {
+        coordinator.generationStatus == .generating
+    }
+
     private var greetingHeader: some View {
         HStack {
             Text(timeOfDayGreeting)
                 .font(.largeTitle)
                 .fontWeight(.bold)
+
+            Button {
+                Task { await coordinator.regenerateBriefing() }
+            } label: {
+                Image(systemName: "arrow.clockwise")
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .rotationEffect(.degrees(isGenerating ? 360 : 0))
+                    .animation(isGenerating ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: isGenerating)
+            }
+            .buttonStyle(.plain)
+            .disabled(isGenerating)
+            .help("Regenerate briefing")
 
             Spacer()
 
@@ -111,12 +127,14 @@ struct PersistentBriefingSection: View {
 
     private var progressSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            ProgressView(value: coordinator.generationProgress)
+            ProgressView()
+                .progressViewStyle(.linear)
                 .tint(.blue)
 
             Text(coordinator.generationStageLabel)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .animation(.easeInOut(duration: 0.3), value: coordinator.generationStageLabel)
         }
     }
 
@@ -163,31 +181,8 @@ struct PersistentBriefingSection: View {
                 }
             }
 
-            // Follow-ups
-            if !briefing.followUps.isEmpty {
-                checkableSection(
-                    title: "Follow-ups",
-                    icon: "arrow.turn.up.right",
-                    color: .purple
-                ) {
-                    ForEach(briefing.followUps) { followUp in
-                        followUpRow(followUp)
-                    }
-                }
-            }
-
-            // Life events
-            if !briefing.lifeEventOutreach.isEmpty {
-                checkableSection(
-                    title: "Life Events",
-                    icon: "gift.fill",
-                    color: .pink
-                ) {
-                    ForEach(briefing.lifeEventOutreach) { event in
-                        lifeEventRow(event)
-                    }
-                }
-            }
+            // Follow-ups and life events are shown as outcome cards in Zone 2 —
+            // no need to duplicate them here.
         }
     }
 
