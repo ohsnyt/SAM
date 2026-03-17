@@ -542,11 +542,18 @@ struct GrowDashboardView: View {
                             .foregroundStyle(.secondary)
                         Text("No Content Ideas Yet")
                             .font(.headline)
-                        Text("Content ideas are generated as part of the strategic digest. Refresh Business \u{203a} Strategic to generate new ideas.")
+                        Text("Content ideas are generated from your business goals, recent meetings, and note topics.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
                             .frame(maxWidth: 380)
+
+                        Button {
+                            Task { await StrategicCoordinator.shared.generateDigest(type: .onDemand) }
+                        } label: {
+                            Label("Generate Ideas", systemImage: "sparkles")
+                        }
+                        .disabled(StrategicCoordinator.shared.generationStatus == .generating)
                     }
                     .frame(maxWidth: .infinity)
                     .padding()

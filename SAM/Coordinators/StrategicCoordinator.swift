@@ -411,6 +411,26 @@ final class StrategicCoordinator {
     private func gatherContentData() -> String {
         var lines: [String] = []
 
+        // Active business goals — so content ideas align with what the user is working toward
+        do {
+            let activeGoals = try GoalRepository.shared.fetchActive()
+            if !activeGoals.isEmpty {
+                lines.append("ACTIVE BUSINESS GOALS (content should support these):")
+                let engine = GoalProgressEngine.shared
+                for goal in activeGoals {
+                    let progress = engine.computeProgress(for: goal)
+                    var desc = "  - \(goal.title) (\(goal.goalType.displayName): \(Int(progress.currentValue))/\(Int(goal.targetValue)) \(goal.goalType.unit), \(progress.pace.displayName))"
+                    if let notes = goal.notes, !notes.isEmpty {
+                        desc += " — \(notes)"
+                    }
+                    lines.append(desc)
+                }
+                lines.append("")
+            }
+        } catch {
+            logger.error("Failed to gather goal data for content advisor: \(error)")
+        }
+
         // Recent meeting topics from evidence titles
         do {
             let allEvidence = try evidenceRepo.fetchAll()

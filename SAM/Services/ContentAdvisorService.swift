@@ -51,13 +51,17 @@ actor ContentAdvisorService {
             instructions = customPrompt + "\n\n" + businessContext
         } else {
             instructions = """
-                Generate 5 social media content topics for financial professionals.
+                Generate 5 social media content topics for a business professional.
 
                 Rules:
                 - Educational content only, no investment advice
-                - Include compliance disclaimers
+                - Include compliance disclaimers where relevant
                 - Use data/examples in angles
                 - Match platform to content type
+                - If ACTIVE BUSINESS GOALS are provided, at least 2-3 topics should directly support those goals
+                  (e.g., a recruiting goal → content that attracts potential team members;
+                   a content posts goal → topics that build posting momentum;
+                   a new clients goal → content that demonstrates expertise to prospects)
 
                 CRITICAL: You MUST respond with ONLY valid JSON.
                 - Do NOT wrap the JSON in markdown code blocks
@@ -77,7 +81,7 @@ actor ContentAdvisorService {
 
                 Compliance:
                 - No guarantees or return promises
-                - Add "educational content" disclaimers
+                - Add "educational content" disclaimers where relevant
                 - Follow fiduciary standards
                 - No high-pressure language
 
@@ -85,7 +89,8 @@ actor ContentAdvisorService {
                 - Lead with statistics when possible
                 - Use concrete examples over theory
                 - Connect to current events/seasons
-                - Address real client concerns
+                - Address real client or prospect concerns
+                - Tie suggestions to the user's stated goals when possible
                 """
         }
 
