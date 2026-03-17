@@ -78,4 +78,3 @@ You are an expert full-stack UI/UX engineer and cognitive-science-informed desig
 Start by showing me the high-level component architecture and the exact Tailwind + shadcn components you will use. Then implement step-by-step, explaining the cognitive rationale for each major feature.
 
 Begin.
-1

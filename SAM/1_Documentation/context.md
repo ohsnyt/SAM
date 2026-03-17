@@ -414,24 +414,6 @@ Bookmark the **directory** (not file) for SQLite to cover WAL/SHM companions. `.
 
 ## 9. Roadmap
 
-### ~~Priority 3 — Global Clipboard Capture Hotkey~~ ✅ Completed (Mar 5, 2026)
-
-### ~~Priority 4 — LinkedIn as Reply Channel~~ ✅ Completed (Mar 5, 2026)
-
-### ~~Message-Category-Aware Channel Prefs~~ ✅ Completed (Mar 5, 2026)
-
-### ~~Evidence-Gated Social Profile Buttons~~ ✅ Completed (Mar 5, 2026)
-
-### ~~Priority 5 — WhatsApp Direct Database Integration~~ ✅ Completed (Mar 5, 2026)
-
-### ~~Priority 6 — Data Migration & Schema Version Hygiene~~ ✅ Completed (Mar 5, 2026)
-
-### ~~Priority 7 — Onboarding, Helps & Tooltips Remediation~~ ✅ Completed (Mar 6, 2026)
-
-### ~~Event Management & Presentation Library~~ ✅ Completed (Mar 11, 2026)
-
-### ~~Priority 8 — Security Hardening~~ ✅ Completed (Mar 13, 2026)
-
 ### Near-Term Polish
 
 - **LinkedIn Data Export tab**: Review and simplify the multi-step instructions in File → Import → LinkedIn → Data Export tab. The current flow (request data, watch for email, detect ZIP, parse, review) should be streamlined for the user.
