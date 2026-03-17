@@ -46,9 +46,28 @@ actor ContentAdvisorService {
                 forKey: PromptSite.contentTopics.userDefaultsKey
             ) ?? ""
         }
+        let jsonFormat = """
+
+            CRITICAL: You MUST respond with ONLY valid JSON.
+            - Do NOT wrap the JSON in markdown code blocks
+            - Return ONLY the raw JSON object starting with { and ending with }
+
+            The JSON structure must be:
+            {
+              "topic_suggestions": [
+                {
+                  "topic": "specific content idea",
+                  "key_points": ["point 1", "point 2", "point 3"],
+                  "suggested_tone": "educational",
+                  "compliance_notes": "required disclaimers or null"
+                }
+              ]
+            }
+            """
+
         let instructions: String
         if !customPrompt.isEmpty {
-            instructions = customPrompt + "\n\n" + businessContext
+            instructions = customPrompt + "\n\n" + businessContext + jsonFormat
         } else {
             instructions = """
                 Generate 5 social media content topics for a business professional.
@@ -63,21 +82,7 @@ actor ContentAdvisorService {
                    a content posts goal → topics that build posting momentum;
                    a new clients goal → content that demonstrates expertise to prospects)
 
-                CRITICAL: You MUST respond with ONLY valid JSON.
-                - Do NOT wrap the JSON in markdown code blocks
-                - Return ONLY the raw JSON object starting with { and ending with }
-
-                The JSON structure must be:
-                {
-                  "topic_suggestions": [
-                    {
-                      "topic": "specific content idea",
-                      "key_points": ["point 1", "point 2", "point 3"],
-                      "suggested_tone": "educational",
-                      "compliance_notes": "required disclaimers or null"
-                    }
-                  ]
-                }
+                \(jsonFormat)
 
                 Compliance:
                 - No guarantees or return promises
@@ -104,7 +109,13 @@ actor ContentAdvisorService {
             prompt: prompt,
             systemInstruction: instructions
         )
-        return try parseResponse(responseText)
+        logger.debug("📝 Content advisor raw response (\(responseText.count) chars): \(String(responseText.prefix(500)))")
+        let analysis = try parseResponse(responseText)
+        logger.debug("📝 Content advisor parsed \(analysis.topicSuggestions.count) topics")
+        for (i, topic) in analysis.topicSuggestions.enumerated() {
+            logger.debug("📝  Topic \(i+1): \(topic.topic)")
+        }
+        return analysis
     }
 
     // MARK: - Draft Generation (Phase W)
@@ -559,17 +570,38 @@ actor ContentAdvisorService {
 
     private func parseResponse(_ jsonString: String) throws -> ContentAnalysis {
         let cleaned = JSONExtraction.extractJSON(from: jsonString)
+        logger.debug("📝 Content parseResponse — cleaned JSON (\(cleaned.count) chars): \(String(cleaned.prefix(300)))")
         guard let data = cleaned.data(using: .utf8) else {
+            logger.error("📝 Content parseResponse — failed to convert cleaned JSON to UTF-8 data")
             throw AnalysisError.invalidResponse
         }
 
         do {
+            // Primary: expect {"topic_suggestions": [...]}
             let llm = try JSONDecoder().decode(
                 LLMContentAnalysis.self,
                 from: data
             )
             return ContentAnalysis(
                 topicSuggestions: (llm.topicSuggestions ?? []).compactMap { t in
+                    guard let topic = t.topic else { return nil }
+                    return ContentTopic(
+                        topic: topic,
+                        keyPoints: t.keyPoints ?? [],
+                        suggestedTone: t.suggestedTone ?? "educational",
+                        complianceNotes: t.complianceNotes
+                    )
+                }
+            )
+        } catch DecodingError.typeMismatch {
+            // Fallback: LLM returned a bare array instead of an object
+            logger.debug("📝 Content parseResponse — retrying as bare array")
+            let topics = try JSONDecoder().decode(
+                [LLMContentTopic].self,
+                from: data
+            )
+            return ContentAnalysis(
+                topicSuggestions: topics.compactMap { t in
                     guard let topic = t.topic else { return nil }
                     return ContentTopic(
                         topic: topic,

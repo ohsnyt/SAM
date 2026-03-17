@@ -4,6 +4,28 @@
 
 ---
 
+## Content Advisor Robustness & Encodable Fix (March 17, 2026)
+
+**What**: Fixed `LLMContentTopic` Encodable conformance, hardened content advisor JSON parsing, added diagnostic logging across the content pipeline, and pinned architecture to arm64.
+
+### LLMContentTopic Encodable Fix
+- `LLMContentTopic` had extra `CodingKeys` cases (`platform`, `angle`, `relevance`) for tolerant decoding of alternate LLM field names, but these broke the compiler's auto-synthesized `Encodable` conformance
+- Added explicit `encode(to:)` that encodes only the four canonical properties (`topic`, `keyPoints`, `suggestedTone`, `complianceNotes`)
+
+### Content Advisor Parsing Hardening
+- Added bare-array fallback: if the LLM returns `[{...}]` instead of `{"topic_suggestions": [{...}]}`, the parser now handles it via a `DecodingError.typeMismatch` retry
+- Extracted JSON format instructions into a shared `jsonFormat` constant so both custom-prompt and default-prompt paths include the same schema specification
+
+### Diagnostic Logging
+- Added debug logging throughout the content pipeline: `StrategicCoordinator` cache status, content result counts, digest persistence, and `ContentAdvisorService` raw response / parse results
+- Added debug prints in `GrowDashboardView` content tab for tracing rendering decisions
+- Commented out verbose per-fetch logging in `ContactsService` to reduce noise
+
+### Build Configuration
+- Pinned `ARCHS = arm64` across all build configurations (Debug, Release, target-level) for Apple Silicon-only builds
+
+---
+
 ## Parallelize Briefing Generation, Improve Progress UX, Remove Duplicated Sections (March 17, 2026)
 
 **What**: Parallelized AI narrative and strategic analysis in daily briefing generation, replaced numeric progress bar with descriptive stage labels and indeterminate progress, moved refresh button inline, removed duplicated follow-up/life-event sections from the briefing card (already shown as outcome cards in Zone 2), and removed overzealous hallucination-detection filter that was discarding valid narratives.

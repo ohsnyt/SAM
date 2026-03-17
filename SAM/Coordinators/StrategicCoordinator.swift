@@ -117,6 +117,7 @@ final class StrategicCoordinator {
         let needsPattern = !isCacheValid(lastPatternAnalyzed, ttl: patternTTL)
         let needsContent = !isCacheValid(lastContentAnalyzed, ttl: contentTTL)
         let needsEventTopics = !isCacheValid(lastEventTopicsAnalyzed, ttl: eventTopicTTL)
+        logger.debug("🔍 Cache status — needsContent: \(needsContent), lastContentAnalyzed: \(String(describing: self.lastContentAnalyzed)), cachedContentAnalysis topics: \(self.cachedContentAnalysis?.topicSuggestions.count ?? -1)")
 
         // Run specialists concurrently
         async let pipelineResult = needsPipeline
@@ -151,8 +152,10 @@ final class StrategicCoordinator {
         if needsTime { cachedTimeAnalysis = time; lastTimeAnalyzed = now }
         if needsPattern { cachedPatternAnalysis = pattern; lastPatternAnalyzed = now }
         if needsContent {
+            logger.debug("🔍 Content result — \(content.topicSuggestions.count) topics, isEmpty: \(content.topicSuggestions.isEmpty)")
             cachedContentAnalysis = content
             lastContentAnalyzed = content.topicSuggestions.isEmpty ? nil : now
+            logger.debug("🔍 Content cache updated — lastContentAnalyzed set to: \(String(describing: self.lastContentAnalyzed))")
         }
         if needsEventTopics { cachedEventTopicAnalysis = eventTopics; lastEventTopicsAnalyzed = now }
 
@@ -176,6 +179,7 @@ final class StrategicCoordinator {
         strategicRecommendations = topRecs
         lastGeneratedAt = now
         generationStatus = .success
+        logger.debug("🔍 Digest assigned — latestDigest.contentSuggestions isEmpty: \(digest.contentSuggestions.isEmpty), length: \(digest.contentSuggestions.count)")
 
         let totalElapsed = digestClock.now - digestStart
         logger.info("⏱ Strategic digest complete — \(topRecs.count) recommendations — total: \(totalElapsed.formatted(.units(allowed: [.seconds, .milliseconds], width: .abbreviated))) — backend: \(modelLabel)")
@@ -189,6 +193,7 @@ final class StrategicCoordinator {
 
     /// Invalidate content cache so the next digest generation re-runs the content advisor.
     func invalidateContentCache() {
+        logger.debug("🔍 invalidateContentCache called — clearing content cache")
         lastContentAnalyzed = nil
         cachedContentAnalysis = nil
     }
@@ -568,12 +573,13 @@ final class StrategicCoordinator {
     private func runContentAdvisor(data: String) async -> ContentAnalysis {
         let clock = ContinuousClock()
         let start = clock.now
+        logger.debug("🔍 Content advisor starting — input data \(data.count) chars")
         do {
             let result = try await ContentAdvisorService.shared.analyze(data: data)
-            logger.debug("⏱ Content Ideas: \((clock.now - start).formatted(.units(allowed: [.seconds, .milliseconds], width: .abbreviated)))")
+            logger.debug("⏱ Content Ideas: \((clock.now - start).formatted(.units(allowed: [.seconds, .milliseconds], width: .abbreviated))) — \(result.topicSuggestions.count) topics returned")
             return result
         } catch {
-            logger.error("Content advisor failed: \(error.localizedDescription)")
+            logger.error("❌ Content advisor failed: \(error)")
             return ContentAnalysis()
         }
     }
@@ -734,12 +740,16 @@ final class StrategicCoordinator {
         digest.timeSummary = time.balanceSummary
         digest.patternInsights = pattern.patterns.map(\.description).joined(separator: "; ")
         // Persist full structured ContentTopic data as JSON for interactive rendering
+        logger.debug("🔍 persistDigest — content.topicSuggestions.count: \(content.topicSuggestions.count)")
         if let contentData = try? JSONEncoder().encode(content.topicSuggestions),
            let contentJSON = String(data: contentData, encoding: .utf8) {
             digest.contentSuggestions = contentJSON
+            logger.debug("🔍 persistDigest — stored JSON (\(contentJSON.count) chars): \(String(contentJSON.prefix(200)))")
         } else {
             // Fallback: semicolon-separated titles
-            digest.contentSuggestions = content.topicSuggestions.map(\.topic).joined(separator: "; ")
+            let fallback = content.topicSuggestions.map(\.topic).joined(separator: "; ")
+            digest.contentSuggestions = fallback
+            logger.debug("🔍 persistDigest — JSON encode failed, used fallback: \(fallback)")
         }
 
         // Persist event topic suggestions as JSON

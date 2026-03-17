@@ -135,8 +135,8 @@ actor ContactsService {
         
         do {
             let contact = try store.unifiedContact(withIdentifier: identifier, keysToFetch: keys.keys)
-            logger.debug("fetchContact keys: \(self.debugKeysDescription(keys.keys), privacy: .public)")
-            logger.debug("fetchContact contact: \(self.debugDescription(for: contact), privacy: .private)")
+//            logger.debug("fetchContact keys: \(self.debugKeysDescription(keys.keys), privacy: .public)")
+//            logger.debug("fetchContact contact: \(self.debugDescription(for: contact), privacy: .private)")
             return ContactDTO(from: contact)
         } catch {
             logger.error("Failed to fetch contact \(identifier, privacy: .private): \(error.localizedDescription)")

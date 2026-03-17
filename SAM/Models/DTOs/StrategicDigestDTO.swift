@@ -270,5 +270,35 @@ nonisolated struct LLMContentTopic: Codable, Sendable {
         case keyPoints = "key_points"
         case suggestedTone = "suggested_tone"
         case complianceNotes = "compliance_notes"
+        // Alternate keys LLMs sometimes use
+        case platform
+        case angle
+        case relevance
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        topic = try c.decodeIfPresent(String.self, forKey: .topic)
+        keyPoints = try c.decodeIfPresent([String].self, forKey: .keyPoints)
+        // Map alternate field names
+        suggestedTone = try c.decodeIfPresent(String.self, forKey: .suggestedTone)
+            ?? c.decodeIfPresent(String.self, forKey: .platform)
+        complianceNotes = try c.decodeIfPresent(String.self, forKey: .complianceNotes)
+            ?? c.decodeIfPresent(String.self, forKey: .relevance)
+    }
+
+    init(topic: String?, keyPoints: [String]? = nil, suggestedTone: String? = nil, complianceNotes: String? = nil) {
+        self.topic = topic
+        self.keyPoints = keyPoints
+        self.suggestedTone = suggestedTone
+        self.complianceNotes = complianceNotes
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(topic, forKey: .topic)
+        try c.encodeIfPresent(keyPoints, forKey: .keyPoints)
+        try c.encodeIfPresent(suggestedTone, forKey: .suggestedTone)
+        try c.encodeIfPresent(complianceNotes, forKey: .complianceNotes)
     }
 }

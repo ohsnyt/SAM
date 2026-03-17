@@ -530,6 +530,15 @@ struct GrowDashboardView: View {
 
                 Divider().padding(.horizontal)
 
+                let _ = {
+                    let d = StrategicCoordinator.shared.latestDigest
+                    let status = StrategicCoordinator.shared.generationStatus
+                    print("🔍 [ContentTab] generationStatus: \(status.rawValue), latestDigest: \(d != nil ? "present" : "nil"), contentSuggestions isEmpty: \(d?.contentSuggestions.isEmpty ?? true), length: \(d?.contentSuggestions.count ?? 0)")
+                    if let cs = d?.contentSuggestions, !cs.isEmpty {
+                        print("🔍 [ContentTab] contentSuggestions preview: \(String(cs.prefix(200)))")
+                    }
+                }()
+
                 if let digest = StrategicCoordinator.shared.latestDigest,
                    !digest.contentSuggestions.isEmpty {
                     contentIdeasSection(digest.contentSuggestions)
@@ -559,8 +568,18 @@ struct GrowDashboardView: View {
 
     private func contentIdeasSection(_ raw: String) -> some View {
         let structuredTopics: [ContentTopic]? = {
-            guard let data = raw.data(using: .utf8) else { return nil }
-            return try? JSONDecoder().decode([ContentTopic].self, from: data)
+            guard let data = raw.data(using: .utf8) else {
+                print("🔍 [contentIdeasSection] Failed to convert raw string to UTF-8 data")
+                return nil
+            }
+            do {
+                let topics = try JSONDecoder().decode([ContentTopic].self, from: data)
+                print("🔍 [contentIdeasSection] Successfully decoded \(topics.count) ContentTopic items")
+                return topics
+            } catch {
+                print("🔍 [contentIdeasSection] JSON decode failed: \(error)")
+                return nil
+            }
         }()
 
         return VStack(alignment: .leading, spacing: 6) {
