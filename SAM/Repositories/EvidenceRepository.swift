@@ -159,6 +159,10 @@ final class EvidenceRepository {
             throw RepositoryError.notConfigured
         }
 
+        // Snapshot photoThumbnailCache before relationship changes dirty the person
+        // objects — cross-context saves can overwrite the cache with nil.
+        let photoSnapshots = linkedPeople.map { ($0, $0.photoThumbnailCache) }
+
         // Idempotent: update if sourceUID already exists
         if let existing = try fetch(sourceUID: sourceUID) {
             existing.title = title
@@ -168,6 +172,7 @@ final class EvidenceRepository {
             existing.linkedPeople = linkedPeople
             existing.linkedContexts = linkedContexts
             try context.save()
+            restorePhotoCacheIfNeeded(photoSnapshots, in: context)
             return existing
         }
 
@@ -186,8 +191,19 @@ final class EvidenceRepository {
 
         context.insert(evidence)
         try context.save()
+        restorePhotoCacheIfNeeded(photoSnapshots, in: context)
 
         return evidence
+    }
+
+    /// Restore photoThumbnailCache values that were zeroed out by a cross-context save.
+    private func restorePhotoCacheIfNeeded(_ snapshots: [(SamPerson, Data?)], in context: ModelContext) {
+        for (person, cachedPhoto) in snapshots {
+            if person.photoThumbnailCache == nil, cachedPhoto != nil {
+                person.photoThumbnailCache = cachedPhoto
+                try? context.save()
+            }
+        }
     }
 
     /// Create evidence by people/context IDs — re-fetches objects in this repository's
@@ -207,19 +223,22 @@ final class EvidenceRepository {
             throw RepositoryError.notConfigured
         }
 
-        // Re-fetch people and contexts in THIS context to avoid cross-context errors
+        // Re-fetch only needed objects by ID to avoid loading entire tables
+        // and risking stale writes of large Data? properties (photoThumbnailCache).
         let people: [SamPerson]
         if !linkedPeopleIDs.isEmpty {
-            let allPeople = try context.fetch(FetchDescriptor<SamPerson>())
-            people = allPeople.filter { linkedPeopleIDs.contains($0.id) }
+            let idSet = linkedPeopleIDs
+            let descriptor = FetchDescriptor<SamPerson>(predicate: #Predicate { idSet.contains($0.id) })
+            people = try context.fetch(descriptor)
         } else {
             people = []
         }
 
         let contexts: [SamContext]
         if !linkedContextIDs.isEmpty {
-            let allContexts = try context.fetch(FetchDescriptor<SamContext>())
-            contexts = allContexts.filter { linkedContextIDs.contains($0.id) }
+            let idSet = linkedContextIDs
+            let descriptor = FetchDescriptor<SamContext>(predicate: #Predicate { idSet.contains($0.id) })
+            contexts = try context.fetch(descriptor)
         } else {
             contexts = []
         }

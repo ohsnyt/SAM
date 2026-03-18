@@ -77,14 +77,32 @@ final class NotesRepository {
             throw RepositoryError.notConfigured
         }
 
-        // Re-fetch objects in this context
-        let allPeople = try modelContext.fetch(FetchDescriptor<SamPerson>())
-        let allContexts = try modelContext.fetch(FetchDescriptor<SamContext>())
-        let allEvidence = try modelContext.fetch(FetchDescriptor<SamEvidenceItem>())
+        // Re-fetch only the objects we need (by ID) to avoid loading the entire
+        // table into this context and risking stale writes of large Data? properties
+        // like photoThumbnailCache.
+        let linkedPeople: [SamPerson] = {
+            guard !linkedPeopleIDs.isEmpty else { return [] }
+            let idSet = linkedPeopleIDs
+            let descriptor = FetchDescriptor<SamPerson>(predicate: #Predicate { idSet.contains($0.id) })
+            return (try? modelContext.fetch(descriptor)) ?? []
+        }()
+        let linkedContexts: [SamContext] = {
+            guard !linkedContextIDs.isEmpty else { return [] }
+            let idSet = linkedContextIDs
+            let descriptor = FetchDescriptor<SamContext>(predicate: #Predicate { idSet.contains($0.id) })
+            return (try? modelContext.fetch(descriptor)) ?? []
+        }()
+        let linkedEvidence: [SamEvidenceItem] = {
+            guard !linkedEvidenceIDs.isEmpty else { return [] }
+            let idSet = linkedEvidenceIDs
+            let descriptor = FetchDescriptor<SamEvidenceItem>(predicate: #Predicate { idSet.contains($0.id) })
+            return (try? modelContext.fetch(descriptor)) ?? []
+        }()
 
-        let linkedPeople = allPeople.filter { linkedPeopleIDs.contains($0.id) }
-        let linkedContexts = allContexts.filter { linkedContextIDs.contains($0.id) }
-        let linkedEvidence = allEvidence.filter { linkedEvidenceIDs.contains($0.id) }
+        // Snapshot photoThumbnailCache before relationship changes dirty the person
+        // objects — saving a cross-context person can overwrite the cache with nil
+        // if the Data? property wasn't fully materialized in this context.
+        let photoSnapshots = linkedPeople.map { ($0, $0.photoThumbnailCache) }
 
         let note = SamNote(
             content: content,
@@ -98,6 +116,14 @@ final class NotesRepository {
 
         modelContext.insert(note)
         try modelContext.save()
+
+        // Restore photo caches if the save zeroed them out
+        for (person, cachedPhoto) in photoSnapshots {
+            if person.photoThumbnailCache == nil, cachedPhoto != nil {
+                person.photoThumbnailCache = cachedPhoto
+                try? modelContext.save()
+            }
+        }
 
         return note
     }
@@ -194,22 +220,37 @@ final class NotesRepository {
             throw RepositoryError.notConfigured
         }
 
-        // Re-fetch objects in this context
+        // Re-fetch only needed objects by ID to avoid loading entire tables
+        // and risking stale writes of large Data? properties (photoThumbnailCache).
+        var photoSnapshots: [(SamPerson, Data?)] = []
         if let peopleIDs = peopleIDs {
-            let allPeople = try modelContext.fetch(FetchDescriptor<SamPerson>())
-            note.linkedPeople = allPeople.filter { peopleIDs.contains($0.id) }
+            let idSet = peopleIDs
+            let descriptor = FetchDescriptor<SamPerson>(predicate: #Predicate { idSet.contains($0.id) })
+            let people = try modelContext.fetch(descriptor)
+            photoSnapshots = people.map { ($0, $0.photoThumbnailCache) }
+            note.linkedPeople = people
         }
         if let contextIDs = contextIDs {
-            let allContexts = try modelContext.fetch(FetchDescriptor<SamContext>())
-            note.linkedContexts = allContexts.filter { contextIDs.contains($0.id) }
+            let idSet = contextIDs
+            let descriptor = FetchDescriptor<SamContext>(predicate: #Predicate { idSet.contains($0.id) })
+            note.linkedContexts = try modelContext.fetch(descriptor)
         }
         if let evidenceIDs = evidenceIDs {
-            let allEvidence = try modelContext.fetch(FetchDescriptor<SamEvidenceItem>())
-            note.linkedEvidence = allEvidence.filter { evidenceIDs.contains($0.id) }
+            let idSet = evidenceIDs
+            let descriptor = FetchDescriptor<SamEvidenceItem>(predicate: #Predicate { idSet.contains($0.id) })
+            note.linkedEvidence = try modelContext.fetch(descriptor)
         }
 
         note.updatedAt = .now
         try modelContext.save()
+
+        // Restore photo caches if the save zeroed them out
+        for (person, cachedPhoto) in photoSnapshots {
+            if person.photoThumbnailCache == nil, cachedPhoto != nil {
+                person.photoThumbnailCache = cachedPhoto
+                try? modelContext.save()
+            }
+        }
     }
 
     /// Store LLM analysis results

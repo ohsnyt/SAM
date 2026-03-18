@@ -295,11 +295,12 @@ struct PersonDetailView: View {
 
     private var contactPhotoView: some View {
         let links = photoLinks
-        let hasPhoto = person.photoThumbnailCache != nil
+        let photoData = person.photoThumbnailCache ?? fullContact?.thumbnailImageData
+        let hasPhoto = photoData != nil
         let isClickable = !hasPhoto && !links.isEmpty
 
         return Group {
-            if let photoData = person.photoThumbnailCache,
+            if let photoData,
                let nsImage = NSImage(data: photoData) {
                 Image(nsImage: nsImage)
                     .resizable()
