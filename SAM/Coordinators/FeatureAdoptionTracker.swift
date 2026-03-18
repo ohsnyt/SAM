@@ -182,7 +182,7 @@ final class FeatureAdoptionTracker {
             feature: .substackImport,
             title: "Connect your Substack for audience insights",
             rationale: "Import your Substack subscriber list to find warm leads already in your contacts, and get AI-powered content coaching.",
-            suggestedNextStep: "Open Settings → Imports → Substack",
+            suggestedNextStep: "Use File → Import → Substack",
             guideArticleID: "grow.social-imports"
         ),
         CoachingEntry(
@@ -190,7 +190,7 @@ final class FeatureAdoptionTracker {
             feature: .linkedInImport,
             title: "Import LinkedIn connections",
             rationale: "Import your LinkedIn connections CSV to match existing contacts and discover potential leads in your network.",
-            suggestedNextStep: "Open Settings → Imports → LinkedIn Import",
+            suggestedNextStep: "Use File → Import → LinkedIn",
             guideArticleID: "grow.social-imports"
         ),
         CoachingEntry(
@@ -198,7 +198,7 @@ final class FeatureAdoptionTracker {
             feature: .facebookImport,
             title: "Import Facebook friends to find warm leads",
             rationale: "Your Facebook friends list often contains warm leads. Import it to match contacts and surface relationship opportunities.",
-            suggestedNextStep: "Open Settings → Imports → Facebook Import",
+            suggestedNextStep: "Use File → Import → Facebook",
             guideArticleID: "grow.social-imports"
         ),
         CoachingEntry(

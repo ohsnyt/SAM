@@ -1065,7 +1065,7 @@ final class OutcomeEngine {
             return SamOutcome(
                 title: suggestion.title,
                 rationale: suggestion.rationale,
-                outcomeKind: .setup,
+                outcomeKind: .training,
                 priorityScore: 0.4,
                 sourceInsightSummary: "Feature adoption coaching: \(suggestion.feature.rawValue)",
                 suggestedNextStep: suggestion.suggestedNextStep
