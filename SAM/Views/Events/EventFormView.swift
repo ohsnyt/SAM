@@ -82,13 +82,13 @@ struct EventFormView: View {
     /// True when the event has participants who have already been invited.
     private var hasInvitees: Bool {
         guard let event = existingEvent else { return false }
-        return event.participations.contains { $0.inviteStatus != .notInvited }
+        return EventRepository.shared.fetchParticipations(for: event).contains { $0.inviteStatus != .notInvited }
     }
 
     /// Number of people already contacted.
     private var inviteeCount: Int {
         guard let event = existingEvent else { return 0 }
-        return event.participations.filter { $0.inviteStatus != .notInvited }.count
+        return EventRepository.shared.fetchParticipations(for: event).filter { $0.inviteStatus != .notInvited }.count
     }
 
     /// Detects whether the user has made material changes that would affect invitees.
@@ -550,7 +550,7 @@ struct EventFormView: View {
             event.autoReplyUnknownSenders = autoReplyUnknownSenders
 
             // Pass change summary only if there are material changes and people have been invited
-            let hasInvitedParticipants = event.participations.contains { $0.inviteStatus != .notInvited }
+            let hasInvitedParticipants = EventRepository.shared.fetchParticipations(for: event).contains { $0.inviteStatus != .notInvited }
             onUpdated?(changes.hasChanges && hasInvitedParticipants ? changes : nil)
             dismiss()
         } catch {

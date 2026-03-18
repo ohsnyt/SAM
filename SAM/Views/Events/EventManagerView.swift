@@ -153,6 +153,14 @@ struct EventManagerView: View {
 struct EventRowView: View {
     let event: SamEvent
 
+    /// Accepted count fetched via repository query to avoid traversing
+    /// event.participations which can crash on corrupted SwiftData relationships.
+    private var safeAcceptedCount: Int {
+        EventRepository.shared.fetchParticipations(for: event)
+            .filter { $0.rsvpStatus == .accepted }
+            .count
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
@@ -175,7 +183,7 @@ struct EventRowView: View {
                 HStack(spacing: 4) {
                     Image(systemName: "person.fill.checkmark")
                         .foregroundStyle(.green)
-                    Text("\(event.acceptedCount)")
+                    Text("\(safeAcceptedCount)")
                     Text("/")
                         .foregroundStyle(.tertiary)
                     Text("\(event.targetParticipantCount)")

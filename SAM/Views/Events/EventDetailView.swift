@@ -1138,7 +1138,7 @@ struct BulkRSVPReviewSheet: View {
     }
 
     private func reload() {
-        participations = event.participations
+        participations = EventRepository.shared.fetchParticipations(for: event)
             .filter { $0.rsvpDetectionConfidence != nil && !$0.rsvpUserConfirmed && !$0.rsvpDismissed }
             .sorted { ($0.rsvpDetectionConfidence ?? 0) > ($1.rsvpDetectionConfidence ?? 0) }
     }

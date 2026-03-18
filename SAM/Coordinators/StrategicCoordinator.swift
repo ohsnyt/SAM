@@ -603,7 +603,7 @@ final class StrategicCoordinator {
             if !pastEvents.isEmpty {
                 lines.append("PAST EVENTS (most recent first):")
                 for event in pastEvents.prefix(10) {
-                    let attendees = event.acceptedCount
+                    let attendees = EventRepository.shared.fetchParticipations(for: event).filter { $0.rsvpStatus == .accepted }.count
                     lines.append("  - \"\(event.title)\" (\(event.startDate.formatted(date: .abbreviated, time: .omitted)), \(event.format.displayName), \(attendees) attendees)")
                 }
             }

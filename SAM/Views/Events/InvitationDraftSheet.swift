@@ -68,7 +68,7 @@ struct InvitationDraftSheet: View {
             if let single = singleParticipation {
                 uninvited = [single]
             } else {
-                uninvited = event.participations
+                uninvited = EventRepository.shared.fetchParticipations(for: event)
                     .filter { $0.inviteStatus == .notInvited }
                     .sorted { ($0.person?.displayNameCache ?? "") < ($1.person?.displayNameCache ?? "") }
             }

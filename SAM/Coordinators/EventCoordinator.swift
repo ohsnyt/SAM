@@ -258,7 +258,7 @@ final class EventCoordinator {
         isGeneratingDrafts = true
         defer { isGeneratingDrafts = false }
 
-        let uninvited = event.participations.filter { $0.inviteStatus == .notInvited }
+        let uninvited = EventRepository.shared.fetchParticipations(for: event).filter { $0.inviteStatus == .notInvited }
         guard !uninvited.isEmpty else { return 0 }
 
         var draftCount = 0
@@ -528,8 +528,9 @@ final class EventCoordinator {
     /// Generate a social media promotion draft for a specific platform.
     func generateSocialPromotion(for event: SamEvent, platform: String) async throws -> String {
         let eventDetails = buildEventDetails(event: event)
-        let participantCount = event.participations.count
-        let acceptedCount = event.acceptedCount
+        let allParticipations = EventRepository.shared.fetchParticipations(for: event)
+        let participantCount = allParticipations.count
+        let acceptedCount = allParticipations.filter { $0.rsvpStatus == .accepted }.count
 
         let prompt = """
             Write a social media post promoting this event for \(platform).
@@ -871,7 +872,7 @@ final class EventCoordinator {
 
     /// Filter participants based on audience selection.
     func participantsForUpdate(event: SamEvent, audience: UpdateAudience) -> [EventParticipation] {
-        event.participations.filter { p in
+        EventRepository.shared.fetchParticipations(for: event).filter { p in
             switch audience {
             case .allContacted:
                 return p.inviteStatus != .notInvited && p.rsvpStatus != .declined
@@ -1036,7 +1037,7 @@ final class EventCoordinator {
     /// Generate pre-event reminder drafts for all confirmed attendees.
     /// Called by OutcomeEngine at configured intervals (7 days, 1 day, 10 minutes).
     func generateReminderDrafts(for event: SamEvent, minutesBefore: Int) async throws -> Int {
-        let accepted = event.participations.filter { $0.rsvpStatus == .accepted }
+        let accepted = EventRepository.shared.fetchParticipations(for: event).filter { $0.rsvpStatus == .accepted }
         guard !accepted.isEmpty else { return 0 }
 
         var count = 0
@@ -1109,7 +1110,7 @@ final class EventCoordinator {
     func generateFollowUpDrafts(for event: SamEvent, workshopNotes: String? = nil) async throws -> Int {
         var count = 0
 
-        for participation in event.participations {
+        for participation in EventRepository.shared.fetchParticipations(for: event) {
             guard let person = participation.person else { continue }
 
             let followUpKind: FollowUpKind
@@ -1242,7 +1243,7 @@ final class EventCoordinator {
         let activePeople = allPeople.filter { $0.lifecycleStatus == .active && !$0.isMe }
 
         // Exclude people already participating in this event
-        let existingIDs = Set(event.participations.compactMap { $0.person?.id })
+        let existingIDs = Set(EventRepository.shared.fetchParticipations(for: event).compactMap { $0.person?.id })
         let candidates = activePeople.filter { !existingIDs.contains($0.id) }
 
         guard !candidates.isEmpty else { return [] }
@@ -1583,7 +1584,7 @@ final class EventCoordinator {
 
     /// Generate and optionally send reminders for an event at a given window.
     private func sendReminderDrafts(for event: SamEvent, minutesBefore: Int) async {
-        let accepted = event.participations.filter { $0.rsvpStatus == .accepted }
+        let accepted = EventRepository.shared.fetchParticipations(for: event).filter { $0.rsvpStatus == .accepted }
         guard !accepted.isEmpty else { return }
 
         // Dedup: skip if reminders already exist for this window
@@ -1607,7 +1608,7 @@ final class EventCoordinator {
                 // Auto-send all drafts
                 var sentCount = 0
                 let refreshedEvent = try? EventRepository.shared.fetch(id: event.id)
-                let participations = (refreshedEvent ?? event).participations.filter { $0.rsvpStatus == .accepted }
+                let participations = EventRepository.shared.fetchParticipations(for: refreshedEvent ?? event).filter { $0.rsvpStatus == .accepted }
 
                 for participation in participations {
                     guard let person = participation.person else { continue }

@@ -23,7 +23,7 @@ struct AddParticipantsSheet: View {
     @State private var addedCount = 0
 
     private var existingPersonIDs: Set<UUID> {
-        Set(event.participations.compactMap { $0.person?.id })
+        Set(EventRepository.shared.fetchParticipations(for: event).compactMap { $0.person?.id })
     }
 
     var body: some View {

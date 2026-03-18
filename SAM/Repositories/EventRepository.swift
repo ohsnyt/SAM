@@ -185,7 +185,7 @@ final class EventRepository {
             autoAcknowledgeEnabled: event.autoAcknowledgeEnabled,
             ackAcceptTemplate: event.ackAcceptTemplate,
             ackDeclineTemplate: event.ackDeclineTemplate,
-            participantPersonIDs: event.participations.compactMap { $0.person?.id }
+            participantPersonIDs: fetchParticipations(for: event).compactMap { $0.person?.id }
         )
 
         let displayName = event.title
@@ -259,7 +259,7 @@ final class EventRepository {
         guard let context else { throw RepositoryError.notConfigured }
 
         // Prevent duplicate participation
-        let existing = event.participations.first { $0.person?.id == person.id }
+        let existing = fetchParticipations(for: event).first { $0.person?.id == person.id }
         if let existing { return existing }
 
         let participation = EventParticipation(
@@ -278,7 +278,7 @@ final class EventRepository {
     func removeParticipant(participationID: UUID, from event: SamEvent) throws {
         guard let context else { throw RepositoryError.notConfigured }
 
-        guard let participation = event.participations.first(where: { $0.id == participationID }) else {
+        guard let participation = fetchParticipations(for: event).first(where: { $0.id == participationID }) else {
             return
         }
         context.delete(participation)
@@ -287,14 +287,27 @@ final class EventRepository {
     }
 
     /// Fetch all participations for an event, sorted by priority (VIP first) then name.
+    /// Uses a FetchDescriptor query instead of traversing event.participations to avoid
+    /// SwiftData assertion crashes from corrupted relationship data.
     func fetchParticipations(for event: SamEvent) -> [EventParticipation] {
-        event.participations.sorted { lhs, rhs in
-            let lhsPriority = lhs.priority.sortOrder
-            let rhsPriority = rhs.priority.sortOrder
-            if lhsPriority != rhsPriority { return lhsPriority < rhsPriority }
-            let lhsName = lhs.person?.displayNameCache ?? ""
-            let rhsName = rhs.person?.displayNameCache ?? ""
-            return lhsName < rhsName
+        guard let context else { return [] }
+        let eventID = event.id
+        do {
+            let descriptor = FetchDescriptor<EventParticipation>(
+                predicate: #Predicate { $0.event?.id == eventID }
+            )
+            let results = try context.fetch(descriptor)
+            return results.sorted { lhs, rhs in
+                let lhsPriority = lhs.priority.sortOrder
+                let rhsPriority = rhs.priority.sortOrder
+                if lhsPriority != rhsPriority { return lhsPriority < rhsPriority }
+                let lhsName = lhs.person?.displayNameCache ?? ""
+                let rhsName = rhs.person?.displayNameCache ?? ""
+                return lhsName < rhsName
+            }
+        } catch {
+            logger.error("Failed to fetch participations for event \(event.title): \(error.localizedDescription)")
+            return []
         }
     }
 
@@ -305,7 +318,7 @@ final class EventRepository {
 
     /// Fetch participations needing user confirmation (low-confidence RSVP detections).
     func fetchUnconfirmedRSVPs(for event: SamEvent) -> [EventParticipation] {
-        event.participations.filter { participation in
+        fetchParticipations(for: event).filter { participation in
             participation.rsvpDetectionConfidence != nil
             && !participation.rsvpUserConfirmed
             && !participation.rsvpDismissed
@@ -386,7 +399,7 @@ final class EventRepository {
     /// Fetch participations eligible for auto-acknowledgment.
     func fetchPendingAutoAcks(for event: SamEvent) -> [EventParticipation] {
         guard event.autoAcknowledgeEnabled else { return [] }
-        return event.participations.filter { participation in
+        return fetchParticipations(for: event).filter { participation in
             !participation.acknowledgmentSent
             && participation.priority.allowsAutoAcknowledge
             && (participation.rsvpStatus == .accepted || participation.rsvpStatus == .declined)

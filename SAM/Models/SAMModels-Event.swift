@@ -107,16 +107,6 @@ public final class SamEvent {
     // MARK: Computed
 
     @Transient
-    public var acceptedCount: Int {
-        participations.filter { $0.rsvpStatus == .accepted }.count
-    }
-
-    @Transient
-    public var pendingCount: Int {
-        participations.filter { $0.rsvpStatus == .pending || $0.rsvpStatus == .invited }.count
-    }
-
-    @Transient
     public var isUpcoming: Bool {
         startDate > .now && status != .cancelled
     }

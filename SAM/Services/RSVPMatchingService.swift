@@ -140,7 +140,7 @@ final class RSVPMatchingService {
             }
 
             // Skip if person is already a confirmed-accepted participant on this event
-            if let existing = targetEvent.participations.first(where: { $0.person?.id == person.id }),
+            if let existing = EventRepository.shared.fetchParticipations(for: targetEvent).first(where: { $0.person?.id == person.id }),
                existing.rsvpUserConfirmed && existing.rsvpStatus == .accepted {
                 logger.debug("Skipping auto-add for \(personName) — already confirmed-accepted on '\(targetEvent.title)'")
                 return
@@ -319,7 +319,7 @@ final class RSVPMatchingService {
                 let matches = try PeopleRepository.shared.search(query: trimmed)
                 if let matched = matches.first(where: { $0.lifecycleStatus == .active && !($0.isMe) }) {
                     // Found a matching contact — auto-add them too
-                    let existing = event.participations.first { $0.person?.id == matched.id }
+                    let existing = EventRepository.shared.fetchParticipations(for: event).first { $0.person?.id == matched.id }
                     if existing == nil {
                         try autoAddParticipant(
                             person: matched,
