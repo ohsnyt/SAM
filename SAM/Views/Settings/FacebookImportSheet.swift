@@ -17,8 +17,19 @@ struct FacebookImportSheet: View {
     @State private var coordinator = FacebookImportCoordinator.shared
     @State private var classifications: [UUID: FacebookClassification] = [:]
     @State private var deleteZipAfterImport: Bool = true
-    @State private var showManualFilePicker = false
-    @State private var showFolderPicker = false
+    @State private var showFilePicker = false
+    @State private var filePickerMode: FilePickerMode = .zip
+
+    private enum FilePickerMode {
+        case zip, folder
+
+        var allowedTypes: [UTType] {
+            switch self {
+            case .zip: [.zip, .archive]
+            case .folder: [.folder]
+            }
+        }
+    }
 
     @Environment(\.dismiss) private var dismiss
 
@@ -77,25 +88,8 @@ struct FacebookImportSheet: View {
             coordinator.beginImportFlow()
         }
         .fileImporter(
-            isPresented: $showManualFilePicker,
-            allowedContentTypes: [.zip, .archive],
-            allowsMultipleSelection: false
-        ) { result in
-            switch result {
-            case .success(let urls):
-                guard let url = urls.first else { return }
-                let accessing = url.startAccessingSecurityScopedResource()
-                Task {
-                    await coordinator.processZip(url: url)
-                    if accessing { url.stopAccessingSecurityScopedResource() }
-                }
-            case .failure(let error):
-                coordinator.sheetPhase = .failed(error.localizedDescription)
-            }
-        }
-        .fileImporter(
-            isPresented: $showFolderPicker,
-            allowedContentTypes: [.folder],
+            isPresented: $showFilePicker,
+            allowedContentTypes: filePickerMode.allowedTypes,
             allowsMultipleSelection: false
         ) { result in
             switch result {
@@ -222,12 +216,14 @@ struct FacebookImportSheet: View {
                 .buttonStyle(.borderedProminent)
 
                 Button("Select ZIP File...") {
-                    showManualFilePicker = true
+                    filePickerMode = .zip
+                    showFilePicker = true
                 }
                 .buttonStyle(.bordered)
 
                 Button("Select Folder...") {
-                    showFolderPicker = true
+                    filePickerMode = .folder
+                    showFilePicker = true
                 }
                 .buttonStyle(.bordered)
             }
@@ -397,13 +393,15 @@ struct FacebookImportSheet: View {
 
             HStack(spacing: 8) {
                 Button("Select ZIP File...") {
-                    showManualFilePicker = true
+                    filePickerMode = .zip
+                    showFilePicker = true
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
 
                 Button("Select Folder...") {
-                    showFolderPicker = true
+                    filePickerMode = .folder
+                    showFilePicker = true
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
@@ -443,7 +441,8 @@ struct FacebookImportSheet: View {
                 .controlSize(.small)
 
                 Button("Select ZIP File...") {
-                    showManualFilePicker = true
+                    filePickerMode = .zip
+                    showFilePicker = true
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
@@ -470,7 +469,8 @@ struct FacebookImportSheet: View {
                 .buttonStyle(.borderedProminent)
 
                 Button("Select ZIP File...") {
-                    showManualFilePicker = true
+                    filePickerMode = .zip
+                    showFilePicker = true
                 }
                 .buttonStyle(.bordered)
             }
@@ -503,7 +503,8 @@ struct FacebookImportSheet: View {
                 .controlSize(.small)
 
                 Button("Select ZIP File...") {
-                    showManualFilePicker = true
+                    filePickerMode = .zip
+                    showFilePicker = true
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
@@ -578,12 +579,14 @@ struct FacebookImportSheet: View {
 
             HStack(spacing: 12) {
                 Button("Select ZIP File...") {
-                    showManualFilePicker = true
+                    filePickerMode = .zip
+                    showFilePicker = true
                 }
                 .buttonStyle(.borderedProminent)
 
                 Button("Select Folder...") {
-                    showFolderPicker = true
+                    filePickerMode = .folder
+                    showFilePicker = true
                 }
                 .buttonStyle(.bordered)
             }
