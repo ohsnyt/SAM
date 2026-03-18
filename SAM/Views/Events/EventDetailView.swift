@@ -58,7 +58,12 @@ struct EventDetailView: View {
             }
         }
         .frame(maxHeight: .infinity)
-        .onAppear { reloadEvent() }
+        .task(id: eventID) {
+            selectedParticipationID = nil
+            unknownRSVPs = []
+            lastActionMessage = nil
+            reloadEvent()
+        }
         .onChange(of: refreshToken) { reloadEvent() }
         .onReceive(NotificationCenter.default.publisher(for: .samRSVPAutoAdded)) { notification in
             // Refresh if the auto-add was for this event
