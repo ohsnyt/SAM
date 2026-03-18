@@ -10,6 +10,7 @@
 //
 
 import SwiftUI
+import TipKit
 import os.log
 
 private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "GoalCheckInSessionView")
@@ -30,6 +31,9 @@ struct GoalCheckInSessionView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            TipView(GoalCheckInTip())
+                .tipViewStyle(SAMTipViewStyle())
+
             // Header
             headerSection
 
@@ -80,8 +84,8 @@ struct GoalCheckInSessionView: View {
             inputBar
         }
         .frame(minWidth: 560, idealWidth: 560, minHeight: 500, idealHeight: 600)
-        .onAppear {
-            let opening = GoalCheckInService.shared.generateOpeningMessage(context: context)
+        .task {
+            let opening = await GoalCheckInService.shared.generateOpeningMessage(context: context)
             messages = [opening]
         }
     }

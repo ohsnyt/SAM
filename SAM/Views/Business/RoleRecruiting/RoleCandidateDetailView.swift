@@ -144,6 +144,8 @@ struct RoleCandidateDetailView: View {
                     TextEditor(text: $userNotes)
                         .frame(minHeight: 60)
                         .samFont(.body)
+                        .onDisappear { saveNotes() }
+                        .onSubmit { saveNotes() }
                 }
 
                 // Pass button
@@ -179,6 +181,14 @@ struct RoleCandidateDetailView: View {
         .onAppear {
             userNotes = candidate.userNotes ?? ""
         }
+    }
+
+    private func saveNotes() {
+        let trimmed = userNotes.trimmingCharacters(in: .whitespacesAndNewlines)
+        let newValue = trimmed.isEmpty ? nil : trimmed
+        guard newValue != candidate.userNotes else { return }
+        candidate.userNotes = newValue
+        try? RoleRecruitingRepository.shared.saveCandidate(candidate)
     }
 
     private var scoreColor: Color {

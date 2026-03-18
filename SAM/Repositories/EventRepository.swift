@@ -308,8 +308,79 @@ final class EventRepository {
         event.participations.filter { participation in
             participation.rsvpDetectionConfidence != nil
             && !participation.rsvpUserConfirmed
+            && !participation.rsvpDismissed
             && (participation.rsvpDetectionConfidence ?? 1.0) < 0.8
         }
+    }
+
+    // MARK: - RSVP Dismiss / Undo
+
+    /// Dismiss a SAM-detected RSVP as incorrect. Preserves the original detection for undo.
+    func dismissRSVP(participationID: UUID) throws {
+        guard let context else { throw RepositoryError.notConfigured }
+
+        let descriptor = FetchDescriptor<EventParticipation>()
+        let all = try context.fetch(descriptor)
+        guard let participation = all.first(where: { $0.id == participationID }) else {
+            throw RepositoryError.notFound
+        }
+
+        // Preserve original detected status
+        participation.rsvpOriginalDetectedStatusRawValue = participation.rsvpStatusRawValue
+
+        // Reset to appropriate base status
+        participation.rsvpStatus = participation.inviteStatus == .invited ? .invited : .pending
+        participation.rsvpDetectionConfidence = nil
+        participation.rsvpUserConfirmed = false
+        participation.rsvpDismissed = true
+        participation.rsvpDismissedAt = .now
+
+        try context.save()
+        let name = participation.person?.displayNameCache ?? participationID.uuidString
+        logger.debug("Dismissed RSVP for \(name)")
+    }
+
+    /// Undo a dismissed RSVP — restore the original detected status.
+    func undoDismissRSVP(participationID: UUID) throws {
+        guard let context else { throw RepositoryError.notConfigured }
+
+        let descriptor = FetchDescriptor<EventParticipation>()
+        let all = try context.fetch(descriptor)
+        guard let participation = all.first(where: { $0.id == participationID }) else {
+            throw RepositoryError.notFound
+        }
+
+        if let originalStatus = participation.rsvpOriginalDetectedStatus {
+            participation.rsvpStatus = originalStatus
+        }
+        participation.rsvpDismissed = false
+        participation.rsvpDismissedAt = nil
+        participation.rsvpOriginalDetectedStatusRawValue = nil
+
+        try context.save()
+        let name = participation.person?.displayNameCache ?? participationID.uuidString
+        logger.debug("Undid RSVP dismiss for \(name)")
+    }
+
+    /// Batch dismiss multiple RSVP detections in a single save.
+    func bulkDismissRSVPs(participationIDs: [UUID]) throws {
+        guard let context else { throw RepositoryError.notConfigured }
+
+        let descriptor = FetchDescriptor<EventParticipation>()
+        let all = try context.fetch(descriptor)
+        let idSet = Set(participationIDs)
+
+        for participation in all where idSet.contains(participation.id) {
+            participation.rsvpOriginalDetectedStatusRawValue = participation.rsvpStatusRawValue
+            participation.rsvpStatus = participation.inviteStatus == .invited ? .invited : .pending
+            participation.rsvpDetectionConfidence = nil
+            participation.rsvpUserConfirmed = false
+            participation.rsvpDismissed = true
+            participation.rsvpDismissedAt = .now
+        }
+
+        try context.save()
+        logger.debug("Bulk dismissed \(participationIDs.count) RSVPs")
     }
 
     /// Fetch participations eligible for auto-acknowledgment.

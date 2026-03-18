@@ -26,6 +26,15 @@ final class ContactPhotoCoordinator {
     /// Non-nil while a LinkedIn PDF import success/info message should be shown.
     private(set) var linkedInImportMessage: String?
 
+    /// Pending LinkedIn PDF import awaiting user confirmation due to name mismatch.
+    struct PendingLinkedInImport {
+        let profileName: String
+        let personName: String
+        let data: Data
+        let person: SamPerson
+    }
+    private(set) var pendingLinkedInImport: PendingLinkedInImport?
+
     /// True while a photo is being processed/saved.
     private(set) var isSaving = false
 
@@ -249,7 +258,7 @@ final class ContactPhotoCoordinator {
 
     /// Returns true if the contact had a photo written recently (within grace period)
     /// and the sync should not overwrite the thumbnail cache.
-    static func isPhotoWriteRecent(for contactIdentifier: String, gracePeriod: TimeInterval = 30) -> Bool {
+    @MainActor static func isPhotoWriteRecent(for contactIdentifier: String, gracePeriod: TimeInterval = 30) -> Bool {
         guard let writeDate = shared.recentPhotoWrites[contactIdentifier] else { return false }
         return Date().timeIntervalSince(writeDate) < gracePeriod
     }
@@ -266,6 +275,61 @@ final class ContactPhotoCoordinator {
         do {
             let profile = try LinkedInPDFParserService.parse(data: data)
 
+            // Check for name mismatch — warn user before importing wrong profile
+            let personName = person.displayNameCache ?? person.displayName
+            if !namesMatch(profileName: profile.name, personName: personName) {
+                pendingLinkedInImport = PendingLinkedInImport(
+                    profileName: profile.name,
+                    personName: personName,
+                    data: data,
+                    person: person
+                )
+                return
+            }
+
+            await performLinkedInImport(profile: profile, for: person)
+        } catch {
+            errorMessage = "LinkedIn PDF import failed: \(error.localizedDescription)"
+            scheduleDismissError()
+            logger.error("LinkedIn PDF import failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// Confirm a pending mismatch import — user chose to proceed anyway.
+    func confirmPendingLinkedInImport() async {
+        guard let pending = pendingLinkedInImport else { return }
+        pendingLinkedInImport = nil
+        do {
+            let profile = try LinkedInPDFParserService.parse(data: pending.data)
+            await performLinkedInImport(profile: profile, for: pending.person)
+        } catch {
+            errorMessage = "LinkedIn PDF import failed: \(error.localizedDescription)"
+            scheduleDismissError()
+        }
+    }
+
+    /// Cancel a pending mismatch import.
+    func cancelPendingLinkedInImport() {
+        pendingLinkedInImport = nil
+    }
+
+    /// Check whether a LinkedIn profile name plausibly matches a contact name.
+    private func namesMatch(profileName: String, personName: String) -> Bool {
+        let profileParts = profileName.lowercased().folding(options: .diacriticInsensitive, locale: .current)
+            .split(separator: " ").map(String.init)
+        let personParts = personName.lowercased().folding(options: .diacriticInsensitive, locale: .current)
+            .split(separator: " ").map(String.init)
+
+        guard !profileParts.isEmpty, !personParts.isEmpty else { return false }
+
+        // Match if first name matches and last name matches (handles middle names, suffixes)
+        let firstMatch = profileParts.first == personParts.first
+        let lastMatch = profileParts.last == personParts.last
+        return firstMatch && lastMatch
+    }
+
+    private func performLinkedInImport(profile: LinkedInPDFProfileDTO, for person: SamPerson) async {
+        do {
             // Build enrichment candidates — skip values that already match existing data
             var candidates: [EnrichmentCandidate] = []
 

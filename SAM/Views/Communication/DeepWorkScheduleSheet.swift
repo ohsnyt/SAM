@@ -10,6 +10,7 @@
 //
 
 import SwiftUI
+import TipKit
 import os.log
 
 private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "DeepWorkScheduleSheet")
@@ -55,6 +56,9 @@ struct DeepWorkScheduleSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
+            TipView(DeepWorkScheduleTip())
+                .tipViewStyle(SAMTipViewStyle())
+
             // Title
             Text("Schedule Deep Work")
                 .samFont(.title3)

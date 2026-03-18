@@ -89,11 +89,10 @@ final class EnrichmentRepository {
         let descriptor = FetchDescriptor<PendingEnrichment>()
         let existing = try modelContext.fetch(descriptor)
 
-        // Build a set of (personID, field, proposedValue) for already-pending records
-        let pendingKeys = Set(
-            existing
-                .filter { $0.status == .pending }
-                .map { "\($0.personID)|\($0.fieldRawValue)|\($0.proposedValue)" }
+        // Build a set of (personID, field, proposedValue) for existing records (any status).
+        // This prevents re-creating enrichments that were already approved/dismissed.
+        let existingKeys = Set(
+            existing.map { "\($0.personID)|\($0.fieldRawValue)|\($0.proposedValue)" }
         )
 
         var inserted = 0
@@ -103,7 +102,7 @@ final class EnrichmentRepository {
             guard !value.isEmpty else { continue }
 
             let key = "\(candidate.personID)|\(candidate.field.rawValue)|\(value)"
-            guard !pendingKeys.contains(key) else { continue }
+            guard !existingKeys.contains(key) else { continue }
 
             let record = PendingEnrichment(
                 personID: candidate.personID,

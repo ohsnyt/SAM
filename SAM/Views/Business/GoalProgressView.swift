@@ -260,7 +260,7 @@ struct GoalProgressView: View {
 
         Task {
             let snapshot = await BusinessProfileService.shared.fullContextBlock()
-            let goal = try? goalRepo.fetchActive().first(where: { $0.id == progress.goalID })
+            _ = try? goalRepo.fetchActive().first(where: { $0.id == progress.goalID })
 
             checkInContext = GoalCheckInContext(
                 goalID: progress.goalID,

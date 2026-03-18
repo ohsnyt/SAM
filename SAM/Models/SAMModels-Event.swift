@@ -233,6 +233,21 @@ public final class EventParticipation {
     /// Whether the user has confirmed SAM's RSVP classification.
     public var rsvpUserConfirmed: Bool = false
 
+    // MARK: RSVP Dismiss Tracking
+
+    /// Whether the user dismissed SAM's RSVP detection as incorrect.
+    public var rsvpDismissed: Bool = false
+    public var rsvpDismissedAt: Date?
+
+    /// Preserves the original AI-detected status so Dismissed rows can show what SAM inferred.
+    public var rsvpOriginalDetectedStatusRawValue: String?
+
+    @Transient
+    public var rsvpOriginalDetectedStatus: RSVPStatus? {
+        get { rsvpOriginalDetectedStatusRawValue.flatMap { RSVPStatus(rawValue: $0) } }
+        set { rsvpOriginalDetectedStatusRawValue = newValue?.rawValue }
+    }
+
     public var rsvpUpdatedAt: Date?
 
     // MARK: Acknowledgment Tracking

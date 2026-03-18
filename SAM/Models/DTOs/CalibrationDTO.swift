@@ -93,6 +93,28 @@ nonisolated public struct CalibrationLedger: Codable, Sendable, Equatable {
             .sorted()
     }
 
+    // MARK: - RSVP Accuracy
+
+    /// RSVP detection accuracy stats for Settings display.
+    /// Returns nil if no RSVP feedback has been recorded.
+    public var rsvpAccuracyStats: (confirmed: Int, dismissed: Int, accuracy: Double)? {
+        let keys = ["rsvpAccepted", "rsvpDeclined", "rsvpTentative"]
+        var totalConfirmed = 0
+        var totalDismissed = 0
+
+        for key in keys {
+            if let stat = kindStats[key] {
+                totalConfirmed += stat.actedOn
+                totalDismissed += stat.dismissed
+            }
+        }
+
+        let total = totalConfirmed + totalDismissed
+        guard total > 0 else { return nil }
+        let accuracy = Double(totalConfirmed) / Double(total)
+        return (confirmed: totalConfirmed, dismissed: totalDismissed, accuracy: accuracy)
+    }
+
     // MARK: - Nested Types
 
     /// Per-kind interaction statistics.

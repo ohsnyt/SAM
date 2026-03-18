@@ -777,8 +777,13 @@ actor MailDatabaseService {
         let flags = SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX
         let rc = sqlite3_open_v2(url.path, &db, flags, nil)
         guard rc == SQLITE_OK, let db else {
-            let err = db.map { String(cString: sqlite3_errmsg($0)) } ?? "Unknown error"
-            sqlite3_close(db)
+            let err: String
+            if let db {
+                err = String(cString: sqlite3_errmsg(db))
+                sqlite3_close(db)
+            } else {
+                err = "sqlite3_open_v2 returned \(rc) with nil db pointer"
+            }
             throw MailDatabaseError.openFailed(err)
         }
         // Set a short busy timeout in case Mail has a write lock

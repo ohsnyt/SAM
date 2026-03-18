@@ -71,6 +71,7 @@ struct PeopleListView: View {
     @State private var searchText = ""
     @State private var sortOrder: PeopleSortOrder = .firstName
     @State private var personToDelete: SamPerson?
+    @State private var showingNewPersonSheet = false
     /// Tracks allPeople count to re-trigger batch contact match check only when new people appear.
     @State private var lastCheckedPeopleCount: Int = 0
 
@@ -291,6 +292,14 @@ struct PeopleListView: View {
                 importStatusBadge
 
                 Button {
+                    showingNewPersonSheet = true
+                } label: {
+                    Label("New Person", systemImage: "person.badge.plus")
+                }
+                .keyboardShortcut("n")
+                .help("Add a person without an Apple Contact (⌘N)")
+
+                Button {
                     Task {
                         await importCoordinator.importNow()
                     }
@@ -301,6 +310,11 @@ struct PeopleListView: View {
                 .help("Import contacts from Apple Contacts")
 
                 GuideButton(articleID: "people.contact-list")
+            }
+        }
+        .sheet(isPresented: $showingNewPersonSheet) {
+            NewPersonSheet { newID in
+                selectedPersonID = newID
             }
         }
         .onChange(of: allPeople.count) { _, newCount in
@@ -575,16 +589,24 @@ struct PeopleListView: View {
         ContentUnavailableView {
             Label("No People", systemImage: "person.2.slash")
         } description: {
-            Text("Import contacts from Apple Contacts to get started")
+            Text("Import contacts from Apple Contacts or add someone manually")
         } actions: {
-            Button {
-                Task {
-                    await importCoordinator.importNow()
+            HStack(spacing: 12) {
+                Button {
+                    showingNewPersonSheet = true
+                } label: {
+                    Text("New Person")
                 }
-            } label: {
-                Text("Import Now")
+
+                Button {
+                    Task {
+                        await importCoordinator.importNow()
+                    }
+                } label: {
+                    Text("Import from Contacts")
+                }
+                .buttonStyle(.borderedProminent)
             }
-            .buttonStyle(.borderedProminent)
         }
     }
 

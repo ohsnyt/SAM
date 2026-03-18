@@ -9,7 +9,7 @@ import Contacts
 import Foundation
 import os.log
 
-private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "ContactPhotoService")
+private nonisolated(unsafe) let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "ContactPhotoService")
 
 actor ContactPhotoService {
 

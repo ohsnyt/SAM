@@ -1042,10 +1042,11 @@ final class LinkedInImportCoordinator {
                 }
             }
 
-            if let phone = profile.phone, !phone.isEmpty {
+            if let phone = profile.phone, !phone.isEmpty,
+               !person.phoneAliases.contains(where: { $0.filter(\.isNumber) == phone.filter(\.isNumber) }) {
                 candidates.append(EnrichmentCandidate(
                     personID: person.id, field: .phone, proposedValue: phone,
-                    currentValue: nil, source: .linkedInProfilePDF,
+                    currentValue: person.phoneAliases.first, source: .linkedInProfilePDF,
                     sourceDetail: "LinkedIn Profile PDF"
                 ))
             }

@@ -292,13 +292,18 @@ final class GuideScreenshotRunner {
     private func manualScreenshotList() -> String {
         """
           Settings & Permissions (getting-started/images/gs-02.png)
+          Text Size picker in Settings (getting-started/images/gs-03.png)
           Outcome queue cards (today/images/td-02.png)
+          Life events section in Today view (today/images/td-03.png)
+          Deep work schedule sheet (today/images/td-04.png)
           Deduced relationship alert (people/images/pp-04.png)
           Goals view (business/images/bi-02.png)
           Client pipeline funnel (business/images/bi-03.png)
           Strategic insights (business/images/bi-04.png)
           Recruiting pipeline (business/images/bi-05.png)
           Production dashboard (business/images/bi-06.png)
+          Goal check-in session (business/images/bi-07.png)
+          Goal journal entries (business/images/bi-08.png)
           Content drafts (grow/images/gr-02.png)
           Social promotion sheet (events/images/05-01.png)
           Presentations tab (events/images/06-01.png)
@@ -307,6 +312,7 @@ final class GuideScreenshotRunner {
           Presentation delivery history (events/images/07-01.png)
           Identity settings (events/images/08-01.png)
           Undo toast (events/images/09-01.png)
+          Command palette (search/images/sr-02.png)
         """
     }
 

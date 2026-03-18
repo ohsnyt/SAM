@@ -15,7 +15,7 @@ import Combine
 import SQLite3
 import os.log
 
-private let containerLogger = Logger(subsystem: "com.matthewsessions.SAM", category: "SAMModelContainer")
+private nonisolated(unsafe) let containerLogger = Logger(subsystem: "com.matthewsessions.SAM", category: "SAMModelContainer")
 
 // ─────────────────────────────────────────────────────────────────────
 // MARK: - Schema

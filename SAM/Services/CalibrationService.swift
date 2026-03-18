@@ -86,6 +86,44 @@ actor CalibrationService {
         save()
     }
 
+    // MARK: - RSVP Feedback
+
+    /// Record whether an RSVP detection was correct or incorrect.
+    /// Uses kind keys "rsvpAccepted", "rsvpDeclined", "rsvpTentative".
+    func recordRSVPFeedback(detectedStatus: RSVPStatus, wasCorrect: Bool) {
+        let kind = "rsvp\(detectedStatus.rawValue.capitalized)"
+        if wasCorrect {
+            recordCompletion(kind: kind, responseMinutes: 0, hour: 0, dayOfWeek: 0)
+        } else {
+            recordDismissal(kind: kind)
+        }
+    }
+
+    /// Compute the adaptive auto-confirm threshold based on RSVP accuracy history.
+    /// Default 0.8. Needs 5+ data points before adjusting.
+    /// High accuracy → lower threshold (trust more). Low accuracy → higher threshold.
+    func rsvpAutoConfirmThreshold() -> Double {
+        let keys = ["rsvpAccepted", "rsvpDeclined", "rsvpTentative"]
+        var totalCorrect = 0
+        var totalWrong = 0
+
+        for key in keys {
+            if let stat = ledger.kindStats[key] {
+                totalCorrect += stat.actedOn
+                totalWrong += stat.dismissed
+            }
+        }
+
+        let total = totalCorrect + totalWrong
+        guard total >= 5 else { return 0.8 }
+
+        let accuracy = Double(totalCorrect) / Double(total)
+        // Map accuracy to threshold: high accuracy (0.9+) → 0.6, low accuracy (0.3) → 0.95
+        // Linear interpolation: threshold = 1.0 - (accuracy * 0.5), clamped to [0.6, 0.95]
+        let threshold = max(0.6, min(0.95, 1.0 - accuracy * 0.5))
+        return threshold
+    }
+
     // MARK: - Muting
 
     /// Mute or unmute an outcome kind.

@@ -70,6 +70,16 @@
       "relatedFeatureID": null
     },
     {
+      "id": "getting-started.text-size",
+      "title": "Text Size",
+      "sectionID": "getting-started",
+      "sortOrder": 6,
+      "markdownFileName": "07-Text-Size.md",
+      "searchKeywords": ["text size", "font size", "display", "accessibility", "scale", "large text", "small text"],
+      "relatedTipID": null,
+      "relatedFeatureID": null
+    },
+    {
       "id": "today.daily-briefing",
       "title": "Daily Briefing",
       "sectionID": "today",
@@ -98,6 +108,26 @@
       "searchKeywords": ["coaching", "calibration", "learning", "adapt", "preferences", "mute", "rating", "encouragement"],
       "relatedTipID": null,
       "relatedFeatureID": null
+    },
+    {
+      "id": "today.life-events",
+      "title": "Life Event Intelligence",
+      "sectionID": "today",
+      "sortOrder": 3,
+      "markdownFileName": "04-Life-Event-Intelligence.md",
+      "searchKeywords": ["life event", "birthday", "graduation", "promotion", "wedding", "loss", "outreach", "milestone"],
+      "relatedTipID": null,
+      "relatedFeatureID": null
+    },
+    {
+      "id": "today.deep-work",
+      "title": "Deep Work Scheduling",
+      "sectionID": "today",
+      "sortOrder": 4,
+      "markdownFileName": "05-Deep-Work-Scheduling.md",
+      "searchKeywords": ["deep work", "focus", "schedule", "time block", "calendar", "concentration"],
+      "relatedTipID": null,
+      "relatedFeatureID": "deepWorkSchedule"
     },
     {
       "id": "people.contact-list",
@@ -208,6 +238,16 @@
       "searchKeywords": ["role", "recruiting", "candidates", "scoring", "board", "referral", "discover", "scan"],
       "relatedTipID": "RoleRecruitingTip",
       "relatedFeatureID": "roleRecruiting"
+    },
+    {
+      "id": "business.goal-check-ins",
+      "title": "Goal Check-In Sessions",
+      "sectionID": "business",
+      "sortOrder": 7,
+      "markdownFileName": "08-Goal-Check-Ins.md",
+      "searchKeywords": ["check-in", "journal", "goal review", "reflection", "coaching session", "barriers", "commitments"],
+      "relatedTipID": null,
+      "relatedFeatureID": null
     },
     {
       "id": "grow.lead-acquisition",
@@ -358,6 +398,16 @@
       "searchKeywords": ["search", "find", "query", "command palette"],
       "relatedTipID": "SearchTip",
       "relatedFeatureID": "search"
+    },
+    {
+      "id": "search.command-palette",
+      "title": "Command Palette",
+      "sectionID": "search",
+      "sortOrder": 1,
+      "markdownFileName": "02-Command-Palette.md",
+      "searchKeywords": ["command palette", "launcher", "quick nav", "command k", "spotlight", "fuzzy search"],
+      "relatedTipID": "CommandPaletteTip",
+      "relatedFeatureID": null
     }
   ]
 }

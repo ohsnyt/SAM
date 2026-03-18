@@ -23,6 +23,7 @@ The dashboard is organized into tabs. Use the segmented picker to switch between
 | **Pipeline** | Client funnel (Lead > Applicant > Client) and Recruiting funnel (7 stages) | Client Pipeline, Recruiting Pipeline |
 | **Production** | Policies, products, premiums, and status tracking | Production |
 | **Goals** | Business targets with pacing and progress tracking | Goals |
+| **Roles** | Candidate discovery and pipeline for custom roles (appears when you create a role) | Role Recruiting |
 
 ## Refreshing Data
 

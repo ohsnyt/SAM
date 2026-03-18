@@ -7,7 +7,7 @@ import Foundation
 import Security
 import os.log
 
-private nonisolated(unsafe) let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "KeychainService")
+private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "KeychainService")
 
 actor KeychainService {
 

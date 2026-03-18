@@ -10,6 +10,7 @@
 //
 
 import SwiftUI
+import TipKit
 import os.log
 
 private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "PostMeetingCaptureView")
@@ -202,6 +203,8 @@ struct PostMeetingCaptureView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            TipView(PostMeetingCaptureTip())
+                .tipViewStyle(SAMTipViewStyle())
             header
             Divider()
 

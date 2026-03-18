@@ -143,7 +143,7 @@ final class GoalJournalRepository {
         onSaved: (() -> Void)? = nil
     ) {
         isSummarizing = true
-        Task {
+        Task { @MainActor in
             do {
                 let dto = try await GoalCheckInService.shared.summarizeSession(
                     messages: messages,

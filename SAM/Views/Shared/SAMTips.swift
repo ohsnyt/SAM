@@ -38,6 +38,12 @@ enum SAMTipGuideMapping {
         case is GrowDashboardTip:        return "grow.lead-acquisition"
         case is ClipboardCaptureTip:     return "getting-started.clipboard-capture"
         case is CommandPaletteTip:       return "search.overview"
+        case is PostMeetingCaptureTip:   return "people.adding-notes"
+        case is ContentDraftTip:         return "grow.content-drafts"
+        case is LifeEventCoachingTip:    return "today.coaching"
+        case is GoalCheckInTip:          return "business.goals"
+        case is DeepWorkScheduleTip:     return "today.outcome-queue"
+        case is EnrichmentReviewTip:     return "people.contact-list"
         default:                         return nil
         }
     }
@@ -81,6 +87,12 @@ enum SAMTipState {
         GrowDashboardTip.self,
         ClipboardCaptureTip.self,
         CommandPaletteTip.self,
+        PostMeetingCaptureTip.self,
+        ContentDraftTip.self,
+        LifeEventCoachingTip.self,
+        GoalCheckInTip.self,
+        DeepWorkScheduleTip.self,
+        EnrichmentReviewTip.self,
     ]
 
     /// Turn tips on: reset eligibility for all tips so they reappear.
@@ -109,6 +121,12 @@ enum SAMTipState {
             await GrowDashboardTip().resetEligibility()
             await ClipboardCaptureTip().resetEligibility()
             await CommandPaletteTip().resetEligibility()
+            await PostMeetingCaptureTip().resetEligibility()
+            await ContentDraftTip().resetEligibility()
+            await LifeEventCoachingTip().resetEligibility()
+            await GoalCheckInTip().resetEligibility()
+            await DeepWorkScheduleTip().resetEligibility()
+            await EnrichmentReviewTip().resetEligibility()
             logger.debug("All tips re-enabled via resetEligibility")
         }
     }
@@ -138,6 +156,12 @@ enum SAMTipState {
         GrowDashboardTip().invalidate(reason: .tipClosed)
         ClipboardCaptureTip().invalidate(reason: .tipClosed)
         CommandPaletteTip().invalidate(reason: .tipClosed)
+        PostMeetingCaptureTip().invalidate(reason: .tipClosed)
+        ContentDraftTip().invalidate(reason: .tipClosed)
+        LifeEventCoachingTip().invalidate(reason: .tipClosed)
+        GoalCheckInTip().invalidate(reason: .tipClosed)
+        DeepWorkScheduleTip().invalidate(reason: .tipClosed)
+        EnrichmentReviewTip().invalidate(reason: .tipClosed)
         logger.debug("All tips disabled via invalidate")
     }
 
@@ -451,6 +475,80 @@ struct SearchTip: Tip {
         Text("Search across people, notes, evidence, and outcomes all at once. Use \u{2318}4 or \u{2318}K to get here quickly.")
     }
     var image: Image? { Image(systemName: "magnifyingglass") }
+    var actions: [Action] {
+        [Action(id: "learn-more", title: "Learn more")]
+    }
+}
+
+// MARK: - Meeting & Coaching Tips
+
+struct PostMeetingCaptureTip: Tip {
+    var title: Text { Text("Post-Meeting Capture") }
+    var message: Text? {
+        Text("After a meeting or call, SAM walks you through what happened. Use Guided mode for step-by-step prompts or Freeform for quick notes. SAM extracts action items and follow-ups automatically.")
+    }
+    var image: Image? { Image(systemName: "list.clipboard") }
+    var actions: [Action] {
+        [Action(id: "learn-more", title: "Learn more")]
+    }
+}
+
+struct LifeEventCoachingTip: Tip {
+    var title: Text { Text("Life Event Coaching") }
+    var message: Text? {
+        Text("SAM detected a life event for this person. Chat with SAM to craft the right response \u{2014} whether it's a congratulations, condolence, or transition check-in.")
+    }
+    var image: Image? { Image(systemName: "heart.text.clipboard") }
+    var actions: [Action] {
+        [Action(id: "learn-more", title: "Learn more")]
+    }
+}
+
+struct DeepWorkScheduleTip: Tip {
+    var title: Text { Text("Schedule Deep Work") }
+    var message: Text? {
+        Text("Block focused time on your calendar for this task. SAM creates an event on your SAM Tasks calendar so you have dedicated space to get it done.")
+    }
+    var image: Image? { Image(systemName: "clock.badge.checkmark") }
+    var actions: [Action] {
+        [Action(id: "learn-more", title: "Learn more")]
+    }
+}
+
+// MARK: - Goal Tips
+
+struct GoalCheckInTip: Tip {
+    var title: Text { Text("Goal Check-In") }
+    var message: Text? {
+        Text("Reflect on your progress with SAM. This guided session reviews your goal pacing, surfaces what's working, and produces a journal entry you can revisit later.")
+    }
+    var image: Image? { Image(systemName: "text.badge.checkmark") }
+    var actions: [Action] {
+        [Action(id: "learn-more", title: "Learn more")]
+    }
+}
+
+// MARK: - Content Tips
+
+struct ContentDraftTip: Tip {
+    var title: Text { Text("Content Drafts") }
+    var message: Text? {
+        Text("SAM generates social media drafts tailored to each platform. Pick a platform, review the draft, then copy it to your clipboard. Compliance flags appear automatically if needed.")
+    }
+    var image: Image? { Image(systemName: "pencil.and.outline") }
+    var actions: [Action] {
+        [Action(id: "learn-more", title: "Learn more")]
+    }
+}
+
+// MARK: - Enrichment Tips
+
+struct EnrichmentReviewTip: Tip {
+    var title: Text { Text("Contact Updates") }
+    var message: Text? {
+        Text("SAM found updated info for this contact from social imports. Review each field, toggle the ones you want, and apply them back to Apple Contacts.")
+    }
+    var image: Image? { Image(systemName: "person.text.rectangle") }
     var actions: [Action] {
         [Action(id: "learn-more", title: "Learn more")]
     }

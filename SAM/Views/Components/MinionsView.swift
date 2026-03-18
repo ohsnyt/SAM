@@ -113,6 +113,12 @@ struct MinionsView: View {
                 id: "linkedin", icon: "link",
                 label: "LinkedIn", tooltip: "Processing LinkedIn data"))
         }
+        if linkedInCoordinator.pdfScanStatus == .scanning || linkedInCoordinator.pdfScanStatus == .importing {
+            items.append(MinionItem(
+                id: "linkedinPDF", icon: "doc.text.magnifyingglass",
+                label: linkedInCoordinator.pdfScanProgress ?? "LinkedIn Profiles",
+                tooltip: "Scanning and matching LinkedIn Profile PDFs"))
+        }
         if facebookCoordinator.importStatus == .parsing || facebookCoordinator.importStatus == .importing {
             items.append(MinionItem(
                 id: "facebook", icon: "face.smiling",

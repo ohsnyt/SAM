@@ -22,6 +22,18 @@ When you undo a deletion, SAM restores:
 
 Even if you miss the toast notification, you can find your deleted event in the undo history for up to 30 days. Check SAM's undo history to restore it later.
 
+## Universal Undo
+
+SAM's undo system extends beyond events. Any destructive or relational change throughout the app is tracked with a 30-day undo history, including:
+
+- **Notes** — Deleted notes can be restored
+- **Outcomes** — Dismissed or completed coaching outcomes
+- **Contexts** — Deleted business contexts
+- **Participations** — Removed event participants
+- **Insights** — Dismissed AI insights
+
+In each case, a toast notification appears at the bottom of the screen with an **Undo** button. All undo entries expire after 30 days and are pruned automatically.
+
 ---
 
 ## See Also

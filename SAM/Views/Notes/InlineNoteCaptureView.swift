@@ -77,6 +77,26 @@ struct InlineNoteCaptureView: View {
         .onAppear {
             if initiallyExpanded { isEditing = true }
         }
+        .confirmationDialog(
+            "Name Mismatch",
+            isPresented: Binding(
+                get: { photoCoordinator.pendingLinkedInImport != nil },
+                set: { if !$0 { photoCoordinator.cancelPendingLinkedInImport() } }
+            ),
+            presenting: photoCoordinator.pendingLinkedInImport
+        ) { pending in
+            Button("Import Anyway") {
+                Task {
+                    await photoCoordinator.confirmPendingLinkedInImport()
+                    onSaved()
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                photoCoordinator.cancelPendingLinkedInImport()
+            }
+        } message: { pending in
+            Text("This PDF is for \"\(pending.profileName)\" but you're viewing \"\(pending.personName)\". Import anyway?")
+        }
     }
 
     // MARK: - Collapsed Bar

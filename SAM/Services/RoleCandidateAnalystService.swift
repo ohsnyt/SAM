@@ -59,7 +59,7 @@ struct RoleCandidateScoringResult: Sendable, Codable {
 
 // MARK: - LLM Response DTO
 
-private struct LLMCandidateScore: Codable {
+private struct LLMCandidateScore: Codable, Sendable {
     let index: Int?
     let match_score: Double?
     let match_rationale: String?

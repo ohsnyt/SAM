@@ -113,9 +113,10 @@ final class RoleRecruitingCoordinator {
                 candidates: filtered
             )
 
-            let results = try await RoleCandidateAnalystService.shared.scoreCandidates(input: input) { [weak self] current in
+            weak var weakSelf = self
+            let results = try await RoleCandidateAnalystService.shared.scoreCandidates(input: input) { current in
                 Task { @MainActor in
-                    self?.scoringStatus = .scoring(roleName, current: current, total: total)
+                    weakSelf?.scoringStatus = .scoring(roleName, current: current, total: total)
                 }
             }
 

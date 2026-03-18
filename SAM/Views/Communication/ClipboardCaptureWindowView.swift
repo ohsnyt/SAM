@@ -50,6 +50,7 @@ struct ClipboardCaptureWindowView: View {
     var body: some View {
         VStack(spacing: 0) {
             TipView(ClipboardCaptureTip())
+                .tipViewStyle(SAMTipViewStyle())
             header
             Divider()
 
@@ -520,17 +521,15 @@ struct ClipboardCaptureWindowView: View {
                 let senderMatch = senderMatches[msg.senderName] ?? .unmatched
 
                 // Determine which person this message belongs to
-                // For "Me" messages, they go to all matched non-Me persons
+                // For "Me" messages, add once per matched non-Me person (conversation context)
                 if msg.isFromMe || senderMatch.isMe {
-                    for (name, match) in senderMatches {
+                    for (_, match) in senderMatches {
                         if case .matched(let person) = match, !person.isMe {
                             messagesByPerson[person.id, default: []].append(
                                 (text: msg.text, date: msg.timestamp ?? conversationDate, isFromMe: true)
                             )
                             personMap[person.id] = person
                         }
-                        // Also check for explicit non-Me matched senders
-                        if name != msg.senderName { continue }
                     }
                 } else if case .matched(let person) = senderMatch, !person.isMe {
                     messagesByPerson[person.id, default: []].append(

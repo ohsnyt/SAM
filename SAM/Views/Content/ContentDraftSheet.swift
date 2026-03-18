@@ -10,6 +10,7 @@
 //
 
 import SwiftUI
+import TipKit
 import os.log
 
 private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "ContentDraftSheet")
@@ -40,6 +41,9 @@ struct ContentDraftSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
+            TipView(ContentDraftTip())
+                .tipViewStyle(SAMTipViewStyle())
+
             // Title
             Text("Content Draft")
                 .samFont(.title3)

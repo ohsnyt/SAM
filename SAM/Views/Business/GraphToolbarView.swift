@@ -16,6 +16,7 @@ struct GraphToolbarView: ToolbarContent {
     @Bindable var coordinator: RelationshipGraphCoordinator
     @Binding var scale: CGFloat
     @Binding var offset: CGPoint
+    @Binding var showLegend: Bool
     var fitToView: () -> Void
 
     private let predefinedRoles = ["Client", "Applicant", "Lead", "Agent", "External Agent", "Referral Partner", "Vendor", "Prospect"]
@@ -71,6 +72,12 @@ struct GraphToolbarView: ToolbarContent {
                 }
                 .toggleStyle(.button)
                 .help("Toggle Edge Bundling (⌘B)")
+
+                Toggle(isOn: $showLegend) {
+                    Image(systemName: "list.bullet.rectangle")
+                }
+                .toggleStyle(.button)
+                .help("Toggle Legend (⌘L)")
             }
         }
 

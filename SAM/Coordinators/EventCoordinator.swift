@@ -580,7 +580,18 @@ final class EventCoordinator {
     /// Confirm a SAM-detected RSVP and trigger auto-acknowledgment if eligible.
     /// Call this instead of `EventRepository.confirmRSVP` to ensure the ack pipeline fires.
     func confirmDetectedRSVP(participationID: UUID) throws {
+        // Capture detected status before confirming (status won't change, but ensure we have it)
+        let detectedStatus = (try? EventRepository.shared.fetchParticipation(id: participationID))?.rsvpStatus
+
         try EventRepository.shared.confirmRSVP(participationID: participationID)
+
+        // Record calibration feedback after successful confirmation
+        if let detectedStatus {
+            Task(priority: .background) {
+                await CalibrationService.shared.recordRSVPFeedback(detectedStatus: detectedStatus, wasCorrect: true)
+            }
+        }
+
         if let participation = try? EventRepository.shared.fetchParticipation(id: participationID),
            let event = participation.event {
             transitionFromDraftIfNeeded(event: event)
@@ -590,11 +601,22 @@ final class EventCoordinator {
 
     /// Confirm a SAM-detected RSVP with a corrected status and trigger auto-acknowledgment.
     func confirmDetectedRSVP(participationID: UUID, correctedStatus: RSVPStatus) throws {
+        // Capture the AI-detected status before overwriting it
+        let detectedStatus = (try? EventRepository.shared.fetchParticipation(id: participationID))?.rsvpStatus
+
         try EventRepository.shared.updateRSVP(
             participationID: participationID,
             status: correctedStatus,
             userConfirmed: true
         )
+
+        // Record calibration feedback: original detection was wrong (user corrected it)
+        if let detectedStatus {
+            Task(priority: .background) {
+                await CalibrationService.shared.recordRSVPFeedback(detectedStatus: detectedStatus, wasCorrect: false)
+            }
+        }
+
         if let participation = try? EventRepository.shared.fetchParticipation(id: participationID),
            let event = participation.event {
             transitionFromDraftIfNeeded(event: event)
@@ -602,15 +624,56 @@ final class EventCoordinator {
         try processAutoAcknowledgment(participationID: participationID)
     }
 
+    /// Dismiss a SAM-detected RSVP as incorrect. Records calibration feedback.
+    func dismissDetectedRSVP(participationID: UUID) throws {
+        // Capture the detected status before dismissing
+        let detectedStatus: RSVPStatus?
+        if let participation = try? EventRepository.shared.fetchParticipation(id: participationID) {
+            detectedStatus = participation.rsvpStatus
+        } else {
+            detectedStatus = nil
+        }
+
+        try EventRepository.shared.dismissRSVP(participationID: participationID)
+
+        if let status = detectedStatus {
+            Task(priority: .background) {
+                await CalibrationService.shared.recordRSVPFeedback(detectedStatus: status, wasCorrect: false)
+            }
+        }
+    }
+
     /// Process a detected RSVP signal from evidence analysis.
     /// Called by the evidence pipeline when a message matches an invited participant.
+    /// Compute the RSVP auto-confirm threshold from the cached calibration ledger.
+    /// Reads from the synchronous cache — safe to call from @MainActor without async.
+    static func computeRSVPThreshold(from ledger: CalibrationLedger) -> Double {
+        let keys = ["rsvpAccepted", "rsvpDeclined", "rsvpTentative"]
+        var totalCorrect = 0
+        var totalWrong = 0
+
+        for key in keys {
+            if let stat = ledger.kindStats[key] {
+                totalCorrect += stat.actedOn
+                totalWrong += stat.dismissed
+            }
+        }
+
+        let total = totalCorrect + totalWrong
+        guard total >= 5 else { return 0.8 }
+
+        let accuracy = Double(totalCorrect) / Double(total)
+        return max(0.6, min(0.95, 1.0 - accuracy * 0.5))
+    }
+
     func processRSVPSignal(
         participationID: UUID,
         detectedStatus: RSVPStatus,
         responseQuote: String,
         confidence: Double
     ) throws {
-        let needsConfirmation = confidence < 0.8
+        let threshold = Self.computeRSVPThreshold(from: CalibrationService.cachedLedger)
+        let needsConfirmation = confidence < threshold
 
         try EventRepository.shared.updateRSVP(
             participationID: participationID,

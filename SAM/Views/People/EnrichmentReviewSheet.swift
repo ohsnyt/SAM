@@ -8,6 +8,7 @@
 //
 
 import SwiftUI
+import TipKit
 
 struct EnrichmentReviewSheet: View {
 
@@ -28,6 +29,9 @@ struct EnrichmentReviewSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            TipView(EnrichmentReviewTip())
+                .tipViewStyle(SAMTipViewStyle())
+
             // Header
             HStack {
                 VStack(alignment: .leading, spacing: 2) {

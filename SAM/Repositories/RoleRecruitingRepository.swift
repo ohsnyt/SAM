@@ -106,7 +106,11 @@ final class RoleRecruitingRepository {
 
     func saveCandidate(_ candidate: RoleCandidate) throws {
         guard let context else { throw RepositoryError.notConfigured }
-        context.insert(candidate)
+        // Only insert if not already tracked by this context
+        let existing = try? context.fetch(FetchDescriptor<RoleCandidate>()).first { $0.id == candidate.id }
+        if existing == nil {
+            context.insert(candidate)
+        }
         try context.save()
         logger.debug("Saved candidate: \(candidate.person?.displayNameCache ?? "unknown") for \(candidate.roleDefinition?.name ?? "unknown")")
     }

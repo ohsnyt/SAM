@@ -96,6 +96,9 @@ struct RelationshipGraphView: View {
     @State private var roleDeductionEngine = RoleDeductionEngine.shared
     @State private var rolePickerNodeID: UUID?
 
+    // Legend visibility
+    @State private var showLegend: Bool = false
+
     // MARK: - Navigation
 
     @AppStorage("sam.sidebar.selection") private var sidebarSelection: String = "graph"
@@ -124,6 +127,7 @@ struct RelationshipGraphView: View {
                     coordinator: coordinator,
                     scale: $scale,
                     offset: $offset,
+                    showLegend: $showLegend,
                     fitToView: fitToView
                 )
                 ToolbarItem {
@@ -275,6 +279,22 @@ struct RelationshipGraphView: View {
                 Spacer()
             }
             .allowsHitTesting(true)
+
+            // Legend overlay — pinned to bottom-leading
+            if showLegend {
+                VStack {
+                    Spacer()
+                    HStack {
+                        GraphLegendView(
+                            hasGhostNodes: coordinator.showGhostNodes && coordinator.nodes.contains(where: \.isGhost)
+                        )
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                        Spacer()
+                    }
+                }
+                .padding(12)
+                .allowsHitTesting(true)
+            }
         }
     }
 
@@ -685,6 +705,9 @@ struct RelationshipGraphView: View {
         case "g":
             coordinator.familyClusteringEnabled.toggle()
             coordinator.applyFilters()
+            return .handled
+        case "l":
+            withAnimation(.easeInOut(duration: 0.2)) { showLegend.toggle() }
             return .handled
         case "r":
             coordinator.invalidateLayoutCache()

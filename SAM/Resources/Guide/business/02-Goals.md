@@ -50,6 +50,10 @@ When SAM generates coaching outcomes, it references your goals when relevant. A 
 
 Goal pacing alerts also appear in your morning briefing when a goal is at risk.
 
+## Check-In Sessions
+
+Each goal has a **Check In** button that opens a coaching conversation focused on that specific goal. Check-ins help you review progress, identify barriers, and commit to next steps. Each session produces a journal entry. See the **Goal Check-In Sessions** guide for details.
+
 ## Managing Goals
 
 - **Edit** — Click the edit button on any goal card to change the target, dates, or category
@@ -59,6 +63,7 @@ Goal pacing alerts also appear in your morning briefing when a goal is at risk.
 
 ## See Also
 
+- **Goal Check-In Sessions** — Structured coaching conversations to review progress and plan next steps
 - **Dashboard Overview** — The Business command center where goals sit alongside pipeline and production
 - **Strategic Insights** — AI recommendations that reference your goal pacing and priorities
 - **Outcome Queue** — Where goal-connected coaching actions appear in your daily workflow

@@ -12,8 +12,9 @@ struct EventDetailView: View {
 
     let eventID: UUID
     var onDelete: (() -> Void)?
+    @State private var event: SamEvent?
+    @State private var cachedParticipations: [EventParticipation] = []
     @State private var selectedParticipationID: UUID?
-    @State private var participantFilter: ParticipantFilter = .all
     @State private var showAddParticipants = false
     @State private var showSocialPromotion = false
     @State private var showInvitationDrafts = false
@@ -26,18 +27,18 @@ struct EventDetailView: View {
     @State private var lastActionMessage: String?
     @State private var unknownRSVPs: [EventCoordinator.UnknownEventRSVP] = []
     @State private var quickAddRSVP: EventCoordinator.UnknownEventRSVP?
+    @State private var showBulkReviewSheet = false
+    @State private var inferredExpanded = true
+    @State private var dismissedExpanded = false
 
-    enum ParticipantFilter: String, CaseIterable {
-        case all = "All"
-        case accepted = "Accepted"
-        case pending = "Pending"
-        case declined = "Declined"
-        case needsConfirmation = "Needs Review"
-    }
-
-    private var event: SamEvent? {
-        _ = refreshToken // Force re-evaluation after participant changes
-        return try? EventRepository.shared.fetch(id: eventID)
+    private func reloadEvent() {
+        let loaded = try? EventRepository.shared.fetch(id: eventID)
+        event = loaded
+        if let loaded {
+            cachedParticipations = EventRepository.shared.fetchParticipations(for: loaded)
+        } else {
+            cachedParticipations = []
+        }
     }
 
     var body: some View {
@@ -57,6 +58,8 @@ struct EventDetailView: View {
             }
         }
         .frame(maxHeight: .infinity)
+        .onAppear { reloadEvent() }
+        .onChange(of: refreshToken) { reloadEvent() }
         .onReceive(NotificationCenter.default.publisher(for: .samRSVPAutoAdded)) { notification in
             // Refresh if the auto-add was for this event
             if let eventIDStr = notification.userInfo?["eventID"] as? String,
@@ -124,36 +127,89 @@ struct EventDetailView: View {
 
             Divider()
 
-            // Filter bar
-            Picker("Filter", selection: $participantFilter) {
-                ForEach(ParticipantFilter.allCases, id: \.self) { filter in
-                    Text(filter.rawValue).tag(filter)
-                }
-            }
-            .pickerStyle(.segmented)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-
-            Divider()
-
-            // Participant rows
+            // Two-tier participant list
             List(selection: $selectedParticipationID) {
-                let participations = filteredParticipations(event: event)
-                if participations.isEmpty {
+                let confirmed = confirmedParticipations
+                let inferred = inferredParticipations
+                let dismissed = dismissedParticipations
+
+                if confirmed.isEmpty && inferred.isEmpty && dismissed.isEmpty {
                     ContentUnavailableView(
                         "No Participants",
                         systemImage: "person.badge.plus",
                         description: Text("Add people to this event")
                     )
                 } else {
-                    ForEach(participations, id: \.id) { participation in
-                        ParticipantRowView(participation: participation)
-                            .tag(participation.id)
+                    // Confirmed participants
+                    if !confirmed.isEmpty {
+                        Section("Participants (\(confirmed.count))") {
+                            ForEach(confirmed, id: \.id) { participation in
+                                ParticipantRowView(participation: participation)
+                                    .tag(participation.id)
+                            }
+                        }
+                    }
+
+                    // Inferred (AI-detected, unconfirmed) participants
+                    if !inferred.isEmpty {
+                        Section {
+                            DisclosureGroup(isExpanded: $inferredExpanded) {
+                                ForEach(inferred, id: \.id) { participation in
+                                    InferredParticipantRowView(participation: participation) {
+                                        refreshToken = UUID()
+                                    }
+                                    .tag(participation.id)
+                                }
+                                if inferred.count > 3 {
+                                    Button {
+                                        showBulkReviewSheet = true
+                                    } label: {
+                                        Label("Review All", systemImage: "checklist")
+                                            .samFont(.caption)
+                                    }
+                                    .buttonStyle(.borderless)
+                                }
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "sparkles")
+                                        .foregroundStyle(.orange)
+                                    Text("Inferred (\(inferred.count))")
+                                        .samFont(.subheadline, weight: .medium)
+                                }
+                            }
+                        }
+                    }
+
+                    // Dismissed detections
+                    if !dismissed.isEmpty {
+                        Section {
+                            DisclosureGroup(isExpanded: $dismissedExpanded) {
+                                ForEach(dismissed, id: \.id) { participation in
+                                    DismissedParticipantRowView(participation: participation) {
+                                        refreshToken = UUID()
+                                    }
+                                    .tag(participation.id)
+                                }
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "eye.slash")
+                                        .foregroundStyle(.secondary)
+                                    Text("Dismissed (\(dismissed.count))")
+                                        .samFont(.subheadline, weight: .medium)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
                     }
                 }
             }
             .listStyle(.plain)
             .frame(maxHeight: .infinity)
+            .sheet(isPresented: $showBulkReviewSheet, onDismiss: { refreshToken = UUID() }) {
+                BulkRSVPReviewSheet(event: event) {
+                    refreshToken = UUID()
+                }
+            }
 
             // Unknown sender RSVPs
             if !unknownRSVPs.isEmpty {
@@ -293,21 +349,27 @@ struct EventDetailView: View {
 
             // RSVP summary bar
             HStack(spacing: 12) {
-                rsvpBadge(count: event.participations.filter { $0.rsvpStatus == .accepted }.count,
+                rsvpBadge(count: cachedParticipations.filter { $0.rsvpStatus == .accepted }.count,
                           label: "Accepted", color: .green)
-                rsvpBadge(count: event.participations.filter { $0.rsvpStatus == .tentative }.count,
+                rsvpBadge(count: cachedParticipations.filter { $0.rsvpStatus == .tentative }.count,
                           label: "Tentative", color: .orange)
-                rsvpBadge(count: event.participations.filter { $0.rsvpStatus == .declined }.count,
+                rsvpBadge(count: cachedParticipations.filter { $0.rsvpStatus == .declined }.count,
                           label: "Declined", color: .red)
-                rsvpBadge(count: event.participations.filter {
+                rsvpBadge(count: cachedParticipations.filter {
                     $0.rsvpStatus == .invited || $0.rsvpStatus == .pending
                 }.count, label: "Pending", color: .blue)
 
+                let dismissedCount = cachedParticipations.filter { $0.rsvpDismissed }.count
+                if dismissedCount > 0 {
+                    rsvpBadge(count: dismissedCount, label: "Dismissed", color: .gray)
+                }
+
                 Spacer()
 
-                Text("\(event.acceptedCount)/\(event.targetParticipantCount) target")
+                let acceptedCount = cachedParticipations.filter { $0.rsvpStatus == .accepted }.count
+                Text("\(acceptedCount)/\(event.targetParticipantCount) target")
                     .samFont(.caption, weight: .bold)
-                    .foregroundStyle(event.acceptedCount >= event.targetParticipantCount ? .green : .secondary)
+                    .foregroundStyle(acceptedCount >= event.targetParticipantCount ? .green : .secondary)
             }
 
             if let message = lastActionMessage {
@@ -357,7 +419,7 @@ struct EventDetailView: View {
                 Label("Draft Invitations", systemImage: "paperplane")
                     .samFont(.caption)
             }
-            .disabled(!hasUninvitedParticipants(event: event))
+            .disabled(!hasUninvitedParticipants())
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -379,7 +441,7 @@ struct EventDetailView: View {
     private func participantDetail(event: SamEvent) -> some View {
         Group {
             if let participationID = selectedParticipationID,
-               let participation = event.participations.first(where: { $0.id == participationID }) {
+               let participation = cachedParticipations.first(where: { $0.id == participationID }) {
                 ParticipantDetailView(participation: participation, event: event)
             } else {
                 ContentUnavailableView(
@@ -391,26 +453,43 @@ struct EventDetailView: View {
         }
     }
 
-    // MARK: - Filtering
+    // MARK: - Two-Tier Filtering
 
-    private func hasUninvitedParticipants(event: SamEvent) -> Bool {
-        event.participations.contains { $0.inviteStatus == .notInvited }
+    private func hasUninvitedParticipants() -> Bool {
+        cachedParticipations.contains { $0.inviteStatus == .notInvited }
     }
 
-    private func filteredParticipations(event: SamEvent) -> [EventParticipation] {
-        let sorted = EventRepository.shared.fetchParticipations(for: event)
-        switch participantFilter {
-        case .all:
-            return sorted
-        case .accepted:
-            return sorted.filter { $0.rsvpStatus == .accepted }
-        case .pending:
-            return sorted.filter { $0.rsvpStatus == .pending || $0.rsvpStatus == .invited }
-        case .declined:
-            return sorted.filter { $0.rsvpStatus == .declined }
-        case .needsConfirmation:
-            return sorted.filter { !$0.rsvpUserConfirmed && $0.rsvpDetectionConfidence != nil }
+    /// The adaptive RSVP auto-confirm threshold from calibration data.
+    private var rsvpThreshold: Double {
+        EventCoordinator.computeRSVPThreshold(from: CalibrationService.cachedLedger)
+    }
+
+    /// Confirmed: user-set status, manually confirmed, no AI detection, or high-confidence auto-detection.
+    private var confirmedParticipations: [EventParticipation] {
+        let threshold = rsvpThreshold
+        return cachedParticipations.filter { p in
+            guard !p.rsvpDismissed else { return false }
+            if p.rsvpUserConfirmed || p.rsvpDetectionConfidence == nil { return true }
+            // High-confidence detections are treated as confirmed
+            if let confidence = p.rsvpDetectionConfidence, confidence >= threshold { return true }
+            return false
         }
+    }
+
+    /// Inferred: AI-detected RSVP below the confidence threshold, not yet confirmed or dismissed.
+    private var inferredParticipations: [EventParticipation] {
+        let threshold = rsvpThreshold
+        return cachedParticipations
+            .filter { p in
+                guard let confidence = p.rsvpDetectionConfidence else { return false }
+                return confidence < threshold && !p.rsvpUserConfirmed && !p.rsvpDismissed
+            }
+            .sorted { ($0.rsvpDetectionConfidence ?? 0) > ($1.rsvpDetectionConfidence ?? 0) }
+    }
+
+    /// Dismissed: user rejected the AI detection.
+    private var dismissedParticipations: [EventParticipation] {
+        cachedParticipations.filter { $0.rsvpDismissed }
     }
 }
 
@@ -790,6 +869,300 @@ struct ParticipantDetailView: View {
         case .update:          return .indigo
         case .rsvpResponse:    return .teal
         case .custom:          return .secondary
+        }
+    }
+}
+
+// MARK: - Inferred Participant Row
+
+struct InferredParticipantRowView: View {
+    let participation: EventParticipation
+    var onAction: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            // Priority indicator
+            if participation.priority != .standard {
+                Image(systemName: participation.priority.icon)
+                    .samFont(.caption)
+                    .foregroundStyle(participation.priority == .vip ? .yellow : .blue)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(participation.person?.displayNameCache ?? "Unknown")
+                    .samFont(.body)
+                    .lineLimit(1)
+
+                HStack(spacing: 6) {
+                    // RSVP status badge
+                    HStack(spacing: 3) {
+                        Image(systemName: participation.rsvpStatus.icon)
+                        Text(participation.rsvpStatus.displayName)
+                    }
+                    .samFont(.caption2)
+                    .foregroundStyle(rsvpColor)
+
+                    if let confidence = participation.rsvpDetectionConfidence {
+                        Text("\(Int(confidence * 100))%")
+                            .samFont(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if let quote = participation.rsvpResponseQuote {
+                        Text(quote)
+                            .samFont(.caption2)
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                            .italic()
+                    }
+                }
+            }
+
+            Spacer()
+
+            // Confirm button
+            Button {
+                try? EventCoordinator.shared.confirmDetectedRSVP(participationID: participation.id)
+                onAction()
+            } label: {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+            }
+            .buttonStyle(.borderless)
+            .help("Confirm this RSVP detection")
+
+            // Dismiss button
+            Button {
+                try? EventCoordinator.shared.dismissDetectedRSVP(participationID: participation.id)
+                onAction()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.red)
+            }
+            .buttonStyle(.borderless)
+            .help("Dismiss — SAM got this wrong")
+        }
+        .padding(.vertical, 2)
+    }
+
+    private var rsvpColor: Color {
+        switch participation.rsvpStatus {
+        case .accepted:   return .green
+        case .declined:   return .red
+        case .tentative:  return .orange
+        case .invited:    return .blue
+        case .noResponse: return .gray
+        case .pending:    return .secondary
+        }
+    }
+}
+
+// MARK: - Dismissed Participant Row
+
+struct DismissedParticipantRowView: View {
+    let participation: EventParticipation
+    var onAction: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(participation.person?.displayNameCache ?? "Unknown")
+                    .samFont(.body)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+
+                if let originalStatus = participation.rsvpOriginalDetectedStatus {
+                    Text("SAM detected: \(originalStatus.displayName)")
+                        .samFont(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+
+            Spacer()
+
+            Button("Undo") {
+                try? EventRepository.shared.undoDismissRSVP(participationID: participation.id)
+                onAction()
+            }
+            .controlSize(.mini)
+            .buttonStyle(.bordered)
+        }
+        .padding(.vertical, 2)
+    }
+}
+
+// MARK: - Bulk RSVP Review Sheet
+
+struct BulkRSVPReviewSheet: View {
+    let event: SamEvent
+    var onDismiss: () -> Void
+    @State private var participations: [EventParticipation] = []
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                Text("Review Inferred RSVPs")
+                    .samFont(.title3, weight: .bold)
+                Spacer()
+                Button("Done") {
+                    onDismiss()
+                    dismiss()
+                }
+                .keyboardShortcut(.cancelAction)
+            }
+            .padding()
+
+            Divider()
+
+            // Toolbar
+            HStack(spacing: 12) {
+                Button {
+                    confirmAll()
+                } label: {
+                    Label("Confirm All", systemImage: "checkmark.circle")
+                }
+                .controlSize(.small)
+
+                Button {
+                    dismissAll()
+                } label: {
+                    Label("Dismiss All", systemImage: "xmark.circle")
+                }
+                .controlSize(.small)
+
+                Spacer()
+
+                Text("\(participations.count) inferred")
+                    .samFont(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+
+            Divider()
+
+            // List
+            List {
+                ForEach(participations, id: \.id) { participation in
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(participation.person?.displayNameCache ?? "Unknown")
+                                .samFont(.body)
+
+                            HStack(spacing: 8) {
+                                HStack(spacing: 3) {
+                                    Image(systemName: participation.rsvpStatus.icon)
+                                    Text(participation.rsvpStatus.displayName)
+                                }
+                                .samFont(.caption)
+                                .foregroundStyle(badgeColor(for: participation.rsvpStatus))
+
+                                if let confidence = participation.rsvpDetectionConfidence {
+                                    Text("\(Int(confidence * 100))% confidence")
+                                        .samFont(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+
+                            if let quote = participation.rsvpResponseQuote {
+                                Text("\"\(quote)\"")
+                                    .samFont(.caption)
+                                    .italic()
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
+                        }
+
+                        Spacer()
+
+                        // Per-row actions
+                        HStack(spacing: 8) {
+                            Button {
+                                try? EventCoordinator.shared.confirmDetectedRSVP(participationID: participation.id)
+                                reload()
+                            } label: {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(.green)
+                            }
+                            .buttonStyle(.borderless)
+                            .help("Confirm")
+
+                            // Correct status menu
+                            Menu {
+                                ForEach([RSVPStatus.accepted, .declined, .tentative], id: \.self) { status in
+                                    if status != participation.rsvpStatus {
+                                        Button(status.displayName) {
+                                            try? EventCoordinator.shared.confirmDetectedRSVP(
+                                                participationID: participation.id,
+                                                correctedStatus: status
+                                            )
+                                            reload()
+                                        }
+                                    }
+                                }
+                            } label: {
+                                Image(systemName: "arrow.triangle.swap")
+                                    .foregroundStyle(.blue)
+                            }
+                            .menuStyle(.borderlessButton)
+                            .frame(width: 20)
+                            .help("Correct the detected status")
+
+                            Button {
+                                try? EventCoordinator.shared.dismissDetectedRSVP(participationID: participation.id)
+                                reload()
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundStyle(.red)
+                            }
+                            .buttonStyle(.borderless)
+                            .help("Dismiss")
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+        }
+        .frame(width: 550, height: 450)
+        .onAppear { reload() }
+    }
+
+    private func reload() {
+        participations = event.participations
+            .filter { $0.rsvpDetectionConfidence != nil && !$0.rsvpUserConfirmed && !$0.rsvpDismissed }
+            .sorted { ($0.rsvpDetectionConfidence ?? 0) > ($1.rsvpDetectionConfidence ?? 0) }
+    }
+
+    private func confirmAll() {
+        for p in participations {
+            try? EventCoordinator.shared.confirmDetectedRSVP(participationID: p.id)
+        }
+        reload()
+    }
+
+    private func dismissAll() {
+        let ids = participations.map(\.id)
+        try? EventRepository.shared.bulkDismissRSVPs(participationIDs: ids)
+        // Record calibration feedback for each
+        for p in participations {
+            let status = p.rsvpStatus
+            Task(priority: .background) {
+                await CalibrationService.shared.recordRSVPFeedback(detectedStatus: status, wasCorrect: false)
+            }
+        }
+        reload()
+    }
+
+    private func badgeColor(for status: RSVPStatus) -> Color {
+        switch status {
+        case .accepted:   return .green
+        case .declined:   return .red
+        case .tentative:  return .orange
+        case .invited:    return .blue
+        case .noResponse: return .gray
+        case .pending:    return .secondary
         }
     }
 }

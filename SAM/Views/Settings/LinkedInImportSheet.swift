@@ -294,6 +294,7 @@ struct LinkedInImportSheet: View {
         case .idle:
             Button("Scan Downloads for Profiles") {
                 Task { await coordinator.scanFolderForProfilePDFs() }
+                dismiss()
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
@@ -306,6 +307,7 @@ struct LinkedInImportSheet: View {
                     .samFont(.caption)
                     .foregroundStyle(.secondary)
             }
+            .onAppear { dismiss() }
 
         case .awaitingReview:
             VStack(alignment: .leading, spacing: 4) {
@@ -347,6 +349,7 @@ struct LinkedInImportSheet: View {
                 }
                 Button("Scan Again") {
                     Task { await coordinator.scanFolderForProfilePDFs() }
+                    dismiss()
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
@@ -376,6 +379,7 @@ struct LinkedInImportSheet: View {
                 }
                 Button("Try Again") {
                     Task { await coordinator.scanFolderForProfilePDFs() }
+                    dismiss()
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
@@ -394,6 +398,7 @@ struct LinkedInImportSheet: View {
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
         Task { await coordinator.scanFolderForProfilePDFs(folderURL: url) }
+        dismiss()
     }
 
     private var scanningPhase: some View {

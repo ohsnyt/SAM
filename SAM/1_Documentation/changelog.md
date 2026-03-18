@@ -4,6 +4,63 @@
 
 ---
 
+## RSVP Calibration, Event Detail UX, Graph Legend, New Person, LinkedIn PDF Safety, Tips & Guides (March 18, 2026)
+
+### RSVP Intelligence Calibration
+AI-detected RSVPs now learn from user feedback. When a user confirms or dismisses a detected RSVP, the outcome is logged via `CalibrationService.recordRSVPFeedback()`. Historical accuracy drives an adaptive auto-confirm threshold (`EventCoordinator.computeRSVPThreshold()`): high accuracy lowers the bar, low accuracy raises it. Stats visible in Settings > Coaching > RSVP Detection Accuracy.
+
+- **CalibrationDTO** — Added `rsvpAccuracyStats` property (confirmed/dismissed/accuracy%)
+- **CalibrationService** — `recordRSVPFeedback(detectedStatus:wasCorrect:)`, `rsvpAutoConfirmThreshold()`
+- **CoachingSettingsView** — RSVP accuracy stats section with reset button
+
+### Event Detail UX Overhaul
+EventDetailView replaced simple dropdown participant filter with a three-tier layout: Confirmed → Inferred (AI-detected) → Dismissed. Collapsible sections reduce clutter. Added bulk review sheet for inferred RSVPs.
+
+- **EventDetailView** — Cached participations, `reloadEvent()`, collapsible inferred/dismissed sections, bulk review sheet
+- **EventCoordinator** — `dismissDetectedRSVP()`, calibration feedback on confirm/correct
+- **EventRepository** — `dismissRSVP()`, `undoDismissRSVP()`, `bulkDismissRSVPs()`
+- **SAMModels-Event** — New fields: `rsvpDismissed`, `rsvpDismissedAt`, `rsvpOriginalDetectedStatusRawValue`
+
+### Relationship Graph Legend
+New visual legend overlay (⌘L toggle) showing edge types (business, referral, recruiting, communication, co-attendee, mentioned together, family) with colors/line styles, plus node health color key.
+
+- **GraphLegendView** (new) — Compact overlay with edge and node legends
+- **GraphToolbarView** — Legend toggle button (⌘L)
+- **RelationshipGraphView** — Legend overlay, keyboard shortcut
+
+### New Person Sheet
+Users can now create SAM contacts directly without Apple Contacts. Accessible via ⌘N in People list or empty state.
+
+- **NewPersonSheet** (new) — Simple form (name, optional email/phone), calls `PeopleRepository.insertStandalone()`
+- **PeopleListView** — ⌘N button, updated empty state with "New Person" option
+
+### LinkedIn PDF Name Mismatch Warning
+Drag-and-drop LinkedIn PDF import now checks whether the PDF profile name matches the target contact. On mismatch, a confirmation dialog warns: *"This PDF is for 'X' but you're viewing 'Y'. Import anyway?"*
+
+- **ContactPhotoCoordinator** — `PendingLinkedInImport`, `namesMatch()` (accent-insensitive first+last comparison), `confirmPendingLinkedInImport()`, `cancelPendingLinkedInImport()`, extracted `performLinkedInImport()`
+- **InlineNoteCaptureView** — `.confirmationDialog` for mismatch confirmation
+
+### TipKit Expansion & Guide Articles
+8 new contextual tips added across views (post-meeting capture, content drafts, life event coaching, goal check-ins, deep work scheduling, enrichment review). 5 new guide articles covering text size, life events, deep work, goal check-ins, and command palette.
+
+- **SAMTips** — New tip types with guide article mappings
+- **GuideManifest.json** — 5 new entries
+- **GuideScreenshotRunner** — Updated screenshot list
+- Multiple views — Added `TipView()` with `SAMTipViewStyle()`
+
+### Infrastructure & Fixes
+- **EnrichmentRepository** — Dedup skips enrichments in any status, not just pending
+- **LinkedInImportCoordinator** — Phone enrichment skips duplicates
+- **RoleRecruitingCoordinator** — Fixed retain cycle with `weak` capture
+- **RoleRecruitingRepository** — Prevents duplicate candidate inserts
+- **RoleCandidateDetailView** — Auto-save notes on disappear/submit
+- **MailDatabaseService** — Guards against nil SQLite pointer
+- **GoalJournalRepository** — Fixed actor isolation in `summarizeSession()`
+- **RoleCandidateAnalystService** — `LLMCandidateScore` Sendable conformance
+- **GoalCheckInSessionView** — Changed `.onAppear` to `.task` for async init
+
+---
+
 ## App-Wide Text Size Setting (March 18, 2026)
 
 **What**: Added a user-configurable text size preference (Settings > General) that scales all semantic fonts throughout SAM. Addresses readability concerns on high-resolution displays.

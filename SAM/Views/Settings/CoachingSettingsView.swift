@@ -524,6 +524,60 @@ struct CoachingSettingsContent: View {
                 }
             }
 
+            // ── RSVP Detection Accuracy ──
+            if let rsvpStats = ledger.rsvpAccuracyStats {
+                Divider()
+                    .padding(.vertical, 4)
+
+                Text("RSVP Detection Accuracy")
+                    .samFont(.subheadline)
+                    .fontWeight(.medium)
+
+                HStack(spacing: 20) {
+                    VStack(alignment: .leading) {
+                        Text("\(rsvpStats.confirmed)")
+                            .samFont(.title3)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.green)
+                        Text("Confirmed")
+                            .samFont(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    VStack(alignment: .leading) {
+                        Text("\(rsvpStats.dismissed)")
+                            .samFont(.title3)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.red)
+                        Text("Wrong")
+                            .samFont(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    VStack(alignment: .leading) {
+                        Text("\(Int(rsvpStats.accuracy * 100))%")
+                            .samFont(.title3)
+                            .fontWeight(.semibold)
+                        Text("Accuracy")
+                            .samFont(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                let threshold = EventCoordinator.computeRSVPThreshold(from: ledger)
+                Text("Auto-confirm threshold: \(Int(threshold * 100))%")
+                    .samFont(.caption)
+                    .foregroundStyle(.secondary)
+
+                Button("Reset RSVP Stats") {
+                    Task {
+                        await CalibrationService.shared.resetKind("rsvpAccepted")
+                        await CalibrationService.shared.resetKind("rsvpDeclined")
+                        await CalibrationService.shared.resetKind("rsvpTentative")
+                    }
+                }
+                .controlSize(.mini)
+                .buttonStyle(.bordered)
+            }
+
             // ── Muted Types ──
             if !ledger.mutedKinds.isEmpty {
                 Divider()
