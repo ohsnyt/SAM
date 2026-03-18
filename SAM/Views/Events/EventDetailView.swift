@@ -63,6 +63,9 @@ struct EventDetailView: View {
             unknownRSVPs = []
             lastActionMessage = nil
             reloadEvent()
+            if let event {
+                refreshUnknownRSVPs(event: event)
+            }
         }
         .onChange(of: refreshToken) { reloadEvent() }
         .onReceive(NotificationCenter.default.publisher(for: .samRSVPAutoAdded)) { notification in
