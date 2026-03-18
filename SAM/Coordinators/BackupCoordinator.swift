@@ -160,6 +160,9 @@ final class BackupCoordinator {
             progress = "Reading Substack imports..."
             let substackImports = try context.fetch(FetchDescriptor<SubstackImport>())
 
+            progress = "Reading goal journal entries..."
+            let journalEntries = try context.fetch(FetchDescriptor<GoalJournalEntry>())
+
             // Map to DTOs
             progress = "Building backup document..."
 
@@ -502,6 +505,25 @@ final class BackupCoordinator {
                 )
             }
 
+            let journalEntryDTOs = journalEntries.map { e in
+                GoalJournalEntryBackup(
+                    id: e.id,
+                    goalID: e.goalID,
+                    goalTypeRawValue: e.goalTypeRawValue,
+                    headline: e.headline,
+                    whatsWorking: e.whatsWorking,
+                    whatsNotWorking: e.whatsNotWorking,
+                    barriers: e.barriers,
+                    adjustedStrategy: e.adjustedStrategy,
+                    keyInsight: e.keyInsight,
+                    commitmentActions: e.commitmentActions,
+                    paceAtCheckInRawValue: e.paceAtCheckInRawValue,
+                    progressAtCheckIn: e.progressAtCheckIn,
+                    conversationTurnCount: e.conversationTurnCount,
+                    createdAt: e.createdAt
+                )
+            }
+
             // Gather preferences
             progress = "Gathering preferences..."
             var prefs: [String: AnyCodableValue] = [:]
@@ -550,7 +572,8 @@ final class BackupCoordinator {
                 businessGoals: goalDTOs,
                 complianceAuditEntries: auditDTOs,
                 deducedRelations: deducedRelationDTOs,
-                substackImports: substackImportDTOs
+                substackImports: substackImportDTOs,
+                goalJournalEntries: journalEntryDTOs
             )
 
             // Encode
@@ -789,6 +812,26 @@ final class BackupCoordinator {
                 goal.createdAt = dto.createdAt
                 goal.updatedAt = dto.updatedAt
                 context.insert(goal)
+            }
+
+            for dto in doc.goalJournalEntries ?? [] {
+                let entry = GoalJournalEntry(
+                    id: dto.id,
+                    goalID: dto.goalID,
+                    goalType: GoalType(rawValue: dto.goalTypeRawValue) ?? .newClients,
+                    headline: dto.headline,
+                    whatsWorking: dto.whatsWorking,
+                    whatsNotWorking: dto.whatsNotWorking,
+                    barriers: dto.barriers,
+                    adjustedStrategy: dto.adjustedStrategy,
+                    keyInsight: dto.keyInsight,
+                    commitmentActions: dto.commitmentActions,
+                    paceAtCheckIn: GoalPace(rawValue: dto.paceAtCheckInRawValue) ?? .onTrack,
+                    progressAtCheckIn: dto.progressAtCheckIn,
+                    conversationTurnCount: dto.conversationTurnCount
+                )
+                entry.createdAt = dto.createdAt
+                context.insert(entry)
             }
 
             for dto in doc.contentPosts {
@@ -1194,6 +1237,7 @@ final class BackupCoordinator {
             let audits = try context.fetch(FetchDescriptor<ComplianceAuditEntry>())
             let deducedRelations = try context.fetch(FetchDescriptor<DeducedRelation>())
             let substackImports = try context.fetch(FetchDescriptor<SubstackImport>())
+            let journalEntries = try context.fetch(FetchDescriptor<GoalJournalEntry>())
 
             let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
             let buildNumber = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
@@ -1433,6 +1477,18 @@ final class BackupCoordinator {
                         subscriberCount: s.subscriberCount, matchedSubscriberCount: s.matchedSubscriberCount,
                         newLeadsFound: s.newLeadsFound, touchEventsCreated: s.touchEventsCreated,
                         statusRawValue: s.statusRawValue
+                    )
+                },
+                goalJournalEntries: journalEntries.map { e in
+                    GoalJournalEntryBackup(
+                        id: e.id, goalID: e.goalID, goalTypeRawValue: e.goalTypeRawValue,
+                        headline: e.headline, whatsWorking: e.whatsWorking,
+                        whatsNotWorking: e.whatsNotWorking, barriers: e.barriers,
+                        adjustedStrategy: e.adjustedStrategy, keyInsight: e.keyInsight,
+                        commitmentActions: e.commitmentActions,
+                        paceAtCheckInRawValue: e.paceAtCheckInRawValue,
+                        progressAtCheckIn: e.progressAtCheckIn,
+                        conversationTurnCount: e.conversationTurnCount, createdAt: e.createdAt
                     )
                 }
             )

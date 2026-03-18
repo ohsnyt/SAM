@@ -57,13 +57,30 @@ actor DailyBriefingService {
             return ("", "")
         }
 
+        // Fetch journal data from MainActor before building the synchronous data block
+        let journalBlock = await MainActor.run { () -> String in
+            let sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
+            guard let recentJournal = try? GoalJournalRepository.shared.fetchRecent(limit: 5) else { return "" }
+            let recent = recentJournal.filter { $0.createdAt > sevenDaysAgo }
+            guard !recent.isEmpty else { return "" }
+            let items = recent.map { entry in
+                var line = "- \(entry.goalType.displayName) (\(entry.paceAtCheckIn.displayName)): \(entry.headline)"
+                if let insight = entry.keyInsight, !insight.isEmpty {
+                    line += " — \(insight)"
+                }
+                return line
+            }.joined(separator: "\n")
+            return "RECENT GOAL CHECK-INS:\n\(items)"
+        }
+
         let dataBlock = buildMorningDataBlock(
             calendarItems: calendarItems,
             priorityActions: priorityActions,
             followUps: followUps,
             lifeEvents: lifeEvents,
             tomorrowPreview: tomorrowPreview,
-            goalProgress: goalProgress
+            goalProgress: goalProgress,
+            recentJournalBlock: journalBlock
         )
 
         // Use Prompt Lab deployed variant if available, otherwise fall back to default
@@ -217,7 +234,8 @@ actor DailyBriefingService {
         followUps: [BriefingFollowUp],
         lifeEvents: [BriefingLifeEvent],
         tomorrowPreview: [BriefingCalendarItem],
-        goalProgress: [GoalProgress] = []
+        goalProgress: [GoalProgress] = [],
+        recentJournalBlock: String = ""
     ) -> String {
         var parts: [String] = []
 
@@ -272,6 +290,11 @@ actor DailyBriefingService {
                 return "- \(gp.goalType.displayName): \(Int(gp.currentValue))/\(Int(gp.targetValue)) (\(pctStr)%, \(gp.pace.displayName), \(gp.daysRemaining)d left, \(rateStr))"
             }.joined(separator: "\n")
             parts.append("BUSINESS GOALS:\n\(items)")
+        }
+
+        // Recent goal journal entries (past 7 days) — pre-fetched via @MainActor
+        if !recentJournalBlock.isEmpty {
+            parts.append(recentJournalBlock)
         }
 
         // Gap answers context (user-provided knowledge) — read directly from UserDefaults
@@ -373,6 +396,7 @@ actor DailyBriefingService {
         case .contentPosts:      reasonableDailyMax = 3;  reasonableWeeklyMax = 15
         case .deepWorkHours:     reasonableDailyMax = 8;  reasonableWeeklyMax = 40
         case .eventsHosted:      reasonableDailyMax = 2;  reasonableWeeklyMax = 5
+        case .roleFilling:       reasonableDailyMax = 2;  reasonableWeeklyMax = 5
         }
 
         if perDay > reasonableDailyMax {

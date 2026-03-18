@@ -671,10 +671,23 @@ struct PersonDetailView: View {
     
     // MARK: - Role Badges
 
-    private static let predefinedBadges = [
+    private static let builtInBadges = [
         "Client", "Applicant", "Lead", "Vendor",
         "Agent", "External Agent", "Referral Partner"
     ]
+
+    /// Built-in badges + any user-defined RoleDefinition names (deduplicated, stable order).
+    private var predefinedBadges: [String] {
+        let roleNames = (try? RoleRecruitingRepository.shared.fetchActiveRoles().map(\.name)) ?? []
+        var seen = Set<String>()
+        var result: [String] = []
+        for badge in Self.builtInBadges + roleNames {
+            if seen.insert(badge).inserted {
+                result.append(badge)
+            }
+        }
+        return result
+    }
 
     private var roleBadgesView: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -779,7 +792,7 @@ struct PersonDetailView: View {
             // Edit mode: predefined options + custom entry
             if isEditingBadges {
                 // Predefined badges (only show ones not already assigned)
-                let available = Self.predefinedBadges.filter { !person.roleBadges.contains($0) }
+                let available = predefinedBadges.filter { !person.roleBadges.contains($0) }
                 if !available.isEmpty {
                     FlowLayout(spacing: 6) {
                         ForEach(available, id: \.self) { badge in

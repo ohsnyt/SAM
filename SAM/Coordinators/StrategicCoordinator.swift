@@ -99,6 +99,11 @@ final class StrategicCoordinator {
         let digestClock = ContinuousClock()
         let digestStart = digestClock.now
 
+        // Trigger stale role recruiting refresh (non-blocking)
+        Task(priority: .utility) {
+            await RoleRecruitingCoordinator.shared.refreshIfStale()
+        }
+
         // Gather data (all deterministic Swift)
         let pipelineData = gatherPipelineData()
         let timeData = gatherTimeData()
@@ -297,6 +302,48 @@ final class StrategicCoordinator {
             }
         }
 
+        // Role Recruiting
+        do {
+            let roles = try RoleRecruitingRepository.shared.fetchActiveRoles()
+            if !roles.isEmpty {
+                lines.append("ROLE RECRUITING:")
+                for role in roles {
+                    let candidates = (try? RoleRecruitingRepository.shared.fetchCandidates(for: role.id, includeTerminal: true)) ?? []
+                    let byCounts = Dictionary(grouping: candidates, by: { $0.stage })
+                    let suggested = byCounts[.suggested]?.count ?? 0
+                    let considering = byCounts[.considering]?.count ?? 0
+                    let approached = byCounts[.approached]?.count ?? 0
+                    let committed = byCounts[.committed]?.count ?? 0
+                    lines.append("  \(role.name): \(suggested) suggested, \(considering) considering, \(approached) approached, \(committed) committed (target: \(role.targetCount))")
+                }
+            }
+        } catch {
+            logger.error("Failed to gather role recruiting pipeline data: \(error)")
+        }
+
+        // Journal barriers and strategies for pipeline-related goals
+        do {
+            let journalEntries = try GoalJournalRepository.shared.fetchRecent(limit: 5)
+            let pipelineRelevant = journalEntries.filter { entry in
+                let type = entry.goalType
+                return type == .newClients || type == .policiesSubmitted || type == .recruiting || type == .roleFilling
+            }
+            if !pipelineRelevant.isEmpty {
+                lines.append("PIPELINE GOAL LEARNINGS:")
+                for entry in pipelineRelevant {
+                    let goalType = entry.goalType.displayName
+                    if !entry.barriers.isEmpty {
+                        lines.append("  \(goalType) barriers: \(entry.barriers.joined(separator: ", "))")
+                    }
+                    if let strategy = entry.adjustedStrategy, !strategy.isEmpty {
+                        lines.append("  \(goalType) adjusted strategy: \(strategy)")
+                    }
+                }
+            }
+        } catch {
+            logger.error("Failed to gather journal pipeline data: \(error)")
+        }
+
         return lines.joined(separator: "\n")
     }
 
@@ -483,6 +530,56 @@ final class StrategicCoordinator {
             }
         } catch {
             logger.error("Failed to gather content data: \(error)")
+        }
+
+        // Role recruiting goals — so content attracts the right candidates
+        do {
+            let roles = try RoleRecruitingRepository.shared.fetchActiveRoles()
+            let unfilled = roles.filter { $0.filledCount < $0.targetCount }
+            if !unfilled.isEmpty {
+                lines.append("")
+                lines.append("ROLE RECRUITING GOALS (suggest content that attracts candidates matching these profiles):")
+                for role in unfilled {
+                    let remaining = role.targetCount - role.filledCount
+                    var desc = "  \(role.name) (need \(remaining) more)"
+                    if !role.idealCandidateProfile.isEmpty {
+                        desc += ": \(role.idealCandidateProfile)"
+                    }
+                    if !role.refinementNotes.isEmpty {
+                        desc += " Previously rejected because: \(role.refinementNotes.joined(separator: ", "))"
+                    }
+                    lines.append(desc)
+                }
+            }
+        } catch {
+            logger.error("Failed to gather role recruiting data for content: \(error)")
+        }
+
+        // Goal check-in learnings for content alignment
+        do {
+            let recentJournalEntries = try GoalJournalRepository.shared.fetchRecent(limit: 5)
+            let relevant = recentJournalEntries.filter { !$0.whatsWorking.isEmpty || !$0.whatsNotWorking.isEmpty || $0.keyInsight != nil }
+            if !relevant.isEmpty {
+                lines.append("")
+                lines.append("GOAL CHECK-IN LEARNINGS:")
+                for entry in relevant {
+                    let goalType = entry.goalType.displayName
+                    let pace = entry.paceAtCheckIn.displayName.lowercased()
+                    var desc = "  \(goalType) (\(pace))"
+                    if !entry.whatsWorking.isEmpty {
+                        desc += ": Working: \(entry.whatsWorking.joined(separator: ", "))."
+                    }
+                    if !entry.whatsNotWorking.isEmpty {
+                        desc += " Not working: \(entry.whatsNotWorking.joined(separator: ", "))."
+                    }
+                    if let insight = entry.keyInsight {
+                        desc += " Insight: \(insight)."
+                    }
+                    lines.append(desc)
+                }
+            }
+        } catch {
+            logger.error("Failed to gather journal data for content: \(error)")
         }
 
         // Seasonal context

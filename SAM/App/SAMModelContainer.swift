@@ -65,6 +65,9 @@ enum SAMSchema {
         SamEvent.self,                      // Event/workshop management with RSVP tracking
         EventParticipation.self,            // Event ↔ Person join table with RSVP state
         SamPresentation.self,               // Presentation library for recurring workshops
+        RoleDefinition.self,                    // Role recruiting definitions
+        RoleCandidate.self,                     // Role recruiting candidates
+        GoalJournalEntry.self,                  // Goal check-in journal entries
     ]
 }
 

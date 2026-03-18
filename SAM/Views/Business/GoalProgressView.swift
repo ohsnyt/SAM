@@ -16,9 +16,13 @@ struct GoalProgressView: View {
     @State private var progressItems: [GoalProgress] = []
     @State private var showAddGoal = false
     @State private var editingGoal: BusinessGoal? = nil
+    @State private var checkInContext: GoalCheckInContext? = nil
+    @State private var journalEntriesByGoal: [UUID: [GoalJournalEntry]] = [:]
+    @State private var expandedJournals: Set<UUID> = []
 
     private var engine: GoalProgressEngine { GoalProgressEngine.shared }
     private var goalRepo: GoalRepository { GoalRepository.shared }
+    private var journalRepo: GoalJournalRepository { GoalJournalRepository.shared }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -55,6 +59,16 @@ struct GoalProgressView: View {
         }
         .task {
             refreshProgress()
+            loadJournalEntries()
+        }
+        .sheet(item: $checkInContext) { ctx in
+            GoalCheckInSessionView(
+                context: ctx,
+                onDone: {
+                    checkInContext = nil
+                    loadJournalEntries()
+                }
+            )
         }
         .sheet(isPresented: $showAddGoal) {
             GoalEntryForm(mode: .create) {
@@ -154,9 +168,23 @@ struct GoalProgressView: View {
                     .foregroundStyle(.tertiary)
             }
 
+            // Journal entries (collapsible)
+            if let entries = journalEntriesByGoal[progress.goalID], !entries.isEmpty {
+                journalSection(entries: entries, goalID: progress.goalID)
+            }
+
             // Actions
             HStack(spacing: 12) {
                 Spacer()
+
+                Button {
+                    startCheckIn(for: progress)
+                } label: {
+                    Label("Check In", systemImage: "bubble.left.and.text.bubble.right")
+                        .font(.caption)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
 
                 Button {
                     if let goal = try? goalRepo.fetchActive().first(where: { $0.id == progress.goalID }) {
@@ -214,6 +242,102 @@ struct GoalProgressView: View {
 
     private func refreshProgress() {
         progressItems = engine.computeAllProgress()
+    }
+
+    private func loadJournalEntries() {
+        var result: [UUID: [GoalJournalEntry]] = [:]
+        for item in progressItems {
+            if let entries = try? journalRepo.fetchEntries(for: item.goalID) {
+                result[item.goalID] = Array(entries.prefix(3))
+            }
+        }
+        journalEntriesByGoal = result
+    }
+
+    private func startCheckIn(for progress: GoalProgress) {
+        let entries = (try? journalRepo.fetchEntries(for: progress.goalID)) ?? []
+        let dtos = entries.prefix(3).map { GoalJournalEntryDTO(from: $0) }
+
+        Task {
+            let snapshot = await BusinessProfileService.shared.fullContextBlock()
+            let goal = try? goalRepo.fetchActive().first(where: { $0.id == progress.goalID })
+
+            checkInContext = GoalCheckInContext(
+                goalID: progress.goalID,
+                goalTitle: progress.title,
+                goalType: progress.goalType,
+                progress: progress,
+                previousEntries: Array(dtos),
+                businessSnapshot: snapshot
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func journalSection(entries: [GoalJournalEntry], goalID: UUID) -> some View {
+        let isExpanded = expandedJournals.contains(goalID)
+
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                withAnimation {
+                    if isExpanded {
+                        expandedJournals.remove(goalID)
+                    } else {
+                        expandedJournals.insert(goalID)
+                    }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                        .font(.caption2)
+                    Text("Journal (\(entries.count))")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                }
+                .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+
+            if isExpanded {
+                ForEach(entries, id: \.id) { entry in
+                    journalEntryRow(entry)
+                }
+            }
+        }
+    }
+
+    private func journalEntryRow(_ entry: GoalJournalEntry) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(entry.headline)
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .lineLimit(1)
+                Spacer()
+                Text(entry.createdAt.formatted(date: .abbreviated, time: .omitted))
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+
+            if let insight = entry.keyInsight, !insight.isEmpty {
+                Text(insight)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+
+            HStack(spacing: 8) {
+                Text(entry.paceAtCheckIn.displayName)
+                    .font(.caption2)
+                    .foregroundStyle(entry.paceAtCheckIn.color)
+                Text("\(Int(entry.progressAtCheckIn * 100))%")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .padding(8)
+        .background(Color.secondary.opacity(0.05))
+        .clipShape(RoundedRectangle(cornerRadius: 6))
     }
 
     private func archiveGoal(_ id: UUID) {

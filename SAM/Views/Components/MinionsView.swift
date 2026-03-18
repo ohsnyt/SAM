@@ -30,6 +30,8 @@ struct MinionsView: View {
     @State private var linkedInCoordinator = LinkedInImportCoordinator.shared
     @State private var facebookCoordinator = FacebookImportCoordinator.shared
     @State private var presentationAnalysis = PresentationAnalysisCoordinator.shared
+    @State private var roleRecruiting = RoleRecruitingCoordinator.shared
+    @State private var goalJournal = GoalJournalRepository.shared
 
     var body: some View {
         let minions = activeMinions
@@ -122,6 +124,23 @@ struct MinionsView: View {
             items.append(MinionItem(
                 id: "presentation", icon: "doc.richtext",
                 label: label, tooltip: "Digesting \(title)"))
+        }
+        switch roleRecruiting.scoringStatus {
+        case .preparing(let name):
+            items.append(MinionItem(
+                id: "roleScan", icon: "person.badge.key",
+                label: "Role Scan", tooltip: "Preparing scan for \(name)"))
+        case .scoring(let name, let current, let total):
+            items.append(MinionItem(
+                id: "roleScan", icon: "person.badge.key",
+                label: "Scanning \(current)/\(total)", tooltip: "Scanning candidates for \(name)"))
+        default:
+            break
+        }
+        if goalJournal.isSummarizing {
+            items.append(MinionItem(
+                id: "journalSummary", icon: "text.book.closed",
+                label: "Distilling", tooltip: "Distilling check-in learnings"))
         }
 
         return items

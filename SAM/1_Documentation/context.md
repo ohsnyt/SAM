@@ -332,6 +332,8 @@ All models use SwiftData lightweight migration. Enum storage uses `rawValue` pat
 | **SamEvent** | Event/workshop management | title, format, status, startDate, RSVP tracking, autoReplyUnknownSenders, presentation link |
 | **EventParticipation** | Event ↔ Person join with RSVP | event, person, rsvpStatus, invitedAt, respondedAt |
 | **SamPresentation** | Reusable presentation library | title, description, topicTags, fileAttachments, contentSummary, keyTalkingPoints |
+| **GoalJournalEntry** | Distilled learnings from goal check-in conversations | goalID, headline, whatsWorkingJSON, whatsNotWorkingJSON, barriersJSON, adjustedStrategy, keyInsight, commitmentActionsJSON, paceAtCheckIn, progressAtCheckIn, conversationTurnCount |
+| **RoleDefinition** | Role specifications for recruiting pipeline | title, description, idealProfile, refinementNotes, scoringCriteria |
 
 **Non-SwiftData**: `UserLinkedInProfileDTO`, `UserFacebookProfileDTO` — stored as JSON in UserDefaults, injected into AI prompts via `BusinessProfileService.contextFragment()`.
 
@@ -427,5 +429,5 @@ Bookmark the **directory** (not file) for SQLite to cover WAL/SHM companions. `.
 
 ---
 
-**Document Version**: 44
-**Last Updated**: March 16, 2026 — LinkedIn PDF import, log level cleanup, clipboard capture improvements, note context menu.
+**Document Version**: 45
+**Last Updated**: March 17, 2026 — Goal Journal (check-in conversations with distilled learnings), Role Recruiting pipeline.

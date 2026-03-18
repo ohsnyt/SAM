@@ -132,6 +132,8 @@ final class GoalProgressEngine {
             return measureDeepWorkHours(start: start, end: end)
         case .eventsHosted:
             return measureEventsHosted(start: start, end: end)
+        case .roleFilling:
+            return measureRoleFilling(goal: goal, start: start, end: end)
         }
     }
 
@@ -198,6 +200,17 @@ final class GoalProgressEngine {
             && (event.status == .completed || event.status == .inProgress || (event.startDate <= .now && event.status != .cancelled))
         }.count
         return Double(count)
+    }
+
+    private func measureRoleFilling(goal: BusinessGoal, start: Date, end: Date) -> Double {
+        guard let roleID = goal.roleDefinitionID else { return 0 }
+        guard let candidates = try? RoleRecruitingRepository.shared.fetchCandidates(for: roleID, includeTerminal: true) else { return 0 }
+        let committed = candidates.filter { candidate in
+            candidate.stage == .committed
+            && candidate.stageEnteredAt >= start
+            && candidate.stageEnteredAt <= end
+        }
+        return Double(committed.count)
     }
 
     // MARK: - Pace

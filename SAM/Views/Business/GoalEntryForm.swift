@@ -37,6 +37,9 @@ struct GoalEntryForm: View {
     @State private var notes: String = ""
     @State private var hasAutoTitle = true
     @State private var isFinancial = true
+    @State private var selectedRoleDefinitionID: UUID?
+    @State private var availableRoles: [RoleDefinition] = []
+    @State private var showingRoleEditor = false
 
     private var goalRepo: GoalRepository { GoalRepository.shared }
 
@@ -125,6 +128,24 @@ struct GoalEntryForm: View {
                     }
                 }
 
+                // Role definition picker (for roleFilling only)
+                if selectedType == .roleFilling {
+                    Section("Linked Role") {
+                        Picker("Role", selection: $selectedRoleDefinitionID) {
+                            Text("Select a role...").tag(nil as UUID?)
+                            ForEach(availableRoles) { role in
+                                Text(role.name).tag(Optional(role.id))
+                            }
+                        }
+                        .pickerStyle(.menu)
+
+                        Button("+ Create New Role") {
+                            showingRoleEditor = true
+                        }
+                        .controlSize(.small)
+                    }
+                }
+
                 // Date range
                 Section("Period") {
                     DatePicker("Start", selection: $startDate, displayedComponents: .date)
@@ -140,8 +161,15 @@ struct GoalEntryForm: View {
             .formStyle(.grouped)
         }
         .frame(width: 450, height: 520)
+        .sheet(isPresented: $showingRoleEditor) {
+            RoleDefinitionEditorSheet(mode: .create) {
+                availableRoles = (try? RoleRecruitingRepository.shared.fetchActiveRoles()) ?? []
+                selectedRoleDefinitionID = availableRoles.last?.id
+            }
+        }
         .task {
             isFinancial = await BusinessProfileService.shared.isFinancialPractice()
+            availableRoles = (try? RoleRecruitingRepository.shared.fetchActiveRoles()) ?? []
         }
         .onAppear {
             FeatureAdoptionTracker.shared.recordUsage(.goalSetting)
@@ -154,6 +182,7 @@ struct GoalEntryForm: View {
                 startDate = goal.startDate
                 endDate = goal.endDate
                 notes = goal.notes ?? ""
+                selectedRoleDefinitionID = goal.roleDefinitionID
                 hasAutoTitle = false
             } else {
                 title = autoTitle
@@ -189,8 +218,11 @@ struct GoalEntryForm: View {
                     endDate: endDate,
                     notes: notes.isEmpty ? nil : notes
                 )
+                if selectedType == .roleFilling {
+                    goal.roleDefinitionID = selectedRoleDefinitionID
+                }
             } else {
-                try goalRepo.create(
+                let goal = try goalRepo.create(
                     goalType: selectedType,
                     title: title,
                     targetValue: value,
@@ -198,6 +230,9 @@ struct GoalEntryForm: View {
                     endDate: endDate,
                     notes: notes.isEmpty ? nil : notes
                 )
+                if selectedType == .roleFilling {
+                    goal.roleDefinitionID = selectedRoleDefinitionID
+                }
             }
             onSave()
             dismiss()

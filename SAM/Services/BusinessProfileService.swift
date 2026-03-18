@@ -353,14 +353,42 @@ actor BusinessProfileService {
         return "\(p.systemInstructionFragment())\n\n\(blocklistFragment())"
     }
 
-    /// Returns the combined business context + blocklist + calibration for injection into system instructions.
+    /// Returns the combined business context + blocklist + calibration + journal for injection into system instructions.
     func fullContextBlock() async -> String {
         let context = contextFragment()
         let blocklist = blocklistFragment()
         let calibration = await CalibrationService.shared.calibrationFragment()
-        if calibration.isEmpty {
-            return "\(context)\n\n\(blocklist)"
+        let journal = await goalJournalFragment()
+
+        var parts = [context, blocklist]
+        if !calibration.isEmpty { parts.append(calibration) }
+        if !journal.isEmpty { parts.append(journal) }
+        return parts.joined(separator: "\n\n")
+    }
+
+    /// Formats the 5 most recent goal journal entries as a compact text block.
+    /// Automatically propagates to all AI specialists that call fullContextBlock().
+    @MainActor
+    func goalJournalFragment() -> String {
+        guard let entries = try? GoalJournalRepository.shared.fetchRecent(limit: 5),
+              !entries.isEmpty else { return "" }
+
+        var lines: [String] = ["RECENT GOAL CHECK-IN LEARNINGS:"]
+        for entry in entries {
+            let dateStr = entry.createdAt.formatted(date: .abbreviated, time: .omitted)
+            let goalType = entry.goalType.displayName
+            var entryLine = "  \(goalType) (\(dateStr), \(entry.paceAtCheckIn.displayName)): \(entry.headline)"
+            if !entry.whatsWorking.isEmpty {
+                entryLine += " Working: \(entry.whatsWorking.joined(separator: ", "))."
+            }
+            if !entry.whatsNotWorking.isEmpty {
+                entryLine += " Not working: \(entry.whatsNotWorking.joined(separator: ", "))."
+            }
+            if let insight = entry.keyInsight, !insight.isEmpty {
+                entryLine += " Insight: \(insight)."
+            }
+            lines.append(entryLine)
         }
-        return "\(context)\n\n\(blocklist)\n\n\(calibration)"
+        return lines.joined(separator: "\n")
     }
 }

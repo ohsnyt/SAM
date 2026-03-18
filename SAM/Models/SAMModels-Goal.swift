@@ -25,6 +25,7 @@ nonisolated public enum GoalType: String, Codable, Sendable, CaseIterable {
     case contentPosts     = "Content Posts"
     case deepWorkHours    = "Deep Work Hours"
     case eventsHosted     = "Events Hosted"
+    case roleFilling      = "Role Filling"
 
     public var displayName: String { rawValue }
 
@@ -38,6 +39,7 @@ nonisolated public enum GoalType: String, Codable, Sendable, CaseIterable {
         case .contentPosts:      return "text.bubble.fill"
         case .deepWorkHours:     return "brain.head.profile"
         case .eventsHosted:      return "person.3.sequence"
+        case .roleFilling:       return "person.badge.key"
         }
     }
 
@@ -51,6 +53,7 @@ nonisolated public enum GoalType: String, Codable, Sendable, CaseIterable {
         case .contentPosts:      return "posts"
         case .deepWorkHours:     return "hours"
         case .eventsHosted:      return "events"
+        case .roleFilling:       return "filled"
         }
     }
 
@@ -64,6 +67,7 @@ nonisolated public enum GoalType: String, Codable, Sendable, CaseIterable {
         case .contentPosts:      return .pink
         case .deepWorkHours:     return .indigo
         case .eventsHosted:      return .cyan
+        case .roleFilling:       return .cyan
         }
     }
 
@@ -76,7 +80,7 @@ nonisolated public enum GoalType: String, Codable, Sendable, CaseIterable {
         switch self {
         case .policiesSubmitted, .productionVolume, .recruiting:
             return true
-        case .newClients, .meetingsHeld, .contentPosts, .deepWorkHours, .eventsHosted:
+        case .newClients, .meetingsHeld, .contentPosts, .deepWorkHours, .eventsHosted, .roleFilling:
             return false
         }
     }
@@ -140,6 +144,9 @@ public final class BusinessGoal {
 
     /// Optional user notes.
     public var notes: String?
+
+    /// Links to RoleDefinition when goalType == .roleFilling.
+    public var roleDefinitionID: UUID?
 
     public var createdAt: Date
     public var updatedAt: Date

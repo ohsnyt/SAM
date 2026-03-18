@@ -376,6 +376,7 @@ extension OutcomeKind {
         case .compliance:      return "Compliance"
         case .contentCreation: return "Content"
         case .setup:           return "Setup"
+        case .roleFilling:     return "Role Filling"
         }
     }
 
@@ -390,6 +391,7 @@ extension OutcomeKind {
         case .compliance:      return .red
         case .contentCreation: return .mint
         case .setup:           return .cyan
+        case .roleFilling:     return .cyan
         }
     }
 
@@ -404,6 +406,7 @@ extension OutcomeKind {
         case .compliance:      return "checkmark.shield"
         case .contentCreation: return "text.badge.star"
         case .setup:           return "gearshape.2"
+        case .roleFilling:     return "person.badge.key"
         }
     }
 }

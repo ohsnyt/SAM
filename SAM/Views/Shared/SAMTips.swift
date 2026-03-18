@@ -29,6 +29,7 @@ enum SAMTipGuideMapping {
         case is GoalsTip:                return "business.goals"
         case is ClientPipelineTip:       return "business.client-pipeline"
         case is RecruitingPipelineTip:   return "business.recruiting-pipeline"
+        case is RoleRecruitingTip:       return "business.role-recruiting"
         case is ProductionTip:           return "business.production"
         case is RelationshipGraphTip:    return "people.relationship-graph"
         case is SearchTip:               return "search.overview"
@@ -72,6 +73,7 @@ enum SAMTipState {
         ClientPipelineTip.self,
         RecruitingPipelineTip.self,
         ProductionTip.self,
+        RoleRecruitingTip.self,
         RelationshipGraphTip.self,
         SearchTip.self,
         EventManagerTip.self,
@@ -99,6 +101,7 @@ enum SAMTipState {
             await ClientPipelineTip().resetEligibility()
             await RecruitingPipelineTip().resetEligibility()
             await ProductionTip().resetEligibility()
+            await RoleRecruitingTip().resetEligibility()
             await RelationshipGraphTip().resetEligibility()
             await SearchTip().resetEligibility()
             await EventManagerTip().resetEligibility()
@@ -127,6 +130,7 @@ enum SAMTipState {
         ClientPipelineTip().invalidate(reason: .tipClosed)
         RecruitingPipelineTip().invalidate(reason: .tipClosed)
         ProductionTip().invalidate(reason: .tipClosed)
+        RoleRecruitingTip().invalidate(reason: .tipClosed)
         RelationshipGraphTip().invalidate(reason: .tipClosed)
         SearchTip().invalidate(reason: .tipClosed)
         EventManagerTip().invalidate(reason: .tipClosed)
@@ -351,6 +355,17 @@ struct ProductionTip: Tip {
         Text("Log policies written, applications submitted, and products sold. SAM shows your product mix, pending aging, and production trends over time.")
     }
     var image: Image? { Image(systemName: "doc.text.badge.checkmark") }
+    var actions: [Action] {
+        [Action(id: "learn-more", title: "Learn more")]
+    }
+}
+
+struct RoleRecruitingTip: Tip {
+    var title: Text { Text("Role Recruiting") }
+    var message: Text? {
+        Text("Define roles and let SAM scan your contacts for candidates. The AI evaluates each person individually — scans run in the background and you'll be notified when done.")
+    }
+    var image: Image? { Image(systemName: "person.badge.key") }
     var actions: [Action] {
         [Action(id: "learn-more", title: "Learn more")]
     }

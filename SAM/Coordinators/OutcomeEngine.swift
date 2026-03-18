@@ -146,6 +146,9 @@ final class OutcomeEngine {
             // 16. WhatsApp auto-detection
             newOutcomes.append(contentsOf: scanWhatsAppAutoDetection())
 
+            // 17. Role recruiting discovery & cultivation
+            newOutcomes.append(contentsOf: scanRoleRecruiting())
+
             // Classify action lanes and suggest channels
             for outcome in newOutcomes {
                 classifyActionLane(for: outcome)
@@ -765,13 +768,30 @@ final class OutcomeEngine {
             let rateText = goalRateText(gp)
             let paceLabel = gp.pace.displayName
 
-            let (title, rationale, step, kind) = goalOutcomeDetails(
+            // Use journal learnings to inform the suggested next step
+            let journalEntry = try? GoalJournalRepository.shared.fetchLatest(for: gp.goalID)
+
+            let (title, rationale, defaultStep, kind) = goalOutcomeDetails(
                 goalType: gp.goalType,
                 paceLabel: paceLabel,
                 remaining: remaining,
                 rateText: rateText,
                 daysRemaining: gp.daysRemaining
             )
+
+            // Prefer journal-informed step over generic advice
+            let step: String
+            if let entry = journalEntry {
+                if let strategy = entry.adjustedStrategy, !strategy.isEmpty {
+                    step = "You recently decided to try: \"\(strategy)\" — have you acted on this?"
+                } else if let firstAction = entry.commitmentActions.first {
+                    step = "You committed to: \"\(firstAction)\" — have you done this yet?"
+                } else {
+                    step = defaultStep
+                }
+            } else {
+                step = defaultStep
+            }
 
             let outcome = SamOutcome(
                 title: title,
@@ -783,6 +803,35 @@ final class OutcomeEngine {
                 suggestedNextStep: step
             )
             outcomes.append(outcome)
+        }
+
+        // Check-in nudge: if behind/atRisk and no recent journal entry (>14 days)
+        for gp in allProgress where gp.pace == .behind || gp.pace == .atRisk {
+            let latestEntry = try? GoalJournalRepository.shared.fetchLatest(for: gp.goalID)
+            let daysSinceCheckIn: Int
+            if let entry = latestEntry {
+                daysSinceCheckIn = Calendar.current.dateComponents([.day], from: entry.createdAt, to: .now).day ?? 999
+            } else {
+                daysSinceCheckIn = 999  // Never checked in
+            }
+
+            guard daysSinceCheckIn >= 14 else { continue }
+
+            // Title-based dedup
+            let active = (try? outcomeRepo.fetchActive()) ?? []
+            let alreadyNudged = active.contains { $0.title.contains("Check in on") && $0.title.contains(gp.title) }
+            guard !alreadyNudged else { continue }
+
+            let nudge = SamOutcome(
+                title: "Check in on your \(gp.title) goal",
+                rationale: "You're \(gp.pace.displayName.lowercased()) on \(gp.title) and haven't checked in \(daysSinceCheckIn == 999 ? "yet" : "in \(daysSinceCheckIn) days"). A quick conversation helps SAM give better guidance.",
+                outcomeKind: goalOutcomeKind(for: gp.goalType),
+                priorityScore: 0.5,
+                deadlineDate: Calendar.current.date(byAdding: .day, value: 3, to: .now),
+                sourceInsightSummary: "Goal: \(gp.title) — \(gp.pace.displayName)",
+                suggestedNextStep: "Open the Goals tab and tap 'Check In' on this goal."
+            )
+            outcomes.append(nudge)
         }
 
         return outcomes
@@ -1091,6 +1140,7 @@ final class OutcomeEngine {
         case .contentPosts:      return .contentCreation
         case .deepWorkHours:     return .growth
         case .eventsHosted:      return .growth
+        case .roleFilling:       return .roleFilling
         }
     }
 
@@ -1182,6 +1232,13 @@ final class OutcomeEngine {
                 "Create a new event in SAM and start building your invitation list",
                 kind
             )
+        case .roleFilling:
+            return (
+                "Fill open role positions",
+                "\(paceLabel) on role filling — \(Int(remaining)) remaining over \(daysRemaining) days (\(rateText)).",
+                "Scan your contacts for potential candidates or follow up with existing candidates",
+                kind
+            )
         }
     }
 
@@ -1210,6 +1267,7 @@ final class OutcomeEngine {
         case .contentPosts:      reasonableDailyMax = 3;  reasonableWeeklyMax = 15
         case .deepWorkHours:     reasonableDailyMax = 8;  reasonableWeeklyMax = 40
         case .eventsHosted:      reasonableDailyMax = 2;  reasonableWeeklyMax = 5
+        case .roleFilling:       reasonableDailyMax = 2;  reasonableWeeklyMax = 5
         }
 
         // If daily rate is unreasonable, skip to weekly
@@ -1473,6 +1531,8 @@ final class OutcomeEngine {
             outcome.actionLane = .record
         case .setup:
             outcome.actionLane = .openURL
+        case .roleFilling:
+            outcome.actionLane = .communicate
         }
     }
 
@@ -1994,5 +2054,117 @@ final class OutcomeEngine {
         } catch {
             logger.warning("Draft generation failed for '\(outcome.title)': \(error.localizedDescription)")
         }
+    }
+
+    // MARK: - Role Recruiting Scanner
+
+    /// Generates .roleFilling outcomes for role recruiting discovery & cultivation.
+    private func scanRoleRecruiting() -> [SamOutcome] {
+        var outcomes: [SamOutcome] = []
+
+        let repo = RoleRecruitingRepository.shared
+        guard let roles = try? repo.fetchActiveRoles() else { return [] }
+
+        for role in roles {
+            let candidates = (try? repo.fetchCandidates(for: role.id, includeTerminal: true)) ?? []
+            let activeCandidates = candidates.filter { !$0.stage.isTerminal }
+
+            // 1. Criteria gap: active role with empty criteria and empty idealCandidateProfile
+            if role.criteria.isEmpty && role.idealCandidateProfile.isEmpty {
+                outcomes.append(SamOutcome(
+                    title: "Define what makes a good \(role.name) candidate",
+                    rationale: "SAM needs criteria to scan your contacts for \(role.name) candidates.",
+                    outcomeKind: .roleFilling,
+                    priorityScore: 0.7,
+                    sourceInsightSummary: "Role \(role.name) has no criteria defined"
+                ))
+                continue  // Can't generate other outcomes without criteria
+            }
+
+            // 2. Scan nudge: active role with criteria but 0 candidates
+            if activeCandidates.isEmpty && !role.criteria.isEmpty {
+                let lastScored = RoleRecruitingCoordinator.shared.lastScoredAt[role.id]
+                let stale = lastScored == nil || Date.now.timeIntervalSince(lastScored!) > 24 * 60 * 60
+                if stale {
+                    outcomes.append(SamOutcome(
+                        title: "Scan contacts for \(role.name) candidates",
+                        rationale: "You have criteria defined but haven't scanned yet. SAM can identify matches in your network.",
+                        outcomeKind: .roleFilling,
+                        priorityScore: 0.6,
+                        sourceInsightSummary: "Role \(role.name): criteria exist but no candidates scored"
+                    ))
+                }
+            }
+
+            // 3. Follow-up nudge: candidate in .approached with no contact in 14+ days
+            let approachedStale = activeCandidates.filter { candidate in
+                candidate.stage == .approached
+                && (candidate.lastContactedAt == nil
+                    || Date.now.timeIntervalSince(candidate.lastContactedAt!) > 14 * 24 * 60 * 60)
+            }
+            for candidate in approachedStale.prefix(3) {
+                guard let person = candidate.person else { continue }
+                let name = person.displayNameCache ?? person.displayName
+                let daysSince = candidate.lastContactedAt.map {
+                    Calendar.current.dateComponents([.day], from: $0, to: .now).day ?? 0
+                } ?? 0
+                outcomes.append(SamOutcome(
+                    title: "Follow up with \(name) about the \(role.name) role",
+                    rationale: "It's been \(daysSince) days since you last reached out.",
+                    outcomeKind: .roleFilling,
+                    priorityScore: 0.65,
+                    sourceInsightSummary: "Role candidate follow-up: \(name) for \(role.name)",
+                    linkedPerson: person
+                ))
+            }
+
+            // 4. Initial contact nudge: approved candidate in .suggested for 7+ days
+            let suggestedStale = activeCandidates.filter { candidate in
+                candidate.stage == .suggested
+                && candidate.isUserApproved
+                && Date.now.timeIntervalSince(candidate.stageEnteredAt) > 7 * 24 * 60 * 60
+            }
+            for candidate in suggestedStale.prefix(3) {
+                guard let person = candidate.person else { continue }
+                let name = person.displayNameCache ?? person.displayName
+                let topStrength = candidate.strengthSignals.first ?? "matching profile"
+                outcomes.append(SamOutcome(
+                    title: "Reach out to \(name) about the \(role.name) role",
+                    rationale: "They scored \(Int(candidate.matchScore * 100))% because of \(topStrength).",
+                    outcomeKind: .roleFilling,
+                    priorityScore: 0.55,
+                    sourceInsightSummary: "Role candidate outreach: \(name) for \(role.name)",
+                    linkedPerson: person
+                ))
+            }
+
+            // 5. Existing member referral: filledCount < targetCount AND people exist with matching role
+            if role.filledCount < role.targetCount {
+                let committed = candidates.filter { $0.stage == .committed }
+                for member in committed.prefix(2) {
+                    guard let person = member.person else { continue }
+                    let name = person.displayNameCache ?? person.displayName
+
+                    // Check 30-day window dedup
+                    let isDuplicate = (try? outcomeRepo.hasSimilarOutcome(
+                        kind: .roleFilling,
+                        personID: person.id,
+                        withinHours: 30 * 24
+                    )) ?? false
+                    guard !isDuplicate else { continue }
+
+                    outcomes.append(SamOutcome(
+                        title: "Ask \(name) for \(role.name) referrals",
+                        rationale: "\(name) understands the \(role.name) role — they may know others who'd be a good fit.",
+                        outcomeKind: .roleFilling,
+                        priorityScore: 0.5,
+                        sourceInsightSummary: "Existing \(role.name) referral ask: \(name)",
+                        linkedPerson: person
+                    ))
+                }
+            }
+        }
+
+        return outcomes
     }
 }

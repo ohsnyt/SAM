@@ -4,6 +4,41 @@
 
 ---
 
+## Goal Journal — Conversational Refinement (March 17, 2026)
+
+**What**: Added goal-scoped coaching check-in sessions that produce persistent, structured learnings. Users can check in on any business goal via a chat UI; when done, SAM distills the conversation into a `GoalJournalEntry` capturing what's working, what's not, barriers, adjusted strategy, key insight, and commitment actions. Journal data feeds forward into all AI specialists.
+
+### New Files
+- **`SAMModels-GoalJournal.swift`** — `GoalJournalEntry` SwiftData model with JSON-encoded array pattern
+- **`GoalJournalDTO.swift`** — `GoalJournalEntryDTO` (Sendable, Codable, team-export-ready) + `GoalCheckInContext` context DTO
+- **`GoalJournalRepository.swift`** — `@MainActor @Observable` singleton with CRUD, export, and background `summarizeAndSave()` with observable `isSummarizing` status
+- **`GoalCheckInService.swift`** — Actor singleton: goal-scoped coaching responses (conversation rules enforce ONE question per turn, conversation-ending detection) + post-session AI summarization into structured JSON
+- **`GoalCheckInSessionView.swift`** — Chat UI with goal header (progress, pace badge, days remaining), multi-line TextEditor input, action buttons, immediate close on "Done" with background distillation
+
+### Forward-Feeding Injection Points (6+)
+- **BusinessProfileService** — `goalJournalFragment()` in `fullContextBlock()` propagates to all AI specialists
+- **StrategicCoordinator** — `gatherContentData()` includes whatsWorking/whatsNotWorking/insights; `gatherPipelineData()` includes barriers and adjusted strategies
+- **OutcomeEngine** — Journal-informed pacing (references adjustedStrategy/commitmentActions); check-in nudge when behind/atRisk goal hasn't been checked in for 14+ days
+- **RoleCandidateAnalystService** — Journal context from roleFilling goals injected into candidate scoring prompts
+- **DailyBriefingService** — Recent journal entries (7 days) included in briefing prompt
+
+### Modified Files
+- **GoalProgressView** — "Check In" button per goal, collapsible journal history section
+- **MinionsView** — "Distilling" minion row during background summarization
+- **SAMModelContainer** — Registered `GoalJournalEntry.self`
+- **SAMApp** — `GoalJournalRepository.shared.configure(container:)`
+- **BackupDocument** — `GoalJournalEntryBackup` struct (optional for backward compat)
+- **BackupCoordinator** — Export/import for journal entries
+
+### UX Refinements (from testing)
+- System instruction rewritten: one question per turn, 2–4 sentences, conversation arc guide instead of probing checklist
+- Multi-line TextEditor (72pt min / 120pt max) replaces single-line TextField
+- Thinking indicator scrolls into view via `onChange(of: isGenerating)`
+- Conversation-ending detection: SAM closes warmly when user signals wrap-up
+- "Done" closes window immediately; summarization runs in background with Minion status indicator
+
+---
+
 ## Content Advisor Robustness & Encodable Fix (March 17, 2026)
 
 **What**: Fixed `LLMContentTopic` Encodable conformance, hardened content advisor JSON parsing, added diagnostic logging across the content pipeline, and pinned architecture to arm64.

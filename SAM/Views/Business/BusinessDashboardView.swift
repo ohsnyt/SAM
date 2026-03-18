@@ -17,14 +17,20 @@ struct BusinessDashboardView: View {
     @State private var strategic = StrategicCoordinator.shared
     @State private var selectedTab = 0  // 0 = Strategic (default)
     @State private var isFinancial = true
+    @State private var hasRoles = false
 
     /// Tab definitions that adapt to practice type.
     private var tabs: [(label: String, tag: Int)] {
+        var result: [(String, Int)]
         if isFinancial {
-            return [("Strategic", 0), ("Pipeline", 1), ("Production", 2), ("Goals", 3)]
+            result = [("Strategic", 0), ("Pipeline", 1), ("Production", 2), ("Goals", 3)]
         } else {
-            return [("Strategic", 0), ("Pipeline", 1), ("Goals", 3)]
+            result = [("Strategic", 0), ("Pipeline", 1), ("Goals", 3)]
         }
+        if hasRoles {
+            result.append(("Roles", 4))
+        }
+        return result
     }
 
     var body: some View {
@@ -63,6 +69,8 @@ struct BusinessDashboardView: View {
                     ProductionDashboardView(tracker: tracker)
                 case 3:
                     GoalProgressView()
+                case 4:
+                    RoleRecruitingDashboardView()
                 default:
                     EmptyView()
                 }
@@ -88,6 +96,9 @@ struct BusinessDashboardView: View {
         }
         .task {
             isFinancial = await BusinessProfileService.shared.isFinancialPractice()
+            let roleCount = (try? RoleRecruitingRepository.shared.fetchActiveRoles().count) ?? 0
+            let hasRoleGoal = (try? GoalRepository.shared.fetchActive().contains { $0.goalType == .roleFilling }) ?? false
+            hasRoles = roleCount > 0 || hasRoleGoal
         }
         .onAppear {
             tracker.refresh()

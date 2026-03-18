@@ -965,6 +965,7 @@ public enum OutcomeKind: String, Codable, Sendable, CaseIterable {
     case compliance        // Regulatory or compliance action
     case contentCreation   // Social media / educational content
     case setup             // Platform notification setup guidance (Phase 6)
+    case roleFilling       // Role recruiting discovery & cultivation
 }
 
 public enum OutcomeStatus: String, Codable, Sendable {
@@ -989,13 +990,14 @@ extension OutcomeKind {
         case .followUp, .outreach:        return .quick
         case .proposal, .preparation, .training, .compliance, .setup: return .detailed
         case .growth, .contentCreation:   return .social
+        case .roleFilling:                return .quick
         }
     }
 
     var defaultAction: OutcomeAction {
         switch self {
         case .followUp, .preparation: return .captureNote
-        case .proposal, .outreach, .growth, .training, .compliance, .contentCreation, .setup: return .openPerson
+        case .proposal, .outreach, .growth, .training, .compliance, .contentCreation, .setup, .roleFilling: return .openPerson
         }
     }
 
@@ -1004,6 +1006,7 @@ extension OutcomeKind {
         case .followUp, .preparation: return "Write Note"
         case .contentCreation: return "Draft"
         case .setup: return "Open Settings"
+        case .roleFilling: return "View"
         case .proposal, .outreach, .growth, .training, .compliance: return "View"
         }
     }
@@ -1013,6 +1016,7 @@ extension OutcomeKind {
         case .followUp, .preparation: return "square.and.pencil"
         case .contentCreation: return "text.badge.star"
         case .setup: return "safari"
+        case .roleFilling: return "person.badge.key"
         case .proposal, .outreach, .growth, .training, .compliance: return "arrow.right.circle"
         }
     }

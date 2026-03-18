@@ -200,6 +200,16 @@
       "relatedFeatureID": null
     },
     {
+      "id": "business.role-recruiting",
+      "title": "Role Recruiting",
+      "sectionID": "business",
+      "sortOrder": 6,
+      "markdownFileName": "07-Role-Recruiting.md",
+      "searchKeywords": ["role", "recruiting", "candidates", "scoring", "board", "referral", "discover", "scan"],
+      "relatedTipID": "RoleRecruitingTip",
+      "relatedFeatureID": "roleRecruiting"
+    },
+    {
       "id": "grow.lead-acquisition",
       "title": "Lead Acquisition",
       "sectionID": "grow",

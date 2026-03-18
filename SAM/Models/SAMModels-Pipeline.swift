@@ -17,8 +17,9 @@ import SwiftUI
 
 /// Which pipeline a stage transition belongs to.
 public enum PipelineType: String, Codable, Sendable {
-    case client    = "client"
-    case recruiting = "recruiting"
+    case client         = "client"
+    case recruiting     = "recruiting"
+    case roleRecruiting = "roleRecruiting"
 }
 
 // MARK: - RecruitingStageKind

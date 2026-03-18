@@ -39,6 +39,8 @@ final class SystemNotificationService: NSObject, UNUserNotificationCenterDelegat
     private static let viewUnknownSenderAction = "VIEW_UNKNOWN_SENDER"
     private static let eventReminderCategory = "EVENT_REMINDER"
     private static let viewEventRemindersAction = "VIEW_EVENT_REMINDERS"
+    private static let roleScanCategory = "ROLE_SCAN"
+    private static let viewRoleScanAction = "VIEW_ROLE_SCAN"
 
     private override init() {
         super.init()
@@ -167,7 +169,21 @@ final class SystemNotificationService: NSObject, UNUserNotificationCenterDelegat
             options: []
         )
 
-        center.setNotificationCategories([planCategory, meetingCategory, substackCategory, linkedInCategory, facebookCategory, unknownSenderCategory, eventReminderCategory])
+        // Role Scan category
+        let viewRoleScanAction = UNNotificationAction(
+            identifier: Self.viewRoleScanAction,
+            title: "Review Matches",
+            options: [.foreground]
+        )
+
+        let roleScanCategory = UNNotificationCategory(
+            identifier: Self.roleScanCategory,
+            actions: [viewRoleScanAction],
+            intentIdentifiers: [],
+            options: []
+        )
+
+        center.setNotificationCategories([planCategory, meetingCategory, substackCategory, linkedInCategory, facebookCategory, unknownSenderCategory, eventReminderCategory, roleScanCategory])
         logger.debug("System notification categories configured")
     }
 
@@ -426,6 +442,36 @@ final class SystemNotificationService: NSObject, UNUserNotificationCenterDelegat
         }
     }
 
+    /// Post a system notification when a role candidate scan completes.
+    func postRoleScanComplete(roleName: String, matchCount: Int) async {
+        let granted = await requestPermissionIfNeeded()
+        guard granted else { return }
+
+        let content = UNMutableNotificationContent()
+        content.title = "Role scan complete"
+        if matchCount == 0 {
+            content.body = "No new matches found for \"\(roleName)\""
+        } else {
+            content.body = "\(matchCount) \(matchCount == 1 ? "match" : "matches") found for \"\(roleName)\""
+        }
+        content.sound = .default
+        content.categoryIdentifier = Self.roleScanCategory
+        content.userInfo = ["roleName": roleName]
+
+        let request = UNNotificationRequest(
+            identifier: "role-scan-\(roleName.hashValue)-\(Date.now.timeIntervalSince1970)",
+            content: content,
+            trigger: nil
+        )
+
+        do {
+            try await UNUserNotificationCenter.current().add(request)
+            logger.debug("Role scan notification posted for: \(roleName)")
+        } catch {
+            logger.error("Failed to post role scan notification: \(error.localizedDescription)")
+        }
+    }
+
     // MARK: - UNUserNotificationCenterDelegate
 
     /// Show notification banner even when app is in foreground.
@@ -537,6 +583,14 @@ final class SystemNotificationService: NSObject, UNUserNotificationCenterDelegat
                     }
                     FacebookImportCoordinator.shared.startFileWatcher()
                 }
+
+            case Self.roleScanCategory:
+                // Navigate to Business > Roles tab
+                NotificationCenter.default.post(
+                    name: .samNavigateToSection,
+                    object: nil,
+                    userInfo: ["section": "business", "tab": "roles"]
+                )
 
             case Self.unknownSenderRSVPCategory, Self.eventReminderCategory:
                 // Navigate to the event — post section navigation to events

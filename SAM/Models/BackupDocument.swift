@@ -40,6 +40,7 @@ struct BackupDocument: Codable {
     var complianceAuditEntries: [ComplianceAuditBackup]
     var deducedRelations: [DeducedRelationBackup]
     var substackImports: [SubstackImportBackup]?  // v33+, backward-compatible
+    var goalJournalEntries: [GoalJournalEntryBackup]?  // Goal check-in journal, backward-compatible
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -521,4 +522,25 @@ struct SubstackImportBackup: Codable {
     var newLeadsFound: Int
     var touchEventsCreated: Int
     var statusRawValue: String
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// MARK: - 23. GoalJournalEntryBackup
+// ─────────────────────────────────────────────────────────────────────
+
+struct GoalJournalEntryBackup: Codable {
+    var id: UUID
+    var goalID: UUID
+    var goalTypeRawValue: String
+    var headline: String
+    var whatsWorking: [String]
+    var whatsNotWorking: [String]
+    var barriers: [String]
+    var adjustedStrategy: String?
+    var keyInsight: String?
+    var commitmentActions: [String]
+    var paceAtCheckInRawValue: String
+    var progressAtCheckIn: Double
+    var conversationTurnCount: Int
+    var createdAt: Date
 }
