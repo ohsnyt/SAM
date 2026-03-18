@@ -31,7 +31,7 @@ struct AddParticipantsSheet: View {
             // Header
             HStack {
                 Text("Add Participants")
-                    .font(.title2.bold())
+                    .samFont(.title2, weight: .bold)
                 Spacer()
                 Button("Done") { dismiss() }
                     .keyboardShortcut(.escape)
@@ -78,7 +78,7 @@ struct AddParticipantsSheet: View {
             HStack {
                 if addedCount > 0 {
                     Text("\(addedCount) added")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.green)
                 }
                 Spacer()
@@ -108,7 +108,7 @@ struct AddParticipantsSheet: View {
                 VStack(spacing: 8) {
                     ProgressView()
                     Text("SAM is analyzing your contacts…")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -160,18 +160,18 @@ struct AddParticipantsSheet: View {
             // Selection checkbox
             Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                 .foregroundStyle(isSelected ? .blue : .secondary)
-                .font(.body)
+                .samFont(.body)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(person.displayNameCache ?? "Unknown")
-                    .font(.body)
+                    .samFont(.body)
                     .lineLimit(1)
 
                 HStack(spacing: 4) {
                     if !person.roleBadges.isEmpty {
                         ForEach(person.roleBadges.prefix(3), id: \.self) { badge in
                             Text(badge)
-                                .font(.caption2)
+                                .samFont(.caption2)
                                 .padding(.horizontal, 4)
                                 .padding(.vertical, 1)
                                 .background(.quaternary, in: Capsule())
@@ -180,7 +180,7 @@ struct AddParticipantsSheet: View {
 
                     if let reason {
                         Text(reason)
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .foregroundStyle(.blue)
                             .italic()
                     }
@@ -191,7 +191,7 @@ struct AddParticipantsSheet: View {
 
             if isAlreadyAdded {
                 Text("Already added")
-                    .font(.caption2)
+                    .samFont(.caption2)
                     .foregroundStyle(.tertiary)
             }
         }
@@ -212,7 +212,7 @@ struct AddParticipantsSheet: View {
     private var selectedSummary: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Selected (\(selectedPeople.count))")
-                .font(.headline)
+                .samFont(.headline)
                 .padding(12)
 
             Divider()
@@ -229,7 +229,7 @@ struct AddParticipantsSheet: View {
                         VStack(alignment: .leading, spacing: 4) {
                             HStack {
                                 Text(person.displayNameCache ?? "Unknown")
-                                    .font(.body)
+                                    .samFont(.body)
                                 Spacer()
                                 Button {
                                     selectedPeople.remove(person.id)
@@ -251,7 +251,7 @@ struct AddParticipantsSheet: View {
 
                                 TextField("Role", text: roleBinding(for: person.id))
                                     .textFieldStyle(.roundedBorder)
-                                    .font(.caption)
+                                    .samFont(.caption)
                                     .frame(maxWidth: 100)
                             }
                         }

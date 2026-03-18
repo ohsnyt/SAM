@@ -60,10 +60,10 @@ struct ProductionDashboardView: View {
         VStack(spacing: 8) {
             HStack {
                 Text("Production Overview")
-                    .font(.headline)
+                    .samFont(.headline)
                 Spacer()
                 Text(tracker.productionTotalPremium, format: .currency(code: "USD"))
-                    .font(.caption)
+                    .samFont(.caption)
                     .fontWeight(.semibold)
                     .foregroundStyle(.secondary)
             }
@@ -77,15 +77,15 @@ struct ProductionDashboardView: View {
                 ForEach(tracker.productionByStatus) { summary in
                     VStack(spacing: 4) {
                         Image(systemName: summary.status.icon)
-                            .font(.title3)
+                            .samFont(.title3)
                             .foregroundStyle(summary.status.color)
 
                         Text("\(summary.count)")
-                            .font(.title2)
+                            .samFont(.title2)
                             .fontWeight(.bold)
 
                         Text(summary.status.displayName)
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
 
                         if summary.totalPremium > 0 {
@@ -112,28 +112,28 @@ struct ProductionDashboardView: View {
     private var productMixSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Product Mix")
-                .font(.headline)
+                .samFont(.headline)
 
             ForEach(tracker.productionByType) { summary in
                 HStack(spacing: 8) {
                     Image(systemName: summary.productType.icon)
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(summary.productType.color)
                         .frame(width: 16)
 
                     Text(summary.productType.displayName)
-                        .font(.subheadline)
+                        .samFont(.subheadline)
                         .lineLimit(1)
 
                     Spacer()
 
                     Text("\(summary.count)")
-                        .font(.subheadline)
+                        .samFont(.subheadline)
                         .fontWeight(.semibold)
                         .monospacedDigit()
 
                     Text(summary.totalPremium, format: .currency(code: "USD"))
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
                         .frame(width: 80, alignment: .trailing)
@@ -150,7 +150,7 @@ struct ProductionDashboardView: View {
     private var windowPicker: some View {
         HStack {
             Text("Production window:")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
 
             Picker("Window", selection: $tracker.productionWindowDays) {
@@ -175,7 +175,7 @@ struct ProductionDashboardView: View {
     private var allRecordsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("All Production Records")
-                .font(.headline)
+                .samFont(.headline)
 
             ForEach(tracker.productionAllRecords) { item in
                 Button {
@@ -189,17 +189,17 @@ struct ProductionDashboardView: View {
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: item.productType.icon)
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(item.productType.color)
                             .frame(width: 16)
 
                         VStack(alignment: .leading, spacing: 1) {
                             Text(item.personName)
-                                .font(.subheadline)
+                                .samFont(.subheadline)
                                 .foregroundStyle(.primary)
                                 .lineLimit(1)
                             Text("\(item.productType.displayName) · \(item.carrierName)")
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
                         }
@@ -207,7 +207,7 @@ struct ProductionDashboardView: View {
                         Spacer()
 
                         Text(item.annualPremium, format: .currency(code: "USD"))
-                            .font(.caption)
+                            .samFont(.caption)
                             .monospacedDigit()
 
                         HStack(spacing: 3) {
@@ -223,7 +223,7 @@ struct ProductionDashboardView: View {
                         .clipShape(Capsule())
 
                         Text(item.submittedDate, style: .date)
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .foregroundStyle(.secondary)
                             .frame(width: 70, alignment: .trailing)
                     }
@@ -243,10 +243,10 @@ struct ProductionDashboardView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 4) {
                 Image(systemName: "clock.badge.exclamationmark")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.orange)
                 Text("Pending Submissions")
-                    .font(.headline)
+                    .samFont(.headline)
                     .foregroundStyle(.orange)
             }
 
@@ -262,28 +262,28 @@ struct ProductionDashboardView: View {
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: item.productType.icon)
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(item.productType.color)
                             .frame(width: 16)
 
                         Text(item.personName)
-                            .font(.subheadline)
+                            .samFont(.subheadline)
                             .foregroundStyle(.primary)
                             .lineLimit(1)
 
                         Text(item.carrierName)
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
 
                         Spacer()
 
                         Text(item.premium, format: .currency(code: "USD"))
-                            .font(.caption)
+                            .samFont(.caption)
                             .monospacedDigit()
 
                         Text("\(item.daysPending)d pending")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(item.daysPending > 30 ? .red : .orange)
                     }
                     .contentShape(Rectangle())

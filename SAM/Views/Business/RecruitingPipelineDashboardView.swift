@@ -50,11 +50,11 @@ struct RecruitingPipelineDashboardView: View {
         VStack(spacing: 8) {
             HStack {
                 Text("Recruiting Funnel")
-                    .font(.headline)
+                    .samFont(.headline)
                 Spacer()
                 let total = tracker.recruitFunnel.reduce(0) { $0 + $1.count }
                 Text("\(total) total")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             }
 
@@ -67,7 +67,7 @@ struct RecruitingPipelineDashboardView: View {
                 ForEach(tracker.recruitFunnel) { summary in
                     VStack(spacing: 4) {
                         Text("\(summary.count)")
-                            .font(.title3)
+                            .samFont(.title3)
                             .fontWeight(.bold)
                             .foregroundStyle(summary.stage.color)
 
@@ -85,7 +85,7 @@ struct RecruitingPipelineDashboardView: View {
                         .frame(height: 50)
 
                         Image(systemName: summary.stage.icon)
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .foregroundStyle(summary.stage.color)
 
                         Text(summary.stage.rawValue)
@@ -110,7 +110,7 @@ struct RecruitingPipelineDashboardView: View {
                 Image(systemName: "checkmark.seal.fill")
                     .foregroundStyle(.purple)
                 Text("Licensing Rate")
-                    .font(.headline)
+                    .samFont(.headline)
             }
 
             Text(tracker.recruitLicensingRate > 0
@@ -120,7 +120,7 @@ struct RecruitingPipelineDashboardView: View {
                 .foregroundStyle(.purple)
 
             Text("Licensed or beyond")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
@@ -135,10 +135,10 @@ struct RecruitingPipelineDashboardView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 4) {
                 Image(systemName: "bell.badge")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.orange)
                 Text("Mentoring Overdue")
-                    .font(.headline)
+                    .samFont(.headline)
                     .foregroundStyle(.orange)
             }
 
@@ -153,16 +153,16 @@ struct RecruitingPipelineDashboardView: View {
                     } label: {
                         HStack(spacing: 8) {
                             Image(systemName: alert.stage.icon)
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(alert.stage.color)
 
                             Text(alert.personName)
-                                .font(.subheadline)
+                                .samFont(.subheadline)
                                 .foregroundStyle(.primary)
                                 .lineLimit(1)
 
                             Text(alert.stage.rawValue)
-                                .font(.caption2)
+                                .samFont(.caption2)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
                                 .background(alert.stage.color.opacity(0.15))
@@ -172,7 +172,7 @@ struct RecruitingPipelineDashboardView: View {
                             Spacer()
 
                             Text("\(alert.daysSinceContact)d overdue")
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(alert.daysSinceContact > 21 ? .red : .orange)
                         }
                         .contentShape(Rectangle())
@@ -184,7 +184,7 @@ struct RecruitingPipelineDashboardView: View {
                         tracker.refresh()
                     } label: {
                         Label("Log", systemImage: "hand.wave")
-                            .font(.caption)
+                            .samFont(.caption)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)

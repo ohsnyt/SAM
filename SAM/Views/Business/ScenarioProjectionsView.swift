@@ -27,16 +27,16 @@ struct ScenarioProjectionsView: View {
                 Image(systemName: "chart.line.uptrend.xyaxis")
                     .foregroundStyle(.blue)
                 Text("Scenario Projections")
-                    .font(.headline)
+                    .samFont(.headline)
                 Spacer()
                 Text("Based on 90-day trailing pace")
-                    .font(.caption2)
+                    .samFont(.caption2)
                     .foregroundStyle(.tertiary)
             }
 
             if engine.projections.isEmpty {
                 Text("No projection data yet.")
-                    .font(.callout)
+                    .samFont(.callout)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 20)
@@ -60,10 +60,10 @@ struct ScenarioProjectionsView: View {
             HStack(spacing: 6) {
                 Image(systemName: projection.category.icon)
                     .foregroundStyle(categoryColor(projection.category))
-                    .font(.callout)
+                    .samFont(.callout)
 
                 Text(projection.category.displayName)
-                    .font(.subheadline)
+                    .samFont(.subheadline)
                     .fontWeight(.medium)
                     .lineLimit(1)
 
@@ -74,7 +74,7 @@ struct ScenarioProjectionsView: View {
 
             if !projection.hasEnoughData {
                 Text("Limited data")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
                     .italic()
             }
@@ -84,17 +84,17 @@ struct ScenarioProjectionsView: View {
                 ForEach(projection.points) { point in
                     VStack(spacing: 2) {
                         Text("\(point.months)mo")
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .foregroundStyle(.tertiary)
 
                         Text(formatValue(point.mid, category: projection.category))
-                            .font(.subheadline)
+                            .samFont(.subheadline)
                             .fontWeight(.semibold)
                             .lineLimit(1)
                             .minimumScaleFactor(0.7)
 
                         Text("\(formatValue(point.low, category: projection.category))–\(formatValue(point.high, category: projection.category))")
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .minimumScaleFactor(0.6)
@@ -112,9 +112,9 @@ struct ScenarioProjectionsView: View {
     private func trendBadge(_ trend: ProjectionTrend) -> some View {
         HStack(spacing: 2) {
             Image(systemName: trendIcon(trend))
-                .font(.caption2)
+                .samFont(.caption2)
             Text(trendLabel(trend))
-                .font(.caption2)
+                .samFont(.caption2)
         }
         .padding(.horizontal, 5)
         .padding(.vertical, 2)

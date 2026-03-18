@@ -26,10 +26,10 @@ struct NetworkGrowthSection: View {
                     Image(systemName: "circle.grid.cross")
                         .foregroundStyle(.cyan)
                     Text("Network")
-                        .font(.headline)
+                        .samFont(.headline)
                     Spacer()
                     Text("\(coordinator.nodes.count) people")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
                 .padding(.horizontal)
@@ -77,10 +77,10 @@ struct NetworkGrowthSection: View {
                                     .fill(item.color)
                                     .frame(width: 8, height: 8)
                                 Text("\(item.count)")
-                                    .font(.caption)
+                                    .samFont(.caption)
                                     .fontWeight(.medium)
                                 Text(item.label)
-                                    .font(.caption)
+                                    .samFont(.caption)
                                     .foregroundStyle(.secondary)
                             }
                         }
@@ -151,7 +151,7 @@ private struct NetworkMetricCard: View {
     var body: some View {
         VStack(spacing: 6) {
             Image(systemName: icon)
-                .font(.title3)
+                .samFont(.title3)
                 .foregroundStyle(accent)
 
             Text(value)
@@ -159,7 +159,7 @@ private struct NetworkMetricCard: View {
                 .foregroundStyle(.primary)
 
             Text(label)
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .lineLimit(2)

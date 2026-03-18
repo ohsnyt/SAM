@@ -26,21 +26,21 @@ struct RoleConfirmationBannerView: View {
                         Image(systemName: style.icon)
                             .foregroundStyle(style.color)
                         Text("Suggested: \(role)")
-                            .font(.callout.bold())
+                            .samFont(.callout, weight: .bold)
                         Text("(\(engine.currentBatch.count) people)")
-                            .font(.callout)
+                            .samFont(.callout)
                             .foregroundStyle(.secondary)
                     }
 
                     if engine.totalBatchCount > 1 {
                         Text("Batch \(engine.currentBatchNumber) of \(engine.totalBatchCount)")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.tertiary)
                     }
 
                     if engine.remainingAfterCurrentBatch > 0 {
                         Text("(\(engine.remainingAfterCurrentBatch) more to review)")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.tertiary)
                     }
 
@@ -88,7 +88,7 @@ struct RoleConfirmationBannerView: View {
 
                 // Hint text
                 Text("Tap a node to change its role, or confirm the batch.")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             }
             .padding(.horizontal, 12)

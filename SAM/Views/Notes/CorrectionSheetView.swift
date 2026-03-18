@@ -45,9 +45,9 @@ struct CorrectionSheetView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Correct AI Summary")
-                        .font(.headline)
+                        .samFont(.headline)
                     Text(person.displayNameCache ?? person.displayName)
-                        .font(.subheadline)
+                        .samFont(.subheadline)
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -66,12 +66,12 @@ struct CorrectionSheetView: View {
             // Current AI summary (read-only, scrollable)
             VStack(alignment: .leading, spacing: 4) {
                 Text("What the AI thinks:")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
 
                 ScrollView {
                     Text(currentSummary)
-                        .font(.callout)
+                        .samFont(.callout)
                         .italic()
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(10)
@@ -84,7 +84,7 @@ struct CorrectionSheetView: View {
             // User correction input
             VStack(alignment: .leading, spacing: 4) {
                 Text("What's actually true:")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
 
                 HStack(alignment: .bottom, spacing: 8) {
@@ -98,7 +98,7 @@ struct CorrectionSheetView: View {
                         .overlay(alignment: .topLeading) {
                             if correctionText.isEmpty && !isDictating {
                                 Text("Type or dictate a correction...")
-                                    .font(.body)
+                                    .samFont(.body)
                                     .foregroundStyle(.tertiary)
                                     .padding(.horizontal, 10)
                                     .padding(.vertical, 10)
@@ -111,7 +111,7 @@ struct CorrectionSheetView: View {
                         attachImage()
                     } label: {
                         Image(systemName: "paperclip")
-                            .font(.body)
+                            .samFont(.body)
                             .foregroundStyle(.secondary)
                             .frame(width: 28, height: 28)
                     }
@@ -127,7 +127,7 @@ struct CorrectionSheetView: View {
                         }
                     } label: {
                         Image(systemName: isDictating ? "mic.fill" : "mic")
-                            .font(.body)
+                            .samFont(.body)
                             .foregroundStyle(isDictating ? .red : .secondary)
                             .frame(width: 28, height: 28)
                     }
@@ -151,7 +151,7 @@ struct CorrectionSheetView: View {
                         ProgressView()
                             .controlSize(.mini)
                         Text("Polishing dictation...")
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -162,7 +162,7 @@ struct CorrectionSheetView: View {
                         rawDictationText = nil
                     } label: {
                         Label("Undo polish", systemImage: "arrow.uturn.backward")
-                            .font(.caption2)
+                            .samFont(.caption2)
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(.secondary)
@@ -170,7 +170,7 @@ struct CorrectionSheetView: View {
 
                 if let error = errorMessage {
                     Text(error)
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.red)
                 }
             }

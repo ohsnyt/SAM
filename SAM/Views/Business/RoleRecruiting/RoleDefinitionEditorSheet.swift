@@ -49,7 +49,7 @@ struct RoleDefinitionEditorSheet: View {
                 Spacer()
 
                 Text(isEditing ? "Edit Role" : "New Role")
-                    .font(.headline)
+                    .samFont(.headline)
 
                 Spacer()
 

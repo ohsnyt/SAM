@@ -37,7 +37,7 @@ struct CommandPaletteView: View {
                     .foregroundStyle(.secondary)
                 TextField("Search commands and people\u{2026}", text: $query)
                     .textFieldStyle(.plain)
-                    .font(.title3)
+                    .samFont(.title3)
                     .onSubmit {
                         executeSelected()
                     }
@@ -64,7 +64,7 @@ struct CommandPaletteView: View {
                         let items = filteredItems
                         if items.isEmpty && !query.isEmpty {
                             Text("No results")
-                                .font(.subheadline)
+                                .samFont(.subheadline)
                                 .foregroundStyle(.secondary)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 24)
@@ -177,11 +177,11 @@ struct CommandPaletteView: View {
                     .frame(width: 20)
                     .foregroundStyle(.secondary)
                 Text(label)
-                    .font(.body)
+                    .samFont(.body)
                 Spacer()
                 if let shortcut {
                     Text(shortcut)
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.tertiary)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
@@ -194,11 +194,11 @@ struct CommandPaletteView: View {
                     .frame(width: 20)
                     .foregroundStyle(.secondary)
                 Text(label)
-                    .font(.body)
+                    .samFont(.body)
                 Spacer()
                 if let shortcut {
                     Text(shortcut)
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.tertiary)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
@@ -223,11 +223,11 @@ struct CommandPaletteView: View {
 
                 VStack(alignment: .leading, spacing: 0) {
                     Text(person.displayNameCache ?? person.displayName)
-                        .font(.body)
+                        .samFont(.body)
                         .lineLimit(1)
                     if let email = person.emailCache ?? person.email {
                         Text(email)
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
@@ -240,7 +240,7 @@ struct CommandPaletteView: View {
                 Spacer()
 
                 Text("Person")
-                    .font(.caption2)
+                    .samFont(.caption2)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)

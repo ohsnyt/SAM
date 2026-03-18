@@ -34,7 +34,7 @@ struct SubstackImportSettingsContent: View {
 
             // Description
             Text("Connect your Substack publication to get content suggestions that extend your existing articles and identify warm leads from your subscriber base.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
 
             Divider()
@@ -74,7 +74,7 @@ struct SubstackImportSettingsContent: View {
     private var feedSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Publication Feed")
-                .font(.headline)
+                .samFont(.headline)
 
             HStack {
                 TextField("e.g. sarahksnyder.substack.com", text: $feedURLInput)
@@ -92,13 +92,13 @@ struct SubstackImportSettingsContent: View {
                 HStack(spacing: 4) {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(.green)
-                        .font(.caption)
+                        .samFont(.caption)
                     Text("Last fetched: \(lastFetch.formatted(date: .abbreviated, time: .shortened))")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                     if !coordinator.parsedPosts.isEmpty {
                         Text("(\(coordinator.parsedPosts.count) posts)")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -114,10 +114,10 @@ struct SubstackImportSettingsContent: View {
     private var subscriberSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Subscriber Import")
-                .font(.headline)
+                .samFont(.headline)
 
             Text("Go to Substack Settings → Exports → Download. Select the downloaded CSV file.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
 
             HStack {
@@ -138,9 +138,9 @@ struct SubstackImportSettingsContent: View {
                 HStack(spacing: 4) {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(.green)
-                        .font(.caption)
+                        .samFont(.caption)
                     Text("Last imported: \(lastImport.formatted(date: .abbreviated, time: .shortened))")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -155,9 +155,9 @@ struct SubstackImportSettingsContent: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("\(coordinator.subscriberCandidates.count) subscribers found")
-                        .font(.caption).bold()
+                        .samFont(.caption).bold()
                     Text("\(matched) matched to existing contacts • \(unmatched) new • \(paid) paid")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
                 .padding(8)
@@ -178,26 +178,26 @@ struct SubstackImportSettingsContent: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text("Writing Voice")
-                        .font(.headline)
+                        .samFont(.headline)
                     Spacer()
                     Button("Refresh") {
                         Task { await coordinator.fetchFeed() }
                     }
-                    .font(.caption)
+                    .samFont(.caption)
                     .disabled(isActive)
                 }
 
                 Text(profile.writingVoiceSummary)
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
 
                 if !profile.topicSummary.isEmpty {
                     HStack(spacing: 4) {
                         Text("Topics:")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                         Text(profile.topicSummary.joined(separator: ", "))
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.primary)
                     }
                 }
@@ -217,7 +217,7 @@ struct SubstackImportSettingsContent: View {
                 ProgressView()
                     .controlSize(.small)
                 Text(coordinator.statusMessage)
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             }
         case .awaitingReview:
@@ -227,9 +227,9 @@ struct SubstackImportSettingsContent: View {
                 HStack(spacing: 4) {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(.green)
-                        .font(.caption)
+                        .samFont(.caption)
                     Text(coordinator.statusMessage)
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -237,9 +237,9 @@ struct SubstackImportSettingsContent: View {
             HStack(spacing: 4) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(.red)
-                    .font(.caption)
+                    .samFont(.caption)
                 Text(msg)
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.red)
             }
         }

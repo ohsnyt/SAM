@@ -32,10 +32,10 @@ struct EnrichmentReviewSheet: View {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Contact Updates")
-                        .font(.title3)
+                        .samFont(.title3)
                         .fontWeight(.semibold)
                     Text("Review suggested updates for \(person.displayNameCache ?? person.displayName)")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -77,7 +77,7 @@ struct EnrichmentReviewSheet: View {
             // Error message
             if let error = applyError {
                 Text(error)
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.red)
                     .padding(.horizontal)
                     .padding(.top, 8)
@@ -150,16 +150,16 @@ private struct EnrichmentRowView: View {
                 // Checkbox
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .foregroundStyle(isSelected ? Color.accentColor : .secondary)
-                    .font(.title3)
+                    .samFont(.title3)
 
                 // Field info
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
                         Text(item.field.displayName)
-                            .font(.subheadline)
+                            .samFont(.subheadline)
                             .fontWeight(.medium)
                         Text(item.source.displayName)
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 2)
@@ -170,7 +170,7 @@ private struct EnrichmentRowView: View {
                     HStack(spacing: 8) {
                         if let current = item.currentValue, !current.isEmpty {
                             Text(current)
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.secondary)
                                 .strikethrough()
                             Image(systemName: "arrow.right")
@@ -179,22 +179,22 @@ private struct EnrichmentRowView: View {
                         }
                         if item.field == .contactRelation {
                             Text(Self.formatContactRelation(item.proposedValue))
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.blue)
                         } else if item.field == .anniversary {
                             Text(Self.formatAnniversaryDate(item.proposedValue))
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.blue)
                         } else {
                             Text(item.proposedValue)
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.blue)
                         }
                     }
 
                     if let detail = item.sourceDetail, !detail.isEmpty {
                         Text(detail)
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .foregroundStyle(.tertiary)
                     }
                 }

@@ -347,7 +347,7 @@ struct PeopleListView: View {
                 }
             } label: {
                 Label("Sort", systemImage: "arrow.up.arrow.down")
-                    .font(.caption)
+                    .samFont(.caption)
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
@@ -403,7 +403,7 @@ struct PeopleListView: View {
                 Label("Filter", systemImage: anyFiltersActive
                       ? "line.3.horizontal.decrease.circle.fill"
                       : "line.3.horizontal.decrease")
-                    .font(.caption)
+                    .samFont(.caption)
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
@@ -463,7 +463,7 @@ struct PeopleListView: View {
                             Image(systemName: style.icon)
                                 .font(.system(size: 10))
                             Text(role)
-                                .font(.caption2)
+                                .samFont(.caption2)
                         }
                         .foregroundStyle(style.color)
                     }
@@ -472,7 +472,7 @@ struct PeopleListView: View {
                             Image(systemName: filter.icon)
                                 .font(.system(size: 10))
                             Text(filter.rawValue)
-                                .font(.caption2)
+                                .samFont(.caption2)
                         }
                         .foregroundStyle(Color.accentColor)
                     }
@@ -683,12 +683,12 @@ struct PeopleListView: View {
                 ProgressView()
                     .scaleEffect(0.7)
                 Text("Importing...")
-                    .font(.caption)
+                    .samFont(.caption)
             }
             .foregroundStyle(.secondary)
         } else if let date = importCoordinator.lastImportedAt {
             Text("\(importCoordinator.lastImportCount) contacts, \(date, style: .relative) ago")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(importCoordinator.importStatus == .failed ? .red : .green)
         }
     }
@@ -783,11 +783,11 @@ private struct PersonRowView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 5) {
                         Text(person.displayNameCache ?? person.displayName)
-                            .font(.headline)
+                            .samFont(.headline)
 
                         if person.isMe {
                             Text("Me")
-                                .font(.caption2)
+                                .samFont(.caption2)
                                 .fontWeight(.medium)
                                 .foregroundStyle(.white)
                                 .padding(.horizontal, 5)
@@ -804,11 +804,11 @@ private struct PersonRowView: View {
 
                     if let preview = coachingPreview {
                         Text(preview)
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.orange)
                     } else if let email = person.emailCache ?? person.email {
                         Text(email)
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -820,7 +820,7 @@ private struct PersonRowView: View {
                     // Lifecycle badge for non-active contacts
                     if person.lifecycleStatus != .active {
                         Image(systemName: person.lifecycleStatus.icon)
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(person.lifecycleStatus == .dnc ? .red : .gray)
                             .help(person.lifecycleStatus.displayName)
                     }
@@ -829,20 +829,20 @@ private struct PersonRowView: View {
 
                     if hasPendingEnrichment {
                         Image(systemName: "arrow.up.circle.fill")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.blue)
                             .help("Contact updates available")
                     }
 
                     if person.consentAlertsCount > 0 {
                         Label("\(person.consentAlertsCount)", systemImage: "exclamationmark.triangle.fill")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.orange)
                     }
 
                     if person.reviewAlertsCount > 0 {
                         Label("\(person.reviewAlertsCount)", systemImage: "bell.fill")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.red)
                     }
                 }

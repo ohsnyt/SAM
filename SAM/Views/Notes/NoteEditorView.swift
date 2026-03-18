@@ -70,7 +70,7 @@ struct NoteEditorView: View {
             // Header
             HStack {
                 Text("Edit Note")
-                    .font(.headline)
+                    .samFont(.headline)
 
                 Spacer()
 
@@ -104,7 +104,7 @@ struct NoteEditorView: View {
                     attachImage()
                 } label: {
                     Label("Attach Image", systemImage: "paperclip")
-                        .font(.caption)
+                        .samFont(.caption)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
@@ -117,7 +117,7 @@ struct NoteEditorView: View {
                     }
                 } label: {
                     Image(systemName: isDictating ? "mic.fill" : "mic")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(isDictating ? .red : .secondary)
                 }
                 .buttonStyle(.plain)
@@ -144,7 +144,7 @@ struct NoteEditorView: View {
                     ProgressView()
                         .controlSize(.mini)
                     Text("Polishing dictation...")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.secondary)
                 }
                 .padding(.horizontal)
@@ -156,7 +156,7 @@ struct NoteEditorView: View {
                     rawDictationText = nil
                 } label: {
                     Label("Undo polish", systemImage: "arrow.uturn.backward")
-                        .font(.caption2)
+                        .samFont(.caption2)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
@@ -166,7 +166,7 @@ struct NoteEditorView: View {
             // Error
             if let error = errorMessage {
                 Text(error)
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.red)
                     .padding(.horizontal)
                     .padding(.bottom, 4)

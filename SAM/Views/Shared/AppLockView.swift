@@ -33,14 +33,14 @@ struct AppLockView: View {
 
                 // Title
                 Text("SAM is Locked")
-                    .font(.title)
+                    .samFont(.title)
                     .fontWeight(.semibold)
                     .foregroundStyle(.primary)
 
                 // Unlock Button
                 Button(action: { lockService.authenticate() }) {
                     Label("Unlock", systemImage: lockService.isBiometricAvailable ? "touchid" : "lock.open")
-                        .font(.body.weight(.medium))
+                        .samFont(.body, weight: .medium)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
@@ -49,7 +49,7 @@ struct AppLockView: View {
                 // Error Text
                 if let error = lockService.authError {
                     Text(error)
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.red)
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: 260)

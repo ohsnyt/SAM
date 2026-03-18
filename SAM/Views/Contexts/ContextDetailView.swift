@@ -120,12 +120,12 @@ struct ContextDetailView: View {
                 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(context.name)
-                        .font(.title)
+                        .samFont(.title)
                         .bold()
                     
                     HStack(spacing: 8) {
                         Label(context.kind.displayName, systemImage: context.kind.icon)
-                            .font(.subheadline)
+                            .samFont(.subheadline)
                             .foregroundStyle(.secondary)
                         
                         if !context.participations.isEmpty {
@@ -133,7 +133,7 @@ struct ContextDetailView: View {
                                 .foregroundStyle(.secondary)
                             
                             Label("\(context.participations.count) participants", systemImage: "person.2")
-                                .font(.subheadline)
+                                .samFont(.subheadline)
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -147,19 +147,19 @@ struct ContextDetailView: View {
                 HStack(spacing: 12) {
                     if context.consentAlertCount > 0 {
                         Label("\(context.consentAlertCount) consent required", systemImage: "exclamationmark.triangle.fill")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.orange)
                     }
                     
                     if context.reviewAlertCount > 0 {
                         Label("\(context.reviewAlertCount) needs review", systemImage: "bell.fill")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.red)
                     }
                     
                     if context.followUpAlertCount > 0 {
                         Label("\(context.followUpAlertCount) follow-up", systemImage: "clock.fill")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.blue)
                     }
                 }
@@ -174,7 +174,7 @@ struct ContextDetailView: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
                 Label("Participants", systemImage: "person.2")
-                    .font(.headline)
+                    .samFont(.headline)
                 
                 Spacer()
                 
@@ -182,7 +182,7 @@ struct ContextDetailView: View {
                     showingAddParticipantSheet = true
                 } label: {
                     Label("Add", systemImage: "plus.circle")
-                        .font(.caption)
+                        .samFont(.caption)
                 }
             }
             
@@ -201,10 +201,10 @@ struct ContextDetailView: View {
     private var productsSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             Label("Products", systemImage: "doc.text")
-                .font(.headline)
+                .samFont(.headline)
             
             Text("Product management coming in future phases")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
         }
     }
@@ -214,10 +214,10 @@ struct ContextDetailView: View {
     private var insightsSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             Label("Insights", systemImage: "lightbulb")
-                .font(.headline)
+                .samFont(.headline)
             
             Text("AI-generated insights coming in Phase I")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
         }
     }
@@ -227,7 +227,7 @@ struct ContextDetailView: View {
     private var notesSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             Label("Notes", systemImage: "note.text")
-                .font(.headline)
+                .samFont(.headline)
 
             // Inline capture — always visible
             InlineNoteCaptureView(
@@ -250,16 +250,16 @@ struct ContextDetailView: View {
         GroupBox {
             VStack(alignment: .leading, spacing: 8) {
                 Label("Details", systemImage: "info.circle")
-                    .font(.headline)
+                    .samFont(.headline)
                 
                 Divider()
                 
                 LabeledContent("ID", value: context.id.uuidString)
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
                 
                 LabeledContent("Type", value: context.kind.displayName)
-                    .font(.caption)
+                    .samFont(.caption)
             }
         }
     }
@@ -314,11 +314,11 @@ private struct ParticipantRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) {
                     Text(person.displayNameCache ?? person.displayName)
-                        .font(.body)
+                        .samFont(.body)
                     
                     if participation.isPrimary {
                         Text("PRIMARY")
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .fontWeight(.semibold)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
@@ -330,13 +330,13 @@ private struct ParticipantRow: View {
                 
                 if !participation.roleBadges.isEmpty {
                     Text(participation.roleBadges.joined(separator: ", "))
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
                 
                 if let note = participation.note {
                     Text(note)
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                         .italic()
                 }
@@ -387,7 +387,7 @@ private struct EditContextSheet: View {
                 
                 if let error = errorMessage {
                     Text(error)
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.red)
                 }
             }
@@ -480,7 +480,7 @@ private struct AddParticipantSheet: View {
                 
                 if let error = errorMessage {
                     Text(error)
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.red)
                 }
             }

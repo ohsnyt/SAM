@@ -42,17 +42,17 @@ struct ContentDraftSheet: View {
         VStack(alignment: .leading, spacing: 16) {
             // Title
             Text("Content Draft")
-                .font(.title3)
+                .samFont(.title3)
                 .fontWeight(.semibold)
 
             // Topic context
             VStack(alignment: .leading, spacing: 4) {
                 Text(topic)
-                    .font(.subheadline)
+                    .samFont(.subheadline)
                     .fontWeight(.medium)
                 if !keyPoints.isEmpty {
                     Text(keyPoints.joined(separator: " \u{2022} "))
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                 }
@@ -63,7 +63,7 @@ struct ContentDraftSheet: View {
             // Platform picker
             VStack(alignment: .leading, spacing: 8) {
                 Text("Platform")
-                    .font(.subheadline)
+                    .samFont(.subheadline)
                     .fontWeight(.medium)
 
                 HStack(spacing: 8) {
@@ -79,9 +79,9 @@ struct ContentDraftSheet: View {
                         } label: {
                             HStack(spacing: 4) {
                                 Image(systemName: platform.icon)
-                                    .font(.caption)
+                                    .samFont(.caption)
                                 Text(platform.rawValue)
-                                    .font(.caption)
+                                    .samFont(.caption)
                             }
                             .padding(.horizontal, 12)
                             .padding(.vertical, 6)
@@ -118,7 +118,7 @@ struct ContentDraftSheet: View {
                     ProgressView()
                         .controlSize(.small)
                     Text("Generating \(selectedPlatform.rawValue) draft...")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -128,20 +128,20 @@ struct ContentDraftSheet: View {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Text("Draft")
-                            .font(.subheadline)
+                            .samFont(.subheadline)
                             .fontWeight(.medium)
                         Spacer()
                         Button(isEditing ? "Done" : "Edit") {
                             isEditing.toggle()
                         }
-                        .font(.caption)
+                        .samFont(.caption)
                         .buttonStyle(.plain)
                         .foregroundStyle(Color.accentColor)
                     }
 
                     if isEditing {
                         TextEditor(text: $draftText)
-                            .font(.body)
+                            .samFont(.body)
                             .frame(minHeight: 120, maxHeight: 200)
                             .scrollContentBackground(.hidden)
                             .padding(8)
@@ -150,7 +150,7 @@ struct ContentDraftSheet: View {
                     } else {
                         ScrollView {
                             Text(draftText)
-                                .font(.body)
+                                .samFont(.body)
                                 .textSelection(.enabled)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
@@ -166,9 +166,9 @@ struct ContentDraftSheet: View {
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "arrow.clockwise")
-                                .font(.caption2)
+                                .samFont(.caption2)
                             Text("Regenerate")
-                                .font(.caption)
+                                .samFont(.caption)
                         }
                     }
                     .buttonStyle(.plain)
@@ -182,24 +182,24 @@ struct ContentDraftSheet: View {
                     ForEach(complianceFlags, id: \.self) { flag in
                         HStack(spacing: 4) {
                             Image(systemName: "exclamationmark.triangle.fill")
-                                .font(.caption2)
+                                .samFont(.caption2)
                                 .foregroundStyle(.orange)
                             Text(flag)
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.orange)
                         }
                     }
                     ForEach(localComplianceFlags) { flag in
                         HStack(spacing: 4) {
                             Image(systemName: flag.category.icon)
-                                .font(.caption2)
+                                .samFont(.caption2)
                                 .foregroundStyle(.orange)
                             Text("\"\(flag.matchedPhrase)\"")
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.orange)
                             if let suggestion = flag.suggestion {
                                 Text("— \(suggestion)")
-                                    .font(.caption2)
+                                    .samFont(.caption2)
                                     .foregroundStyle(.secondary)
                             }
                         }
@@ -209,7 +209,7 @@ struct ContentDraftSheet: View {
 
             if let error = errorMessage {
                 Text(error)
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.red)
             }
 
@@ -223,7 +223,7 @@ struct ContentDraftSheet: View {
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "doc.on.doc")
-                                .font(.caption)
+                                .samFont(.caption)
                             Text("Copy")
                         }
                     }

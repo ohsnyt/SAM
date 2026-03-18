@@ -30,10 +30,10 @@ struct ProductionEntryForm: View {
             // Header
             HStack {
                 Text(existingRecord != nil ? "Edit Production" : "Add Production")
-                    .font(.headline)
+                    .samFont(.headline)
                 Spacer()
                 Text(personName)
-                    .font(.subheadline)
+                    .samFont(.subheadline)
                     .foregroundStyle(.secondary)
             }
             .padding()

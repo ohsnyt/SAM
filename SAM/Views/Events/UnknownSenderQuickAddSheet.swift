@@ -57,7 +57,7 @@ struct UnknownSenderQuickAddSheet: View {
             // Header
             HStack {
                 Text(phase == .addContact ? "Add to Event" : "Send Confirmation")
-                    .font(.headline)
+                    .samFont(.headline)
                 Spacer()
                 if phase == .addContact {
                     Button("Cancel") { dismiss() }
@@ -105,30 +105,30 @@ struct UnknownSenderQuickAddSheet: View {
                 // Message preview
                 VStack(alignment: .leading, spacing: 6) {
                     Label("Message Received", systemImage: "bubble.left.fill")
-                        .font(.caption.bold())
+                        .samFont(.caption, weight: .bold)
                         .foregroundStyle(.secondary)
 
                     HStack(alignment: .top, spacing: 8) {
                         Image(systemName: isPhone ? "phone.circle.fill" : "envelope.circle.fill")
-                            .font(.title2)
+                            .samFont(.title2)
                             .foregroundStyle(.blue)
 
                         VStack(alignment: .leading, spacing: 2) {
                             Text(rsvp.displayName ?? formattedHandle)
-                                .font(.callout.bold())
+                                .samFont(.callout, weight: .bold)
                             if rsvp.displayName != nil {
                                 Text(formattedHandle)
-                                    .font(.caption)
+                                    .samFont(.caption)
                                     .foregroundStyle(.secondary)
                             }
                             Text(rsvp.messageDate.formatted(date: .abbreviated, time: .shortened))
-                                .font(.caption2)
+                                .samFont(.caption2)
                                 .foregroundStyle(.tertiary)
                         }
                     }
 
                     Text("\"\(rsvp.messagePreview)\"")
-                        .font(.callout)
+                        .samFont(.callout)
                         .italic()
                         .padding(8)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -140,14 +140,14 @@ struct UnknownSenderQuickAddSheet: View {
                 // Name field
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Contact Name")
-                        .font(.caption.bold())
+                        .samFont(.caption, weight: .bold)
                         .foregroundStyle(.secondary)
 
                     TextField("Name (optional — leave blank if unknown)", text: $contactName)
                         .textFieldStyle(.roundedBorder)
 
                     Text("If left blank, the contact will be saved using their \(isPhone ? "phone number" : "email address").")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.tertiary)
                 }
 
@@ -156,12 +156,12 @@ struct UnknownSenderQuickAddSheet: View {
                     Image(systemName: "calendar.badge.plus")
                         .foregroundStyle(.green)
                     Text("Will be added to **\(rsvp.matchedEventTitle)** as Accepted")
-                        .font(.caption)
+                        .samFont(.caption)
                 }
 
                 if let error = errorMessage {
                     Text(error)
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.red)
                 }
             }
@@ -200,7 +200,7 @@ struct UnknownSenderQuickAddSheet: View {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(.green)
                     Text("Added to **\(rsvp.matchedEventTitle)**")
-                        .font(.callout)
+                        .samFont(.callout)
                 }
 
                 Divider()
@@ -208,15 +208,15 @@ struct UnknownSenderQuickAddSheet: View {
                 // Draft message
                 VStack(alignment: .leading, spacing: 4) {
                     Label("Confirmation Message", systemImage: "paperplane")
-                        .font(.caption.bold())
+                        .samFont(.caption, weight: .bold)
                         .foregroundStyle(.secondary)
 
                     Text("To: \(formattedHandle)")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
 
                     TextEditor(text: $confirmationDraft)
-                        .font(.body)
+                        .samFont(.body)
                         .frame(minHeight: 80, maxHeight: 120)
                         .padding(4)
                         .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
@@ -224,7 +224,7 @@ struct UnknownSenderQuickAddSheet: View {
 
                 if let error = errorMessage {
                     Text(error)
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.red)
                 }
             }

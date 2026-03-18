@@ -23,13 +23,13 @@ struct InlineGapPromptView: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: gap.icon)
-                .font(.title3)
+                .samFont(.title3)
                 .foregroundStyle(.secondary)
                 .frame(width: 24)
 
             VStack(alignment: .leading, spacing: 8) {
                 Text(gap.question)
-                    .font(.subheadline.weight(.medium))
+                    .samFont(.subheadline, weight: .medium)
                     .foregroundStyle(.primary)
 
                 TextField(gap.placeholder, text: $answer)

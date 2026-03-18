@@ -94,10 +94,10 @@ struct InvitationDraftSheet: View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Draft Invitations")
-                    .font(.title3.bold())
+                    .samFont(.title3, weight: .bold)
                 if !uninvited.isEmpty && !isFinished {
                     Text("\(currentIndex + 1) of \(uninvited.count) — \(currentPersonName)")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -105,7 +105,7 @@ struct InvitationDraftSheet: View {
             // Progress indicator
             if !uninvited.isEmpty {
                 Text("\(sentCount) sent, \(skippedCount) skipped")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             }
         }
@@ -120,11 +120,11 @@ struct InvitationDraftSheet: View {
             if let participation = currentParticipation {
                 HStack(spacing: 8) {
                     Text(currentPersonName)
-                        .font(.headline)
+                        .samFont(.headline)
                     if let roles = participation.person?.roleBadges, !roles.isEmpty {
                         ForEach(roles.prefix(3), id: \.self) { badge in
                             Text(badge)
-                                .font(.caption2)
+                                .samFont(.caption2)
                                 .padding(.horizontal, 5)
                                 .padding(.vertical, 2)
                                 .background(.quaternary, in: Capsule())
@@ -147,7 +147,7 @@ struct InvitationDraftSheet: View {
 
                     if participation.priority != .standard {
                         Label(participation.priority.displayName, systemImage: participation.priority.icon)
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(participation.priority == .vip ? .yellow : .blue)
                     }
                 }
@@ -162,7 +162,7 @@ struct InvitationDraftSheet: View {
                     ProgressView()
                         .controlSize(.large)
                     Text("Generating invitation for \(currentPersonName)...")
-                        .font(.callout)
+                        .samFont(.callout)
                         .foregroundStyle(.secondary)
                     ProgressView(value: nil as Double?)
                         .progressViewStyle(.linear)
@@ -171,7 +171,7 @@ struct InvitationDraftSheet: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 TextEditor(text: $draftText)
-                    .font(.body)
+                    .samFont(.body)
                     .padding(8)
                     .scrollContentBackground(.hidden)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -182,13 +182,13 @@ struct InvitationDraftSheet: View {
                     Image(systemName: "exclamationmark.triangle")
                         .foregroundStyle(.orange)
                     Text(error)
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.orange)
                     Spacer()
                     Button("Retry") {
                         Task { await generateCurrentDraft() }
                     }
-                    .font(.caption)
+                    .samFont(.caption)
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                 }
@@ -207,7 +207,7 @@ struct InvitationDraftSheet: View {
                 .foregroundStyle(.green)
 
             Text("All Done")
-                .font(.title2.bold())
+                .samFont(.title2, weight: .bold)
 
             VStack(spacing: 4) {
                 if sentCount > 0 {
@@ -219,7 +219,7 @@ struct InvitationDraftSheet: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .font(.callout)
+            .samFont(.callout)
         }
     }
 

@@ -45,12 +45,12 @@ struct GuideSidebarView: View {
                 ForEach(guideService.articles(inSection: section.id)) { article in
                     NavigationLink(value: article.id) {
                         Text(article.title)
-                            .font(.callout)
+                            .samFont(.callout)
                     }
                 }
             } header: {
                 Label(section.title, systemImage: section.icon)
-                    .font(.headline)
+                    .samFont(.headline)
             }
         }
     }
@@ -80,10 +80,10 @@ struct GuideSidebarView: View {
                 NavigationLink(value: article.id) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(article.title)
-                            .font(.callout)
+                            .samFont(.callout)
                         if let section = guideService.sections.first(where: { $0.id == article.sectionID }) {
                             Text(section.title)
-                                .font(.caption2)
+                                .samFont(.caption2)
                                 .foregroundStyle(.secondary)
                         }
                     }

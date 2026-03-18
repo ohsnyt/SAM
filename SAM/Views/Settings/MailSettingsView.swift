@@ -35,7 +35,7 @@ struct MailSettingsContent: View {
             // ── Mail.app Accounts ──
             VStack(alignment: .leading, spacing: 8) {
                 Text("Mail.app Accounts")
-                    .font(.headline)
+                    .samFont(.headline)
 
                 if let error = accessError {
                     Label(error, systemImage: "exclamationmark.triangle.fill")
@@ -53,7 +53,7 @@ struct MailSettingsContent: View {
                                 Text(account.name)
                                 if !account.emailAddresses.isEmpty {
                                     Text(account.emailAddresses.joined(separator: ", "))
-                                        .font(.caption)
+                                        .samFont(.caption)
                                         .foregroundStyle(.secondary)
                                 }
                             }
@@ -62,7 +62,7 @@ struct MailSettingsContent: View {
                 }
 
                 Text("Showing accounts that match your Me contact's email addresses. SAM reads email metadata and generates summaries — raw message bodies are never stored.")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             }
 
@@ -71,7 +71,7 @@ struct MailSettingsContent: View {
             // ── Import Settings ──
             VStack(alignment: .leading, spacing: 8) {
                 Text("Import Settings")
-                    .font(.headline)
+                    .samFont(.headline)
 
                 Toggle("Enable Email Import", isOn: Binding(
                     get: { coordinator.mailEnabled },
@@ -95,14 +95,14 @@ struct MailSettingsContent: View {
             // ── Direct Access (Performance) ──
             VStack(alignment: .leading, spacing: 8) {
                 Text("Direct Access")
-                    .font(.headline)
+                    .samFont(.headline)
 
                 if bookmarkManager.hasMailDirAccess {
                     Label("Direct database access enabled", systemImage: "checkmark.circle.fill")
                         .foregroundStyle(.green)
 
                     Text("SAM reads Mail's database files directly — Mail.app is never blocked during imports.")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
 
                     Button("Revoke Access") {
@@ -111,7 +111,7 @@ struct MailSettingsContent: View {
                     .foregroundStyle(.red)
                 } else {
                     Text("Grant SAM direct access to Mail's data files for faster imports that don't slow down Mail.app.")
-                        .font(.callout)
+                        .samFont(.callout)
                         .foregroundStyle(.secondary)
 
                     Button("Grant Mail Data Access") {
@@ -119,7 +119,7 @@ struct MailSettingsContent: View {
                     }
 
                     Text("You'll be asked to select ~/Library/Mail. This gives SAM read-only access to email metadata and message files. Mail.app is never touched.")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -129,12 +129,12 @@ struct MailSettingsContent: View {
             // ── Inbox Filters ──
             VStack(alignment: .leading, spacing: 8) {
                 Text("Inbox Filters")
-                    .font(.headline)
+                    .samFont(.headline)
 
                 if hasMeContact {
                     if meEmailAliases.isEmpty {
                         Text("Your Me card has no email addresses. Add emails to your Me card in Contacts.")
-                            .font(.callout)
+                            .samFont(.callout)
                             .foregroundStyle(.secondary)
                     } else {
                         ForEach(meEmailAliases, id: \.self) { email in
@@ -149,12 +149,12 @@ struct MailSettingsContent: View {
                     }
                 } else {
                     Text("Set up your Me card in Contacts to configure email filtering.")
-                        .font(.callout)
+                        .samFont(.callout)
                         .foregroundStyle(.secondary)
                 }
 
                 Text("Only emails sent to these addresses will be imported. If none are selected, all emails are imported.")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             }
 
@@ -163,7 +163,7 @@ struct MailSettingsContent: View {
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Status")
-                        .font(.headline)
+                        .samFont(.headline)
 
                     HStack {
                         Text("Last Import")
@@ -180,7 +180,7 @@ struct MailSettingsContent: View {
                     if let error = coordinator.lastError {
                         Label(error, systemImage: "exclamationmark.triangle.fill")
                             .foregroundStyle(.red)
-                            .font(.caption)
+                            .samFont(.caption)
                     }
 
                     Button("Import Now") {

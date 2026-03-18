@@ -49,9 +49,9 @@ struct TimeAllocationSection: View {
                     Image(systemName: "clock.arrow.circlepath")
                         .foregroundStyle(.blue)
                     Text("Time Allocation")
-                        .font(.headline)
+                        .samFont(.headline)
                     Text(totalHours)
-                        .font(.caption)
+                        .samFont(.caption)
                         .fontWeight(.semibold)
                         .foregroundStyle(.white)
                         .padding(.horizontal, 6)
@@ -60,7 +60,7 @@ struct TimeAllocationSection: View {
                         .clipShape(Capsule())
                     Spacer()
                     Text("Last 7 days")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
                 .padding(.horizontal)
@@ -81,10 +81,10 @@ struct TimeAllocationSection: View {
                     if let trend {
                         HStack(spacing: 6) {
                             Image(systemName: "arrow.up.right")
-                                .font(.caption2)
+                                .samFont(.caption2)
                                 .foregroundStyle(.secondary)
                             Text(trend)
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.secondary)
                             Spacer()
                         }
@@ -134,7 +134,7 @@ struct TimeAllocationSection: View {
                 .frame(width: 8, height: 8)
 
             Text(row.category.rawValue)
-                .font(.subheadline)
+                .samFont(.subheadline)
 
             // Mini bar
             GeometryReader { geometry in
@@ -145,12 +145,12 @@ struct TimeAllocationSection: View {
             .frame(height: 6)
 
             Text("\(Int(round(row.percent)))%")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
                 .frame(width: 36, alignment: .trailing)
 
             Text(formatHours(row.minutes))
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
                 .frame(width: 40, alignment: .trailing)
         }

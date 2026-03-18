@@ -61,7 +61,7 @@ struct PresentationLibraryView: View {
 
             HStack {
                 Text("Presentations")
-                    .font(.title2.bold())
+                    .samFont(.title2, weight: .bold)
                 Spacer()
                 Button {
                     showNewPresentation = true
@@ -101,10 +101,10 @@ struct PresentationLibraryView: View {
                         .overlay {
                             VStack(spacing: 8) {
                                 Image(systemName: "arrow.down.doc")
-                                    .font(.title)
+                                    .samFont(.title)
                                     .foregroundStyle(.blue)
                                 Text("Drop to add presentation")
-                                    .font(.caption)
+                                    .samFont(.caption)
                                     .foregroundStyle(.blue)
                             }
                         }
@@ -205,11 +205,11 @@ struct PresentationRowView: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(presentation.title)
-                    .font(.headline)
+                    .samFont(.headline)
                     .lineLimit(1)
                 if presentation.contentSummary == nil && !presentation.fileAttachments.isEmpty {
                     Image(systemName: "sparkles")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.orange)
                         .help("Content not yet analyzed")
                 }
@@ -218,13 +218,13 @@ struct PresentationRowView: View {
             HStack(spacing: 8) {
                 if let duration = presentation.estimatedDurationMinutes {
                     Label("\(duration) min", systemImage: "clock")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
 
                 if !presentation.topicTags.isEmpty {
                     Text(presentation.topicTags.prefix(3).joined(separator: ", "))
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -236,19 +236,19 @@ struct PresentationRowView: View {
                 let deliveries = presentation.linkedEvents.filter { $0.status == .completed }.count
                 if deliveries > 0 {
                     Text("\(deliveries) delivered")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.green)
                 }
 
                 if let next = presentation.nextScheduledAt {
                     Text("Next: \(next.formatted(date: .abbreviated, time: .omitted))")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.blue)
                 }
 
                 if !presentation.fileAttachments.isEmpty {
                     Label("\(presentation.fileAttachments.count)", systemImage: "paperclip")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.secondary)
                 }
 
@@ -273,22 +273,22 @@ struct PresentationDetailView: View {
                 // Header
                 VStack(alignment: .leading, spacing: 8) {
                     Text(presentation.title)
-                        .font(.title2.bold())
+                        .samFont(.title2, weight: .bold)
 
                     if let desc = presentation.presentationDescription {
                         Text(desc)
-                            .font(.body)
+                            .samFont(.body)
                             .foregroundStyle(.secondary)
                     }
 
                     HStack(spacing: 16) {
                         if let duration = presentation.estimatedDurationMinutes {
                             Label("\(duration) minutes", systemImage: "clock")
-                                .font(.caption)
+                                .samFont(.caption)
                         }
                         if let audience = presentation.targetAudience {
                             Label(audience, systemImage: "person.2")
-                                .font(.caption)
+                                .samFont(.caption)
                         }
                     }
                     .foregroundStyle(.secondary)
@@ -297,7 +297,7 @@ struct PresentationDetailView: View {
                         HStack(spacing: 4) {
                             ForEach(presentation.topicTags, id: \.self) { tag in
                                 Text(tag)
-                                    .font(.caption2)
+                                    .samFont(.caption2)
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 2)
                                     .background(.blue.opacity(0.1), in: Capsule())
@@ -339,13 +339,13 @@ struct PresentationDetailView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("Files")
-                    .font(.headline)
+                    .samFont(.headline)
                 Spacer()
                 Button {
                     isImportingFile = true
                 } label: {
                     Label("Add File", systemImage: "plus")
-                        .font(.caption)
+                        .samFont(.caption)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
@@ -353,7 +353,7 @@ struct PresentationDetailView: View {
 
             if presentation.fileAttachments.isEmpty {
                 Text("No files attached. Add PDFs or slide decks.")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.tertiary)
                     .padding(.vertical, 8)
             } else {
@@ -363,16 +363,16 @@ struct PresentationDetailView: View {
                             .foregroundStyle(.blue)
                         VStack(alignment: .leading) {
                             Text(file.fileName)
-                                .font(.body)
+                                .samFont(.body)
                                 .lineLimit(1)
                             Text(file.fileType.uppercased())
-                                .font(.caption2)
+                                .samFont(.caption2)
                                 .foregroundStyle(.secondary)
                         }
                         Spacer()
                         if let size = file.fileSizeBytes {
                             Text(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file))
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.secondary)
                         }
                         Button {
@@ -396,7 +396,7 @@ struct PresentationDetailView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("Content Summary")
-                    .font(.headline)
+                    .samFont(.headline)
                 Spacer()
                 if !presentation.fileAttachments.isEmpty {
                     let isAnalyzing = analysisCoordinator.analysisStatus == .extracting
@@ -417,7 +417,7 @@ struct PresentationDetailView: View {
                             Text(presentation.contentSummary != nil ? "Re-analyze" : "Analyze Content")
                         }
                     }
-                    .font(.caption)
+                    .samFont(.caption)
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                     .disabled(isAnalyzing)
@@ -426,20 +426,20 @@ struct PresentationDetailView: View {
 
             if let summary = presentation.contentSummary {
                 Text(summary)
-                    .font(.body)
+                    .samFont(.body)
 
                 if !presentation.keyTalkingPoints.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Key Talking Points")
-                            .font(.subheadline.bold())
+                            .samFont(.subheadline, weight: .bold)
                             .padding(.top, 4)
                         ForEach(presentation.keyTalkingPoints, id: \.self) { point in
                             HStack(alignment: .top, spacing: 6) {
                                 Image(systemName: "arrow.right.circle.fill")
-                                    .font(.caption)
+                                    .samFont(.caption)
                                     .foregroundStyle(.blue)
                                 Text(point)
-                                    .font(.callout)
+                                    .samFont(.callout)
                             }
                         }
                     }
@@ -447,12 +447,12 @@ struct PresentationDetailView: View {
 
                 if let analyzedAt = presentation.contentAnalyzedAt {
                     Text("Last analyzed \(analyzedAt.formatted(date: .abbreviated, time: .shortened))")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.tertiary)
                 }
             } else {
                 Text("Add files and click 'Analyze Content' to generate a summary and talking points.")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.tertiary)
                     .padding(.vertical, 8)
             }
@@ -464,13 +464,13 @@ struct PresentationDetailView: View {
     private var deliveryHistorySection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Delivery History")
-                .font(.headline)
+                .samFont(.headline)
 
             let events = presentation.linkedEvents.sorted { $0.startDate > $1.startDate }
 
             if events.isEmpty {
                 Text("Not yet linked to any events.")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.tertiary)
                     .padding(.vertical, 8)
             } else {
@@ -480,14 +480,14 @@ struct PresentationDetailView: View {
                             .foregroundStyle(event.isUpcoming ? .blue : .secondary)
                         VStack(alignment: .leading) {
                             Text(event.title)
-                                .font(.body)
+                                .samFont(.body)
                             Text(event.startDate.formatted(date: .abbreviated, time: .shortened))
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.secondary)
                         }
                         Spacer()
                         Text(event.status.displayName)
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                             .background(.quaternary, in: Capsule())
@@ -598,7 +598,7 @@ struct PresentationFormSheet: View {
         VStack(spacing: 0) {
             HStack {
                 Text("New Presentation")
-                    .font(.title2.bold())
+                    .samFont(.title2, weight: .bold)
                 Spacer()
             }
             .padding()
@@ -623,7 +623,7 @@ struct PresentationFormSheet: View {
                             Image(systemName: "doc.fill")
                                 .foregroundStyle(.blue)
                             Text(file.fileName)
-                                .font(.body)
+                                .samFont(.body)
                             Spacer()
                             Button {
                                 pendingFiles.removeAll { $0.id == file.id }

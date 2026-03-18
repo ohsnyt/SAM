@@ -50,9 +50,9 @@ struct GhostMergePersonPicker: View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Link to Existing Contact")
-                    .font(.headline)
+                    .samFont(.headline)
                 Text("Link \"\(ghostName)\" mentions to:")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -108,13 +108,13 @@ struct GhostMergePersonPicker: View {
             initialsCircle(person)
             VStack(alignment: .leading, spacing: 2) {
                 Text(person.displayNameCache ?? person.displayName)
-                    .font(.body)
+                    .samFont(.body)
                 if !person.roleBadges.isEmpty {
                     HStack(spacing: 4) {
                         ForEach(person.roleBadges.prefix(3), id: \.self) { badge in
                             let style = RoleBadgeStyle.forBadge(badge)
                             Label(badge, systemImage: style.icon)
-                                .font(.caption2)
+                                .samFont(.caption2)
                                 .foregroundStyle(style.color)
                         }
                     }
@@ -139,7 +139,7 @@ struct GhostMergePersonPicker: View {
             .frame(width: 32, height: 32)
             .overlay {
                 Text(initials.isEmpty ? "?" : initials)
-                    .font(.caption)
+                    .samFont(.caption)
                     .fontWeight(.medium)
                     .foregroundStyle(.primary)
             }

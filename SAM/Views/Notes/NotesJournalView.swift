@@ -57,7 +57,7 @@ struct NotesJournalView: View {
     var body: some View {
         if notes.isEmpty {
             Text("No notes yet")
-                .font(.body)
+                .samFont(.body)
                 .foregroundStyle(.secondary)
                 .padding(.vertical, 4)
         } else {
@@ -170,24 +170,24 @@ struct NotesJournalView: View {
             HStack(spacing: 6) {
                 Image(systemName: note.isAnalyzed ? "brain.head.profile" : "note.text")
                     .foregroundStyle(note.isAnalyzed ? .purple : .secondary)
-                    .font(.caption)
+                    .samFont(.caption)
 
                 Text(note.createdAt, format: .dateTime.month(.abbreviated).day().hour().minute())
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
 
                 if note.sourceType == .dictated {
                     Image(systemName: "mic.fill")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.secondary)
                 }
 
                 if imageCount > 0 {
                     HStack(spacing: 2) {
                         Image(systemName: "photo")
-                            .font(.caption2)
+                            .samFont(.caption2)
                         Text("\(imageCount)")
-                            .font(.caption2)
+                            .samFont(.caption2)
                     }
                     .foregroundStyle(.secondary)
                 }
@@ -198,7 +198,7 @@ struct NotesJournalView: View {
                     let pendingCount = note.extractedActionItems.filter { $0.status == .pending }.count
                     if pendingCount > 0 {
                         Text("\(pendingCount) action\(pendingCount == 1 ? "" : "s")")
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                             .background(.orange.opacity(0.2))
@@ -213,7 +213,7 @@ struct NotesJournalView: View {
                         beginEditing(note: note)
                     } label: {
                         Image(systemName: "pencil")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
@@ -248,7 +248,7 @@ struct NotesJournalView: View {
                         attachImage()
                     } label: {
                         Image(systemName: "paperclip")
-                            .font(.body)
+                            .samFont(.body)
                             .foregroundStyle(.secondary)
                             .frame(width: 24, height: 24)
                     }
@@ -264,7 +264,7 @@ struct NotesJournalView: View {
                         }
                     } label: {
                         Image(systemName: isDictating ? "mic.fill" : "mic")
-                            .font(.body)
+                            .samFont(.body)
                             .foregroundStyle(isDictating ? .red : .secondary)
                             .frame(width: 24, height: 24)
                     }
@@ -285,7 +285,7 @@ struct NotesJournalView: View {
                         ProgressView()
                             .controlSize(.mini)
                         Text("Polishing...")
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .foregroundStyle(.secondary)
                     }
 
@@ -294,14 +294,14 @@ struct NotesJournalView: View {
                     Button("Cancel") {
                         cancelEdit()
                     }
-                    .font(.caption2)
+                    .samFont(.caption2)
                     .buttonStyle(.plain)
                     .foregroundStyle(.secondary)
 
                     Button("Save") {
                         saveEdit(note: note)
                     }
-                    .font(.caption2)
+                    .samFont(.caption2)
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
                     .keyboardShortcut("s", modifiers: .command)
@@ -314,12 +314,12 @@ struct NotesJournalView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(note.content)
                             .lineLimit(2)
-                            .font(.body)
+                            .samFont(.body)
                             .frame(maxWidth: .infinity, alignment: .leading)
 
                         if note.content.count > 100 || imageCount > 0 {
                             Text(imageCount == 0 ? "Show more" : "Show more (\(imageCount) image\(imageCount == 1 ? "" : "s"))")
-                                .font(.caption2)
+                                .samFont(.caption2)
                                 .foregroundStyle(.blue)
                         }
                     }
@@ -353,7 +353,7 @@ struct NotesJournalView: View {
                         }
                     } label: {
                         Text("Show less")
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .foregroundStyle(.blue)
                     }
                     .buttonStyle(.plain)
@@ -364,10 +364,10 @@ struct NotesJournalView: View {
                     if let summary = note.summary, summary != note.content {
                         HStack(spacing: 4) {
                             Image(systemName: "sparkles")
-                                .font(.caption2)
+                                .samFont(.caption2)
                                 .foregroundStyle(.purple)
                             Text(summary)
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.secondary)
                                 .italic()
                         }
@@ -378,7 +378,7 @@ struct NotesJournalView: View {
                         HStack(spacing: 4) {
                             ForEach(note.extractedTopics.prefix(4), id: \.self) { topic in
                                 Text(topic)
-                                    .font(.caption2)
+                                    .samFont(.caption2)
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 2)
                                     .background(.blue.opacity(0.1))
@@ -387,7 +387,7 @@ struct NotesJournalView: View {
                             }
                             if note.extractedTopics.count > 4 {
                                 Text("+\(note.extractedTopics.count - 4)")
-                                    .font(.caption2)
+                                    .samFont(.caption2)
                                     .foregroundStyle(.secondary)
                             }
                         }
@@ -417,10 +417,10 @@ struct NotesJournalView: View {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 4) {
                     Image(systemName: "text.bubble")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.teal)
                     Text("Suggested Follow-up")
-                        .font(.caption)
+                        .samFont(.caption)
                         .fontWeight(.medium)
                         .foregroundStyle(.teal)
                     Spacer()
@@ -429,7 +429,7 @@ struct NotesJournalView: View {
                         note.followUpDraft = nil
                     } label: {
                         Image(systemName: "xmark")
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
@@ -437,7 +437,7 @@ struct NotesJournalView: View {
                 }
 
                 Text(draft)
-                    .font(.callout)
+                    .samFont(.callout)
                     .foregroundStyle(.primary)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -459,7 +459,7 @@ struct NotesJournalView: View {
         if images.isEmpty {
             // No images — simple text display
             Text(content)
-                .font(.body)
+                .samFont(.body)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .textSelection(.enabled)
         } else {
@@ -471,7 +471,7 @@ struct NotesJournalView: View {
                     case .text(let str):
                         if !str.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                             Text(str)
-                                .font(.body)
+                                .samFont(.body)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .textSelection(.enabled)
                         }
@@ -490,9 +490,9 @@ struct NotesJournalView: View {
                             // Visible placeholder so missing images are obvious
                             HStack(spacing: 6) {
                                 Image(systemName: "photo.badge.exclamationmark")
-                                    .font(.title3)
+                                    .samFont(.title3)
                                 Text("Image failed to load (\(noteImage.mimeType))")
-                                    .font(.caption)
+                                    .samFont(.caption)
                             }
                             .foregroundStyle(.secondary)
                             .padding(8)

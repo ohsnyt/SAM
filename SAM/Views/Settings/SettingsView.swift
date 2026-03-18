@@ -172,7 +172,7 @@ private struct ImportStatusDashboard: View {
             }
 
             Text(statusText)
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -227,10 +227,10 @@ struct DataSourcesSettingsView: View {
                 // ── Global Lookback Period ──────────────────────────────
                 VStack(alignment: .leading, spacing: 8) {
                     Text("History Lookback Period")
-                        .font(.headline)
+                        .samFont(.headline)
 
                     Text("How far back SAM scans when importing from Calendar, Mail, and Communications. Applies to all sources.")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
 
                     Picker("Look back", selection: $globalLookbackDays) {
@@ -251,7 +251,7 @@ struct DataSourcesSettingsView: View {
 
                     if globalLookbackDays == 0 {
                         Text("First import will scan all available history. Subsequent imports use incremental sync.")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.orange)
                     }
                 }
@@ -334,7 +334,7 @@ struct AISettingsView: View {
                         Label("Open Prompt Lab", systemImage: "wand.and.stars")
                         Spacer()
                         Text("Compare and refine AI prompts")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -356,7 +356,7 @@ struct BusinessSettingsView: View {
             Section {
                 VStack(alignment: .leading, spacing: 20) {
                     Label("Business", systemImage: "briefcase")
-                        .font(.title2).bold()
+                        .samFont(.title2).bold()
                     Divider()
                     DisclosureGroup("Business Profile") {
                         BusinessProfileSettingsContent(practiceTypeBinding: $practiceType)
@@ -404,7 +404,7 @@ struct GuidanceSettingsContent: View {
             ))
 
             Text("Contextual tips appear near features to help you learn SAM's interface.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
 
             Toggle("Suggest features you haven't tried", isOn: Binding(
@@ -415,13 +415,13 @@ struct GuidanceSettingsContent: View {
             ))
 
             Text("SAM will suggest features over your first weeks to help you get the most out of the app.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
 
             Toggle("Show help buttons in views", isOn: $showHelpButtons)
 
             Text("Small \"?\" buttons in toolbars and headers that open the SAM Guide to the relevant article.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
 
             HStack(spacing: 12) {
@@ -455,10 +455,10 @@ struct ClipboardCaptureSettingsContent: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Clipboard Capture")
-                .font(.headline)
+                .samFont(.headline)
 
             Text("Copy a conversation from any app and press ⌃⇧V to capture it as evidence in SAM.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
 
             Toggle("Enable global hotkey (⌃⇧V)", isOn: $hotkeyEnabled)
@@ -478,7 +478,7 @@ struct ClipboardCaptureSettingsContent: View {
             // Accessibility permission status
             HStack(spacing: 8) {
                 Text("Accessibility Permission")
-                    .font(.subheadline)
+                    .samFont(.subheadline)
 
                 Spacer()
 
@@ -487,7 +487,7 @@ struct ClipboardCaptureSettingsContent: View {
                         Image(systemName: "checkmark.circle.fill")
                             .foregroundStyle(.green)
                         Text("Granted")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.green)
                     }
                 } else {
@@ -496,7 +496,7 @@ struct ClipboardCaptureSettingsContent: View {
                             Image(systemName: "xmark.circle")
                                 .foregroundStyle(.orange)
                             Text("Not Granted")
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.orange)
 
                             Button("Open Accessibility Settings") {
@@ -514,7 +514,7 @@ struct ClipboardCaptureSettingsContent: View {
                         }
 
                         Text("In the Accessibility list, click + and add the app shown in Finder. When running from Xcode, you may also need to add Xcode itself.")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -522,16 +522,16 @@ struct ClipboardCaptureSettingsContent: View {
 
             if hotkeyService.isRegistered {
                 Text("Global hotkey is active — press ⌃⇧V from any app to capture a conversation.")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.green)
             } else if hotkeyEnabled && !hotkeyService.accessibilityGranted {
                 Text("Grant Accessibility permission, then restart SAM to activate the global hotkey.")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.orange)
             }
 
             Text("The in-app menu command (Edit → Capture Clipboard Conversation) works without Accessibility permission.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
         }
     }
@@ -563,7 +563,7 @@ struct PermissionsSettingsView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
                         Label("Permissions", systemImage: "lock.shield")
-                            .font(.title2)
+                            .samFont(.title2)
                             .bold()
                         Spacer()
                         GuideButton(articleID: "getting-started.settings")
@@ -621,7 +621,7 @@ struct PermissionsSettingsView: View {
                     ) {
                         if !bookmarkManager.hasMessagesAccess {
                             Text("Grant in Data Sources")
-                                .font(.caption2)
+                                .samFont(.caption2)
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -633,7 +633,7 @@ struct PermissionsSettingsView: View {
                     ) {
                         if !bookmarkManager.hasCallHistoryAccess {
                             Text("Grant in Data Sources")
-                                .font(.caption2)
+                                .samFont(.caption2)
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -690,7 +690,7 @@ struct PermissionsSettingsView: View {
                     Toggle("Auto-detect permission loss", isOn: $autoDetectPermissionLoss)
 
                     Text("Automatically reset onboarding if permissions are revoked (e.g., after rebuilding in Xcode).")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
                 .padding()
@@ -732,10 +732,10 @@ struct PermissionsSettingsView: View {
         let isGranted = status == "Authorized"
         HStack(spacing: 4) {
             Image(systemName: isGranted ? "checkmark.circle.fill" : "xmark.circle")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(isGranted ? .green : .orange)
             Text(status)
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(isGranted ? .green : .secondary)
         }
     }
@@ -896,11 +896,11 @@ struct ContactsSettingsContent: View {
             if authorizationStatus != .authorized {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Authorization Required")
-                        .font(.headline)
+                        .samFont(.headline)
                         .foregroundStyle(.orange)
 
                     Text("Please grant Contacts access in the Permissions tab first.")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
                 .padding(.vertical, 8)
@@ -912,22 +912,22 @@ struct ContactsSettingsContent: View {
             GroupBox {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Contact Group")
-                        .font(.headline)
+                        .samFont(.headline)
 
                     Text("SAM reads all contacts to identify matches and avoid duplicates, but only imports and updates contacts in this group.")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
 
                     if authorizationStatus != .authorized {
                         Text("Contacts access required to load groups.")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.orange)
                     } else if isLoadingGroups {
                         HStack {
                             ProgressView()
                                 .scaleEffect(0.7)
                             Text("Loading groups...")
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.secondary)
                         }
                     } else if !availableGroups.isEmpty {
@@ -954,12 +954,12 @@ struct ContactsSettingsContent: View {
 
                         if let error = errorMessage {
                             Text(error)
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.red)
                         }
                     } else {
                         Text("No contact groups found. Create one in the Contacts app, or click 'Refresh Groups' below.")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
 
                         Button("Refresh Groups") {
@@ -978,11 +978,11 @@ struct ContactsSettingsContent: View {
                 GroupBox {
                     VStack(alignment: .leading, spacing: 8) {
                         Label("SAM group is not in iCloud", systemImage: "exclamationmark.icloud")
-                            .font(.headline)
+                            .samFont(.headline)
                             .foregroundStyle(.orange)
 
                         Text("Your SAM group is stored locally. Contacts in other accounts (like iCloud) can't be added to it, and it won't sync to other devices. Migrate to iCloud to fix this.")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
 
                         Button {
@@ -1025,7 +1025,7 @@ struct ContactsSettingsContent: View {
             Toggle("Automatically import contacts", isOn: $autoImportEnabled)
 
             Text("When enabled, SAM will automatically sync with Contacts when changes are detected.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
 
             Divider()
@@ -1042,14 +1042,14 @@ struct ContactsSettingsContent: View {
 
                 if let date = coordinator.lastImportedAt {
                     Text("\(coordinator.lastImportCount) contacts, \(date, style: .relative) ago")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
 
             if let error = coordinator.lastError {
                 Text(error)
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.red)
             }
 
@@ -1147,7 +1147,7 @@ struct ContactsSettingsView: View {
             Section {
                 VStack(alignment: .leading, spacing: 20) {
                     Label("Contacts Import", systemImage: "person.crop.circle")
-                        .font(.title2)
+                        .samFont(.title2)
                         .bold()
 
                     Divider()
@@ -1181,11 +1181,11 @@ struct CalendarSettingsContent: View {
             if authorizationStatus != .fullAccess {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Authorization Required")
-                        .font(.headline)
+                        .samFont(.headline)
                         .foregroundStyle(.orange)
 
                     Text("Please grant Calendar access in the Permissions tab first.")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
                 .padding(.vertical, 8)
@@ -1197,22 +1197,22 @@ struct CalendarSettingsContent: View {
             GroupBox {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Calendar")
-                        .font(.headline)
+                        .samFont(.headline)
 
                     Text("Select which Calendar SAM should access. Only events from this calendar will be imported.")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
 
                     if authorizationStatus != .fullAccess {
                         Text("Calendar access required to load calendars.")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.orange)
                     } else if isLoadingCalendars {
                         HStack {
                             ProgressView()
                                 .scaleEffect(0.7)
                             Text("Loading calendars...")
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.secondary)
                         }
                     } else if !availableCalendars.isEmpty {
@@ -1247,12 +1247,12 @@ struct CalendarSettingsContent: View {
 
                         if let error = errorMessage {
                             Text(error)
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.red)
                         }
                     } else {
                         Text("No calendars found. Create one in the Calendar app, or click 'Refresh Calendars' below.")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
 
                         Button("Refresh Calendars") {
@@ -1272,7 +1272,7 @@ struct CalendarSettingsContent: View {
             Toggle("Automatically import calendar events", isOn: $autoImportEnabled)
 
             Text("When enabled, SAM will automatically sync with Calendar when changes are detected.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
 
             Divider()
@@ -1289,7 +1289,7 @@ struct CalendarSettingsContent: View {
 
                 if let lastImport = coordinator.lastImportedAt {
                     Text("Last: \(lastImport, style: .relative)")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -1386,7 +1386,7 @@ struct CalendarSettingsView: View {
             Section {
                 VStack(alignment: .leading, spacing: 20) {
                     Label("Calendar Import", systemImage: "calendar")
-                        .font(.title2)
+                        .samFont(.title2)
                         .bold()
 
                     Divider()
@@ -1420,7 +1420,7 @@ struct BusinessProfileSettingsContent: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             Text("Tell SAM about your practice so coaching suggestions are relevant and grounded.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
 
             // Practice Type
@@ -1437,7 +1437,7 @@ struct BusinessProfileSettingsContent: View {
                     Text(profile.isFinancial
                          ? "Full financial advisor experience with production tracking, recruiting pipeline, and compliance scanning."
                          : "Generic relationship coaching, event management, and social media. Financial-specific features are hidden.")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
                 .padding(.vertical, 4)
@@ -1488,7 +1488,7 @@ struct BusinessProfileSettingsContent: View {
                 VStack(alignment: .leading, spacing: 12) {
                     if profile.isFinancial {
                         Text("Select your primary focus areas:")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
 
                         FlowLayout(spacing: 6) {
@@ -1546,7 +1546,7 @@ struct BusinessProfileSettingsContent: View {
                         .onChange(of: profile.samIsCRM) { _, _ in saveProfile() }
 
                     Text("Social platforms:")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
 
                     HStack(spacing: 8) {
@@ -1577,7 +1577,7 @@ struct BusinessProfileSettingsContent: View {
             GroupBox("Additional Context") {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Anything else SAM's AI should always know about your practice:")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
 
                     TextEditor(text: $profile.additionalContext)
@@ -1634,7 +1634,7 @@ struct IntelligenceSettingsContent: View {
             // Insight Generation Settings
             VStack(alignment: .leading, spacing: 12) {
                 Text("Insight Generation")
-                    .font(.headline)
+                    .samFont(.headline)
 
                 Toggle("Auto-generate insights", isOn: Binding(
                     get: { insightGenerator.autoGenerateEnabled },
@@ -1642,7 +1642,7 @@ struct IntelligenceSettingsContent: View {
                 ))
 
                 Text("When enabled, SAM automatically generates insights after importing contacts, calendar events, or emails.")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
 
                 HStack {
@@ -1660,7 +1660,7 @@ struct IntelligenceSettingsContent: View {
                 }
 
                 Text("Alert when an untagged contact (no role badge) hasn't been reached within this period. Contacts with role badges use adaptive role-based thresholds.")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             }
         }
@@ -1675,7 +1675,7 @@ struct IntelligenceSettingsView: View {
             Section {
                 VStack(alignment: .leading, spacing: 20) {
                     Label("Intelligence", systemImage: "brain")
-                        .font(.title2)
+                        .samFont(.title2)
                         .bold()
 
                     Divider()
@@ -1697,6 +1697,7 @@ struct GeneralSettingsView: View {
     @AppStorage("sam.user.lastName") private var userLastName = ""
     @AppStorage("sam.user.defaultClosing") private var defaultClosing = "Best,"
     @AppStorage("sam.messages.allowEmoji") private var allowEmoji = false
+    @AppStorage("sam.display.textSize") private var textSizeRawValue = SAMTextSize.standard.rawValue
     @State private var silenceTimeout: Double = {
         let stored = UserDefaults.standard.double(forKey: "sam.dictation.silenceTimeout")
         return stored > 0 ? stored : 2.0
@@ -1713,7 +1714,7 @@ struct GeneralSettingsView: View {
             Section {
                 VStack(alignment: .leading, spacing: 20) {
                     Label("General", systemImage: "gearshape")
-                        .font(.title2)
+                        .samFont(.title2)
                         .bold()
 
                     Divider()
@@ -1730,7 +1731,7 @@ struct GeneralSettingsView: View {
                             Text("Schema:")
                                 .foregroundStyle(.secondary)
                             Text(SAMModelContainer.schemaVersion)
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -1740,19 +1741,19 @@ struct GeneralSettingsView: View {
                     // Identity & Signature
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Your Identity")
-                            .font(.headline)
+                            .samFont(.headline)
 
                         HStack(spacing: 12) {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("First Name")
-                                    .font(.caption)
+                                    .samFont(.caption)
                                     .foregroundStyle(.secondary)
                                 TextField("First name", text: $userFirstName)
                                     .textFieldStyle(.roundedBorder)
                             }
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Last Name")
-                                    .font(.caption)
+                                    .samFont(.caption)
                                     .foregroundStyle(.secondary)
                                 TextField("Last name", text: $userLastName)
                                     .textFieldStyle(.roundedBorder)
@@ -1761,7 +1762,7 @@ struct GeneralSettingsView: View {
 
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Default Closing")
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.secondary)
                             TextField("e.g. Best, / Yours, / Warm regards,", text: $defaultClosing)
                                 .textFieldStyle(.roundedBorder)
@@ -1769,14 +1770,14 @@ struct GeneralSettingsView: View {
                         }
 
                         Text("Used to sign AI-generated messages. SAM uses your first name for people you interact with regularly, and your full name for others. SAM learns your preferred closing style as you edit drafts.")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
 
                         if userFirstName.isEmpty {
                             Button("Auto-fill from Me Contact") {
                                 autoFillFromMeContact()
                             }
-                            .font(.caption)
+                            .samFont(.caption)
                             .buttonStyle(.bordered)
                             .controlSize(.small)
                         }
@@ -1788,8 +1789,34 @@ struct GeneralSettingsView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Toggle("Allow emoji and icons in AI messages", isOn: $allowEmoji)
                         Text("When off, SAM will not use emoji, emoticons, or Unicode symbols in generated messages, briefings, and coaching text.")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
+                    }
+
+                    Divider()
+
+                    // Text Size
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Text Size")
+                            .samFont(.headline)
+
+                        Picker("Text Size", selection: $textSizeRawValue) {
+                            ForEach(SAMTextSize.allCases) { size in
+                                Text(size.label).tag(size.rawValue)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(maxWidth: 400)
+
+                        Text("Adjusts text size throughout SAM. Useful when your display resolution makes default text feel too small.")
+                            .samFont(.caption)
+                            .foregroundStyle(.secondary)
+
+                        Text("The quick brown fox jumps over the lazy dog.")
+                            .font(.sam(.body, scale: SAMTextSize(rawValue: textSizeRawValue)?.scale ?? 1.0))
+                            .padding(8)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
                     }
 
                     Divider()
@@ -1858,10 +1885,10 @@ struct GeneralSettingsView: View {
     private func legacyDataSection(discovery: LegacyStoreDiscovery) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("Legacy Data", systemImage: "clock.arrow.circlepath")
-                .font(.headline)
+                .samFont(.headline)
 
             Text("Data from a previous SAM version was found on this Mac.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
 
             HStack {
@@ -1874,7 +1901,7 @@ struct GeneralSettingsView: View {
 
             if let mostRecent = discovery.mostRecent {
                 Text("Most recent: \(mostRecent.version)")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             }
 
@@ -1885,7 +1912,7 @@ struct GeneralSettingsView: View {
                     ProgressView()
                         .controlSize(.small)
                     Text(message)
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
             case .cleaning:
@@ -1893,21 +1920,21 @@ struct GeneralSettingsView: View {
                     ProgressView()
                         .controlSize(.small)
                     Text("Cleaning up...")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
             case .success(let message):
                 Label(message, systemImage: "checkmark.circle.fill")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.green)
             case .failed(let message):
                 VStack(alignment: .leading, spacing: 4) {
                     Label(message, systemImage: "xmark.circle.fill")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.red)
                     if message.contains("schemas too old") {
                         Text("Try \"Import Roles Only\" to recover role assignments via direct database read.")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -1957,10 +1984,10 @@ struct GeneralSettingsView: View {
     private var dictationSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Dictation")
-                .font(.headline)
+                .samFont(.headline)
 
             Text("How long SAM waits after you stop speaking before ending dictation.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
 
             HStack {
@@ -1978,11 +2005,11 @@ struct GeneralSettingsView: View {
 
             HStack {
                 Text("0.5s")
-                    .font(.caption2)
+                    .samFont(.caption2)
                     .foregroundStyle(.tertiary)
                 Spacer()
                 Text("5.0s")
-                    .font(.caption2)
+                    .samFont(.caption2)
                     .foregroundStyle(.tertiary)
             }
         }
@@ -2001,7 +2028,7 @@ private struct SecuritySettingsContent: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("Security", systemImage: "lock.shield")
-                .font(.headline)
+                .samFont(.headline)
 
             HStack {
                 Text("Lock after inactive:")
@@ -2026,16 +2053,16 @@ private struct SecuritySettingsContent: View {
 
             if lockService.isBiometricAvailable {
                 Text("Touch ID is available and will be used for authentication.")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             } else {
                 Text("Touch ID is not available. System password will be used.")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             }
 
             Text("SAM always requires authentication on launch and after the idle timeout expires. All backups are encrypted with a passphrase.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
         }
     }

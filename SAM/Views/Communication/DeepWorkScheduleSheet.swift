@@ -57,25 +57,25 @@ struct DeepWorkScheduleSheet: View {
         VStack(alignment: .leading, spacing: 16) {
             // Title
             Text("Schedule Deep Work")
-                .font(.title3)
+                .samFont(.title3)
                 .fontWeight(.semibold)
 
             // Outcome context
             VStack(alignment: .leading, spacing: 4) {
                 Text(payload.title)
-                    .font(.subheadline)
+                    .samFont(.subheadline)
                     .fontWeight(.medium)
                 Text(payload.rationale)
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(3)
 
                 if let name = payload.personName {
                     HStack(spacing: 4) {
                         Image(systemName: "person")
-                            .font(.caption2)
+                            .samFont(.caption2)
                         Text(name)
-                            .font(.caption)
+                            .samFont(.caption)
                     }
                     .foregroundStyle(.secondary)
                 }
@@ -86,7 +86,7 @@ struct DeepWorkScheduleSheet: View {
             // Duration picker
             VStack(alignment: .leading, spacing: 8) {
                 Text("Duration")
-                    .font(.subheadline)
+                    .samFont(.subheadline)
                     .fontWeight(.medium)
 
                 HStack(spacing: 8) {
@@ -95,7 +95,7 @@ struct DeepWorkScheduleSheet: View {
                             selectedDuration = option.minutes
                         } label: {
                             Text(option.label)
-                                .font(.caption)
+                                .samFont(.caption)
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 6)
                                 .background(selectedDuration == option.minutes
@@ -114,7 +114,7 @@ struct DeepWorkScheduleSheet: View {
             // Date/time picker
             VStack(alignment: .leading, spacing: 8) {
                 Text("When")
-                    .font(.subheadline)
+                    .samFont(.subheadline)
                     .fontWeight(.medium)
 
                 DatePicker(
@@ -130,16 +130,16 @@ struct DeepWorkScheduleSheet: View {
             let endDate = Calendar.current.date(byAdding: .minute, value: selectedDuration, to: selectedDate)!
             HStack(spacing: 4) {
                 Image(systemName: "calendar.badge.clock")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
                 Text("\(selectedDate.formatted(date: .abbreviated, time: .shortened)) — \(endDate.formatted(date: .omitted, time: .shortened))")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             }
 
             if let error = errorMessage {
                 Text(error)
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.red)
             }
 

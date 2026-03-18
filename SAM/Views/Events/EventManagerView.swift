@@ -89,7 +89,7 @@ struct EventManagerView: View {
 
             HStack {
                 Text("Events")
-                    .font(.title2.bold())
+                    .samFont(.title2, weight: .bold)
                 Spacer()
                 Button {
                     showNewEventForm = true
@@ -158,15 +158,15 @@ struct EventRowView: View {
             HStack {
                 Image(systemName: event.format.icon)
                     .foregroundStyle(statusColor)
-                    .font(.caption)
+                    .samFont(.caption)
                 Text(event.title)
-                    .font(.headline)
+                    .samFont(.headline)
                     .lineLimit(1)
             }
 
             HStack(spacing: 8) {
                 Text(event.startDate.formatted(date: .abbreviated, time: .shortened))
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
 
                 Spacer()
@@ -180,19 +180,19 @@ struct EventRowView: View {
                         .foregroundStyle(.tertiary)
                     Text("\(event.targetParticipantCount)")
                 }
-                .font(.caption)
+                .samFont(.caption)
             }
 
             HStack(spacing: 6) {
                 Text(event.status.displayName)
-                    .font(.caption2)
+                    .samFont(.caption2)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
                     .background(statusColor.opacity(0.15), in: Capsule())
                     .foregroundStyle(statusColor)
 
                 Text(event.format.displayName)
-                    .font(.caption2)
+                    .samFont(.caption2)
                     .foregroundStyle(.secondary)
             }
         }

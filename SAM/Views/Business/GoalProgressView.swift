@@ -29,7 +29,7 @@ struct GoalProgressView: View {
             // Header
             HStack {
                 Label("Goals", systemImage: "target")
-                    .font(.headline)
+                    .samFont(.headline)
 
                 Spacer()
 
@@ -101,16 +101,16 @@ struct GoalProgressView: View {
             HStack(spacing: 8) {
                 Image(systemName: progress.goalType.icon)
                     .foregroundStyle(progress.goalType.color)
-                    .font(.title3)
+                    .samFont(.title3)
 
                 Text(progress.title)
-                    .font(.headline)
+                    .samFont(.headline)
 
                 Spacer()
 
                 // Pace badge
                 Text(progress.pace.displayName)
-                    .font(.caption)
+                    .samFont(.caption)
                     .fontWeight(.semibold)
                     .foregroundStyle(.white)
                     .padding(.horizontal, 10)
@@ -144,27 +144,27 @@ struct GoalProgressView: View {
 
                 if progress.daysRemaining > 0 {
                     Text("\(progress.daysRemaining) days left")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 } else {
                     Text("Deadline passed")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.red)
                 }
             }
-            .font(.subheadline)
+            .samFont(.subheadline)
 
             // Pacing hint
             if progress.daysRemaining > 0 && progress.currentValue < progress.targetValue {
                 Text(pacingHint(progress))
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             }
 
             // Projection
             if progress.daysRemaining > 0 {
                 Text("On pace for \(formattedValue(progress.projectedCompletion, type: progress.goalType)) of \(formattedValue(progress.targetValue, type: progress.goalType)) target")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.tertiary)
             }
 
@@ -181,7 +181,7 @@ struct GoalProgressView: View {
                     startCheckIn(for: progress)
                 } label: {
                     Label("Check In", systemImage: "bubble.left.and.text.bubble.right")
-                        .font(.caption)
+                        .samFont(.caption)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
@@ -192,7 +192,7 @@ struct GoalProgressView: View {
                     }
                 } label: {
                     Label("Edit", systemImage: "pencil")
-                        .font(.caption)
+                        .samFont(.caption)
                 }
                 .buttonStyle(.bordered)
 
@@ -200,7 +200,7 @@ struct GoalProgressView: View {
                     archiveGoal(progress.goalID)
                 } label: {
                     Label("Archive", systemImage: "archivebox")
-                        .font(.caption)
+                        .samFont(.caption)
                 }
                 .buttonStyle(.bordered)
             }
@@ -225,11 +225,11 @@ struct GoalProgressView: View {
                 .foregroundStyle(.secondary)
 
             Text("No goals set")
-                .font(.title3)
+                .samFont(.title3)
                 .fontWeight(.semibold)
 
             Text("Tap + to create your first business goal.")
-                .font(.body)
+                .samFont(.body)
                 .foregroundStyle(.secondary)
 
             Spacer()
@@ -289,9 +289,9 @@ struct GoalProgressView: View {
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                        .font(.caption2)
+                        .samFont(.caption2)
                     Text("Journal (\(entries.count))")
-                        .font(.caption)
+                        .samFont(.caption)
                         .fontWeight(.medium)
                 }
                 .foregroundStyle(.secondary)
@@ -310,28 +310,28 @@ struct GoalProgressView: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(entry.headline)
-                    .font(.caption)
+                    .samFont(.caption)
                     .fontWeight(.medium)
                     .lineLimit(1)
                 Spacer()
                 Text(entry.createdAt.formatted(date: .abbreviated, time: .omitted))
-                    .font(.caption2)
+                    .samFont(.caption2)
                     .foregroundStyle(.tertiary)
             }
 
             if let insight = entry.keyInsight, !insight.isEmpty {
                 Text(insight)
-                    .font(.caption2)
+                    .samFont(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
             }
 
             HStack(spacing: 8) {
                 Text(entry.paceAtCheckIn.displayName)
-                    .font(.caption2)
+                    .samFont(.caption2)
                     .foregroundStyle(entry.paceAtCheckIn.color)
                 Text("\(Int(entry.progressAtCheckIn * 100))%")
-                    .font(.caption2)
+                    .samFont(.caption2)
                     .foregroundStyle(.tertiary)
             }
         }

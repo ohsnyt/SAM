@@ -119,7 +119,7 @@ struct GrowDashboardView: View {
             VStack(spacing: 16) {
                 ProgressView().controlSize(.large)
                 Text("Analyzing your profile\u{2026}")
-                    .font(.subheadline)
+                    .samFont(.subheadline)
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -170,15 +170,15 @@ struct GrowDashboardView: View {
             // Collapsed header: platform icon + name + mini score ring
             HStack(spacing: 12) {
                 Image(systemName: meta.icon)
-                    .font(.title3)
+                    .samFont(.title3)
                     .foregroundStyle(meta.iconColor)
                     .frame(width: 28)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(meta.displayName)
-                        .font(.headline)
+                        .samFont(.headline)
                     Text("Last analyzed \(a.analysisDate, style: .relative) ago")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
 
@@ -291,13 +291,13 @@ struct GrowDashboardView: View {
                         .font(.system(size: 26, weight: .bold, design: .rounded))
                         .foregroundStyle(scoreColor(a))
                     Text("/ 100")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.secondary)
                 }
             }
             VStack(alignment: .leading, spacing: 4) {
-                Text(scoreLabel(a)).font(.title3.weight(.semibold))
-                Text(scoreDescription(a)).font(.caption).foregroundStyle(.secondary)
+                Text(scoreLabel(a)).samFont(.title3, weight: .semibold)
+                Text(scoreDescription(a)).samFont(.caption).foregroundStyle(.secondary)
             }
             Spacer()
         }
@@ -341,16 +341,16 @@ struct GrowDashboardView: View {
             ForEach(a.praise) { item in
                 HStack(alignment: .top, spacing: 12) {
                     Text(item.category)
-                        .font(.caption.weight(.semibold))
+                        .samFont(.caption, weight: .semibold)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
                         .background(.green.opacity(0.15), in: Capsule())
                         .foregroundStyle(.green)
                         .fixedSize()
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(item.message).font(.callout)
+                        Text(item.message).samFont(.callout)
                         if let metric = item.metric {
-                            Text(metric).font(.caption).foregroundStyle(.secondary)
+                            Text(metric).samFont(.caption).foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -369,20 +369,20 @@ struct GrowDashboardView: View {
                             .fill(priorityColor(item.priority))
                             .frame(width: 8, height: 8)
                         Text(item.category)
-                            .font(.caption.weight(.semibold))
+                            .samFont(.caption, weight: .semibold)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 3)
                             .background(.orange.opacity(0.12), in: Capsule())
                             .foregroundStyle(.orange)
                         Text(item.priority.capitalized)
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(priorityColor(item.priority))
                     }
-                    Text(item.suggestion).font(.callout.weight(.semibold))
-                    Text(item.rationale).font(.caption).foregroundStyle(.secondary)
+                    Text(item.suggestion).samFont(.callout, weight: .semibold)
+                    Text(item.rationale).samFont(.caption).foregroundStyle(.secondary)
                     if let example = item.exampleOrPrompt {
                         Text(example)
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.primary.opacity(0.75))
                             .padding(8)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -412,21 +412,21 @@ struct GrowDashboardView: View {
 
     private func contentStrategySection(_ cs: ContentStrategyAssessmentDTO) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(cs.summary).font(.callout)
+            Text(cs.summary).samFont(.callout)
             if let freq = cs.postingFrequency      { labeledRow(label: "Posting Frequency", value: freq) }
             if let mix = cs.contentMix             { labeledRow(label: "Content Mix", value: mix) }
             if let eng = cs.engagementAssessment   { labeledRow(label: "Engagement", value: eng) }
             if !cs.topicSuggestions.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Topic Suggestions")
-                        .font(.caption.weight(.semibold))
+                        .samFont(.caption, weight: .semibold)
                         .foregroundStyle(.secondary)
                     ForEach(cs.topicSuggestions, id: \.self) { topic in
                         HStack(spacing: 6) {
                             Image(systemName: "lightbulb.fill")
                                 .imageScale(.small)
                                 .foregroundStyle(.yellow)
-                            Text(topic).font(.caption)
+                            Text(topic).samFont(.caption)
                         }
                     }
                 }
@@ -439,7 +439,7 @@ struct GrowDashboardView: View {
     private func networkHealthSection(_ a: ProfileAnalysisDTO) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             let nh = a.networkHealth
-            Text(nh.summary).font(.callout)
+            Text(nh.summary).samFont(.callout)
             if let trend = nh.growthTrend              { labeledRow(label: "Growth Trend", value: trend) }
             if let end = nh.endorsementInsight         { labeledRow(label: "Endorsements", value: end) }
             if let rec = nh.recommendationReciprocity  { labeledRow(label: "Recommendations", value: rec) }
@@ -455,7 +455,7 @@ struct GrowDashboardView: View {
                     Image(systemName: change.isImprovement ? "checkmark.circle.fill" : "xmark.circle.fill")
                         .foregroundStyle(change.isImprovement ? .green : .orange)
                         .imageScale(.small)
-                    Text(change.description).font(.callout)
+                    Text(change.description).samFont(.callout)
                 }
             }
         }
@@ -466,10 +466,10 @@ struct GrowDashboardView: View {
     private func externalPromptSection(_ ep: ExternalAIPromptDTO) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             if !ep.context.isEmpty {
-                Text(ep.context).font(.caption).foregroundStyle(.secondary)
+                Text(ep.context).samFont(.caption).foregroundStyle(.secondary)
             }
             Text(ep.prompt)
-                .font(.caption)
+                .samFont(.caption)
                 .padding(10)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(.quaternary.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
@@ -502,7 +502,7 @@ struct GrowDashboardView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Image(systemName: icon).foregroundStyle(color).imageScale(.medium)
-                Text(title).font(.subheadline.weight(.semibold))
+                Text(title).samFont(.subheadline, weight: .semibold)
             }
             content().padding(.leading, 4)
         }
@@ -513,8 +513,8 @@ struct GrowDashboardView: View {
 
     private func labeledRow(label: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(label).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-            Text(value).font(.caption)
+            Text(label).samFont(.caption, weight: .semibold).foregroundStyle(.secondary)
+            Text(value).samFont(.caption)
         }
     }
 
@@ -547,12 +547,12 @@ struct GrowDashboardView: View {
                 } else {
                     VStack(spacing: 12) {
                         Image(systemName: "lightbulb")
-                            .font(.title)
+                            .samFont(.title)
                             .foregroundStyle(.secondary)
                         Text("No Content Ideas Yet")
-                            .font(.headline)
+                            .samFont(.headline)
                         Text("Content ideas are generated from your business goals, recent meetings, and note topics.")
-                            .font(.subheadline)
+                            .samFont(.subheadline)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
                             .frame(maxWidth: 380)
@@ -585,7 +585,7 @@ struct GrowDashboardView: View {
         return VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Image(systemName: "doc.text.fill").foregroundStyle(.purple)
-                Text("Content Ideas").font(.headline)
+                Text("Content Ideas").samFont(.headline)
                 Spacer()
                 generateContentIdeasButton
             }
@@ -597,20 +597,20 @@ struct GrowDashboardView: View {
                     } label: {
                         HStack(alignment: .top, spacing: 6) {
                             Text("\(index + 1).")
-                                .font(.callout)
+                                .samFont(.callout)
                                 .foregroundStyle(.secondary)
                                 .frame(width: 20, alignment: .trailing)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(topic.topic).font(.callout).fontWeight(.medium)
+                                Text(topic.topic).samFont(.callout).fontWeight(.medium)
                                 if !topic.keyPoints.isEmpty {
                                     Text(topic.keyPoints.joined(separator: " \u{2022} "))
-                                        .font(.caption)
+                                        .samFont(.caption)
                                         .foregroundStyle(.secondary)
                                         .lineLimit(2)
                                 }
                             }
                             Spacer()
-                            Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                            Image(systemName: "chevron.right").samFont(.caption).foregroundStyle(.tertiary)
                         }
                         .contentShape(Rectangle())
                     }
@@ -621,10 +621,10 @@ struct GrowDashboardView: View {
                 ForEach(Array(titles.enumerated()), id: \.offset) { index, title in
                     HStack(alignment: .top, spacing: 6) {
                         Text("\(index + 1).")
-                            .font(.callout)
+                            .samFont(.callout)
                             .foregroundStyle(.secondary)
                             .frame(width: 20, alignment: .trailing)
-                        Text(title).font(.callout).textSelection(.enabled)
+                        Text(title).samFont(.callout).textSelection(.enabled)
                     }
                 }
             }

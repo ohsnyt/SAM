@@ -53,11 +53,11 @@ struct StrategicActionSheet: View {
             }
 
             Text(recommendation.title)
-                .font(.title3)
+                .samFont(.title3)
                 .fontWeight(.semibold)
 
             Text(recommendation.rationale)
-                .font(.callout)
+                .samFont(.callout)
                 .foregroundStyle(.secondary)
         }
     }
@@ -67,7 +67,7 @@ struct StrategicActionSheet: View {
     private var approachesSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("How would you like to approach this?")
-                .font(.subheadline)
+                .samFont(.subheadline)
                 .fontWeight(.medium)
 
             ForEach(recommendation.approaches) { approach in
@@ -80,14 +80,14 @@ struct StrategicActionSheet: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(approach.title)
-                    .font(.subheadline)
+                    .samFont(.subheadline)
                     .fontWeight(.medium)
                 Spacer()
                 effortBadge(approach.effort)
             }
 
             Text(approach.summary)
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
 
             if !approach.steps.isEmpty {
@@ -95,10 +95,10 @@ struct StrategicActionSheet: View {
                     ForEach(Array(approach.steps.enumerated()), id: \.offset) { _, step in
                         HStack(alignment: .top, spacing: 6) {
                             Text("\u{2022}")
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.tertiary)
                             Text(step)
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -114,9 +114,9 @@ struct StrategicActionSheet: View {
                     HStack(spacing: 4) {
                         Text("Plan This")
                         Image(systemName: "arrow.right")
-                            .font(.caption2)
+                            .samFont(.caption2)
                     }
-                    .font(.caption)
+                    .samFont(.caption)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
@@ -131,7 +131,7 @@ struct StrategicActionSheet: View {
     private var emptyApproachesSection: some View {
         VStack(spacing: 12) {
             Text("Want help planning how to tackle this?")
-                .font(.subheadline)
+                .samFont(.subheadline)
                 .foregroundStyle(.secondary)
 
             Button {
@@ -178,7 +178,7 @@ struct StrategicActionSheet: View {
 
     private func categoryBadge(_ category: String) -> some View {
         Text(category.capitalized)
-            .font(.caption2)
+            .samFont(.caption2)
             .fontWeight(.medium)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
@@ -202,7 +202,7 @@ struct StrategicActionSheet: View {
                 .fill(priorityColor(priority))
                 .frame(width: 6, height: 6)
             Text(priorityLabel(priority))
-                .font(.caption2)
+                .samFont(.caption2)
                 .foregroundStyle(.secondary)
         }
     }
@@ -221,7 +221,7 @@ struct StrategicActionSheet: View {
 
     private func effortBadge(_ effort: EffortLevel) -> some View {
         Text(effortLabel(effort))
-            .font(.caption2)
+            .samFont(.caption2)
             .fontWeight(.medium)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)

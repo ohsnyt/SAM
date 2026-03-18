@@ -138,11 +138,11 @@ struct StrategicInsightsView: View {
             if let lastGen = coordinator.lastGeneratedAt {
                 let formatter = RelativeDateTimeFormatter()
                 Text("Last updated: \(formatter.localizedString(for: lastGen, relativeTo: .now))")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             } else {
                 Text("No analysis yet")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             }
 
@@ -154,7 +154,7 @@ struct StrategicInsightsView: View {
                 Task { await coordinator.generateDigest(type: .onDemand) }
             } label: {
                 Label("Refresh", systemImage: "arrow.clockwise")
-                    .font(.caption)
+                    .samFont(.caption)
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
@@ -167,13 +167,13 @@ struct StrategicInsightsView: View {
     private var emptyState: some View {
         VStack(spacing: 12) {
             Image(systemName: "lightbulb")
-                .font(.largeTitle)
+                .samFont(.largeTitle)
                 .foregroundStyle(.secondary)
             Text("No strategic insights yet")
-                .font(.headline)
+                .samFont(.headline)
                 .foregroundStyle(.secondary)
             Text("Tap Refresh to generate business intelligence from your pipeline, time tracking, and relationship data.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)
         }
@@ -189,10 +189,10 @@ struct StrategicInsightsView: View {
                 Image(systemName: "star.fill")
                     .foregroundStyle(.orange)
                 Text("Strategic Actions")
-                    .font(.headline)
+                    .samFont(.headline)
                 Spacer()
                 Text("\(coordinator.strategicRecommendations.count)")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             }
 
@@ -214,14 +214,14 @@ struct StrategicInsightsView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
                         Text(rec.title)
-                            .font(.subheadline)
+                            .samFont(.subheadline)
                             .fontWeight(.medium)
                         Spacer()
                         categoryBadge(rec.category)
                     }
 
                     Text(rec.rationale)
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(3)
                 }
@@ -234,7 +234,7 @@ struct StrategicInsightsView: View {
                     ProgressView()
                         .controlSize(.mini)
                     Text("SAM is developing a plan...")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.secondary)
                 }
             } else if let prep = preparations[rec.id], prep.isReady {
@@ -244,7 +244,7 @@ struct StrategicInsightsView: View {
                         activeCoachingPlan = prep
                     } label: {
                         Label("View Plan", systemImage: "doc.text.magnifyingglass")
-                            .font(.caption2)
+                            .samFont(.caption2)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.mini)
@@ -254,7 +254,7 @@ struct StrategicInsightsView: View {
                         preparations.removeValue(forKey: rec.id)
                     } label: {
                         Label("Discard", systemImage: "xmark")
-                            .font(.caption2)
+                            .samFont(.caption2)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.mini)
@@ -267,7 +267,7 @@ struct StrategicInsightsView: View {
                         selectedRecForAction = rec
                     } label: {
                         Label("Act", systemImage: "checkmark.circle")
-                            .font(.caption2)
+                            .samFont(.caption2)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.mini)
@@ -277,7 +277,7 @@ struct StrategicInsightsView: View {
                         coordinator.recordFeedback(recommendationID: rec.id, feedback: .dismissed)
                     } label: {
                         Label("Dismiss", systemImage: "xmark.circle")
-                            .font(.caption2)
+                            .samFont(.caption2)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.mini)
@@ -287,7 +287,7 @@ struct StrategicInsightsView: View {
                 HStack {
                     Spacer()
                     Text(rec.feedback == .actedOn ? "Acted on" : "Dismissed")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(rec.feedback == .actedOn ? .green : .secondary)
                 }
             }
@@ -304,11 +304,11 @@ struct StrategicInsightsView: View {
                 Image(systemName: icon)
                     .foregroundStyle(.blue)
                 Text(title)
-                    .font(.headline)
+                    .samFont(.headline)
             }
 
             Text(content)
-                .font(.callout)
+                .samFont(.callout)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -330,7 +330,7 @@ struct StrategicInsightsView: View {
                 Image(systemName: "doc.text.fill")
                     .foregroundStyle(.purple)
                 Text("Content Ideas")
-                    .font(.headline)
+                    .samFont(.headline)
             }
 
             if let topics = structuredTopics {
@@ -341,23 +341,23 @@ struct StrategicInsightsView: View {
                     } label: {
                         HStack(alignment: .top, spacing: 6) {
                             Text("\(index + 1).")
-                                .font(.callout)
+                                .samFont(.callout)
                                 .foregroundStyle(.secondary)
                                 .frame(width: 20, alignment: .trailing)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(topic.topic)
-                                    .font(.callout)
+                                    .samFont(.callout)
                                     .fontWeight(.medium)
                                 if !topic.keyPoints.isEmpty {
                                     Text(topic.keyPoints.joined(separator: " \u{2022} "))
-                                        .font(.caption)
+                                        .samFont(.caption)
                                         .foregroundStyle(.secondary)
                                         .lineLimit(2)
                                 }
                             }
                             Spacer()
                             Image(systemName: "chevron.right")
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.tertiary)
                         }
                         .contentShape(Rectangle())
@@ -370,11 +370,11 @@ struct StrategicInsightsView: View {
                 ForEach(Array(titles.enumerated()), id: \.offset) { index, title in
                     HStack(alignment: .top, spacing: 6) {
                         Text("\(index + 1).")
-                            .font(.callout)
+                            .samFont(.callout)
                             .foregroundStyle(.secondary)
                             .frame(width: 20, alignment: .trailing)
                         Text(title)
-                            .font(.callout)
+                            .samFont(.callout)
                             .textSelection(.enabled)
                     }
                 }
@@ -431,7 +431,7 @@ struct StrategicInsightsView: View {
 
     private func categoryBadge(_ category: String) -> some View {
         Text(category.capitalized)
-            .font(.caption2)
+            .samFont(.caption2)
             .fontWeight(.medium)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)

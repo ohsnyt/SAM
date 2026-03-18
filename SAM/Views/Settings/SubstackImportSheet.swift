@@ -32,7 +32,7 @@ struct SubstackImportSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     Text("Connect your Substack publication to get content suggestions and identify warm leads from your subscriber base.")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                         .padding(.horizontal)
 
@@ -89,7 +89,7 @@ struct SubstackImportSheet: View {
             Spacer()
 
             Text("Substack")
-                .font(.headline)
+                .samFont(.headline)
 
             Spacer()
 
@@ -128,7 +128,7 @@ struct SubstackImportSheet: View {
     private var feedSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Publication Feed")
-                .font(.headline)
+                .samFont(.headline)
 
             HStack {
                 TextField("e.g. sarahksnyder.substack.com", text: $feedURLInput)
@@ -146,13 +146,13 @@ struct SubstackImportSheet: View {
                 HStack(spacing: 4) {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(.green)
-                        .font(.caption)
+                        .samFont(.caption)
                     Text("Last fetched: \(lastFetch.formatted(date: .abbreviated, time: .shortened))")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                     if !coordinator.parsedPosts.isEmpty {
                         Text("(\(coordinator.parsedPosts.count) posts)")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -163,7 +163,7 @@ struct SubstackImportSheet: View {
                     ProgressView()
                         .controlSize(.small)
                     Text(coordinator.statusMessage)
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -175,7 +175,7 @@ struct SubstackImportSheet: View {
     private var subscriberSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Subscriber Import")
-                .font(.headline)
+                .samFont(.headline)
 
             subscriberPhaseContent
         }
@@ -192,7 +192,7 @@ struct SubstackImportSheet: View {
                 ProgressView()
                     .controlSize(.small)
                 Text("Checking Downloads folder...")
-                    .font(.callout)
+                    .samFont(.callout)
                     .foregroundStyle(.secondary)
             }
 
@@ -205,7 +205,7 @@ struct SubstackImportSheet: View {
                     ProgressView()
                         .controlSize(.small)
                     Text(coordinator.statusMessage.isEmpty ? "Processing..." : coordinator.statusMessage)
-                        .font(.callout)
+                        .samFont(.callout)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -238,7 +238,7 @@ struct SubstackImportSheet: View {
     private var setupPhase: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Enter your Substack feed URL above to get started. You can also import a subscriber CSV directly.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
 
             Button("Select File Manually...") {
@@ -255,15 +255,15 @@ struct SubstackImportSheet: View {
                         Image(systemName: "doc.zipper")
                             .foregroundStyle(.blue)
                         Text(info.fileName)
-                            .font(.callout).bold()
+                            .samFont(.callout).bold()
                     }
 
                     HStack(spacing: 16) {
                         Label(info.fileDate.formatted(date: .abbreviated, time: .shortened), systemImage: "calendar")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                         Label(info.formattedSize, systemImage: "internaldrive")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -295,9 +295,9 @@ struct SubstackImportSheet: View {
             GroupBox {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("\(coordinator.subscriberCandidates.count) subscribers found")
-                        .font(.callout).bold()
+                        .samFont(.callout).bold()
                     Text("\(matched) matched to contacts \u{2022} \(unmatched) new \u{2022} \(paid) paid")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -305,7 +305,7 @@ struct SubstackImportSheet: View {
             }
 
             Text("Matched subscribers will get a touch event. Unmatched will be routed to Unknown Sender triage.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
         }
     }
@@ -313,7 +313,7 @@ struct SubstackImportSheet: View {
     private var noZipFoundPhase: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("To import subscribers, download your Substack data export:")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
 
             VStack(alignment: .leading, spacing: 6) {
@@ -339,7 +339,7 @@ struct SubstackImportSheet: View {
 
             if !coordinator.isMailAvailableForWatching {
                 Text("Tip: Configure Mail in Settings to let SAM automatically detect when Substack sends the export email.")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.orange)
             }
 
@@ -348,7 +348,7 @@ struct SubstackImportSheet: View {
             Button("Select File Manually...") {
                 showManualFilePicker = true
             }
-            .font(.callout)
+            .samFont(.callout)
         }
     }
 
@@ -358,7 +358,7 @@ struct SubstackImportSheet: View {
                 ProgressView()
                     .controlSize(.small)
                 Text("Watching for Substack export email...")
-                    .font(.callout)
+                    .samFont(.callout)
                     .foregroundStyle(.secondary)
             }
 
@@ -366,12 +366,12 @@ struct SubstackImportSheet: View {
                 let elapsed = Date.now.timeIntervalSince(start)
                 let minutes = Int(elapsed / 60)
                 Text("Polling every 5 minutes \u{2022} \(minutes) min elapsed")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.tertiary)
             }
 
             Text("SAM is checking your Mail for the Substack export notification. You can close this sheet — SAM will notify you when it arrives.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
 
             HStack {
@@ -393,11 +393,11 @@ struct SubstackImportSheet: View {
                 Image(systemName: "envelope.badge.fill")
                     .foregroundStyle(.green)
                 Text("Export email detected!")
-                    .font(.callout).bold()
+                    .samFont(.callout).bold()
             }
 
             Text("Substack has prepared your data export. Click below to download it, then SAM will automatically detect the ZIP in your Downloads folder.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
 
             HStack {
@@ -420,7 +420,7 @@ struct SubstackImportSheet: View {
                 ProgressView()
                     .controlSize(.small)
                 Text("Monitoring ~/Downloads for export ZIP...")
-                    .font(.callout)
+                    .samFont(.callout)
                     .foregroundStyle(.secondary)
             }
 
@@ -428,12 +428,12 @@ struct SubstackImportSheet: View {
                 let elapsed = Date.now.timeIntervalSince(start)
                 let minutes = Int(elapsed / 60)
                 Text("Checking every 30 seconds \u{2022} \(minutes) min elapsed")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.tertiary)
             }
 
             Text("You can close this sheet — SAM will notify you when the file appears.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
 
             HStack {
@@ -455,15 +455,15 @@ struct SubstackImportSheet: View {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(.green)
                 Text("Import complete!")
-                    .font(.callout).bold()
+                    .samFont(.callout).bold()
             }
 
             GroupBox {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("\(stats.subscriberCount) subscribers processed")
-                        .font(.caption).bold()
+                        .samFont(.caption).bold()
                     Text("\(stats.matchedCount) matched \u{2022} \(stats.newLeads) new leads \u{2022} \(stats.touchesCreated) touch events")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -472,7 +472,7 @@ struct SubstackImportSheet: View {
 
             if coordinator.importedZipURL != nil {
                 Toggle("Delete export file from Downloads", isOn: $deleteZipAfterImport)
-                    .font(.caption)
+                    .samFont(.caption)
             }
         }
     }
@@ -483,7 +483,7 @@ struct SubstackImportSheet: View {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(.red)
                 Text(message)
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.red)
             }
 
@@ -504,11 +504,11 @@ struct SubstackImportSheet: View {
     private func instructionRow(_ number: Int, _ text: String) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Text("\(number).")
-                .font(.caption).bold()
+                .samFont(.caption).bold()
                 .foregroundStyle(.secondary)
                 .frame(width: 16, alignment: .trailing)
             Text(text)
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
         }
     }

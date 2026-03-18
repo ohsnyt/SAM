@@ -44,7 +44,7 @@ struct OutcomeCardView: View {
                 kindBadge
                 if !draftComplianceFlags.isEmpty {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.orange)
                         .help("Draft contains \(draftComplianceFlags.count) compliance-sensitive phrase\(draftComplianceFlags.count == 1 ? "" : "s")")
                 }
@@ -78,10 +78,10 @@ struct OutcomeCardView: View {
             if let step = outcome.suggestedNextStep, !step.isEmpty {
                 HStack(spacing: 4) {
                     Image(systemName: "arrow.right.circle.fill")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.blue)
                     Text(step)
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.blue)
                         .italic()
                         .lineLimit(isHero ? 3 : 2)
@@ -96,7 +96,7 @@ struct OutcomeCardView: View {
                         }
                     } label: {
                         Image(systemName: copiedStep ? "checkmark" : "doc.on.doc")
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .foregroundStyle(copiedStep ? .green : .secondary)
                     }
                     .buttonStyle(.plain)
@@ -108,7 +108,7 @@ struct OutcomeCardView: View {
             // Encouragement note
             if let note = outcome.encouragementNote, !note.isEmpty {
                 Text(note)
-                    .font(.caption2)
+                    .samFont(.caption2)
                     .foregroundStyle(.green)
                     .padding(.top, 1)
             }
@@ -120,9 +120,9 @@ struct OutcomeCardView: View {
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "book.pages")
-                            .font(.caption2)
+                            .samFont(.caption2)
                         Text("Learn more")
-                            .font(.caption2)
+                            .samFont(.caption2)
                     }
                     .foregroundStyle(.blue)
                 }
@@ -137,7 +137,7 @@ struct OutcomeCardView: View {
                 if let onAct {
                     Button(action: onAct) {
                         Label(actionButtonLabel, systemImage: actionButtonIcon)
-                            .font(.caption)
+                            .samFont(.caption)
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(isHero ? .regular : .small)
@@ -146,14 +146,14 @@ struct OutcomeCardView: View {
                 if onAct != nil {
                     Button(action: onDone) {
                         Label("Done", systemImage: "checkmark.circle")
-                            .font(.caption)
+                            .samFont(.caption)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(isHero ? .regular : .small)
                 } else {
                     Button(action: onDone) {
                         Label("Done", systemImage: "checkmark.circle")
-                            .font(.caption)
+                            .samFont(.caption)
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(isHero ? .regular : .small)
@@ -161,7 +161,7 @@ struct OutcomeCardView: View {
 
                 Button(action: onSkip) {
                     Label("Skip", systemImage: "xmark.circle")
-                        .font(.caption)
+                        .samFont(.caption)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(isHero ? .regular : .small)
@@ -193,7 +193,7 @@ struct OutcomeCardView: View {
         .overlay(alignment: .topTrailing) {
             if copiedAll {
                 Text("Copied")
-                    .font(.caption2)
+                    .samFont(.caption2)
                     .foregroundStyle(.green)
                     .padding(6)
                     .transition(.opacity)
@@ -247,10 +247,10 @@ struct OutcomeCardView: View {
         if outcome.isCompanionOutcome {
             HStack(spacing: 4) {
                 Image(systemName: "link")
-                    .font(.caption2)
+                    .samFont(.caption2)
                     .foregroundStyle(.secondary)
                 Text("Heads-up companion")
-                    .font(.caption2)
+                    .samFont(.caption2)
                     .foregroundStyle(.secondary)
             }
         }
@@ -261,16 +261,16 @@ struct OutcomeCardView: View {
     private var sequenceIndicator: some View {
         HStack(spacing: 4) {
             Image(systemName: "arrow.triangle.branch")
-                .font(.caption2)
+                .samFont(.caption2)
                 .foregroundStyle(.secondary)
 
             Text("Step \(outcome.sequenceIndex + 1) of \(sequenceStepCount)")
-                .font(.caption2)
+                .samFont(.caption2)
                 .foregroundStyle(.secondary)
 
             if let next = nextAwaitingStep, outcome.sequenceIndex < next.sequenceIndex {
                 Text("·")
-                    .font(.caption2)
+                    .samFont(.caption2)
                     .foregroundStyle(.tertiary)
 
                 let channelName = next.suggestedChannel?.displayName ?? "follow-up"
@@ -278,7 +278,7 @@ struct OutcomeCardView: View {
                 let daysText = next.triggerAfterDays > 0 ? "in \(next.triggerAfterDays)d" : ""
 
                 Text("Then: \(channelName) \(daysText) \(conditionText)")
-                    .font(.caption2)
+                    .samFont(.caption2)
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
             } else if outcome.sequenceIndex > 0 {
@@ -286,10 +286,10 @@ struct OutcomeCardView: View {
                 let conditionLabel = outcome.triggerCondition == .noResponse ? "(no response received)" : ""
                 if !conditionLabel.isEmpty {
                     Text("·")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.tertiary)
                     Text("Follow-up \(conditionLabel)")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.tertiary)
                 }
             }
@@ -306,7 +306,7 @@ struct OutcomeCardView: View {
 
     private var kindBadge: some View {
         Text(outcome.outcomeKind.displayName.uppercased())
-            .font(.caption2)
+            .samFont(.caption2)
             .fontWeight(.semibold)
             .foregroundStyle(kindColor)
             .padding(.horizontal, 8)
@@ -329,7 +329,7 @@ struct OutcomeCardView: View {
         }
 
         return Text(text)
-            .font(.caption2)
+            .samFont(.caption2)
             .foregroundStyle(remaining <= 0 ? .red : remaining < 86400 ? .orange : .secondary)
     }
 

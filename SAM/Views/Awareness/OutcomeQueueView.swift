@@ -119,7 +119,7 @@ struct OutcomeQueueView: View {
                         withAnimation { showAllOutcomes.toggle() }
                     }) {
                         Text(showAllOutcomes ? "Show fewer" : "Show all \(activeOutcomes.count) outcomes")
-                            .font(.subheadline)
+                            .samFont(.subheadline)
                             .foregroundStyle(.blue)
                     }
                     .buttonStyle(.plain)
@@ -197,10 +197,10 @@ struct OutcomeQueueView: View {
     private func ratingSheet(for outcome: SamOutcome) -> some View {
         VStack(spacing: 16) {
             Text("How helpful was this?")
-                .font(.headline)
+                .samFont(.headline)
 
             Text(outcome.title)
-                .font(.subheadline)
+                .samFont(.subheadline)
                 .foregroundStyle(.secondary)
                 .lineLimit(2)
                 .multilineTextAlignment(.center)
@@ -209,7 +209,7 @@ struct OutcomeQueueView: View {
             HStack(spacing: 8) {
                 ForEach(1...5, id: \.self) { star in
                     Image(systemName: star <= ratingValue ? "star.fill" : "star")
-                        .font(.title2)
+                        .samFont(.title2)
                         .foregroundStyle(star <= ratingValue ? .yellow : .gray)
                         .onTapGesture { ratingValue = star }
                 }

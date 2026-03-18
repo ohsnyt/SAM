@@ -35,7 +35,7 @@ struct GoalPacingSection: View {
                     Image(systemName: "target")
                         .foregroundStyle(.secondary)
                     Text("Goal Pacing")
-                        .font(.subheadline)
+                        .samFont(.subheadline)
                         .fontWeight(.semibold)
                     Spacer()
                 }
@@ -53,7 +53,7 @@ struct GoalPacingSection: View {
                 // "View all" link if more than 3
                 if progressItems.count > 3 {
                     Text("View all \(progressItems.count) goals →")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.blue)
                         .padding(.horizontal)
                 }
@@ -77,7 +77,7 @@ struct GoalPacingSection: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(progress.title)
-                    .font(.caption)
+                    .samFont(.caption)
                     .fontWeight(.medium)
                     .lineLimit(1)
 
@@ -100,7 +100,7 @@ struct GoalPacingSection: View {
 
             // Pace badge
             Text(progress.pace.displayName)
-                .font(.caption2)
+                .samFont(.caption2)
                 .fontWeight(.semibold)
                 .foregroundStyle(.white)
                 .padding(.horizontal, 8)

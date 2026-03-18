@@ -65,7 +65,7 @@ struct CoachingSessionView: View {
 
             if let error = errorMessage {
                 Text(error)
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.red)
                     .padding(.horizontal)
             }
@@ -99,12 +99,12 @@ struct CoachingSessionView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Planning: \(context.recommendation.title)")
-                        .font(.headline)
+                        .samFont(.headline)
                         .lineLimit(1)
 
                     if let approach = context.approach {
                         Text("Approach: \(approach.title)")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -115,10 +115,10 @@ struct CoachingSessionView: View {
                 if let given = sessionFeedbackGiven {
                     HStack(spacing: 4) {
                         Image(systemName: given ? "hand.thumbsup.fill" : "hand.thumbsdown.fill")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(given ? .green : .orange)
                         Text(given ? "Helpful" : "Not helpful")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                 } else {
@@ -128,7 +128,7 @@ struct CoachingSessionView: View {
                             Task { await CalibrationService.shared.recordSessionFeedback(category: context.recommendation.category, helpful: true) }
                         } label: {
                             Image(systemName: "hand.thumbsup")
-                                .font(.caption)
+                                .samFont(.caption)
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.mini)
@@ -139,7 +139,7 @@ struct CoachingSessionView: View {
                             Task { await CalibrationService.shared.recordSessionFeedback(category: context.recommendation.category, helpful: false) }
                         } label: {
                             Image(systemName: "hand.thumbsdown")
-                                .font(.caption)
+                                .samFont(.caption)
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.mini)
@@ -165,15 +165,15 @@ struct CoachingSessionView: View {
             HStack(spacing: 4) {
                 if message.role == .assistant {
                     Image(systemName: "sparkles")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.blue)
                     Text("SAM")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .fontWeight(.medium)
                         .foregroundStyle(.blue)
                 } else {
                     Text("You")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .fontWeight(.medium)
                         .foregroundStyle(.secondary)
                 }
@@ -181,7 +181,7 @@ struct CoachingSessionView: View {
 
             // Content
             Text(message.content)
-                .font(.callout)
+                .samFont(.callout)
                 .textSelection(.enabled)
                 .padding(10)
                 .background(messageBubbleBackground(for: message.role))
@@ -206,9 +206,9 @@ struct CoachingSessionView: View {
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: actionIcon(action.actionType))
-                    .font(.caption2)
+                    .samFont(.caption2)
                 Text(action.label)
-                    .font(.caption)
+                    .samFont(.caption)
             }
         }
         .buttonStyle(.bordered)
@@ -223,7 +223,7 @@ struct CoachingSessionView: View {
             ProgressView()
                 .controlSize(.small)
             Text("SAM is thinking...")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 10)
@@ -243,7 +243,7 @@ struct CoachingSessionView: View {
                 sendMessage()
             } label: {
                 Image(systemName: "arrow.up.circle.fill")
-                    .font(.title3)
+                    .samFont(.title3)
             }
             .buttonStyle(.plain)
             .foregroundStyle(inputText.isEmpty ? Color.gray.opacity(0.4) : Color.blue)

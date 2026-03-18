@@ -66,6 +66,9 @@ struct SAMApp: App {
     @State private var showOnboarding: Bool
     @State private var hasCheckedPermissions = false
 
+    // Display
+    @AppStorage("sam.display.textSize") private var textSizeRawValue = SAMTextSize.standard.rawValue
+
     // Security
     @State private var lockService = AppLockService.shared
 
@@ -238,6 +241,7 @@ struct SAMApp: App {
                         .transition(.opacity)
                 }
             }
+                .environment(\.samTextScale, SAMTextSize(rawValue: textSizeRawValue)?.scale ?? 1.0)
                 .sheet(isPresented: $showOnboarding) {
                     OnboardingView()
                         .interactiveDismissDisabled() // Prevent accidental dismissal
@@ -705,6 +709,7 @@ struct SAMApp: App {
             if let payload {
                 QuickNoteWindowView(payload: payload)
                     .modelContainer(SAMModelContainer.shared)
+                    .environment(\.samTextScale, SAMTextSize(rawValue: textSizeRawValue)?.scale ?? 1.0)
             }
         }
         .defaultSize(width: 500, height: 300)
@@ -716,6 +721,7 @@ struct SAMApp: App {
             if let payload {
                 ClipboardCaptureWindowView(payload: payload)
                     .modelContainer(SAMModelContainer.shared)
+                    .environment(\.samTextScale, SAMTextSize(rawValue: textSizeRawValue)?.scale ?? 1.0)
             }
         }
         .defaultSize(width: 600, height: 500)
@@ -727,6 +733,7 @@ struct SAMApp: App {
             if let payload {
                 ComposeWindowView(payload: payload)
                     .modelContainer(SAMModelContainer.shared)
+                    .environment(\.samTextScale, SAMTextSize(rawValue: textSizeRawValue)?.scale ?? 1.0)
             }
         }
         .defaultSize(width: 540, height: 400)

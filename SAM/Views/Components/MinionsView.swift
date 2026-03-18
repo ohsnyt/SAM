@@ -153,11 +153,11 @@ private struct MinionRow: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: item.icon)
-                .font(.caption2)
+                .samFont(.caption2)
                 .foregroundStyle(.tertiary)
                 .frame(width: 14)
             Text(item.label)
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
             Spacer()
             ProgressView()

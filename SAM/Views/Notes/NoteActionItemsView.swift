@@ -108,12 +108,12 @@ private struct ActionItemRow: View {
                 // Description
                 VStack(alignment: .leading, spacing: 2) {
                     Text(item.description)
-                        .font(.body)
+                        .samFont(.body)
                     
                     HStack(spacing: 8) {
                         // Type badge
                         Text(item.type.displayName)
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                             .background(item.type.color.opacity(0.2))
@@ -122,7 +122,7 @@ private struct ActionItemRow: View {
                         
                         // Urgency badge
                         Text(item.urgency.displayName)
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                             .background(item.urgency.color.opacity(0.2))
@@ -131,7 +131,7 @@ private struct ActionItemRow: View {
                         
                         // Status badge
                         Text(item.status.displayName)
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                             .background(item.status.color.opacity(0.2))
@@ -161,7 +161,7 @@ private struct ActionItemRow: View {
                             Image(systemName: "person.fill")
                                 .foregroundStyle(.secondary)
                             Text("Related to: \(personName)")
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -170,11 +170,11 @@ private struct ActionItemRow: View {
                     if let suggestedText = item.suggestedText {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Suggested Message:")
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.secondary)
                             
                             Text(suggestedText)
-                                .font(.body)
+                                .samFont(.body)
                                 .padding(8)
                                 .background(Color.secondary.opacity(0.1))
                                 .clipShape(RoundedRectangle(cornerRadius: 8))

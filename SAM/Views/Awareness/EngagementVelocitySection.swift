@@ -87,10 +87,10 @@ struct EngagementVelocitySection: View {
                     Image(systemName: "gauge.with.dots.needle.67percent")
                         .foregroundStyle(.orange)
                     Text("Engagement Velocity")
-                        .font(.headline)
+                        .samFont(.headline)
                     let total = overdue.count + predicted.count
                     Text("\(total)")
-                        .font(.caption)
+                        .samFont(.caption)
                         .fontWeight(.semibold)
                         .foregroundStyle(.white)
                         .padding(.horizontal, 6)
@@ -99,7 +99,7 @@ struct EngagementVelocitySection: View {
                         .clipShape(Capsule())
                     Spacer()
                     Text("Based on contact rhythm")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
                 .padding(.horizontal)
@@ -117,7 +117,7 @@ struct EngagementVelocitySection: View {
                     if !predicted.isEmpty {
                         HStack {
                             Text("Predicted")
-                                .font(.caption)
+                                .samFont(.caption)
                                 .fontWeight(.medium)
                                 .foregroundStyle(.secondary)
                             Spacer()
@@ -217,14 +217,14 @@ private struct OverduePersonRow: View {
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
                         Text(entry.displayName)
-                            .font(.subheadline)
+                            .samFont(.subheadline)
                             .fontWeight(.medium)
                             .foregroundStyle(.primary)
 
                         ForEach(entry.roleBadges.prefix(2), id: \.self) { badge in
                             let style = RoleBadgeStyle.forBadge(badge)
                             Text(badge)
-                                .font(.caption2)
+                                .samFont(.caption2)
                                 .padding(.horizontal, 5)
                                 .padding(.vertical, 1)
                                 .background(style.color.opacity(0.15))
@@ -235,14 +235,14 @@ private struct OverduePersonRow: View {
 
                     HStack(spacing: 8) {
                         Text(entry.cadenceLabel)
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
 
                         Text("·")
                             .foregroundStyle(.secondary)
 
                         Text(entry.gapLabel)
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -252,12 +252,12 @@ private struct OverduePersonRow: View {
                 // Overdue ratio badge or predicted label
                 if entry.predictedOverdueDays != nil {
                     Text("Predicted")
-                        .font(.caption)
+                        .samFont(.caption)
                         .fontWeight(.medium)
                         .foregroundStyle(.yellow)
                 } else {
                     Text("\(entry.formattedRatio) longer than usual")
-                        .font(.caption)
+                        .samFont(.caption)
                         .fontWeight(.medium)
                         .foregroundStyle(entry.severityColor)
                 }

@@ -89,10 +89,10 @@ struct InlineNoteCaptureView: View {
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "square.and.pencil")
-                    .font(.body)
+                    .samFont(.body)
                     .foregroundStyle(.secondary)
                 Text("Add a note…")
-                    .font(.body)
+                    .samFont(.body)
                     .foregroundStyle(.tertiary)
                 Spacer()
             }
@@ -113,9 +113,9 @@ struct InlineNoteCaptureView: View {
                     .overlay {
                         HStack(spacing: 6) {
                             Image(systemName: "doc.text.fill")
-                                .font(.body)
+                                .samFont(.body)
                             Text("Import LinkedIn Profile")
-                                .font(.caption)
+                                .samFont(.caption)
                                 .fontWeight(.medium)
                         }
                         .foregroundStyle(.blue)
@@ -128,7 +128,7 @@ struct InlineNoteCaptureView: View {
                     .fill(.green.opacity(0.12))
                     .overlay {
                         Text(msg)
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.green)
                     }
             }
@@ -166,7 +166,7 @@ struct InlineNoteCaptureView: View {
                 .overlay(alignment: .topLeading) {
                     if text.isEmpty && !isDictating {
                         Text("Type a note…")
-                            .font(.body)
+                            .samFont(.body)
                             .foregroundStyle(.tertiary)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 10)
@@ -181,7 +181,7 @@ struct InlineNoteCaptureView: View {
                     attachImage()
                 } label: {
                     Image(systemName: "paperclip")
-                        .font(.body)
+                        .samFont(.body)
                         .foregroundStyle(.secondary)
                         .frame(width: 28, height: 28)
                 }
@@ -198,7 +198,7 @@ struct InlineNoteCaptureView: View {
                     }
                 } label: {
                     Image(systemName: isDictating ? "mic.fill" : "mic")
-                        .font(.body)
+                        .samFont(.body)
                         .foregroundStyle(isDictating ? .red : .secondary)
                         .frame(width: 28, height: 28)
                 }
@@ -244,7 +244,7 @@ struct InlineNoteCaptureView: View {
                 ProgressView()
                     .controlSize(.mini)
                 Text("Polishing dictation...")
-                    .font(.caption2)
+                    .samFont(.caption2)
                     .foregroundStyle(.secondary)
             }
         }
@@ -255,7 +255,7 @@ struct InlineNoteCaptureView: View {
                 rawDictationText = nil
             } label: {
                 Label("Undo polish", systemImage: "arrow.uturn.backward")
-                    .font(.caption2)
+                    .samFont(.caption2)
             }
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
@@ -265,13 +265,13 @@ struct InlineNoteCaptureView: View {
             HStack(spacing: 4) {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(.green)
-                    .font(.caption)
+                    .samFont(.caption)
                 Text("Saved")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.green)
                 if let title = autoLinkedTitle {
                     Text("• Linked to: \(title)")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -280,7 +280,7 @@ struct InlineNoteCaptureView: View {
 
         if let error = errorMessage {
             Text(error)
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.red)
         }
     }

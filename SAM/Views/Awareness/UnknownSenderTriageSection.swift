@@ -101,11 +101,11 @@ struct UnknownSenderTriageSection: View {
             // Header
             HStack(spacing: 8) {
                 Label("Unknown Senders", systemImage: "person.fill.questionmark")
-                    .font(.headline)
+                    .samFont(.headline)
                     .foregroundStyle(.secondary)
 
                 Text("\(pendingSenders.count)")
-                    .font(.caption2)
+                    .samFont(.caption2)
                     .fontWeight(.semibold)
                     .foregroundStyle(.white)
                     .padding(.horizontal, 8)
@@ -117,7 +117,7 @@ struct UnknownSenderTriageSection: View {
 
                 if hasChanges {
                     Text("\(changesSummary)")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
 
@@ -131,15 +131,15 @@ struct UnknownSenderTriageSection: View {
                         HStack(spacing: 4) {
                             if isExpanded {
                                 Text("Show less")
-                                    .font(.caption)
+                                    .samFont(.caption)
                                     .foregroundStyle(.secondary)
                             } else {
                                 Text("Show all \(allSenders.count)")
-                                    .font(.caption)
+                                    .samFont(.caption)
                                     .foregroundStyle(.secondary)
                             }
                             Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -168,7 +168,7 @@ struct UnknownSenderTriageSection: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.leading, 8)
             }
-            .font(.caption2)
+            .samFont(.caption2)
             .foregroundStyle(.tertiary)
             .padding(.horizontal)
             .padding(.bottom, 4)
@@ -193,15 +193,15 @@ struct UnknownSenderTriageSection: View {
                 if !visibleLinkedIn.isEmpty {
                     HStack(spacing: 6) {
                         Image(systemName: "network")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.blue)
                         Text("LinkedIn Connections")
-                            .font(.caption)
+                            .samFont(.caption)
                             .fontWeight(.medium)
                             .foregroundStyle(.secondary)
                         Spacer()
                         Text("Scored by interaction history")
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .foregroundStyle(.tertiary)
                     }
                     .padding(.horizontal)
@@ -221,15 +221,15 @@ struct UnknownSenderTriageSection: View {
                 if !visibleFacebook.isEmpty {
                     HStack(spacing: 6) {
                         Image(systemName: "person.2.fill")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.indigo)
                         Text("Facebook Friends")
-                            .font(.caption)
+                            .samFont(.caption)
                             .fontWeight(.medium)
                             .foregroundStyle(.secondary)
                         Spacer()
                         Text("Scored by interaction history")
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .foregroundStyle(.tertiary)
                     }
                     .padding(.horizontal)
@@ -254,15 +254,15 @@ struct UnknownSenderTriageSection: View {
                 if !visibleMarketing.isEmpty {
                     HStack(spacing: 6) {
                         Image(systemName: "envelope.badge.fill")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.orange)
                         Text("Mailing Lists & Marketing")
-                            .font(.caption)
+                            .samFont(.caption)
                             .fontWeight(.medium)
                             .foregroundStyle(.secondary)
                         Spacer()
                         Text("Defaulting to Never")
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .foregroundStyle(.tertiary)
                     }
                     .padding(.horizontal)
@@ -282,7 +282,7 @@ struct UnknownSenderTriageSection: View {
                 if !isExpanded && allSenders.count > collapsedRowCount {
                     let hiddenCount = allSenders.count - collapsedRowCount
                     Text("\(hiddenCount) more \u{2014} tap Show all to expand")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.tertiary)
                         .frame(maxWidth: .infinity, alignment: .center)
                         .padding(.vertical, 6)
@@ -300,7 +300,7 @@ struct UnknownSenderTriageSection: View {
                     ProgressView()
                         .scaleEffect(0.8)
                     Text("Saving...")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
 
@@ -672,16 +672,16 @@ private struct LinkedInTriageRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Image(systemName: "network")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.blue)
                     Text(sender.displayName ?? sender.email)
-                        .font(.body)
+                        .samFont(.body)
                         .lineLimit(1)
                         .truncationMode(.tail)
 
                     if sender.intentionalTouchScore > 0 {
                         Text("Score: \(sender.intentionalTouchScore)")
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1)
                             .background(Color.blue.opacity(0.15))
@@ -692,19 +692,19 @@ private struct LinkedInTriageRow: View {
 
                 if let position = sender.linkedInPosition, let company = sender.linkedInCompany {
                     Text("\(position) · \(company)")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 } else if let company = sender.linkedInCompany {
                     Text(company)
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
 
                 if let connectedOn = sender.linkedInConnectedOn {
                     Text("Connected \(connectedOn.formatted(.dateTime.month(.abbreviated).year()))")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.tertiary)
                 }
             }
@@ -754,16 +754,16 @@ private struct FacebookTriageRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Image(systemName: "person.2.fill")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.indigo)
                     Text(sender.displayName ?? "Facebook Friend")
-                        .font(.body)
+                        .samFont(.body)
                         .lineLimit(1)
                         .truncationMode(.tail)
 
                     if sender.intentionalTouchScore > 0 {
                         Text("Score: \(sender.intentionalTouchScore)")
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1)
                             .background(Color.indigo.opacity(0.15))
@@ -775,20 +775,20 @@ private struct FacebookTriageRow: View {
                 HStack(spacing: 8) {
                     if sender.facebookMessageCount > 0 {
                         Text("\(sender.facebookMessageCount) messages")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                     }
 
                     if let lastMsg = sender.facebookLastMessageDate {
                         Text("Last: \(lastMsg.formatted(.dateTime.month(.abbreviated).year()))")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
 
                 if let friendedOn = sender.facebookFriendedOn {
                     Text("Friends since \(friendedOn.formatted(.dateTime.month(.abbreviated).year()))")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.tertiary)
                 }
             }
@@ -835,10 +835,10 @@ private struct TriageRow: View {
             // Sender name + source icon
             HStack(spacing: 4) {
                 Image(systemName: sourceIcon(for: sender.source))
-                    .font(.caption2)
+                    .samFont(.caption2)
                     .foregroundStyle(sourceColor(for: sender.source))
                 Text(sender.displayName ?? sender.email)
-                    .font(.body)
+                    .samFont(.body)
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
@@ -850,7 +850,7 @@ private struct TriageRow: View {
                !subject.hasPrefix("linkedin:"), !subject.hasPrefix("facebook:"),
                !subject.hasPrefix("WhatsApp") {
                 Text(subject)
-                    .font(.body)
+                    .samFont(.body)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -863,7 +863,7 @@ private struct TriageRow: View {
             // Email count badge
             if sender.emailCount > 1 {
                 Text("\(sender.emailCount)")
-                    .font(.caption2)
+                    .samFont(.caption2)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
@@ -942,7 +942,7 @@ private struct TriageMatchConfirmationView: View {
             // Header
             HStack {
                 Label("SAM found existing contacts that may match", systemImage: "person.2.badge.gearshape")
-                    .font(.headline)
+                    .samFont(.headline)
                 Spacer()
             }
             .padding()
@@ -964,7 +964,7 @@ private struct TriageMatchConfirmationView: View {
             // Footer
             HStack {
                 Text("\(pendingMatches.filter(\.isResolved).count) of \(pendingMatches.count) resolved")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
 
                 Spacer()
@@ -994,16 +994,16 @@ private struct MatchRow: View {
             HStack(spacing: 6) {
                 Image(systemName: "person.fill.questionmark")
                     .foregroundStyle(.orange)
-                    .font(.title3)
+                    .samFont(.title3)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Unknown sender")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                     Text(match.sender.displayName ?? match.sender.email)
-                        .font(.body)
+                        .samFont(.body)
                         .fontWeight(.medium)
                     Text(match.sender.email)
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -1012,22 +1012,22 @@ private struct MatchRow: View {
             HStack(spacing: 6) {
                 Image(systemName: "person.crop.circle.fill")
                     .foregroundStyle(.blue)
-                    .font(.title3)
+                    .samFont(.title3)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Existing Apple Contact")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                     Text(match.matchedContact.displayName)
-                        .font(.body)
+                        .samFont(.body)
                         .fontWeight(.medium)
                     if !match.matchedContact.emailAddresses.isEmpty {
                         Text(match.matchedContact.emailAddresses.joined(separator: ", "))
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                     if !match.matchedContact.phoneNumbers.isEmpty {
                         Text(match.matchedContact.phoneNumbers.map(\.number).joined(separator: ", "))
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -1039,7 +1039,7 @@ private struct MatchRow: View {
                     match.resolution = .samePerson
                 } label: {
                     Label("Same Person — Link", systemImage: "link")
-                        .font(.callout)
+                        .samFont(.callout)
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(match.resolution == .samePerson ? .blue : .gray.opacity(0.4))
@@ -1049,7 +1049,7 @@ private struct MatchRow: View {
                     match.resolution = .differentPerson
                 } label: {
                     Label("Different — Create New", systemImage: "person.badge.plus")
-                        .font(.callout)
+                        .samFont(.callout)
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(match.resolution == .differentPerson ? .orange : .gray.opacity(0.4))

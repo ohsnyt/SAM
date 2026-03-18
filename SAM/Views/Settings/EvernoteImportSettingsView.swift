@@ -30,7 +30,7 @@ struct EvernoteImportSettingsContent: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             Text("Import notes from Evernote .enex export files. Tags will be matched to existing people by name. You need to select the folder that contains EverNote .enex files")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
 
             Divider()
@@ -48,7 +48,7 @@ struct EvernoteImportSettingsContent: View {
                 switch coordinator.importStatus {
                 case .idle:
                     Text("No file selected")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
 
                 case .parsing:
@@ -57,11 +57,11 @@ struct EvernoteImportSettingsContent: View {
                             .scaleEffect(0.7)
                         if coordinator.fileCount > 1 {
                             Text("Reading file \(coordinator.processedFileCount + 1) of \(coordinator.fileCount)...")
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.secondary)
                         } else {
                             Text("Reading file...")
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -74,7 +74,7 @@ struct EvernoteImportSettingsContent: View {
                         ProgressView()
                             .scaleEffect(0.7)
                         Text("Importing \(coordinator.importedCount) notes...")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                     }
 
@@ -83,7 +83,7 @@ struct EvernoteImportSettingsContent: View {
                         Image(systemName: "checkmark.circle.fill")
                             .foregroundStyle(.green)
                         Text("Successfully imported \(coordinator.importedCount) notes")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.green)
                     }
 
@@ -92,7 +92,7 @@ struct EvernoteImportSettingsContent: View {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundStyle(.red)
                         Text(coordinator.lastError ?? "Import failed")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.red)
                     }
 
@@ -108,10 +108,10 @@ struct EvernoteImportSettingsContent: View {
             // Maintenance
             VStack(alignment: .leading, spacing: 12) {
                 Text("Maintenance")
-                    .font(.headline)
+                    .samFont(.headline)
 
                 Text("Re-analyze previously imported Evernote notes that aren't linked to any people. This uses AI analysis to detect person references in note content.")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
 
                 HStack(spacing: 12) {
@@ -141,7 +141,7 @@ struct EvernoteImportSettingsContent: View {
                         Text(count > 0
                             ? "\(count) notes queued for analysis"
                             : "No unlinked notes found")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(count > 0 ? .green : .secondary)
                     }
                 }
@@ -149,7 +149,7 @@ struct EvernoteImportSettingsContent: View {
                 Divider()
 
                 Text("Remove malformed JSON text that may have leaked into note summaries from AI analysis failures.")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
 
                 HStack(spacing: 12) {
@@ -173,7 +173,7 @@ struct EvernoteImportSettingsContent: View {
                         Text(count > 0
                             ? "\(count) summaries cleaned"
                             : "No contaminated summaries found")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(count > 0 ? .green : .secondary)
                     }
                 }
@@ -197,44 +197,44 @@ struct EvernoteImportSettingsContent: View {
                     if coordinator.fileCount > 1 {
                         HStack {
                             Text("Files parsed:")
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.secondary)
                             Spacer()
                             Text("\(coordinator.fileCount)")
-                                .font(.caption)
+                                .samFont(.caption)
                                 .fontWeight(.semibold)
                         }
                     }
 
                     HStack {
                         Text("Total notes:")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                         Spacer()
                         Text("\(coordinator.parsedNotes.count)")
-                            .font(.caption)
+                            .samFont(.caption)
                             .fontWeight(.semibold)
                     }
 
                     if coordinator.splitCount > 0 {
                         HStack {
                             Text("  ↳ Expanded by dates:")
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.secondary)
                             Spacer()
                             Text("+\(coordinator.splitCount)")
-                                .font(.caption)
+                                .samFont(.caption)
                                 .fontWeight(.semibold)
                         }
                     }
 
                     HStack {
                         Text("New (will import):")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                         Spacer()
                         Text("\(coordinator.newCount)")
-                            .font(.caption)
+                            .samFont(.caption)
                             .fontWeight(.semibold)
                             .foregroundStyle(.green)
                     }
@@ -242,11 +242,11 @@ struct EvernoteImportSettingsContent: View {
                     if coordinator.duplicateCount > 0 {
                         HStack {
                             Text("Already imported (skip):")
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.secondary)
                             Spacer()
                             Text("\(coordinator.duplicateCount)")
-                                .font(.caption)
+                                .samFont(.caption)
                                 .fontWeight(.semibold)
                                 .foregroundStyle(.orange)
                         }
@@ -320,7 +320,7 @@ struct EvernoteImportSettingsView: View {
             Section {
                 VStack(alignment: .leading, spacing: 20) {
                     Label("Evernote Import", systemImage: "square.and.arrow.down")
-                        .font(.title2)
+                        .samFont(.title2)
                         .bold()
 
                     EvernoteImportSettingsContent()
@@ -356,7 +356,7 @@ struct EvernoteImportPreviewSheet: View {
                 Spacer()
 
                 Text("Evernote Import")
-                    .font(.headline)
+                    .samFont(.headline)
 
                 Spacer()
 
@@ -384,7 +384,7 @@ struct EvernoteImportPreviewSheet: View {
 
                 if coordinator.importedCount > 0 {
                     Text("Importing \(coordinator.importedCount) notes…")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                         .padding(.top, 4)
                 }
@@ -420,11 +420,11 @@ struct EvernoteImportPreviewSheet: View {
     private func summaryRow(_ label: String, value: String, color: Color = .primary) -> some View {
         HStack {
             Text(label)
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
             Spacer()
             Text(value)
-                .font(.caption)
+                .samFont(.caption)
                 .fontWeight(.semibold)
                 .foregroundStyle(color)
         }

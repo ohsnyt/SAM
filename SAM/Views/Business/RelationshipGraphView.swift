@@ -337,7 +337,7 @@ struct RelationshipGraphView: View {
                         if !node.roleBadges.isEmpty {
                             ForEach(node.roleBadges.prefix(2), id: \.self) { badge in
                                 Text(badge)
-                                    .font(.caption2)
+                                    .samFont(.caption2)
                                     .padding(.horizontal, 4)
                                     .padding(.vertical, 1)
                                     .background(RoleBadgeStyle.forBadge(badge).color.opacity(0.2))
@@ -349,7 +349,7 @@ struct RelationshipGraphView: View {
                         if node.isOrphaned && !coordinator.showOrphanedNodes
                             && !coordinator.revealedNodeIDs.contains(node.id) {
                             Image(systemName: "eye.slash")
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.tertiary)
                         }
                     }
@@ -389,10 +389,10 @@ struct RelationshipGraphView: View {
                 // Title line: names + label
                 if let label = edge.label, !label.isEmpty {
                     Text("\(sourceName) — \(label) — \(targetName)")
-                        .font(.caption.bold())
+                        .samFont(.caption, weight: .bold)
                 } else {
                     Text("\(sourceName) — \(targetName)")
-                        .font(.caption.bold())
+                        .samFont(.caption, weight: .bold)
                 }
                 // Edge type + status
                 let typeName = edgeTypeDisplayName(edge.edgeType)
@@ -400,11 +400,11 @@ struct RelationshipGraphView: View {
                     let status = edge.isConfirmedDeduction ? "confirmed" : "unconfirmed"
                     let hint = edge.isConfirmedDeduction ? "" : "\nDouble-click or right-click to confirm or reject"
                     Text("\(typeName) (\(status))\(hint)")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.secondary)
                 } else {
                     Text(typeName)
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -466,12 +466,12 @@ struct RelationshipGraphView: View {
                     Image(systemName: "person.2.fill")
                         .foregroundStyle(.pink)
                     Text("Deduced Family Relationships")
-                        .font(.callout.bold())
+                        .samFont(.callout, weight: .bold)
 
                     let count = coordinator.unconfirmedDeducedRelationCount
                     if count > 0 {
                         Text("(\(count) unconfirmed)")
-                            .font(.callout)
+                            .samFont(.callout)
                             .foregroundStyle(.secondary)
                     }
 
@@ -509,7 +509,7 @@ struct RelationshipGraphView: View {
                 HStack {
                     Image(systemName: "scope")
                     Text("Focus Mode")
-                        .font(.callout.bold())
+                        .samFont(.callout, weight: .bold)
                     Button("Exit") {
                         coordinator.clearFocusMode()
                         fitToView()
@@ -535,7 +535,7 @@ struct RelationshipGraphView: View {
            let suggestion = roleDeductionEngine.currentBatch.first(where: { $0.personID == nodeID }) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(suggestion.displayName)
-                    .font(.headline)
+                    .samFont(.headline)
                     .padding(.bottom, 2)
 
                 let predefined = ["Client", "Applicant", "Lead", "Agent", "External Agent", "Vendor", "Referral Partner"]
@@ -564,7 +564,7 @@ struct RelationshipGraphView: View {
                             Spacer()
                             if role == suggestion.suggestedRole {
                                 Text("Suggested")
-                                    .font(.caption2)
+                                    .samFont(.caption2)
                                     .foregroundStyle(.secondary)
                             }
                         }

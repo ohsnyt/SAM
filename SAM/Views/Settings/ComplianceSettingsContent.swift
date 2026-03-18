@@ -37,7 +37,7 @@ struct ComplianceSettingsContent: View {
                 // Category toggles
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Categories")
-                        .font(.subheadline)
+                        .samFont(.subheadline)
                         .fontWeight(.medium)
 
                     categoryToggle(.guarantees, isOn: $catGuarantees)
@@ -51,13 +51,13 @@ struct ComplianceSettingsContent: View {
                 // Custom keywords
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Custom Keywords")
-                        .font(.subheadline)
+                        .samFont(.subheadline)
                         .fontWeight(.medium)
                     Text("One phrase per line. Matched as Specific Advice.")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                     TextEditor(text: $customKeywords)
-                        .font(.caption)
+                        .samFont(.caption)
                         .frame(height: 60)
                         .scrollContentBackground(.hidden)
                         .padding(6)
@@ -70,7 +70,7 @@ struct ComplianceSettingsContent: View {
                 // Audit section
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Audit Trail")
-                        .font(.subheadline)
+                        .samFont(.subheadline)
                         .fontWeight(.medium)
 
                     Picker("Retention", selection: $retentionDays) {
@@ -84,7 +84,7 @@ struct ComplianceSettingsContent: View {
 
                     HStack {
                         Text("\(auditCount) audit entries")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
 
                         Spacer()
@@ -92,7 +92,7 @@ struct ComplianceSettingsContent: View {
                         Button("Clear Audit Log", role: .destructive) {
                             showClearConfirmation = true
                         }
-                        .font(.caption)
+                        .samFont(.caption)
                         .disabled(auditCount == 0)
                     }
                 }
@@ -118,11 +118,11 @@ struct ComplianceSettingsContent: View {
         Toggle(isOn: isOn) {
             HStack(spacing: 6) {
                 Image(systemName: category.icon)
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(category.color)
                     .frame(width: 16)
                 Text(category.displayName)
-                    .font(.callout)
+                    .samFont(.callout)
             }
         }
     }

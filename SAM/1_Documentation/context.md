@@ -378,6 +378,15 @@ Bookmark the **directory** (not file) for SQLite to cover WAL/SHM companions. `.
 - **Profile URL resolution**: checks `SamPerson.linkedInProfileURL` / `facebookProfileURL`, then Apple Contacts `socialProfiles`, then `urlAddresses`. `sanitizeProfileURL()` strips service prefixes (e.g., `linkedin:www.linkedin.com/...`) that Apple Contacts sometimes includes. Falls back to Facebook people search for confirmed friends without a stored profile URL.
 - **LinkedIn PDF import**: Drag a LinkedIn-generated profile PDF onto the "Add a note..." bar in PersonDetailView. `LinkedInPDFParserService` (deterministic, no AI) extracts structured data. Creates `PendingEnrichment` records for email, phone, company, job title, and LinkedIn URL. Generates a concise note with summary, current position, education, skills, honors, and languages — the note triggers AI analysis for family/relationship discovery.
 
+### Text Size Scaling
+- macOS does not meaningfully scale semantic SwiftUI fonts (`.body`, `.caption`, etc.) via `DynamicTypeSize` — those are fixed point sizes
+- SAM uses a custom environment key (`\.samTextScale`) propagated from the app root, with a `CGFloat` multiplier (0.88–1.30)
+- **All view files use `.samFont(.body)` / `.samFont(.caption, weight: .bold)` etc.** instead of `.font(.body)` — these read the environment scale and return explicitly sized fonts
+- `SAMTextSize` enum (in `SAMModels-Supporting.swift`) defines Small/Standard/Large/Extra Large with scale factors
+- User preference stored in `@AppStorage("sam.display.textSize")`, applied via `.environment(\.samTextScale, ...)` on all `WindowGroup` roots in `SAMApp.swift`
+- Hardcoded `.font(.system(size:))` calls (decorative icons, tiny badges) are intentionally excluded from scaling
+- **New views must use `.samFont()` instead of `.font()` for semantic text styles**
+
 ### App Security
 - **Authentication is mandatory** — SAM always locks on launch and after idle timeout. Uses `LocalAuthentication` framework (`deviceOwnerAuthentication` = Touch ID + system password fallback). No opt-out setting.
 - **Backup encryption is mandatory** — All exports require a user-supplied passphrase. AES-256-GCM encryption with HKDF-SHA256 key derivation. `SAMENC1` header for format detection.

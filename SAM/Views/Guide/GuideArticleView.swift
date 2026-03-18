@@ -17,16 +17,16 @@ struct GuideArticleView: View {
             VStack(alignment: .leading, spacing: 20) {
                 // Article title
                 Text(article.title)
-                    .font(.title.bold())
+                    .samFont(.title, weight: .bold)
                     .textSelection(.enabled)
 
                 // Section breadcrumb
                 if let section = guideService.sections.first(where: { $0.id == article.sectionID }) {
                     HStack(spacing: 4) {
                         Image(systemName: section.icon)
-                            .font(.caption)
+                            .samFont(.caption)
                         Text(section.title)
-                            .font(.caption)
+                            .samFont(.caption)
                     }
                     .foregroundStyle(.secondary)
                 }

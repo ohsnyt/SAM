@@ -21,17 +21,17 @@ struct DailyBriefingPopover: View {
                     // Mini header
                     HStack {
                         Text("Today's Briefing")
-                            .font(.headline)
+                            .samFont(.headline)
                         Spacer()
                         Text(briefing.generatedAt.formatted(date: .omitted, time: .shortened))
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                     }
 
                     // Mini narrative
                     if let narrative = briefing.narrativeSummary, !narrative.isEmpty {
                         Text(narrative)
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.primary)
                             .padding(10)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -43,14 +43,14 @@ struct DailyBriefingPopover: View {
                     if !briefing.calendarItems.isEmpty {
                         VStack(alignment: .leading, spacing: 6) {
                             Text("Schedule")
-                                .font(.caption)
+                                .samFont(.caption)
                                 .fontWeight(.semibold)
                                 .foregroundStyle(.secondary)
 
                             ForEach(briefing.calendarItems) { item in
                                 HStack(spacing: 8) {
                                     Text(item.startsAt.formatted(date: .omitted, time: .shortened))
-                                        .font(.caption2)
+                                        .samFont(.caption2)
                                         .monospacedDigit()
                                         .foregroundStyle(.secondary)
                                         .frame(width: 50, alignment: .trailing)
@@ -60,7 +60,7 @@ struct DailyBriefingPopover: View {
                                         .frame(width: 6, height: 6)
 
                                     Text(item.eventTitle)
-                                        .font(.caption)
+                                        .samFont(.caption)
                                         .lineLimit(1)
                                 }
                             }
@@ -71,7 +71,7 @@ struct DailyBriefingPopover: View {
                     if !briefing.priorityActions.isEmpty {
                         VStack(alignment: .leading, spacing: 6) {
                             Text("Actions")
-                                .font(.caption)
+                                .samFont(.caption)
                                 .fontWeight(.semibold)
                                 .foregroundStyle(.secondary)
 
@@ -82,7 +82,7 @@ struct DailyBriefingPopover: View {
                                         .frame(width: 6, height: 6)
 
                                     Text(action.title)
-                                        .font(.caption)
+                                        .samFont(.caption)
                                         .lineLimit(1)
                                 }
                             }
@@ -94,7 +94,7 @@ struct DailyBriefingPopover: View {
                         coordinator.showMorningBriefing = true
                     }) {
                         Text("View Full Briefing")
-                            .font(.caption)
+                            .samFont(.caption)
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.bordered)
@@ -103,10 +103,10 @@ struct DailyBriefingPopover: View {
                 } else {
                     VStack(spacing: 12) {
                         Image(systemName: "text.book.closed")
-                            .font(.title)
+                            .samFont(.title)
                             .foregroundStyle(.secondary)
                         Text("No briefing yet")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)

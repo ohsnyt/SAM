@@ -131,7 +131,7 @@ struct LinkedInReviewContent: View {
                     if candidates.isEmpty {
                         VStack(spacing: 8) {
                             Image(systemName: "checkmark.circle")
-                                .font(.largeTitle)
+                                .samFont(.largeTitle)
                                 .foregroundStyle(.secondary)
                             Text("All connections already in SAM")
                                 .foregroundStyle(.secondary)
@@ -146,7 +146,7 @@ struct LinkedInReviewContent: View {
             Divider()
             HStack {
                 footerText
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
             }
@@ -177,14 +177,14 @@ struct LinkedInReviewContent: View {
     ) -> some View {
         HStack {
             Text(title)
-                .font(.subheadline)
+                .samFont(.subheadline)
                 .fontWeight(.semibold)
             Text("(\(count))")
-                .font(.subheadline)
+                .samFont(.subheadline)
                 .foregroundStyle(.secondary)
             Spacer()
             Button(actionLabel, action: action)
-                .font(.caption)
+                .samFont(.caption)
                 .buttonStyle(.borderless)
                 .foregroundStyle(.blue)
         }
@@ -241,9 +241,9 @@ struct LinkedInImportReviewSheet: View {
 
                 VStack(spacing: 2) {
                     Text("LinkedIn Import Review")
-                        .font(.headline)
+                        .samFont(.headline)
                     subtitleText
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
 
@@ -281,7 +281,7 @@ struct LinkedInImportReviewSheet: View {
 
                 if let progress = coordinator.progressMessage {
                     Text(progress)
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                         .padding(.top, 4)
                 }
@@ -338,7 +338,7 @@ struct ProbableMatchRow: View {
         VStack(alignment: .leading, spacing: 8) {
             if let status = matchReason {
                 Text(status)
-                    .font(.caption2)
+                    .samFont(.caption2)
                     .foregroundStyle(.orange)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
@@ -349,22 +349,22 @@ struct ProbableMatchRow: View {
             HStack(alignment: .top, spacing: 16) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("From LinkedIn")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.secondary)
                     Text(candidate.fullName.isEmpty ? "Unknown" : candidate.fullName)
                         .fontWeight(.medium)
                     if let pos = candidate.position, !pos.isEmpty {
-                        Text(pos).font(.caption).foregroundStyle(.secondary)
+                        Text(pos).samFont(.caption).foregroundStyle(.secondary)
                     }
                     if let co = candidate.company, !co.isEmpty {
-                        Text(co).font(.caption).foregroundStyle(.secondary)
+                        Text(co).samFont(.caption).foregroundStyle(.secondary)
                     }
                     if let email = candidate.email, !email.isEmpty {
-                        Text(email).font(.caption).foregroundStyle(.tertiary)
+                        Text(email).samFont(.caption).foregroundStyle(.tertiary)
                     }
                     if let connectedOn = candidate.connectedOn {
                         Text("Connected \(connectedOn.formatted(.dateTime.month(.abbreviated).year()))")
-                            .font(.caption).foregroundStyle(.tertiary)
+                            .samFont(.caption).foregroundStyle(.tertiary)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -374,22 +374,22 @@ struct ProbableMatchRow: View {
                 if let info = candidate.matchedPersonInfo {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Existing in SAM")
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .foregroundStyle(.secondary)
                         Text(info.displayName)
                             .fontWeight(.medium)
                         if let pos = info.position, !pos.isEmpty {
-                            Text(pos).font(.caption).foregroundStyle(.secondary)
+                            Text(pos).samFont(.caption).foregroundStyle(.secondary)
                         }
                         if let co = info.company, !co.isEmpty {
-                            Text(co).font(.caption).foregroundStyle(.secondary)
+                            Text(co).samFont(.caption).foregroundStyle(.secondary)
                         }
                         if let email = info.email, !email.isEmpty {
-                            Text(email).font(.caption).foregroundStyle(.tertiary)
+                            Text(email).samFont(.caption).foregroundStyle(.tertiary)
                         }
                         if let url = info.linkedInURL, !url.isEmpty {
                             Text("Has LinkedIn URL")
-                                .font(.caption).foregroundStyle(.tertiary)
+                                .samFont(.caption).foregroundStyle(.tertiary)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -399,7 +399,7 @@ struct ProbableMatchRow: View {
             HStack(spacing: 10) {
                 Button(action: onMerge) {
                     Label("Merge", systemImage: "arrow.triangle.merge")
-                        .font(.caption)
+                        .samFont(.caption)
                 }
                 .buttonStyle(.bordered)
                 .tint(isMerging ? .blue : .secondary)
@@ -407,7 +407,7 @@ struct ProbableMatchRow: View {
 
                 Button(action: onSkip) {
                     Label("Keep Separate", systemImage: "arrow.left.arrow.right")
-                        .font(.caption)
+                        .samFont(.caption)
                 }
                 .buttonStyle(.bordered)
                 .tint(!isMerging ? .orange : .secondary)
@@ -451,7 +451,7 @@ struct CandidateRow: View {
 
                         if let score = candidate.touchScore, score.totalScore > 0 {
                             Text("Score: \(score.totalScore)")
-                                .font(.caption2)
+                                .samFont(.caption2)
                                 .padding(.horizontal, 5)
                                 .padding(.vertical, 1)
                                 .background(Color.blue.opacity(0.15))
@@ -463,10 +463,10 @@ struct CandidateRow: View {
                     if let info = candidate.matchedPersonInfo {
                         HStack(spacing: 4) {
                             Text("matched to")
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.secondary)
                             Text(info.displayName)
-                                .font(.caption)
+                                .samFont(.caption)
                                 .fontWeight(.medium)
                                 .foregroundStyle(.blue)
                         }
@@ -480,7 +480,7 @@ struct CandidateRow: View {
                                 Text(company)
                             }
                         }
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                     }
 
@@ -488,17 +488,17 @@ struct CandidateRow: View {
                         if let email = candidate.email, !email.isEmpty,
                            candidate.touchScore == nil {
                             Text(email)
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.tertiary)
                         }
                         if let score = candidate.touchScore, !score.touchSummary.isEmpty {
                             Text(score.touchSummary)
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.secondary)
                         }
                         if let connectedOn = candidate.connectedOn {
                             Text("Connected \(connectedOn.formatted(.dateTime.month(.abbreviated).year()))")
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.tertiary)
                         }
                     }
@@ -529,10 +529,10 @@ struct AppleContactsSyncConfirmationSheet: View {
                     .foregroundStyle(.blue)
 
                 Text("Add LinkedIn URLs to Apple Contacts?")
-                    .font(.headline)
+                    .samFont(.headline)
 
                 Text("SAM found LinkedIn profile URLs for \(candidates.count) contact\(candidates.count == 1 ? "" : "s") marked Add. Adding them to Apple Contacts makes it easy to find their LinkedIn profile from your phone's Contacts app.")
-                    .font(.subheadline)
+                    .samFont(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
@@ -544,9 +544,9 @@ struct AppleContactsSyncConfirmationSheet: View {
                         HStack(spacing: 8) {
                             Image(systemName: "checkmark.circle.fill")
                                 .foregroundStyle(.blue)
-                                .font(.caption)
+                                .samFont(.caption)
                             Text(candidate.displayName)
-                                .font(.caption)
+                                .samFont(.caption)
                             Spacer()
                         }
                     }
@@ -588,9 +588,9 @@ struct LinkedInPDFImportReviewSheet: View {
             HStack {
                 VStack(alignment: .leading) {
                     Text("LinkedIn PDF Import Review")
-                        .font(.headline)
+                        .samFont(.headline)
                     Text("\(coordinator.pdfImportCandidates.count) profile(s) to review")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
                 Spacer()

@@ -95,12 +95,12 @@ struct GuideMarkdownRenderer: View {
             EmptyView()
         } else if let attributed = try? AttributedString(markdown: cleaned, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)) {
             Text(attributed)
-                .font(.body)
+                .samFont(.body)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
         } else {
             Text(cleaned)
-                .font(.body)
+                .samFont(.body)
                 .textSelection(.enabled)
         }
     }
@@ -117,15 +117,15 @@ struct GuideMarkdownRenderer: View {
                     } label: {
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Image(systemName: "arrow.right.circle.fill")
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(Color.accentColor)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(link.title)
-                                    .font(.callout.weight(.medium))
+                                    .samFont(.callout, weight: .medium)
                                     .foregroundStyle(Color.accentColor)
                                 if !link.description.isEmpty {
                                     Text(link.description)
-                                        .font(.caption)
+                                        .samFont(.caption)
                                         .foregroundStyle(.secondary)
                                 }
                             }
@@ -137,14 +137,14 @@ struct GuideMarkdownRenderer: View {
                     // Unresolved link — render as plain text
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Image(systemName: "doc.text")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(link.title)
-                                .font(.callout.weight(.medium))
+                                .samFont(.callout, weight: .medium)
                             if !link.description.isEmpty {
                                 Text(link.description)
-                                    .font(.caption)
+                                    .samFont(.caption)
                                     .foregroundStyle(.secondary)
                             }
                         }
@@ -185,7 +185,7 @@ struct GuideMarkdownRenderer: View {
                         Image(systemName: "photo")
                             .foregroundStyle(.secondary)
                         Text(alt)
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -225,7 +225,7 @@ struct GuideMarkdownRenderer: View {
             GridRow {
                 ForEach(Array(headers.enumerated()), id: \.offset) { _, header in
                     Text(header)
-                        .font(.caption.bold())
+                        .samFont(.caption, weight: .bold)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -238,7 +238,7 @@ struct GuideMarkdownRenderer: View {
                 GridRow {
                     ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
                         Text(cell)
-                            .font(.caption)
+                            .samFont(.caption)
                     }
                 }
             }

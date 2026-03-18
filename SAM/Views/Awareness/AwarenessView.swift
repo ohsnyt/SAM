@@ -106,10 +106,10 @@ struct AwarenessView: View {
             Button(action: { withAnimation { showMore.toggle() } }) {
                 HStack(spacing: 6) {
                     Image(systemName: showMore ? "chevron.down" : "chevron.right")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.secondary)
                     Text("More")
-                        .font(.headline)
+                        .samFont(.headline)
                     Spacer()
                 }
                 .contentShape(Rectangle())
@@ -194,9 +194,9 @@ struct AwarenessView: View {
                 Button(action: { withAnimation { showCompleted.toggle() } }) {
                     HStack {
                         Image(systemName: showCompleted ? "chevron.down" : "chevron.right")
-                            .font(.caption2)
+                            .samFont(.caption2)
                         Text("Completed Today (\(completedToday.count))")
-                            .font(.caption)
+                            .samFont(.caption)
                             .fontWeight(.medium)
                         Spacer()
                     }
@@ -211,10 +211,10 @@ struct AwarenessView: View {
                         ForEach(completedToday) { outcome in
                             HStack(spacing: 8) {
                                 Image(systemName: "checkmark.circle.fill")
-                                    .font(.caption)
+                                    .samFont(.caption)
                                     .foregroundStyle(.green)
                                 Text(outcome.title)
-                                    .font(.caption)
+                                    .samFont(.caption)
                                     .foregroundStyle(.secondary)
                                     .lineLimit(1)
                             }
@@ -243,7 +243,7 @@ struct AwarenessView: View {
             Spacer()
 
             Text("\(filteredInsights.count) insight\(filteredInsights.count == 1 ? "" : "s")")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
         }
         .padding()
@@ -280,11 +280,11 @@ struct AwarenessView: View {
                 .foregroundStyle(.secondary)
 
             Text("No Insights Yet")
-                .font(.title2)
+                .samFont(.title2)
                 .fontWeight(.semibold)
 
             Text("Insights will appear here after you create notes, import calendar events, and add contacts.")
-                .font(.body)
+                .samFont(.body)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 400)
@@ -419,7 +419,7 @@ private struct InsightCard: View {
             HStack(alignment: .top, spacing: 12) {
                 // Icon
                 Image(systemName: insight.kind.icon)
-                    .font(.title2)
+                    .samFont(.title2)
                     .foregroundStyle(insight.kind.color)
                     .frame(width: 40, height: 40)
                     .background(insight.kind.color.opacity(0.1))
@@ -428,13 +428,13 @@ private struct InsightCard: View {
                 // Content
                 VStack(alignment: .leading, spacing: 4) {
                     Text(insight.title)
-                        .font(.headline)
+                        .samFont(.headline)
                         .foregroundStyle(.primary)
 
                     HStack(spacing: 8) {
                         // Urgency Badge
                         Text(insight.urgency.displayText)
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .fontWeight(.semibold)
                             .foregroundStyle(.white)
                             .padding(.horizontal, 8)
@@ -444,7 +444,7 @@ private struct InsightCard: View {
 
                         // Source Badge
                         Text(insight.sourceType.rawValue)
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 3)
@@ -455,7 +455,7 @@ private struct InsightCard: View {
 
                         // Timestamp
                         Text(insight.createdAt, style: .relative)
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -478,7 +478,7 @@ private struct InsightCard: View {
                     Divider()
 
                     Text(insight.message)
-                        .font(.body)
+                        .samFont(.body)
                         .foregroundStyle(.secondary)
 
                     // Actions
@@ -623,7 +623,7 @@ struct ProfileAnalysisReadySection: View {
                     HStack(spacing: 12) {
                         // Platform icon
                         Image(systemName: meta.icon)
-                            .font(.title3)
+                            .samFont(.title3)
                             .foregroundStyle(meta.iconColor)
                             .frame(width: 28)
 
@@ -644,9 +644,9 @@ struct ProfileAnalysisReadySection: View {
 
                         VStack(alignment: .leading, spacing: 2) {
                             Text("\(meta.displayName) Profile Analysis Ready")
-                                .font(.subheadline.weight(.semibold))
+                                .samFont(.subheadline, weight: .semibold)
                             Text("Score: \(a.overallScore)/100 \u{2022} \(a.improvements.count) improvement\(a.improvements.count == 1 ? "" : "s") suggested")
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.secondary)
                         }
 
@@ -689,10 +689,10 @@ private struct LegacyDataNoticeBanner: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("Data from a previous SAM version was found")
-                    .font(.subheadline)
+                    .samFont(.subheadline)
                     .fontWeight(.medium)
                 Text("Go to Settings \u{2192} General to migrate your data.")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             }
 
@@ -702,7 +702,7 @@ private struct LegacyDataNoticeBanner: View {
                 onDismiss()
             } label: {
                 Image(systemName: "xmark")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)

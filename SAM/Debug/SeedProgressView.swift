@@ -18,20 +18,20 @@ struct SeedProgressView: View {
                 .scaleEffect(1.2)
 
             Text("Preparing to reseed…")
-                .font(.headline)
+                .samFont(.headline)
 
             if monitor.isIdle {
                 Text("All tasks complete — relaunching…")
-                    .font(.subheadline)
+                    .samFont(.subheadline)
                     .foregroundStyle(.secondary)
             } else {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Waiting for:")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.tertiary)
                     ForEach(monitor.activeDescriptions, id: \.self) { description in
                         Label(description, systemImage: "arrow.trianglehead.2.clockwise")
-                            .font(.subheadline)
+                            .samFont(.subheadline)
                             .foregroundStyle(.secondary)
                     }
                 }

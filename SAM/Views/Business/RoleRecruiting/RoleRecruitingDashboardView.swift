@@ -160,10 +160,10 @@ struct RoleRecruitingDashboardView: View {
                 let count = byCounts[stage]?.count ?? 0
                 VStack(spacing: 2) {
                     Text("\(count)")
-                        .font(.title3.bold())
+                        .samFont(.title3, weight: .bold)
                         .foregroundStyle(stage.color)
                     Text(stage.rawValue)
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity)
@@ -173,10 +173,10 @@ struct RoleRecruitingDashboardView: View {
 
             VStack(spacing: 2) {
                 Text("\(role.filledCount)/\(role.targetCount)")
-                    .font(.title3.bold())
+                    .samFont(.title3, weight: .bold)
                     .foregroundStyle(role.filledCount >= role.targetCount ? .green : .orange)
                 Text("Filled")
-                    .font(.caption2)
+                    .samFont(.caption2)
                     .foregroundStyle(.secondary)
             }
         }
@@ -231,7 +231,7 @@ struct RoleRecruitingDashboardView: View {
             HStack(spacing: 4) {
                 ProgressView().controlSize(.small)
                 Text("Preparing scan for \(name)...")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             }
         case .scoring(_, let current, let total):
@@ -240,19 +240,19 @@ struct RoleRecruitingDashboardView: View {
                     .progressViewStyle(.linear)
                     .frame(width: 80)
                 Text("Scanning \(current) of \(total)")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
             }
         case .complete:
             if pendingCount == 0 {
                 Text("Scan complete — no new matches")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             }
         case .failed(let msg):
             Label(msg, systemImage: "exclamationmark.triangle")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.red)
         }
     }
@@ -292,11 +292,11 @@ private struct RoleCandidateRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(candidate.person?.displayNameCache ?? candidate.person?.displayName ?? "Unknown")
-                        .font(.body.weight(.medium))
+                        .samFont(.body, weight: .medium)
 
                     ForEach(candidate.person?.roleBadges ?? [], id: \.self) { badge in
                         Text(badge)
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .padding(.horizontal, 4)
                             .padding(.vertical, 1)
                             .background(.quaternary)
@@ -306,7 +306,7 @@ private struct RoleCandidateRow: View {
 
                 if !candidate.matchRationale.isEmpty {
                     Text(candidate.matchRationale)
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                 }
@@ -320,7 +320,7 @@ private struct RoleCandidateRow: View {
             // Last contacted
             if let date = candidate.lastContactedAt {
                 Text(date, style: .relative)
-                    .font(.caption2)
+                    .samFont(.caption2)
                     .foregroundStyle(.secondary)
             }
         }

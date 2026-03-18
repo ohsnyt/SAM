@@ -53,12 +53,12 @@ struct QuickNoteWindowView: View {
         VStack(alignment: .leading, spacing: 12) {
             // Title bar context
             Text(payload.contextTitle)
-                .font(.headline)
+                .samFont(.headline)
                 .foregroundStyle(.secondary)
 
             // Text editor
             TextEditor(text: $text)
-                .font(.body)
+                .samFont(.body)
                 .scrollContentBackground(.hidden)
                 .frame(minHeight: 120, maxHeight: 200)
                 .padding(8)
@@ -67,7 +67,7 @@ struct QuickNoteWindowView: View {
                 .overlay(alignment: .topLeading) {
                     if text.isEmpty && !isDictating {
                         Text("Type or dictate your note...")
-                            .font(.body)
+                            .samFont(.body)
                             .foregroundStyle(.tertiary)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 12)
@@ -81,7 +81,7 @@ struct QuickNoteWindowView: View {
                     ProgressView()
                         .controlSize(.mini)
                     Text("Polishing dictation...")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -92,7 +92,7 @@ struct QuickNoteWindowView: View {
                     rawDictationText = nil
                 } label: {
                     Label("Undo polish", systemImage: "arrow.uturn.backward")
-                        .font(.caption2)
+                        .samFont(.caption2)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
@@ -100,7 +100,7 @@ struct QuickNoteWindowView: View {
 
             if let error = errorMessage {
                 Text(error)
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.red)
             }
 
@@ -116,7 +116,7 @@ struct QuickNoteWindowView: View {
                     }
                 } label: {
                     Image(systemName: isDictating ? "mic.fill" : "mic")
-                        .font(.body)
+                        .samFont(.body)
                         .foregroundStyle(isDictating ? .red : .secondary)
                         .frame(width: 28, height: 28)
                 }

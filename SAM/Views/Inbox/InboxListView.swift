@@ -188,16 +188,16 @@ struct InboxListView: View {
                 ProgressView()
                     .scaleEffect(0.7)
                 Text("Importing...")
-                    .font(.caption)
+                    .samFont(.caption)
             }
             .foregroundStyle(.secondary)
         } else if let lastImport = importCoordinator.lastImportedAt {
             Text("\(importCoordinator.lastImportCount) events \(lastImport, style: .relative) ago")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
         } else if let error = importCoordinator.lastError {
             Text(error)
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.red)
                 .lineLimit(1)
         }
@@ -273,11 +273,11 @@ private struct EvidenceRowView: View {
             // Title and snippet
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.title)
-                    .font(.body)
+                    .samFont(.body)
                     .lineLimit(1)
 
                 Text(item.snippet)
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
             }
@@ -287,7 +287,7 @@ private struct EvidenceRowView: View {
             // Date and state badge
             VStack(alignment: .trailing, spacing: 4) {
                 Text(item.occurredAt, style: .relative)
-                    .font(.caption2)
+                    .samFont(.caption2)
                     .foregroundStyle(.secondary)
 
                 stateBadge
@@ -338,7 +338,7 @@ private struct EvidenceRowView: View {
     private var stateBadge: some View {
         if item.state == .needsReview {
             Text("New")
-                .font(.caption2)
+                .samFont(.caption2)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 2)
                 .background(Color.orange.opacity(0.2))

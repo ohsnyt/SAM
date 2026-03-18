@@ -23,7 +23,7 @@ struct CommunicationsSettingsContent: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             Text("Import iMessage conversations, phone calls, FaceTime, and WhatsApp history as relationship evidence.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
 
             Divider()
@@ -53,23 +53,23 @@ struct CommunicationsSettingsContent: View {
     private var databaseAccessSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Database Access")
-                .font(.headline)
+                .samFont(.headline)
 
             Text("SAM needs permission to read your local message and call history databases. Select each folder when prompted.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
 
             // Messages DB
             HStack(spacing: 12) {
                 Image(systemName: bookmarkManager.hasMessagesAccess ? "checkmark.circle.fill" : "xmark.circle")
                     .foregroundStyle(bookmarkManager.hasMessagesAccess ? .green : .secondary)
-                    .font(.title3)
+                    .samFont(.title3)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Messages Database")
-                        .font(.body)
+                        .samFont(.body)
                     Text("~/Library/Messages/chat.db")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
 
@@ -95,13 +95,13 @@ struct CommunicationsSettingsContent: View {
             HStack(spacing: 12) {
                 Image(systemName: bookmarkManager.hasCallHistoryAccess ? "checkmark.circle.fill" : "xmark.circle")
                     .foregroundStyle(bookmarkManager.hasCallHistoryAccess ? .green : .secondary)
-                    .font(.title3)
+                    .samFont(.title3)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Call History Database")
-                        .font(.body)
+                        .samFont(.body)
                     Text("~/Library/Application Support/CallHistoryDB/")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
 
@@ -127,13 +127,13 @@ struct CommunicationsSettingsContent: View {
             HStack(spacing: 12) {
                 Image(systemName: bookmarkManager.hasWhatsAppAccess ? "checkmark.circle.fill" : "xmark.circle")
                     .foregroundStyle(bookmarkManager.hasWhatsAppAccess ? .green : .secondary)
-                    .font(.title3)
+                    .samFont(.title3)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text("WhatsApp Database")
-                        .font(.body)
+                        .samFont(.body)
                     Text("~/Library/Group Containers/group.net.whatsapp.WhatsApp.shared/")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
 
@@ -162,7 +162,7 @@ struct CommunicationsSettingsContent: View {
     private var iMessageSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("iMessage")
-                .font(.headline)
+                .samFont(.headline)
 
             Toggle("Import iMessage conversations", isOn: Binding(
                 get: { coordinator.messagesEnabled },
@@ -172,7 +172,7 @@ struct CommunicationsSettingsContent: View {
 
             if !bookmarkManager.hasMessagesAccess {
                 Text("Grant messages database access above to enable.")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.orange)
             }
 
@@ -183,7 +183,7 @@ struct CommunicationsSettingsContent: View {
             .disabled(!coordinator.messagesEnabled)
 
             Text("When enabled, conversation threads are summarized by on-device AI. Raw message text is never stored.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
 
 
@@ -195,7 +195,7 @@ struct CommunicationsSettingsContent: View {
     private var callsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Calls & FaceTime")
-                .font(.headline)
+                .samFont(.headline)
 
             Toggle("Import phone calls and FaceTime", isOn: Binding(
                 get: { coordinator.callsEnabled },
@@ -205,12 +205,12 @@ struct CommunicationsSettingsContent: View {
 
             if !bookmarkManager.hasCallHistoryAccess {
                 Text("Grant call history database access above to enable.")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.orange)
             }
 
             Text("Imports call duration and direction. No audio content is accessed.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
         }
     }
@@ -220,7 +220,7 @@ struct CommunicationsSettingsContent: View {
     private var whatsAppSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("WhatsApp")
-                .font(.headline)
+                .samFont(.headline)
 
             Toggle("Import WhatsApp messages", isOn: Binding(
                 get: { coordinator.whatsAppMessagesEnabled },
@@ -230,7 +230,7 @@ struct CommunicationsSettingsContent: View {
 
             if !bookmarkManager.hasWhatsAppAccess {
                 Text("Grant WhatsApp database access above to enable.")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.orange)
             }
 
@@ -247,7 +247,7 @@ struct CommunicationsSettingsContent: View {
             .disabled(!bookmarkManager.hasWhatsAppAccess)
 
             Text("Message text is analyzed on-device then discarded. Only AI summaries are stored. Call metadata only (duration, direction).")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
         }
     }
@@ -257,7 +257,7 @@ struct CommunicationsSettingsContent: View {
     private var importSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Import")
-                .font(.headline)
+                .samFont(.headline)
 
             HStack {
                 Text("Import Status:")
@@ -278,7 +278,7 @@ struct CommunicationsSettingsContent: View {
 
                 if let date = coordinator.lastImportedAt {
                     Text("\(date, style: .relative) ago")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -286,22 +286,22 @@ struct CommunicationsSettingsContent: View {
             if coordinator.lastImportedAt != nil {
                 HStack(spacing: 16) {
                     Label("\(coordinator.lastMessageCount) messages", systemImage: "message")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
 
                     Label("\(coordinator.lastCallCount) calls", systemImage: "phone")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
 
                 if coordinator.lastWhatsAppMessageCount > 0 || coordinator.lastWhatsAppCallCount > 0 {
                     HStack(spacing: 16) {
                         Label("\(coordinator.lastWhatsAppMessageCount) WhatsApp messages", systemImage: "text.bubble")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
 
                         Label("\(coordinator.lastWhatsAppCallCount) WhatsApp calls", systemImage: "phone.bubble")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -309,7 +309,7 @@ struct CommunicationsSettingsContent: View {
 
             if let error = coordinator.lastError {
                 Text(error)
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.red)
             }
 
@@ -338,7 +338,7 @@ struct CommunicationsSettingsView: View {
             Section {
                 VStack(alignment: .leading, spacing: 20) {
                     Label("Communications", systemImage: "message.fill")
-                        .font(.title2)
+                        .samFont(.title2)
                         .bold()
 
                     CommunicationsSettingsContent()

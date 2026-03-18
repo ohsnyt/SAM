@@ -74,10 +74,10 @@ struct EventUpdateSheet: View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Send Event Update")
-                    .font(.title3.bold())
+                    .samFont(.title3, weight: .bold)
                 if didPickAudience && !recipients.isEmpty && !isFinished {
                     Text("\(currentIndex + 1) of \(recipients.count) — \(currentPersonName)")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -85,7 +85,7 @@ struct EventUpdateSheet: View {
 
             if didPickAudience && !recipients.isEmpty {
                 Text("\(sentCount) sent, \(skippedCount) skipped")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             }
         }
@@ -99,10 +99,10 @@ struct EventUpdateSheet: View {
             // Change summary
             VStack(alignment: .leading, spacing: 8) {
                 Label("What Changed", systemImage: "arrow.triangle.2.circlepath")
-                    .font(.headline)
+                    .samFont(.headline)
 
                 Text(changes.changeDescription)
-                    .font(.callout)
+                    .samFont(.callout)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(10)
@@ -112,7 +112,7 @@ struct EventUpdateSheet: View {
             // Audience selection
             VStack(alignment: .leading, spacing: 8) {
                 Text("Who should be notified?")
-                    .font(.headline)
+                    .samFont(.headline)
 
                 ForEach(EventCoordinator.UpdateAudience.allCases, id: \.self) { option in
                     let count = EventCoordinator.shared.participantsForUpdate(event: event, audience: option).count
@@ -124,9 +124,9 @@ struct EventUpdateSheet: View {
                                 .foregroundStyle(audience == option ? .blue : .secondary)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(option.rawValue)
-                                    .font(.callout.bold())
+                                    .samFont(.callout, weight: .bold)
                                 Text("\(option.description) (\(count) \(count == 1 ? "person" : "people"))")
-                                    .font(.caption)
+                                    .samFont(.caption)
                                     .foregroundStyle(.secondary)
                             }
                             Spacer()
@@ -151,10 +151,10 @@ struct EventUpdateSheet: View {
             if let participation = currentParticipation {
                 HStack(spacing: 8) {
                     Text(currentPersonName)
-                        .font(.headline)
+                        .samFont(.headline)
 
                     Text(participation.rsvpStatus.displayName)
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 2)
                         .background(rsvpColor(participation.rsvpStatus).opacity(0.2), in: Capsule())
@@ -184,13 +184,13 @@ struct EventUpdateSheet: View {
                     ProgressView()
                         .controlSize(.large)
                     Text("Generating update for \(currentPersonName)...")
-                        .font(.callout)
+                        .samFont(.callout)
                         .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 TextEditor(text: $draftText)
-                    .font(.body)
+                    .samFont(.body)
                     .padding(8)
                     .scrollContentBackground(.hidden)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -201,13 +201,13 @@ struct EventUpdateSheet: View {
                     Image(systemName: "exclamationmark.triangle")
                         .foregroundStyle(.orange)
                     Text(error)
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.orange)
                     Spacer()
                     Button("Retry") {
                         Task { await generateCurrentDraft() }
                     }
-                    .font(.caption)
+                    .samFont(.caption)
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                 }
@@ -226,7 +226,7 @@ struct EventUpdateSheet: View {
                 .foregroundStyle(.green)
 
             Text("Updates Sent")
-                .font(.title2.bold())
+                .samFont(.title2, weight: .bold)
 
             VStack(spacing: 4) {
                 if sentCount > 0 {
@@ -238,7 +238,7 @@ struct EventUpdateSheet: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .font(.callout)
+            .samFont(.callout)
         }
     }
 

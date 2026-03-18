@@ -107,9 +107,9 @@ struct PipelineStageSection: View {
                     Image(systemName: "chart.bar.horizontal.page")
                         .foregroundStyle(.blue)
                     Text("Pipeline")
-                        .font(.headline)
+                        .samFont(.headline)
                     Text("\(totalCount)")
-                        .font(.caption)
+                        .samFont(.caption)
                         .fontWeight(.semibold)
                         .foregroundStyle(.white)
                         .padding(.horizontal, 6)
@@ -168,7 +168,7 @@ struct PipelineStageSection: View {
 
     private var arrowSeparator: some View {
         Image(systemName: "arrow.right")
-            .font(.caption)
+            .samFont(.caption)
             .foregroundStyle(.secondary)
             .padding(.horizontal, 6)
     }
@@ -179,10 +179,10 @@ struct PipelineStageSection: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 4) {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.orange)
                 Text("Needs Attention")
-                    .font(.subheadline)
+                    .samFont(.subheadline)
                     .fontWeight(.semibold)
                     .foregroundStyle(.orange)
             }
@@ -198,18 +198,18 @@ struct PipelineStageSection: View {
                     HStack(spacing: 8) {
                         let style = RoleBadgeStyle.forBadge(item.stage)
                         Image(systemName: style.icon)
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(style.color)
 
                         Text(item.person.displayNameCache ?? item.person.displayName)
-                            .font(.subheadline)
+                            .samFont(.subheadline)
                             .foregroundStyle(.primary)
                             .lineLimit(1)
 
                         Spacer()
 
                         Text("stuck for \(item.daysStuck) days")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.orange)
                     }
                     .contentShape(Rectangle())
@@ -234,11 +234,11 @@ private struct StageCard: View {
     var body: some View {
         VStack(spacing: 4) {
             Text("\(count)")
-                .font(.title2)
+                .samFont(.title2)
                 .fontWeight(.bold)
                 .foregroundStyle(color)
             Text(stage)
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)

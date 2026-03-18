@@ -35,7 +35,7 @@ struct FacebookImportReviewSheet: View {
                 Spacer()
 
                 Text("Facebook Import Review")
-                    .font(.headline)
+                    .samFont(.headline)
 
                 Spacer()
 
@@ -60,7 +60,7 @@ struct FacebookImportReviewSheet: View {
                     ProgressView()
                     if let progress = coordinator.progressMessage {
                         Text(progress)
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -205,7 +205,7 @@ struct FacebookReviewContent: View {
                     if coordinator.importCandidates.isEmpty {
                         VStack(spacing: 8) {
                             Image(systemName: "checkmark.circle")
-                                .font(.largeTitle)
+                                .samFont(.largeTitle)
                                 .foregroundStyle(.secondary)
                             Text("All friends already in SAM")
                                 .foregroundStyle(.secondary)
@@ -220,7 +220,7 @@ struct FacebookReviewContent: View {
             Divider()
             HStack {
                 footerText
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
             }
@@ -250,14 +250,14 @@ struct FacebookReviewContent: View {
     ) -> some View {
         HStack {
             Text(title)
-                .font(.subheadline)
+                .samFont(.subheadline)
                 .fontWeight(.semibold)
             Text("(\(count))")
-                .font(.subheadline)
+                .samFont(.subheadline)
                 .foregroundStyle(.secondary)
             Spacer()
             Button(actionLabel, action: action)
-                .font(.caption)
+                .samFont(.caption)
                 .buttonStyle(.borderless)
                 .foregroundStyle(.blue)
         }
@@ -302,7 +302,7 @@ struct FacebookProbableMatchRow: View {
             // Match reason label
             if let status = matchReason {
                 Text(status)
-                    .font(.caption2)
+                    .samFont(.caption2)
                     .foregroundStyle(.orange)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
@@ -314,17 +314,17 @@ struct FacebookProbableMatchRow: View {
                 // Left: Facebook data
                 VStack(alignment: .leading, spacing: 3) {
                     Text("From Facebook")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.secondary)
                     Text(candidate.displayName)
                         .fontWeight(.medium)
                     if candidate.messageCount > 0 {
                         Text("\(candidate.messageCount) messages")
-                            .font(.caption).foregroundStyle(.secondary)
+                            .samFont(.caption).foregroundStyle(.secondary)
                     }
                     if let friendedOn = candidate.friendedOn {
                         Text("Friends since \(friendedOn.formatted(.dateTime.month(.abbreviated).year()))")
-                            .font(.caption).foregroundStyle(.tertiary)
+                            .samFont(.caption).foregroundStyle(.tertiary)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -335,16 +335,16 @@ struct FacebookProbableMatchRow: View {
                 if let info = candidate.matchedPersonInfo {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Existing in SAM")
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .foregroundStyle(.secondary)
                         Text(info.displayName)
                             .fontWeight(.medium)
                         if let email = info.email, !email.isEmpty {
-                            Text(email).font(.caption).foregroundStyle(.tertiary)
+                            Text(email).samFont(.caption).foregroundStyle(.tertiary)
                         }
                         if let url = info.linkedInURL, !url.isEmpty {
                             Text("Has LinkedIn URL")
-                                .font(.caption).foregroundStyle(.tertiary)
+                                .samFont(.caption).foregroundStyle(.tertiary)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -355,7 +355,7 @@ struct FacebookProbableMatchRow: View {
             HStack(spacing: 10) {
                 Button(action: onMerge) {
                     Label("Merge", systemImage: "arrow.triangle.merge")
-                        .font(.caption)
+                        .samFont(.caption)
                 }
                 .buttonStyle(.bordered)
                 .tint(isMerging ? .blue : .secondary)
@@ -363,7 +363,7 @@ struct FacebookProbableMatchRow: View {
 
                 Button(action: onSkip) {
                     Label("Keep Separate", systemImage: "arrow.left.arrow.right")
-                        .font(.caption)
+                        .samFont(.caption)
                 }
                 .buttonStyle(.bordered)
                 .tint(!isMerging ? .orange : .secondary)
@@ -411,7 +411,7 @@ struct FacebookCandidateRow: View {
 
                         if let score = candidate.touchScore, score.totalScore > 0 {
                             Text("Score: \(score.totalScore)")
-                                .font(.caption2)
+                                .samFont(.caption2)
                                 .padding(.horizontal, 5)
                                 .padding(.vertical, 1)
                                 .background(Color.blue.opacity(0.15))
@@ -423,7 +423,7 @@ struct FacebookCandidateRow: View {
                     // Message count
                     if candidate.messageCount > 0 {
                         Text("\(candidate.messageCount) messages")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                     }
 
@@ -431,12 +431,12 @@ struct FacebookCandidateRow: View {
                     HStack(spacing: 8) {
                         if let score = candidate.touchScore, !score.touchSummary.isEmpty {
                             Text(score.touchSummary)
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.secondary)
                         }
                         if let friendedOn = candidate.friendedOn {
                             Text("Friends since \(friendedOn.formatted(.dateTime.month(.abbreviated).year()))")
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.tertiary)
                         }
                     }

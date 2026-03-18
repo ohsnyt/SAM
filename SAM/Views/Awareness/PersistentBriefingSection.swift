@@ -45,10 +45,10 @@ struct PersistentBriefingSection: View {
                     Button(action: { withAnimation { isBriefingExpanded.toggle() } }) {
                         HStack(spacing: 6) {
                             Image(systemName: isBriefingExpanded ? "chevron.down" : "chevron.right")
-                                .font(.caption2)
+                                .samFont(.caption2)
                                 .foregroundStyle(.secondary)
                             Text("Today's Briefing")
-                                .font(.subheadline)
+                                .samFont(.subheadline)
                                 .fontWeight(.medium)
                                 .foregroundStyle(.secondary)
                             Spacer()
@@ -88,14 +88,14 @@ struct PersistentBriefingSection: View {
     private var greetingHeader: some View {
         HStack {
             Text(timeOfDayGreeting)
-                .font(.largeTitle)
+                .samFont(.largeTitle)
                 .fontWeight(.bold)
 
             Button {
                 Task { await coordinator.regenerateBriefing() }
             } label: {
                 Image(systemName: "arrow.clockwise")
-                    .font(.body)
+                    .samFont(.body)
                     .foregroundStyle(.secondary)
                     .rotationEffect(.degrees(isGenerating ? 360 : 0))
                     .animation(isGenerating ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: isGenerating)
@@ -108,7 +108,7 @@ struct PersistentBriefingSection: View {
 
             if let briefing = coordinator.morningBriefing {
                 Text("Updated \(briefing.generatedAt, style: .relative) ago")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.tertiary)
             }
         }
@@ -132,7 +132,7 @@ struct PersistentBriefingSection: View {
                 .tint(.blue)
 
             Text(coordinator.generationStageLabel)
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
                 .animation(.easeInOut(duration: 0.3), value: coordinator.generationStageLabel)
         }
@@ -146,7 +146,7 @@ struct PersistentBriefingSection: View {
             // AI narrative
             if let narrative = briefing.narrativeSummary, !narrative.isEmpty {
                 Text(narrative)
-                    .font(.body)
+                    .samFont(.body)
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
                     .contextMenu {
@@ -198,10 +198,10 @@ struct PersistentBriefingSection: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 Image(systemName: icon)
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(color)
                 Text(title)
-                    .font(.subheadline)
+                    .samFont(.subheadline)
                     .fontWeight(.semibold)
                     .foregroundStyle(.secondary)
             }
@@ -225,23 +225,23 @@ struct PersistentBriefingSection: View {
         }) {
             HStack(spacing: 10) {
                 Image(systemName: checked ? "checkmark.circle.fill" : "circle")
-                    .font(.body)
+                    .samFont(.body)
                     .foregroundStyle(checked ? .green : .secondary)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(item.eventTitle)
-                        .font(.subheadline)
+                        .samFont(.subheadline)
                         .strikethrough(checked, color: .secondary)
                         .foregroundStyle(checked ? .secondary : .primary)
 
                     HStack(spacing: 6) {
                         Text(item.startsAt, style: .time)
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
 
                         if !item.attendeeNames.isEmpty {
                             Text(item.attendeeNames.joined(separator: ", "))
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.tertiary)
                                 .lineLimit(1)
                         }
@@ -275,17 +275,17 @@ struct PersistentBriefingSection: View {
         }) {
             HStack(spacing: 10) {
                 Image(systemName: checked ? "checkmark.circle.fill" : "circle")
-                    .font(.body)
+                    .samFont(.body)
                     .foregroundStyle(checked ? .green : .secondary)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(followUp.personName)
-                        .font(.subheadline)
+                        .samFont(.subheadline)
                         .strikethrough(checked, color: .secondary)
                         .foregroundStyle(checked ? .secondary : .primary)
 
                     Text(followUp.reason)
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
                 }
@@ -294,7 +294,7 @@ struct PersistentBriefingSection: View {
 
                 if followUp.daysSinceInteraction > 0 {
                     Text("\(followUp.daysSinceInteraction)d")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
@@ -323,18 +323,18 @@ struct PersistentBriefingSection: View {
         }) {
             HStack(spacing: 10) {
                 Image(systemName: checked ? "checkmark.circle.fill" : "circle")
-                    .font(.body)
+                    .samFont(.body)
                     .foregroundStyle(checked ? .green : .secondary)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text("\(event.personName) — \(event.eventDescription)")
-                        .font(.subheadline)
+                        .samFont(.subheadline)
                         .strikethrough(checked, color: .secondary)
                         .foregroundStyle(checked ? .secondary : .primary)
 
                     if let suggestion = event.outreachSuggestion, !suggestion.isEmpty {
                         Text(suggestion)
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.tertiary)
                             .lineLimit(1)
                     }
@@ -375,7 +375,7 @@ struct PersistentBriefingSection: View {
                 Image(systemName: "sparkles")
                     .foregroundStyle(.blue)
                 Text("Generate Briefing")
-                    .font(.subheadline)
+                    .samFont(.subheadline)
                     .fontWeight(.medium)
             }
             .frame(maxWidth: .infinity)
@@ -394,7 +394,7 @@ struct PersistentBriefingSection: View {
                 Image(systemName: "sunrise.fill")
                     .foregroundStyle(.orange)
                 Text("Start your day")
-                    .font(.subheadline)
+                    .samFont(.subheadline)
                     .fontWeight(.medium)
             }
             .frame(maxWidth: .infinity)
@@ -410,7 +410,7 @@ struct PersistentBriefingSection: View {
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(.green)
             Text("All done for today!")
-                .font(.subheadline)
+                .samFont(.subheadline)
                 .fontWeight(.medium)
                 .foregroundStyle(.green)
         }

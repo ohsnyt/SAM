@@ -76,14 +76,14 @@ struct LinkedInSetupGuideSheet: View {
     private var headerSection: some View {
         HStack(spacing: 12) {
             Image(systemName: "gearshape.2")
-                .font(.title2)
+                .samFont(.title2)
                 .foregroundStyle(.cyan)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(outcome.title)
-                    .font(.headline)
+                    .samFont(.headline)
                 Text("LinkedIn Notification Setup")
-                    .font(.subheadline)
+                    .samFont(.subheadline)
                     .foregroundStyle(.secondary)
             }
 
@@ -95,10 +95,10 @@ struct LinkedInSetupGuideSheet: View {
     private func whyItMattersSection(payload: SetupGuidePayload) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Label("Why this matters", systemImage: "lightbulb")
-                .font(.subheadline.weight(.semibold))
+                .samFont(.subheadline, weight: .semibold)
                 .foregroundStyle(.secondary)
             Text(payload.whyItMatters)
-                .font(.body)
+                .samFont(.body)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -106,20 +106,21 @@ struct LinkedInSetupGuideSheet: View {
     private func stepsSection(payload: SetupGuidePayload) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Label("Steps", systemImage: "list.number")
-                .font(.subheadline.weight(.semibold))
+                .samFont(.subheadline, weight: .semibold)
                 .foregroundStyle(.secondary)
 
             VStack(alignment: .leading, spacing: 10) {
                 ForEach(Array(payload.instructions.enumerated()), id: \.offset) { index, step in
                     HStack(alignment: .top, spacing: 10) {
                         Text("\(index + 1)")
-                            .font(.caption.monospacedDigit())
+                            .samFont(.caption)
+                            .monospacedDigit()
                             .foregroundStyle(.white)
                             .frame(width: 20, height: 20)
                             .background(.cyan, in: Circle())
 
                         Text(step)
-                            .font(.body)
+                            .samFont(.body)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }

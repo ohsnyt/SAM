@@ -38,9 +38,9 @@ struct LifeEventsSection: View {
                     Image(systemName: "heart.circle")
                         .foregroundStyle(.pink)
                     Text("Life Events")
-                        .font(.headline)
+                        .samFont(.headline)
                     Text("\(pendingEvents.count)")
-                        .font(.caption)
+                        .samFont(.caption)
                         .fontWeight(.semibold)
                         .foregroundStyle(.white)
                         .padding(.horizontal, 6)
@@ -49,7 +49,7 @@ struct LifeEventsSection: View {
                         .clipShape(Capsule())
                     Spacer()
                     Text("Outreach opportunities")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
                 .padding(.horizontal)
@@ -185,21 +185,21 @@ private struct LifeEventCard: View {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: iconForEventType(event.eventType))
                     .foregroundStyle(.pink)
-                    .font(.title3)
+                    .samFont(.title3)
 
                 VStack(alignment: .leading, spacing: 4) {
                     // Person name (tappable)
                     HStack(spacing: 6) {
                         Button(action: navigateToPerson) {
                             Text(event.personName)
-                                .font(.subheadline)
+                                .samFont(.subheadline)
                                 .fontWeight(.semibold)
                                 .foregroundStyle(.blue)
                         }
                         .buttonStyle(.plain)
 
                         Text(event.eventTypeLabel)
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .fontWeight(.medium)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
@@ -210,17 +210,17 @@ private struct LifeEventCard: View {
 
                     // Description
                     Text(event.eventDescription)
-                        .font(.subheadline)
+                        .samFont(.subheadline)
                         .foregroundStyle(.primary)
 
                     // Approximate date
                     if let approxDate = event.approximateDate, !approxDate.isEmpty {
                         HStack(spacing: 4) {
                             Image(systemName: "calendar")
-                                .font(.caption2)
+                                .samFont(.caption2)
                                 .foregroundStyle(.secondary)
                             Text(approxDate)
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -229,10 +229,10 @@ private struct LifeEventCard: View {
                     if let suggestion = event.outreachSuggestion, !suggestion.isEmpty {
                         HStack(alignment: .top, spacing: 6) {
                             Image(systemName: "lightbulb")
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.orange)
                             Text(suggestion)
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(3)
                             Spacer()

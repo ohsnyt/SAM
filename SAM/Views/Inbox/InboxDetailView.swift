@@ -134,7 +134,7 @@ struct InboxDetailView: View {
             HStack(spacing: 8) {
                 // Source badge
                 Label(item.source.rawValue, systemImage: sourceIcon)
-                    .font(.caption)
+                    .samFont(.caption)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
                     .background(sourceColor.opacity(0.15))
@@ -143,7 +143,7 @@ struct InboxDetailView: View {
 
                 // State badge
                 Text(item.state == .needsReview ? "New" : "Reviewed")
-                    .font(.caption)
+                    .samFont(.caption)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
                     .background(stateColor.opacity(0.15))
@@ -153,7 +153,7 @@ struct InboxDetailView: View {
 
             // Date
             Text(item.occurredAt, format: .dateTime.weekday(.wide).month(.wide).day().year().hour().minute())
-                .font(.body)
+                .samFont(.body)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -168,7 +168,7 @@ struct InboxDetailView: View {
         if !text.isEmpty {
             section(title: "Content") {
                 Text(text)
-                    .font(.body)
+                    .samFont(.body)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -197,22 +197,22 @@ struct InboxDetailView: View {
                         if status.isKnown {
                             Image(systemName: "checkmark.seal.fill")
                                 .foregroundStyle(.green)
-                                .font(.caption)
+                                .samFont(.caption)
                         } else {
                             Image(systemName: "person.circle")
                                 .foregroundStyle(.secondary)
-                                .font(.caption)
+                                .samFont(.caption)
                         }
 
                         // Name
                         VStack(alignment: .leading, spacing: 1) {
                             HStack(spacing: 4) {
                                 Text(participant.displayName)
-                                    .font(.body)
+                                    .samFont(.body)
 
                                 if participant.isOrganizer {
                                     Text("Organizer")
-                                        .font(.caption2)
+                                        .samFont(.caption2)
                                         .padding(.horizontal, 6)
                                         .padding(.vertical, 2)
                                         .background(.blue.opacity(0.2))
@@ -232,7 +232,7 @@ struct InboxDetailView: View {
 
                             if let email = participant.rawEmail {
                                 Text(email)
-                                    .font(.caption)
+                                    .samFont(.caption)
                                     .foregroundStyle(.secondary)
                             }
                         }
@@ -259,7 +259,7 @@ struct InboxDetailView: View {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(signal.type.rawValue)
-                                .font(.caption2)
+                                .samFont(.caption2)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
                                 .background(.indigo.opacity(0.2))
@@ -267,14 +267,14 @@ struct InboxDetailView: View {
                                 .clipShape(Capsule())
 
                             Text(signal.message)
-                                .font(.body)
+                                .samFont(.body)
                                 .foregroundStyle(.secondary)
                         }
 
                         Spacer()
 
                         Text("\(Int(signal.confidence * 100))%")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.green.opacity(0.7))
                     }
                     .padding(.vertical, 4)
@@ -294,14 +294,14 @@ struct InboxDetailView: View {
                             .foregroundStyle(.secondary)
 
                         Text(person.displayNameCache ?? person.displayName)
-                            .font(.body)
+                            .samFont(.body)
 
                         Spacer()
 
                         if !person.roleBadges.isEmpty {
                             ForEach(person.roleBadges, id: \.self) { badge in
                                 Text(badge)
-                                    .font(.caption2)
+                                    .samFont(.caption2)
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 2)
                                     .background(.blue.opacity(0.2))
@@ -327,12 +327,12 @@ struct InboxDetailView: View {
                             .foregroundStyle(.secondary)
 
                         Text(context.name)
-                            .font(.body)
+                            .samFont(.body)
 
                         Spacer()
 
                         Text(context.kind.rawValue)
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                             .background(.purple.opacity(0.2))
@@ -365,12 +365,12 @@ struct InboxDetailView: View {
     private func metadataRow(label: String, value: String) -> some View {
         HStack {
             Text(label)
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
                 .frame(width: 80, alignment: .leading)
 
             Text(value)
-                .font(.caption)
+                .samFont(.caption)
                 .textSelection(.enabled)
 
             Spacer()
@@ -382,7 +382,7 @@ struct InboxDetailView: View {
     private func section<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(title)
-                .font(.headline)
+                .samFont(.headline)
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
                 .padding(.horizontal)

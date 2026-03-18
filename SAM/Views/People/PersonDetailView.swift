@@ -271,11 +271,11 @@ struct PersonDetailView: View {
                     .foregroundStyle(.blue)
                 let count = pendingEnrichments.count
                 Text("\(count) contact update\(count == 1 ? "" : "s") available")
-                    .font(.subheadline)
+                    .samFont(.subheadline)
                     .fontWeight(.medium)
                 Spacer()
                 Image(systemName: "chevron.right")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             }
             .padding(10)
@@ -319,7 +319,7 @@ struct PersonDetailView: View {
                             .foregroundStyle(color)
                         if !links.isEmpty {
                             Image(systemName: "photo.badge.plus")
-                                .font(.caption2)
+                                .samFont(.caption2)
                                 .foregroundStyle(color.opacity(0.6))
                         }
                     }
@@ -356,9 +356,9 @@ struct PersonDetailView: View {
                     .overlay {
                         VStack(spacing: 4) {
                             Image(systemName: "photo.badge.plus")
-                                .font(.title2)
+                                .samFont(.title2)
                             Text("Drop")
-                                .font(.caption)
+                                .samFont(.caption)
                         }
                         .foregroundStyle(.primary)
                     }
@@ -372,7 +372,7 @@ struct PersonDetailView: View {
         .overlay(alignment: .bottom) {
             if let error = photoCoordinator.errorMessage {
                 Text(error)
-                    .font(.caption2)
+                    .samFont(.caption2)
                     .foregroundStyle(.white)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
@@ -427,18 +427,18 @@ struct PersonDetailView: View {
                         if !contact.organizationName.isEmpty {
                             HStack(spacing: 4) {
                                 Text(contact.organizationName)
-                                    .font(.body)
+                                    .samFont(.body)
                                 if !contact.jobTitle.isEmpty {
                                     Text("•")
                                         .foregroundStyle(.secondary)
                                     Text(contact.jobTitle)
-                                        .font(.body)
+                                        .samFont(.body)
                                         .foregroundStyle(.secondary)
                                 }
                             }
                         } else if !contact.jobTitle.isEmpty {
                             Text(contact.jobTitle)
-                                .font(.body)
+                                .samFont(.body)
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -459,17 +459,17 @@ struct PersonDetailView: View {
             if let outcome = OutcomeRepository.shared.fetchTopActiveOutcome(forPersonID: person.id) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("SAM recommends")
-                        .font(.caption)
+                        .samFont(.caption)
                         .fontWeight(.semibold)
                         .foregroundStyle(.blue)
                         .textCase(.uppercase)
 
                     Text(outcome.title)
-                        .font(.subheadline)
+                        .samFont(.subheadline)
                         .fontWeight(.medium)
 
                     Text(outcome.rationale)
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(3)
                 }
@@ -521,7 +521,7 @@ struct PersonDetailView: View {
                 Text("No interaction history")
             }
         }
-        .font(.subheadline)
+        .samFont(.subheadline)
         .foregroundStyle(.secondary)
     }
 
@@ -645,13 +645,13 @@ struct PersonDetailView: View {
             if let phone = contact.phoneNumbers.first {
                 HStack(spacing: 4) {
                     Image(systemName: "phone")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                     Text(phone.number)
-                        .font(.subheadline)
+                        .samFont(.subheadline)
                     if let label = phone.label, !label.isEmpty {
                         Text(label)
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -659,10 +659,10 @@ struct PersonDetailView: View {
             if let email = contact.emailAddresses.first {
                 HStack(spacing: 4) {
                     Image(systemName: "envelope")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                     Text(email)
-                        .font(.subheadline)
+                        .samFont(.subheadline)
                         .foregroundStyle(.blue)
                 }
             }
@@ -695,7 +695,7 @@ struct PersonDetailView: View {
                 // Me badge (non-editable, set via Apple Contacts)
                 if person.isMe {
                     Text("Me")
-                        .font(.subheadline)
+                        .samFont(.subheadline)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
                         .background(.secondary.opacity(0.2))
@@ -706,7 +706,7 @@ struct PersonDetailView: View {
                 // Placeholder when no roles assigned
                 if person.roleBadges.isEmpty && !person.isMe && !isEditingBadges {
                     Text("Add a role")
-                        .font(.subheadline)
+                        .samFont(.subheadline)
                         .foregroundStyle(.tertiary)
                         .italic()
                 }
@@ -727,7 +727,7 @@ struct PersonDetailView: View {
                                 Image(systemName: "xmark")
                                     .font(.system(size: 8, weight: .bold))
                             }
-                            .font(.caption)
+                            .samFont(.caption)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
                             .background(style.color.opacity(0.15))
@@ -737,7 +737,7 @@ struct PersonDetailView: View {
                         .buttonStyle(.plain)
                     } else {
                         Text(badge)
-                            .font(.subheadline)
+                            .samFont(.subheadline)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
                             .background(style.color.opacity(0.15))
@@ -782,7 +782,7 @@ struct PersonDetailView: View {
                     }
                 } label: {
                     Image(systemName: isEditingBadges ? "checkmark.circle.fill" : "pencil")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(isEditingBadges ? .green : .secondary)
                 }
                 .buttonStyle(.plain)
@@ -808,7 +808,7 @@ struct PersonDetailView: View {
                                         .font(.system(size: 8, weight: .bold))
                                     Text(badge)
                                 }
-                                .font(.caption)
+                                .samFont(.caption)
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 4)
                                 .background(style.color.opacity(0.08))
@@ -824,12 +824,12 @@ struct PersonDetailView: View {
                 HStack(spacing: 6) {
                     TextField("Custom badge...", text: $customBadgeText)
                         .textFieldStyle(.roundedBorder)
-                        .font(.caption)
+                        .samFont(.caption)
                         .frame(maxWidth: 200)
                         .onSubmit { addCustomBadge() }
 
                     Button("Add") { addCustomBadge() }
-                        .font(.caption)
+                        .samFont(.caption)
                         .disabled(customBadgeText.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
@@ -993,11 +993,11 @@ struct PersonDetailView: View {
                     let totalPremium = productionRecords.reduce(0) { $0 + $1.annualPremium }
                     HStack {
                         Text("\(productionRecords.count) record\(productionRecords.count == 1 ? "" : "s")")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                         Spacer()
                         Text(totalPremium, format: .currency(code: "USD"))
-                            .font(.caption)
+                            .samFont(.caption)
                             .fontWeight(.semibold)
                             .foregroundStyle(.secondary)
                     }
@@ -1007,16 +1007,16 @@ struct PersonDetailView: View {
                 ForEach(productionRecords.prefix(5), id: \.id) { record in
                     HStack(spacing: 8) {
                         Image(systemName: record.productType.icon)
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(record.productType.color)
                             .frame(width: 16)
 
                         VStack(alignment: .leading, spacing: 2) {
                             Text(record.productType.displayName)
-                                .font(.subheadline)
+                                .samFont(.subheadline)
                                 .lineLimit(1)
                             Text(record.carrierName)
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
                         }
@@ -1024,7 +1024,7 @@ struct PersonDetailView: View {
                         Spacer()
 
                         Text(record.annualPremium, format: .currency(code: "USD"))
-                            .font(.caption)
+                            .samFont(.caption)
                             .monospacedDigit()
 
                         // Status badge — tap to advance
@@ -1053,7 +1053,7 @@ struct PersonDetailView: View {
 
                 if productionRecords.count > 5 {
                     Text("\(productionRecords.count - 5) more…")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
 
@@ -1062,7 +1062,7 @@ struct PersonDetailView: View {
                     showingProductionForm = true
                 } label: {
                     Label("Add Production", systemImage: "plus.circle")
-                        .font(.caption)
+                        .samFont(.caption)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
@@ -1106,7 +1106,7 @@ struct PersonDetailView: View {
     ) -> some View {
         HStack(spacing: 6) {
             Label(category.displayName, systemImage: category.icon)
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
                 .frame(width: 80, alignment: .leading)
 
@@ -1124,7 +1124,7 @@ struct PersonDetailView: View {
                let ch = CommunicationChannel(rawValue: raw),
                explicitBinding.wrappedValue.isEmpty {
                 Text("(inferred: \(ch.displayName))")
-                    .font(.caption2)
+                    .samFont(.caption2)
                     .foregroundStyle(.tertiary)
             }
         }
@@ -1143,7 +1143,7 @@ struct PersonDetailView: View {
     private var cadencePreferenceView: some View {
         HStack(spacing: 8) {
             Text("Cadence:")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
 
             Picker("Cadence", selection: cadencePreferenceBinding) {
@@ -1160,7 +1160,7 @@ struct PersonDetailView: View {
             if person.preferredCadenceDays == nil {
                 if let computed = personHealth.cadenceDays {
                     Text("(computed: ~\(computed)d)")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.tertiary)
                 }
             }
@@ -1318,7 +1318,7 @@ struct PersonDetailView: View {
         VStack(alignment: .leading, spacing: 0) {
             // Section header
             Text(title)
-                .font(.headline)
+                .samFont(.headline)
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
                 .padding(.horizontal)
@@ -1343,20 +1343,20 @@ struct PersonDetailView: View {
                 // For multiline content (like addresses), show on one line
                 HStack(alignment: .bottom, spacing: 4) {
                     Text(value)
-                        .font(.body)
+                        .samFont(.body)
                     if let label = label, !label.isEmpty {
                         Text(label)
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.green.opacity(0.7))
                     }
                 }
             } else {
                 HStack(alignment: .bottom, spacing: 4) {
                     Text(value)
-                        .font(.body)
+                        .samFont(.body)
                     if let label = label, !label.isEmpty {
                         Text(label)
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.green.opacity(0.7))
                     }
                 }
@@ -1368,7 +1368,7 @@ struct PersonDetailView: View {
             if let action = action {
                 Button(action: action) {
                     Image(systemName: "doc.on.doc")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
@@ -1385,18 +1385,18 @@ struct PersonDetailView: View {
         GroupBox {
             VStack(spacing: 12) {
                 Label("Contact Details Unavailable", systemImage: "exclamationmark.triangle")
-                    .font(.headline)
+                    .samFont(.headline)
                     .foregroundStyle(.orange)
                 
                 Text("Full contact details could not be loaded. This may be because:")
-                    .font(.body)
+                    .samFont(.body)
                 
                 VStack(alignment: .leading, spacing: 8) {
                     Label("Contacts access was not granted", systemImage: "hand.raised.fill")
                     Label("The contact was deleted from Apple Contacts", systemImage: "trash")
                     Label("The app needs to be restarted", systemImage: "arrow.clockwise")
                 }
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
                 
                 Divider()
@@ -1470,15 +1470,15 @@ struct PersonDetailView: View {
                 ForEach(person.familyReferences) { ref in
                     HStack(spacing: 8) {
                         Image(systemName: ref.linkedPersonID != nil ? "person.fill" : "person.fill.questionmark")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(ref.linkedPersonID != nil ? .green : .secondary)
                             .frame(width: 20)
 
                         VStack(alignment: .leading, spacing: 2) {
                             Text(ref.name)
-                                .font(.body)
+                                .samFont(.body)
                             Text(ref.relationship.capitalized)
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.secondary)
                         }
 
@@ -1486,7 +1486,7 @@ struct PersonDetailView: View {
 
                         if ref.linkedPersonID == nil {
                             Text("No contact")
-                                .font(.caption2)
+                                .samFont(.caption2)
                                 .foregroundStyle(.tertiary)
                         }
                     }
@@ -1533,9 +1533,9 @@ struct PersonDetailView: View {
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "chevron.down")
-                                .font(.caption2)
+                                .samFont(.caption2)
                             Text("\(min(remaining, 10)) more…")
-                                .font(.caption)
+                                .samFont(.caption)
                         }
                         .foregroundStyle(.secondary)
                     }
@@ -1549,9 +1549,9 @@ struct PersonDetailView: View {
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "chevron.up")
-                                .font(.caption2)
+                                .samFont(.caption2)
                             Text("Show fewer")
-                                .font(.caption)
+                                .samFont(.caption)
                         }
                         .foregroundStyle(.secondary)
                     }
@@ -1566,19 +1566,19 @@ struct PersonDetailView: View {
         HStack(alignment: .top, spacing: 10) {
             // Source icon
             Image(systemName: item.source.iconName)
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(item.source.iconColor)
                 .frame(width: 16, alignment: .center)
                 .padding(.top, 2)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.title)
-                    .font(.subheadline)
+                    .samFont(.subheadline)
                     .lineLimit(2)
 
                 if !item.snippet.isEmpty {
                     Text(item.snippet)
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -1587,7 +1587,7 @@ struct PersonDetailView: View {
             Spacer(minLength: 0)
 
             Text(item.occurredAt.formatted(date: .abbreviated, time: .omitted))
-                .font(.caption2)
+                .samFont(.caption2)
                 .foregroundStyle(.tertiary)
                 .padding(.top, 2)
         }
@@ -1611,19 +1611,19 @@ struct PersonDetailView: View {
                 if person.linkedInProfileURL != nil || person.linkedInConnectedOn != nil {
                     HStack(alignment: .top, spacing: 10) {
                         Image(systemName: "network")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.blue)
                             .frame(width: 16, alignment: .center)
                             .padding(.top, 2)
 
                         VStack(alignment: .leading, spacing: 3) {
                             Text("LinkedIn")
-                                .font(.subheadline)
+                                .samFont(.subheadline)
                                 .fontWeight(.medium)
 
                             if let connectedOn = person.linkedInConnectedOn {
                                 Text("Connected \(connectedOn.formatted(date: .abbreviated, time: .omitted))")
-                                    .font(.caption)
+                                    .samFont(.caption)
                                     .foregroundStyle(.secondary)
                             }
 
@@ -1635,7 +1635,7 @@ struct PersonDetailView: View {
                                     }
                                 } label: {
                                     Text(url)
-                                        .font(.caption)
+                                        .samFont(.caption)
                                         .foregroundStyle(.blue)
                                         .lineLimit(1)
                                         .truncationMode(.middle)
@@ -1650,31 +1650,31 @@ struct PersonDetailView: View {
                 if person.facebookFriendedOn != nil || person.facebookMessageCount > 0 {
                     HStack(alignment: .top, spacing: 10) {
                         Image(systemName: "person.2.fill")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.indigo)
                             .frame(width: 16, alignment: .center)
                             .padding(.top, 2)
 
                         VStack(alignment: .leading, spacing: 3) {
                             Text("Facebook")
-                                .font(.subheadline)
+                                .samFont(.subheadline)
                                 .fontWeight(.medium)
 
                             if let friendedOn = person.facebookFriendedOn {
                                 Text("Friends since \(friendedOn.formatted(date: .abbreviated, time: .omitted))")
-                                    .font(.caption)
+                                    .samFont(.caption)
                                     .foregroundStyle(.secondary)
                             }
 
                             if person.facebookMessageCount > 0 {
                                 HStack(spacing: 12) {
                                     Label("\(person.facebookMessageCount) messages", systemImage: "message.fill")
-                                        .font(.caption)
+                                        .samFont(.caption)
                                         .foregroundStyle(.secondary)
 
                                     if let lastMsg = person.facebookLastMessageDate {
                                         Text("Last: \(lastMsg.formatted(date: .abbreviated, time: .omitted))")
-                                            .font(.caption)
+                                            .samFont(.caption)
                                             .foregroundStyle(.tertiary)
                                     }
                                 }
@@ -1682,7 +1682,7 @@ struct PersonDetailView: View {
 
                             if person.facebookTouchScore > 0 {
                                 Text("Interaction score: \(person.facebookTouchScore)")
-                                    .font(.caption2)
+                                    .samFont(.caption2)
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 2)
                                     .background(Color.indigo.opacity(0.12))
@@ -1698,7 +1698,7 @@ struct PersonDetailView: View {
                                     }
                                 } label: {
                                     Text(url)
-                                        .font(.caption)
+                                        .samFont(.caption)
                                         .foregroundStyle(.indigo)
                                         .lineLimit(1)
                                         .truncationMode(.middle)
@@ -1725,11 +1725,11 @@ struct PersonDetailView: View {
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "chevron.right")
-                        .font(.caption.weight(.semibold))
+                        .samFont(.caption, weight: .semibold)
                         .rotationEffect(.degrees(showMoreDetails ? 90 : 0))
                         .animation(.easeInOut(duration: 0.2), value: showMoreDetails)
                     Text("More Details")
-                        .font(.subheadline)
+                        .samFont(.subheadline)
                 }
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -1799,7 +1799,7 @@ struct PersonDetailView: View {
         VStack(alignment: .leading, spacing: 0) {
             // Section header
             Text(title)
-                .font(.headline)
+                .samFont(.headline)
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
                 .padding(.horizontal)
@@ -1826,12 +1826,12 @@ struct PersonDetailView: View {
                         .foregroundStyle(.orange)
                     
                     Text("Consent review needed")
-                        .font(.body)
+                        .samFont(.body)
                     
                     Spacer()
                     
                     Text("\(person.consentAlertsCount)")
-                        .font(.caption)
+                        .samFont(.caption)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
                         .background(.orange.opacity(0.2))
@@ -1847,12 +1847,12 @@ struct PersonDetailView: View {
                         .foregroundStyle(.red)
                     
                     Text("Needs follow-up")
-                        .font(.body)
+                        .samFont(.body)
                     
                     Spacer()
                     
                     Text("\(person.reviewAlertsCount)")
-                        .font(.caption)
+                        .samFont(.caption)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
                         .background(.red.opacity(0.2))
@@ -1871,11 +1871,11 @@ struct PersonDetailView: View {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(context.name)
-                                .font(.body)
+                                .samFont(.body)
                             
                             if !participation.roleBadges.isEmpty {
                                 Text(participation.roleBadges.joined(separator: ", "))
-                                    .font(.caption)
+                                    .samFont(.caption)
                                     .foregroundStyle(.green.opacity(0.7))
                             }
                         }
@@ -1883,7 +1883,7 @@ struct PersonDetailView: View {
                         Spacer()
                         
                         Text(context.kind.rawValue)
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                             .background(.purple.opacity(0.2))
@@ -1903,16 +1903,16 @@ struct PersonDetailView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         if let product = coverage.product {
                             Text(product.name)
-                                .font(.body)
+                                .samFont(.body)
                             
                             if let context = product.context {
                                 Text(context.name)
-                                    .font(.caption)
+                                    .samFont(.caption)
                                     .foregroundStyle(.green.opacity(0.7))
                             }
                         } else {
                             Text("Unknown Product")
-                                .font(.body)
+                                .samFont(.body)
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -1920,7 +1920,7 @@ struct PersonDetailView: View {
                     Spacer()
                     
                     Text(coverage.role.rawValue)
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
                         .background(.green.opacity(0.2))
@@ -1938,23 +1938,23 @@ struct PersonDetailView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
                         Text(insight.kind.rawValue)
-                            .font(.body)
+                            .samFont(.body)
                             .bold()
                         
                         Spacer()
                         
                         Text(insight.createdAt, style: .relative)
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.green.opacity(0.7))
                     }
                     
                     Text(insight.message)
-                        .font(.body)
+                        .samFont(.body)
                         .foregroundStyle(.secondary)
                     
                     HStack {
                         Text(insight.kind.rawValue)
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                             .background(.indigo.opacity(0.2))
@@ -1964,7 +1964,7 @@ struct PersonDetailView: View {
                         Spacer()
                         
                         Text("Confidence: \(Int(insight.confidence * 100))%")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.green.opacity(0.7))
                     }
                 }
@@ -1980,7 +1980,7 @@ struct PersonDetailView: View {
                 // Overview
                 if let overview = person.relationshipSummary {
                     Text(overview)
-                        .font(.body)
+                        .samFont(.body)
                         .foregroundStyle(.secondary)
                 }
 
@@ -1989,7 +1989,7 @@ struct PersonDetailView: View {
                     FlowLayout(spacing: 6) {
                         ForEach(person.relationshipKeyThemes, id: \.self) { theme in
                             Text(theme)
-                                .font(.caption2)
+                                .samFont(.caption2)
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 4)
                                 .background(.purple.opacity(0.1))
@@ -2005,11 +2005,11 @@ struct PersonDetailView: View {
                         ForEach(person.relationshipNextSteps, id: \.self) { step in
                             HStack(alignment: .top, spacing: 6) {
                                 Image(systemName: "arrow.right.circle")
-                                    .font(.caption)
+                                    .samFont(.caption)
                                     .foregroundStyle(.blue)
                                     .padding(.top, 1)
                                 Text(step)
-                                    .font(.caption)
+                                    .samFont(.caption)
                             }
                         }
                     }
@@ -2018,7 +2018,7 @@ struct PersonDetailView: View {
                 // Updated timestamp
                 if let updatedAt = person.summaryUpdatedAt {
                     Text("Updated \(updatedAt, style: .relative)")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.tertiary)
                 }
 
@@ -2027,7 +2027,7 @@ struct PersonDetailView: View {
                     showingCorrectionSheet = true
                 } label: {
                     Label("Correct this", systemImage: "pencil.and.list.clipboard")
-                        .font(.caption)
+                        .samFont(.caption)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
@@ -2073,7 +2073,7 @@ struct PersonDetailView: View {
             HStack(spacing: 8) {
                 if let referrer = person.referredBy {
                     Image(systemName: "arrow.triangle.branch")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.green)
 
                     Button {
@@ -2084,7 +2084,7 @@ struct PersonDetailView: View {
                         )
                     } label: {
                         Text(referrer.displayNameCache ?? referrer.displayName)
-                            .font(.body)
+                            .samFont(.body)
                             .foregroundStyle(.primary)
                     }
                     .buttonStyle(.plain)
@@ -2096,7 +2096,7 @@ struct PersonDetailView: View {
                         person.referredBy = nil
                     } label: {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
@@ -2107,18 +2107,18 @@ struct PersonDetailView: View {
                         showingReferrerPicker = true
                     } label: {
                         Image(systemName: "pencil")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
                     .help("Change referrer")
                 } else {
                     Image(systemName: "arrow.triangle.branch")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
 
                     Text("No referrer set")
-                        .font(.body)
+                        .samFont(.body)
                         .foregroundStyle(.secondary)
 
                     Spacer()
@@ -2127,7 +2127,7 @@ struct PersonDetailView: View {
                         showingReferrerPicker = true
                     } label: {
                         Label("Set", systemImage: "plus")
-                            .font(.caption)
+                            .samFont(.caption)
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(Color.accentColor)
@@ -2145,7 +2145,7 @@ struct PersonDetailView: View {
                         .foregroundStyle(.secondary)
                     
                     Text("Last synced: \(syncedAt, style: .relative)")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -2156,7 +2156,7 @@ struct PersonDetailView: View {
                         .foregroundStyle(.secondary)
                     
                     Text("Contact ID: \(identifier)")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -2189,9 +2189,9 @@ struct PersonDetailView: View {
                 applyLifecycleChange(.active)
             }
             .buttonStyle(.borderless)
-            .font(.caption)
+            .samFont(.caption)
         }
-        .font(.caption)
+        .samFont(.caption)
         .foregroundStyle({
             switch status {
             case .archived: return Color.orange
@@ -2434,7 +2434,7 @@ private struct ContextPickerSheet: View {
                                 Spacer()
 
                                 Text(context.kind.rawValue)
-                                    .font(.caption2)
+                                    .samFont(.caption2)
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 2)
                                     .background(.purple.opacity(0.2))
@@ -2508,7 +2508,7 @@ private struct ReferrerPickerSheet: View {
                                 ForEach(candidate.roleBadges.prefix(2), id: \.self) { badge in
                                     let style = RoleBadgeStyle.forBadge(badge)
                                     Text(badge)
-                                        .font(.caption2)
+                                        .samFont(.caption2)
                                         .padding(.horizontal, 5)
                                         .padding(.vertical, 1)
                                         .background(style.color.opacity(0.15))
@@ -2556,9 +2556,9 @@ private struct RoleSuggestionBadge: View {
             Image(systemName: "sparkles")
                 .font(.system(size: 8))
             Text(suggestion.suggestedRole)
-                .font(.caption)
+                .samFont(.caption)
             Text("?")
-                .font(.caption.bold())
+                .samFont(.caption, weight: .bold)
 
             Button {
                 withAnimation { onConfirm() }
@@ -2651,7 +2651,7 @@ struct RelationshipHealthView: View {
                     .fill(health.statusColor)
                     .frame(width: 8, height: 8)
                 Text("Last interaction: \(health.statusLabel)")
-                    .font(.subheadline)
+                    .samFont(.subheadline)
 
                 Spacer()
 
@@ -2685,7 +2685,7 @@ struct RelationshipHealthView: View {
                     decayRiskBadge
                     if let predicted = health.predictedOverdueDays, predicted > 0 {
                         Text("Predicted overdue in ~\(predicted) day\(predicted == 1 ? "" : "s")")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -2715,7 +2715,7 @@ struct RelationshipHealthView: View {
                 simpleTrendLabel
             }
         }
-        .font(.caption)
+        .samFont(.caption)
     }
 
     private var simpleTrendLabel: some View {
@@ -2751,7 +2751,7 @@ struct RelationshipHealthView: View {
             label = "~every \(days) days"
         }
         return Text(label)
-            .font(.caption)
+            .samFont(.caption)
             .foregroundStyle(.secondary)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
@@ -2769,7 +2769,7 @@ struct RelationshipHealthView: View {
         }
         let color: Color = ratio >= 2.5 ? .red : .orange
         return Text(formatted)
-            .font(.caption)
+            .samFont(.caption)
             .fontWeight(.semibold)
             .foregroundStyle(color)
             .padding(.horizontal, 8)
@@ -2780,7 +2780,7 @@ struct RelationshipHealthView: View {
 
     private func qualityScoreChip(score: Double) -> some View {
         Text("Q: \(String(format: "%.1f", score))")
-            .font(.caption)
+            .samFont(.caption)
             .foregroundStyle(.secondary)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
@@ -2800,7 +2800,7 @@ struct RelationshipHealthView: View {
         }()
         if !label.isEmpty {
             Text(label)
-                .font(.caption)
+                .samFont(.caption)
                 .fontWeight(.medium)
                 .foregroundStyle(color)
                 .padding(.horizontal, 8)
@@ -2813,10 +2813,10 @@ struct RelationshipHealthView: View {
     private func frequencyChip(label: String, count: Int) -> some View {
         HStack(spacing: 3) {
             Text(label)
-                .font(.caption2)
+                .samFont(.caption2)
                 .foregroundStyle(.secondary)
             Text("\(count)")
-                .font(.caption)
+                .samFont(.caption)
                 .fontWeight(.semibold)
         }
         .padding(.horizontal, 8)

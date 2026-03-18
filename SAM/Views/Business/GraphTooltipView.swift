@@ -20,11 +20,11 @@ struct GraphTooltipView: View {
             // Name + role badges
             HStack(spacing: 6) {
                 Text(node.displayName)
-                    .font(.headline)
+                    .samFont(.headline)
 
                 if node.isGhost {
                     Text("Ghost")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 1)
                         .background(.ultraThinMaterial)
@@ -37,7 +37,7 @@ struct GraphTooltipView: View {
                     ForEach(node.roleBadges, id: \.self) { badge in
                         let style = RoleBadgeStyle.forBadge(badge)
                         Label(badge, systemImage: style.icon)
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .foregroundStyle(style.color)
                     }
                 }
@@ -48,15 +48,15 @@ struct GraphTooltipView: View {
             if node.isGhost {
                 // Ghost-specific info
                 Text("Mentioned in notes — not yet in Contacts")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
 
                 Text("\(edgeCount) connection\(edgeCount == 1 ? "" : "s")")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
 
                 Text("Right-click to add or link to contact")
-                    .font(.caption2)
+                    .samFont(.caption2)
                     .foregroundStyle(.tertiary)
                     .italic()
             } else {
@@ -66,20 +66,20 @@ struct GraphTooltipView: View {
                         .fill(healthColor)
                         .frame(width: 8, height: 8)
                     Text(healthLabel)
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
 
                 // Connections
                 Text("\(edgeCount) connection\(edgeCount == 1 ? "" : "s")")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
 
                 // Top outcome
                 if let outcome = node.topOutcome {
                     Divider()
                     Text(outcome)
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                 }

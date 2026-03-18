@@ -26,7 +26,7 @@ struct FacebookImportSettingsContent: View {
 
             // Description
             Text("Import friends, messages, comments, and reactions from a Facebook data export. Use **File → Import → Facebook** to start.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
 
             // Profile Analysis section (FB-3)
@@ -43,24 +43,24 @@ struct FacebookImportSettingsContent: View {
                 Divider()
                 HStack {
                     Text("Last import:")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                     Text(lastImport, style: .relative)
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                     Text("ago")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                     Spacer()
                     Text("\(coordinator.lastImportCount) item(s)")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
 
             if let error = coordinator.lastError {
                 Text(error)
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.red)
             }
         }
@@ -76,11 +76,11 @@ struct FacebookImportSettingsContent: View {
             HStack(spacing: 8) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Facebook Presence Analysis")
-                        .font(.caption)
+                        .samFont(.caption)
                         .fontWeight(.semibold)
                     if let date = coordinator.latestProfileAnalysis?.analysisDate {
                         Text("Last analyzed: \(date, style: .relative) ago")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -104,7 +104,7 @@ struct FacebookImportSettingsContent: View {
                 }
                 .buttonStyle(.borderless)
                 .foregroundStyle(.cyan)
-                .font(.caption)
+                .samFont(.caption)
             }
         }
     }
@@ -119,25 +119,25 @@ struct FacebookImportSettingsContent: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text("Writing Voice")
-                        .font(.caption)
+                        .samFont(.caption)
                         .fontWeight(.semibold)
                     Spacer()
                     Button("Refresh") {
                         Task { await coordinator.runProfileAnalysis() }
                     }
-                    .font(.caption)
+                    .samFont(.caption)
                     .buttonStyle(.borderless)
                     .disabled(coordinator.profileAnalysisStatus == .analyzing)
                 }
 
                 Text(voice)
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
 
                 if coordinator.parsedPostCount > 0 {
                     let sampled = min(coordinator.parsedPostCount, 10)
                     Text("Analyzed from \(sampled) of \(coordinator.parsedPostCount) posts")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.tertiary)
                 }
             }
@@ -161,7 +161,7 @@ struct FacebookImportSettingsView: View {
             Section {
                 VStack(alignment: .leading, spacing: 20) {
                     Label("Facebook Import", systemImage: "person.2.fill")
-                        .font(.title2)
+                        .samFont(.title2)
                         .bold()
 
                     FacebookImportSettingsContent()

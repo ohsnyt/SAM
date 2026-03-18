@@ -56,11 +56,11 @@ struct MeetingQualitySection: View {
                     Image(systemName: "chart.line.uptrend.xyaxis")
                         .foregroundStyle(.purple)
                     Text("Meeting Quality")
-                        .font(.headline)
+                        .samFont(.headline)
                     averageScoreBadge
                     Spacer()
                     Text("Last 14 days")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
                 .padding(.horizontal)
@@ -87,7 +87,7 @@ struct MeetingQualitySection: View {
 
     private var averageScoreBadge: some View {
         Text("\(averageScore)")
-            .font(.caption)
+            .samFont(.caption)
             .fontWeight(.semibold)
             .foregroundStyle(.white)
             .padding(.horizontal, 6)
@@ -99,14 +99,14 @@ struct MeetingQualitySection: View {
     private var congratulatoryMessage: some View {
         HStack(spacing: 10) {
             Image(systemName: "checkmark.seal.fill")
-                .font(.title3)
+                .samFont(.title3)
                 .foregroundStyle(.green)
             VStack(alignment: .leading, spacing: 2) {
                 Text("All meetings well-documented")
-                    .font(.subheadline)
+                    .samFont(.subheadline)
                     .fontWeight(.medium)
                 Text("\(recentMeetings.count) meeting\(recentMeetings.count == 1 ? "" : "s") in the last two weeks, all with solid follow-through.")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -238,12 +238,12 @@ private struct MeetingQualityCard: View {
             HStack(alignment: .center, spacing: 10) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(meeting.title)
-                        .font(.subheadline)
+                        .samFont(.subheadline)
                         .fontWeight(.medium)
                         .lineLimit(1)
 
                     Text(meeting.occurredAt, style: .relative)
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
 
@@ -261,7 +261,7 @@ private struct MeetingQualityCard: View {
                 HStack(spacing: 4) {
                     ForEach(meeting.missing, id: \.self) { tag in
                         Text(tag)
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
@@ -282,7 +282,7 @@ private struct MeetingQualityCard: View {
 
     private var scoreLabel: some View {
         Text("\(meeting.score)")
-            .font(.title3)
+            .samFont(.title3)
             .fontWeight(.bold)
             .foregroundStyle(MeetingQualitySection.colorForScore(meeting.score))
     }

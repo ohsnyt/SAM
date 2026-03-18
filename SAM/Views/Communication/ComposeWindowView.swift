@@ -79,11 +79,11 @@ struct ComposeWindowView: View {
             // To line
             HStack(spacing: 8) {
                 Text("To:")
-                    .font(.subheadline)
+                    .samFont(.subheadline)
                     .foregroundStyle(.secondary)
                     .frame(width: 60, alignment: .trailing)
                 Text(recipientDisplay)
-                    .font(.subheadline)
+                    .samFont(.subheadline)
                     .fontWeight(.medium)
                 Spacer()
             }
@@ -91,7 +91,7 @@ struct ComposeWindowView: View {
             // Channel picker
             HStack(spacing: 8) {
                 Text("Via:")
-                    .font(.subheadline)
+                    .samFont(.subheadline)
                     .foregroundStyle(.secondary)
                     .frame(width: 60, alignment: .trailing)
                 Picker("Channel", selection: $channel) {
@@ -109,7 +109,7 @@ struct ComposeWindowView: View {
             if channel == .email {
                 HStack(spacing: 8) {
                     Text("Subject:")
-                        .font(.subheadline)
+                        .samFont(.subheadline)
                         .foregroundStyle(.secondary)
                         .frame(width: 60, alignment: .trailing)
                     TextField("Subject", text: $subject)
@@ -121,7 +121,7 @@ struct ComposeWindowView: View {
 
             // Draft body
             TextEditor(text: $draftBody)
-                .font(.body)
+                .samFont(.body)
                 .scrollContentBackground(.hidden)
                 .frame(minHeight: 120, maxHeight: 250)
                 .padding(8)
@@ -130,7 +130,7 @@ struct ComposeWindowView: View {
                 .overlay(alignment: .topLeading) {
                     if draftBody.isEmpty && !isDictating {
                         Text("Type your message...")
-                            .font(.body)
+                            .samFont(.body)
                             .foregroundStyle(.tertiary)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 12)
@@ -147,10 +147,10 @@ struct ComposeWindowView: View {
             if !payload.contextTitle.isEmpty {
                 HStack(spacing: 4) {
                     Image(systemName: "info.circle")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.secondary)
                     Text(payload.contextTitle)
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -159,14 +159,14 @@ struct ComposeWindowView: View {
             // Error
             if let error = errorMessage {
                 Text(error)
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.red)
             }
 
             // Copied toast
             if showCopiedToast {
                 Text("Draft copied to clipboard")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.green)
             }
 
@@ -183,7 +183,7 @@ struct ComposeWindowView: View {
                     }
                 } label: {
                     Image(systemName: isDictating ? "mic.fill" : "mic")
-                        .font(.body)
+                        .samFont(.body)
                         .foregroundStyle(isDictating ? .red : .secondary)
                         .frame(width: 28, height: 28)
                 }
@@ -276,14 +276,14 @@ struct ComposeWindowView: View {
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.orange)
                     Text("\(complianceFlags.count) compliance flag\(complianceFlags.count == 1 ? "" : "s")")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.orange)
                     Spacer()
                     Image(systemName: complianceFlagsExpanded ? "chevron.up" : "chevron.down")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -293,16 +293,16 @@ struct ComposeWindowView: View {
                 ForEach(complianceFlags) { flag in
                     HStack(spacing: 6) {
                         Image(systemName: flag.category.icon)
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .foregroundStyle(flag.category.color)
                             .frame(width: 14)
                         VStack(alignment: .leading, spacing: 1) {
                             Text("\"\(flag.matchedPhrase)\"")
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.primary)
                             if let suggestion = flag.suggestion {
                                 Text(suggestion)
-                                    .font(.caption2)
+                                    .samFont(.caption2)
                                     .foregroundStyle(.secondary)
                             }
                         }

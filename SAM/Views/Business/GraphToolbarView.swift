@@ -40,7 +40,7 @@ struct GraphToolbarView: ToolbarContent {
 
         ToolbarItem(placement: .automatic) {
             Text(coordinator.progress)
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
         }
 
@@ -254,7 +254,7 @@ struct GraphToolbarView: ToolbarContent {
             .help("Zoom In")
 
             Text("\(Int(scale * 100))%")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
                 .frame(width: 40)
 

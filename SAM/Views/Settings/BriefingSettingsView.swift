@@ -76,7 +76,7 @@ struct BriefingSettingsContent: View {
     private var morningSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Morning Briefing")
-                .font(.headline)
+                .samFont(.headline)
 
             Toggle("Show morning briefing on first open", isOn: $morningEnabled)
                 .onChange(of: morningEnabled) { _, newValue in
@@ -84,7 +84,7 @@ struct BriefingSettingsContent: View {
                 }
 
             Text("When enabled, SAM shows a daily briefing with your schedule, priority actions, and follow-ups when you first open the app each day.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
         }
     }
@@ -92,7 +92,7 @@ struct BriefingSettingsContent: View {
     private var eveningSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Evening Recap")
-                .font(.headline)
+                .samFont(.headline)
 
             Toggle("Enable end-of-day summary", isOn: $eveningEnabled)
                 .onChange(of: eveningEnabled) { _, newValue in
@@ -125,7 +125,7 @@ struct BriefingSettingsContent: View {
             }
 
             Text("SAM will prompt you with a summary of today's accomplishments and tomorrow's highlights. The prompt is non-modal — you can defer or dismiss it.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
         }
     }
@@ -133,7 +133,7 @@ struct BriefingSettingsContent: View {
     private var narrativeSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("AI Narrative")
-                .font(.headline)
+                .samFont(.headline)
 
             Toggle("Generate prose summary", isOn: $narrativeEnabled)
                 .onChange(of: narrativeEnabled) { _, newValue in
@@ -141,7 +141,7 @@ struct BriefingSettingsContent: View {
                 }
 
             Text("When enabled, SAM uses on-device AI to generate a brief narrative summary at the top of each briefing. Structured sections always appear regardless of this setting.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
         }
     }
@@ -155,7 +155,7 @@ struct BriefingSettingsView: View {
             Section {
                 VStack(alignment: .leading, spacing: 20) {
                     Label("Daily Briefings", systemImage: "text.book.closed")
-                        .font(.title2)
+                        .samFont(.title2)
                         .bold()
 
                     Divider()

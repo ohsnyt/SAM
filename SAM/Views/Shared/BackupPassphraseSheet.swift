@@ -24,13 +24,13 @@ struct BackupPassphraseSheet: View {
                 .foregroundStyle(.secondary)
 
             Text(isExport ? "Encrypt Backup" : "Decrypt Backup")
-                .font(.title2)
+                .samFont(.title2)
                 .fontWeight(.semibold)
 
             Text(isExport
                  ? "Enter a passphrase to encrypt this backup. You will need this passphrase to restore it."
                  : "This backup is encrypted. Enter the passphrase to decrypt it.")
-                .font(.callout)
+                .samFont(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 350)
@@ -45,7 +45,7 @@ struct BackupPassphraseSheet: View {
 
                     if mismatchError {
                         Text("Passphrases do not match")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.red)
                     }
                 }

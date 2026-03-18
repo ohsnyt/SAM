@@ -34,32 +34,32 @@ struct FacebookImportSheet: View {
                 VStack(alignment: .leading, spacing: 16) {
                     // Description
                     Text("Import friends, messages, comments, and reactions from a Facebook data export.")
-                        .font(.callout)
+                        .samFont(.callout)
                         .foregroundStyle(.secondary)
 
                     // Last import info
                     if let lastImport = coordinator.lastFacebookImportAt {
                         HStack(spacing: 4) {
                             Image(systemName: "clock")
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.secondary)
                             Text("Last import:")
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.secondary)
                             Text(lastImport, style: .relative)
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.secondary)
                             Text("ago")
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.secondary)
                             if coordinator.parsedFriendCount > 0 {
                                 Text("· \(coordinator.parsedFriendCount) friends")
-                                    .font(.caption)
+                                    .samFont(.caption)
                                     .foregroundStyle(.secondary)
                             }
                             if coordinator.parsedMessageCount > 0 {
                                 Text("· \(coordinator.parsedMessageCount) messages")
-                                    .font(.caption)
+                                    .samFont(.caption)
                                     .foregroundStyle(.secondary)
                             }
                         }
@@ -125,7 +125,7 @@ struct FacebookImportSheet: View {
             Spacer()
 
             Text("Facebook")
-                .font(.headline)
+                .samFont(.headline)
 
             Spacer()
 
@@ -205,7 +205,7 @@ struct FacebookImportSheet: View {
     private var setupPhase: some View {
         VStack(alignment: .leading, spacing: 16) {
             Label("Getting Started", systemImage: "info.circle")
-                .font(.subheadline)
+                .samFont(.subheadline)
                 .fontWeight(.semibold)
 
             VStack(alignment: .leading, spacing: 8) {
@@ -233,7 +233,7 @@ struct FacebookImportSheet: View {
             }
 
             Text("If your download was auto-unzipped, use \"Select Folder\" to choose the Facebook export folder directly.")
-                .font(.caption2)
+                .samFont(.caption2)
                 .foregroundStyle(.tertiary)
         }
     }
@@ -249,7 +249,7 @@ struct FacebookImportSheet: View {
     private func zipFoundPhase(info: FacebookZipInfo) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             Label("Export Found", systemImage: "doc.zipper")
-                .font(.subheadline)
+                .samFont(.subheadline)
                 .fontWeight(.semibold)
                 .foregroundStyle(.green)
 
@@ -257,25 +257,25 @@ struct FacebookImportSheet: View {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
                         Text("File:")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                         Text(info.fileName)
-                            .font(.caption)
+                            .samFont(.caption)
                             .fontWeight(.medium)
                     }
                     HStack {
                         Text("Date:")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                         Text(info.fileDate.formatted(.dateTime.month(.abbreviated).day().year().hour().minute()))
-                            .font(.caption)
+                            .samFont(.caption)
                     }
                     HStack {
                         Text("Size:")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                         Text(info.formattedSize)
-                            .font(.caption)
+                            .samFont(.caption)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -302,11 +302,11 @@ struct FacebookImportSheet: View {
 
             if let progress = coordinator.progressMessage {
                 Text(progress)
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             } else {
                 Text("Processing Facebook export...")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             }
         }
@@ -320,15 +320,15 @@ struct FacebookImportSheet: View {
             HStack(spacing: 8) {
                 if coordinator.exactMatchCount > 0 {
                     Text("\(coordinator.exactMatchCount) auto-matched")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.green)
                 }
                 Text("\(coordinator.parsedFriendCount) friends to review")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
                 if coordinator.parsedMessageCount > 0 {
                     Text("\u{00B7} \(coordinator.parsedMessageCount) messages")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -357,11 +357,11 @@ struct FacebookImportSheet: View {
 
             if let progress = coordinator.progressMessage {
                 Text(progress)
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             } else {
                 Text("Importing...")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             }
         }
@@ -371,7 +371,7 @@ struct FacebookImportSheet: View {
     private var noZipFoundPhase: some View {
         VStack(alignment: .leading, spacing: 16) {
             Label("No Export Found in Downloads", systemImage: "folder.badge.questionmark")
-                .font(.subheadline)
+                .samFont(.subheadline)
                 .fontWeight(.semibold)
 
             VStack(alignment: .leading, spacing: 8) {
@@ -418,7 +418,7 @@ struct FacebookImportSheet: View {
                 ProgressView()
                     .scaleEffect(0.7)
                 Text("Watching for Facebook export email...")
-                    .font(.callout)
+                    .samFont(.callout)
             }
 
             if let startDate = UserDefaults.standard.object(forKey: "sam.facebook.emailWatcherStartDate") as? Date {
@@ -426,12 +426,12 @@ struct FacebookImportSheet: View {
                 let hours = Int(elapsed / 3600)
                 let minutes = Int((elapsed.truncatingRemainder(dividingBy: 3600)) / 60)
                 Text("Checking every 5 minutes \u{00B7} \(hours)h \(minutes)m elapsed")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             }
 
             Text("SAM will notify you when the export email arrives. Facebook exports can take up to 48 hours.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
 
             HStack(spacing: 12) {
@@ -454,12 +454,12 @@ struct FacebookImportSheet: View {
     private func emailFoundPhase(url: URL) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             Label("Export Email Detected!", systemImage: "envelope.open.fill")
-                .font(.subheadline)
+                .samFont(.subheadline)
                 .fontWeight(.semibold)
                 .foregroundStyle(.green)
 
             Text("SAM found the Facebook data export email. Open the download page, download the ZIP file, then come back here.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
 
             HStack(spacing: 12) {
@@ -483,14 +483,14 @@ struct FacebookImportSheet: View {
                 ProgressView()
                     .scaleEffect(0.7)
                 Text("Monitoring ~/Downloads for Facebook export...")
-                    .font(.callout)
+                    .samFont(.callout)
             }
 
             if let startDate = UserDefaults.standard.object(forKey: "sam.facebook.fileWatcherStartDate") as? Date {
                 let elapsed = Date.now.timeIntervalSince(startDate)
                 let minutes = Int(elapsed / 60)
                 Text("Checking every 30 seconds \u{00B7} \(minutes) min elapsed")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             }
 
@@ -514,7 +514,7 @@ struct FacebookImportSheet: View {
     private func completePhase(stats: FacebookImportStats) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             Label("Import Complete", systemImage: "checkmark.circle.fill")
-                .font(.subheadline)
+                .samFont(.subheadline)
                 .fontWeight(.semibold)
                 .foregroundStyle(.green)
 
@@ -545,10 +545,10 @@ struct FacebookImportSheet: View {
                 Toggle(isOn: $deleteZipAfterImport) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Delete export file from Downloads")
-                            .font(.caption)
+                            .samFont(.caption)
                             .fontWeight(.medium)
                         Text("The import data is now in SAM — the ZIP file is no longer needed.")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -568,12 +568,12 @@ struct FacebookImportSheet: View {
     private func failedPhase(message: String) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             Label("Import Failed", systemImage: "xmark.circle.fill")
-                .font(.subheadline)
+                .samFont(.subheadline)
                 .fontWeight(.semibold)
                 .foregroundStyle(.red)
 
             Text(message)
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
 
             HStack(spacing: 12) {
@@ -589,7 +589,7 @@ struct FacebookImportSheet: View {
             }
 
             Text("If macOS auto-unzipped your download, use \"Select Folder\" to choose the Facebook export folder directly.")
-                .font(.caption2)
+                .samFont(.caption2)
                 .foregroundStyle(.tertiary)
         }
     }
@@ -599,12 +599,12 @@ struct FacebookImportSheet: View {
     private func instructionRow(number: Int, text: String) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Text("\(number).")
-                .font(.caption)
+                .samFont(.caption)
                 .fontWeight(.semibold)
                 .foregroundStyle(.secondary)
                 .frame(width: 16, alignment: .trailing)
             Text(text)
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
         }
     }
@@ -612,11 +612,11 @@ struct FacebookImportSheet: View {
     private func summaryRow(_ label: String, value: Int) -> some View {
         HStack {
             Text(label)
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
             Spacer()
             Text("\(value)")
-                .font(.caption)
+                .samFont(.caption)
                 .fontWeight(.semibold)
         }
     }

@@ -139,12 +139,12 @@ struct OnboardingView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("Welcome to SAM")
-                    .font(.title2)
+                    .samFont(.title2)
                     .bold()
 
                 if currentStep != .welcome && currentStep != .complete && currentStepNumber > 0 && totalSteps > 0 {
                     Text("Step \(currentStepNumber) of \(totalSteps)")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -316,11 +316,11 @@ struct OnboardingView: View {
     private var welcomeStep: some View {
         VStack(alignment: .leading, spacing: 20) {
             Text("Your Relationship Management Assistant")
-                .font(.title)
+                .samFont(.title)
                 .bold()
 
             Text("SAM helps you maintain great relationships with your clients by:")
-                .font(.body)
+                .samFont(.body)
                 .foregroundStyle(.secondary)
 
             VStack(alignment: .leading, spacing: 12) {
@@ -338,18 +338,18 @@ struct OnboardingView: View {
                     ProgressView()
                         .controlSize(.small)
                     Text("Checking current setup…")
-                        .font(.body)
+                        .samFont(.body)
                         .foregroundStyle(.secondary)
                 }
                 .padding(.top, 8)
             } else if totalSteps == 0 {
                 Text("Everything is already configured!")
-                    .font(.body)
+                    .samFont(.body)
                     .foregroundStyle(.secondary)
                     .padding(.top, 8)
             } else {
                 Text("Let's get started by setting up permissions.")
-                    .font(.body)
+                    .samFont(.body)
                     .foregroundStyle(.secondary)
                     .padding(.top, 8)
             }
@@ -364,11 +364,11 @@ struct OnboardingView: View {
                 .frame(maxWidth: .infinity)
 
             Text("Contacts Access")
-                .font(.title)
+                .samFont(.title)
                 .bold()
 
             Text("SAM needs access to your Contacts to:")
-                .font(.body)
+                .samFont(.body)
                 .foregroundStyle(.secondary)
 
             VStack(alignment: .leading, spacing: 12) {
@@ -379,7 +379,7 @@ struct OnboardingView: View {
             .padding(.leading, 8)
 
             Text("SAM reads your full Contacts list to identify matches and avoid duplicates, but only imports and updates contacts in the group you choose in the next step.")
-                .font(.callout)
+                .samFont(.callout)
                 .foregroundStyle(.orange)
                 .padding()
                 .background(Color.orange.opacity(0.1))
@@ -402,7 +402,7 @@ struct OnboardingView: View {
                     }
 
                     Text("To grant access, go to System Settings → Privacy & Security → Contacts")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
 
                     Button("Open System Settings") {
@@ -423,15 +423,15 @@ struct OnboardingView: View {
                 .frame(maxWidth: .infinity)
 
             Text("Choose a Contact Group")
-                .font(.title)
+                .samFont(.title)
                 .bold()
 
             Text("For best results, create a dedicated 'SAM' group in Contacts containing only your work contacts.")
-                .font(.body)
+                .samFont(.body)
                 .foregroundStyle(.secondary)
 
             Text("SAM reads all contacts to find matches and prevent duplicates, but only imports and updates contacts in this group.")
-                .font(.callout)
+                .samFont(.callout)
                 .foregroundStyle(.orange)
                 .padding()
                 .background(Color.orange.opacity(0.1))
@@ -440,7 +440,7 @@ struct OnboardingView: View {
             GroupBox {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Select Group")
-                        .font(.headline)
+                        .samFont(.headline)
 
                     if isLoadingGroups {
                         ProgressView()
@@ -470,7 +470,7 @@ struct OnboardingView: View {
                         }
                     } else {
                         Text("No groups found. Please create a group in the Contacts app.")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -491,11 +491,11 @@ struct OnboardingView: View {
                 .frame(maxWidth: .infinity)
 
             Text("Calendar Access")
-                .font(.title)
+                .samFont(.title)
                 .bold()
 
             Text("SAM needs access to your Calendar to:")
-                .font(.body)
+                .samFont(.body)
                 .foregroundStyle(.secondary)
 
             VStack(alignment: .leading, spacing: 12) {
@@ -506,7 +506,7 @@ struct OnboardingView: View {
             .padding(.leading, 8)
 
             Text("SAM only accesses events from the calendar you choose.")
-                .font(.callout)
+                .samFont(.callout)
                 .foregroundStyle(.orange)
                 .padding()
                 .background(Color.orange.opacity(0.1))
@@ -529,7 +529,7 @@ struct OnboardingView: View {
                     }
 
                     Text("To grant access, go to System Settings → Privacy & Security → Calendars")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
 
                     Button("Open System Settings") {
@@ -550,17 +550,17 @@ struct OnboardingView: View {
                 .frame(maxWidth: .infinity)
 
             Text("Choose a Calendar")
-                .font(.title)
+                .samFont(.title)
                 .bold()
 
             Text("For best results, create a dedicated 'SAM' calendar containing only your work events.")
-                .font(.body)
+                .samFont(.body)
                 .foregroundStyle(.secondary)
 
             GroupBox {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Select Calendar")
-                        .font(.headline)
+                        .samFont(.headline)
 
                     if isLoadingCalendars {
                         ProgressView()
@@ -594,7 +594,7 @@ struct OnboardingView: View {
                         }
                     } else {
                         Text("No calendars found. Please create a calendar in the Calendar app.")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -615,11 +615,11 @@ struct OnboardingView: View {
                 .frame(maxWidth: .infinity)
 
             Text("Email Integration")
-                .font(.title)
+                .samFont(.title)
                 .bold()
 
             Text("SAM can read your email to help you stay on top of relationships:")
-                .font(.body)
+                .samFont(.body)
                 .foregroundStyle(.secondary)
 
             VStack(alignment: .leading, spacing: 12) {
@@ -630,7 +630,7 @@ struct OnboardingView: View {
             .padding(.leading, 8)
 
             Text("SAM only reads metadata and generates summaries. You'll choose which email addresses to monitor next.")
-                .font(.callout)
+                .samFont(.callout)
                 .foregroundStyle(.orange)
                 .padding()
                 .background(Color.orange.opacity(0.1))
@@ -651,7 +651,7 @@ struct OnboardingView: View {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundStyle(.orange)
                         Text(error)
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                     }
 
@@ -666,7 +666,7 @@ struct OnboardingView: View {
                     Image(systemName: "info.circle.fill")
                         .foregroundStyle(.secondary)
                     Text("Email integration requires a Me card in Contacts. You can set this up later in Settings.")
-                        .font(.callout)
+                        .samFont(.callout)
                         .foregroundStyle(.secondary)
                 }
                 .padding()
@@ -687,11 +687,11 @@ struct OnboardingView: View {
                 .frame(maxWidth: .infinity)
 
             Text("Choose Email Addresses")
-                .font(.title)
+                .samFont(.title)
                 .bold()
 
             Text("Select which of your email addresses SAM should monitor for client interactions.")
-                .font(.body)
+                .samFont(.body)
                 .foregroundStyle(.secondary)
 
             GroupBox {
@@ -709,14 +709,14 @@ struct OnboardingView: View {
             }
 
             Text("Only emails sent to selected addresses will be imported. You can change this later in Settings.")
-                .font(.callout)
+                .samFont(.callout)
                 .foregroundStyle(.secondary)
 
             Divider()
 
             VStack(alignment: .leading, spacing: 8) {
                 Text("Initial scan depth")
-                    .font(.headline)
+                    .samFont(.headline)
 
                 Picker("Initial scan depth", selection: $onboardingLookbackDays) {
                     Text("7 days").tag(7)
@@ -729,11 +729,11 @@ struct OnboardingView: View {
 
                 if onboardingLookbackDays == 0 {
                     Text("First import will scan all available history. This may take several minutes for large inboxes.")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.orange)
                 } else {
                     Text("How far back to scan for emails on first import. You can change this later in Settings.")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -748,11 +748,11 @@ struct OnboardingView: View {
                 .frame(maxWidth: .infinity)
 
             Text("iMessage & Call History")
-                .font(.title)
+                .samFont(.title)
                 .bold()
 
             Text("SAM can analyze your iMessage conversations and call history to build a complete picture of your relationships:")
-                .font(.body)
+                .samFont(.body)
                 .foregroundStyle(.secondary)
 
             VStack(alignment: .leading, spacing: 12) {
@@ -763,7 +763,7 @@ struct OnboardingView: View {
             .padding(.leading, 8)
 
             Text("SAM reads local database files on your Mac. You'll be asked to select each folder. Message text is analyzed on-device then discarded.")
-                .font(.callout)
+                .samFont(.callout)
                 .foregroundStyle(.orange)
                 .padding()
                 .background(Color.orange.opacity(0.1))
@@ -773,13 +773,13 @@ struct OnboardingView: View {
             HStack(spacing: 12) {
                 Image(systemName: BookmarkManager.shared.hasMessagesAccess ? "checkmark.circle.fill" : "circle")
                     .foregroundStyle(BookmarkManager.shared.hasMessagesAccess ? .green : .secondary)
-                    .font(.title3)
+                    .samFont(.title3)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Messages Database")
-                        .font(.body)
+                        .samFont(.body)
                     Text("~/Library/Messages/")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
 
@@ -799,13 +799,13 @@ struct OnboardingView: View {
             HStack(spacing: 12) {
                 Image(systemName: BookmarkManager.shared.hasCallHistoryAccess ? "checkmark.circle.fill" : "circle")
                     .foregroundStyle(BookmarkManager.shared.hasCallHistoryAccess ? .green : .secondary)
-                    .font(.title3)
+                    .samFont(.title3)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Call History Database")
-                        .font(.body)
+                        .samFont(.body)
                     Text("~/Library/Application Support/CallHistoryDB/")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
 
@@ -831,11 +831,11 @@ struct OnboardingView: View {
                 .frame(maxWidth: .infinity)
 
             Text("Microphone & Speech")
-                .font(.title)
+                .samFont(.title)
                 .bold()
 
             Text("SAM can transcribe your voice notes during meetings:")
-                .font(.body)
+                .samFont(.body)
                 .foregroundStyle(.secondary)
 
             VStack(alignment: .leading, spacing: 12) {
@@ -846,7 +846,7 @@ struct OnboardingView: View {
             .padding(.leading, 8)
 
             Text("Microphone audio is only used for live transcription and is never stored or sent anywhere.")
-                .font(.callout)
+                .samFont(.callout)
                 .foregroundStyle(.orange)
                 .padding()
                 .background(Color.orange.opacity(0.1))
@@ -864,7 +864,7 @@ struct OnboardingView: View {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
                     Text("Microphone granted, but speech recognition was denied. You can enable it in System Settings.")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -879,11 +879,11 @@ struct OnboardingView: View {
                 .frame(maxWidth: .infinity)
 
             Text("Notifications")
-                .font(.title)
+                .samFont(.title)
                 .bold()
 
             Text("SAM uses macOS notifications to keep you informed:")
-                .font(.body)
+                .samFont(.body)
                 .foregroundStyle(.secondary)
 
             VStack(alignment: .leading, spacing: 12) {
@@ -894,7 +894,7 @@ struct OnboardingView: View {
             .padding(.leading, 8)
 
             Text("Notifications are optional — SAM works fully without them. You just won't get background alerts.")
-                .font(.callout)
+                .samFont(.callout)
                 .foregroundStyle(.orange)
                 .padding()
                 .background(Color.orange.opacity(0.1))
@@ -917,7 +917,7 @@ struct OnboardingView: View {
                     }
 
                     Text("To enable later, go to System Settings → Notifications → SAM")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
 
                     Button("Open System Settings") {
@@ -938,11 +938,11 @@ struct OnboardingView: View {
                 .frame(maxWidth: .infinity)
 
             Text("Enhanced AI")
-                .font(.title)
+                .samFont(.title)
                 .bold()
 
             Text("SAM includes Apple Intelligence for on-device coaching. For deeper reasoning, download the Mistral 7B model:")
-                .font(.body)
+                .samFont(.body)
                 .foregroundStyle(.secondary)
 
             VStack(alignment: .leading, spacing: 12) {
@@ -953,7 +953,7 @@ struct OnboardingView: View {
             .padding(.leading, 8)
 
             Text("The download is approximately 4 GB and runs in the background — you can start using SAM immediately. All processing stays on your device.")
-                .font(.callout)
+                .samFont(.callout)
                 .foregroundStyle(.orange)
                 .padding()
                 .background(Color.orange.opacity(0.1))
@@ -964,9 +964,9 @@ struct OnboardingView: View {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Mistral 7B Instruct (4-bit)")
-                                .font(.subheadline)
+                                .samFont(.subheadline)
                             Text("~4 GB download")
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.secondary)
                         }
 
@@ -974,7 +974,7 @@ struct OnboardingView: View {
 
                         if mlxModelReady {
                             Label("Ready", systemImage: "checkmark.circle.fill")
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.green)
                                 .fontWeight(.medium)
                         } else if isMlxDownloading {
@@ -996,19 +996,19 @@ struct OnboardingView: View {
                         ProgressView(value: mlxDownloadProgress)
                             .progressViewStyle(.linear)
                         Text("Downloading… \(Int(mlxDownloadProgress * 100))%")
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .foregroundStyle(.secondary)
                     }
 
                     if let error = mlxDownloadError {
                         Text(error)
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.red)
                     }
 
                     if mlxModelReady {
                         Text("Hybrid AI backend will be activated when you complete setup.")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -1027,11 +1027,11 @@ struct OnboardingView: View {
                 .foregroundStyle(.green)
 
             Text("You're All Set!")
-                .font(.title2)
+                .samFont(.title2)
                 .bold()
 
             Text("SAM is now importing your data and identifying roles. You'll see coaching suggestions in the Today view within minutes.")
-                .font(.callout)
+                .samFont(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
@@ -1056,7 +1056,7 @@ struct OnboardingView: View {
             .padding(.top, 4)
 
             Text("You can change any of these in Settings.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.tertiary)
         }
     }
@@ -1069,7 +1069,7 @@ struct OnboardingView: View {
                 .frame(width: 22)
 
             Text(title)
-                .font(.callout)
+                .samFont(.callout)
                 .foregroundStyle(enabled ? .primary : .secondary)
 
             Spacer()
@@ -1272,7 +1272,7 @@ struct OnboardingView: View {
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(.green)
             Text(text)
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
         }
     }
@@ -1758,7 +1758,7 @@ private struct FeatureRow: View {
                 .foregroundStyle(.blue)
                 .frame(width: 24)
             Text(text)
-                .font(.body)
+                .samFont(.body)
         }
     }
 }
@@ -1773,9 +1773,9 @@ private struct BulletPoint: View {
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             Text("\u{2022}")
-                .font(.body)
+                .samFont(.body)
             Text(text)
-                .font(.body)
+                .samFont(.body)
         }
     }
 }

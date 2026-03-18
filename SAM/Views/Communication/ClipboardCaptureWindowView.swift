@@ -80,13 +80,13 @@ struct ClipboardCaptureWindowView: View {
             Image(systemName: "doc.on.clipboard")
                 .foregroundStyle(.blue)
             Text("Clipboard Capture")
-                .font(.headline)
+                .samFont(.headline)
 
             Spacer()
 
             if let platform = conversation?.detectedPlatform ?? profileContent?.platform {
                 Text(platform)
-                    .font(.caption)
+                    .samFont(.caption)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
                     .background(.blue.opacity(0.15), in: Capsule())
@@ -117,7 +117,7 @@ struct ClipboardCaptureWindowView: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text("Title")
-                        .font(.subheadline)
+                        .samFont(.subheadline)
                         .foregroundStyle(.secondary)
                         .frame(width: 50, alignment: .leading)
                     TextField("Conversation title", text: $title)
@@ -126,7 +126,7 @@ struct ClipboardCaptureWindowView: View {
 
                 HStack {
                     Text("Date")
-                        .font(.subheadline)
+                        .samFont(.subheadline)
                         .foregroundStyle(.secondary)
                         .frame(width: 50, alignment: .leading)
                     DatePicker("", selection: $conversationDate, displayedComponents: [.date])
@@ -140,7 +140,7 @@ struct ClipboardCaptureWindowView: View {
             // Senders section
             VStack(alignment: .leading, spacing: 8) {
                 Text("Senders")
-                    .font(.subheadline)
+                    .samFont(.subheadline)
                     .fontWeight(.medium)
 
                 ForEach(uniqueSenders, id: \.self) { senderName in
@@ -199,7 +199,7 @@ struct ClipboardCaptureWindowView: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text("Title")
-                        .font(.subheadline)
+                        .samFont(.subheadline)
                         .foregroundStyle(.secondary)
                         .frame(width: 60, alignment: .leading)
                     TextField("Note title", text: $title)
@@ -213,19 +213,19 @@ struct ClipboardCaptureWindowView: View {
             // Person matching
             VStack(alignment: .leading, spacing: 8) {
                 Text("Link to Contact")
-                    .font(.subheadline)
+                    .samFont(.subheadline)
                     .fontWeight(.medium)
 
                 if let person = profileMatch {
                     HStack(spacing: 6) {
                         Image(systemName: "checkmark.circle.fill")
                             .foregroundStyle(.green)
-                            .font(.caption)
+                            .samFont(.caption)
                         Text(person.displayName)
-                            .font(.subheadline)
+                            .samFont(.subheadline)
                         if let role = person.roleBadges.first {
                             Text(role)
-                                .font(.caption2)
+                                .samFont(.caption2)
                                 .padding(.horizontal, 4)
                                 .padding(.vertical, 1)
                                 .background(Color.accentColor.opacity(0.15), in: Capsule())
@@ -234,7 +234,7 @@ struct ClipboardCaptureWindowView: View {
                             profileMatch = nil
                         } label: {
                             Image(systemName: "xmark.circle")
-                                .font(.caption)
+                                .samFont(.caption)
                         }
                         .buttonStyle(.borderless)
                     }
@@ -262,10 +262,10 @@ struct ClipboardCaptureWindowView: View {
                                         } label: {
                                             HStack {
                                                 Text(person.displayName)
-                                                    .font(.subheadline)
+                                                    .samFont(.subheadline)
                                                 if let role = person.roleBadges.first {
                                                     Text(role)
-                                                        .font(.caption2)
+                                                        .samFont(.caption2)
                                                         .padding(.horizontal, 4)
                                                         .padding(.vertical, 1)
                                                         .background(Color.accentColor.opacity(0.15), in: Capsule())
@@ -284,7 +284,7 @@ struct ClipboardCaptureWindowView: View {
 
                         Image(systemName: "questionmark.circle")
                             .foregroundStyle(.orange)
-                            .font(.caption)
+                            .samFont(.caption)
                     }
                 }
             }
@@ -294,7 +294,7 @@ struct ClipboardCaptureWindowView: View {
 
             // Profile content preview (editable)
             TextEditor(text: $profileNoteText)
-                .font(.callout)
+                .samFont(.callout)
                 .padding(8)
                 .scrollContentBackground(.hidden)
 
@@ -338,7 +338,7 @@ struct ClipboardCaptureWindowView: View {
             Spacer()
 
             Image(systemName: "exclamationmark.triangle")
-                .font(.largeTitle)
+                .samFont(.largeTitle)
                 .foregroundStyle(.orange)
 
             Text(errorMessage ?? "An unknown error occurred.")
@@ -645,11 +645,11 @@ private struct SenderMatchRow: View {
     var body: some View {
         HStack(spacing: 8) {
             Text(senderName)
-                .font(.subheadline)
+                .samFont(.subheadline)
                 .frame(width: 120, alignment: .leading)
 
             Image(systemName: "arrow.right")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
 
             switch match {
@@ -657,9 +657,9 @@ private struct SenderMatchRow: View {
                 HStack(spacing: 4) {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(.green)
-                        .font(.caption)
+                        .samFont(.caption)
                     Text("Me (auto)")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
 
@@ -667,11 +667,11 @@ private struct SenderMatchRow: View {
                 HStack(spacing: 4) {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(.green)
-                        .font(.caption)
+                        .samFont(.caption)
                     Text(person.displayName)
-                        .font(.caption)
+                        .samFont(.caption)
                     Text("(Me)")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.secondary)
                 }
 
@@ -679,12 +679,12 @@ private struct SenderMatchRow: View {
                 HStack(spacing: 4) {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(.green)
-                        .font(.caption)
+                        .samFont(.caption)
                     Text(person.displayName)
-                        .font(.caption)
+                        .samFont(.caption)
                     if let role = person.roleBadges.first {
                         Text(role)
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .padding(.horizontal, 4)
                             .padding(.vertical, 1)
                             .background(Color.accentColor.opacity(0.15), in: Capsule())
@@ -693,7 +693,7 @@ private struct SenderMatchRow: View {
                         onClear()
                     } label: {
                         Image(systemName: "xmark.circle")
-                            .font(.caption)
+                            .samFont(.caption)
                     }
                     .buttonStyle(.borderless)
                 }
@@ -722,10 +722,10 @@ private struct SenderMatchRow: View {
                                     } label: {
                                         HStack {
                                             Text(person.displayName)
-                                                .font(.subheadline)
+                                                .samFont(.subheadline)
                                             if let role = person.roleBadges.first {
                                                 Text(role)
-                                                    .font(.caption2)
+                                                    .samFont(.caption2)
                                                     .padding(.horizontal, 4)
                                                     .padding(.vertical, 1)
                                                     .background(Color.accentColor.opacity(0.15), in: Capsule())
@@ -744,7 +744,7 @@ private struct SenderMatchRow: View {
 
                     Image(systemName: "questionmark.circle")
                         .foregroundStyle(.orange)
-                        .font(.caption)
+                        .samFont(.caption)
                 }
             }
 
@@ -763,19 +763,19 @@ private struct MessagePreviewRow: View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 6) {
                 Text(message.senderName)
-                    .font(.caption)
+                    .samFont(.caption)
                     .fontWeight(.semibold)
                     .foregroundStyle(message.isFromMe ? .blue : .primary)
 
                 if let ts = message.timestamp {
                     Text(ts, style: .time)
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.secondary)
                 }
             }
 
             Text(message.text)
-                .font(.callout)
+                .samFont(.callout)
                 .foregroundStyle(.primary)
         }
     }

@@ -286,10 +286,10 @@ private struct NoteDetailReadOnlyView: View {
                     Image(systemName: "note.text")
                         .foregroundStyle(.orange)
                     Text("Note")
-                        .font(.headline)
+                        .samFont(.headline)
                     Spacer()
                     Text(note.updatedAt, style: .date)
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
 
@@ -299,10 +299,10 @@ private struct NoteDetailReadOnlyView: View {
                 if let summary = note.summary, !summary.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Summary")
-                            .font(.subheadline)
+                            .samFont(.subheadline)
                             .fontWeight(.semibold)
                         Text(summary)
-                            .font(.body)
+                            .samFont(.body)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -310,10 +310,10 @@ private struct NoteDetailReadOnlyView: View {
                 // Content
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Content")
-                        .font(.subheadline)
+                        .samFont(.subheadline)
                         .fontWeight(.semibold)
                     Text(note.content)
-                        .font(.body)
+                        .samFont(.body)
                         .textSelection(.enabled)
                 }
 
@@ -321,7 +321,7 @@ private struct NoteDetailReadOnlyView: View {
                 if !note.linkedPeople.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Linked People")
-                            .font(.subheadline)
+                            .samFont(.subheadline)
                             .fontWeight(.semibold)
                         ForEach(note.linkedPeople, id: \.id) { person in
                             HStack(spacing: 6) {
@@ -329,7 +329,7 @@ private struct NoteDetailReadOnlyView: View {
                                     .foregroundStyle(.secondary)
                                 Text(person.displayNameCache ?? person.displayName)
                             }
-                            .font(.body)
+                            .samFont(.body)
                         }
                     }
                 }
@@ -338,7 +338,7 @@ private struct NoteDetailReadOnlyView: View {
                 if !note.extractedActionItems.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Action Items")
-                            .font(.subheadline)
+                            .samFont(.subheadline)
                             .fontWeight(.semibold)
                         ForEach(note.extractedActionItems, id: \.description) { item in
                             HStack(alignment: .top, spacing: 6) {
@@ -346,7 +346,7 @@ private struct NoteDetailReadOnlyView: View {
                                     .foregroundStyle(.blue)
                                 Text(item.description)
                             }
-                            .font(.body)
+                            .samFont(.body)
                         }
                     }
                 }
@@ -367,10 +367,10 @@ private struct InsightDetailReadOnlyView: View {
                     Image(systemName: "lightbulb.fill")
                         .foregroundStyle(.yellow)
                     Text(insight.title)
-                        .font(.headline)
+                        .samFont(.headline)
                     Spacer()
                     Text(insight.urgency.displayText)
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.white)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
@@ -382,28 +382,28 @@ private struct InsightDetailReadOnlyView: View {
 
                 // Message
                 Text(insight.message)
-                    .font(.body)
+                    .samFont(.body)
                     .textSelection(.enabled)
 
                 // Linked Person
                 if let person = insight.samPerson {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Related Person")
-                            .font(.subheadline)
+                            .samFont(.subheadline)
                             .fontWeight(.semibold)
                         HStack(spacing: 6) {
                             Image(systemName: "person.circle.fill")
                                 .foregroundStyle(.secondary)
                             Text(person.displayNameCache ?? person.displayName)
                         }
-                        .font(.body)
+                        .samFont(.body)
                     }
                 }
 
                 // Metadata
                 HStack(spacing: 16) {
                     Text(insight.createdAt, format: .dateTime.month().day().year())
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -461,10 +461,10 @@ private struct OutcomeDetailReadOnlyView: View {
                         .fill(outcome.outcomeKind.themeColor)
                         .frame(width: 12, height: 12)
                     Text(outcome.title)
-                        .font(.headline)
+                        .samFont(.headline)
                     Spacer()
                     Text(outcome.outcomeKind.displayName)
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(outcome.outcomeKind.themeColor)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
@@ -477,10 +477,10 @@ private struct OutcomeDetailReadOnlyView: View {
                 // Rationale
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Why")
-                        .font(.subheadline)
+                        .samFont(.subheadline)
                         .fontWeight(.semibold)
                     Text(outcome.rationale)
-                        .font(.body)
+                        .samFont(.body)
                         .textSelection(.enabled)
                 }
 
@@ -488,10 +488,10 @@ private struct OutcomeDetailReadOnlyView: View {
                 if let nextStep = outcome.suggestedNextStep, !nextStep.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Next Step")
-                            .font(.subheadline)
+                            .samFont(.subheadline)
                             .fontWeight(.semibold)
                         Text(nextStep)
-                            .font(.body)
+                            .samFont(.body)
                     }
                 }
 
@@ -501,7 +501,7 @@ private struct OutcomeDetailReadOnlyView: View {
                         Image(systemName: "calendar.badge.clock")
                             .foregroundStyle(.red)
                         Text("Due: \(deadline, format: .dateTime.month().day().year())")
-                            .font(.body)
+                            .samFont(.body)
                     }
                 }
 
@@ -509,24 +509,24 @@ private struct OutcomeDetailReadOnlyView: View {
                 if let person = outcome.linkedPerson {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Related Person")
-                            .font(.subheadline)
+                            .samFont(.subheadline)
                             .fontWeight(.semibold)
                         HStack(spacing: 6) {
                             Image(systemName: "person.circle.fill")
                                 .foregroundStyle(.secondary)
                             Text(person.displayNameCache ?? person.displayName)
                         }
-                        .font(.body)
+                        .samFont(.body)
                     }
                 }
 
                 // Status
                 HStack(spacing: 6) {
                     Text("Status:")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                     Text(outcome.status.rawValue.capitalized)
-                        .font(.caption)
+                        .samFont(.caption)
                         .fontWeight(.medium)
                 }
             }

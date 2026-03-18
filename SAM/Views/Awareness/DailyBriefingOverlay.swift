@@ -72,7 +72,7 @@ struct DailyBriefingOverlay: View {
                     } label: {
                         Label(copiedBriefing ? "Copied" : "Copy Briefing",
                               systemImage: copiedBriefing ? "checkmark" : "doc.on.doc")
-                            .font(.headline)
+                            .samFont(.headline)
                             .padding(.vertical, 12)
                     }
                     .buttonStyle(.bordered)
@@ -81,7 +81,7 @@ struct DailyBriefingOverlay: View {
                         coordinator.markMorningViewed()
                     }) {
                         Text("Start My Day")
-                            .font(.headline)
+                            .samFont(.headline)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
                     }
@@ -100,11 +100,11 @@ struct DailyBriefingOverlay: View {
     private var greetingHeader: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(greetingText)
-                .font(.title)
+                .samFont(.title)
                 .fontWeight(.bold)
 
             Text(Date.now.formatted(date: .complete, time: .omitted))
-                .font(.subheadline)
+                .samFont(.subheadline)
                 .foregroundStyle(.secondary)
         }
     }
@@ -127,7 +127,7 @@ struct DailyBriefingOverlay: View {
             ForEach(Array(priorities.enumerated()), id: \.element.id) { index, priority in
                 HStack(alignment: .top, spacing: 10) {
                     Text("\(index + 1)")
-                        .font(.caption)
+                        .samFont(.caption)
                         .fontWeight(.bold)
                         .foregroundStyle(.white)
                         .frame(width: 22, height: 22)
@@ -136,18 +136,18 @@ struct DailyBriefingOverlay: View {
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text(priority.title)
-                            .font(.subheadline)
+                            .samFont(.subheadline)
                             .fontWeight(.medium)
 
                         if let rationale = priority.rationale, !rationale.isEmpty {
                             Text(rationale)
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.secondary)
                         }
 
                         if let person = priority.personName {
                             Text(person)
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.purple)
                         }
                     }
@@ -165,7 +165,7 @@ struct DailyBriefingOverlay: View {
 
     private func urgencyBadge(_ urgency: String) -> some View {
         Text(urgency.capitalized)
-            .font(.caption2)
+            .samFont(.caption2)
             .fontWeight(.medium)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
@@ -179,7 +179,7 @@ struct DailyBriefingOverlay: View {
     private func narrativeSection(_ text: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(text)
-                .font(.body)
+                .samFont(.body)
                 .foregroundStyle(.primary)
                 .textSelection(.enabled)
                 .padding()
@@ -207,12 +207,12 @@ struct DailyBriefingOverlay: View {
                     // Time column
                     VStack(alignment: .trailing) {
                         Text(item.startsAt.formatted(date: .omitted, time: .shortened))
-                            .font(.caption)
+                            .samFont(.caption)
                             .fontWeight(.medium)
                             .monospacedDigit()
                         if let end = item.endsAt {
                             Text(end.formatted(date: .omitted, time: .shortened))
-                                .font(.caption2)
+                                .samFont(.caption2)
                                 .foregroundStyle(.tertiary)
                                 .monospacedDigit()
                         }
@@ -228,18 +228,18 @@ struct DailyBriefingOverlay: View {
                     // Content
                     VStack(alignment: .leading, spacing: 4) {
                         Text(item.eventTitle)
-                            .font(.subheadline)
+                            .samFont(.subheadline)
                             .fontWeight(.medium)
 
                         if !item.attendeeNames.isEmpty {
                             Text(item.attendeeNames.joined(separator: ", "))
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.secondary)
                         }
 
                         if let prep = item.preparationNote, !prep.isEmpty {
                             Text(prep)
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.orange)
                         }
                     }
@@ -257,7 +257,7 @@ struct DailyBriefingOverlay: View {
             ForEach(Array(actions.enumerated()), id: \.element.id) { index, action in
                 HStack(alignment: .top, spacing: 10) {
                     Text("\(index + 1)")
-                        .font(.caption)
+                        .samFont(.caption)
                         .fontWeight(.bold)
                         .foregroundStyle(.white)
                         .frame(width: 22, height: 22)
@@ -266,11 +266,11 @@ struct DailyBriefingOverlay: View {
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text(action.title)
-                            .font(.subheadline)
+                            .samFont(.subheadline)
 
                         if let person = action.personName {
                             Text(person)
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -288,23 +288,23 @@ struct DailyBriefingOverlay: View {
             ForEach(followUps) { followUp in
                 HStack(spacing: 12) {
                     Image(systemName: "person.circle")
-                        .font(.title3)
+                        .samFont(.title3)
                         .foregroundStyle(.orange)
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text(followUp.personName)
-                            .font(.subheadline)
+                            .samFont(.subheadline)
                             .fontWeight(.medium)
 
                         Text(followUp.reason)
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                     }
 
                     Spacer()
 
                     Text("\(followUp.daysSinceInteraction)d")
-                        .font(.caption)
+                        .samFont(.caption)
                         .fontWeight(.medium)
                         .foregroundStyle(.orange)
                 }
@@ -322,16 +322,16 @@ struct DailyBriefingOverlay: View {
             ForEach(events) { event in
                 HStack(spacing: 12) {
                     Image(systemName: "gift.fill")
-                        .font(.title3)
+                        .samFont(.title3)
                         .foregroundStyle(.pink)
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text("\(event.personName) — \(event.eventDescription)")
-                            .font(.subheadline)
+                            .samFont(.subheadline)
 
                         if let suggestion = event.outreachSuggestion {
                             Text(suggestion)
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.secondary)
                                 .italic()
                         }
@@ -351,17 +351,17 @@ struct DailyBriefingOverlay: View {
             ForEach(items) { item in
                 HStack(spacing: 8) {
                     Text(item.startsAt.formatted(date: .omitted, time: .shortened))
-                        .font(.caption)
+                        .samFont(.caption)
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
                         .frame(width: 60, alignment: .trailing)
 
                     Text(item.eventTitle)
-                        .font(.subheadline)
+                        .samFont(.subheadline)
 
                     if !item.attendeeNames.isEmpty {
                         Text("(\(item.attendeeNames.joined(separator: ", ")))")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.tertiary)
                     }
                 }
@@ -376,10 +376,10 @@ struct DailyBriefingOverlay: View {
             Image(systemName: icon)
                 .foregroundStyle(.secondary)
             Text(title)
-                .font(.headline)
+                .samFont(.headline)
             Spacer()
             Text("\(count)")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 2)

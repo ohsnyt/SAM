@@ -24,7 +24,7 @@ struct RoleCandidateReviewSheet: View {
             // Header
             HStack {
                 Text("Candidate Suggestions for \(roleName)")
-                    .font(.headline)
+                    .samFont(.headline)
                 Spacer()
                 Button("Done") { dismiss() }
                     .keyboardShortcut(.cancelAction)
@@ -59,16 +59,16 @@ struct RoleCandidateReviewSheet: View {
                         .stroke(scoreColor(result.matchScore), lineWidth: 3)
                         .frame(width: 32, height: 32)
                     Text("\(Int(result.matchScore * 100))")
-                        .font(.caption2.bold())
+                        .samFont(.caption2, weight: .bold)
                         .foregroundStyle(scoreColor(result.matchScore))
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(personName(for: result.personID))
-                        .font(.body.weight(.medium))
+                        .samFont(.body, weight: .medium)
 
                     Text(result.matchRationale)
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(3)
                 }
@@ -81,9 +81,9 @@ struct RoleCandidateReviewSheet: View {
                 HStack(spacing: 4) {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(.green)
-                        .font(.caption)
+                        .samFont(.caption)
                     Text(result.strengthSignals.prefix(2).joined(separator: " · "))
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -93,9 +93,9 @@ struct RoleCandidateReviewSheet: View {
                 HStack(spacing: 4) {
                     Image(systemName: "exclamationmark.circle")
                         .foregroundStyle(.orange)
-                        .font(.caption)
+                        .samFont(.caption)
                     Text(result.gapSignals.first ?? "")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
             }

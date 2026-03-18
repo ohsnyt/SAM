@@ -62,7 +62,7 @@ struct GoalEntryForm: View {
                 Spacer()
 
                 Text(isEditing ? "Edit Goal" : "New Goal")
-                    .font(.headline)
+                    .samFont(.headline)
 
                 Spacer()
 
@@ -123,7 +123,7 @@ struct GoalEntryForm: View {
 
                     if !selectedType.isCurrency {
                         Text(selectedType.unit)
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }

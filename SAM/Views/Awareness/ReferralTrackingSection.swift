@@ -83,10 +83,10 @@ struct ReferralTrackingSection: View {
                 Image(systemName: "arrow.triangle.branch")
                     .foregroundStyle(.green)
                 Text("Referrals")
-                    .font(.headline)
+                    .samFont(.headline)
                 if totalReferralCount > 0 {
                     Text("\(totalReferralCount)")
-                        .font(.caption)
+                        .samFont(.caption)
                         .fontWeight(.semibold)
                         .foregroundStyle(.white)
                         .padding(.horizontal, 6)
@@ -131,13 +131,13 @@ struct ReferralTrackingSection: View {
     private var emptyState: some View {
         VStack(spacing: 10) {
             Image(systemName: "arrow.triangle.branch")
-                .font(.title2)
+                .samFont(.title2)
                 .foregroundStyle(.secondary)
             Text("No referral data yet")
-                .font(.subheadline)
+                .samFont(.subheadline)
                 .fontWeight(.medium)
             Text("Track who referred each contact to surface your best referral sources. Set referrals from each person's detail page.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 360)
@@ -153,9 +153,9 @@ struct ReferralTrackingSection: View {
             Button(action: { withAnimation { showTopReferrers.toggle() } }) {
                 HStack {
                     Image(systemName: showTopReferrers ? "chevron.down" : "chevron.right")
-                        .font(.caption2)
+                        .samFont(.caption2)
                     Text("Top Referrers (\(referrers.count))")
-                        .font(.caption)
+                        .samFont(.caption)
                         .fontWeight(.medium)
                     Spacer()
                 }
@@ -184,9 +184,9 @@ struct ReferralTrackingSection: View {
             Button(action: { withAnimation { showOpportunities.toggle() } }) {
                 HStack {
                     Image(systemName: showOpportunities ? "chevron.down" : "chevron.right")
-                        .font(.caption2)
+                        .samFont(.caption2)
                     Text("Referral Opportunities (\(opportunities.count))")
-                        .font(.caption)
+                        .samFont(.caption)
                         .fontWeight(.medium)
                     Spacer()
                 }
@@ -260,21 +260,21 @@ private struct ReferrerRow: View {
             HStack(spacing: 12) {
                 // Rank indicator
                 Image(systemName: "person.2.fill")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.green)
                     .frame(width: 20)
 
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
                         Text(entry.displayName)
-                            .font(.subheadline)
+                            .samFont(.subheadline)
                             .fontWeight(.medium)
                             .foregroundStyle(.primary)
 
                         ForEach(entry.roleBadges.prefix(2), id: \.self) { badge in
                             let style = RoleBadgeStyle.forBadge(badge)
                             Text(badge)
-                                .font(.caption2)
+                                .samFont(.caption2)
                                 .padding(.horizontal, 5)
                                 .padding(.vertical, 1)
                                 .background(style.color.opacity(0.15))
@@ -288,7 +288,7 @@ private struct ReferrerRow: View {
 
                 // Referral count badge
                 Text("\(entry.referralCount) referral\(entry.referralCount == 1 ? "" : "s")")
-                    .font(.caption)
+                    .samFont(.caption)
                     .fontWeight(.medium)
                     .foregroundStyle(.green)
             }
@@ -324,21 +324,21 @@ private struct OpportunityRow: View {
             HStack(spacing: 12) {
                 // Opportunity indicator
                 Image(systemName: "lightbulb.fill")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.yellow)
                     .frame(width: 20)
 
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
                         Text(entry.displayName)
-                            .font(.subheadline)
+                            .samFont(.subheadline)
                             .fontWeight(.medium)
                             .foregroundStyle(.primary)
 
                         ForEach(entry.roleBadges.prefix(2), id: \.self) { badge in
                             let style = RoleBadgeStyle.forBadge(badge)
                             Text(badge)
-                                .font(.caption2)
+                                .samFont(.caption2)
                                 .padding(.horizontal, 5)
                                 .padding(.vertical, 1)
                                 .background(style.color.opacity(0.15))
@@ -348,14 +348,14 @@ private struct OpportunityRow: View {
                     }
 
                     Text("Client for \(entry.relationshipLabel) · No referrals yet")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
 
                 Spacer()
 
                 Text("Consider asking")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.orange)
             }
             .padding(10)

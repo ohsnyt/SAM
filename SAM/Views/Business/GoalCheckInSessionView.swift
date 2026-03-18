@@ -69,7 +69,7 @@ struct GoalCheckInSessionView: View {
 
             if let error = errorMessage {
                 Text(error)
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.red)
                     .padding(.horizontal)
             }
@@ -96,19 +96,19 @@ struct GoalCheckInSessionView: View {
                         Image(systemName: context.goalType.icon)
                             .foregroundStyle(context.goalType.color)
                         Text("Check In: \(context.goalTitle)")
-                            .font(.headline)
+                            .samFont(.headline)
                             .lineLimit(1)
                     }
 
                     HStack(spacing: 12) {
                         // Progress
                         Text("\(Int(context.progress.currentValue))/\(Int(context.progress.targetValue))")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
 
                         // Pace badge
                         Text(context.progress.pace.displayName)
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .fontWeight(.semibold)
                             .foregroundStyle(.white)
                             .padding(.horizontal, 6)
@@ -119,7 +119,7 @@ struct GoalCheckInSessionView: View {
                         // Days remaining
                         if context.progress.daysRemaining > 0 {
                             Text("\(context.progress.daysRemaining) days left")
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -151,22 +151,22 @@ struct GoalCheckInSessionView: View {
             HStack(spacing: 4) {
                 if message.role == .assistant {
                     Image(systemName: "sparkles")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.blue)
                     Text("SAM")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .fontWeight(.medium)
                         .foregroundStyle(.blue)
                 } else {
                     Text("You")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .fontWeight(.medium)
                         .foregroundStyle(.secondary)
                 }
             }
 
             Text(message.content)
-                .font(.callout)
+                .samFont(.callout)
                 .textSelection(.enabled)
                 .padding(10)
                 .background(
@@ -194,9 +194,9 @@ struct GoalCheckInSessionView: View {
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: actionIcon(action.actionType))
-                    .font(.caption2)
+                    .samFont(.caption2)
                 Text(action.label)
-                    .font(.caption)
+                    .samFont(.caption)
             }
         }
         .buttonStyle(.bordered)
@@ -210,7 +210,7 @@ struct GoalCheckInSessionView: View {
             ProgressView()
                 .controlSize(.small)
             Text(text)
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 10)
@@ -221,7 +221,7 @@ struct GoalCheckInSessionView: View {
     private var inputBar: some View {
         HStack(alignment: .bottom, spacing: 8) {
             TextEditor(text: $inputText)
-                .font(.body)
+                .samFont(.body)
                 .frame(minHeight: 72, maxHeight: 120)
                 .scrollContentBackground(.hidden)
                 .padding(6)
@@ -236,7 +236,7 @@ struct GoalCheckInSessionView: View {
                 .overlay(alignment: .topLeading) {
                     if inputText.isEmpty {
                         Text("Share what's working, what's not...")
-                            .font(.body)
+                            .samFont(.body)
                             .foregroundStyle(.tertiary)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 14)
@@ -249,7 +249,7 @@ struct GoalCheckInSessionView: View {
                     sendMessage()
                 } label: {
                     Image(systemName: "arrow.up.circle.fill")
-                        .font(.title3)
+                        .samFont(.title3)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(inputText.isEmpty ? Color.gray.opacity(0.4) : Color.blue)

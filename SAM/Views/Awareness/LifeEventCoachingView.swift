@@ -63,7 +63,7 @@ struct LifeEventCoachingView: View {
 
             if let error = errorMessage {
                 Text(error)
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.red)
                     .padding(.horizontal)
             }
@@ -100,9 +100,9 @@ struct LifeEventCoachingView: View {
                         Image(systemName: iconForEventType(context.event.eventType))
                             .foregroundStyle(.pink)
                         Text(context.personName)
-                            .font(.headline)
+                            .samFont(.headline)
                         Text(context.event.eventTypeLabel)
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .fontWeight(.medium)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
@@ -112,7 +112,7 @@ struct LifeEventCoachingView: View {
                     }
 
                     Text(context.event.eventDescription)
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                 }
@@ -137,15 +137,15 @@ struct LifeEventCoachingView: View {
             HStack(spacing: 4) {
                 if message.role == .assistant {
                     Image(systemName: "sparkles")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.pink)
                     Text("SAM")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .fontWeight(.medium)
                         .foregroundStyle(.pink)
                 } else {
                     Text("You")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .fontWeight(.medium)
                         .foregroundStyle(.secondary)
                 }
@@ -153,7 +153,7 @@ struct LifeEventCoachingView: View {
 
             // Content
             Text(message.content)
-                .font(.callout)
+                .samFont(.callout)
                 .textSelection(.enabled)
                 .padding(10)
                 .background(messageBubbleBackground(for: message.role))
@@ -178,9 +178,9 @@ struct LifeEventCoachingView: View {
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: actionIcon(action.actionType))
-                    .font(.caption2)
+                    .samFont(.caption2)
                 Text(action.label)
-                    .font(.caption)
+                    .samFont(.caption)
             }
         }
         .buttonStyle(.bordered)
@@ -195,7 +195,7 @@ struct LifeEventCoachingView: View {
             ProgressView()
                 .controlSize(.small)
             Text("SAM is thinking...")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 10)
@@ -215,7 +215,7 @@ struct LifeEventCoachingView: View {
                 sendMessage()
             } label: {
                 Image(systemName: "arrow.up.circle.fill")
-                    .font(.title3)
+                    .samFont(.title3)
             }
             .buttonStyle(.plain)
             .foregroundStyle(inputText.isEmpty ? Color.gray.opacity(0.4) : Color.pink)

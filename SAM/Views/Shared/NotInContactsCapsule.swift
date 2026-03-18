@@ -94,7 +94,7 @@ struct NotInContactsCapsule: View {
                 showingConfirmation = true
             } label: {
                 Text(badgeLabel)
-                    .font(.caption2)
+                    .samFont(.caption2)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
                     .background(.orange.opacity(0.2))
@@ -134,16 +134,16 @@ struct NotInContactsCapsule: View {
             if containerMismatch {
                 // Container mismatch: offer move, duplicate, or cancel
                 Text("Different Account")
-                    .font(.headline)
+                    .samFont(.headline)
 
                 Text("\"\(displayName)\" is stored in a non-iCloud account and can't be added to your SAM group directly.")
-                    .font(.body)
+                    .samFont(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
 
                 if let error = errorMessage {
                     Text(error)
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.red)
                 }
 
@@ -181,37 +181,37 @@ struct NotInContactsCapsule: View {
             } else {
                 // Normal flow: add to SAM group or create contact
                 Text(matchStatus == .notInSAMGroup ? "Add to SAM?" : "Add to Contacts?")
-                    .font(.headline)
+                    .samFont(.headline)
 
                 VStack(spacing: 4) {
                     if matchStatus == .notInSAMGroup, let contactName = matchedContactName, contactName != displayName {
                         // Phone-number entry matched to a named contact
                         Text("Match found: \"\(contactName)\"")
-                            .font(.body)
+                            .samFont(.body)
                             .multilineTextAlignment(.center)
                         Text("This contact is not yet in the SAM group.")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
                     } else {
                         Text(matchStatus == .notInSAMGroup
                              ? "\"\(displayName)\" is in your Contacts but not in the SAM group."
                              : "Create \"\(displayName)\" in Apple Contacts.")
-                            .font(.body)
+                            .samFont(.body)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
                     }
 
                     if let email {
                         Text(email)
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
 
                 if let error = errorMessage {
                     Text(error)
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.red)
                 }
 

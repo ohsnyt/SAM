@@ -90,11 +90,11 @@ struct IntroSequenceOverlay: View {
                 .frame(width: 96, height: 96)
 
             Text("SAM helps you build your practice")
-                .font(.title.bold())
+                .samFont(.title, weight: .bold)
                 .multilineTextAlignment(.center)
 
             Text("Your cognitive coaching assistant for relationships and business growth.")
-                .font(.title3)
+                .samFont(.title3)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
@@ -117,11 +117,11 @@ struct IntroSequenceOverlay: View {
             )
 
             Text("Your relationships, coached")
-                .font(.title2.bold())
+                .samFont(.title2, weight: .bold)
                 .multilineTextAlignment(.center)
 
             Text("SAM observes your interactions and recommends specific actions for each person — who to follow up with, what to say, and why it matters.")
-                .font(.body)
+                .samFont(.body)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
@@ -144,11 +144,11 @@ struct IntroSequenceOverlay: View {
             )
 
             Text("Your business, visible")
-                .font(.title2.bold())
+                .samFont(.title2, weight: .bold)
                 .multilineTextAlignment(.center)
 
             Text("Pipeline health, production metrics, recruiting progress, and strategic insights — all in one place. SAM connects individual actions to business goals.")
-                .font(.body)
+                .samFont(.body)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
@@ -171,11 +171,11 @@ struct IntroSequenceOverlay: View {
             )
 
             Text("Tips will guide you")
-                .font(.title2.bold())
+                .samFont(.title2, weight: .bold)
                 .multilineTextAlignment(.center)
 
             Text("Orange tips appear contextually as you explore SAM's features. Dismiss them when you're ready, or find help anytime in the Help menu.")
-                .font(.body)
+                .samFont(.body)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)

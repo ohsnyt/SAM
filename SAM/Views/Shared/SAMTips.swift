@@ -165,17 +165,17 @@ struct SAMTipViewStyle: TipViewStyle {
     func makeBody(configuration: Configuration) -> some View {
         HStack(alignment: .top, spacing: 12) {
             configuration.image?
-                .font(.title2)
+                .samFont(.title2)
                 .foregroundStyle(.white)
                 .frame(width: 36, height: 36)
                 .background(Color.orange, in: Circle())
 
             VStack(alignment: .leading, spacing: 4) {
                 configuration.title?
-                    .font(.headline)
+                    .samFont(.headline)
 
                 configuration.message?
-                    .font(.callout)
+                    .samFont(.callout)
                     .foregroundStyle(.secondary)
 
                 // "Learn more" action — opens Guide to the related article
@@ -183,7 +183,7 @@ struct SAMTipViewStyle: TipViewStyle {
                     ForEach(configuration.actions) { action in
                         Button(action: action.handler) {
                             action.label()
-                                .font(.caption)
+                                .samFont(.caption)
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
@@ -198,7 +198,7 @@ struct SAMTipViewStyle: TipViewStyle {
                 configuration.tip.invalidate(reason: .tipClosed)
             } label: {
                 Image(systemName: "xmark.circle.fill")
-                    .font(.body)
+                    .samFont(.body)
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(.secondary)
             }

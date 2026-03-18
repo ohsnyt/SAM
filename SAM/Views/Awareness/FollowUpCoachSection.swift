@@ -28,9 +28,9 @@ struct FollowUpCoachSection: View {
                     Image(systemName: "text.bubble")
                         .foregroundStyle(.orange)
                     Text("Meeting Follow-ups")
-                        .font(.headline)
+                        .samFont(.headline)
                     Text("\(visiblePrompts.count)")
-                        .font(.caption)
+                        .samFont(.caption)
                         .fontWeight(.semibold)
                         .foregroundStyle(.white)
                         .padding(.horizontal, 6)
@@ -77,16 +77,16 @@ private struct FollowUpCard: View {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: "clock.arrow.circlepath")
                     .foregroundStyle(.orange)
-                    .font(.title3)
+                    .samFont(.title3)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(meetingDescription)
-                        .font(.subheadline)
+                        .samFont(.subheadline)
 
                     if !prompt.pendingActionItems.isEmpty {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Open items:")
-                                .font(.caption)
+                                .samFont(.caption)
                                 .fontWeight(.semibold)
                                 .foregroundStyle(.secondary)
                             ForEach(prompt.pendingActionItems.prefix(3), id: \.description) { item in
@@ -95,7 +95,7 @@ private struct FollowUpCard: View {
                                         .font(.system(size: 6))
                                         .foregroundStyle(.secondary)
                                     Text(item.description)
-                                        .font(.caption)
+                                        .samFont(.caption)
                                         .foregroundStyle(.secondary)
                                         .lineLimit(1)
                                     Spacer()

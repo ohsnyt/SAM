@@ -29,7 +29,7 @@ struct LinkedInImportSettingsContent: View {
 
             // Description — point to the import sheet
             Text("Use **File \u{2192} Import \u{2192} LinkedIn** to import connections, messages, and interaction data from a LinkedIn data export.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
 
             // Last import info
@@ -37,17 +37,17 @@ struct LinkedInImportSettingsContent: View {
                 Divider()
                 HStack {
                     Text("Last import:")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                     Text(lastImport, style: .relative)
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                     Text("ago")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                     Spacer()
                     Text("\(coordinator.lastImportCount) item(s)")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -55,16 +55,16 @@ struct LinkedInImportSettingsContent: View {
             if let watermark = coordinator.lastMessageImportAt {
                 HStack {
                     Text("Message watermark:")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                     Text(watermark, style: .date)
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                     Spacer()
                     Button("Reset") {
                         coordinator.resetWatermark()
                     }
-                    .font(.caption)
+                    .samFont(.caption)
                     .buttonStyle(.borderless)
                     .foregroundStyle(.orange)
                 }
@@ -85,7 +85,7 @@ struct LinkedInImportSettingsContent: View {
 
             if let error = coordinator.lastError {
                 Text(error)
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.red)
             }
         }
@@ -107,10 +107,10 @@ struct LinkedInImportSettingsContent: View {
             Toggle(isOn: $autoSyncLinkedInURLs) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Automatically add LinkedIn URLs to Apple Contacts")
-                        .font(.caption)
+                        .samFont(.caption)
                         .fontWeight(.medium)
                     Text("When contacts are marked Add, SAM writes their LinkedIn profile URL to your Apple Contacts without asking each time.")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -128,11 +128,11 @@ struct LinkedInImportSettingsContent: View {
             HStack(spacing: 8) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("LinkedIn Profile Analysis")
-                        .font(.caption)
+                        .samFont(.caption)
                         .fontWeight(.semibold)
                     if let date = coordinator.latestProfileAnalysis?.analysisDate {
                         Text("Last analyzed: \(date, style: .relative) ago")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -156,7 +156,7 @@ struct LinkedInImportSettingsContent: View {
                 }
                 .buttonStyle(.borderless)
                 .foregroundStyle(.cyan)
-                .font(.caption)
+                .samFont(.caption)
             }
         }
     }
@@ -171,19 +171,19 @@ struct LinkedInImportSettingsContent: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text("Writing Voice")
-                        .font(.caption)
+                        .samFont(.caption)
                         .fontWeight(.semibold)
                     Spacer()
                     Button("Refresh") {
                         Task { await coordinator.runProfileAnalysis() }
                     }
-                    .font(.caption)
+                    .samFont(.caption)
                     .buttonStyle(.borderless)
                     .disabled(coordinator.profileAnalysisStatus == .analyzing)
                 }
 
                 Text(voice)
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             }
         }
@@ -210,7 +210,7 @@ struct LinkedInImportSettingsView: View {
             Section {
                 VStack(alignment: .leading, spacing: 20) {
                     Label("LinkedIn Import", systemImage: "network")
-                        .font(.title2)
+                        .samFont(.title2)
                         .bold()
 
                     LinkedInImportSettingsContent()

@@ -141,10 +141,10 @@ struct CoachingSettingsContent: View {
     private var aiBackendSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("AI Backend")
-                .font(.headline)
+                .samFont(.headline)
 
             Text("Choose which AI model powers coaching suggestions.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
 
             Picker("Backend", selection: $selectedBackend) {
@@ -162,7 +162,7 @@ struct CoachingSettingsContent: View {
             }
 
             Text(backendDescription)
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
         }
     }
@@ -172,10 +172,10 @@ struct CoachingSettingsContent: View {
     private var mlxModelSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("MLX Model")
-                .font(.headline)
+                .samFont(.headline)
 
             Text("Select and download a local model for AI-powered coaching.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
 
             ForEach(mlxModels) { model in
@@ -183,9 +183,9 @@ struct CoachingSettingsContent: View {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(model.displayName)
-                                .font(.subheadline)
+                                .samFont(.subheadline)
                             Text("\(String(format: "%.1f", model.sizeGB)) GB")
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.secondary)
                         }
 
@@ -212,7 +212,7 @@ struct CoachingSettingsContent: View {
                         ProgressView(value: downloadProgress)
                             .progressViewStyle(.linear)
                         Text("Downloading… \(Int(downloadProgress * 100))%")
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -221,7 +221,7 @@ struct CoachingSettingsContent: View {
 
             if let error = downloadError {
                 Text(error)
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.red)
             }
         }
@@ -232,14 +232,14 @@ struct CoachingSettingsContent: View {
         if selectedModelID == model.id {
             HStack(spacing: 8) {
                 Text("Active")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.green)
 
                 Button(role: .destructive) {
                     deleteModel(id: model.id)
                 } label: {
                     Image(systemName: "trash")
-                        .font(.caption)
+                        .samFont(.caption)
                 }
                 .buttonStyle(.borderless)
             }
@@ -255,7 +255,7 @@ struct CoachingSettingsContent: View {
                     deleteModel(id: model.id)
                 } label: {
                     Image(systemName: "trash")
-                        .font(.caption)
+                        .samFont(.caption)
                 }
                 .buttonStyle(.borderless)
             }
@@ -267,10 +267,10 @@ struct CoachingSettingsContent: View {
     private var coachingStyleSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Coaching Style")
-                .font(.headline)
+                .samFont(.headline)
 
             Text("How SAM frames encouragement when you complete outcomes.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
 
             Picker("Style", selection: $coachingStyle) {
@@ -293,7 +293,7 @@ struct CoachingSettingsContent: View {
             }
 
             Text(styleDescription)
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
         }
     }
@@ -327,7 +327,7 @@ struct CoachingSettingsContent: View {
     private var outcomeGenerationSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Outcome Generation")
-                .font(.headline)
+                .samFont(.headline)
 
             Toggle("Auto-generate on launch", isOn: $autoGenerate)
                 .onChange(of: autoGenerate) { _, newValue in
@@ -335,7 +335,7 @@ struct CoachingSettingsContent: View {
                 }
 
             Text("When enabled, SAM generates coaching outcomes automatically after data imports complete.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
 
             Button("Generate Now") {
@@ -350,10 +350,10 @@ struct CoachingSettingsContent: View {
     private var reanalyzeSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Re-analyze")
-                .font(.headline)
+                .samFont(.headline)
 
             Text("Re-run AI analysis on all notes using the current backend. Emails and messages require a fresh import.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
 
             HStack(spacing: 12) {
@@ -371,7 +371,7 @@ struct CoachingSettingsContent: View {
 
             if let status = reanalyzeStatus {
                 Text(status)
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(status.contains("Failed") ? .red : .secondary)
             }
         }
@@ -383,13 +383,13 @@ struct CoachingSettingsContent: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text("What SAM Has Learned")
-                    .font(.headline)
+                    .samFont(.headline)
                 Spacer()
                 GuideButton(articleID: "today.coaching")
             }
 
             Text("SAM adapts to your patterns over time. Here's what it's learned so far.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
 
             let ledger = CalibrationService.cachedLedger
@@ -399,26 +399,26 @@ struct CoachingSettingsContent: View {
                 HStack(spacing: 20) {
                     VStack(alignment: .leading) {
                         Text("\(profile.totalActedOn)")
-                            .font(.title3)
+                            .samFont(.title3)
                             .fontWeight(.semibold)
                         Text("Completed")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                     VStack(alignment: .leading) {
                         Text("\(profile.totalDismissed)")
-                            .font(.title3)
+                            .samFont(.title3)
                             .fontWeight(.semibold)
                         Text("Skipped")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                     VStack(alignment: .leading) {
                         Text(profile.avgRating > 0 ? String(format: "%.1f", profile.avgRating) : "—")
-                            .font(.title3)
+                            .samFont(.title3)
                             .fontWeight(.semibold)
                         Text("Avg Rating")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -430,7 +430,7 @@ struct CoachingSettingsContent: View {
                     .padding(.vertical, 4)
 
                 Text("Outcome Preferences")
-                    .font(.subheadline)
+                    .samFont(.subheadline)
                     .fontWeight(.medium)
 
                 let sortedKinds = ledger.kindStats.sorted { $0.value.actRate > $1.value.actRate }
@@ -439,14 +439,14 @@ struct CoachingSettingsContent: View {
                     if total > 0 {
                         HStack(spacing: 8) {
                             Text(OutcomeKind(rawValue: kind)?.displayName ?? kind)
-                                .font(.caption)
+                                .samFont(.caption)
                                 .frame(width: 90, alignment: .leading)
 
                             ProgressView(value: stat.actRate)
                                 .tint(stat.actRate > 0.5 ? .green : stat.actRate > 0.25 ? .yellow : .orange)
 
                             Text("\(Int(stat.actRate * 100))%")
-                                .font(.caption2)
+                                .samFont(.caption2)
                                 .foregroundStyle(.secondary)
                                 .frame(width: 35, alignment: .trailing)
 
@@ -454,7 +454,7 @@ struct CoachingSettingsContent: View {
                                 Task { await CalibrationService.shared.resetKind(kind) }
                             } label: {
                                 Image(systemName: "arrow.counterclockwise")
-                                    .font(.caption2)
+                                    .samFont(.caption2)
                             }
                             .buttonStyle(.borderless)
                             .help("Reset \(kind) learning")
@@ -469,20 +469,20 @@ struct CoachingSettingsContent: View {
                     .padding(.vertical, 4)
 
                 Text("Your Active Hours")
-                    .font(.subheadline)
+                    .samFont(.subheadline)
                     .fontWeight(.medium)
 
                 if !ledger.peakHours.isEmpty {
                     let hourLabels = ledger.peakHours.map { formatSettingsHour($0) }
                     Text("Peak hours: \(hourLabels.joined(separator: ", "))")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
 
                 if !ledger.peakDays.isEmpty {
                     let dayLabels = ledger.peakDays.map { formatSettingsDay($0) }
                     Text("Most active days: \(dayLabels.joined(separator: ", "))")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
 
@@ -500,23 +500,23 @@ struct CoachingSettingsContent: View {
                     .padding(.vertical, 4)
 
                 Text("Strategic Focus")
-                    .font(.subheadline)
+                    .samFont(.subheadline)
                     .fontWeight(.medium)
 
                 ForEach(adjustedCategories.sorted(by: { $0.key < $1.key }), id: \.key) { category, weight in
                     HStack {
                         Text(category.capitalized)
-                            .font(.caption)
+                            .samFont(.caption)
                         Spacer()
                         Text(String(format: "%.1fx", weight))
-                            .font(.caption)
+                            .samFont(.caption)
                             .fontWeight(.medium)
                             .foregroundStyle(weight > 1.0 ? .green : .orange)
                         Button {
                             Task { await CalibrationService.shared.resetStrategicCategory(category) }
                         } label: {
                             Image(systemName: "arrow.counterclockwise")
-                                .font(.caption2)
+                                .samFont(.caption2)
                         }
                         .buttonStyle(.borderless)
                         .help("Reset \(category) weight")
@@ -530,13 +530,13 @@ struct CoachingSettingsContent: View {
                     .padding(.vertical, 4)
 
                 Text("Muted Types")
-                    .font(.subheadline)
+                    .samFont(.subheadline)
                     .fontWeight(.medium)
 
                 ForEach(ledger.mutedKinds, id: \.self) { kind in
                     HStack {
                         Text(OutcomeKind(rawValue: kind)?.displayName ?? kind)
-                            .font(.caption)
+                            .samFont(.caption)
                         Spacer()
                         Button("Unmute") {
                             Task { await CalibrationService.shared.setMuted(kind: kind, muted: false) }
@@ -553,7 +553,7 @@ struct CoachingSettingsContent: View {
 
             HStack {
                 Text("Mute a type:")
-                    .font(.caption)
+                    .samFont(.caption)
 
                 Picker("", selection: $mutePickerSelection) {
                     Text("Select…").tag("")
@@ -597,10 +597,10 @@ struct CoachingSettingsContent: View {
     private var autonomousActionsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Autonomous Actions")
-                .font(.headline)
+                .samFont(.headline)
 
             Text("Let SAM proactively create content for your review.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
 
             Toggle("Auto-create meeting note templates", isOn: $autoMeetingNoteTemplates)
@@ -609,7 +609,7 @@ struct CoachingSettingsContent: View {
                 }
 
             Text("When a calendar event ends, SAM creates a pre-filled note template for you to complete.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.bottom, 4)
 
@@ -619,7 +619,7 @@ struct CoachingSettingsContent: View {
                 }
 
             Text("When you add a role like Applicant or Client, SAM generates relevant action items.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.bottom, 4)
 
@@ -629,7 +629,7 @@ struct CoachingSettingsContent: View {
                 }
 
             Text("On Monday mornings, your briefing includes a \"This Week's Priorities\" section.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.bottom, 4)
 
@@ -639,7 +639,7 @@ struct CoachingSettingsContent: View {
                 }
 
             Text("SAM sends a notification ~15 minutes before meetings with a briefing summary.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.bottom, 4)
 
@@ -649,7 +649,7 @@ struct CoachingSettingsContent: View {
                 }
 
             Text("When enabled, SAM sends iMessages and emails via AppleScript without leaving the app. Requires one-time Automation permission grant.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.bottom, 4)
 
@@ -659,7 +659,7 @@ struct CoachingSettingsContent: View {
                 }
 
             Text("SAM suggests 3 educational content topics per week based on your recent meetings and client conversations.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
         }
     }
@@ -669,10 +669,10 @@ struct CoachingSettingsContent: View {
     private var businessIntelligenceSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Business Intelligence")
-                .font(.headline)
+                .samFont(.headline)
 
             Text("Strategic insights analyze your pipeline, time allocation, and relationship patterns to suggest business-level actions.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
 
             Toggle("Enable strategic digest", isOn: $strategicDigestEnabled)
@@ -681,7 +681,7 @@ struct CoachingSettingsContent: View {
                 }
 
             Text("When enabled, SAM periodically analyzes your business data and generates strategic recommendations.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.bottom, 4)
 
@@ -692,7 +692,7 @@ struct CoachingSettingsContent: View {
                 .disabled(!strategicDigestEnabled)
 
             Text("When enabled, your morning briefing includes top strategic recommendations.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
         }
     }
@@ -836,7 +836,7 @@ struct CoachingSettingsView: View {
             Section {
                 VStack(alignment: .leading, spacing: 20) {
                     Label("Coaching", systemImage: "brain.head.profile")
-                        .font(.title2)
+                        .samFont(.title2)
                         .bold()
 
                     Divider()

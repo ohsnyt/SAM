@@ -35,7 +35,7 @@ struct StreakTrackingSection: View {
                     Image(systemName: "flame.fill")
                         .foregroundStyle(.orange)
                     Text("Streaks")
-                        .font(.headline)
+                        .samFont(.headline)
                     Spacer()
                 }
                 .padding(.horizontal)
@@ -191,11 +191,11 @@ private struct StreakCard: View {
         VStack(spacing: 6) {
             HStack(spacing: 4) {
                 Image(systemName: icon)
-                    .font(.title3)
+                    .samFont(.title3)
                     .foregroundStyle(accentColor)
                 if count >= 5 {
                     Image(systemName: "flame.fill")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.orange)
                 }
             }
@@ -205,13 +205,13 @@ private struct StreakCard: View {
                 .foregroundStyle(accentColor)
 
             Text(label)
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
 
             Text(isActive ? "Keep it going!" : "Start a new streak today")
-                .font(.caption2)
+                .samFont(.caption2)
                 .foregroundStyle(isActive ? .green : .secondary)
         }
         .frame(maxWidth: .infinity)

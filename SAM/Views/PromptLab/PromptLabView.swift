@@ -54,7 +54,7 @@ struct PromptLabView: View {
             .frame(width: 200)
 
             Text(selectedSite.outputFormat)
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 2)
@@ -157,13 +157,13 @@ struct PromptLabView: View {
             // Header
             HStack {
                 Label("Sample Input", systemImage: "doc.text")
-                    .font(.headline)
+                    .samFont(.headline)
                 Spacer()
                 Button {
                     sampleInput = selectedSite.sampleInput
                 } label: {
                     Text("Reset")
-                        .font(.caption)
+                        .samFont(.caption)
                 }
             }
             .padding(.horizontal, 12)
@@ -173,7 +173,7 @@ struct PromptLabView: View {
 
             // Site description
             Text(selectedSite.siteDescription)
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
@@ -192,13 +192,13 @@ struct PromptLabView: View {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
                     Text(error)
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                     Spacer()
                     Button("Dismiss") {
                         coordinator.lastError = nil
                     }
-                    .font(.caption)
+                    .samFont(.caption)
                 }
                 .padding(8)
                 .background(.orange.opacity(0.1))
@@ -234,7 +234,7 @@ struct PromptLabView: View {
     private var addVariantPopover: some View {
         VStack(spacing: 12) {
             Text("New Variant")
-                .font(.headline)
+                .samFont(.headline)
 
             TextField("Variant name", text: $newVariantName)
                 .textFieldStyle(.roundedBorder)
@@ -306,16 +306,16 @@ struct PromptLabColumnView: View {
                 // Name and badges
                 if variant.isDefault {
                     Image(systemName: "lock.fill")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.secondary)
                 }
                 Text(variant.name)
-                    .font(.headline)
+                    .samFont(.headline)
                     .lineLimit(1)
 
                 if coordinator.isDeployed(variant, for: site) {
                     Text("ACTIVE")
-                        .font(.caption2.bold())
+                        .samFont(.caption2, weight: .bold)
                         .foregroundStyle(.white)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
@@ -351,7 +351,7 @@ struct PromptLabColumnView: View {
                     }
                 } label: {
                     Image(systemName: "ellipsis.circle")
-                        .font(.body)
+                        .samFont(.body)
                 }
                 .menuStyle(.borderlessButton)
                 .frame(width: 24)
@@ -364,7 +364,7 @@ struct PromptLabColumnView: View {
                         coordinator.rateVariant(variant, rating: rating, for: site)
                     } label: {
                         Image(systemName: rating.icon)
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(ratingColor(rating))
                     }
                     .buttonStyle(.plain)
@@ -374,7 +374,7 @@ struct PromptLabColumnView: View {
 
                 if variant.rating != .unrated {
                     Text(variant.rating.label)
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -397,16 +397,16 @@ struct PromptLabColumnView: View {
             } label: {
                 HStack {
                     Image(systemName: showPrompt ? "chevron.down" : "chevron.right")
-                        .font(.caption2)
+                        .samFont(.caption2)
                     Text("System Instruction")
-                        .font(.caption.bold())
+                        .samFont(.caption, weight: .bold)
                     if !variant.isDefault {
                         Text("(editable)")
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .foregroundStyle(.blue)
                     }
                     Text("(\(variant.systemInstruction.count) chars)")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.tertiary)
                     Spacer()
                 }
@@ -446,7 +446,7 @@ struct PromptLabColumnView: View {
                         HStack {
                             if hasUnsavedChanges {
                                 Text("Unsaved changes")
-                                    .font(.caption2)
+                                    .samFont(.caption2)
                                     .foregroundStyle(.blue)
                             }
 
@@ -456,14 +456,14 @@ struct PromptLabColumnView: View {
                                 Button("Revert") {
                                     editedPrompt = variant.systemInstruction
                                 }
-                                .font(.caption)
+                                .samFont(.caption)
 
                                 Button("Save") {
                                     var updated = variant
                                     updated.systemInstruction = editedPrompt
                                     coordinator.updateVariant(updated, for: site)
                                 }
-                                .font(.caption)
+                                .samFont(.caption)
                                 .buttonStyle(.borderedProminent)
                                 .controlSize(.small)
                             }
@@ -487,14 +487,14 @@ struct PromptLabColumnView: View {
             // Output header
             HStack {
                 Text("Output")
-                    .font(.caption.bold())
+                    .samFont(.caption, weight: .bold)
 
                 if let run = latestRun {
                     Text(String(format: "%.1fs", run.durationSeconds))
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.secondary)
                     Text("via \(run.backend)")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.tertiary)
                 }
 
@@ -505,7 +505,7 @@ struct PromptLabColumnView: View {
                         ClipboardSecurity.copyPersistent(run.output)
                     } label: {
                         Image(systemName: "doc.on.doc")
-                            .font(.caption)
+                            .samFont(.caption)
                     }
                     .buttonStyle(.plain)
                     .help("Copy output")
@@ -520,7 +520,7 @@ struct PromptLabColumnView: View {
                     ProgressView()
                         .padding()
                     Text("Generating...")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -535,13 +535,13 @@ struct PromptLabColumnView: View {
             } else {
                 VStack {
                     Image(systemName: "play.circle")
-                        .font(.title2)
+                        .samFont(.title2)
                         .foregroundStyle(.tertiary)
                     Text("No results yet")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.tertiary)
                     Text("Click Run All or use the menu")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.quaternary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

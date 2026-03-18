@@ -162,11 +162,11 @@ private struct BusinessMetricCard: View {
     var body: some View {
         VStack(spacing: 4) {
             Text(value)
-                .font(.title2)
+                .samFont(.title2)
                 .fontWeight(.bold)
                 .foregroundStyle(color)
             Text(title)
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)

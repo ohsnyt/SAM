@@ -31,9 +31,9 @@ struct CalendarPatternsSection: View {
                     Image(systemName: "calendar.badge.checkmark")
                         .foregroundStyle(.purple)
                     Text("Calendar Insights")
-                        .font(.headline)
+                        .samFont(.headline)
                     Text("\(insights.count)")
-                        .font(.caption)
+                        .samFont(.caption)
                         .fontWeight(.semibold)
                         .foregroundStyle(.white)
                         .padding(.horizontal, 6)
@@ -42,7 +42,7 @@ struct CalendarPatternsSection: View {
                         .clipShape(Capsule())
                     Spacer()
                     Text("Last 30 days + next 7")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
                 .padding(.horizontal)
@@ -357,12 +357,12 @@ private struct InsightRow: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: insight.icon)
-                .font(.subheadline)
+                .samFont(.subheadline)
                 .foregroundStyle(insight.color)
                 .frame(width: 24, alignment: .center)
 
             Text(insight.message)
-                .font(.subheadline)
+                .samFont(.subheadline)
                 .foregroundStyle(.primary)
 
             Spacer()

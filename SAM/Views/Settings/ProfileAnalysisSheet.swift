@@ -34,7 +34,7 @@ struct ProfileAnalysisSheet: View {
             // Toolbar
             HStack {
                 Text("LinkedIn Profile Analysis")
-                    .font(.headline)
+                    .samFont(.headline)
                 Spacer()
                 Button { dismiss() } label: {
                     Image(systemName: "xmark.circle.fill")
@@ -97,7 +97,7 @@ struct ProfileAnalysisSheet: View {
                     // Footer
                     HStack {
                         Text("Last analyzed: \(analysis.analysisDate.formatted(date: .abbreviated, time: .shortened))")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                         Spacer()
                         Button {
@@ -148,16 +148,16 @@ struct ProfileAnalysisSheet: View {
                         .font(.system(size: 26, weight: .bold, design: .rounded))
                         .foregroundStyle(scoreColor)
                     Text("/ 100")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.secondary)
                 }
             }
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(scoreLabel)
-                    .font(.title3.weight(.semibold))
+                    .samFont(.title3, weight: .semibold)
                 Text(scoreDescription)
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             }
 
@@ -201,7 +201,7 @@ struct ProfileAnalysisSheet: View {
             ForEach(analysis.praise) { item in
                 HStack(alignment: .top, spacing: 12) {
                     Text(item.category)
-                        .font(.caption.weight(.semibold))
+                        .samFont(.caption, weight: .semibold)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
                         .background(.green.opacity(0.15), in: Capsule())
@@ -210,10 +210,10 @@ struct ProfileAnalysisSheet: View {
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text(item.message)
-                            .font(.callout)
+                            .samFont(.callout)
                         if let metric = item.metric {
                             Text(metric)
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -234,27 +234,27 @@ struct ProfileAnalysisSheet: View {
                             .frame(width: 8, height: 8)
 
                         Text(item.category)
-                            .font(.caption.weight(.semibold))
+                            .samFont(.caption, weight: .semibold)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 3)
                             .background(.orange.opacity(0.12), in: Capsule())
                             .foregroundStyle(.orange)
 
                         Text(item.priority.capitalized)
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(priorityColor(item.priority))
                     }
 
                     Text(item.suggestion)
-                        .font(.callout.weight(.semibold))
+                        .samFont(.callout, weight: .semibold)
 
                     Text(item.rationale)
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
 
                     if let example = item.exampleOrPrompt {
                         Text(example)
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.primary.opacity(0.75))
                             .textSelection(.enabled)
                             .padding(8)
@@ -286,7 +286,7 @@ struct ProfileAnalysisSheet: View {
     private func contentStrategySection(_ cs: ContentStrategyAssessmentDTO) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(cs.summary)
-                .font(.callout)
+                .samFont(.callout)
 
             if let freq = cs.postingFrequency {
                 labeledRow(label: "Posting Frequency", value: freq)
@@ -300,7 +300,7 @@ struct ProfileAnalysisSheet: View {
             if !cs.topicSuggestions.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Topic Suggestions")
-                        .font(.caption.weight(.semibold))
+                        .samFont(.caption, weight: .semibold)
                         .foregroundStyle(.secondary)
                     ForEach(cs.topicSuggestions, id: \.self) { topic in
                         HStack(spacing: 6) {
@@ -308,7 +308,7 @@ struct ProfileAnalysisSheet: View {
                                 .imageScale(.small)
                                 .foregroundStyle(.yellow)
                             Text(topic)
-                                .font(.caption)
+                                .samFont(.caption)
                         }
                     }
                 }
@@ -321,7 +321,7 @@ struct ProfileAnalysisSheet: View {
     private var networkHealthSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             let nh = analysis.networkHealth
-            Text(nh.summary).font(.callout)
+            Text(nh.summary).samFont(.callout)
 
             if let trend = nh.growthTrend {
                 labeledRow(label: "Growth Trend", value: trend)
@@ -345,7 +345,7 @@ struct ProfileAnalysisSheet: View {
                         .foregroundStyle(change.isImprovement ? .green : .orange)
                         .imageScale(.small)
                     Text(change.description)
-                        .font(.callout)
+                        .samFont(.callout)
                 }
             }
         }
@@ -357,12 +357,12 @@ struct ProfileAnalysisSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             if !ep.context.isEmpty {
                 Text(ep.context)
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             }
 
             Text(ep.prompt)
-                .font(.caption)
+                .samFont(.caption)
                 .padding(10)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(.quaternary.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
@@ -399,7 +399,7 @@ struct ProfileAnalysisSheet: View {
                     .foregroundStyle(color)
                     .imageScale(.medium)
                 Text(title)
-                    .font(.subheadline.weight(.semibold))
+                    .samFont(.subheadline, weight: .semibold)
             }
 
             content()
@@ -413,10 +413,10 @@ struct ProfileAnalysisSheet: View {
     private func labeledRow(label: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label)
-                .font(.caption.weight(.semibold))
+                .samFont(.caption, weight: .semibold)
                 .foregroundStyle(.secondary)
             Text(value)
-                .font(.caption)
+                .samFont(.caption)
         }
     }
 }

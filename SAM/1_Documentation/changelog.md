@@ -4,6 +4,25 @@
 
 ---
 
+## App-Wide Text Size Setting (March 18, 2026)
+
+**What**: Added a user-configurable text size preference (Settings > General) that scales all semantic fonts throughout SAM. Addresses readability concerns on high-resolution displays.
+
+**Why**: macOS does not meaningfully respond to SwiftUI's `DynamicTypeSize` for semantic fonts — `.body`, `.caption`, `.headline` etc. are fixed point sizes regardless of the dynamic type environment. A custom scaling system was needed.
+
+**How it works**:
+- `SAMTextSize` enum defines four levels: Small (0.88×), Standard (1.0×), Large (1.15×), Extra Large (1.30×)
+- Custom `EnvironmentKey` (`\.samTextScale`) propagates a `CGFloat` multiplier from the app root
+- `Font.sam(_:scale:weight:)` returns system fonts at macOS default point sizes × the multiplier
+- `.samFont(_:weight:)` `ViewModifier` reads the environment and applies the scaled font
+- Settings UI uses a segmented picker with a live preview sentence
+
+**Scope**: ~1,870 `.font(.caption)` / `.font(.headline)` / etc. calls across 109 view files converted to `.samFont()`. Hardcoded `.font(.system(size:))` calls for decorative elements left as-is.
+
+**Convention**: All new views must use `.samFont()` instead of `.font()` for semantic text styles.
+
+---
+
 ## Goal Journal — Conversational Refinement (March 17, 2026)
 
 **What**: Added goal-scoped coaching check-in sessions that produce persistent, structured learnings. Users can check in on any business goal via a chat UI; when done, SAM distills the conversation into a `GoalJournalEntry` capturing what's working, what's not, barriers, adjusted strategy, key insight, and commitment actions. Journal data feeds forward into all AI specialists.

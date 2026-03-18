@@ -36,9 +36,9 @@ struct TimeCategoryPicker: View {
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: currentCategory.icon)
-                    .font(.caption2)
+                    .samFont(.caption2)
                 Text(currentCategory.rawValue)
-                    .font(.caption2)
+                    .samFont(.caption2)
                     .fontWeight(.medium)
             }
             .padding(.horizontal, 8)

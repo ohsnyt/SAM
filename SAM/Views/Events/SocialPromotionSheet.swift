@@ -30,7 +30,7 @@ struct SocialPromotionSheet: View {
             // Header
             HStack {
                 Text("Social Promotion")
-                    .font(.title2.bold())
+                    .samFont(.title2, weight: .bold)
                 Spacer()
                 Button("Done") { dismiss() }
                     .keyboardShortcut(.escape)
@@ -54,7 +54,7 @@ struct SocialPromotionSheet: View {
             HStack {
                 if let copied = copiedPlatform {
                     Text("Copied \(copied) post to clipboard")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.green)
                 }
                 Spacer()
@@ -87,11 +87,11 @@ struct SocialPromotionSheet: View {
                             if promo.isPosted {
                                 Image(systemName: "checkmark.circle.fill")
                                     .foregroundStyle(.green)
-                                    .font(.caption)
+                                    .samFont(.caption)
                             } else if promo.draftText != nil {
                                 Image(systemName: "doc.text")
                                     .foregroundStyle(.blue)
-                                    .font(.caption)
+                                    .samFont(.caption)
                             }
                         }
                     }
@@ -108,7 +108,7 @@ struct SocialPromotionSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text(platformDisplayName(selectedPlatform))
-                    .font(.headline)
+                    .samFont(.headline)
 
                 Spacer()
 
@@ -134,20 +134,20 @@ struct SocialPromotionSheet: View {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(.green)
                     Text("Posted \(postedAt.formatted(date: .abbreviated, time: .shortened))")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
 
             TextEditor(text: $draftText)
-                .font(.body)
+                .samFont(.body)
                 .scrollContentBackground(.hidden)
                 .padding(8)
                 .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
 
             HStack {
                 Text("\(draftText.count) characters")
-                    .font(.caption2)
+                    .samFont(.caption2)
                     .foregroundStyle(.tertiary)
 
                 Spacer()

@@ -31,7 +31,7 @@ struct ContentCadenceSection: View {
                 Image(systemName: "text.badge.star")
                     .foregroundStyle(.mint)
                 Text("Content & Posting")
-                    .font(.headline)
+                    .samFont(.headline)
                 Spacer()
             }
             .padding(.horizontal)
@@ -52,9 +52,9 @@ struct ContentCadenceSection: View {
                 HStack(spacing: 6) {
                     Image(systemName: "flame.fill")
                         .foregroundStyle(.orange)
-                        .font(.caption)
+                        .samFont(.caption)
                     Text("\(weeklyStreak)-week posting streak")
-                        .font(.caption)
+                        .samFont(.caption)
                         .fontWeight(.medium)
                 }
                 .padding(.horizontal)
@@ -103,11 +103,11 @@ struct ContentCadenceSection: View {
 
         VStack(spacing: 6) {
             Image(systemName: platform.icon)
-                .font(.title3)
+                .samFont(.title3)
                 .foregroundStyle(platform.color)
 
             Text(platform.rawValue)
-                .font(.caption)
+                .samFont(.caption)
                 .fontWeight(.medium)
 
             if let days = stat.daysSince {
@@ -121,7 +121,7 @@ struct ContentCadenceSection: View {
             }
 
             Text("\(stat.monthCount) this month")
-                .font(.caption2)
+                .samFont(.caption2)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)

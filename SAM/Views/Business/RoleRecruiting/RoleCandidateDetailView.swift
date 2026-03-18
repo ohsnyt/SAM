@@ -24,11 +24,11 @@ struct RoleCandidateDetailView: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(candidate.person?.displayNameCache ?? candidate.person?.displayName ?? "Unknown")
-                            .font(.title3.bold())
+                            .samFont(.title3, weight: .bold)
 
                         if let role = candidate.roleDefinition {
                             Text("Candidate for \(role.name)")
-                                .font(.subheadline)
+                                .samFont(.subheadline)
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -40,7 +40,7 @@ struct RoleCandidateDetailView: View {
                             .stroke(scoreColor, lineWidth: 4)
                             .frame(width: 44, height: 44)
                         Text("\(Int(candidate.matchScore * 100))%")
-                            .font(.caption.bold())
+                            .samFont(.caption, weight: .bold)
                     }
                 }
                 .padding(.bottom, 4)
@@ -51,10 +51,10 @@ struct RoleCandidateDetailView: View {
                 if !candidate.matchRationale.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Match Rationale")
-                            .font(.caption.bold())
+                            .samFont(.caption, weight: .bold)
                             .foregroundStyle(.secondary)
                         Text(candidate.matchRationale)
-                            .font(.body)
+                            .samFont(.body)
                     }
                 }
 
@@ -62,15 +62,15 @@ struct RoleCandidateDetailView: View {
                 if !candidate.strengthSignals.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Strengths")
-                            .font(.caption.bold())
+                            .samFont(.caption, weight: .bold)
                             .foregroundStyle(.secondary)
                         ForEach(candidate.strengthSignals, id: \.self) { signal in
                             HStack(spacing: 4) {
                                 Image(systemName: "checkmark.circle.fill")
                                     .foregroundStyle(.green)
-                                    .font(.caption)
+                                    .samFont(.caption)
                                 Text(signal)
-                                    .font(.callout)
+                                    .samFont(.callout)
                             }
                         }
                     }
@@ -80,15 +80,15 @@ struct RoleCandidateDetailView: View {
                 if !candidate.gapSignals.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Gaps")
-                            .font(.caption.bold())
+                            .samFont(.caption, weight: .bold)
                             .foregroundStyle(.secondary)
                         ForEach(candidate.gapSignals, id: \.self) { signal in
                             HStack(spacing: 4) {
                                 Image(systemName: "exclamationmark.circle")
                                     .foregroundStyle(.orange)
-                                    .font(.caption)
+                                    .samFont(.caption)
                                 Text(signal)
-                                    .font(.callout)
+                                    .samFont(.callout)
                             }
                         }
                     }
@@ -99,7 +99,7 @@ struct RoleCandidateDetailView: View {
                 // Stage progression
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Stage")
-                        .font(.caption.bold())
+                        .samFont(.caption, weight: .bold)
                         .foregroundStyle(.secondary)
 
                     HStack(spacing: 8) {
@@ -109,10 +109,10 @@ struct RoleCandidateDetailView: View {
 
                             VStack(spacing: 2) {
                                 Image(systemName: stage.icon)
-                                    .font(.caption)
+                                    .samFont(.caption)
                                     .foregroundStyle(isCurrent ? stage.color : isPast ? .green : .gray)
                                 Text(stage.rawValue)
-                                    .font(.caption2)
+                                    .samFont(.caption2)
                                     .foregroundStyle(isCurrent ? .primary : .secondary)
                             }
                             .padding(.horizontal, 6)
@@ -139,11 +139,11 @@ struct RoleCandidateDetailView: View {
                 // User notes
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Notes")
-                        .font(.caption.bold())
+                        .samFont(.caption, weight: .bold)
                         .foregroundStyle(.secondary)
                     TextEditor(text: $userNotes)
                         .frame(minHeight: 60)
-                        .font(.body)
+                        .samFont(.body)
                 }
 
                 // Pass button

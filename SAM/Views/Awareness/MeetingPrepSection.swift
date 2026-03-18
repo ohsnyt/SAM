@@ -23,9 +23,9 @@ struct MeetingPrepSection: View {
                     Image(systemName: "calendar.badge.clock")
                         .foregroundStyle(.blue)
                     Text("Meeting Prep")
-                        .font(.headline)
+                        .samFont(.headline)
                     Text("\(coordinator.briefings.count)")
-                        .font(.caption)
+                        .samFont(.caption)
                         .fontWeight(.semibold)
                         .foregroundStyle(.white)
                         .padding(.horizontal, 6)
@@ -34,7 +34,7 @@ struct MeetingPrepSection: View {
                         .clipShape(Capsule())
                     Spacer()
                     Text("Next 48 hours")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
                 .padding(.horizontal)
@@ -86,17 +86,17 @@ private struct BriefingCard: View {
                 HStack(alignment: .center, spacing: 12) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(briefing.title)
-                            .font(.headline)
+                            .samFont(.headline)
                             .foregroundStyle(.primary)
 
                         HStack(spacing: 8) {
                             Text(briefing.startsAt, style: .relative)
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.secondary)
 
                             if let location = briefing.location {
                                 Text(location)
-                                    .font(.caption)
+                                    .samFont(.caption)
                                     .foregroundStyle(.secondary)
                                     .lineLimit(1)
                             }
@@ -112,7 +112,7 @@ private struct BriefingCard: View {
                         }
                         if briefing.attendees.count > 4 {
                             Text("+\(briefing.attendees.count - 4)")
-                                .font(.caption2)
+                                .samFont(.caption2)
                                 .fontWeight(.semibold)
                                 .foregroundStyle(.secondary)
                                 .frame(width: 28, height: 28)
@@ -123,7 +123,7 @@ private struct BriefingCard: View {
 
                     Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                         .foregroundStyle(.secondary)
-                        .font(.caption)
+                        .samFont(.caption)
                 }
                 .contentShape(Rectangle())
             }
@@ -208,18 +208,18 @@ private struct BriefingCard: View {
     private var talkingPointsSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Talking Points")
-                .font(.subheadline)
+                .samFont(.subheadline)
                 .fontWeight(.semibold)
                 .foregroundStyle(.blue)
 
             ForEach(briefing.talkingPoints, id: \.self) { point in
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: "lightbulb.fill")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.yellow)
                         .frame(width: 14)
                     Text(point)
-                        .font(.caption)
+                        .samFont(.caption)
                     Spacer()
                     CopyButton(text: point)
                 }
@@ -230,7 +230,7 @@ private struct BriefingCard: View {
     private var attendeesSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Attendees")
-                .font(.subheadline)
+                .samFont(.subheadline)
                 .fontWeight(.semibold)
                 .foregroundStyle(.secondary)
 
@@ -242,11 +242,11 @@ private struct BriefingCard: View {
                         VStack(alignment: .leading, spacing: 2) {
                             HStack(spacing: 6) {
                                 Text(attendee.displayName)
-                                    .font(.subheadline)
+                                    .samFont(.subheadline)
                                     .fontWeight(.medium)
                                 if let stage = attendee.pipelineStage {
                                     Text(stage)
-                                        .font(.caption2)
+                                        .samFont(.caption2)
                                         .padding(.horizontal, 5)
                                         .padding(.vertical, 1)
                                         .background(.blue.opacity(0.15))
@@ -255,7 +255,7 @@ private struct BriefingCard: View {
                                 }
                                 ForEach(attendee.roleBadges.filter({ $0 != attendee.pipelineStage }), id: \.self) { badge in
                                     Text(badge)
-                                        .font(.caption2)
+                                        .samFont(.caption2)
                                         .padding(.horizontal, 5)
                                         .padding(.vertical, 1)
                                         .background(.blue.opacity(0.15))
@@ -269,7 +269,7 @@ private struct BriefingCard: View {
                                     .fill(attendee.health.statusColor)
                                     .frame(width: 6, height: 6)
                                 Text("Last contact \(attendee.health.statusLabel)")
-                                    .font(.caption)
+                                    .samFont(.caption)
                                     .foregroundStyle(.secondary)
                             }
 
@@ -277,7 +277,7 @@ private struct BriefingCard: View {
                                 HStack(spacing: 4) {
                                     ForEach(attendee.contexts.prefix(3), id: \.name) { ctx in
                                         Text(ctx.name)
-                                            .font(.caption2)
+                                            .samFont(.caption2)
                                             .padding(.horizontal, 5)
                                             .padding(.vertical, 1)
                                             .background(Color.secondary.opacity(0.1))
@@ -296,15 +296,15 @@ private struct BriefingCard: View {
                             ForEach(attendee.lastInteractions) { record in
                                 HStack(spacing: 6) {
                                     Image(systemName: sourceIcon(record.source))
-                                        .font(.caption2)
+                                        .samFont(.caption2)
                                         .foregroundStyle(.secondary)
                                         .frame(width: 12)
                                     Text(record.title)
-                                        .font(.caption2)
+                                        .samFont(.caption2)
                                         .lineLimit(1)
                                     Spacer()
                                     Text(record.date, style: .relative)
-                                        .font(.caption2)
+                                        .samFont(.caption2)
                                         .foregroundStyle(.tertiary)
                                 }
                             }
@@ -321,7 +321,7 @@ private struct BriefingCard: View {
                                         .font(.system(size: 6))
                                         .foregroundStyle(.orange)
                                     Text(action)
-                                        .font(.caption2)
+                                        .samFont(.caption2)
                                         .foregroundStyle(.secondary)
                                         .lineLimit(1)
                                 }
@@ -339,7 +339,7 @@ private struct BriefingCard: View {
                                         .font(.system(size: 7))
                                         .foregroundStyle(.yellow)
                                     Text(event)
-                                        .font(.caption2)
+                                        .samFont(.caption2)
                                         .foregroundStyle(.secondary)
                                         .lineLimit(1)
                                 }
@@ -353,7 +353,7 @@ private struct BriefingCard: View {
                         HStack(spacing: 4) {
                             ForEach(attendee.productHoldings, id: \.self) { product in
                                 Text(product)
-                                    .font(.caption2)
+                                    .samFont(.caption2)
                                     .padding(.horizontal, 5)
                                     .padding(.vertical, 1)
                                     .background(Color.green.opacity(0.1))
@@ -371,25 +371,25 @@ private struct BriefingCard: View {
     private var recentHistorySection: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Recent History")
-                .font(.subheadline)
+                .samFont(.subheadline)
                 .fontWeight(.semibold)
                 .foregroundStyle(.secondary)
 
             ForEach(briefing.recentHistory) { record in
                 HStack(spacing: 8) {
                     Image(systemName: sourceIcon(record.source))
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                         .frame(width: 16)
 
                     Text(record.title)
-                        .font(.caption)
+                        .samFont(.caption)
                         .lineLimit(1)
 
                     Spacer()
 
                     Text(record.date, style: .relative)
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -399,17 +399,17 @@ private struct BriefingCard: View {
     private var actionItemsSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Open Action Items")
-                .font(.subheadline)
+                .samFont(.subheadline)
                 .fontWeight(.semibold)
                 .foregroundStyle(.secondary)
 
             ForEach(briefing.openActionItems, id: \.description) { item in
                 HStack(spacing: 6) {
                     Image(systemName: "circle")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(urgencyColor(item.urgency))
                     Text(item.description)
-                        .font(.caption)
+                        .samFont(.caption)
                         .lineLimit(2)
                     Spacer()
                     CopyButton(text: item.description)
@@ -421,14 +421,14 @@ private struct BriefingCard: View {
     private var topicsSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Topics")
-                .font(.subheadline)
+                .samFont(.subheadline)
                 .fontWeight(.semibold)
                 .foregroundStyle(.secondary)
 
             FlowLayout(spacing: 4) {
                 ForEach(briefing.topics, id: \.self) { topic in
                     Text(topic)
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
                         .background(Color.blue.opacity(0.1))
@@ -442,17 +442,17 @@ private struct BriefingCard: View {
     private var signalsSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Signals")
-                .font(.subheadline)
+                .samFont(.subheadline)
                 .fontWeight(.semibold)
                 .foregroundStyle(.orange)
 
             ForEach(briefing.signals) { signal in
                 HStack(spacing: 6) {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.orange)
                     Text(signal.message)
-                        .font(.caption)
+                        .samFont(.caption)
                     Spacer()
                     CopyButton(text: signal.message)
                 }
@@ -463,7 +463,7 @@ private struct BriefingCard: View {
     private var sharedContextsSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Shared Contexts")
-                .font(.subheadline)
+                .samFont(.subheadline)
                 .fontWeight(.semibold)
                 .foregroundStyle(.secondary)
 
@@ -471,9 +471,9 @@ private struct BriefingCard: View {
                 ForEach(briefing.sharedContexts, id: \.id) { context in
                     HStack(spacing: 3) {
                         Image(systemName: "building.2")
-                            .font(.caption2)
+                            .samFont(.caption2)
                         Text(context.name)
-                            .font(.caption2)
+                            .samFont(.caption2)
                     }
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)
@@ -487,7 +487,7 @@ private struct BriefingCard: View {
     private var familyRelationsSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Family Relations")
-                .font(.subheadline)
+                .samFont(.subheadline)
                 .fontWeight(.semibold)
                 .foregroundStyle(.secondary)
 
@@ -495,9 +495,9 @@ private struct BriefingCard: View {
                 ForEach(Array(briefing.familyRelations.enumerated()), id: \.offset) { _, rel in
                     HStack(spacing: 3) {
                         Image(systemName: "figure.2.and.child.holdinghands")
-                            .font(.caption2)
+                            .samFont(.caption2)
                         Text("\(rel.personAName) — \(rel.relationType) — \(rel.personBName)")
-                            .font(.caption2)
+                            .samFont(.caption2)
                     }
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)
@@ -556,7 +556,7 @@ private struct AttendeeAvatar: View {
                     .clipShape(Circle())
             } else {
                 Text(initials(attendee.displayName))
-                    .font(.caption2)
+                    .samFont(.caption2)
                     .fontWeight(.semibold)
                     .foregroundStyle(.white)
                     .frame(width: 28, height: 28)

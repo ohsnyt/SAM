@@ -58,10 +58,10 @@ struct ClientPipelineDashboardView: View {
         VStack(spacing: 8) {
             HStack {
                 Text("Funnel")
-                    .font(.headline)
+                    .samFont(.headline)
                 Spacer()
                 Text("\(tracker.clientFunnel.total) total")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             }
 
@@ -81,7 +81,7 @@ struct ClientPipelineDashboardView: View {
                 )
 
                 Image(systemName: "arrow.right")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
 
                 funnelBar(
@@ -92,7 +92,7 @@ struct ClientPipelineDashboardView: View {
                 )
 
                 Image(systemName: "arrow.right")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
 
                 funnelBar(
@@ -111,7 +111,7 @@ struct ClientPipelineDashboardView: View {
     private func funnelBar(label: String, count: Int, maxCount: Int, color: Color) -> some View {
         VStack(spacing: 6) {
             Text("\(count)")
-                .font(.title2)
+                .samFont(.title2)
                 .fontWeight(.bold)
                 .foregroundStyle(color)
 
@@ -129,7 +129,7 @@ struct ClientPipelineDashboardView: View {
             .frame(height: 60)
 
             Text(label)
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
@@ -177,15 +177,15 @@ struct ClientPipelineDashboardView: View {
         VStack(spacing: 6) {
             HStack(spacing: 4) {
                 Image(systemName: icon)
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(color)
                 Text(title)
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             }
 
             Text(value)
-                .font(.title3)
+                .samFont(.title3)
                 .fontWeight(.semibold)
         }
         .frame(maxWidth: .infinity)
@@ -199,7 +199,7 @@ struct ClientPipelineDashboardView: View {
     private var windowPicker: some View {
         HStack {
             Text("Conversion window:")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
 
             Picker("Window", selection: $tracker.configWindowDays) {
@@ -225,10 +225,10 @@ struct ClientPipelineDashboardView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 4) {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.orange)
                 Text("Needs Attention")
-                    .font(.headline)
+                    .samFont(.headline)
                     .foregroundStyle(.orange)
             }
 
@@ -243,18 +243,18 @@ struct ClientPipelineDashboardView: View {
                     HStack(spacing: 8) {
                         let style = RoleBadgeStyle.forBadge(item.stage)
                         Image(systemName: style.icon)
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(style.color)
 
                         Text(item.personName)
-                            .font(.subheadline)
+                            .samFont(.subheadline)
                             .foregroundStyle(.primary)
                             .lineLimit(1)
 
                         Spacer()
 
                         Text("stuck \(item.daysStuck)d as \(item.stage)")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.orange)
                     }
                     .contentShape(Rectangle())
@@ -272,7 +272,7 @@ struct ClientPipelineDashboardView: View {
     private var recentTransitionsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Recent Transitions")
-                .font(.headline)
+                .samFont(.headline)
 
             ForEach(tracker.recentClientTransitions) { t in
                 Button {
@@ -286,7 +286,7 @@ struct ClientPipelineDashboardView: View {
                 } label: {
                     HStack(spacing: 8) {
                         Text(t.personName)
-                            .font(.subheadline)
+                            .samFont(.subheadline)
                             .foregroundStyle(.primary)
                             .lineLimit(1)
 
@@ -294,20 +294,20 @@ struct ClientPipelineDashboardView: View {
 
                         if t.fromStage.isEmpty {
                             Text("→ \(t.toStage)")
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(RoleBadgeStyle.forBadge(t.toStage).color)
                         } else if t.toStage.isEmpty {
                             Text("\(t.fromStage) → exited")
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.secondary)
                         } else {
                             Text("\(t.fromStage) → \(t.toStage)")
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(RoleBadgeStyle.forBadge(t.toStage).color)
                         }
 
                         Text(t.date, style: .relative)
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .foregroundStyle(.secondary)
                             .frame(width: 60, alignment: .trailing)
                     }

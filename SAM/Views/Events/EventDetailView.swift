@@ -175,10 +175,10 @@ struct EventDetailView: View {
                 Image(systemName: "person.crop.circle.badge.questionmark")
                     .foregroundStyle(.orange)
                 Text("Possible RSVPs from Unknown Contacts")
-                    .font(.caption.bold())
+                    .samFont(.caption, weight: .bold)
                 Spacer()
                 Text("\(unknownRSVPs.count)")
-                    .font(.caption.bold())
+                    .samFont(.caption, weight: .bold)
                     .foregroundStyle(.orange)
             }
             .padding(.horizontal, 12)
@@ -190,15 +190,15 @@ struct EventDetailView: View {
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: "person.badge.plus")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.blue)
 
                         VStack(alignment: .leading, spacing: 2) {
                             Text(rsvp.displayName ?? rsvp.senderHandle)
-                                .font(.callout)
+                                .samFont(.callout)
                                 .lineLimit(1)
                             Text(rsvp.messagePreview)
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(2)
                         }
@@ -206,7 +206,7 @@ struct EventDetailView: View {
                         Spacer()
 
                         Text(rsvp.messageDate.formatted(date: .abbreviated, time: .shortened))
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .foregroundStyle(.tertiary)
                     }
                     .padding(.horizontal, 12)
@@ -232,10 +232,10 @@ struct EventDetailView: View {
             HStack {
                 Image(systemName: event.format.icon)
                 Text(event.title)
-                    .font(.title3.bold())
+                    .samFont(.title3, weight: .bold)
                 Spacer()
                 Text(event.status.displayName)
-                    .font(.caption)
+                    .samFont(.caption)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
                     .background(.tertiary.opacity(0.3), in: Capsule())
@@ -274,18 +274,18 @@ struct EventDetailView: View {
                     event.startDate.formatted(date: .abbreviated, time: .shortened),
                     systemImage: "calendar"
                 )
-                .font(.caption)
+                .samFont(.caption)
 
                 if let venue = event.venue {
                     let locationText = [venue, event.address].compactMap { $0 }.joined(separator: ", ")
                     Label(locationText, systemImage: "mappin")
-                        .font(.caption)
+                        .samFont(.caption)
                         .lineLimit(1)
                 }
 
                 if event.format == .virtual, event.joinLink != nil {
                     Label("Link Set", systemImage: "link")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.green)
                 }
             }
@@ -306,13 +306,13 @@ struct EventDetailView: View {
                 Spacer()
 
                 Text("\(event.acceptedCount)/\(event.targetParticipantCount) target")
-                    .font(.caption.bold())
+                    .samFont(.caption, weight: .bold)
                     .foregroundStyle(event.acceptedCount >= event.targetParticipantCount ? .green : .secondary)
             }
 
             if let message = lastActionMessage {
                 Text(message)
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.blue)
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
@@ -323,10 +323,10 @@ struct EventDetailView: View {
     private func rsvpBadge(count: Int, label: String, color: Color) -> some View {
         HStack(spacing: 3) {
             Text("\(count)")
-                .font(.caption.bold())
+                .samFont(.caption, weight: .bold)
                 .foregroundStyle(color)
             Text(label)
-                .font(.caption2)
+                .samFont(.caption2)
                 .foregroundStyle(.secondary)
         }
     }
@@ -339,7 +339,7 @@ struct EventDetailView: View {
                 showAddParticipants = true
             } label: {
                 Label("Add People", systemImage: "person.badge.plus")
-                    .font(.caption)
+                    .samFont(.caption)
             }
 
             Spacer()
@@ -348,14 +348,14 @@ struct EventDetailView: View {
                 showSocialPromotion = true
             } label: {
                 Label("Promote", systemImage: "megaphone")
-                    .font(.caption)
+                    .samFont(.caption)
             }
 
             Button {
                 showInvitationDrafts = true
             } label: {
                 Label("Draft Invitations", systemImage: "paperplane")
-                    .font(.caption)
+                    .samFont(.caption)
             }
             .disabled(!hasUninvitedParticipants(event: event))
         }
@@ -424,23 +424,23 @@ struct ParticipantRowView: View {
             // Priority indicator
             if participation.priority != .standard {
                 Image(systemName: participation.priority.icon)
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(participation.priority == .vip ? .yellow : .blue)
             }
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(participation.person?.displayNameCache ?? "Unknown")
-                    .font(.body)
+                    .samFont(.body)
                     .lineLimit(1)
 
                 HStack(spacing: 6) {
                     Text(participation.eventRole)
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.secondary)
 
                     if participation.inviteStatus != .notInvited {
                         Text(participation.inviteStatus.displayName)
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .foregroundStyle(.tertiary)
                     }
                 }
@@ -454,7 +454,7 @@ struct ParticipantRowView: View {
             // Needs confirmation indicator
             if !participation.rsvpUserConfirmed && participation.rsvpDetectionConfidence != nil {
                 Image(systemName: "exclamationmark.circle")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.orange)
                     .help("SAM detected an RSVP — needs your confirmation")
             }
@@ -467,7 +467,7 @@ struct ParticipantRowView: View {
             Image(systemName: participation.rsvpStatus.icon)
             Text(participation.rsvpStatus.displayName)
         }
-        .font(.caption2)
+        .samFont(.caption2)
         .foregroundStyle(rsvpColor)
     }
 
@@ -521,17 +521,17 @@ struct ParticipantDetailView: View {
             HStack {
                 VStack(alignment: .leading) {
                     Text(participation.person?.displayNameCache ?? "Unknown")
-                        .font(.title2.bold())
+                        .samFont(.title2, weight: .bold)
 
                     HStack(spacing: 8) {
                         if participation.priority != .standard {
                             Label(participation.priority.displayName, systemImage: participation.priority.icon)
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(participation.priority == .vip ? .yellow : .blue)
                         }
 
                         Text(participation.eventRole)
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -543,12 +543,12 @@ struct ParticipantDetailView: View {
                         Image(systemName: participation.rsvpStatus.icon)
                         Text(participation.rsvpStatus.displayName)
                     }
-                    .font(.callout.bold())
+                    .samFont(.callout, weight: .bold)
                     .foregroundStyle(rsvpColor)
 
                     if let sentAt = participation.inviteSentAt {
                         Text("Invited \(sentAt.formatted(date: .abbreviated, time: .omitted))")
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .foregroundStyle(.tertiary)
                     }
                 }
@@ -559,7 +559,7 @@ struct ParticipantDetailView: View {
                 HStack(spacing: 4) {
                     ForEach(person.roleBadges, id: \.self) { badge in
                         Text(badge)
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                             .background(.quaternary, in: Capsule())
@@ -575,23 +575,23 @@ struct ParticipantDetailView: View {
                 Image(systemName: "exclamationmark.circle.fill")
                     .foregroundStyle(.orange)
                 Text("RSVP Needs Confirmation")
-                    .font(.headline)
+                    .samFont(.headline)
                 Spacer()
                 Text("\(Int(confidence * 100))% confidence")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             }
 
             if let quote = participation.rsvpResponseQuote {
                 Text("\"\(quote)\"")
-                    .font(.callout)
+                    .samFont(.callout)
                     .italic()
                     .padding(8)
                     .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
             }
 
             Text("SAM detected this as: \(participation.rsvpStatus.displayName)")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
 
             HStack(spacing: 8) {
@@ -621,11 +621,11 @@ struct ParticipantDetailView: View {
     private var messageLogSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Message History")
-                .font(.headline)
+                .samFont(.headline)
 
             if participation.messageLog.isEmpty {
                 Text("No messages yet")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.tertiary)
                     .padding(.vertical, 8)
             } else {
@@ -640,15 +640,15 @@ struct ParticipantDetailView: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Image(systemName: messageIcon(for: message.kind))
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(messageColor(for: message.kind))
 
                 Text(message.kind.rawValue.capitalized)
-                    .font(.caption.bold())
+                    .samFont(.caption, weight: .bold)
 
                 if let channel = message.channel {
                     Text("via \(channel.displayName)")
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.tertiary)
                 }
 
@@ -656,17 +656,17 @@ struct ParticipantDetailView: View {
 
                 if message.isDraft {
                     Text("DRAFT")
-                        .font(.caption2.bold())
+                        .samFont(.caption2, weight: .bold)
                         .foregroundStyle(.blue)
                 } else if let sentAt = message.sentAt {
                     Text(sentAt.formatted(date: .abbreviated, time: .shortened))
-                        .font(.caption2)
+                        .samFont(.caption2)
                         .foregroundStyle(.secondary)
                 }
             }
 
             Text(message.body)
-                .font(.callout)
+                .samFont(.callout)
                 .lineLimit(3)
                 .padding(8)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -682,7 +682,7 @@ struct ParticipantDetailView: View {
                             messageID: message.id
                         )
                     }
-                    .font(.caption)
+                    .samFont(.caption)
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
                 }
@@ -694,7 +694,7 @@ struct ParticipantDetailView: View {
     private var quickActions: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Quick Actions")
-                .font(.headline)
+                .samFont(.headline)
 
             HStack(spacing: 8) {
                 if participation.inviteStatus == .notInvited || participation.inviteStatus == .draftReady {

@@ -35,10 +35,10 @@ struct GuideWindowView: View {
                 .foregroundStyle(.secondary)
 
             Text("SAM Guide")
-                .font(.title2.bold())
+                .samFont(.title2, weight: .bold)
 
             Text("Select a topic from the sidebar to get started.")
-                .font(.callout)
+                .samFont(.callout)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

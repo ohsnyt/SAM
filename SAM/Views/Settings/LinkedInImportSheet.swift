@@ -62,23 +62,23 @@ struct LinkedInImportSheet: View {
                     VStack(alignment: .leading, spacing: 16) {
                         // Description
                         Text("Import connections, messages, and interaction data from a LinkedIn data export.")
-                            .font(.callout)
+                            .samFont(.callout)
                             .foregroundStyle(.secondary)
 
                         // Last import info
                         if let lastImport = coordinator.lastConnectionImportAt {
                             HStack(spacing: 4) {
                                 Image(systemName: "clock")
-                                    .font(.caption)
+                                    .samFont(.caption)
                                     .foregroundStyle(.secondary)
                                 Text("Last import:")
-                                    .font(.caption)
+                                    .samFont(.caption)
                                     .foregroundStyle(.secondary)
                                 Text(lastImport, style: .relative)
-                                    .font(.caption)
+                                    .samFont(.caption)
                                     .foregroundStyle(.secondary)
                                 Text("ago")
-                                    .font(.caption)
+                                    .samFont(.caption)
                                     .foregroundStyle(.secondary)
                             }
                         }
@@ -145,7 +145,7 @@ struct LinkedInImportSheet: View {
             Spacer()
 
             Text("LinkedIn")
-                .font(.headline)
+                .samFont(.headline)
 
             Spacer()
 
@@ -234,7 +234,7 @@ struct LinkedInImportSheet: View {
     private var setupPhase: some View {
         VStack(alignment: .leading, spacing: 16) {
             Label("Getting Started", systemImage: "info.circle")
-                .font(.subheadline)
+                .samFont(.subheadline)
                 .fontWeight(.semibold)
 
             VStack(alignment: .leading, spacing: 8) {
@@ -263,11 +263,11 @@ struct LinkedInImportSheet: View {
     private var pdfImportSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             Label("Profile PDFs", systemImage: "doc.text")
-                .font(.subheadline)
+                .samFont(.subheadline)
                 .fontWeight(.semibold)
 
             Text("Scan your Downloads folder for LinkedIn Profile PDFs. Matched contacts are auto-enriched; new profiles are shown for review.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
 
             Toggle(isOn: Binding(
@@ -275,7 +275,7 @@ struct LinkedInImportSheet: View {
                 set: { coordinator.pdfDeleteAfterImport = $0 }
             )) {
                 Text("Delete PDFs after importing")
-                    .font(.caption)
+                    .samFont(.caption)
             }
 
             HStack {
@@ -303,7 +303,7 @@ struct LinkedInImportSheet: View {
                 ProgressView()
                     .controlSize(.small)
                 Text(coordinator.pdfScanProgress ?? "Scanning…")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             }
 
@@ -312,11 +312,11 @@ struct LinkedInImportSheet: View {
                 HStack(spacing: 4) {
                     if coordinator.pdfAutoEnrichedCount > 0 {
                         Text("\(coordinator.pdfAutoEnrichedCount) matched and enriched.")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.green)
                     }
                     Text("\(coordinator.pdfImportCandidates.count) need review.")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.orange)
                 }
                 Button("Review & Import") {
@@ -331,7 +331,7 @@ struct LinkedInImportSheet: View {
                 ProgressView()
                     .controlSize(.small)
                 Text("Importing…")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             }
 
@@ -340,9 +340,9 @@ struct LinkedInImportSheet: View {
                 HStack(spacing: 4) {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(.green)
-                        .font(.caption)
+                        .samFont(.caption)
                     Text("\(count) profile(s) imported successfully.")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.green)
                 }
                 Button("Scan Again") {
@@ -355,7 +355,7 @@ struct LinkedInImportSheet: View {
         case .needsFolderAccess:
             VStack(alignment: .leading, spacing: 4) {
                 Text("SAM needs access to your Downloads folder to scan for Profile PDFs.")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
                 Button("Choose Downloads Folder…") {
                     pickFolderForPDFScan()
@@ -369,9 +369,9 @@ struct LinkedInImportSheet: View {
                 HStack(spacing: 4) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
-                        .font(.caption)
+                        .samFont(.caption)
                     Text(message)
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
                 Button("Try Again") {
@@ -407,7 +407,7 @@ struct LinkedInImportSheet: View {
     private func zipFoundPhase(info: LinkedInZipInfo) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             Label("Export Found", systemImage: "doc.zipper")
-                .font(.subheadline)
+                .samFont(.subheadline)
                 .fontWeight(.semibold)
                 .foregroundStyle(.green)
 
@@ -415,25 +415,25 @@ struct LinkedInImportSheet: View {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
                         Text("File:")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                         Text(info.fileName)
-                            .font(.caption)
+                            .samFont(.caption)
                             .fontWeight(.medium)
                     }
                     HStack {
                         Text("Date:")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                         Text(info.fileDate.formatted(.dateTime.month(.abbreviated).day().year().hour().minute()))
-                            .font(.caption)
+                            .samFont(.caption)
                     }
                     HStack {
                         Text("Size:")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                         Text(info.formattedSize)
-                            .font(.caption)
+                            .samFont(.caption)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -460,11 +460,11 @@ struct LinkedInImportSheet: View {
 
             if let progress = coordinator.progressMessage {
                 Text(progress)
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             } else {
                 Text("Processing LinkedIn export...")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             }
         }
@@ -478,15 +478,15 @@ struct LinkedInImportSheet: View {
             HStack(spacing: 8) {
                 if coordinator.exactMatchCount > 0 {
                     Text("\(coordinator.exactMatchCount) auto-matched")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.green)
                 }
                 Text("\(coordinator.pendingConnectionCount) connections to review")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
                 if coordinator.newMessageCount > 0 {
                     Text("\u{00B7} \(coordinator.newMessageCount) new messages")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -507,11 +507,11 @@ struct LinkedInImportSheet: View {
 
             if let progress = coordinator.progressMessage {
                 Text(progress)
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             } else {
                 Text("Importing...")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             }
         }
@@ -521,7 +521,7 @@ struct LinkedInImportSheet: View {
     private var noZipFoundPhase: some View {
         VStack(alignment: .leading, spacing: 16) {
             Label("No Export Found in Downloads", systemImage: "folder.badge.questionmark")
-                .font(.subheadline)
+                .samFont(.subheadline)
                 .fontWeight(.semibold)
 
             VStack(alignment: .leading, spacing: 8) {
@@ -561,7 +561,7 @@ struct LinkedInImportSheet: View {
                 ProgressView()
                     .scaleEffect(0.7)
                 Text("Watching for LinkedIn export email...")
-                    .font(.callout)
+                    .samFont(.callout)
             }
 
             if let startDate = UserDefaults.standard.object(forKey: "sam.linkedin.emailWatcherStartDate") as? Date {
@@ -569,12 +569,12 @@ struct LinkedInImportSheet: View {
                 let hours = Int(elapsed / 3600)
                 let minutes = Int((elapsed.truncatingRemainder(dividingBy: 3600)) / 60)
                 Text("Checking every 5 minutes \u{00B7} \(hours)h \(minutes)m elapsed")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             }
 
             Text("SAM will notify you when the export email arrives. This typically takes up to 24 hours.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
 
             HStack(spacing: 12) {
@@ -597,12 +597,12 @@ struct LinkedInImportSheet: View {
     private func emailFoundPhase(url: URL) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             Label("Export Email Detected!", systemImage: "envelope.open.fill")
-                .font(.subheadline)
+                .samFont(.subheadline)
                 .fontWeight(.semibold)
                 .foregroundStyle(.green)
 
             Text("SAM found the LinkedIn data export email. Open the download page, download the ZIP file, then come back here.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
 
             HStack(spacing: 12) {
@@ -626,14 +626,14 @@ struct LinkedInImportSheet: View {
                 ProgressView()
                     .scaleEffect(0.7)
                 Text("Monitoring ~/Downloads for LinkedIn export...")
-                    .font(.callout)
+                    .samFont(.callout)
             }
 
             if let startDate = UserDefaults.standard.object(forKey: "sam.linkedin.fileWatcherStartDate") as? Date {
                 let elapsed = Date.now.timeIntervalSince(startDate)
                 let minutes = Int(elapsed / 60)
                 Text("Checking every 30 seconds \u{00B7} \(minutes) min elapsed")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             }
 
@@ -657,7 +657,7 @@ struct LinkedInImportSheet: View {
     private func completePhase(stats: LinkedInImportStats) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             Label("Import Complete", systemImage: "checkmark.circle.fill")
-                .font(.subheadline)
+                .samFont(.subheadline)
                 .fontWeight(.semibold)
                 .foregroundStyle(.green)
 
@@ -688,10 +688,10 @@ struct LinkedInImportSheet: View {
                 Toggle(isOn: $deleteZipAfterImport) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Delete export file from Downloads")
-                            .font(.caption)
+                            .samFont(.caption)
                             .fontWeight(.medium)
                         Text("The import data is now in SAM — the ZIP file is no longer needed.")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -702,12 +702,12 @@ struct LinkedInImportSheet: View {
     private func failedPhase(message: String) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             Label("Import Failed", systemImage: "xmark.circle.fill")
-                .font(.subheadline)
+                .samFont(.subheadline)
                 .fontWeight(.semibold)
                 .foregroundStyle(.red)
 
             Text(message)
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
 
             HStack(spacing: 12) {
@@ -729,12 +729,12 @@ struct LinkedInImportSheet: View {
     private func instructionRow(number: Int, text: String) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Text("\(number).")
-                .font(.caption)
+                .samFont(.caption)
                 .fontWeight(.semibold)
                 .foregroundStyle(.secondary)
                 .frame(width: 16, alignment: .trailing)
             Text(text)
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
         }
     }
@@ -742,11 +742,11 @@ struct LinkedInImportSheet: View {
     private func summaryRow(_ label: String, value: Int) -> some View {
         HStack {
             Text(label)
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
             Spacer()
             Text("\(value)")
-                .font(.caption)
+                .samFont(.caption)
                 .fontWeight(.semibold)
         }
     }

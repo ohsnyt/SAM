@@ -199,17 +199,17 @@ private struct ContextRowView: View {
         HStack(spacing: 12) {
             // Icon based on kind
             Image(systemName: context.kind.icon)
-                .font(.title2)
+                .samFont(.title2)
                 .foregroundStyle(context.kind.color)
                 .frame(width: 32, height: 32)
             
             // Name and kind
             VStack(alignment: .leading, spacing: 2) {
                 Text(context.name)
-                    .font(.body)
+                    .samFont(.body)
                 
                 Text(context.kind.displayName)
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             }
             
@@ -218,7 +218,7 @@ private struct ContextRowView: View {
             // Participant count
             if !context.participations.isEmpty {
                 Label("\(context.participations.count)", systemImage: "person.2.fill")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             }
             
@@ -226,19 +226,19 @@ private struct ContextRowView: View {
             HStack(spacing: 8) {
                 if context.consentAlertCount > 0 {
                     Label("\(context.consentAlertCount)", systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.orange)
                 }
                 
                 if context.reviewAlertCount > 0 {
                     Label("\(context.reviewAlertCount)", systemImage: "bell.fill")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.red)
                 }
                 
                 if context.followUpAlertCount > 0 {
                     Label("\(context.followUpAlertCount)", systemImage: "clock.fill")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.blue)
                 }
             }
@@ -274,7 +274,7 @@ private struct CreateContextSheet: View {
                 
                 if let error = errorMessage {
                     Text(error)
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.red)
                 }
             }

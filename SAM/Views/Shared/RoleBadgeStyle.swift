@@ -52,7 +52,7 @@ struct RoleBadgeIconView: View {
             .foregroundStyle(style.color)
             .popover(isPresented: $showTooltip, arrowEdge: .bottom) {
                 Text(badge)
-                    .font(.caption2)
+                    .samFont(.caption2)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 4)
             }

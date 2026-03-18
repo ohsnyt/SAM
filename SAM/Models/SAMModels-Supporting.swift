@@ -11,6 +11,110 @@
 //
 
 import Foundation
+import SwiftUI
+
+// ─────────────────────────────────────────────────────────────────────
+// MARK: - Text Size
+// ─────────────────────────────────────────────────────────────────────
+
+/// User-facing text size preference applied app-wide by scaling all semantic fonts.
+///
+/// macOS does not meaningfully respond to `DynamicTypeSize` the way iOS does —
+/// semantic fonts (.body, .caption, .headline) are fixed-size regardless of the
+/// dynamic-type environment.  SAM therefore uses a custom `EnvironmentKey`
+/// (`\.samTextScale`) to propagate a CGFloat multiplier from the app root, and
+/// a `TextScaleModifier` that converts the multiplier into an explicit
+/// `.font(.system(size:…))` for every semantic role.
+public enum SAMTextSize: String, CaseIterable, Identifiable, Sendable {
+    case small    = "small"
+    case standard = "standard"
+    case large    = "large"
+    case extraLarge = "extraLarge"
+
+    public var id: String { rawValue }
+
+    public var label: String {
+        switch self {
+        case .small:      return "Small"
+        case .standard:   return "Standard"
+        case .large:      return "Large"
+        case .extraLarge: return "Extra Large"
+        }
+    }
+
+    /// Multiplier applied to base macOS font sizes.
+    public var scale: CGFloat {
+        switch self {
+        case .small:      return 0.88
+        case .standard:   return 1.0
+        case .large:      return 1.15
+        case .extraLarge: return 1.30
+        }
+    }
+}
+
+// MARK: - Environment Key
+
+private struct SAMTextScaleKey: EnvironmentKey {
+    static let defaultValue: CGFloat = 1.0
+}
+
+extension EnvironmentValues {
+    /// App-wide text scale multiplier driven by the user's Text Size preference.
+    public var samTextScale: CGFloat {
+        get { self[SAMTextScaleKey.self] }
+        set { self[SAMTextScaleKey.self] = newValue }
+    }
+}
+
+// MARK: - Scaled Font Helpers
+
+extension Font {
+    // macOS default point sizes for semantic roles
+    private static let macOSBaseSizes: [TextStyle: CGFloat] = [
+        .largeTitle: 26, .title: 22, .title2: 17, .title3: 15,
+        .headline: 13, .body: 13, .callout: 12,
+        .subheadline: 11, .footnote: 10, .caption: 10, .caption2: 10
+    ]
+
+    /// Returns a system font scaled by the given multiplier for the specified role.
+    public static func sam(_ style: TextStyle, scale: CGFloat, weight: Weight? = nil) -> Font {
+        let base = macOSBaseSizes[style] ?? 13
+        let size = (base * scale).rounded(.toNearestOrEven)
+        if let weight {
+            return .system(size: size, weight: weight)
+        }
+        // Preserve the default weight for headline (semibold)
+        if style == .headline {
+            return .system(size: size, weight: .semibold)
+        }
+        return .system(size: size)
+    }
+}
+
+// MARK: - View Modifier
+
+/// Reads the `samTextScale` environment value and replaces the view's font
+/// with a size-scaled equivalent of the given semantic role.
+struct SAMScaledFont: ViewModifier {
+    let style: Font.TextStyle
+    let weight: Font.Weight?
+    @Environment(\.samTextScale) private var scale
+
+    func body(content: Content) -> some View {
+        content.font(.sam(style, scale: scale, weight: weight))
+    }
+}
+
+extension View {
+    /// Applies a text-scale-aware font for the given semantic role.
+    ///
+    /// When the user's Text Size preference is **Standard** (scale 1.0) the
+    /// resulting point size matches the macOS default for that role.
+    public func samFont(_ style: Font.TextStyle, weight: Font.Weight? = nil) -> some View {
+        modifier(SAMScaledFont(style: style, weight: weight))
+    }
+}
 
 // ─────────────────────────────────────────────────────────────────────
 // MARK: - Contact Lifecycle

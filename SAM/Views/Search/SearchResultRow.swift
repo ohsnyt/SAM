@@ -32,7 +32,7 @@ struct SearchPersonRow: View {
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 4) {
                     Text(person.displayNameCache ?? person.displayName)
-                        .font(.body)
+                        .samFont(.body)
                         .lineLimit(1)
 
                     ForEach(person.roleBadges, id: \.self) { badge in
@@ -42,7 +42,7 @@ struct SearchPersonRow: View {
 
                 if let email = person.emailCache ?? person.email {
                     Text(email)
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -51,7 +51,7 @@ struct SearchPersonRow: View {
             Spacer()
 
             Text("Person")
-                .font(.caption2)
+                .samFont(.caption2)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 2)
@@ -75,18 +75,18 @@ struct SearchContextRow: View {
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(context.name)
-                    .font(.body)
+                    .samFont(.body)
                     .lineLimit(1)
 
                 Text(context.kind.displayName)
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             }
 
             Spacer()
 
             Text("Context")
-                .font(.caption2)
+                .samFont(.caption2)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 2)
@@ -110,18 +110,18 @@ struct SearchNoteRow: View {
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(note.summary ?? String(note.content.prefix(100)))
-                    .font(.body)
+                    .samFont(.body)
                     .lineLimit(2)
 
                 Text(note.updatedAt, style: .relative)
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             }
 
             Spacer()
 
             Text("Note")
-                .font(.caption2)
+                .samFont(.caption2)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 2)
@@ -145,11 +145,11 @@ struct SearchEvidenceRow: View {
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(item.title)
-                    .font(.body)
+                    .samFont(.body)
                     .lineLimit(1)
 
                 Text(item.snippet)
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -157,7 +157,7 @@ struct SearchEvidenceRow: View {
             Spacer()
 
             Text(item.occurredAt, style: .relative)
-                .font(.caption2)
+                .samFont(.caption2)
                 .foregroundStyle(.secondary)
         }
         .padding(.vertical, 2)
@@ -215,12 +215,12 @@ struct SearchInsightRow: View {
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(insight.title)
-                    .font(.body)
+                    .samFont(.body)
                     .lineLimit(1)
 
                 if let person = insight.samPerson {
                     Text(person.displayNameCache ?? person.displayName)
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -229,7 +229,7 @@ struct SearchInsightRow: View {
             Spacer()
 
             Text(insight.urgency.displayText)
-                .font(.caption2)
+                .samFont(.caption2)
                 .foregroundStyle(.white)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 2)
@@ -262,12 +262,12 @@ struct SearchOutcomeRow: View {
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(outcome.title)
-                    .font(.body)
+                    .samFont(.body)
                     .lineLimit(1)
 
                 if let person = outcome.linkedPerson {
                     Text(person.displayNameCache ?? person.displayName)
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -276,7 +276,7 @@ struct SearchOutcomeRow: View {
             Spacer()
 
             Text(outcome.outcomeKind.displayName)
-                .font(.caption2)
+                .samFont(.caption2)
                 .foregroundStyle(outcome.outcomeKind.themeColor)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 2)

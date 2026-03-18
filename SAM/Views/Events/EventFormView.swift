@@ -107,7 +107,7 @@ struct EventFormView: View {
             // Header
             HStack {
                 Text(isEditing ? "Edit Event" : "New Event")
-                    .font(.title2.bold())
+                    .samFont(.title2, weight: .bold)
                 Spacer()
                 Button("Cancel") { dismiss() }
                     .keyboardShortcut(.escape)
@@ -179,12 +179,12 @@ struct EventFormView: View {
                             }
                         if !venueValid {
                             Label("Venue is required for \(format.displayName.lowercased()) events", systemImage: "exclamationmark.triangle.fill")
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.orange)
                         }
                         if !addressValid {
                             Label("Address is required for \(format.displayName.lowercased()) events", systemImage: "exclamationmark.triangle.fill")
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.orange)
                         }
                         if !address.trimmingCharacters(in: .whitespaces).isEmpty {
@@ -193,19 +193,19 @@ struct EventFormView: View {
                                     ProgressView()
                                         .controlSize(.mini)
                                     Text("Verifying address...")
-                                        .font(.caption)
+                                        .samFont(.caption)
                                         .foregroundStyle(.secondary)
                                 } else if let message = addressValidationMessage {
                                     Image(systemName: message.starts(with: "✓") ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
                                         .foregroundStyle(message.starts(with: "✓") ? .green : .orange)
                                     Text(message)
-                                        .font(.caption)
+                                        .samFont(.caption)
                                         .foregroundStyle(message.starts(with: "✓") ? .green : .orange)
                                 } else {
                                     Button("Verify Address") {
                                         Task { await validateAddress() }
                                     }
-                                    .font(.caption)
+                                    .samFont(.caption)
                                     .buttonStyle(.bordered)
                                     .controlSize(.small)
                                 }
@@ -216,13 +216,13 @@ struct EventFormView: View {
                         TextField("Join Link (Zoom, Teams, etc.)", text: $joinLink)
                         if !joinLinkValid {
                             Label("Join link is required for \(format.displayName.lowercased()) events", systemImage: "exclamationmark.triangle.fill")
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.orange)
                         }
                     }
                     if !needsVenue && !needsJoinLink {
                         Text("No location needed for this format.")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.tertiary)
                     }
                 }
@@ -233,10 +233,10 @@ struct EventFormView: View {
                         Label {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Changes to date, time, venue, link, or format will prompt you to notify \(inviteeCount) invited \(inviteeCount == 1 ? "participant" : "participants").")
-                                    .font(.caption)
+                                    .samFont(.caption)
                                 if hasMaterialChanges {
                                     Text("You have unsaved changes that will affect invitees.")
-                                        .font(.caption.bold())
+                                        .samFont(.caption, weight: .bold)
                                         .foregroundStyle(.orange)
                                 }
                             }
@@ -252,21 +252,21 @@ struct EventFormView: View {
 
                     if autoAckEnabled {
                         TextField("Acceptance template", text: $autoAckTemplate)
-                            .font(.callout)
+                            .samFont(.callout)
 
                         Text("Placeholders: {name} (first name), {date} (smart date & time)")
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .foregroundStyle(.tertiary)
 
                         Toggle("Also auto-acknowledge declines", isOn: $autoAckDeclines)
 
                         if autoAckDeclines {
                             TextField("Decline template", text: $autoAckDeclineTemplate)
-                                .font(.callout)
+                                .samFont(.callout)
                         }
 
                         Text("Auto-ack only applies to Standard priority participants. VIP and Key participants always get personal responses.")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                     }
 
@@ -275,7 +275,7 @@ struct EventFormView: View {
                     Text(autoReplyUnknownSenders
                          ? "When an unknown number texts about this event, SAM will auto-send a holding reply if direct send is enabled."
                          : "Unknown sender holding replies will still fire if auto-acknowledge RSVPs is on above. Enable this to also send holding replies when auto-acknowledge is off.")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -383,7 +383,7 @@ struct EventFormView: View {
             }
         } footer: {
             Text("Based on recent conversations and seasonal trends")
-                .font(.caption2)
+                .samFont(.caption2)
                 .foregroundStyle(.tertiary)
         }
     }
@@ -398,9 +398,9 @@ struct EventFormView: View {
                 HStack {
                     Image(systemName: topic.format.icon)
                         .foregroundStyle(.secondary)
-                        .font(.caption)
+                        .samFont(.caption)
                     Text(topic.title)
-                        .font(.callout.bold())
+                        .samFont(.callout, weight: .bold)
                         .lineLimit(2)
                     Spacer()
                     if isSelected {
@@ -410,21 +410,21 @@ struct EventFormView: View {
                 }
 
                 Text(topic.rationale)
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
 
                 HStack(spacing: 4) {
                     ForEach(topic.targetAudience, id: \.self) { role in
                         Text(role)
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .padding(.horizontal, 4)
                             .padding(.vertical, 1)
                             .background(.quaternary, in: Capsule())
                     }
                     if let hook = topic.seasonalHook {
                         Text(hook)
-                            .font(.caption2)
+                            .samFont(.caption2)
                             .foregroundStyle(.orange)
                             .italic()
                     }

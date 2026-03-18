@@ -233,15 +233,15 @@ struct PostMeetingCaptureView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(payload.captureKind.isMeeting ? "Meeting Notes" : "\(payload.captureKind.sourceLabel) Notes")
-                        .font(.title2)
+                        .samFont(.title2)
                         .fontWeight(.semibold)
 
                     HStack(spacing: 8) {
                         Text(payload.eventTitle)
-                            .font(.subheadline)
+                            .samFont(.subheadline)
                             .foregroundStyle(.secondary)
                         Text(payload.eventDate.formatted(date: .abbreviated, time: .shortened))
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.tertiary)
                     }
                 }
@@ -279,11 +279,11 @@ struct PostMeetingCaptureView: View {
     private func attendeeBadge(_ attendee: CaptureAttendeeInfo) -> some View {
         HStack(spacing: 4) {
             Text(attendee.displayName)
-                .font(.caption)
+                .samFont(.caption)
                 .fontWeight(.medium)
             ForEach(attendee.roleBadges, id: \.self) { badge in
                 Text(badge)
-                    .font(.caption2)
+                    .samFont(.caption2)
                     .foregroundStyle(.white)
                     .padding(.horizontal, 4)
                     .padding(.vertical, 1)
@@ -362,10 +362,10 @@ struct PostMeetingCaptureView: View {
                                   ? "checkmark.circle.fill" : "circle")
                                 .foregroundStyle(attendancePresent.contains(attendee.personID) ? .green : .secondary)
                             Text(attendee.displayName)
-                                .font(.body)
+                                .samFont(.body)
                             ForEach(attendee.roleBadges, id: \.self) { badge in
                                 Text(badge)
-                                    .font(.caption2)
+                                    .samFont(.caption2)
                                     .foregroundStyle(.white)
                                     .padding(.horizontal, 4)
                                     .padding(.vertical, 1)
@@ -384,13 +384,13 @@ struct PostMeetingCaptureView: View {
                         HStack(spacing: 4) {
                             TextField("Name", text: $extraAttendeeNames[i])
                                 .textFieldStyle(.plain)
-                                .font(.body)
+                                .samFont(.body)
                             Button {
                                 extraAttendeeNames.remove(at: i)
                             } label: {
                                 Image(systemName: "xmark.circle.fill")
                                     .foregroundStyle(.secondary)
-                                    .font(.caption)
+                                    .samFont(.caption)
                             }
                             .buttonStyle(.plain)
                         }
@@ -406,7 +406,7 @@ struct PostMeetingCaptureView: View {
                     extraAttendeeNames.append("")
                 } label: {
                     Label("Add attendee", systemImage: "plus.circle")
-                        .font(.caption)
+                        .samFont(.caption)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
@@ -415,7 +415,7 @@ struct PostMeetingCaptureView: View {
                 HStack(spacing: 16) {
                     if let primary = payload.attendees.first {
                         Text(primary.displayName)
-                            .font(.body)
+                            .samFont(.body)
                     }
                     Picker("", selection: $callAnswered) {
                         Text("Answered").tag(true)
@@ -463,13 +463,13 @@ struct PostMeetingCaptureView: View {
         VStack(alignment: .leading, spacing: 12) {
             stepHeader("list.bullet.rectangle", title: "Talking Points Review")
             Text("Were these discussed?")
-                .font(.subheadline)
+                .samFont(.subheadline)
                 .foregroundStyle(.secondary)
 
             ForEach(payload.talkingPoints, id: \.self) { point in
                 VStack(alignment: .leading, spacing: 4) {
                     Text(point)
-                        .font(.body)
+                        .samFont(.body)
                         .fontWeight(.medium)
                     captureTextEditor(
                         text: bindingForTalkingPoint(point),
@@ -491,13 +491,13 @@ struct PostMeetingCaptureView: View {
         VStack(alignment: .leading, spacing: 12) {
             stepHeader("arrow.triangle.2.circlepath", title: "Pending Actions")
             Text("Were any of these addressed?")
-                .font(.subheadline)
+                .samFont(.subheadline)
                 .foregroundStyle(.secondary)
 
             ForEach(payload.openActionItems, id: \.self) { action in
                 VStack(alignment: .leading, spacing: 4) {
                     Text(action)
-                        .font(.body)
+                        .samFont(.body)
                         .fontWeight(.medium)
                     captureTextEditor(
                         text: bindingForActionPoint(action),
@@ -573,7 +573,7 @@ struct PostMeetingCaptureView: View {
                     withAnimation(.easeInOut(duration: 0.2)) { guidedStep -= 1 }
                 } label: {
                     Label("Back", systemImage: "chevron.left")
-                        .font(.subheadline)
+                        .samFont(.subheadline)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
@@ -583,7 +583,7 @@ struct PostMeetingCaptureView: View {
 
             let steps = guidedSteps
             Text("\(currentStepIndex + 1) of \(steps.count)")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.tertiary)
 
             Spacer()
@@ -643,7 +643,7 @@ struct PostMeetingCaptureView: View {
                 Image(systemName: "checklist")
                     .foregroundStyle(.orange)
                 Text("Action Items")
-                    .font(.subheadline)
+                    .samFont(.subheadline)
                     .fontWeight(.semibold)
                 Spacer()
             }
@@ -651,11 +651,11 @@ struct PostMeetingCaptureView: View {
             ForEach($actionItemEntries) { $item in
                 HStack(spacing: 8) {
                     Image(systemName: "circle")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.orange)
                     TextField("Action item...", text: $item.description)
                         .textFieldStyle(.plain)
-                        .font(.body)
+                        .samFont(.body)
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 6)
@@ -668,7 +668,7 @@ struct PostMeetingCaptureView: View {
                 actionItemEntries.append(ActionItemEntry())
             } label: {
                 Label("Add Action Item", systemImage: "plus.circle")
-                    .font(.caption)
+                    .samFont(.caption)
             }
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
@@ -707,9 +707,9 @@ struct PostMeetingCaptureView: View {
         HStack(spacing: 8) {
             Image(systemName: icon)
                 .foregroundStyle(Color.accentColor)
-                .font(.title3)
+                .samFont(.title3)
             Text(title)
-                .font(.title3)
+                .samFont(.title3)
                 .fontWeight(.semibold)
         }
     }
@@ -719,7 +719,7 @@ struct PostMeetingCaptureView: View {
             Image(systemName: icon)
                 .foregroundStyle(.blue)
             Text(title)
-                .font(.subheadline)
+                .samFont(.subheadline)
                 .fontWeight(.semibold)
             Spacer()
             dictationButton(for: dictationTarget)
@@ -729,7 +729,7 @@ struct PostMeetingCaptureView: View {
     private func captureTextEditor(text: Binding<String>, placeholder: String, dictationTarget: DictationTarget, minHeight: CGFloat) -> some View {
         VStack(spacing: 0) {
             TextEditor(text: text)
-                .font(.body)
+                .samFont(.body)
                 .frame(minHeight: minHeight)
                 .scrollContentBackground(.hidden)
                 .padding(8)
@@ -739,7 +739,7 @@ struct PostMeetingCaptureView: View {
                 .overlay(alignment: .topLeading) {
                     if text.wrappedValue.isEmpty {
                         Text(placeholder)
-                            .font(.body)
+                            .samFont(.body)
                             .foregroundStyle(.tertiary)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 12)
@@ -762,7 +762,7 @@ struct PostMeetingCaptureView: View {
             }
         } label: {
             Image(systemName: activeDictationSection == target ? "mic.fill" : "mic")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(activeDictationSection == target ? .red : .secondary)
         }
         .buttonStyle(.plain)
@@ -772,14 +772,14 @@ struct PostMeetingCaptureView: View {
     private func contextualReminders(_ label: String, items: [String]) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label)
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.tertiary)
             ForEach(items, id: \.self) { item in
                 HStack(alignment: .top, spacing: 4) {
                     Text("•")
                         .foregroundStyle(.tertiary)
                     Text(item)
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -798,12 +798,12 @@ struct PostMeetingCaptureView: View {
                     ProgressView()
                         .controlSize(.small)
                     Text("Polishing...")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
             } else if let error = errorMessage {
                 Text(error)
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.red)
             }
 

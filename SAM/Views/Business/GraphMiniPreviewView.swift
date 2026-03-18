@@ -19,11 +19,11 @@ struct GraphMiniPreviewView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Label("Relationship Map", systemImage: "circle.grid.cross")
-                    .font(.headline)
+                    .samFont(.headline)
                 Spacer()
                 if coordinator.graphStatus == .ready {
                     Text("\(coordinator.nodes.count) people")
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -111,16 +111,16 @@ struct GraphMiniPreviewView: View {
                 ProgressView()
                     .controlSize(.small)
                 Text("Building graph…")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             }
         case .failed:
             Text("Graph unavailable")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
         case .idle:
             Text("Graph not loaded")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
         case .ready:
             EmptyView()

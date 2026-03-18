@@ -20,11 +20,11 @@ struct EveningRecapOverlay: View {
                 // Header
                 VStack(alignment: .leading, spacing: 8) {
                     Text("End of Day")
-                        .font(.title)
+                        .samFont(.title)
                         .fontWeight(.bold)
 
                     Text(Date.now.formatted(date: .complete, time: .omitted))
-                        .font(.subheadline)
+                        .samFont(.subheadline)
                         .foregroundStyle(.secondary)
                 }
 
@@ -32,7 +32,7 @@ struct EveningRecapOverlay: View {
                     // AI narrative
                     if let narrative = briefing.narrativeSummary, !narrative.isEmpty {
                         Text(narrative)
-                            .font(.body)
+                            .samFont(.body)
                             .padding()
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(Color.accentColor.opacity(0.08))
@@ -68,7 +68,7 @@ struct EveningRecapOverlay: View {
                     coordinator.markEveningViewed()
                 }) {
                     Text("Done for Today")
-                        .font(.headline)
+                        .samFont(.headline)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
                 }
@@ -98,13 +98,13 @@ struct EveningRecapOverlay: View {
     private func metricChip(_ label: String, value: Int, icon: String) -> some View {
         VStack(spacing: 4) {
             Image(systemName: icon)
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
             Text("\(value)")
-                .font(.title3)
+                .samFont(.title3)
                 .fontWeight(.semibold)
             Text(label)
-                .font(.caption2)
+                .samFont(.caption2)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
@@ -118,23 +118,23 @@ struct EveningRecapOverlay: View {
                 Image(systemName: "star.fill")
                     .foregroundStyle(.yellow)
                 Text("Accomplishments")
-                    .font(.headline)
+                    .samFont(.headline)
             }
 
             ForEach(items) { item in
                 HStack(spacing: 10) {
                     Image(systemName: categoryIcon(item.category))
-                        .font(.caption)
+                        .samFont(.caption)
                         .foregroundStyle(.green)
                         .frame(width: 20)
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text(item.title)
-                            .font(.subheadline)
+                            .samFont(.subheadline)
 
                         if let person = item.personName {
                             Text(person)
-                                .font(.caption)
+                                .samFont(.caption)
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -151,13 +151,13 @@ struct EveningRecapOverlay: View {
                 Image(systemName: "flame.fill")
                     .foregroundStyle(.orange)
                 Text("Streaks")
-                    .font(.headline)
+                    .samFont(.headline)
             }
 
             ForEach(updates) { update in
                 HStack(spacing: 10) {
                     Text("\(update.currentCount)")
-                        .font(.title3)
+                        .samFont(.title3)
                         .fontWeight(.bold)
                         .foregroundStyle(update.isNewRecord ? .orange : .primary)
                         .frame(width: 32)
@@ -165,12 +165,12 @@ struct EveningRecapOverlay: View {
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 4) {
                             Text(update.streakName)
-                                .font(.subheadline)
+                                .samFont(.subheadline)
                                 .fontWeight(.medium)
 
                             if update.isNewRecord {
                                 Text("NEW RECORD")
-                                    .font(.caption2)
+                                    .samFont(.caption2)
                                     .fontWeight(.bold)
                                     .foregroundStyle(.white)
                                     .padding(.horizontal, 6)
@@ -181,7 +181,7 @@ struct EveningRecapOverlay: View {
                         }
 
                         Text(update.message)
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -197,23 +197,23 @@ struct EveningRecapOverlay: View {
                 Image(systemName: "arrow.right.circle")
                     .foregroundStyle(.blue)
                 Text("Tomorrow's Highlights")
-                    .font(.headline)
+                    .samFont(.headline)
             }
 
             ForEach(items) { item in
                 HStack(spacing: 8) {
                     Text(item.startsAt.formatted(date: .omitted, time: .shortened))
-                        .font(.caption)
+                        .samFont(.caption)
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
                         .frame(width: 60, alignment: .trailing)
 
                     Text(item.eventTitle)
-                        .font(.subheadline)
+                        .samFont(.subheadline)
 
                     if !item.attendeeNames.isEmpty {
                         Text("with \(item.attendeeNames.joined(separator: ", "))")
-                            .font(.caption)
+                            .samFont(.caption)
                             .foregroundStyle(.tertiary)
                     }
                 }
@@ -229,11 +229,11 @@ struct EveningRecapOverlay: View {
                 Image(systemName: "calendar.badge.clock")
                     .foregroundStyle(.purple)
                 Text("Week So Far")
-                    .font(.headline)
+                    .samFont(.headline)
             }
 
             Text("You've had a productive week. A full weekly summary with trends and patterns will be available in future updates.")
-                .font(.caption)
+                .samFont(.caption)
                 .foregroundStyle(.secondary)
                 .padding()
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -265,22 +265,22 @@ struct EveningPromptBanner: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: "moon.fill")
-                .font(.title3)
+                .samFont(.title3)
                 .foregroundStyle(.indigo)
 
             VStack(alignment: .leading, spacing: 2) {
                 if coordinator.isRecompilingEvening {
                     Text("Updating your end-of-day summary…")
-                        .font(.subheadline)
+                        .samFont(.subheadline)
                         .fontWeight(.medium)
                 } else {
                     Text("Ready for your end-of-day summary?")
-                        .font(.subheadline)
+                        .samFont(.subheadline)
                         .fontWeight(.medium)
                 }
 
                 Text("Review your accomplishments and plan for tomorrow.")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             }
 
@@ -307,7 +307,7 @@ struct EveningPromptBanner: View {
                 coordinator.declineEvening()
             }) {
                 Image(systemName: "xmark")
-                    .font(.caption)
+                    .samFont(.caption)
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
