@@ -301,8 +301,10 @@ final class EventRepository {
                 let lhsPriority = lhs.priority.sortOrder
                 let rhsPriority = rhs.priority.sortOrder
                 if lhsPriority != rhsPriority { return lhsPriority < rhsPriority }
-                let lhsName = lhs.person?.displayNameCache ?? ""
-                let rhsName = rhs.person?.displayNameCache ?? ""
+                // Use denormalized personNameCache — never traverse the person
+                // relationship here, as it can SIGTRAP on corrupted data.
+                let lhsName = lhs.personNameCache ?? ""
+                let rhsName = rhs.personNameCache ?? ""
                 return lhsName < rhsName
             }
         } catch {
@@ -643,18 +645,91 @@ final class EventRepository {
                 !validParticipationIDs.contains($0.id) && !orphanedNilIDs.contains($0.id)
             }
 
-            let toDelete = orphanedNil + orphanedDangling
-            if !toDelete.isEmpty {
-                for participation in toDelete {
+            // Step 4: Find participations with nil person references.
+            // These cause SIGTRAP when any code accesses participation.person.
+            let nilPersonDescriptor = FetchDescriptor<EventParticipation>(
+                predicate: #Predicate { $0.person == nil }
+            )
+            let orphanedNilPerson = try context.fetch(nilPersonDescriptor)
+
+            // Step 5: Find participations whose person reference points to a
+            // nonexistent SamPerson (dangling foreign key).
+            let personDescriptor = FetchDescriptor<SamPerson>()
+            let allPeople = try context.fetch(personDescriptor)
+            let validPersonIDs = Set(allPeople.map(\.id))
+
+            // For each valid person, collect participation IDs that reference them.
+            var personLinkedPartIDs = Set<UUID>()
+            for personID in validPersonIDs {
+                let desc = FetchDescriptor<EventParticipation>(
+                    predicate: #Predicate { $0.person?.id == personID }
+                )
+                let parts = try context.fetch(desc)
+                for p in parts {
+                    personLinkedPartIDs.insert(p.id)
+                }
+            }
+
+            let nilPersonIDs = Set(orphanedNilPerson.map(\.id))
+            let danglingPersonParts = allParticipations.filter {
+                !personLinkedPartIDs.contains($0.id) && !nilPersonIDs.contains($0.id)
+            }
+
+            let toDelete = orphanedNil + orphanedDangling + orphanedNilPerson + danglingPersonParts
+            // Deduplicate
+            var seen = Set<UUID>()
+            let uniqueToDelete = toDelete.filter { seen.insert($0.id).inserted }
+
+            if !uniqueToDelete.isEmpty {
+                for participation in uniqueToDelete {
                     context.delete(participation)
                 }
                 try context.save()
-                logger.notice("repairIntegrity: deleted \(toDelete.count) orphaned EventParticipation record(s) (\(orphanedNil.count) nil-event, \(orphanedDangling.count) dangling)")
+                logger.notice("repairIntegrity: deleted \(uniqueToDelete.count) corrupted EventParticipation record(s) (\(orphanedNil.count) nil-event, \(orphanedDangling.count) dangling-event, \(orphanedNilPerson.count) nil-person, \(danglingPersonParts.count) dangling-person)")
             } else {
-                logger.debug("repairIntegrity: no orphaned participations found")
+                logger.debug("repairIntegrity: no corrupted participations found")
             }
         } catch {
             logger.error("repairIntegrity failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Backfill personNameCache on existing participations that predate the field.
+    /// Safe to call multiple times — only updates rows where the cache is nil
+    /// and the person relationship is accessible.
+    func backfillPersonNameCache() {
+        guard let context else { return }
+        let flag = "sam.event.personNameCacheBackfilled"
+        guard !UserDefaults.standard.bool(forKey: flag) else { return }
+
+        do {
+            let descriptor = FetchDescriptor<EventParticipation>(
+                predicate: #Predicate { $0.personNameCache == nil }
+            )
+            let uncached = try context.fetch(descriptor)
+            guard !uncached.isEmpty else {
+                UserDefaults.standard.set(true, forKey: flag)
+                return
+            }
+
+            var updated = 0
+            for participation in uncached {
+                // Access person safely — if this specific record has a corrupted
+                // person reference, the raw SQL cleanup already nullified it,
+                // so person will be nil and we skip it.
+                if let name = participation.person?.displayNameCache {
+                    participation.personNameCache = name
+                    updated += 1
+                }
+            }
+
+            if updated > 0 {
+                try context.save()
+                logger.notice("backfillPersonNameCache: updated \(updated) of \(uncached.count) participations")
+            }
+            UserDefaults.standard.set(true, forKey: flag)
+        } catch {
+            logger.error("backfillPersonNameCache failed: \(error.localizedDescription)")
         }
     }
 }

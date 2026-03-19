@@ -203,9 +203,9 @@ enum SAMModelContainer {
 
     // MARK: - Startup Cleanup
 
-    /// Clean up orphaned references to deleted SamPerson records.
+    /// Clean up orphaned references to deleted records.
     /// SwiftData's .nullify delete rule doesn't always fire reliably,
-    /// so we use raw SQL to nil out stale linkedPerson foreign keys.
+    /// so we use raw SQL to nil out stale foreign keys.
     /// Runs before SwiftData opens the store to prevent faulting crashes.
     private nonisolated static func cleanupOrphanedReferences() {
         let url = defaultStoreURL
@@ -215,35 +215,32 @@ enum SAMModelContainer {
         guard sqlite3_open_v2(url.path, &db, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK else { return }
         defer { sqlite3_close(db) }
 
-        // Find all tables that have a ZLINKEDPERSON column pointing to ZSAMPERSON
-        // and null out any that reference deleted rows.
-        // Also handle other relationship columns that point to SamPerson.
-        let fkColumns = ["ZLINKEDPERSON", "ZLINKEDCONTEXT"]
-        let personTable = "ZSAMPERSON"
+        // Map of FK column names → the parent table they reference.
+        // Any row where the FK value is NOT NULL but doesn't exist in the parent
+        // table's Z_PK column is a dangling reference that will SIGTRAP SwiftData.
+        let fkMappings: [(column: String, parentTable: String)] = [
+            ("ZLINKEDPERSON",  "ZSAMPERSON"),
+            ("ZLINKEDCONTEXT", "ZSAMCONTEXT"),
+            ("ZPERSON",        "ZSAMPERSON"),
+            ("ZEVENT",         "ZSAMEVENT"),
+        ]
 
-        // First verify the person table exists
-        var tableCheck: OpaquePointer?
-        let checkSQL = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='\(personTable)'"
-        guard sqlite3_prepare_v2(db, checkSQL, -1, &tableCheck, nil) == SQLITE_OK,
-              sqlite3_step(tableCheck) == SQLITE_ROW,
-              sqlite3_column_int(tableCheck, 0) > 0 else {
-            sqlite3_finalize(tableCheck)
-            return
-        }
-        sqlite3_finalize(tableCheck)
-
-        // Find all tables and check which ones have FK columns to person
+        // Collect all Z-prefixed tables
         var tables: OpaquePointer?
         let tablesSQL = "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'Z%'"
         guard sqlite3_prepare_v2(db, tablesSQL, -1, &tables, nil) == SQLITE_OK else { return }
 
-        var totalCleaned = 0
+        var tableNames: [String] = []
         while sqlite3_step(tables) == SQLITE_ROW {
-            guard let tableNameC = sqlite3_column_text(tables, 0) else { continue }
-            let tableName = String(cString: tableNameC)
+            guard let c = sqlite3_column_text(tables, 0) else { continue }
+            tableNames.append(String(cString: c))
+        }
+        sqlite3_finalize(tables)
 
-            for col in fkColumns {
-                // Check if this table has the column
+        var totalCleaned = 0
+        for tableName in tableNames {
+            for (col, parentTable) in fkMappings {
+                // Check if this table has the FK column
                 let colCheckSQL = "SELECT COUNT(*) FROM pragma_table_info('\(tableName)') WHERE name='\(col)'"
                 var colCheck: OpaquePointer?
                 guard sqlite3_prepare_v2(db, colCheckSQL, -1, &colCheck, nil) == SQLITE_OK,
@@ -254,26 +251,39 @@ enum SAMModelContainer {
                 }
                 sqlite3_finalize(colCheck)
 
+                // Verify the parent table exists
+                let parentCheckSQL = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='\(parentTable)'"
+                var parentCheck: OpaquePointer?
+                guard sqlite3_prepare_v2(db, parentCheckSQL, -1, &parentCheck, nil) == SQLITE_OK,
+                      sqlite3_step(parentCheck) == SQLITE_ROW,
+                      sqlite3_column_int(parentCheck, 0) > 0 else {
+                    sqlite3_finalize(parentCheck)
+                    continue
+                }
+                sqlite3_finalize(parentCheck)
+
                 // Null out orphaned references
                 let cleanSQL = """
                     UPDATE \(tableName) SET \(col) = NULL
                     WHERE \(col) IS NOT NULL
-                    AND \(col) NOT IN (SELECT Z_PK FROM \(personTable))
+                    AND \(col) NOT IN (SELECT Z_PK FROM \(parentTable))
                     """
                 var cleanStmt: OpaquePointer?
                 if sqlite3_prepare_v2(db, cleanSQL, -1, &cleanStmt, nil) == SQLITE_OK {
                     if sqlite3_step(cleanStmt) == SQLITE_DONE {
                         let changes = Int(sqlite3_changes(db))
+                        if changes > 0 {
+                            containerLogger.info("Orphan cleanup: nullified \(changes) stale \(col) references in \(tableName) (parent: \(parentTable))")
+                        }
                         totalCleaned += changes
                     }
                 }
                 sqlite3_finalize(cleanStmt)
             }
         }
-        sqlite3_finalize(tables)
 
         if totalCleaned > 0 {
-            containerLogger.info("Orphan cleanup: nullified \(totalCleaned) stale person references")
+            containerLogger.notice("Orphan cleanup: \(totalCleaned) total dangling references repaired")
         }
     }
 

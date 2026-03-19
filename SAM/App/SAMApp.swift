@@ -901,6 +901,7 @@ struct SAMApp: App {
 
         // Repair corrupted SwiftData relationships before views render
         EventRepository.shared.repairIntegrity()
+        EventRepository.shared.backfillPersonNameCache()
 
         // Prune expired compliance audit entries on launch
         let retentionDays = UserDefaults.standard.object(forKey: "complianceAuditRetentionDays") as? Int ?? 90

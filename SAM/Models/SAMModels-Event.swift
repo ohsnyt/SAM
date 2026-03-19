@@ -257,6 +257,12 @@ public final class EventParticipation {
     /// Set post-event: did they actually show up?
     public var attended: Bool?
 
+    // MARK: Denormalized Caches
+
+    /// Cached display name from the linked person. Avoids traversing the person
+    /// relationship for display/sort, which can SIGTRAP on corrupted SwiftData data.
+    public var personNameCache: String?
+
     // MARK: Timestamps
 
     public var createdAt: Date
@@ -278,6 +284,7 @@ public final class EventParticipation {
         self.eventRole = eventRole
         self.inviteStatusRawValue = InviteStatus.notInvited.rawValue
         self.rsvpStatusRawValue = RSVPStatus.pending.rawValue
+        self.personNameCache = person.displayNameCache
         self.createdAt = createdAt
     }
 }
