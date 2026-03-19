@@ -288,6 +288,12 @@ public final class SamPerson {
     @Relationship(deleteRule: .cascade, inverse: \ProductionRecord.person)
     public var productionRecords: [ProductionRecord] = []
 
+    /// Event participations linking this person to events.
+    /// Cascade: deleting a person removes their event participations,
+    /// preventing dangling foreign keys that cause SwiftData SIGTRAP crashes.
+    @Relationship(deleteRule: .cascade, inverse: \EventParticipation.person)
+    public var eventParticipations: [EventParticipation] = []
+
     // ── Context chips (denormalised snapshot for list / search) ────
     /// Lightweight context membership chips.  Kept in sync with
     /// `participations` but stored flat so the People list can render
