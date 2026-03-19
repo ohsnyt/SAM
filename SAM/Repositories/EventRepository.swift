@@ -592,6 +592,71 @@ final class EventRepository {
             }
         }
     }
+
+    // MARK: - Data Integrity Check
+
+    /// Run at app startup to detect and repair corrupted SwiftData relationships.
+    /// Deletes orphaned EventParticipation records that cause SIGTRAP crashes
+    /// when SwiftData tries to resolve relationship backing data.
+    ///
+    /// Uses predicate-based queries (translated to SQL) to avoid materializing
+    /// relationships in Swift, which is exactly what triggers the crash.
+    func repairIntegrity() {
+        guard let context else {
+            logger.warning("repairIntegrity: not configured")
+            return
+        }
+
+        do {
+            // Step 1: Collect all valid event IDs
+            let eventDescriptor = FetchDescriptor<SamEvent>()
+            let allEvents = try context.fetch(eventDescriptor)
+            let validEventIDs = Set(allEvents.map(\.id))
+
+            // Step 2: Find orphaned participations (event is nil) via predicate
+            // The predicate is evaluated at the SQL level, not by materializing
+            // the relationship in Swift — so this is safe even with corrupted data.
+            let orphanDescriptor = FetchDescriptor<EventParticipation>(
+                predicate: #Predicate { $0.event == nil }
+            )
+            let orphanedNil = try context.fetch(orphanDescriptor)
+
+            // Step 3: Find participations referencing non-existent events.
+            // For each valid event, collect its participation IDs.
+            var validParticipationIDs = Set<UUID>()
+            for eventID in validEventIDs {
+                let desc = FetchDescriptor<EventParticipation>(
+                    predicate: #Predicate { $0.event?.id == eventID }
+                )
+                let parts = try context.fetch(desc)
+                for p in parts {
+                    validParticipationIDs.insert(p.id)
+                }
+            }
+
+            // Fetch ALL participation IDs. Any not in validParticipationIDs
+            // and not in orphanedNil are referencing nonexistent events.
+            let allDescriptor = FetchDescriptor<EventParticipation>()
+            let allParticipations = try context.fetch(allDescriptor)
+            let orphanedNilIDs = Set(orphanedNil.map(\.id))
+            let orphanedDangling = allParticipations.filter {
+                !validParticipationIDs.contains($0.id) && !orphanedNilIDs.contains($0.id)
+            }
+
+            let toDelete = orphanedNil + orphanedDangling
+            if !toDelete.isEmpty {
+                for participation in toDelete {
+                    context.delete(participation)
+                }
+                try context.save()
+                logger.notice("repairIntegrity: deleted \(toDelete.count) orphaned EventParticipation record(s) (\(orphanedNil.count) nil-event, \(orphanedDangling.count) dangling)")
+            } else {
+                logger.debug("repairIntegrity: no orphaned participations found")
+            }
+        } catch {
+            logger.error("repairIntegrity failed: \(error.localizedDescription)")
+        }
+    }
 }
 
 // MARK: - ParticipantPriority Sort Support

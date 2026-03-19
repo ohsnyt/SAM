@@ -144,6 +144,20 @@ struct SAMApp: App {
         }
         #endif
 
+        // Crash guard: if the app crashed within 10 seconds of last launch,
+        // reset sidebar to "today" to avoid crash loops from corrupted data
+        // in a specific section (e.g., Events with corrupted SwiftData relationships).
+        let lastLaunch = UserDefaults.standard.double(forKey: "sam.lastLaunchTimestamp")
+        let now = Date.now.timeIntervalSince1970
+        if lastLaunch > 0 && (now - lastLaunch) < 10 {
+            let currentSidebar = UserDefaults.standard.string(forKey: "sam.sidebar.selection") ?? "today"
+            if currentSidebar != "today" {
+                logger.warning("Crash loop detected — resetting sidebar from '\(currentSidebar, privacy: .public)' to 'today'")
+                UserDefaults.standard.set("today", forKey: "sam.sidebar.selection")
+            }
+        }
+        UserDefaults.standard.set(now, forKey: "sam.lastLaunchTimestamp")
+
         // Configure repositories with shared container
         // Must happen before any data access
         SAMApp.configureDataLayer()
@@ -884,6 +898,9 @@ struct SAMApp: App {
 
         // One-time migration: backfill directionRaw on existing evidence
         SAMModelContainer.runDirectionBackfillIfNeeded()
+
+        // Repair corrupted SwiftData relationships before views render
+        EventRepository.shared.repairIntegrity()
 
         // Prune expired compliance audit entries on launch
         let retentionDays = UserDefaults.standard.object(forKey: "complianceAuditRetentionDays") as? Int ?? 90
