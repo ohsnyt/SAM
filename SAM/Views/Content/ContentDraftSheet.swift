@@ -146,7 +146,7 @@ struct ContentDraftSheet: View {
                     if isEditing {
                         TextEditor(text: $draftText)
                             .samFont(.body)
-                            .frame(minHeight: 120, maxHeight: 200)
+                            .frame(minHeight: 200, maxHeight: 400)
                             .scrollContentBackground(.hidden)
                             .padding(8)
                             .background(Color(nsColor: .controlBackgroundColor))
@@ -158,7 +158,7 @@ struct ContentDraftSheet: View {
                                 .textSelection(.enabled)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
-                        .frame(minHeight: 80, maxHeight: 200)
+                        .frame(minHeight: 160, maxHeight: 400)
                         .padding(8)
                         .background(Color(nsColor: .controlBackgroundColor))
                         .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -255,7 +255,7 @@ struct ContentDraftSheet: View {
             }
         }
         .padding(20)
-        .frame(width: 480)
+        .frame(width: 560)
         .onAppear { FeatureAdoptionTracker.shared.recordUsage(.contentDraft) }
         .onChange(of: draftText) {
             localComplianceFlags = ComplianceScanner.scanWithSettings(draftText)

@@ -15,6 +15,8 @@ private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "Com
 
 struct ComplianceSettingsContent: View {
 
+    let isFinancial: Bool
+
     @AppStorage("complianceCheckingEnabled") private var masterEnabled = true
     @AppStorage("complianceCat_guarantees") private var catGuarantees = true
     @AppStorage("complianceCat_returns") private var catReturns = true
@@ -34,26 +36,28 @@ struct ComplianceSettingsContent: View {
             Toggle("Enable compliance checking", isOn: $masterEnabled)
 
             if masterEnabled {
-                // Category toggles
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Categories")
-                        .samFont(.subheadline)
-                        .fontWeight(.medium)
+                // Financial category toggles (only for financial practice)
+                if isFinancial {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Financial Categories")
+                            .samFont(.subheadline)
+                            .fontWeight(.medium)
 
-                    categoryToggle(.guarantees, isOn: $catGuarantees)
-                    categoryToggle(.returns, isOn: $catReturns)
-                    categoryToggle(.promises, isOn: $catPromises)
-                    categoryToggle(.comparativeClaims, isOn: $catComparative)
-                    categoryToggle(.suitability, isOn: $catSuitability)
-                    categoryToggle(.specificAdvice, isOn: $catSpecificAdvice)
+                        categoryToggle(.guarantees, isOn: $catGuarantees)
+                        categoryToggle(.returns, isOn: $catReturns)
+                        categoryToggle(.promises, isOn: $catPromises)
+                        categoryToggle(.comparativeClaims, isOn: $catComparative)
+                        categoryToggle(.suitability, isOn: $catSuitability)
+                        categoryToggle(.specificAdvice, isOn: $catSpecificAdvice)
+                    }
                 }
 
-                // Custom keywords
+                // Custom keywords (available for all practice types)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Custom Keywords")
                         .samFont(.subheadline)
                         .fontWeight(.medium)
-                    Text("One phrase per line. Matched as Specific Advice.")
+                    Text("One phrase per line. SAM will flag these in draft content for your review.")
                         .samFont(.caption)
                         .foregroundStyle(.secondary)
                     TextEditor(text: $customKeywords)

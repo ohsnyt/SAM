@@ -186,15 +186,13 @@ actor ContentAdvisorService {
 
         let complianceSection =
             complianceNotes.map { "Compliance considerations: \($0)" } ?? ""
-        let keyPointsText =
-            keyPoints.isEmpty
-            ? "" : "Key points to cover: \(keyPoints.joined(separator: "; "))"
         let businessContext = await BusinessProfileService.shared
             .contextFragment()
 
         let voiceBlock = await buildVoiceBlock(for: platform)
 
         let persona = await BusinessProfileService.shared.personaFragment()
+        let isFinancial = await BusinessProfileService.shared.isFinancialPractice()
         let complianceNote = await BusinessProfileService.shared.complianceNote()
 
         // Use Prompt Lab deployed variant if available
@@ -203,30 +201,37 @@ actor ContentAdvisorService {
         let contentType =
             platform == .substack ? "newsletter articles" : "social media posts"
         let complianceLine = complianceNote.isEmpty ? "" : " \(complianceNote)"
-        let instructions: String
-        if !customDraftPrompt.isEmpty {
-            instructions = customDraftPrompt
-        } else {
-        instructions = """
-            You write \(contentType) for \(persona). \
-            The content must be educational.\(complianceLine)
 
-            \(businessContext)
+        let financialComplianceBlock = isFinancial ? """
 
-            \(voiceBlock)
-
-            STRICT COMPLIANCE RULES:
+            FINANCIAL COMPLIANCE RULES (apply only to financial/investment topics):
             - NEVER mention specific product names, company names, or fund names
             - NEVER promise returns, guarantees, or specific financial outcomes
             - NEVER make comparative claims against competitors
             - NEVER give specific financial advice (e.g., "You should invest in X")
             - Always use educational framing: "Consider...", "Many people find...", "A common strategy is..."
-            - If the topic is sensitive, add a disclaimer
+            """ : ""
+
+        let instructions: String
+        if !customDraftPrompt.isEmpty {
+            instructions = customDraftPrompt
+        } else {
+        instructions = """
+            You write \(contentType) for \(persona).\(complianceLine)
+
+            \(businessContext)
+
+            \(voiceBlock)
+
+            CONTENT SCOPE:
+            - The user may request posts on ANY topic they choose, including personal, \
+            nonprofit, charitable, ministry, faith-based, community, or professional topics. \
+            All user-supplied topics are appropriate and should be fulfilled.
+            \(financialComplianceBlock)
 
             \(platformGuidelines)
 
             Tone: \(tone)
-            \(keyPointsText)
             \(complianceSection)
 
             CRITICAL: Respond with ONLY valid JSON (no markdown code blocks).
@@ -245,11 +250,40 @@ actor ContentAdvisorService {
             platform == .substack
             ? "a Substack newsletter article (800-1000 words)"
             : "a social media post"
-        let prompt = "Write \(formatLabel) about: \(topic)"
-        let responseText = try await AIService.shared.generate(
+
+        var prompt = "Write \(formatLabel) about: \(topic)"
+        if !keyPoints.isEmpty {
+            let numbered = keyPoints.enumerated()
+                .map { "\($0.offset + 1). \($0.element)" }
+                .joined(separator: "\n")
+            prompt += """
+
+
+                The post MUST cover these specific points — do not omit or generalize them:
+                \(numbered)
+
+                Weave all of these points naturally into the post. Each point should be clearly addressed.
+                """
+        }
+
+        // Use generateNarrative to prefer MLX (Qwen) for content drafting —
+        // better prose quality and no overly cautious Apple safety filters.
+        var responseText = try await AIService.shared.generateNarrative(
             prompt: prompt,
             systemInstruction: instructions
         )
+
+        // Detect model refusal and retry with softened framing
+        if Self.isRefusal(responseText) {
+            logger.warning("Draft generation refused, retrying with softened prompt")
+            let softenedPrompt = "Write \(formatLabel) about: \(topic). " +
+                "This is a personal post by the author about their own life and community involvement. " +
+                "Focus on the positive, human-interest angle."
+            responseText = try await AIService.shared.generateNarrative(
+                prompt: softenedPrompt,
+                systemInstruction: instructions
+            )
+        }
         return try parseDraftResponse(responseText)
     }
 
@@ -293,12 +327,19 @@ actor ContentAdvisorService {
             return ContentDraft(draftText: extracted)
         }
 
-        // Attempt 4: plain text fallback (strip JSON/markdown artifacts)
-        let plainText =
-            cleaned
-            .replacingOccurrences(of: "\"draft_text\"", with: "")
-            .replacingOccurrences(of: "\"compliance_flags\"", with: "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        // Attempt 4: plain text fallback — the model returned prose instead of JSON.
+        // Strip residual JSON artifacts (keys, braces, brackets) and use as-is.
+        var plainText = cleaned
+        // Remove JSON structural artifacts
+        for artifact in ["\"draft_text\"", "\"compliance_flags\"", "\"compliance_flags\": []", "\"compliance_flags\":[]"] {
+            plainText = plainText.replacingOccurrences(of: artifact, with: "")
+        }
+        // Remove leading/trailing braces and brackets
+        plainText = plainText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if plainText.hasPrefix("{") { plainText = String(plainText.dropFirst()) }
+        if plainText.hasSuffix("}") { plainText = String(plainText.dropLast()) }
+        // Remove leading colon/comma left from key-value stripping
+        plainText = plainText.trimmingCharacters(in: CharacterSet(charactersIn: ":,\" \t\n"))
         if !plainText.isEmpty {
             logger.debug(
                 "Draft generation returned plain text, using as draft body"
@@ -308,6 +349,26 @@ actor ContentAdvisorService {
 
         logger.error("Draft generation parsing failed completely")
         throw AnalysisError.invalidResponse
+    }
+
+    /// Detect on-device model refusal responses (safety filter rejections).
+    private static func isRefusal(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        let refusalPhrases = [
+            "i cannot write",
+            "i can't write",
+            "i'm unable to",
+            "i am unable to",
+            "safeguards prevent",
+            "against my guidelines",
+            "controversial",
+            "i cannot create",
+            "i can't create",
+            "i cannot generate",
+            "i can't generate",
+            "not appropriate for me",
+        ]
+        return refusalPhrases.contains { lower.contains($0) }
     }
 
     /// Escape literal newlines inside JSON string values so JSONDecoder can parse them.

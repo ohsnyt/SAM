@@ -4,6 +4,35 @@
 
 ---
 
+## Custom Topic, MLX Content Drafting, Practice-Aware Compliance (March 20, 2026)
+
+### Custom Topic Sheet
+New "Custom Topic" button in Grow > Content lets users seed their own topic and key points for social media draft generation, beyond SAM's AI-suggested topics.
+
+- **CustomTopicSheet** (new) — Topic + key points entry, submits as `ContentTopic` for draft generation
+- **GrowDashboardView** — Custom Topic button in content ideas header and empty state
+
+### MLX-First Content Generation
+Content draft generation now routes through `generateNarrative()` (prefers MLX/Qwen) instead of `generate()` (FoundationModels). Apple's on-device model was refusing legitimate nonprofit/ministry topics as "controversial." Qwen produces better prose and has no overly cautious safety filters.
+
+- **ContentAdvisorService** — Switched to `generateNarrative()`, added refusal detection with auto-retry, moved key points from system instruction to user prompt for stronger adherence, improved plain text fallback JSON artifact cleanup
+- **Refusal detection** — `isRefusal()` detects common LLM refusal phrases and retries with softened framing
+
+### Practice-Aware Compliance
+Financial compliance rules in content prompts are now conditional on `practiceType`. General practice users get clean prompts without financial compliance noise. Compliance settings section in Settings is now visible for all practice types.
+
+- **ContentAdvisorService** — Financial compliance block only injected when `isFinancial`, removed forced "educational" framing for General practice
+- **ComplianceSettingsContent** — Accepts `isFinancial` parameter; financial category toggles shown only for Financial Advisor; custom keywords always available
+- **SettingsView** — Compliance section visible for all practice types
+
+### Content Draft Sheet UX
+Larger sheet dimensions for both topic entry and draft viewing.
+
+- **CustomTopicSheet** — 560×520 (was 500×400)
+- **ContentDraftSheet** — Width 560 (was 480), draft area 160–400px (was 80–200px read / 120–200px edit)
+
+---
+
 ## RSVP Calibration, Event Detail UX, Graph Legend, New Person, LinkedIn PDF Safety, Tips & Guides (March 18, 2026)
 
 ### RSVP Intelligence Calibration

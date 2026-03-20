@@ -48,6 +48,7 @@ struct GrowDashboardView: View {
 
     // Content Ideas sheet
     @State private var selectedContentTopic: ContentTopic?
+    @State private var showCustomTopicSheet = false
 
     // MARK: - Body
 
@@ -108,6 +109,11 @@ struct GrowDashboardView: View {
                 onPosted: { selectedContentTopic = nil },
                 onCancel: { selectedContentTopic = nil }
             )
+        }
+        .sheet(isPresented: $showCustomTopicSheet) {
+            CustomTopicSheet { topic in
+                selectedContentTopic = topic
+            }
         }
     }
 
@@ -557,7 +563,14 @@ struct GrowDashboardView: View {
                             .multilineTextAlignment(.center)
                             .frame(maxWidth: 380)
 
-                        generateContentIdeasButton
+                        HStack {
+                            generateContentIdeasButton
+                            Button {
+                                showCustomTopicSheet = true
+                            } label: {
+                                Label("Custom Topic", systemImage: "square.and.pencil")
+                            }
+                        }
                     }
                     .frame(maxWidth: .infinity)
                     .padding()
@@ -587,6 +600,11 @@ struct GrowDashboardView: View {
                 Image(systemName: "doc.text.fill").foregroundStyle(.purple)
                 Text("Content Ideas").samFont(.headline)
                 Spacer()
+                Button {
+                    showCustomTopicSheet = true
+                } label: {
+                    Label("Custom Topic", systemImage: "square.and.pencil")
+                }
                 generateContentIdeasButton
             }
 

@@ -362,12 +362,10 @@ struct BusinessSettingsView: View {
                         BusinessProfileSettingsContent(practiceTypeBinding: $practiceType)
                             .padding(.top, 8)
                     }
-                    if practiceType == .financialAdvisor {
-                        Divider()
-                        DisclosureGroup("Compliance") {
-                            ComplianceSettingsContent()
-                                .padding(.top, 8)
-                        }
+                    Divider()
+                    DisclosureGroup("Compliance") {
+                        ComplianceSettingsContent(isFinancial: practiceType == .financialAdvisor)
+                            .padding(.top, 8)
                     }
                 }
                 .padding()
