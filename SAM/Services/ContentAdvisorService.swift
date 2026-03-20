@@ -224,9 +224,20 @@ actor ContentAdvisorService {
             \(voiceBlock)
 
             CONTENT SCOPE:
-            - The user may request posts on ANY topic they choose, including personal, \
-            nonprofit, charitable, ministry, faith-based, community, or professional topics. \
-            All user-supplied topics are appropriate and should be fulfilled.
+            The user may request posts on ANY topic — professional, personal, nonprofit, \
+            ministry, faith-based, charitable, community, or any other subject. \
+            All user-supplied topics are appropriate and should be fulfilled enthusiastically.
+
+            WRITING STYLE:
+            - Write in a warm, personal voice — as if the author is sharing something they care about
+            - Lead with emotion, values, or a compelling question — not dry facts
+            - Use short paragraphs and line breaks for readability
+            - Share just enough detail to spark curiosity and engagement
+            - End with a clear invitation: ask a question, invite comments, or suggest a next step
+            - The goal is to make readers feel something — appreciation, curiosity, inspiration — \
+            not just inform them
+            - Avoid writing like a report or press release; write like a person talking to friends \
+            who share their values
             \(financialComplianceBlock)
 
             \(platformGuidelines)

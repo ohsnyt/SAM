@@ -229,10 +229,15 @@ enum PromptSite: String, CaseIterable, Identifiable, Codable {
 
         case .contentDraft:
             return """
-                Topic: The Hidden Cost of Waiting: Why Starting Your Retirement Plan at 55 Isn't Too Late
-                Key Points: Many people feel behind; small consistent steps matter; the power of catch-up contributions; common misconceptions about "too late"
+                Topic: Spring board meeting for a nonprofit Bible translation organization
+                Key Points:
+                1. Progress on translation work over the past six months
+                2. The impact of published Scripture in the lives of dispersed minority peoples
+                3. Challenges facing the regions where translation work occurs
+                4. The deep cultural heritage connecting these communities to ancient texts
+                5. Leadership transition — finding a new Executive Director
                 Platform: LinkedIn
-                Tone: educational
+                Tone: warm, promotional
                 """
 
         case .morningBriefing:
