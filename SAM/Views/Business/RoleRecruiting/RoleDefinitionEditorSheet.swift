@@ -29,6 +29,8 @@ struct RoleDefinitionEditorSheet: View {
     @State private var newExclusion: String = ""
     @State private var timeCommitment: String = ""
     @State private var targetCount: Int = 1
+    @State private var contentGenerationEnabled: Bool = false
+    @State private var contentBrief: String = ""
 
     private var isEditing: Bool {
         if case .edit = mode { return true }
@@ -137,6 +139,23 @@ struct RoleDefinitionEditorSheet: View {
                 } footer: {
                     Text("People matching these conditions will be excluded. E.g. \"Employees of ABT\", \"Anyone compensated by the organization\".")
                 }
+
+                Section {
+                    Toggle("Generate content topics for this role", isOn: $contentGenerationEnabled)
+
+                    if contentGenerationEnabled {
+                        TextField(
+                            "Why should people know about this group? What do they do? What impact do they have?",
+                            text: $contentBrief,
+                            axis: .vertical
+                        )
+                        .lineLimit(3...8)
+                    }
+                } header: {
+                    Text("Content Generation")
+                } footer: {
+                    Text("When enabled, SAM will suggest social media topics inspired by your interactions with people in this role.")
+                }
             }
             .formStyle(.grouped)
         }
@@ -150,6 +169,8 @@ struct RoleDefinitionEditorSheet: View {
                 exclusionCriteria = role.exclusionCriteria
                 timeCommitment = role.timeCommitment ?? ""
                 targetCount = role.targetCount
+                contentGenerationEnabled = role.contentGenerationEnabled
+                contentBrief = role.contentBrief
             }
         }
     }
@@ -185,6 +206,8 @@ struct RoleDefinitionEditorSheet: View {
                 role.exclusionCriteria = cleanExclusions
                 role.timeCommitment = timeCommitment.isEmpty ? nil : timeCommitment
                 role.targetCount = targetCount
+                role.contentGenerationEnabled = contentGenerationEnabled
+                role.contentBrief = contentBrief
                 try repo.saveRoleDefinition(role)
             } else {
                 let role = RoleDefinition(
@@ -194,7 +217,9 @@ struct RoleDefinitionEditorSheet: View {
                     criteria: cleanCriteria,
                     exclusionCriteria: cleanExclusions,
                     timeCommitment: timeCommitment.isEmpty ? nil : timeCommitment,
-                    targetCount: targetCount
+                    targetCount: targetCount,
+                    contentGenerationEnabled: contentGenerationEnabled,
+                    contentBrief: contentBrief
                 )
                 try repo.saveRoleDefinition(role)
             }

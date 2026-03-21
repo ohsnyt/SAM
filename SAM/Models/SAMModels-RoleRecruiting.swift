@@ -110,6 +110,16 @@ public final class RoleDefinition {
     /// Whether this role is actively being recruited for.
     public var isActive: Bool
 
+    // MARK: - Content Generation
+
+    /// Whether SAM should generate social media topic suggestions related to this role.
+    public var contentGenerationEnabled: Bool = false
+
+    /// Why the world should know about this group — injected into content advisor prompts.
+    /// E.g., "This group oversees Bible translation for dispersed Aramaic-speaking peoples
+    /// whose language and cultural heritage spans millennia."
+    public var contentBrief: String = ""
+
     public var createdAt: Date
     public var updatedAt: Date
 
@@ -183,7 +193,9 @@ public final class RoleDefinition {
         exclusionCriteria: [String] = [],
         timeCommitment: String? = nil,
         targetCount: Int = 1,
-        isActive: Bool = true
+        isActive: Bool = true,
+        contentGenerationEnabled: Bool = false,
+        contentBrief: String = ""
     ) {
         self.id = id
         self.name = name
@@ -195,6 +207,8 @@ public final class RoleDefinition {
         self.timeCommitment = timeCommitment
         self.targetCount = targetCount
         self.isActive = isActive
+        self.contentGenerationEnabled = contentGenerationEnabled
+        self.contentBrief = contentBrief
         self.createdAt = .now
         self.updatedAt = .now
     }

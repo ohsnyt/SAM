@@ -100,6 +100,12 @@ actor ContentAdvisorService {
                 "celebratory" (highlighting wins), "curious" (asking genuine questions).
                 - Do NOT default everything to "educational."
 
+                CONTENT-ENABLED ROLES:
+                - If CONTENT-ENABLED ROLES are listed in the data, generate AT LEAST ONE topic \
+                per role. Use the role's brief to understand why this group matters and craft \
+                a topic that promotes awareness, appreciation, or engagement with their work.
+                - Draw on any listed recent interactions with people in that role for specificity.
+
                 GOAL ALIGNMENT:
                 - If ACTIVE BUSINESS GOALS are provided, 2-3 topics should support those goals — \
                 but frame them as genuine stories or reflections, not marketing tactics.

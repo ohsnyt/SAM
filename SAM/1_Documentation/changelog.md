@@ -4,6 +4,41 @@
 
 ---
 
+## Role-Based Content Seeding, MLX Topic Suggestions, Content Topic Model Comparison (March 20, 2026)
+
+### Role-Based Content Generation Seeding
+Users can now flag specific roles for content topic generation. When editing a role definition, a new "Content Generation" section lets the user toggle content seeding on and provide a brief describing why the world should know about this group. The content advisor then generates at least one topic per content-enabled role, grounded in the role's brief and recent interactions with people in that role.
+
+- **RoleDefinition** — New fields: `contentGenerationEnabled` (Bool), `contentBrief` (String)
+- **RoleDefinitionEditorSheet** — Content Generation section with toggle and multi-line text field
+- **StrategicCoordinator.gatherContentData()** — New `CONTENT-ENABLED ROLES` section includes role name, brief, and up to 5 recent candidate interactions
+- **ContentAdvisorService** — Prompt updated to generate at least one topic per content-enabled role
+
+### MLX-First Topic Suggestions
+Content topic suggestions (`ContentAdvisorService.analyze()`) now route through `generateNarrative()` (MLX/Qwen) instead of FoundationModels. Apple's model ignores style instructions and produces generic "Title: Subtitle" patterns. Qwen follows hook-style, first-person voice, and tone variety prompts faithfully.
+
+- **ContentAdvisorService** — Topic suggestion prompt rewritten for hook-style titles, first-person key points, tone variety
+- **sanitizeMLXJSON()** — Strips Qwen hallucinated unquoted keys (e.g., `clam: "reflective"`) and trailing commas
+- **PromptLabCoordinator** — Default content topics prompt updated to match runtime prompt style
+
+### Content Topic Model Comparison (Debug)
+New debug utility that runs the same content topic prompt through both FoundationModels and MLX, logging timing and parsed output for side-by-side quality comparison.
+
+- **ContentTopicModelComparison** (new) — Actor-isolated debug tool, accessible via Debug > Compare Content Topic Models
+- **SAMApp** — Debug menu entry added
+
+### Prompt Lab Filtering
+Prompt Lab now only shows MLX-routed prompt sites. FoundationModels prompts produce internal structured JSON not useful for user experimentation.
+
+- **PromptSite** — Added `isPromptLabVisible`, `promptLabCases` filter
+- **PromptLabView** — Default selection changed to `.contentDraft`, picker filtered to MLX-only sites
+- **PromptLabCoordinator** — Test runner uses `generateNarrative()` to match runtime behavior
+
+### NotebookLM Documentation Refresh
+Updated onboarding showcase and overview documents with expanded detail on the eleven-step onboarding flow, security lock screen, tooltip examples, guide sections, and adaptive learning.
+
+---
+
 ## Custom Topic, MLX Content Drafting, Practice-Aware Compliance (March 20, 2026)
 
 ### Custom Topic Sheet

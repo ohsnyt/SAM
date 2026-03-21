@@ -555,6 +555,38 @@ final class StrategicCoordinator {
             logger.error("Failed to gather role recruiting data for content: \(error)")
         }
 
+        // Content-enabled roles — seeded topics from user-flagged roles
+        do {
+            let allRoles = try RoleRecruitingRepository.shared.fetchActiveRoles()
+            let contentRoles = allRoles.filter { $0.contentGenerationEnabled }
+            if !contentRoles.isEmpty {
+                lines.append("")
+                lines.append("CONTENT-ENABLED ROLES (suggest at least one topic per role below):")
+                for role in contentRoles {
+                    var desc = "  \(role.name)"
+                    if !role.contentBrief.isEmpty {
+                        desc += ": \(role.contentBrief)"
+                    }
+                    lines.append(desc)
+
+                    // Include recent interactions with people in this role
+                    let candidates = role.candidates.filter { !$0.stage.isTerminal }
+                    let recentCandidates = candidates
+                        .sorted { ($0.lastContactedAt ?? $0.identifiedAt) > ($1.lastContactedAt ?? $1.identifiedAt) }
+                        .prefix(5)
+                    for candidate in recentCandidates {
+                        if let person = candidate.person {
+                            let name = person.displayName
+                            let lastContact = candidate.lastContactedAt?.formatted(date: .abbreviated, time: .omitted) ?? "not yet contacted"
+                            lines.append("    - \(name) (last contact: \(lastContact))")
+                        }
+                    }
+                }
+            }
+        } catch {
+            logger.error("Failed to gather content-enabled roles: \(error)")
+        }
+
         // Goal check-in learnings for content alignment
         do {
             let recentJournalEntries = try GoalJournalRepository.shared.fetchRecent(limit: 5)
