@@ -728,17 +728,28 @@ actor ContentAdvisorService {
     }
 
     /// Fix common MLX/Qwen JSON hallucinations that break parsing.
-    /// - Removes lines with unquoted keys (e.g., `clam: "reflective"`)
+    /// - Quotes unquoted keys anywhere in the JSON (e.g., `compliance_notes:` → `"compliance_notes":`)
+    /// - Removes fully hallucinated key-only lines (e.g., `clam: "reflective"`)
     /// - Fixes trailing commas before `]` or `}`
     static func sanitizeMLXJSON(_ json: String) -> String {
-        var lines = json.components(separatedBy: .newlines)
+        var result = json
 
-        // Remove lines with unquoted keys (word followed by colon, not inside quotes)
-        // Valid JSON keys are always "quoted": value
-        // Hallucinated keys look like: clam: "reflective"
+        // Quote unquoted JSON keys that appear after `{` or `,` (the only valid key positions).
+        // Matches: { key: or , key: where key is a bare word (letters, digits, underscores).
+        // Replaces with: { "key": or , "key":
+        // This handles mid-line unquoted keys that the old line-based filter missed.
+        let unquotedKeyPattern = #"([\{,])\s*([a-zA-Z_]\w*)\s*:"#
+        if let regex = try? NSRegularExpression(pattern: unquotedKeyPattern) {
+            let range = NSRange(result.startIndex..., in: result)
+            result = regex.stringByReplacingMatches(
+                in: result, range: range, withTemplate: "$1 \"$2\":")
+        }
+
+        // Remove fully hallucinated lines: bare word at line start followed by colon
+        // (e.g., Qwen inserting `clam: "reflective"` as an extra field)
+        var lines = result.components(separatedBy: .newlines)
         lines = lines.filter { line in
             let trimmed = line.trimmingCharacters(in: .whitespaces)
-            // Match pattern: starts with a bare word (no quote) followed by colon
             if let colonIdx = trimmed.firstIndex(of: ":"),
                !trimmed.hasPrefix("\""),
                !trimmed.hasPrefix("{"),
@@ -748,7 +759,6 @@ actor ContentAdvisorService {
                !trimmed.isEmpty {
                 let beforeColon = trimmed[trimmed.startIndex..<colonIdx]
                     .trimmingCharacters(in: .whitespaces)
-                // If it's a bare word (no quotes), it's a hallucinated key
                 if !beforeColon.isEmpty && !beforeColon.hasPrefix("\"") &&
                    beforeColon.allSatisfy({ $0.isLetter || $0 == "_" }) {
                     return false
@@ -756,8 +766,7 @@ actor ContentAdvisorService {
             }
             return true
         }
-
-        var result = lines.joined(separator: "\n")
+        result = lines.joined(separator: "\n")
 
         // Fix trailing commas: `,` followed by whitespace/newlines then `]` or `}`
         let trailingCommaPattern = #",\s*([\]\}])"#
