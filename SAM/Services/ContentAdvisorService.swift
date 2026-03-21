@@ -70,42 +70,53 @@ actor ContentAdvisorService {
             instructions = customPrompt + "\n\n" + businessContext + jsonFormat
         } else {
             instructions = """
-                Generate 5 social media content topics for a business professional.
+                Suggest 5 social media post ideas based on the user's recent activities and interests.
 
-                Rules:
-                - Educational content only, no investment advice
-                - Include compliance disclaimers where relevant
-                - Use data/examples in angles
-                - Match platform to content type
-                - If ACTIVE BUSINESS GOALS are provided, at least 2-3 topics should directly support those goals
-                  (e.g., a recruiting goal → content that attracts potential team members;
-                   a content posts goal → topics that build posting momentum;
-                   a new clients goal → content that demonstrates expertise to prospects)
+                YOUR JOB is to suggest topics that will make the user's audience feel something — \
+                curiosity, appreciation, inspiration, connection — not just learn something.
+
+                TOPIC TITLE RULES:
+                - Write titles as hooks, not headlines. Ask a question, make a bold claim, \
+                or name an emotion. Bad: "Navigating Leadership Transitions: Best Practices." \
+                Good: "The Leader Who Built Something That Will Outlast Him."
+                - Titles should sound like something a real person would say to a friend, \
+                not a consulting firm's report title.
+                - No colons followed by subtitles. No "Lessons from..." or "Strategies for..." \
+                or "Best Practices in..." patterns.
+                - Each title should make someone stop scrolling and want to read more.
+
+                KEY POINTS RULES:
+                - The first key point should be a specific, concrete detail from the context data — \
+                not a generic observation.
+                - Include one ready-to-use opening sentence that the user could copy directly \
+                into a post.
+                - The last key point should be an engagement hook: a question to ask readers, \
+                an invitation to connect, or a call to share their own experience.
+                - Write from the user's perspective ("I" / "my") not about the user ("the professional").
+
+                TONE:
+                - suggested_tone should vary across topics. Use: "personal" (sharing from experience), \
+                "inspirational" (calling to action), "reflective" (honest observation), \
+                "celebratory" (highlighting wins), "curious" (asking genuine questions).
+                - Do NOT default everything to "educational."
+
+                GOAL ALIGNMENT:
+                - If ACTIVE BUSINESS GOALS are provided, 2-3 topics should support those goals — \
+                but frame them as genuine stories or reflections, not marketing tactics.
 
                 \(jsonFormat)
-
-                Compliance:
-                - No guarantees or return promises
-                - Add "educational content" disclaimers where relevant
-                - Follow fiduciary standards
-                - No high-pressure language
-
-                Content quality:
-                - Lead with statistics when possible
-                - Use concrete examples over theory
-                - Connect to current events/seasons
-                - Address real client or prospect concerns
-                - Tie suggestions to the user's stated goals when possible
                 """
         }
 
         let prompt = """
-            Suggest educational content topics based on this context:
+            Suggest social media post ideas based on this context about my work and interests:
 
             \(data)
             """
 
-        let responseText = try await AIService.shared.generate(
+        // Use generateNarrative to prefer MLX (Qwen) — FoundationModels ignores
+        // style instructions and produces generic "Title: Subtitle" topics regardless of prompt.
+        let responseText = try await AIService.shared.generateNarrative(
             prompt: prompt,
             systemInstruction: instructions
         )
@@ -641,7 +652,13 @@ actor ContentAdvisorService {
     // MARK: - Parsing
 
     private func parseResponse(_ jsonString: String) throws -> ContentAnalysis {
-        let cleaned = JSONExtraction.extractJSON(from: jsonString)
+        var cleaned = JSONExtraction.extractJSON(from: jsonString)
+
+        // Sanitize common MLX JSON errors:
+        // 1. Unquoted keys like `clam:` → remove the offending line
+        // 2. Trailing commas before closing brackets
+        cleaned = Self.sanitizeMLXJSON(cleaned)
+
         logger.debug("📝 Content parseResponse — cleaned JSON (\(cleaned.count) chars): \(String(cleaned.prefix(300)))")
         guard let data = cleaned.data(using: .utf8) else {
             logger.error("📝 Content parseResponse — failed to convert cleaned JSON to UTF-8 data")
@@ -702,5 +719,49 @@ actor ContentAdvisorService {
             )
             throw error
         }
+    }
+
+    /// Fix common MLX/Qwen JSON hallucinations that break parsing.
+    /// - Removes lines with unquoted keys (e.g., `clam: "reflective"`)
+    /// - Fixes trailing commas before `]` or `}`
+    static func sanitizeMLXJSON(_ json: String) -> String {
+        var lines = json.components(separatedBy: .newlines)
+
+        // Remove lines with unquoted keys (word followed by colon, not inside quotes)
+        // Valid JSON keys are always "quoted": value
+        // Hallucinated keys look like: clam: "reflective"
+        lines = lines.filter { line in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            // Match pattern: starts with a bare word (no quote) followed by colon
+            if let colonIdx = trimmed.firstIndex(of: ":"),
+               !trimmed.hasPrefix("\""),
+               !trimmed.hasPrefix("{"),
+               !trimmed.hasPrefix("["),
+               !trimmed.hasPrefix("}"),
+               !trimmed.hasPrefix("]"),
+               !trimmed.isEmpty {
+                let beforeColon = trimmed[trimmed.startIndex..<colonIdx]
+                    .trimmingCharacters(in: .whitespaces)
+                // If it's a bare word (no quotes), it's a hallucinated key
+                if !beforeColon.isEmpty && !beforeColon.hasPrefix("\"") &&
+                   beforeColon.allSatisfy({ $0.isLetter || $0 == "_" }) {
+                    return false
+                }
+            }
+            return true
+        }
+
+        var result = lines.joined(separator: "\n")
+
+        // Fix trailing commas: `,` followed by whitespace/newlines then `]` or `}`
+        let trailingCommaPattern = #",\s*([\]\}])"#
+        if let regex = try? NSRegularExpression(pattern: trailingCommaPattern) {
+            let range = NSRange(result.startIndex..., in: result)
+            result = regex.stringByReplacingMatches(
+                in: result, range: range, withTemplate: "$1"
+            )
+        }
+
+        return result
     }
 }

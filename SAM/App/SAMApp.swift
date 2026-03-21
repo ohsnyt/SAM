@@ -640,6 +640,21 @@ struct SAMApp: App {
                     Divider()
                 }
 
+                Button("Compare Content Topic Models") {
+                    Task {
+                        let results = await ContentTopicModelComparison.shared.runComparison()
+                        for result in results {
+                            if let error = result.error {
+                                logger.notice("[\(result.backend)] ERROR: \(error)")
+                            } else {
+                                logger.notice("[\(result.backend)] \(result.topicCount) topics in \(String(format: "%.1f", result.durationSeconds))s")
+                            }
+                        }
+                    }
+                }
+
+                Divider()
+
                 Button("Log Store Info") {
                     let url = SAMModelContainer.shared.configurations.first?.url
                     logger.notice("SwiftData store: \(url?.path(percentEncoded: false) ?? "<in-memory>", privacy: .public)")

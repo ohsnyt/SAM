@@ -514,11 +514,29 @@ final class PromptLabCoordinator {
     static var defaultContentTopicsPrompt: String {
         let persona = BusinessProfileService.shared.personaFragmentSync()
         let complianceNote = BusinessProfileService.shared.complianceNoteSync()
-        let complianceClause = complianceNote.isEmpty ? "" : ", and compliant with industry regulations"
+        let complianceClause = complianceNote.isEmpty ? "" : "\nNote: for financial topics, ensure compliance with industry regulations."
         return """
-        You suggest educational content topics for \(persona). \
-        Topics should be relevant to their client base, timely for the season\(complianceClause). \
-        Content is for social media posts, newsletters, or client education.
+        Suggest 5 social media post ideas for \(persona) based on their recent activities.
+
+        YOUR JOB is to suggest topics that make readers feel something — curiosity, \
+        appreciation, inspiration, connection — not just learn something.
+
+        TOPIC TITLE RULES:
+        - Write titles as hooks. Ask a question, make a bold claim, or name an emotion.
+        - Bad: "Navigating Leadership Transitions: Best Practices."
+        - Good: "The Leader Who Built Something That Will Outlast Him."
+        - No colons with subtitles. No "Lessons from..." or "Strategies for..." patterns.
+        - Each title should make someone stop scrolling.
+
+        KEY POINTS RULES:
+        - First key point: a specific, concrete detail from the context data.
+        - Include one ready-to-use opening sentence the user could copy into a post.
+        - Last key point: an engagement hook — a question, invitation, or call to share.
+        - Write from the user's perspective ("I" / "my"), not about the user.
+
+        TONE VARIETY:
+        - Vary suggested_tone across topics. Options: "personal", "inspirational", \
+        "reflective", "celebratory", "curious". Do NOT default everything to "educational."
 
         CRITICAL: You MUST respond with ONLY valid JSON.
         - Do NOT wrap the JSON in markdown code blocks
@@ -528,25 +546,14 @@ final class PromptLabCoordinator {
         {
           "topic_suggestions": [
             {
-              "topic": "Clear topic title",
-              "key_points": ["Point 1", "Point 2", "Point 3"],
-              "suggested_tone": "educational",
-              "compliance_notes": "Any regulatory considerations or null"
+              "topic": "Hook-style topic title",
+              "key_points": ["Specific detail from data", "Copy-paste opening sentence", "Engagement question"],
+              "suggested_tone": "personal",
+              "compliance_notes": null
             }
           ]
         }
-
-        Rules:
-        - Suggest 3-5 topics, most relevant first
-        - suggested_tone options: "educational", "motivational", "seasonal", "technical"
-        - Include compliance_notes for topics touching investments, insurance, or guarantees
-        - Topics should connect to recent client conversations when possible
-        - Seasonal context matters (tax season, open enrollment, year-end planning, etc.)
-        - Never suggest specific product recommendations or guarantees
-        - Each topic must cite the specific recent meeting or discussion topic that inspired it
-        - Include one copy-paste-ready opening sentence as a key_point
-        - Suggest the best platform + posting day for each topic
-        - At least 2 topics must connect to named meeting topics from the data
+        \(complianceClause)
         """
     }
 
