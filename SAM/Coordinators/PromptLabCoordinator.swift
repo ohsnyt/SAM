@@ -189,7 +189,7 @@ final class PromptLabCoordinator {
 
         do {
             let prompt = buildUserPrompt(for: site, input: input)
-            let output = try await AIService.shared.generate(
+            let output = try await AIService.shared.generateNarrative(
                 prompt: prompt,
                 systemInstruction: variant.systemInstruction,
                 maxTokens: 4096

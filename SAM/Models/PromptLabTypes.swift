@@ -42,6 +42,25 @@ enum PromptSite: String, CaseIterable, Identifiable, Codable {
         }
     }
 
+    /// Whether this prompt site uses MLX (generateNarrative) and is available in Prompt Lab.
+    /// Sites that use FoundationModels for structured JSON extraction are not user-facing
+    /// in the Prompt Lab because their output formats are internal implementation details.
+    var isPromptLabVisible: Bool {
+        switch self {
+        case .contentDraft, .morningBriefing, .eveningBriefing:
+            return true
+        case .noteAnalysis, .emailAnalysis, .messageAnalysis,
+             .pipelineAnalyst, .timeAnalyst, .patternDetector,
+             .contentTopics, .eventTopics:
+            return false
+        }
+    }
+
+    /// The subset of prompt sites visible in the Prompt Lab.
+    static var promptLabCases: [PromptSite] {
+        allCases.filter(\.isPromptLabVisible)
+    }
+
     /// Description of what this prompt does.
     var siteDescription: String {
         switch self {

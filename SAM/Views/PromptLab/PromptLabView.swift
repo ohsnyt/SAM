@@ -12,8 +12,8 @@ import UniformTypeIdentifiers
 struct PromptLabView: View {
 
     @State private var coordinator = PromptLabCoordinator.shared
-    @State private var selectedSite: PromptSite = .noteAnalysis
-    @State private var sampleInput: String = PromptSite.noteAnalysis.sampleInput
+    @State private var selectedSite: PromptSite = .contentDraft
+    @State private var sampleInput: String = PromptSite.contentDraft.sampleInput
     @State private var showInputEditor = true
     @State private var showAddVariant = false
     @State private var newVariantName = ""
@@ -46,7 +46,7 @@ struct PromptLabView: View {
         HStack(spacing: 12) {
             // Site picker
             Picker("Prompt Site", selection: $selectedSite) {
-                ForEach(PromptSite.allCases) { site in
+                ForEach(PromptSite.promptLabCases) { site in
                     Label(site.rawValue, systemImage: site.icon)
                         .tag(site)
                 }
