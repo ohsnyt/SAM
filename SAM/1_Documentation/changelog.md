@@ -4,6 +4,28 @@
 
 ---
 
+## Qwen JSON Sanitizer Hardening, Practice-Aware Compliance, Anti-Hallucination (March 20, 2026)
+
+### Qwen JSON Sanitizer Hardening
+`sanitizeMLXJSON()` rewritten from line-based filtering to a whitelist approach. Lines must contain at least one JSON structural character (`"`, `{`, `}`, `[`, `]`, digit) or be a JSON literal (`true`/`false`/`null`) to survive. This catches all observed Qwen hallucination patterns:
+- Bare words on their own line (e.g., `compact`)
+- Half-quoted keys with missing opening quote (e.g., `comlpliance_notes":`)
+- Fully unquoted keys (e.g., `clam: "reflective"`)
+- Trailing commas before `]` or `}`
+
+Enhanced JSON parse error debugging: full JSON logged in 800-char chunks, error byte position with surrounding context, line-level inspection.
+
+### Practice-Aware Topic Compliance
+Content topic JSON schema now conditional on practice type. General practice shows `"compliance_notes": null` in the schema example and instructs Qwen to always return null. Financial Advisor practice preserves the original compliance notes behavior. Also changed example `suggested_tone` from "educational" to "personal" to reduce Qwen's tendency to default every topic to educational.
+
+### Anti-Hallucination Prompt Rule
+Explicit instruction added to content topic prompt: never invent statistics, percentages, study citations, or research findings. Use only facts from the provided context data.
+
+### Role Candidate Scoring Skipped on User-Triggered Digests
+`RoleRecruitingCoordinator.refreshIfStale()` no longer runs during on-demand (user-triggered) strategic digests, only during scheduled runs (morning briefing). Prevents AI resource contention when the user clicks Generate Ideas.
+
+---
+
 ## Role-Based Content Seeding, MLX Topic Suggestions, Content Topic Model Comparison (March 20, 2026)
 
 ### Role-Based Content Generation Seeding

@@ -99,9 +99,12 @@ final class StrategicCoordinator {
         let digestClock = ContinuousClock()
         let digestStart = digestClock.now
 
-        // Trigger stale role recruiting refresh (non-blocking)
-        Task(priority: .utility) {
-            await RoleRecruitingCoordinator.shared.refreshIfStale()
+        // Trigger stale role recruiting refresh only on scheduled digests —
+        // user-triggered (onDemand) runs should not compete for AI resources
+        if type != .onDemand {
+            Task(priority: .utility) {
+                await RoleRecruitingCoordinator.shared.refreshIfStale()
+            }
         }
 
         // Gather data (all deterministic Swift)

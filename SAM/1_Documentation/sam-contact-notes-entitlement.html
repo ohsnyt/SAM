@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SAM — Contact Notes Entitlement Application</title>
+<style>
+  /* ── Reset & Base ── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    background: #f5f5f7;
+    color: #1d1d1f;
+    line-height: 1.6;
+  }
+
+  /* ── Hero ── */
+  .hero {
+    background: linear-gradient(180deg, #000 0%, #1a1a2e 100%);
+    color: #f5f5f7;
+    text-align: center;
+    padding: 80px 24px 60px;
+  }
+  .hero img.app-icon {
+    width: 128px;
+    height: 128px;
+    border-radius: 28px;
+    margin-bottom: 24px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  }
+  .hero h1 {
+    font-family: "SF Pro Display", -apple-system, sans-serif;
+    font-size: 48px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    margin-bottom: 8px;
+  }
+  .hero .subtitle {
+    font-size: 22px;
+    font-weight: 400;
+    color: #a1a1a6;
+    max-width: 600px;
+    margin: 0 auto;
+  }
+
+  /* ── Content Container ── */
+  .content {
+    max-width: 820px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+
+  /* ── Section ── */
+  section {
+    padding: 60px 0;
+    border-bottom: 1px solid #d2d2d7;
+  }
+  section:last-of-type { border-bottom: none; }
+
+  section h2 {
+    font-family: "SF Pro Display", -apple-system, sans-serif;
+    font-size: 32px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+    margin-bottom: 16px;
+    color: #1d1d1f;
+  }
+
+  section h3 {
+    font-size: 20px;
+    font-weight: 600;
+    margin-top: 32px;
+    margin-bottom: 8px;
+    color: #1d1d1f;
+  }
+
+  section p {
+    font-size: 17px;
+    color: #424245;
+    margin-bottom: 16px;
+    max-width: 680px;
+  }
+
+  section ul {
+    list-style: none;
+    padding: 0;
+    margin-bottom: 16px;
+  }
+  section ul li {
+    font-size: 17px;
+    color: #424245;
+    padding: 6px 0 6px 24px;
+    position: relative;
+  }
+  section ul li::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 14px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #0071e3;
+  }
+
+  /* ── Architecture Diagram ── */
+  .arch-diagram {
+    background: #1d1d1f;
+    color: #f5f5f7;
+    border-radius: 16px;
+    padding: 32px;
+    margin: 24px 0;
+    font-family: "SF Mono", SFMono-Regular, Menlo, monospace;
+    font-size: 13px;
+    line-height: 1.7;
+    overflow-x: auto;
+    white-space: pre;
+  }
+
+  /* ── Screenshot ── */
+  .screenshot-row {
+    display: flex;
+    gap: 24px;
+    margin: 32px 0;
+    flex-wrap: wrap;
+  }
+  .screenshot-card {
+    flex: 1;
+    min-width: 280px;
+    text-align: center;
+  }
+  .screenshot-card img {
+    width: 100%;
+    max-width: 380px;
+    border-radius: 12px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.15);
+  }
+  .screenshot-card .caption {
+    font-size: 14px;
+    color: #86868b;
+    margin-top: 12px;
+  }
+
+  /* ── Highlight Box ── */
+  .highlight-box {
+    background: #fff;
+    border-radius: 16px;
+    padding: 28px 32px;
+    margin: 24px 0;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+  }
+  .highlight-box h4 {
+    font-size: 17px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: #1d1d1f;
+  }
+  .highlight-box p {
+    font-size: 15px;
+    color: #424245;
+    margin-bottom: 8px;
+  }
+  .highlight-box code {
+    font-family: "SF Mono", SFMono-Regular, Menlo, monospace;
+    font-size: 13px;
+    background: #f5f5f7;
+    padding: 2px 8px;
+    border-radius: 4px;
+    color: #1d1d1f;
+  }
+
+  /* ── Privacy Badge ── */
+  .privacy-row {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin: 24px 0;
+  }
+  .privacy-badge {
+    flex: 1;
+    min-width: 200px;
+    background: #fff;
+    border-radius: 12px;
+    padding: 20px 24px;
+    text-align: center;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+  }
+  .privacy-badge .icon {
+    font-size: 32px;
+    margin-bottom: 8px;
+  }
+  .privacy-badge .label {
+    font-size: 15px;
+    font-weight: 600;
+    color: #1d1d1f;
+  }
+  .privacy-badge .detail {
+    font-size: 13px;
+    color: #86868b;
+    margin-top: 4px;
+  }
+
+  /* ── Table ── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 15px;
+  }
+  table th, table td {
+    text-align: left;
+    padding: 12px 16px;
+    border-bottom: 1px solid #d2d2d7;
+  }
+  table th {
+    font-weight: 600;
+    color: #1d1d1f;
+    background: #f5f5f7;
+  }
+  table td { color: #424245; }
+
+  /* ── Footer ── */
+  footer {
+    text-align: center;
+    padding: 40px 24px;
+    color: #86868b;
+    font-size: 13px;
+  }
+  footer a { color: #0071e3; text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+
+  /* ── Responsive ── */
+  @media (max-width: 600px) {
+    .hero h1 { font-size: 32px; }
+    .hero .subtitle { font-size: 18px; }
+    section h2 { font-size: 26px; }
+    .screenshot-row { flex-direction: column; }
+    .privacy-row { flex-direction: column; }
+    .arch-diagram { font-size: 11px; padding: 20px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ════════════════════ HERO ════════════════════ -->
+<div class="hero">
+  <!-- Replace src with the URL of SAM_logo.png after uploading to WordPress Media -->
+  <img class="app-icon" src="SAM_logo.png" alt="SAM app icon">
+  <h1>SAM</h1>
+  <p class="subtitle">Strategic Advisory Mind &mdash; a native macOS coaching assistant for independent financial strategists</p>
+</div>
+
+<div class="content">
+
+<!-- ════════════════════ OVERVIEW ════════════════════ -->
+<section>
+  <h2>What SAM Does</h2>
+  <p>
+    SAM is a native Mac application built with Swift 6, SwiftUI, and SwiftData for macOS 26 (Tahoe). It serves as a personal coaching assistant for independent financial strategists operating within World Financial Group (WFG), combining relationship intelligence with business strategy in a single, unified interface.
+  </p>
+  <p>
+    SAM deeply integrates with Apple system apps &mdash; Contacts, Calendar, Mail, iMessage, Phone, and FaceTime &mdash; to observe the user's professional interactions, then provides AI-powered coaching: meeting preparation briefs, follow-up recommendations, relationship health tracking, pipeline analytics, production metrics, and strategic business insights. All AI processing happens entirely on-device using Apple FoundationModels and local MLX models. No data ever leaves the Mac.
+  </p>
+
+  <div class="screenshot-row">
+    <div class="screenshot-card">
+      <!-- Replace src with URL after uploading td-01.png to WordPress Media -->
+      <img src="td-01.png" alt="SAM Today view showing daily briefing and coaching outcome cards">
+      <p class="caption">Today view &mdash; daily briefing with prioritized coaching outcomes</p>
+    </div>
+    <div class="screenshot-card">
+      <!-- Replace src with URL after uploading pp-02.png to WordPress Media -->
+      <img src="pp-02.png" alt="SAM People view showing contact detail with notes and relationship summary">
+      <p class="caption">People view &mdash; contact detail with notes and relationship summary</p>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════ CONTACTS INTEGRATION ════════════════════ -->
+<section>
+  <h2>How SAM Uses Apple Contacts</h2>
+  <p>
+    Apple Contacts is SAM's <strong>canonical source of identity data</strong>. SAM never duplicates or replaces the user's address book. Instead, it links to Apple Contacts and enriches each person with CRM metadata: pipeline stages, communication preferences, interaction history, life events, and coaching outcomes.
+  </p>
+
+  <h3>Scoped Access</h3>
+  <p>
+    During onboarding, the user selects a specific Contacts group that SAM manages. SAM reads all Apple Contacts to support matching and deduplication (e.g., when importing LinkedIn connections or parsing email headers), but only imports and updates contacts within the user-designated group. Personal contacts remain untouched.
+  </p>
+
+  <h3>Contact Enrichment</h3>
+  <p>
+    When SAM discovers new information about a contact &mdash; from a LinkedIn import, a Facebook connection, an email signature, or a meeting note &mdash; it stages the update as a <code>PendingEnrichment</code> record. The user reviews and approves each enrichment before SAM writes it back to Apple Contacts. Enrichable fields include:
+  </p>
+  <ul>
+    <li>Organization and job title</li>
+    <li>Email addresses and phone numbers</li>
+    <li>LinkedIn and Facebook profile URLs</li>
+    <li>WhatsApp identifiers</li>
+    <li>Contact relations (spouse, assistant, etc.)</li>
+    <li>Anniversary dates</li>
+    <li><strong>Contact notes</strong> &mdash; SAM appends a structured block to the Apple Contacts note field containing a relationship summary, key context, and last interaction date (requires <code>com.apple.developer.contacts.notes</code> entitlement)</li>
+  </ul>
+
+  <h3>Why Contact Notes Matter</h3>
+  <p>
+    The Apple Contacts note field is the natural place to store portable relationship context that should travel with the contact across all Apple devices and apps. When a user opens a contact in Apple Contacts, Phone, FaceTime, or Mail, the note provides instant context &mdash; who this person is, what SAM knows about them, and when they last interacted.
+  </p>
+  <p>
+    SAM writes a clearly delimited block within the note (preserving any existing user-written content) that includes:
+  </p>
+  <ul>
+    <li>A one-line AI-generated relationship summary (e.g., "Client since 2024. Active IUL policy. Last met Feb 15 about retirement planning.")</li>
+    <li>Role badges (Client, Lead, Applicant, Agent, Vendor, etc.)</li>
+    <li>Pipeline stage if applicable</li>
+    <li>Last interaction date and channel</li>
+  </ul>
+  <p>
+    Without the Contact Notes entitlement, this context is locked inside SAM and invisible when the user encounters a contact in other Apple apps. The entitlement bridges SAM's intelligence into the broader Apple ecosystem where the user actually communicates.
+  </p>
+
+  <div class="highlight-box">
+    <h4>Current Implementation</h4>
+    <p>SAM already implements graceful degradation for the notes entitlement. The <code>ContactsService.updateContact()</code> method attempts to fetch the contact with <code>CNContactNoteKey</code>; if the entitlement is unavailable, it falls back to base keys and skips the note update while still applying all other enrichment fields. The code uses <code>isKeyAvailable(CNContactNoteKey)</code> to verify access at runtime rather than failing silently.</p>
+    <p>Entitlement: <code>com.apple.developer.contacts.notes</code></p>
+  </div>
+</section>
+
+<!-- ════════════════════ ARCHITECTURE ════════════════════ -->
+<section>
+  <h2>Architecture</h2>
+  <p>
+    SAM follows a clean layered architecture with strict separation of concerns and Swift 6 strict concurrency throughout.
+  </p>
+
+  <div class="arch-diagram">
+┌─────────────────────────────────────────────────────────┐
+│                     Views (SwiftUI)                      │
+│            @MainActor, render DTOs/ViewModels             │
+└──────────────────────┬───────────────────────────────────┘
+                       │
+┌──────────────────────▼───────────────────────────────────┐
+│                    Coordinators                           │
+│     @MainActor @Observable, business logic orchestration  │
+└───────────┬─────────────────────┬────────────────────────┘
+            │                     │
+┌───────────▼────────────┐  ┌─────▼────────────────────────┐
+│       Services         │  │       Repositories            │
+│   actor-isolated       │  │   @MainActor, SwiftData CRUD  │
+│   return Sendable DTOs │  │                               │
+└───────────┬────────────┘  └─────┬────────────────────────┘
+            │                     │
+┌───────────▼────────────┐  ┌─────▼────────────────────────┐
+│    External APIs       │  │        SwiftData              │
+│  CNContactStore        │  │   SamPerson, SamOutcome,      │
+│  EKEventStore          │  │   BusinessGoal, Evidence,     │
+│  FoundationModels      │  │   StageTransition, etc.       │
+│  MLX (Qwen 3 8B)      │  │                               │
+└────────────────────────┘  └──────────────────────────────┘</div>
+
+  <h3>AI Architecture: Two-Layer Intelligence</h3>
+  <p>
+    SAM uses a two-layer AI architecture, both running entirely on-device:
+  </p>
+  <ul>
+    <li><strong>Layer 1 &mdash; Relationship Intelligence (foreground)</strong>: Note analysis, meeting pre-briefs, follow-up drafts, relationship health scoring, communication channel recommendations. Responds within 2&ndash;5 seconds.</li>
+    <li><strong>Layer 2 &mdash; Business Intelligence (background)</strong>: Pipeline analytics, production trends, time allocation analysis, cross-relationship pattern detection, content suggestions, scenario projections. Runs at <code>TaskPriority.background</code>, never competing with foreground interactions.</li>
+  </ul>
+
+  <p>
+    The <code>StrategicCoordinator</code> orchestrates business reasoning using an RLM-inspired decomposition pattern: it breaks complex analysis into focused sub-problems, dispatches specialist analysts (PipelineAnalyst, TimeAnalyst, PatternDetector, ContentAdvisor) in parallel via <code>TaskGroup</code>, then synthesizes results deterministically in Swift. Each specialist receives fewer than 2,000 tokens of pre-aggregated data. All numerical computation happens in Swift &mdash; the LLM interprets and narrates, never computes.
+  </p>
+
+  <h3>Apple System Integration</h3>
+  <table>
+    <tr>
+      <th>System App</th>
+      <th>Integration</th>
+      <th>Data Handling</th>
+    </tr>
+    <tr>
+      <td>Contacts</td>
+      <td>Identity source, enrichment write-back</td>
+      <td>Read all, write only to user-designated SAM group</td>
+    </tr>
+    <tr>
+      <td>Calendar</td>
+      <td>Meeting observation, time categorization</td>
+      <td>Read user-selected work calendars only</td>
+    </tr>
+    <tr>
+      <td>Mail</td>
+      <td>Interaction history, email thread analysis</td>
+      <td>Envelope metadata stored; body analyzed then discarded</td>
+    </tr>
+    <tr>
+      <td>Messages / Phone / FaceTime</td>
+      <td>Communication history</td>
+      <td>Metadata stored; message text analyzed then discarded</td>
+    </tr>
+  </table>
+</section>
+
+<!-- ════════════════════ PRIVACY ════════════════════ -->
+<section>
+  <h2>Privacy &amp; Security</h2>
+  <p>
+    Privacy is foundational to SAM's architecture, not an afterthought.
+  </p>
+
+  <div class="privacy-row">
+    <div class="privacy-badge">
+      <div class="icon">🔒</div>
+      <div class="label">100% On-Device AI</div>
+      <div class="detail">Apple FoundationModels + local MLX. No cloud, no telemetry.</div>
+    </div>
+    <div class="privacy-badge">
+      <div class="icon">🛡️</div>
+      <div class="label">Biometric Auth</div>
+      <div class="detail">Touch ID or password required on every launch. Configurable idle timeout.</div>
+    </div>
+    <div class="privacy-badge">
+      <div class="icon">📋</div>
+      <div class="label">User-Approved Writes</div>
+      <div class="detail">All writes to external data sources require explicit user approval.</div>
+    </div>
+    <div class="privacy-badge">
+      <div class="icon">⏪</div>
+      <div class="label">30-Day Undo History</div>
+      <div class="detail">Full undo support for destructive and relational changes.</div>
+    </div>
+  </div>
+
+  <h3>Data Handling Principles</h3>
+  <ul>
+    <li><strong>Observe, summarize, discard</strong> &mdash; Raw email bodies and message text are analyzed on-device, then discarded. Only AI-generated summaries are stored.</li>
+    <li><strong>Scoped access</strong> &mdash; Contacts limited to user-designated SAM group. Calendar and Mail limited to user-selected work accounts.</li>
+    <li><strong>No external network calls</strong> &mdash; SAM makes zero network requests. All data stays on the local machine. Backups are encrypted.</li>
+    <li><strong>Sandboxed</strong> &mdash; Full App Sandbox with only the entitlements listed below.</li>
+  </ul>
+
+  <h3>Requested Entitlements</h3>
+  <table>
+    <tr><th>Entitlement</th><th>Purpose</th></tr>
+    <tr><td><code>com.apple.security.app-sandbox</code></td><td>App Sandbox</td></tr>
+    <tr><td><code>com.apple.security.contacts.contacts-read</code></td><td>Read Apple Contacts for identity matching</td></tr>
+    <tr><td><code>com.apple.security.contacts.contacts-write</code></td><td>Write enrichment data back to Apple Contacts (user-approved)</td></tr>
+    <tr><td><code>com.apple.developer.contacts.notes</code></td><td>Read/write Contact Notes for relationship context sync</td></tr>
+    <tr><td><code>com.apple.security.calendars.calendar-access</code></td><td>Read Calendar for meeting observation</td></tr>
+    <tr><td><code>com.apple.security.automation.apple-events</code></td><td>AppleEvents for Mail integration</td></tr>
+    <tr><td><code>com.apple.security.files.downloads.read-write</code></td><td>Import LinkedIn/Facebook data exports from Downloads</td></tr>
+  </table>
+</section>
+
+<!-- ════════════════════ CONTACT NOTES DETAIL ════════════════════ -->
+<section>
+  <h2>Contact Notes Entitlement: Technical Detail</h2>
+  <p>
+    SAM requests the <code>com.apple.developer.contacts.notes</code> entitlement to read and write the note field on <code>CNContact</code> records. This section describes exactly how SAM uses this field.
+  </p>
+
+  <h3>What SAM Writes</h3>
+  <p>
+    SAM appends a clearly delimited block to the existing note content &mdash; it never overwrites user-written notes. The block is wrapped in markers (<code>--- SAM ---</code>) so it can be identified, updated, and removed cleanly:
+  </p>
+
+  <div class="highlight-box">
+    <h4>Example Note Block</h4>
+    <p style="font-family: 'SF Mono', monospace; font-size: 13px; white-space: pre-wrap; color: #1d1d1f; line-height: 1.8;">--- SAM ---
+Client since 2024. Active IUL policy holder.
+Role: Client | Pipeline: Active
+Last interaction: Mar 18, 2026 (meeting)
+--- END SAM ---</p>
+  </div>
+
+  <h3>When SAM Writes</h3>
+  <ul>
+    <li>Only when the user explicitly approves a contact enrichment update through the Pending Enrichment review flow</li>
+    <li>Or when the user enables automatic note sync in Settings (opt-in, disabled by default)</li>
+    <li>Never during background processing without user consent</li>
+  </ul>
+
+  <h3>What SAM Reads</h3>
+  <p>
+    SAM reads the note field during contact enrichment to preserve any existing user-written content outside the SAM block. It also reads notes to detect relationship context that the user may have previously entered manually (e.g., "Met at conference 2023" or "Referred by John Smith").
+  </p>
+
+  <h3>Graceful Degradation</h3>
+  <p>
+    SAM is fully functional without this entitlement. The <code>ContactsService</code> uses a try-catch pattern with <code>isKeyAvailable(CNContactNoteKey)</code> to detect entitlement availability at runtime. When unavailable, all other enrichment fields (organization, job title, email, phone, social profiles, relations, dates) still update normally. Only the note sync is skipped.
+  </p>
+</section>
+
+<!-- ════════════════════ TECHNOLOGY ════════════════════ -->
+<section>
+  <h2>Technology Stack</h2>
+  <table>
+    <tr><th>Component</th><th>Technology</th></tr>
+    <tr><td>Platform</td><td>macOS 26+ (Tahoe)</td></tr>
+    <tr><td>Language</td><td>Swift 6, strict concurrency</td></tr>
+    <tr><td>UI Framework</td><td>SwiftUI (AppKit interop for NSTextView, sidebar toggle)</td></tr>
+    <tr><td>Data Layer</td><td>SwiftData (34 model types, SAM_v34 schema)</td></tr>
+    <tr><td>AI &mdash; Primary</td><td>Apple FoundationModels (on-device, zero-config)</td></tr>
+    <tr><td>AI &mdash; Extended</td><td>MLX with Qwen 3 8B (local, for content and strategy)</td></tr>
+    <tr><td>Contacts</td><td>CNContactStore (Contacts framework)</td></tr>
+    <tr><td>Calendar</td><td>EventKit (EKEventStore)</td></tr>
+    <tr><td>Speech</td><td>SFSpeechRecognizer (on-device transcription)</td></tr>
+    <tr><td>Auth</td><td>LocalAuthentication (Touch ID / password)</td></tr>
+  </table>
+</section>
+
+</div><!-- .content -->
+
+<footer>
+  <p>SAM &mdash; Strategic Advisory Mind</p>
+  <p>Built by Matthew Sessions &bull; Native macOS &bull; 100% On-Device AI</p>
+  <p style="margin-top: 12px;">For questions about this entitlement request, contact <a href="mailto:david@matthewsessions.com">david@matthewsessions.com</a></p>
+</footer>
+
+</body>
+</html>

@@ -40,17 +40,26 @@ actor ContentAdvisorService {
 
         let businessContext = await BusinessProfileService.shared
             .fullContextBlock()
+        let isFinancial = await BusinessProfileService.shared.isFinancialPractice()
 
         let customPrompt = await MainActor.run {
             UserDefaults.standard.string(
                 forKey: PromptSite.contentTopics.userDefaultsKey
             ) ?? ""
         }
+
+        let complianceField = isFinancial
+            ? "\"compliance_notes\": \"required disclaimers or null\""
+            : "\"compliance_notes\": null"
+        let complianceInstruction = isFinancial
+            ? ""
+            : "\n- compliance_notes should ALWAYS be null — this is not a financial practice."
+
         let jsonFormat = """
 
             CRITICAL: You MUST respond with ONLY valid JSON.
             - Do NOT wrap the JSON in markdown code blocks
-            - Return ONLY the raw JSON object starting with { and ending with }
+            - Return ONLY the raw JSON object starting with { and ending with }\(complianceInstruction)
 
             The JSON structure must be:
             {
@@ -58,8 +67,8 @@ actor ContentAdvisorService {
                 {
                   "topic": "specific content idea",
                   "key_points": ["point 1", "point 2", "point 3"],
-                  "suggested_tone": "educational",
-                  "compliance_notes": "required disclaimers or null"
+                  "suggested_tone": "personal",
+                  \(complianceField)
                 }
               ]
             }
@@ -93,6 +102,11 @@ actor ContentAdvisorService {
                 - The last key point should be an engagement hook: a question to ask readers, \
                 an invitation to connect, or a call to share their own experience.
                 - Write from the user's perspective ("I" / "my") not about the user ("the professional").
+                - NEVER invent statistics, percentages, study citations, or research findings. \
+                Do not fabricate numbers like "28% higher retention" or cite fake sources like \
+                "(Charity Navigator, 2025)". Use ONLY facts from the provided context data. \
+                If you need a compelling detail, describe a real situation from the context \
+                rather than making up a statistic.
 
                 TONE:
                 - suggested_tone should vary across topics. Use: "personal" (sharing from experience), \
@@ -666,6 +680,28 @@ actor ContentAdvisorService {
         cleaned = Self.sanitizeMLXJSON(cleaned)
 
         logger.debug("📝 Content parseResponse — cleaned JSON (\(cleaned.count) chars): \(String(cleaned.prefix(300)))")
+
+        // Debug: log the full cleaned JSON in chunks so nothing is truncated
+        let chunkSize = 800
+        for i in stride(from: 0, to: cleaned.count, by: chunkSize) {
+            let start = cleaned.index(cleaned.startIndex, offsetBy: i)
+            let end = cleaned.index(start, offsetBy: min(chunkSize, cleaned.count - i))
+            let chunk = String(cleaned[start..<end])
+            logger.debug("📝 JSON chunk [\(i)-\(i + chunk.count)]: \(chunk)")
+        }
+
+        // Debug: identify the exact character at the reported error position
+        let jsonLines = cleaned.components(separatedBy: "\n")
+        if jsonLines.count >= 21 {
+            let line21 = jsonLines[20] // 0-indexed
+            logger.error("📝 JSON line 21: [\(line21)]")
+            if line21.count >= 8 {
+                let charIdx = line21.index(line21.startIndex, offsetBy: 7)
+                logger.error("📝 JSON line 21, col 8: character = '\\(line21[charIdx])' (U+\\(String(format: \"%04X\", line21[charIdx].asciiValue ?? 0)))")
+            }
+        }
+        logger.debug("📝 JSON total lines: \(jsonLines.count)")
+
         guard let data = cleaned.data(using: .utf8) else {
             logger.error("📝 Content parseResponse — failed to convert cleaned JSON to UTF-8 data")
             throw AnalysisError.invalidResponse
@@ -723,6 +759,17 @@ actor ContentAdvisorService {
             logger.error(
                 "Content analysis JSON parsing failed: \(error.localizedDescription)"
             )
+            // Log characters around the error position for diagnosis
+            if case DecodingError.dataCorrupted(let ctx) = error,
+               let nsError = ctx.underlyingError as NSError?,
+               let errorIndex = nsError.userInfo["NSJSONSerializationErrorIndex"] as? Int {
+                let safeStart = max(0, errorIndex - 40)
+                let safeEnd = min(cleaned.count, errorIndex + 40)
+                let startIdx = cleaned.index(cleaned.startIndex, offsetBy: safeStart)
+                let endIdx = cleaned.index(cleaned.startIndex, offsetBy: safeEnd)
+                let errorIdx = cleaned.index(cleaned.startIndex, offsetBy: min(errorIndex, cleaned.count - 1))
+                logger.error("📝 Error at byte \(errorIndex), char='\\(cleaned[errorIdx])'. Context: [\(String(cleaned[startIdx..<endIdx]))]")
+            }
             throw error
         }
     }
@@ -734,10 +781,20 @@ actor ContentAdvisorService {
     static func sanitizeMLXJSON(_ json: String) -> String {
         var result = json
 
-        // Quote unquoted JSON keys that appear after `{` or `,` (the only valid key positions).
+        // Fix half-quoted keys: missing opening quote (e.g., `comlpliance_notes": "value"`)
+        // Qwen sometimes drops the opening quote while keeping the closing one.
+        // Matches: bareword": and replaces with "bareword":
+        let halfQuotedKeyPattern = #"([\{,\n]\s*)([a-zA-Z_]\w*)("\s*:)"#
+        if let regex = try? NSRegularExpression(pattern: halfQuotedKeyPattern) {
+            let range = NSRange(result.startIndex..., in: result)
+            result = regex.stringByReplacingMatches(
+                in: result, range: range, withTemplate: "$1\"$2$3")
+        }
+
+        // Quote fully unquoted JSON keys that appear after `{` or `,`.
         // Matches: { key: or , key: where key is a bare word (letters, digits, underscores).
         // Replaces with: { "key": or , "key":
-        // This handles mid-line unquoted keys that the old line-based filter missed.
+        // Must run AFTER half-quoted fix to avoid double-quoting.
         let unquotedKeyPattern = #"([\{,])\s*([a-zA-Z_]\w*)\s*:"#
         if let regex = try? NSRegularExpression(pattern: unquotedKeyPattern) {
             let range = NSRange(result.startIndex..., in: result)
@@ -745,26 +802,41 @@ actor ContentAdvisorService {
                 in: result, range: range, withTemplate: "$1 \"$2\":")
         }
 
-        // Remove fully hallucinated lines: bare word at line start followed by colon
-        // (e.g., Qwen inserting `clam: "reflective"` as an extra field)
+        // Remove hallucinated lines that aren't valid JSON.
+        // Qwen produces: (a) bare words like `compact`, (b) unquoted key: value pairs like `clam: "reflective"`
+        // Valid JSON lines must contain at least one structural character (" { } [ ] digit) or be
+        // a JSON literal (true, false, null). Bare words are never valid.
         var lines = result.components(separatedBy: .newlines)
+        let jsonLiterals: Set<String> = ["true", "false", "null", "true,", "false,", "null,"]
         lines = lines.filter { line in
             let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if let colonIdx = trimmed.firstIndex(of: ":"),
-               !trimmed.hasPrefix("\""),
-               !trimmed.hasPrefix("{"),
-               !trimmed.hasPrefix("["),
-               !trimmed.hasPrefix("}"),
-               !trimmed.hasPrefix("]"),
-               !trimmed.isEmpty {
-                let beforeColon = trimmed[trimmed.startIndex..<colonIdx]
-                    .trimmingCharacters(in: .whitespaces)
-                if !beforeColon.isEmpty && !beforeColon.hasPrefix("\"") &&
-                   beforeColon.allSatisfy({ $0.isLetter || $0 == "_" }) {
-                    return false
+            guard !trimmed.isEmpty else { return true } // keep blank lines
+
+            // If the line contains any JSON structural character, keep it
+            let hasJSONStructure = trimmed.contains("\"") || trimmed.contains("{") ||
+                trimmed.contains("}") || trimmed.contains("[") || trimmed.contains("]") ||
+                trimmed.first?.isNumber == true
+            if hasJSONStructure {
+                // Still filter out unquoted key: value lines (e.g., `clam: "reflective"`)
+                if let colonIdx = trimmed.firstIndex(of: ":"),
+                   !trimmed.hasPrefix("\""),
+                   !trimmed.hasPrefix("{"),
+                   !trimmed.hasPrefix("[") {
+                    let beforeColon = trimmed[trimmed.startIndex..<colonIdx]
+                        .trimmingCharacters(in: .whitespaces)
+                    if !beforeColon.isEmpty && !beforeColon.hasPrefix("\"") &&
+                       beforeColon.allSatisfy({ $0.isLetter || $0 == "_" }) {
+                        return false
+                    }
                 }
+                return true
             }
-            return true
+
+            // Allow JSON literals (true, false, null)
+            if jsonLiterals.contains(trimmed.lowercased()) { return true }
+
+            // Everything else is a hallucinated bare word — remove it
+            return false
         }
         result = lines.joined(separator: "\n")
 
