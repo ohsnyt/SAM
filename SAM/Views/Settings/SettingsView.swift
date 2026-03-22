@@ -1858,8 +1858,8 @@ struct BusinessProfileSettingsContent: View {
                 .samFont(.caption)
                 .foregroundStyle(.secondary)
 
-            // Practice Type
-            GroupBox("Practice Type") {
+            // Business Type
+            GroupBox("Business Type") {
                 VStack(alignment: .leading, spacing: 8) {
                     Picker("Type", selection: $profile.practiceType) {
                         ForEach(PracticeType.allCases, id: \.self) { type in

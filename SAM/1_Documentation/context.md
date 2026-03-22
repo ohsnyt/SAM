@@ -429,6 +429,18 @@ Bookmark the **directory** (not file) for SQLite to cover WAL/SHM companions. `.
 
 - **LinkedIn Data Export tab**: Review and simplify the multi-step instructions in File → Import → LinkedIn → Data Export tab. The current flow (request data, watch for email, detect ZIP, parse, review) should be streamlined for the user.
 
+### Role System Evolution (Deferred — Needs Product Clarity)
+
+The role system (`RoleDefinition`) currently supports user-defined roles with criteria-based candidate scoring and content generation. Financial Advisor gets seed roles (Referral Partner, WFG Agent Recruit, Client Advocate, Strategic Alliance). A broader vision was considered:
+
+1. **Role template library** — pre-built role catalogs per business type, selectable and customizable
+2. **Per-role AI prompts** — each role carrying its own prompts for candidate scoring, recruiting outreach, conversation analysis, relationship coaching, and content generation (today these are generic and hardcoded in coordinators)
+3. **General business type depth** — seed roles and coaching personality for non-financial-advisor users
+
+**Decision**: Deferred. The core product question is whether the General business type has a real audience. 98% of users will use one business type. The owner's non-financial roles (ABT Chair, elder roles) work within the Financial Advisor instance as custom roles — they don't require a separate business type. Building General depth is essentially building a second product.
+
+**What's worth doing regardless**: per-role prompt customization benefits Financial Advisor roles just as much. When revisited, the architectural direction is clear — it's the product question (who is General for?) that needs answering first.
+
 ### Priority 9+ — Future
 
 - iOS companion app (read-only)
@@ -438,5 +450,5 @@ Bookmark the **directory** (not file) for SQLite to cover WAL/SHM companions. `.
 
 ---
 
-**Document Version**: 45
-**Last Updated**: March 17, 2026 — Goal Journal (check-in conversations with distilled learnings), Role Recruiting pipeline.
+**Document Version**: 46
+**Last Updated**: March 21, 2026 — Settings restructure (sidebar navigation), AI simplification (locked hybrid+Qwen), role system evolution notes.
