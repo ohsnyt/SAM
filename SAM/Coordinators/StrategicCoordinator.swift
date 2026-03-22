@@ -92,9 +92,7 @@ final class StrategicCoordinator {
         guard generationStatus != .generating else { return }
 
         generationStatus = .generating
-        let backend = UserDefaults.standard.string(forKey: "aiBackend") ?? "foundationModels"
-        let modelID = UserDefaults.standard.string(forKey: "mlxSelectedModelID") ?? "none"
-        let modelLabel = backend == "foundationModels" ? "Apple Intelligence" : "\(backend)/\(modelID)"
+        let modelLabel = "hybrid/Qwen3-8B"
         logger.debug("⏱ Strategic digest starting — backend: \(modelLabel)")
         let digestClock = ContinuousClock()
         let digestStart = digestClock.now

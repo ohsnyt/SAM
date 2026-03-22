@@ -11,6 +11,7 @@
 //
 
 import Foundation
+import Contacts
 import os.log
 
 /// Manages the business context profile and universal AI blocklist.
@@ -283,11 +284,62 @@ actor BusinessProfileService {
         return BusinessProfile()
     }
 
+    // MARK: - Social Platform Detection
+
+    /// Reads social profiles from the Me card in Contacts and returns platform names.
+    /// Falls back to empty list if no Me card or no social profiles are configured.
+    /// Cached per-launch to avoid repeated Contacts queries.
+    private var cachedSocialPlatforms: [String]?
+
+    private func socialPlatformsFromMeCard() -> [String] {
+        if let cached = cachedSocialPlatforms { return cached }
+
+        let store = CNContactStore()
+        guard CNContactStore.authorizationStatus(for: .contacts) == .authorized else {
+            cachedSocialPlatforms = []
+            return []
+        }
+
+        do {
+            let me = try store.unifiedMeContactWithKeys(toFetch: [CNContactSocialProfilesKey as CNKeyDescriptor])
+            let services = me.socialProfiles.map { $0.value.service }
+            guard !services.isEmpty else {
+                cachedSocialPlatforms = []
+                return []
+            }
+
+            // Map CNContact service names to user-friendly platform names
+            var platforms: [String] = []
+            for service in services {
+                let lower = service.lowercased()
+                if lower.contains("facebook") { platforms.append("Facebook") }
+                else if lower.contains("linkedin") { platforms.append("LinkedIn") }
+                else if lower.contains("instagram") { platforms.append("Instagram") }
+                else if lower.contains("twitter") || lower == "x" { platforms.append("X/Twitter") }
+                else if lower.contains("tiktok") { platforms.append("TikTok") }
+                else if lower.contains("youtube") { platforms.append("YouTube") }
+                else { platforms.append(service) }
+            }
+            // Deduplicate while preserving order
+            var seen = Set<String>()
+            let result = platforms.filter { seen.insert($0).inserted }
+            cachedSocialPlatforms = result
+            return result
+        } catch {
+            cachedSocialPlatforms = []
+            return []
+        }
+    }
+
     // MARK: - System Instruction Helpers
 
     /// Returns the business context fragment for injection into AI system instructions.
     func contextFragment() -> String {
-        let p = profile()
+        var p = profile()
+
+        // Auto-detect social platforms from the Me card instead of stored setting
+        p.activeSocialPlatforms = socialPlatformsFromMeCard()
+
         var fragment = p.systemInstructionFragment()
 
         // Append LinkedIn profile context if available
@@ -330,11 +382,9 @@ actor BusinessProfileService {
             lines.append("• Do NOT suggest holding team meetings, standups, or group training sessions")
         }
 
-        // SAM-is-CRM constraint
-        if p.samIsCRM {
-            lines.append("• Do NOT suggest CRM software, CRM research, or CRM alternatives — SAM is the CRM")
-            lines.append("• Do NOT suggest spreadsheets or databases for contact tracking — SAM handles this")
-        }
+        // SAM is always the CRM
+        lines.append("• Do NOT suggest CRM software, CRM research, or CRM alternatives — SAM is the CRM")
+        lines.append("• Do NOT suggest spreadsheets or databases for contact tracking — SAM handles this")
 
         // Financial-specific constraints
         if p.isFinancial {

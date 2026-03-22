@@ -956,16 +956,6 @@ struct SAMApp: App {
     /// Check if permissions that should be granted (based on settings) are actually missing
     /// Returns true if onboarding should be reset due to lost permissions
     private func checkIfPermissionsLost() async -> Bool {
-        // Check if auto-detection is enabled
-        let autoDetectEnabled = UserDefaults.standard.bool(forKey: "autoDetectPermissionLoss")
-        
-        // Default to true if never set (first launch)
-        let shouldAutoDetect = UserDefaults.standard.object(forKey: "autoDetectPermissionLoss") == nil ? true : autoDetectEnabled
-        
-        if !shouldAutoDetect {
-            return false
-        }
-
         let contactsEnabled = UserDefaults.standard.bool(forKey: "sam.contacts.enabled")
         let calendarEnabled = UserDefaults.standard.bool(forKey: "calendarAutoImportEnabled")
         let mailEnabled = UserDefaults.standard.bool(forKey: "mailImportEnabled")

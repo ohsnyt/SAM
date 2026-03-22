@@ -941,7 +941,7 @@ struct OnboardingView: View {
                 .samFont(.title)
                 .bold()
 
-            Text("SAM includes Apple Intelligence for on-device coaching. For deeper reasoning, download the Mistral 7B model:")
+            Text("SAM includes Apple Intelligence for on-device coaching. For deeper reasoning, download the Qwen 3 8B model:")
                 .samFont(.body)
                 .foregroundStyle(.secondary)
 
@@ -952,7 +952,7 @@ struct OnboardingView: View {
             }
             .padding(.leading, 8)
 
-            Text("The download is approximately 4 GB and runs in the background — you can start using SAM immediately. All processing stays on your device.")
+            Text("The download is approximately 4.5 GB and runs in the background — you can start using SAM immediately. All processing stays on your device.")
                 .samFont(.callout)
                 .foregroundStyle(.orange)
                 .padding()
@@ -963,9 +963,9 @@ struct OnboardingView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Mistral 7B Instruct (4-bit)")
+                            Text("Qwen 3 8B (4-bit)")
                                 .samFont(.subheadline)
-                            Text("~4 GB download")
+                            Text("~4.5 GB download")
                                 .samFont(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -1697,18 +1697,10 @@ struct OnboardingView: View {
 
         Task {
             do {
-                // Find the model to download (Mistral 7B)
-                let models = await MLXModelManager.shared.availableModels
-                guard let model = models.first else {
-                    await MainActor.run {
-                        mlxDownloadError = "No model available to download."
-                        isMlxDownloading = false
-                    }
-                    return
-                }
+                let modelID = "mlx-community/Qwen3-8B-4bit"
 
                 // Start download
-                try await MLXModelManager.shared.downloadModel(id: model.id)
+                try await MLXModelManager.shared.downloadModel(id: modelID)
 
                 // Poll progress
                 while await MLXModelManager.shared.isDownloading {

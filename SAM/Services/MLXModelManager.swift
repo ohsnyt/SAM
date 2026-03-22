@@ -83,10 +83,10 @@ actor MLXModelManager {
         ),
     ]
 
-    /// Currently selected model ID (UserDefaults-backed).
+    /// Currently selected model ID. Always Qwen 3 8B.
     var selectedModelID: String? {
-        get { UserDefaults.standard.string(forKey: "mlxSelectedModelID") }
-        set { UserDefaults.standard.set(newValue, forKey: "mlxSelectedModelID") }
+        get { "mlx-community/Qwen3-8B-4bit" }
+        set { /* locked to Qwen 3 8B */ }
     }
 
     /// Download progress (0–1) for active download, nil when idle.

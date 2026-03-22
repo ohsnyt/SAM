@@ -4,6 +4,49 @@
 
 ---
 
+## Settings Restructure + AI Simplification (March 21, 2026)
+
+### Settings Sidebar Navigation
+Replaced 5-tab TabView with Xcode-style NavigationSplitView sidebar. 15 sidebar items organized into four groups (General, Data, AI, Business). Window frame widened to 880×580.
+
+**Sidebar sections**:
+- **General**: Personalization, Appearance, Security
+- **Data**: Contacts, Calendar, Mail, Communications, Clipboard Capture
+- **AI**: Coaching, Briefings, Dictation & Voice, Prompt Lab
+- **Business**: Business Type, Compliance, Roles
+
+**New pane files**: `PersonalizationSettingsPane.swift` (identity + signature + emoji), `AppearanceSettingsPane.swift` (text size, tips, notifications), `DictationVoiceSettingsPane.swift` (mic/speech permissions, silence timeout), `RolesSettingsPane.swift` (role definitions with seed roles for Financial Advisor).
+
+### AI Backend Simplification
+- `AIService.activeBackend()` locked to `.hybrid` — structured queries via Apple FoundationModels, narrative via MLX
+- `MLXModelManager.selectedModelID` locked to `mlx-community/Qwen3-8B-4bit`
+- Removed backend picker, model list/download/delete UI from Coaching settings
+- Onboarding AI step updated to reference Qwen 3 8B (was Mistral 7B)
+- `aiBackend` removed from backup preference keys
+- Strategic coordinator logging simplified to fixed `"hybrid/Qwen3-8B"` label
+
+### Settings Simplification
+- **Removed always-on toggles**: morning briefing, strategic digest, strategic briefing integration, outcome auto-generate — these features now always run (UserDefaults keys still default to true for existing users)
+- **Removed "SAM is my CRM" toggle** — CRM constraint always injected into AI system instructions and blocklist
+- **Removed Social Platforms UI** — platforms auto-detected from Me card's CNContact social profiles via `BusinessProfileService.socialPlatformsFromMeCard()` (maps service names to user-friendly labels, cached per-launch)
+- **Removed "Auto-detect permission loss" toggle** — feature always active (was a developer convenience, not user-facing)
+- **Renamed**: "Profile & Identity" → "Personalization", "Practice Profile" → "Business Type"
+- **Moved**: emoji toggle to Personalization, Clipboard Capture to its own sidebar item under Data
+- **Mail import**: added 1-minute interval option (feasible with direct SQLite reads), wording changed to "Automatically import email" for consistency
+- **Inbox filters**: added +/- mechanism for custom email addresses beyond Me card
+
+### Role Recruiting Improvements
+- **Seed roles for Financial Advisor**: "Referral Partner", "WFG Agent Recruit", "Client Advocate", "Strategic Alliance" — pre-populated descriptions, criteria, and exclusions. Button appears in Roles pane when practice type is Financial Advisor.
+- **RoleDefinitionEditorSheet** widened from 450×600 to 560×640, added rounded border text fields, improved section headers and footer descriptions
+- Role definitions management moved from Business dashboard to Settings > Roles
+
+### Migration Notes
+- Same UserDefaults keys — no data migration needed
+- Old container views (`DataSourcesSettingsView`, `AISettingsView`, `BusinessSettingsView`) kept as private dead code for reference
+- `BusinessProfile.samIsCRM` and `activeSocialPlatforms` fields retained in the DTO for backwards-compatible JSON decoding, but no longer exposed in UI
+
+---
+
 ## Qwen JSON Sanitizer Hardening, Practice-Aware Compliance, Anti-Hallucination (March 20, 2026)
 
 ### Qwen JSON Sanitizer Hardening

@@ -64,26 +64,41 @@ struct RoleDefinitionEditorSheet: View {
             Divider()
 
             Form {
-                Section("Role") {
-                    TextField("Name (e.g. ABT Board Member)", text: $name)
-                    TextField("Description — what will this person do?", text: $roleDescription, axis: .vertical)
+                Section {
+                    TextField("Name", text: $name)
+                        .textFieldStyle(.roundedBorder)
+                    TextField("What will this person do?", text: $roleDescription, axis: .vertical)
                         .lineLimit(2...4)
+                        .textFieldStyle(.roundedBorder)
+                } header: {
+                    Text("Role")
+                } footer: {
+                    Text("E.g. \"ABT Board Member\", \"Referral Partner\", \"WFG Agent\"")
                 }
 
-                Section("Target") {
+                Section {
                     Stepper("Need \(targetCount) \(targetCount == 1 ? "person" : "people")", value: $targetCount, in: 1...100)
                     TextField("Time commitment (optional)", text: $timeCommitment)
+                        .textFieldStyle(.roundedBorder)
+                } header: {
+                    Text("Target")
                 }
 
-                Section("Ideal Candidate Profile") {
-                    TextField("Describe who's a good fit (free-form)", text: $idealCandidateProfile, axis: .vertical)
-                        .lineLimit(2...6)
+                Section {
+                    TextField("Describe who would be a good fit for this role...", text: $idealCandidateProfile, axis: .vertical)
+                        .lineLimit(3...6)
+                        .textFieldStyle(.roundedBorder)
+                } header: {
+                    Text("Ideal Candidate Profile")
+                } footer: {
+                    Text("Free-form description that helps SAM identify matching contacts.")
                 }
 
-                Section("Criteria") {
+                Section {
                     ForEach(criteria.indices, id: \.self) { index in
                         HStack {
                             TextField("Criterion", text: $criteria[index])
+                                .textFieldStyle(.roundedBorder)
                             Button {
                                 criteria.remove(at: index)
                             } label: {
@@ -96,6 +111,7 @@ struct RoleDefinitionEditorSheet: View {
 
                     HStack {
                         TextField("Add criterion...", text: $newCriterion)
+                            .textFieldStyle(.roundedBorder)
                             .onSubmit { addCriterion() }
 
                         Button {
@@ -106,12 +122,17 @@ struct RoleDefinitionEditorSheet: View {
                         .disabled(newCriterion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         .buttonStyle(.plain)
                     }
+                } header: {
+                    Text("Matching Criteria")
+                } footer: {
+                    Text("Specific traits SAM uses to score candidates. E.g. \"Connected to our community\", \"Has leadership experience\".")
                 }
 
                 Section {
                     ForEach(exclusionCriteria.indices, id: \.self) { index in
                         HStack {
                             TextField("Exclusion", text: $exclusionCriteria[index])
+                                .textFieldStyle(.roundedBorder)
                             Button {
                                 exclusionCriteria.remove(at: index)
                             } label: {
@@ -124,6 +145,7 @@ struct RoleDefinitionEditorSheet: View {
 
                     HStack {
                         TextField("Add exclusion...", text: $newExclusion)
+                            .textFieldStyle(.roundedBorder)
                             .onSubmit { addExclusion() }
 
                         Button {
@@ -150,6 +172,7 @@ struct RoleDefinitionEditorSheet: View {
                             axis: .vertical
                         )
                         .lineLimit(3...8)
+                        .textFieldStyle(.roundedBorder)
                     }
                 } header: {
                     Text("Content Generation")
@@ -159,7 +182,7 @@ struct RoleDefinitionEditorSheet: View {
             }
             .formStyle(.grouped)
         }
-        .frame(width: 450, height: 600)
+        .frame(width: 560, height: 640)
         .onAppear {
             if case .edit(let role) = mode {
                 name = role.name

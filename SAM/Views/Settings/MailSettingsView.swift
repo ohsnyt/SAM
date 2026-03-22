@@ -21,6 +21,7 @@ struct MailSettingsContent: View {
     @State private var accessError: String?
     @State private var meEmailAliases: [String] = []
     @State private var hasMeContact = false
+    @State private var newFilterEmail: String = ""
 
     private var relevantAccounts: [MailAccountDTO] {
         guard !meEmailAliases.isEmpty else { return [] }
@@ -73,7 +74,7 @@ struct MailSettingsContent: View {
                 Text("Import Settings")
                     .samFont(.headline)
 
-                Toggle("Enable Email Import", isOn: Binding(
+                Toggle("Automatically import email", isOn: Binding(
                     get: { coordinator.mailEnabled },
                     set: { coordinator.setMailEnabled($0) }
                 ))
@@ -82,6 +83,7 @@ struct MailSettingsContent: View {
                     get: { coordinator.importIntervalSeconds },
                     set: { coordinator.setImportInterval($0) }
                 )) {
+                    Text("1 minute").tag(60.0)
                     Text("5 minutes").tag(300.0)
                     Text("10 minutes").tag(600.0)
                     Text("30 minutes").tag(1800.0)
@@ -131,29 +133,67 @@ struct MailSettingsContent: View {
                 Text("Inbox Filters")
                     .samFont(.headline)
 
-                if hasMeContact {
-                    if meEmailAliases.isEmpty {
-                        Text("Your Me card has no email addresses. Add emails to your Me card in Contacts.")
-                            .samFont(.callout)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ForEach(meEmailAliases, id: \.self) { email in
-                            Toggle(isOn: filterBinding(for: email)) {
-                                HStack {
-                                    Image(systemName: "envelope")
-                                        .foregroundStyle(.secondary)
-                                    Text(email)
-                                }
+                // Me card addresses
+                if hasMeContact && !meEmailAliases.isEmpty {
+                    ForEach(meEmailAliases, id: \.self) { email in
+                        Toggle(isOn: filterBinding(for: email)) {
+                            HStack {
+                                Image(systemName: "envelope")
+                                    .foregroundStyle(.secondary)
+                                Text(email)
                             }
                         }
                     }
-                } else {
-                    Text("Set up your Me card in Contacts to configure email filtering.")
-                        .samFont(.callout)
+                }
+
+                // Custom addresses (not on Me card)
+                let customRules = coordinator.filterRules.filter { rule in
+                    !meEmailAliases.contains(where: { $0.lowercased() == rule.value.lowercased() })
+                }
+                if !customRules.isEmpty {
+                    ForEach(customRules) { rule in
+                        HStack {
+                            Image(systemName: "envelope.badge.person.crop")
+                                .foregroundStyle(.secondary)
+                            Text(rule.value)
+                            Spacer()
+                            Button {
+                                var rules = coordinator.filterRules
+                                rules.removeAll { $0.id == rule.id }
+                                coordinator.setFilterRules(rules)
+                            } label: {
+                                Image(systemName: "minus.circle.fill")
+                                    .foregroundStyle(.red)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Remove this address")
+                        }
+                    }
+                }
+
+                // Add custom address
+                HStack {
+                    TextField("Add address...", text: $newFilterEmail)
+                        .textFieldStyle(.roundedBorder)
+                        .onSubmit { addCustomFilterEmail() }
+
+                    Button {
+                        addCustomFilterEmail()
+                    } label: {
+                        Image(systemName: "plus.circle.fill")
+                    }
+                    .disabled(!isValidEmail(newFilterEmail))
+                    .buttonStyle(.plain)
+                    .help("Add this address to inbox filters")
+                }
+
+                if !hasMeContact {
+                    Text("Set up your Me card in Contacts to see your existing email addresses here.")
+                        .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
 
-                Text("Only emails sent to these addresses will be imported. If none are selected, all emails are imported.")
+                Text("Only emails sent to enabled addresses will be imported. If none are selected, all emails are imported.")
                     .samFont(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -226,6 +266,27 @@ struct MailSettingsContent: View {
                 coordinator.setSelectedAccountIDs(ids)
             }
         )
+    }
+
+    private func addCustomFilterEmail() {
+        let trimmed = newFilterEmail.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard isValidEmail(trimmed) else { return }
+        guard !coordinator.filterRules.contains(where: { $0.value.lowercased() == trimmed.lowercased() }) else {
+            newFilterEmail = ""
+            return
+        }
+        var rules = coordinator.filterRules
+        rules.append(MailFilterRule(id: UUID(), value: trimmed))
+        coordinator.setFilterRules(rules)
+        newFilterEmail = ""
+    }
+
+    private func isValidEmail(_ string: String) -> Bool {
+        let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        // Simple check: contains @ with text on both sides
+        let parts = trimmed.split(separator: "@")
+        return parts.count == 2 && !parts[0].isEmpty && parts[1].contains(".")
     }
 
     private func filterBinding(for email: String) -> Binding<Bool> {

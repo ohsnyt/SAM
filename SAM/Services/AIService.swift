@@ -147,10 +147,9 @@ actor AIService {
 
     private let foundationModel = SystemLanguageModel.default
 
-    /// Returns the user's preferred backend (from UserDefaults).
+    /// Returns the active backend. Always hybrid: structured→FM, narrative→MLX.
     func activeBackend() -> Backend {
-        let raw = UserDefaults.standard.string(forKey: "aiBackend") ?? Backend.foundationModels.rawValue
-        return Backend(rawValue: raw) ?? .foundationModels
+        .hybrid
     }
 
     /// Approximate context budget in characters for the active backend.

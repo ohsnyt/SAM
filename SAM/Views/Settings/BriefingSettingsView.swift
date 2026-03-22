@@ -19,10 +19,6 @@ struct BriefingSettingsContent: View {
 
     // MARK: - State
 
-    @State private var morningEnabled: Bool = UserDefaults.standard.object(forKey: "briefingMorningEnabled") == nil
-        ? true
-        : UserDefaults.standard.bool(forKey: "briefingMorningEnabled")
-
     @State private var eveningEnabled: Bool = UserDefaults.standard.object(forKey: "briefingEveningEnabled") == nil
         ? true
         : UserDefaults.standard.bool(forKey: "briefingEveningEnabled")
@@ -59,9 +55,9 @@ struct BriefingSettingsContent: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            morningSection
-
-            Divider()
+            Text("SAM shows a daily briefing with your schedule, priority actions, strategic recommendations, and follow-ups when you first open the app each day.")
+                .samFont(.caption)
+                .foregroundStyle(.secondary)
 
             eveningSection
 
@@ -72,22 +68,6 @@ struct BriefingSettingsContent: View {
     }
 
     // MARK: - Sections
-
-    private var morningSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Morning Briefing")
-                .samFont(.headline)
-
-            Toggle("Show morning briefing on first open", isOn: $morningEnabled)
-                .onChange(of: morningEnabled) { _, newValue in
-                    UserDefaults.standard.set(newValue, forKey: "briefingMorningEnabled")
-                }
-
-            Text("When enabled, SAM shows a daily briefing with your schedule, priority actions, and follow-ups when you first open the app each day.")
-                .samFont(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
 
     private var eveningSection: some View {
         VStack(alignment: .leading, spacing: 8) {

@@ -181,9 +181,8 @@ nonisolated public struct BusinessProfile: Codable, Sendable, Equatable {
             lines.append("• Geographic market: \(geographicMarket)")
         }
 
-        if samIsCRM {
-            lines.append("• SAM IS the user's CRM — do NOT suggest researching, purchasing, or using other CRM tools or software")
-        }
+        // SAM is always the user's CRM
+        lines.append("• SAM IS the user's CRM — do NOT suggest researching, purchasing, or using other CRM tools or software")
 
         if !activeSocialPlatforms.isEmpty {
             lines.append("• Active social platforms: \(activeSocialPlatforms.joined(separator: ", "))")

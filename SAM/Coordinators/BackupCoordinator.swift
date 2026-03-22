@@ -51,7 +51,7 @@ final class BackupCoordinator {
 
     /// Keys included in backup (portable preferences).
     private static let includedPreferenceKeys: [String] = [
-        "aiBackend", "coachingStyle", "outcomeAutoGenerate",
+        "coachingStyle", "outcomeAutoGenerate",
         "contentSuggestionsEnabled", "directSendEnabled",
         "strategicDigestEnabled", "strategicBriefingIntegration",
         "autoMeetingNoteTemplates", "autoRoleTransitionOutcomes", "weeklyDigestEnabled",

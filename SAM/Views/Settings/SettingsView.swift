@@ -3,10 +3,7 @@
 //  SAM_crm
 //
 //  Created by Assistant on 2/9/26.
-//  Updated February 24, 2026 - Settings consolidation: 10 tabs → 4
-//
-//  Settings view with permission management, data source configuration,
-//  AI settings, and general app preferences.
+//  Xcode-style sidebar navigation with focused detail panes.
 //
 
 import SwiftUI
@@ -22,67 +19,517 @@ import os.log
 
 private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "SettingsView")
 
+// MARK: - Settings Section Enum
+
+enum SettingsSection: String, CaseIterable, Identifiable {
+    // General
+    case personalization = "Personalization"
+    case appearance = "Appearance"
+    case security = "Security"
+    // Data
+    case contacts = "Contacts"
+    case calendar = "Calendar"
+    case mail = "Mail"
+    case communications = "Communications"
+    case clipboardCapture = "Clipboard Capture"
+    // AI
+    case coaching = "Coaching"
+    case briefings = "Briefings"
+    case dictationVoice = "Dictation & Voice"
+    case promptLab = "Prompt Lab"
+    // Business
+    case businessType = "Business Type"
+    case compliance = "Compliance"
+    case roles = "Roles"
+
+    var id: String { rawValue }
+
+    var icon: String {
+        switch self {
+        case .personalization: return "person.crop.circle"
+        case .appearance: return "paintbrush"
+        case .security: return "lock.shield"
+        case .contacts: return "person.crop.circle.fill"
+        case .calendar: return "calendar"
+        case .mail: return "envelope"
+        case .communications: return "message.fill"
+        case .clipboardCapture: return "doc.on.clipboard"
+        case .coaching: return "brain.head.profile"
+        case .briefings: return "text.book.closed"
+        case .dictationVoice: return "mic.fill"
+        case .promptLab: return "wand.and.stars"
+        case .businessType: return "briefcase"
+        case .compliance: return "checkmark.shield"
+        case .roles: return "person.badge.key"
+        }
+    }
+
+    var group: String {
+        switch self {
+        case .personalization, .appearance, .security: return "General"
+        case .contacts, .calendar, .mail, .communications, .clipboardCapture: return "Data"
+        case .coaching, .briefings, .dictationVoice, .promptLab: return "AI"
+        case .businessType, .compliance, .roles: return "Business"
+        }
+    }
+
+    static var grouped: [(header: String, sections: [SettingsSection])] {
+        let order = ["General", "Data", "AI", "Business"]
+        let dict = Dictionary(grouping: allCases, by: \.group)
+        return order.compactMap { key in
+            guard let sections = dict[key] else { return nil }
+            return (header: key, sections: sections)
+        }
+    }
+}
+
+// MARK: - Settings View
+
 struct SettingsView: View {
 
-    @State private var selectedTab: SettingsTab = .general
+    @State private var selectedSection: SettingsSection = .personalization
 
-    enum SettingsTab: String, CaseIterable, Identifiable {
-        case general = "General"
-        case permissions = "Permissions"
-        case dataSources = "Data Sources"
-        case ai = "AI & Coaching"
-        case business = "Business"
+    var body: some View {
+        NavigationSplitView {
+            List(selection: $selectedSection) {
+                ForEach(SettingsSection.grouped, id: \.header) { group in
+                    Section(group.header) {
+                        ForEach(group.sections) { section in
+                            Label(section.rawValue, systemImage: section.icon)
+                                .tag(section)
+                        }
+                    }
+                }
+            }
+            .listStyle(.sidebar)
+            .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 220)
+        } detail: {
+            detailPane
+        }
+        .frame(width: 880, height: 580)
+    }
 
-        var id: String { rawValue }
+    @ViewBuilder
+    private var detailPane: some View {
+        switch selectedSection {
+        case .personalization:
+            PersonalizationSettingsPane()
+        case .appearance:
+            AppearanceSettingsPane()
+        case .security:
+            SecuritySettingsPane()
+        case .contacts:
+            ContactsSettingsPane()
+        case .calendar:
+            CalendarSettingsPane()
+        case .mail:
+            MailSettingsPane()
+        case .communications:
+            CommunicationsSettingsPane()
+        case .clipboardCapture:
+            ClipboardCaptureSettingsPane()
+        case .coaching:
+            CoachingSettingsPane()
+        case .briefings:
+            BriefingsSettingsPane()
+        case .dictationVoice:
+            DictationVoiceSettingsPane()
+        case .promptLab:
+            PromptLabSettingsPane()
+        case .businessType:
+            BusinessTypeSettingsPane()
+        case .compliance:
+            ComplianceSettingsPane()
+        case .roles:
+            RolesSettingsPane()
+        }
+    }
+}
 
-        var icon: String {
-            switch self {
-            case .general: return "gearshape"
-            case .permissions: return "lock.shield"
-            case .dataSources: return "externaldrive"
-            case .ai: return "brain"
-            case .business: return "briefcase"
+// MARK: - Shared Permission Badge
+
+func permissionBadge(icon: String, color: Color, name: String, status: String) -> some View {
+    HStack(spacing: 8) {
+        Image(systemName: icon)
+            .font(.system(size: 16))
+            .foregroundStyle(color)
+            .frame(width: 20)
+
+        Text(name)
+            .frame(width: 140, alignment: .leading)
+
+        let isGranted = status == "Authorized"
+        HStack(spacing: 4) {
+            Image(systemName: isGranted ? "checkmark.circle.fill" : "xmark.circle")
+                .samFont(.caption)
+                .foregroundStyle(isGranted ? .green : .orange)
+            Text(status)
+                .samFont(.caption)
+                .foregroundStyle(isGranted ? .green : .secondary)
+        }
+    }
+    .padding(.vertical, 2)
+}
+
+// MARK: - Pane Wrappers (reuse existing content views)
+
+private struct SecuritySettingsPane: View {
+    var body: some View {
+        Form {
+            Section {
+                VStack(alignment: .leading, spacing: 20) {
+                    SecuritySettingsContent()
+                }
+                .padding()
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
+private struct ContactsSettingsPane: View {
+    @State private var contactsStatus: String = "Checking..."
+    @State private var isRequestingContacts = false
+
+    var body: some View {
+        Form {
+            Section {
+                VStack(alignment: .leading, spacing: 20) {
+                    permissionBadge(
+                        icon: "person.crop.circle.fill", color: .blue,
+                        name: "Contacts", status: contactsStatus
+                    )
+
+                    if contactsStatus != "Authorized" {
+                        Button("Request Access") { requestContactsPermission() }
+                            .controlSize(.small)
+                            .disabled(isRequestingContacts)
+                    }
+
+                    Divider()
+
+                    ContactsSettingsContent()
+                }
+                .padding()
+            }
+        }
+        .formStyle(.grouped)
+        .task {
+            let auth = CNContactStore.authorizationStatus(for: .contacts)
+            contactsStatus = authStatusString(auth)
+        }
+    }
+
+    private func requestContactsPermission() {
+        isRequestingContacts = true
+        Task {
+            let granted = await ContactsService.shared.requestAuthorization()
+            contactsStatus = granted ? "Authorized" : "Denied"
+            isRequestingContacts = false
+            if granted {
+                ContactsImportCoordinator.shared.permissionGranted()
+                try? await Task.sleep(for: .milliseconds(500))
+                await ContactsImportCoordinator.shared.importNow()
             }
         }
     }
 
-    var body: some View {
-        TabView(selection: $selectedTab) {
-            GeneralSettingsView()
-                .tabItem {
-                    Label("General", systemImage: "gearshape")
-                }
-                .tag(SettingsTab.general)
-
-            PermissionsSettingsView()
-                .tabItem {
-                    Label("Permissions", systemImage: "lock.shield")
-                }
-                .tag(SettingsTab.permissions)
-
-            DataSourcesSettingsView()
-                .tabItem {
-                    Label("Data Sources", systemImage: "externaldrive")
-                }
-                .tag(SettingsTab.dataSources)
-
-            AISettingsView()
-                .tabItem {
-                    Label("AI & Coaching", systemImage: "brain")
-                }
-                .tag(SettingsTab.ai)
-
-            BusinessSettingsView()
-                .tabItem {
-                    Label("Business", systemImage: "briefcase")
-                }
-                .tag(SettingsTab.business)
+    private func authStatusString(_ status: CNAuthorizationStatus) -> String {
+        switch status {
+        case .authorized: return "Authorized"
+        case .denied: return "Denied"
+        case .notDetermined: return "Not Requested"
+        case .restricted: return "Restricted"
+        @unknown default: return "Unknown"
         }
-        .frame(width: 650, height: 600)
     }
 }
 
-// MARK: - Import Status Dashboard
+private struct CalendarSettingsPane: View {
+    @State private var calendarStatus: String = "Checking..."
+    @State private var isRequestingCalendar = false
+
+    var body: some View {
+        Form {
+            Section {
+                VStack(alignment: .leading, spacing: 20) {
+                    permissionBadge(
+                        icon: "calendar.circle.fill", color: .orange,
+                        name: "Calendar", status: calendarStatus
+                    )
+
+                    if calendarStatus != "Authorized" {
+                        Button("Request Access") { requestCalendarPermission() }
+                            .controlSize(.small)
+                            .disabled(isRequestingCalendar)
+                    }
+
+                    Divider()
+
+                    CalendarSettingsContent()
+                }
+                .padding()
+            }
+        }
+        .formStyle(.grouped)
+        .task {
+            let auth = await CalendarService.shared.authorizationStatus()
+            calendarStatus = authStatusString(auth)
+        }
+    }
+
+    private func requestCalendarPermission() {
+        isRequestingCalendar = true
+        Task {
+            let granted = await CalendarImportCoordinator.shared.requestAuthorization()
+            calendarStatus = granted ? "Authorized" : "Denied"
+            isRequestingCalendar = false
+            if granted {
+                try? await Task.sleep(for: .milliseconds(500))
+                await CalendarImportCoordinator.shared.importNow()
+            }
+        }
+    }
+
+    private func authStatusString(_ status: EKAuthorizationStatus) -> String {
+        switch status {
+        case .fullAccess: return "Authorized"
+        case .denied: return "Denied"
+        case .notDetermined: return "Not Requested"
+        case .restricted: return "Restricted"
+        case .writeOnly: return "Write Only"
+        @unknown default: return "Unknown"
+        }
+    }
+}
+
+private struct MailSettingsPane: View {
+    @State private var mailStatus: String = "Checking..."
+
+    var body: some View {
+        Form {
+            Section {
+                VStack(alignment: .leading, spacing: 20) {
+                    permissionBadge(
+                        icon: "envelope.circle.fill", color: .blue,
+                        name: "Mail", status: mailStatus
+                    )
+
+                    Divider()
+
+                    MailSettingsContent()
+                }
+                .padding()
+            }
+        }
+        .formStyle(.grouped)
+        .task {
+            if MailImportCoordinator.shared.mailEnabled {
+                if let error = await MailImportCoordinator.shared.checkMailAccess() {
+                    mailStatus = error
+                } else {
+                    mailStatus = "Authorized"
+                }
+            } else {
+                mailStatus = "Not Configured"
+            }
+        }
+    }
+}
+
+private struct CommunicationsSettingsPane: View {
+    @State private var bookmarkManager = BookmarkManager.shared
+    @State private var hotkeyService = GlobalHotkeyService.shared
+    @State private var globalLookbackDays: Int = {
+        UserDefaults.standard.object(forKey: "globalLookbackDays") == nil
+            ? 30
+            : UserDefaults.standard.integer(forKey: "globalLookbackDays")
+    }()
+
+    var body: some View {
+        Form {
+            Section {
+                VStack(alignment: .leading, spacing: 20) {
+                    // Permission badges
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Permissions")
+                            .samFont(.headline)
+
+                        permissionBadge(
+                            icon: "message.fill", color: .green,
+                            name: "iMessage", status: bookmarkManager.hasMessagesAccess ? "Authorized" : "Not Configured"
+                        )
+                        permissionBadge(
+                            icon: "phone.fill", color: .green,
+                            name: "Call History", status: bookmarkManager.hasCallHistoryAccess ? "Authorized" : "Not Configured"
+                        )
+                        permissionBadge(
+                            icon: "accessibility", color: .gray,
+                            name: "Accessibility", status: hotkeyService.accessibilityGranted ? "Authorized" : "Not Granted"
+                        )
+                    }
+
+                    Divider()
+
+                    // History Lookback
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("History Lookback Period")
+                            .samFont(.headline)
+
+                        Text("How far back SAM scans when importing from Calendar, Mail, and Communications.")
+                            .samFont(.caption)
+                            .foregroundStyle(.secondary)
+
+                        Picker("Look back", selection: $globalLookbackDays) {
+                            Text("14 days").tag(14)
+                            Text("30 days").tag(30)
+                            Text("60 days").tag(60)
+                            Text("90 days").tag(90)
+                            Text("180 days").tag(180)
+                            Text("All").tag(0)
+                        }
+                        .onChange(of: globalLookbackDays) { _, newValue in
+                            UserDefaults.standard.set(newValue, forKey: "globalLookbackDays")
+                            CalendarImportCoordinator.shared.lookbackDays = newValue
+                            MailImportCoordinator.shared.setLookbackDays(newValue)
+                            CommunicationsImportCoordinator.shared.setLookbackDays(newValue)
+                        }
+
+                        if globalLookbackDays == 0 {
+                            Text("First import will scan all available history. Subsequent imports use incremental sync.")
+                                .samFont(.caption)
+                                .foregroundStyle(.orange)
+                        }
+                    }
+
+                    Divider()
+
+                    // Communications settings
+                    CommunicationsSettingsContent()
+                }
+                .padding()
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
+private struct ClipboardCaptureSettingsPane: View {
+    var body: some View {
+        Form {
+            Section {
+                VStack(alignment: .leading, spacing: 20) {
+                    ClipboardCaptureSettingsContent()
+                }
+                .padding()
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
+private struct CoachingSettingsPane: View {
+    var body: some View {
+        Form {
+            Section {
+                VStack(alignment: .leading, spacing: 20) {
+                    IntelligenceSettingsContent()
+                    Divider()
+                    CoachingSettingsContent()
+                }
+                .padding()
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
+private struct BriefingsSettingsPane: View {
+    var body: some View {
+        Form {
+            Section {
+                VStack(alignment: .leading, spacing: 20) {
+                    BriefingSettingsContent()
+                }
+                .padding()
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
+private struct PromptLabSettingsPane: View {
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Form {
+            Section {
+                VStack(alignment: .leading, spacing: 20) {
+                    Text("Prompt Lab lets you compare and refine the AI prompts SAM uses for coaching, briefings, and analysis.")
+                        .samFont(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Button {
+                        openWindow(id: "prompt-lab")
+                    } label: {
+                        HStack {
+                            Label("Open Prompt Lab", systemImage: "wand.and.stars")
+                            Spacer()
+                            Text("Opens in a separate window")
+                                .samFont(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+                .padding()
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
+private struct BusinessTypeSettingsPane: View {
+    @State private var practiceType: PracticeType = .financialAdvisor
+
+    var body: some View {
+        Form {
+            Section {
+                VStack(alignment: .leading, spacing: 20) {
+                    BusinessProfileSettingsContent(practiceTypeBinding: $practiceType)
+                }
+                .padding()
+            }
+        }
+        .formStyle(.grouped)
+        .task {
+            let profile = await BusinessProfileService.shared.profile()
+            practiceType = profile.practiceType
+        }
+    }
+}
+
+private struct ComplianceSettingsPane: View {
+    @State private var practiceType: PracticeType = .financialAdvisor
+
+    var body: some View {
+        Form {
+            Section {
+                VStack(alignment: .leading, spacing: 20) {
+                    ComplianceSettingsContent(isFinancial: practiceType == .financialAdvisor)
+                }
+                .padding()
+            }
+        }
+        .formStyle(.grouped)
+        .task {
+            let profile = await BusinessProfileService.shared.profile()
+            practiceType = profile.practiceType
+        }
+    }
+}
+
+// MARK: - Import Status Dashboard (used by old DataSourcesSettingsView, kept for reference)
 
 private struct ImportStatusDashboard: View {
 
@@ -211,7 +658,7 @@ private struct ImportStatusDashboard: View {
 
 // MARK: - Data Sources Settings (consolidated tab)
 
-struct DataSourcesSettingsView: View {
+private struct DataSourcesSettingsView: View {
 
     @State private var globalLookbackDays: Int = {
         UserDefaults.standard.object(forKey: "globalLookbackDays") == nil
@@ -297,7 +744,7 @@ struct DataSourcesSettingsView: View {
 
 // MARK: - AI Settings (consolidated tab)
 
-struct AISettingsView: View {
+private struct AISettingsView: View {
 
     @Environment(\.openWindow) private var openWindow
 
@@ -347,7 +794,7 @@ struct AISettingsView: View {
 
 // MARK: - Business Settings (new tab)
 
-struct BusinessSettingsView: View {
+private struct BusinessSettingsView: View {
 
     @State private var practiceType: PracticeType = .financialAdvisor
 
@@ -535,10 +982,9 @@ struct ClipboardCaptureSettingsContent: View {
     }
 }
 
-// MARK: - Permissions Settings (Compact Grid)
+// PermissionsSettingsView removed — permissions now inline in each data source/voice pane
 
-struct PermissionsSettingsView: View {
-
+private struct _RemovedPermissionsView: View {
     @State private var contactsStatus: String = "Checking..."
     @State private var calendarStatus: String = "Checking..."
     @State private var notificationsStatus: String = "Checking..."
@@ -552,8 +998,6 @@ struct PermissionsSettingsView: View {
 
     @State private var bookmarkManager = BookmarkManager.shared
     @State private var hotkeyService = GlobalHotkeyService.shared
-
-    @AppStorage("autoDetectPermissionLoss") private var autoDetectPermissionLoss = true
 
     var body: some View {
         Form {
@@ -683,13 +1127,6 @@ struct PermissionsSettingsView: View {
                         }
                     }
 
-                    Divider()
-
-                    Toggle("Auto-detect permission loss", isOn: $autoDetectPermissionLoss)
-
-                    Text("Automatically reset onboarding if permissions are revoked (e.g., after rebuilding in Xcode).")
-                        .samFont(.caption)
-                        .foregroundStyle(.secondary)
                 }
                 .padding()
             }
@@ -1537,40 +1974,6 @@ struct BusinessProfileSettingsContent: View {
                 .padding(.vertical, 4)
             }
 
-            // Tools & Capabilities
-            GroupBox("Tools & Capabilities") {
-                VStack(alignment: .leading, spacing: 12) {
-                    Toggle("SAM is my CRM (prevent suggestions to buy other CRM tools)", isOn: $profile.samIsCRM)
-                        .onChange(of: profile.samIsCRM) { _, _ in saveProfile() }
-
-                    Text("Social platforms:")
-                        .samFont(.caption)
-                        .foregroundStyle(.secondary)
-
-                    HStack(spacing: 8) {
-                        ForEach(["Facebook", "LinkedIn", "Instagram", "X/Twitter"], id: \.self) { platform in
-                            Toggle(platform, isOn: Binding(
-                                get: { profile.activeSocialPlatforms.contains(platform) },
-                                set: { isOn in
-                                    if isOn {
-                                        if !profile.activeSocialPlatforms.contains(platform) {
-                                            profile.activeSocialPlatforms.append(platform)
-                                        }
-                                    } else {
-                                        profile.activeSocialPlatforms.removeAll { $0 == platform }
-                                    }
-                                    saveProfile()
-                                }
-                            ))
-                            .toggleStyle(.button)
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                        }
-                    }
-                }
-                .padding(.vertical, 4)
-            }
-
             // Additional Context
             GroupBox("Additional Context") {
                 VStack(alignment: .leading, spacing: 8) {
@@ -1687,336 +2090,10 @@ struct IntelligenceSettingsView: View {
     }
 }
 
-// MARK: - General Settings
-
-struct GeneralSettingsView: View {
-
-    @AppStorage("sam.user.firstName") private var userFirstName = ""
-    @AppStorage("sam.user.lastName") private var userLastName = ""
-    @AppStorage("sam.user.defaultClosing") private var defaultClosing = "Best,"
-    @AppStorage("sam.messages.allowEmoji") private var allowEmoji = false
-    @AppStorage("sam.display.textSize") private var textSizeRawValue = SAMTextSize.standard.rawValue
-    @State private var silenceTimeout: Double = {
-        let stored = UserDefaults.standard.double(forKey: "sam.dictation.silenceTimeout")
-        return stored > 0 ? stored : 2.0
-    }()
-    @State private var migrationService = LegacyStoreMigrationService.shared
-    @State private var showCleanupConfirmation = false
-
-    private var appVersion: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.9"
-    }
-
-    var body: some View {
-        Form {
-            Section {
-                VStack(alignment: .leading, spacing: 20) {
-                    Label("General", systemImage: "gearshape")
-                        .samFont(.title2)
-                        .bold()
-
-                    Divider()
-
-                    // App info
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack {
-                            Text("Version:")
-                                .foregroundStyle(.secondary)
-                            Text(appVersion)
-                        }
-
-                        HStack {
-                            Text("Schema:")
-                                .foregroundStyle(.secondary)
-                            Text(SAMModelContainer.schemaVersion)
-                                .samFont(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-
-                    Divider()
-
-                    // Identity & Signature
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Your Identity")
-                            .samFont(.headline)
-
-                        HStack(spacing: 12) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("First Name")
-                                    .samFont(.caption)
-                                    .foregroundStyle(.secondary)
-                                TextField("First name", text: $userFirstName)
-                                    .textFieldStyle(.roundedBorder)
-                            }
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Last Name")
-                                    .samFont(.caption)
-                                    .foregroundStyle(.secondary)
-                                TextField("Last name", text: $userLastName)
-                                    .textFieldStyle(.roundedBorder)
-                            }
-                        }
-
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Default Closing")
-                                .samFont(.caption)
-                                .foregroundStyle(.secondary)
-                            TextField("e.g. Best, / Yours, / Warm regards,", text: $defaultClosing)
-                                .textFieldStyle(.roundedBorder)
-                                .frame(maxWidth: 250)
-                        }
-
-                        Text("Used to sign AI-generated messages. SAM uses your first name for people you interact with regularly, and your full name for others. SAM learns your preferred closing style as you edit drafts.")
-                            .samFont(.caption)
-                            .foregroundStyle(.secondary)
-
-                        if userFirstName.isEmpty {
-                            Button("Auto-fill from Me Contact") {
-                                autoFillFromMeContact()
-                            }
-                            .samFont(.caption)
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                        }
-                    }
-
-                    Divider()
-
-                    // AI Messages
-                    VStack(alignment: .leading, spacing: 8) {
-                        Toggle("Allow emoji and icons in AI messages", isOn: $allowEmoji)
-                        Text("When off, SAM will not use emoji, emoticons, or Unicode symbols in generated messages, briefings, and coaching text.")
-                            .samFont(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Divider()
-
-                    // Text Size
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Text Size")
-                            .samFont(.headline)
-
-                        Picker("Text Size", selection: $textSizeRawValue) {
-                            ForEach(SAMTextSize.allCases) { size in
-                                Text(size.label).tag(size.rawValue)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        .frame(maxWidth: 400)
-
-                        Text("Adjusts text size throughout SAM. Useful when your display resolution makes default text feel too small.")
-                            .samFont(.caption)
-                            .foregroundStyle(.secondary)
-
-                        Text("The quick brown fox jumps over the lazy dog.")
-                            .font(.sam(.body, scale: SAMTextSize(rawValue: textSizeRawValue)?.scale ?? 1.0))
-                            .padding(8)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
-                    }
-
-                    Divider()
-
-                    // Dictation
-                    dictationSection
-
-                    Divider()
-
-                    // Guidance & Tips
-                    DisclosureGroup {
-                        GuidanceSettingsContent()
-                            .padding(.top, 8)
-                    } label: {
-                        Label("Guidance & Tips", systemImage: "lightbulb")
-                    }
-
-                    Divider()
-
-                    // Clipboard Capture
-                    DisclosureGroup {
-                        ClipboardCaptureSettingsContent()
-                            .padding(.top, 8)
-                    } label: {
-                        Label("Clipboard Capture", systemImage: "doc.on.clipboard")
-                    }
-
-                    Divider()
-
-                    // Security
-                    SecuritySettingsContent()
-
-                    // Legacy Data — only visible when orphaned stores are detected
-                    if let discovery = migrationService.discovery, !discovery.isEmpty {
-                        Divider()
-                        legacyDataSection(discovery: discovery)
-                    }
-                }
-                .padding()
-            }
-        }
-        .formStyle(.grouped)
-        .onAppear {
-            if migrationService.discovery == nil {
-                migrationService.discoverLegacyStores()
-            }
-            // Auto-populate name from Me contact if not yet set
-            if userFirstName.isEmpty {
-                autoFillFromMeContact()
-            }
-        }
-        .alert("Clean Up Legacy Files?", isPresented: $showCleanupConfirmation) {
-            Button("Cancel", role: .cancel) { }
-            Button("Delete Old Files", role: .destructive) {
-                migrationService.cleanupLegacyStores()
-            }
-        } message: {
-            if let discovery = migrationService.discovery {
-                Text("This will permanently delete \(discovery.count) legacy store\(discovery.count == 1 ? "" : "s") (\(discovery.formattedSize)). Make sure you have migrated any data you need first.")
-            }
-        }
-    }
-
-    // MARK: - Legacy Data Section
-
-    private func legacyDataSection(discovery: LegacyStoreDiscovery) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Label("Legacy Data", systemImage: "clock.arrow.circlepath")
-                .samFont(.headline)
-
-            Text("Data from a previous SAM version was found on this Mac.")
-                .samFont(.caption)
-                .foregroundStyle(.secondary)
-
-            HStack {
-                Text("\(discovery.count) legacy store\(discovery.count == 1 ? "" : "s")")
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Text(discovery.formattedSize)
-                    .foregroundStyle(.secondary)
-            }
-
-            if let mostRecent = discovery.mostRecent {
-                Text("Most recent: \(mostRecent.version)")
-                    .samFont(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            // Status display
-            switch migrationService.status {
-            case .migrating(let message):
-                HStack(spacing: 8) {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text(message)
-                        .samFont(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            case .cleaning:
-                HStack(spacing: 8) {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text("Cleaning up...")
-                        .samFont(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            case .success(let message):
-                Label(message, systemImage: "checkmark.circle.fill")
-                    .samFont(.caption)
-                    .foregroundStyle(.green)
-            case .failed(let message):
-                VStack(alignment: .leading, spacing: 4) {
-                    Label(message, systemImage: "xmark.circle.fill")
-                        .samFont(.caption)
-                        .foregroundStyle(.red)
-                    if message.contains("schemas too old") {
-                        Text("Try \"Import Roles Only\" to recover role assignments via direct database read.")
-                            .samFont(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            default:
-                EmptyView()
-            }
-
-            HStack(spacing: 12) {
-                Button("Migrate All Data...") {
-                    Task { await migrationService.migrate() }
-                }
-                .disabled(migrationService.isBusy)
-
-                Button("Import Roles Only...") {
-                    Task { await migrationService.migrateRolesOnly() }
-                }
-                .disabled(migrationService.isBusy)
-                .help("Reads role assignments directly from the legacy database and applies them to matching contacts. Works even when full migration fails.")
-
-                Button("Clean Up Old Files...", role: .destructive) {
-                    showCleanupConfirmation = true
-                }
-                .disabled(migrationService.isBusy)
-            }
-        }
-    }
-
-    // MARK: - Dictation Section
-
-    // MARK: - Auto-fill from Me Contact
-
-    private func autoFillFromMeContact() {
-        guard let me = try? PeopleRepository.shared.fetchMe(),
-              let fullName = me.displayNameCache, !fullName.isEmpty else { return }
-
-        let parts = fullName.split(separator: " ", maxSplits: 1)
-        if let first = parts.first {
-            userFirstName = String(first)
-        }
-        if parts.count > 1 {
-            userLastName = String(parts[1])
-        }
-    }
-
-    // MARK: - Dictation Section
-
-    private var dictationSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Dictation")
-                .samFont(.headline)
-
-            Text("How long SAM waits after you stop speaking before ending dictation.")
-                .samFont(.caption)
-                .foregroundStyle(.secondary)
-
-            HStack {
-                Text("Silence timeout")
-                Spacer()
-                Text(String(format: "%.1fs", silenceTimeout))
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-            }
-
-            Slider(value: $silenceTimeout, in: 0.5...5.0, step: 0.5)
-                .onChange(of: silenceTimeout) { _, newValue in
-                    UserDefaults.standard.set(newValue, forKey: "sam.dictation.silenceTimeout")
-                }
-
-            HStack {
-                Text("0.5s")
-                    .samFont(.caption2)
-                    .foregroundStyle(.tertiary)
-                Spacer()
-                Text("5.0s")
-                    .samFont(.caption2)
-                    .foregroundStyle(.tertiary)
-            }
-        }
-    }
-}
 
 // MARK: - Security Settings
 
-private struct SecuritySettingsContent: View {
+struct SecuritySettingsContent: View {
 
     @State private var lockService = AppLockService.shared
     @State private var selectedTimeout: Int = AppLockService.shared.lockTimeoutMinutes

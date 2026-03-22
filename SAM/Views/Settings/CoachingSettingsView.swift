@@ -20,20 +20,9 @@ struct CoachingSettingsContent: View {
 
     // MARK: - State
 
-    @State private var selectedBackend: String = UserDefaults.standard.string(forKey: "aiBackend") ?? "foundationModels"
-    @State private var selectedModelID: String = UserDefaults.standard.string(forKey: "mlxSelectedModelID") ?? ""
     @State private var coachingStyle: String = UserDefaults.standard.string(forKey: "coachingStyle") ?? "auto"
-    @State private var autoGenerate: Bool = {
-        UserDefaults.standard.object(forKey: "outcomeAutoGenerate") == nil
-            ? true
-            : UserDefaults.standard.bool(forKey: "outcomeAutoGenerate")
-    }()
     @State private var advisor = CoachingAdvisor.shared
     @State private var showResetConfirmation = false
-    @State private var mlxModels: [MLXModelManager.ModelInfo] = []
-    @State private var downloadingModelID: String?
-    @State private var downloadProgress: Double = 0
-    @State private var downloadError: String?
     @State private var reanalyzeStatus: String?
     @State private var isReanalyzing = false
     @State private var mutePickerSelection: String = ""
@@ -47,18 +36,6 @@ struct CoachingSettingsContent: View {
 
     // Direct Send
     @State private var directSendEnabled: Bool = UserDefaults.standard.bool(forKey: "directSendEnabled")
-
-    // Business Intelligence (Phase V)
-    @State private var strategicDigestEnabled: Bool = {
-        UserDefaults.standard.object(forKey: "strategicDigestEnabled") == nil
-            ? true
-            : UserDefaults.standard.bool(forKey: "strategicDigestEnabled")
-    }()
-    @State private var strategicBriefingIntegration: Bool = {
-        UserDefaults.standard.object(forKey: "strategicBriefingIntegration") == nil
-            ? true
-            : UserDefaults.standard.bool(forKey: "strategicBriefingIntegration")
-    }()
 
     // Autonomous Actions
     @State private var autoMeetingNoteTemplates: Bool = {
@@ -86,24 +63,8 @@ struct CoachingSettingsContent: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            // ── AI Backend ─────────────────────────────
-            aiBackendSection
-
-            Divider()
-
-            // ── MLX Model ──────────────────────────────
-            if selectedBackend == "mlx" || selectedBackend == "hybrid" {
-                mlxModelSection
-                Divider()
-            }
-
             // ── Coaching Style ─────────────────────────
             coachingStyleSection
-
-            Divider()
-
-            // ── Outcome Generation ─────────────────────
-            outcomeGenerationSection
 
             Divider()
 
@@ -117,148 +78,8 @@ struct CoachingSettingsContent: View {
 
             Divider()
 
-            // ── Business Intelligence ────────────────────
-            businessIntelligenceSection
-
-            Divider()
-
             // ── Feedback ───────────────────────────────
             feedbackSection
-        }
-        .task {
-            mlxModels = await MLXModelManager.shared.availableModels
-            // Auto-upgrade to hybrid if a model is already downloaded and backend is still foundationModels
-            let hasDownloadedModel = mlxModels.contains { $0.isDownloaded }
-            if hasDownloadedModel, selectedBackend == "foundationModels" {
-                selectedBackend = "hybrid"
-                UserDefaults.standard.set("hybrid", forKey: "aiBackend")
-            }
-        }
-    }
-
-    // MARK: - AI Backend Section
-
-    private var aiBackendSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("AI Backend")
-                .samFont(.headline)
-
-            Text("Choose which AI model powers coaching suggestions.")
-                .samFont(.caption)
-                .foregroundStyle(.secondary)
-
-            Picker("Backend", selection: $selectedBackend) {
-                Text("Apple Intelligence (Default)").tag("foundationModels")
-                Text("MLX Local Model").tag("mlx")
-                Text("Hybrid (Apple + MLX)").tag("hybrid")
-            }
-            .pickerStyle(.radioGroup)
-            .onChange(of: selectedBackend) { _, newValue in
-                UserDefaults.standard.set(newValue, forKey: "aiBackend")
-                logger.debug("AI backend changed to: \(newValue)")
-                if newValue == "foundationModels" {
-                    Task { await AIService.shared.unloadMLXModel() }
-                }
-            }
-
-            Text(backendDescription)
-                .samFont(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    // MARK: - MLX Model Section
-
-    private var mlxModelSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("MLX Model")
-                .samFont(.headline)
-
-            Text("Select and download a local model for AI-powered coaching.")
-                .samFont(.caption)
-                .foregroundStyle(.secondary)
-
-            ForEach(mlxModels) { model in
-                VStack(spacing: 6) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(model.displayName)
-                                .samFont(.subheadline)
-                            Text("\(String(format: "%.1f", model.sizeGB)) GB")
-                                .samFont(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-
-                        Spacer()
-
-                        if model.isDownloaded {
-                            modelDownloadedActions(for: model)
-                        } else if downloadingModelID == model.id {
-                            Button("Cancel") {
-                                cancelDownload()
-                            }
-                            .controlSize(.small)
-                        } else {
-                            Button("Download") {
-                                startDownload(modelID: model.id)
-                            }
-                            .controlSize(.small)
-                            .disabled(downloadingModelID != nil)
-                        }
-                    }
-
-                    // Progress bar during download
-                    if downloadingModelID == model.id {
-                        ProgressView(value: downloadProgress)
-                            .progressViewStyle(.linear)
-                        Text("Downloading… \(Int(downloadProgress * 100))%")
-                            .samFont(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .padding(.vertical, 4)
-            }
-
-            if let error = downloadError {
-                Text(error)
-                    .samFont(.caption)
-                    .foregroundStyle(.red)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func modelDownloadedActions(for model: MLXModelManager.ModelInfo) -> some View {
-        if selectedModelID == model.id {
-            HStack(spacing: 8) {
-                Text("Active")
-                    .samFont(.caption)
-                    .foregroundStyle(.green)
-
-                Button(role: .destructive) {
-                    deleteModel(id: model.id)
-                } label: {
-                    Image(systemName: "trash")
-                        .samFont(.caption)
-                }
-                .buttonStyle(.borderless)
-            }
-        } else {
-            HStack(spacing: 8) {
-                Button("Select") {
-                    selectedModelID = model.id
-                    UserDefaults.standard.set(model.id, forKey: "mlxSelectedModelID")
-                }
-                .controlSize(.small)
-
-                Button(role: .destructive) {
-                    deleteModel(id: model.id)
-                } label: {
-                    Image(systemName: "trash")
-                        .samFont(.caption)
-                }
-                .buttonStyle(.borderless)
-            }
         }
     }
 
@@ -298,19 +119,6 @@ struct CoachingSettingsContent: View {
         }
     }
 
-    private var backendDescription: String {
-        switch selectedBackend {
-        case "foundationModels":
-            return "Uses Apple's on-device intelligence. No download required."
-        case "mlx":
-            return "Uses a locally downloaded open-source model. More powerful reasoning but requires disk space."
-        case "hybrid":
-            return "Structured extraction uses Apple Intelligence; summaries and prose use the MLX model for deeper reasoning."
-        default:
-            return ""
-        }
-    }
-
     private var styleDescription: String {
         switch coachingStyle {
         case "auto":       return "SAM will experiment with different styles and learn which you prefer."
@@ -319,29 +127,6 @@ struct CoachingSettingsContent: View {
         case "achievement": return "Goal-oriented: \"That's 3 client proposals this week.\""
         case "analytical": return "Data-driven: \"Your response time for Clients improved 20% this month.\""
         default:           return ""
-        }
-    }
-
-    // MARK: - Outcome Generation Section
-
-    private var outcomeGenerationSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Outcome Generation")
-                .samFont(.headline)
-
-            Toggle("Auto-generate on launch", isOn: $autoGenerate)
-                .onChange(of: autoGenerate) { _, newValue in
-                    UserDefaults.standard.set(newValue, forKey: "outcomeAutoGenerate")
-                }
-
-            Text("When enabled, SAM generates coaching outcomes automatically after data imports complete.")
-                .samFont(.caption)
-                .foregroundStyle(.secondary)
-
-            Button("Generate Now") {
-                Task { await OutcomeEngine.shared.generateOutcomes() }
-            }
-            .controlSize(.small)
         }
     }
 
@@ -718,106 +503,7 @@ struct CoachingSettingsContent: View {
         }
     }
 
-    // MARK: - Business Intelligence Section
-
-    private var businessIntelligenceSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Business Intelligence")
-                .samFont(.headline)
-
-            Text("Strategic insights analyze your pipeline, time allocation, and relationship patterns to suggest business-level actions.")
-                .samFont(.caption)
-                .foregroundStyle(.secondary)
-
-            Toggle("Enable strategic digest", isOn: $strategicDigestEnabled)
-                .onChange(of: strategicDigestEnabled) { _, newValue in
-                    UserDefaults.standard.set(newValue, forKey: "strategicDigestEnabled")
-                }
-
-            Text("When enabled, SAM periodically analyzes your business data and generates strategic recommendations.")
-                .samFont(.caption)
-                .foregroundStyle(.secondary)
-                .padding(.bottom, 4)
-
-            Toggle("Include in daily briefing", isOn: $strategicBriefingIntegration)
-                .onChange(of: strategicBriefingIntegration) { _, newValue in
-                    UserDefaults.standard.set(newValue, forKey: "strategicBriefingIntegration")
-                }
-                .disabled(!strategicDigestEnabled)
-
-            Text("When enabled, your morning briefing includes top strategic recommendations.")
-                .samFont(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-
     // MARK: - Actions
-
-    private func startDownload(modelID: String) {
-        downloadingModelID = modelID
-        downloadProgress = 0
-        downloadError = nil
-
-        Task {
-            do {
-                let progressTask = Task {
-                    while !Task.isCancelled {
-                        let progress = await MLXModelManager.shared.downloadProgress ?? 0
-                        await MainActor.run { downloadProgress = progress }
-                        try await Task.sleep(for: .milliseconds(250))
-                    }
-                }
-
-                try await MLXModelManager.shared.downloadModel(id: modelID)
-                progressTask.cancel()
-
-                mlxModels = await MLXModelManager.shared.availableModels
-                selectedModelID = modelID
-                UserDefaults.standard.set(modelID, forKey: "mlxSelectedModelID")
-                downloadingModelID = nil
-
-                // Auto-switch to hybrid if the user hasn't chosen a non-FM backend yet
-                if selectedBackend == "foundationModels" {
-                    selectedBackend = "hybrid"
-                    UserDefaults.standard.set("hybrid", forKey: "aiBackend")
-                    logger.debug("Auto-switched backend to hybrid after MLX model download")
-                }
-
-                logger.debug("Model downloaded and selected: \(modelID)")
-            } catch is CancellationError {
-                downloadingModelID = nil
-            } catch {
-                downloadingModelID = nil
-                downloadError = "Download failed: \(error.localizedDescription)"
-                logger.error("Model download failed: \(error.localizedDescription)")
-            }
-        }
-    }
-
-    private func cancelDownload() {
-        Task {
-            await MLXModelManager.shared.cancelDownload()
-            downloadingModelID = nil
-            downloadProgress = 0
-        }
-    }
-
-    private func deleteModel(id: String) {
-        Task {
-            do {
-                try await MLXModelManager.shared.deleteModel(id: id)
-                await AIService.shared.unloadMLXModel()
-                mlxModels = await MLXModelManager.shared.availableModels
-                if selectedModelID == id {
-                    selectedModelID = ""
-                }
-                logger.debug("Model deleted: \(id)")
-            } catch {
-                downloadError = "Delete failed: \(error.localizedDescription)"
-                logger.error("Model delete failed: \(error.localizedDescription)")
-            }
-        }
-    }
 
     private func reanalyzeAllNotes() {
         isReanalyzing = true
