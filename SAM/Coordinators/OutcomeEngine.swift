@@ -208,14 +208,19 @@ final class OutcomeEngine {
                 }
             }
 
-            // Persist (deduplication inside upsert check)
+            // Persist (deduplication: skip if an active duplicate exists OR
+            // if the user recently dismissed/completed the same suggestion)
             var persisted = 0
             for outcome in newOutcomes {
                 let isDuplicate = try outcomeRepo.hasSimilarOutcome(
                     kind: outcome.outcomeKind,
                     personID: outcome.linkedPerson?.id
                 )
-                if !isDuplicate {
+                let wasActedOn = try outcomeRepo.hasRecentlyActedOutcome(
+                    kind: outcome.outcomeKind,
+                    personID: outcome.linkedPerson?.id
+                )
+                if !isDuplicate && !wasActedOn {
                     try outcomeRepo.upsert(outcome: outcome)
                     persisted += 1
                 }
@@ -1399,7 +1404,11 @@ final class OutcomeEngine {
                     kind: outcome.outcomeKind,
                     personID: person.id
                 )
-                if !isDuplicate {
+                let wasActedOn = try outcomeRepo.hasRecentlyActedOutcome(
+                    kind: outcome.outcomeKind,
+                    personID: person.id
+                )
+                if !isDuplicate && !wasActedOn {
                     try outcomeRepo.upsert(outcome: outcome)
                 }
             } catch {

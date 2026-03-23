@@ -17,10 +17,13 @@ struct AddParticipantsSheet: View {
     @State private var searchResults: [SamPerson] = []
     @State private var suggestions: [(person: SamPerson, reason: String)] = []
     @State private var isLoadingSuggestions = true
+    @State private var isLoadingMore = false
     @State private var selectedPeople: Set<UUID> = []
     @State private var priorityOverrides: [UUID: ParticipantPriority] = [:]
     @State private var roleOverrides: [UUID: String] = [:]
     @State private var addedCount = 0
+    @State private var excludedFromSuggestions: Set<UUID> = []
+    @State private var noMoreSuggestions = false
 
     private var existingPersonIDs: Set<UUID> {
         Set(EventRepository.shared.fetchParticipations(for: event).compactMap { $0.person?.id })
@@ -125,6 +128,27 @@ struct AddParticipantsSheet: View {
                     Section("SAM's Suggestions") {
                         ForEach(suggestions, id: \.person.id) { suggestion in
                             personRow(suggestion.person, reason: suggestion.reason)
+                        }
+                    }
+
+                    if !noMoreSuggestions {
+                        Section {
+                            Button {
+                                Task { await loadMoreSuggestions() }
+                            } label: {
+                                HStack {
+                                    if isLoadingMore {
+                                        ProgressView()
+                                            .controlSize(.small)
+                                        Text("Loading more…")
+                                    } else {
+                                        Label("Show More Suggestions", systemImage: "arrow.down.circle")
+                                    }
+                                }
+                                .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.borderless)
+                            .disabled(isLoadingMore)
                         }
                     }
                 }
@@ -299,11 +323,30 @@ struct AddParticipantsSheet: View {
         isLoadingSuggestions = true
         do {
             let suggestLimit = max(30, event.targetParticipantCount * 2)
-            suggestions = try await EventCoordinator.shared.suggestInvitationList(for: event, limit: suggestLimit)
+            suggestions = try await EventCoordinator.shared.suggestInvitationList(for: event, limit: suggestLimit, excludingIDs: excludedFromSuggestions)
+            excludedFromSuggestions.formUnion(suggestions.map(\.person.id))
+            noMoreSuggestions = suggestions.isEmpty
         } catch {
             suggestions = []
         }
         isLoadingSuggestions = false
+    }
+
+    private func loadMoreSuggestions() async {
+        isLoadingMore = true
+        do {
+            let suggestLimit = max(30, event.targetParticipantCount * 2)
+            let more = try await EventCoordinator.shared.suggestInvitationList(for: event, limit: suggestLimit, excludingIDs: excludedFromSuggestions)
+            if more.isEmpty {
+                noMoreSuggestions = true
+            } else {
+                suggestions.append(contentsOf: more)
+                excludedFromSuggestions.formUnion(more.map(\.person.id))
+            }
+        } catch {
+            // Keep existing suggestions
+        }
+        isLoadingMore = false
     }
 
     private func addSelectedPeople() {
@@ -321,6 +364,9 @@ struct AddParticipantsSheet: View {
         do {
             let added = try EventCoordinator.shared.addParticipants(to: event, people: entries)
             addedCount += added.count
+            // Remove added people from suggestions so the list stays fresh
+            let addedIDs = Set(added.compactMap { $0.person?.id })
+            suggestions.removeAll { addedIDs.contains($0.person.id) }
             selectedPeople.removeAll()
             priorityOverrides.removeAll()
             roleOverrides.removeAll()

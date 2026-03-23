@@ -450,7 +450,10 @@ struct EventDetailView: View {
         Group {
             if let participationID = selectedParticipationID,
                let participation = cachedParticipations.first(where: { $0.id == participationID }) {
-                ParticipantDetailView(participation: participation, event: event)
+                ParticipantDetailView(participation: participation, event: event) {
+                    selectedParticipationID = nil
+                    refreshToken = UUID()
+                }
             } else {
                 ContentUnavailableView(
                     "Select a Participant",
@@ -575,7 +578,9 @@ struct ParticipantRowView: View {
 struct ParticipantDetailView: View {
     let participation: EventParticipation
     let event: SamEvent
+    var onRemoved: (() -> Void)?
     @State private var showInvitationDraft = false
+    @State private var showRemoveConfirmation = false
 
     var body: some View {
         ScrollView {
@@ -831,7 +836,25 @@ struct ParticipantDetailView: View {
                     }
                     .controlSize(.small)
                 }
+
+                Spacer()
+
+                Button(role: .destructive) {
+                    showRemoveConfirmation = true
+                } label: {
+                    Label("Remove from Event", systemImage: "person.badge.minus")
+                }
+                .controlSize(.small)
             }
+        }
+        .alert("Remove Participant?", isPresented: $showRemoveConfirmation) {
+            Button("Remove", role: .destructive) {
+                try? EventRepository.shared.removeParticipant(participationID: participation.id, from: event)
+                onRemoved?()
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This will remove \(participation.person?.displayNameCache ?? "this person") from the event and clear all invitation and RSVP data. SAM will not associate them with this event.")
         }
         .sheet(isPresented: $showInvitationDraft) {
             InvitationDraftSheet(

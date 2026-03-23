@@ -406,6 +406,30 @@ final class OutcomeRepository {
         }
     }
 
+    /// Check if a similar outcome was recently dismissed or completed.
+    /// Prevents re-suggesting outcomes the user already acted on. Uses a longer
+    /// suppression window (default 7 days) so "Skip" and "Done" choices persist
+    /// across app restarts and outcome regeneration cycles.
+    func hasRecentlyActedOutcome(
+        kind: OutcomeKind,
+        personID: UUID?,
+        withinDays days: Int = 7
+    ) throws -> Bool {
+        guard let context else { throw RepositoryError.notConfigured }
+
+        let cutoff = Calendar.current.date(byAdding: .day, value: -days, to: .now) ?? .now
+        let kindRaw = kind.rawValue
+        let descriptor = FetchDescriptor<SamOutcome>()
+        let all = try context.fetch(descriptor)
+
+        return all.contains { outcome in
+            outcome.outcomeKindRawValue == kindRaw &&
+            outcome.linkedPerson?.id == personID &&
+            (outcome.status == .dismissed || outcome.status == .completed) &&
+            ((outcome.dismissedAt ?? outcome.completedAt) ?? outcome.createdAt) >= cutoff
+        }
+    }
+
     /// Check if a pending/inProgress outcome with the same title exists within a time window.
     /// Used by feature adoption coaching to avoid blocking on unrelated setup outcomes.
     func hasSimilarOutcome(

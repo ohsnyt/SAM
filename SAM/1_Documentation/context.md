@@ -105,6 +105,7 @@ When SAM lacks information to be specific, it shows an **inline prompt** (`Inlin
 - Completed, stale, or low-confidence items hidden by default
 - Prefer **one excellent suggestion** over five mediocre ones
 - Every outcome card should pass the test: "Can the user act on this in the next 2 hours?"
+- **Outcome dedup respects user choices**: `OutcomeRepository.hasRecentlyActedOutcome()` suppresses regeneration of outcomes the user dismissed ("Skip") or completed ("Done") for 7 days. This prevents the same suggestions from reappearing after app restarts or version updates. The 24-hour active-duplicate window (`hasSimilarOutcome`) remains for pending/inProgress outcomes.
 
 ---
 

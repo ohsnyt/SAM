@@ -4,6 +4,35 @@
 
 ---
 
+## Event Invitation UX, Outcome Dedup Fix (March 23, 2026)
+
+### Event Invitation Picker — "Show More Suggestions"
+- `AddParticipantsSheet` now tracks an `excludedFromSuggestions` set of person IDs already shown
+- After adding selected people, they're removed from the visible suggestions list immediately
+- **"Show More Suggestions"** button at the bottom of the list fetches the next batch from the AI, excluding all previously suggested and already-added people
+- `EventCoordinator.suggestInvitationList()` accepts new `excludingIDs` parameter to filter candidates before sending to the AI
+- Button hides when no more candidates remain
+
+### Remove Participant from Event
+- **"Remove from Event"** destructive button added to `ParticipantDetailView` quick actions
+- Confirmation alert explains removal clears all invitation and RSVP data
+- Calls `EventRepository.removeParticipant()` to delete the `EventParticipation` record entirely — no residual accepted/declined status remains
+- Parent view (`EventDetailView`) clears selection and refreshes participant list via `onRemoved` callback
+
+### Outcome Dedup Respects Skip/Done Choices
+**Bug**: `hasSimilarOutcome()` only checked `.pending`/`.inProgress` outcomes. After a user marked an outcome as Skip (dismissed) or Done (completed), it became invisible to the dedup check and was regenerated on every OutcomeEngine cycle — causing duplicate "Reconnect with…" items and lost user choices across app restarts.
+
+**Fix**:
+- Added `OutcomeRepository.hasRecentlyActedOutcome(kind:personID:withinDays:)` — checks dismissed/completed outcomes within a **7-day suppression window**, anchored to `dismissedAt`/`completedAt` timestamps
+- Both persist paths in `OutcomeEngine` (main generation loop + role transition outcomes) now check `hasRecentlyActedOutcome` alongside existing `hasSimilarOutcome`
+- After 7 days, SAM will re-suggest if the relationship health scanner still detects an issue — balancing respect for user choices with ongoing coaching value
+
+### Migration Notes
+- No schema changes — uses existing `dismissedAt`/`completedAt` fields on `SamOutcome`
+- Existing dismissed/completed outcomes immediately participate in the 7-day suppression window
+
+---
+
 ## Settings Restructure + AI Simplification (March 21, 2026)
 
 ### Settings Sidebar Navigation

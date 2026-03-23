@@ -1237,14 +1237,16 @@ final class EventCoordinator {
     /// Uses event description, format, and person roles/interaction history to rank.
     func suggestInvitationList(
         for event: SamEvent,
-        limit: Int = 30
+        limit: Int = 30,
+        excludingIDs: Set<UUID> = []
     ) async throws -> [(person: SamPerson, reason: String)] {
         let allPeople = try PeopleRepository.shared.fetchAll()
         let activePeople = allPeople.filter { $0.lifecycleStatus == .active && !$0.isMe }
 
-        // Exclude people already participating in this event
+        // Exclude people already participating in this event and previously suggested people
         let existingIDs = Set(EventRepository.shared.fetchParticipations(for: event).compactMap { $0.person?.id })
-        let candidates = activePeople.filter { !existingIDs.contains($0.id) }
+        let allExcluded = existingIDs.union(excludingIDs)
+        let candidates = activePeople.filter { !allExcluded.contains($0.id) }
 
         guard !candidates.isEmpty else { return [] }
 
