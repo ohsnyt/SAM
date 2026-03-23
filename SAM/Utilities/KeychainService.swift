@@ -7,11 +7,10 @@ import Foundation
 import Security
 import os.log
 
-private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "KeychainService")
-
 actor KeychainService {
 
     static let shared = KeychainService()
+    private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "KeychainService")
 
     // MARK: - Constants
 

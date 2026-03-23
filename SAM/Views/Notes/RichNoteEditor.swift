@@ -68,6 +68,12 @@ final class RichNoteEditorHandle {
         textView.insertText(combined, replacementRange: textView.selectedRange())
     }
 
+    /// Move keyboard focus into the editor.
+    func focus() {
+        guard let textView, let window = textView.window else { return }
+        window.makeFirstResponder(textView)
+    }
+
     /// Clear all content (text + images).
     func clear() {
         guard let textView else { return }

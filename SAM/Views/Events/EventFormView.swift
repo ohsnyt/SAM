@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import SwiftData
 import MapKit
 
 struct EventFormView: View {
@@ -31,6 +32,10 @@ struct EventFormView: View {
     @State private var lastValidatedAddress: String?
     @State private var joinLink = ""
     @State private var targetParticipants = 20
+
+    // Presentation
+    @State private var selectedPresentationID: UUID?
+    @State private var showPresentationPicker = true
 
     // Auto-acknowledge
     @State private var autoAckEnabled = true
@@ -79,6 +84,15 @@ struct EventFormView: View {
         !title.trimmingCharacters(in: .whitespaces).isEmpty && venueValid && addressValid && joinLinkValid
     }
 
+    private var validationHint: String {
+        var missing: [String] = []
+        if title.trimmingCharacters(in: .whitespaces).isEmpty { missing.append("title") }
+        if !venueValid { missing.append("venue") }
+        if !addressValid { missing.append("address") }
+        if !joinLinkValid { missing.append("join link") }
+        return "Scroll down — \(missing.joined(separator: ", ")) required"
+    }
+
     /// True when the event has participants who have already been invited.
     private var hasInvitees: Bool {
         guard let event = existingEvent else { return false }
@@ -118,9 +132,9 @@ struct EventFormView: View {
 
             // Form
             Form {
-                // Suggested Topics (only in create mode, when available)
-                if !isEditing && !suggestedTopics.isEmpty && showTopicSuggestions {
-                    suggestedTopicsSection
+                // Topic / Presentation chooser (only in create mode)
+                if !isEditing {
+                    topicChooserSection
                 }
 
                 Section("Event Details") {
@@ -227,6 +241,11 @@ struct EventFormView: View {
                     }
                 }
 
+                // Presentation picker (edit mode only — create mode uses topicChooserSection)
+                if isEditing {
+                    presentationPickerSection
+                }
+
                 // Material change warning (only when editing with existing invitees)
                 if isEditing && hasInvitees {
                     Section {
@@ -285,6 +304,11 @@ struct EventFormView: View {
 
             // Footer
             HStack {
+                if !canSave {
+                    Label(validationHint, systemImage: "arrow.down.circle")
+                        .samFont(.caption)
+                        .foregroundStyle(.orange)
+                }
                 Spacer()
                 Button(isEditing ? "Save Changes" : "Create Event") {
                     if isEditing {
@@ -299,6 +323,7 @@ struct EventFormView: View {
                 }
                 .keyboardShortcut(.return, modifiers: .command)
                 .buttonStyle(.borderedProminent)
+                .tint(canSave ? .accentColor : .gray)
                 .disabled(!canSave)
             }
             .padding()
@@ -370,22 +395,120 @@ struct EventFormView: View {
         autoAckDeclines = event.ackDeclineTemplate != nil
         autoAckDeclineTemplate = event.ackDeclineTemplate ?? "Thanks for letting me know, {name}!"
         autoReplyUnknownSenders = event.autoReplyUnknownSenders
+        selectedPresentationID = event.presentation?.id
     }
 
-    // MARK: - Suggested Topics Section
+    // MARK: - Presentation Picker Section (Edit Mode)
 
-    private var suggestedTopicsSection: some View {
-        Section {
-            DisclosureGroup("Suggested Topics", isExpanded: $showTopicSuggestions) {
-                ForEach(suggestedTopics) { topic in
-                    topicCard(topic)
+    private var presentationPickerSection: some View {
+        Section("Presentation") {
+            let presentations = loadPresentations()
+            if presentations.isEmpty {
+                Text("No presentations yet. Add one in the Presentations tab.")
+                    .samFont(.caption)
+                    .foregroundStyle(.tertiary)
+            } else {
+                DisclosureGroup("Your Presentations", isExpanded: $showPresentationPicker) {
+                    ForEach(presentations, id: \.id) { presentation in
+                        presentationRow(presentation)
+                    }
                 }
             }
-        } footer: {
-            Text("Based on recent conversations and seasonal trends")
-                .samFont(.caption2)
-                .foregroundStyle(.tertiary)
         }
+    }
+
+    private func loadPresentations() -> [SamPresentation] {
+        let context = SAMModelContainer.newContext()
+        let descriptor = FetchDescriptor<SamPresentation>(
+            sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]
+        )
+        return (try? context.fetch(descriptor)) ?? []
+    }
+
+    // MARK: - Topic Chooser (Uploaded + Suggested)
+
+    @ViewBuilder
+    private var topicChooserSection: some View {
+        let presentations = loadPresentations()
+
+        if !presentations.isEmpty {
+            Section {
+                DisclosureGroup("Your Presentations", isExpanded: $showPresentationPicker) {
+                    ForEach(presentations, id: \.id) { presentation in
+                        presentationRow(presentation)
+                    }
+                }
+            }
+        }
+
+        if !suggestedTopics.isEmpty {
+            Section {
+                DisclosureGroup("Suggested Topics", isExpanded: $showTopicSuggestions) {
+                    ForEach(suggestedTopics) { topic in
+                        topicCard(topic)
+                    }
+                }
+            } footer: {
+                Text("Based on recent conversations and seasonal trends")
+                    .samFont(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+    }
+
+    private func presentationRow(_ presentation: SamPresentation) -> some View {
+        let isSelected = selectedPresentationID == presentation.id
+        return Button {
+            if isSelected {
+                selectedPresentationID = nil
+                // Clear title/description only if they came from this presentation
+                if title == presentation.title { title = "" }
+            } else {
+                selectedPresentationID = presentation.id
+                selectedTopic = nil  // Deselect any suggested topic
+                title = presentation.title
+                if let desc = presentation.presentationDescription {
+                    description = desc
+                }
+                if let duration = presentation.estimatedDurationMinutes {
+                    durationMinutes = duration
+                }
+            }
+        } label: {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(presentation.title)
+                        .samFont(.callout, weight: .bold)
+                        .lineLimit(1)
+                    if let desc = presentation.presentationDescription {
+                        Text(desc)
+                            .samFont(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    HStack(spacing: 8) {
+                        if let duration = presentation.estimatedDurationMinutes {
+                            Label("\(duration) min", systemImage: "clock")
+                                .samFont(.caption2)
+                        }
+                        if !presentation.topicTags.isEmpty {
+                            Text(presentation.topicTags.prefix(2).joined(separator: ", "))
+                                .samFont(.caption2)
+                        }
+                    }
+                    .foregroundStyle(.tertiary)
+                }
+                Spacer()
+                if isSelected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.blue)
+                }
+            }
+            .padding(.vertical, 4)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(isSelected ? Color.blue.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 6))
     }
 
     private func topicCard(_ topic: SuggestedEventTopic) -> some View {
@@ -441,6 +564,7 @@ struct EventFormView: View {
 
     private func selectTopic(_ topic: SuggestedEventTopic) {
         selectedTopic = topic
+        selectedPresentationID = nil  // Deselect any uploaded presentation
         title = topic.title
         format = topic.format
     }
@@ -474,6 +598,15 @@ struct EventFormView: View {
                 joinLink: joinLink.isEmpty ? nil : joinLink,
                 targetParticipants: targetParticipants
             )
+
+            // Link presentation if selected (must fetch from same context as event)
+            if let presentationID = selectedPresentationID,
+               let ctx = event.modelContext {
+                let desc = FetchDescriptor<SamPresentation>(
+                    predicate: #Predicate<SamPresentation> { $0.id == presentationID }
+                )
+                event.presentation = try? ctx.fetch(desc).first
+            }
 
             // Apply auto-ack settings
             try EventRepository.shared.updateAutoAcknowledge(
@@ -540,6 +673,17 @@ struct EventFormView: View {
                 joinLink: newJoinLink,
                 targetParticipantCount: targetParticipants
             )
+
+            // Update presentation link (must fetch from same context as event)
+            if let presentationID = selectedPresentationID,
+               let ctx = event.modelContext {
+                let desc = FetchDescriptor<SamPresentation>(
+                    predicate: #Predicate<SamPresentation> { $0.id == presentationID }
+                )
+                event.presentation = try? ctx.fetch(desc).first
+            } else {
+                event.presentation = nil
+            }
 
             try EventRepository.shared.updateAutoAcknowledge(
                 eventID: event.id,

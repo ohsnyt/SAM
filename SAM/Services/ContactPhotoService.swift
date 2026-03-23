@@ -9,11 +9,10 @@ import Contacts
 import Foundation
 import os.log
 
-private nonisolated(unsafe) let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "ContactPhotoService")
-
 actor ContactPhotoService {
 
     static let shared = ContactPhotoService()
+    private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "ContactPhotoService")
 
     private let store = CNContactStore()
 

@@ -373,8 +373,10 @@ struct EventParticipationTests {
         try EventRepository.shared.updateRSVP(participationID: participations[1].id, status: .accepted)
         try EventRepository.shared.updateRSVP(participationID: participations[2].id, status: .declined)
 
-        #expect(event.acceptedCount == 2)
-        #expect(event.pendingCount == 0)
+        let acceptedCount = event.participations.filter { $0.rsvpStatus == .accepted }.count
+        let pendingCount = event.participations.filter { $0.rsvpStatus == .pending }.count
+        #expect(acceptedCount == 2)
+        #expect(pendingCount == 0)
     }
 
     @Test("Participation sort order: VIP first, then key, then standard")

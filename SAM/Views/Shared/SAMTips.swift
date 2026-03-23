@@ -472,7 +472,7 @@ struct CommandPaletteTip: Tip {
 struct SearchTip: Tip {
     var title: Text { Text("Search Everything") }
     var message: Text? {
-        Text("Search across people, notes, evidence, and outcomes all at once. Use \u{2318}4 or \u{2318}K to get here quickly.")
+        Text("Search across people, notes, evidence, and outcomes all at once. Use \u{2318}5 or \u{2318}K to get here quickly.")
     }
     var image: Image? { Image(systemName: "magnifyingglass") }
     var actions: [Action] {

@@ -57,6 +57,8 @@ final class AppLockService {
     // MARK: - Private State
 
     @ObservationIgnored private var lastActiveTime: Date?
+    @ObservationIgnored private var currentAuthContext: LAContext?
+    @ObservationIgnored private var keyEventMonitor: Any?
 
     // MARK: - Initializer
 
@@ -67,15 +69,24 @@ final class AppLockService {
     // MARK: - Authentication
 
     /// Authenticate using Touch ID with system password fallback. Unlocks the app on success.
+    /// If an authentication dialog is already showing, cancels it and presents a fresh one
+    /// so the new system dialog receives focus.
     func authenticate() {
         guard isLocked else { return }
-        guard !isAuthenticating else { return }
+
+        // Cancel any in-flight auth so the new dialog gets focus
+        if isAuthenticating, let existing = currentAuthContext {
+            existing.invalidate()
+            currentAuthContext = nil
+            isAuthenticating = false
+        }
 
         isAuthenticating = true
         authError = nil
 
         let context = LAContext()
         context.localizedCancelTitle = "Cancel"
+        currentAuthContext = context
 
         Task {
             do {
@@ -87,6 +98,7 @@ final class AppLockService {
                     isLocked = false
                     lastActiveTime = Date()
                     authError = nil
+                    removeKeyEventMonitor()
                     logger.info("Authentication successful — app unlocked")
                 }
             } catch {
@@ -100,6 +112,7 @@ final class AppLockService {
                     logger.warning("Authentication failed: \(error.localizedDescription)")
                 }
             }
+            currentAuthContext = nil
             isAuthenticating = false
         }
     }
@@ -126,10 +139,13 @@ final class AppLockService {
 
     // MARK: - Lock Management
 
-    /// Immediately lock the app and close auxiliary windows (Settings, Guide, etc.).
+    /// Immediately lock the app: close auxiliary windows, dismiss sheets,
+    /// block keyboard shortcuts, and disable menus.
     func lock() {
         isLocked = true
         closeAuxiliaryWindows()
+        dismissOpenSheets()
+        installKeyEventMonitor()
         logger.info("App locked")
     }
 
@@ -152,6 +168,8 @@ final class AppLockService {
         if elapsed >= timeout {
             isLocked = true
             closeAuxiliaryWindows()
+            dismissOpenSheets()
+            installKeyEventMonitor()
             logger.debug("App locked — inactive for \(Int(elapsed / 60)) minutes (timeout: \(self.lockTimeoutMinutes)m)")
         }
     }
@@ -161,6 +179,7 @@ final class AppLockService {
     /// Configure lock state on app launch. Always starts locked.
     func configureOnLaunch() {
         isLocked = true
+        installKeyEventMonitor()
         logger.debug("App launch — awaiting authentication")
     }
 
@@ -186,5 +205,69 @@ final class AppLockService {
                 logger.debug("Closed auxiliary window on lock: \(id)")
             }
         }
+    }
+
+    /// Dismiss any open sheets so they can't be read behind the lock overlay.
+    private func dismissOpenSheets() {
+        for window in NSApplication.shared.windows where window.isVisible {
+            if let sheet = window.attachedSheet {
+                window.endSheet(sheet, returnCode: .cancel)
+                logger.debug("Dismissed sheet on lock")
+            }
+        }
+    }
+
+    // MARK: - Keyboard Event Blocking
+
+    /// Install a local event monitor that consumes all keyboard events while locked.
+    /// Only ⌘Q (quit) and ⌘H (hide) are allowed through.
+    private func installKeyEventMonitor() {
+        guard keyEventMonitor == nil else { return }
+        keyEventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
+            guard let self, self.isLocked else { return event }
+
+            // Allow ⌘Q (quit) and ⌘H (hide) — standard macOS behavior
+            if event.modifierFlags.contains(.command) {
+                let key = event.charactersIgnoringModifiers?.lowercased()
+                if key == "q" || key == "h" { return event }
+            }
+
+            // Consume all other key events
+            return nil
+        }
+        logger.debug("Key event monitor installed")
+    }
+
+    /// Remove the keyboard event monitor after unlock.
+    private func removeKeyEventMonitor() {
+        if let monitor = keyEventMonitor {
+            NSEvent.removeMonitor(monitor)
+            keyEventMonitor = nil
+            logger.debug("Key event monitor removed")
+        }
+    }
+
+    // MARK: - Menu Validation
+
+    /// Called by the app delegate's `validateMenuItem` to control menu state.
+    /// Returns `true` only for Quit, Hide, and minimize when locked.
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        guard isLocked else { return true }
+
+        // Always allow these system actions
+        let allowedSelectors: Set<Selector> = [
+            #selector(NSApplication.terminate(_:)),
+            #selector(NSApplication.hide(_:)),
+            #selector(NSApplication.hideOtherApplications(_:)),
+            #selector(NSApplication.unhideAllApplications(_:)),
+            #selector(NSWindow.miniaturize(_:)),
+            #selector(NSWindow.performClose(_:)),
+        ]
+
+        if let action = menuItem.action, allowedSelectors.contains(action) {
+            return true
+        }
+
+        return false
     }
 }

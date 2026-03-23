@@ -20,6 +20,7 @@ struct PresentationLibraryView: View {
     @State private var refreshToken = UUID()
     @State private var isDropTargeted = false
     @State private var presentationListWidth: CGFloat = 300
+    @State private var showDeleteConfirmation = false
 
     var body: some View {
         HStack(spacing: 0) {
@@ -48,6 +49,19 @@ struct PresentationLibraryView: View {
                 refreshToken = UUID()
             }
         }
+        .alert("Delete Presentation?", isPresented: $showDeleteConfirmation) {
+            Button("Delete", role: .destructive) {
+                deleteSelectedPresentation()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            if let id = selectedPresentationID,
+               let presentation = presentations.first(where: { $0.id == id }) {
+                Text("Are you sure you want to delete \"\(presentation.title)\"? This will also unlink it from any events. This cannot be undone.")
+            } else {
+                Text("Are you sure you want to delete this presentation?")
+            }
+        }
     }
 
     // MARK: - List
@@ -63,6 +77,15 @@ struct PresentationLibraryView: View {
                 Text("Presentations")
                     .samFont(.title2, weight: .bold)
                 Spacer()
+                if selectedPresentationID != nil {
+                    Button(role: .destructive) {
+                        showDeleteConfirmation = true
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(.red)
+                }
                 Button {
                     showNewPresentation = true
                 } label: {
@@ -88,6 +111,14 @@ struct PresentationLibraryView: View {
                         ForEach(items, id: \.id) { presentation in
                             PresentationRowView(presentation: presentation)
                                 .tag(presentation.id)
+                                .contextMenu {
+                                    Button(role: .destructive) {
+                                        selectedPresentationID = presentation.id
+                                        showDeleteConfirmation = true
+                                    } label: {
+                                        Label("Delete Presentation", systemImage: "trash")
+                                    }
+                                }
                         }
                     }
                 }
@@ -150,6 +181,26 @@ struct PresentationLibraryView: View {
                 }
             }
         }
+    }
+
+    private func deleteSelectedPresentation() {
+        guard let id = selectedPresentationID else { return }
+
+        let context = SAMModelContainer.newContext()
+        let descriptor = FetchDescriptor<SamPresentation>(
+            predicate: #Predicate<SamPresentation> { $0.id == id }
+        )
+        guard let presentation = try? context.fetch(descriptor).first else { return }
+
+        // Unlink from events
+        for event in presentation.linkedEvents {
+            event.presentation = nil
+        }
+        context.delete(presentation)
+        try? context.save()
+
+        selectedPresentationID = nil
+        refreshToken = UUID()
     }
 
     private func createPresentationFromFile(url: URL) {

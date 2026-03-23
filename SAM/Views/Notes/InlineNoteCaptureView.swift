@@ -106,6 +106,10 @@ struct InlineNoteCaptureView: View {
             withAnimation(.easeOut(duration: 0.2)) {
                 isEditing = true
             }
+            // Focus the editor after SwiftUI inserts it
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                editorHandle.focus()
+            }
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "square.and.pencil")

@@ -34,6 +34,8 @@ struct AddParticipantsSheet: View {
                     .samFont(.title2, weight: .bold)
                 Spacer()
                 Button("Done") { dismiss() }
+                    .buttonStyle(.borderedProminent)
+                    .tint(addedCount > 0 ? .accentColor : .gray)
                     .keyboardShortcut(.escape)
             }
             .padding()

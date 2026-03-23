@@ -19,9 +19,15 @@ private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "SAM
 
 // MARK: - App Delegate (Termination Handling)
 
-final class SAMAppDelegate: NSObject, NSApplicationDelegate {
+final class SAMAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     private let log = Logger(subsystem: "com.matthewsessions.SAM", category: "AppDelegate")
+
+    /// Disable all menu items when the app is locked (except Quit, Hide, Minimize).
+    @MainActor
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        AppLockService.shared.validateMenuItem(menuItem)
+    }
 
     @MainActor
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -249,6 +255,7 @@ struct SAMApp: App {
             ZStack {
                 AppShellView()
                     .modelContainer(SAMModelContainer.shared)
+                    .blur(radius: lockService.isLocked ? 20 : 0)
 
                 if lockService.isLocked {
                     AppLockView()
@@ -739,6 +746,7 @@ struct SAMApp: App {
                 QuickNoteWindowView(payload: payload)
                     .modelContainer(SAMModelContainer.shared)
                     .environment(\.samTextScale, SAMTextSize(rawValue: textSizeRawValue)?.scale ?? 1.0)
+                    .lockGuarded()
             }
         }
         .defaultSize(width: 500, height: 300)
@@ -751,6 +759,7 @@ struct SAMApp: App {
                 ClipboardCaptureWindowView(payload: payload)
                     .modelContainer(SAMModelContainer.shared)
                     .environment(\.samTextScale, SAMTextSize(rawValue: textSizeRawValue)?.scale ?? 1.0)
+                    .lockGuarded()
             }
         }
         .defaultSize(width: 600, height: 500)
@@ -763,6 +772,7 @@ struct SAMApp: App {
                 ComposeWindowView(payload: payload)
                     .modelContainer(SAMModelContainer.shared)
                     .environment(\.samTextScale, SAMTextSize(rawValue: textSizeRawValue)?.scale ?? 1.0)
+                    .lockGuarded()
             }
         }
         .defaultSize(width: 540, height: 400)
@@ -773,15 +783,18 @@ struct SAMApp: App {
         Settings {
             SettingsView()
                 .modelContainer(SAMModelContainer.shared)
+                .lockGuarded()
         }
 
         Window("Prompt Lab", id: "prompt-lab") {
             PromptLabView()
+                .lockGuarded()
         }
         .defaultSize(width: 1200, height: 700)
 
         Window("SAM Guide", id: "guide") {
             GuideWindowView()
+                .lockGuarded()
         }
         .defaultSize(width: 700, height: 550)
         #endif

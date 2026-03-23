@@ -825,7 +825,21 @@ final class RelationshipGraphCoordinator {
     /// Activate focus mode to show only a subset of nodes/edges.
     func activateFocusMode(_ mode: String) {
         focusMode = mode
-        applyFilters()
+
+        if graphStatus == .ready {
+            // Graph already built — check if focus yields any nodes.
+            // If empty, the graph is stale (deduced data arrived after last build).
+            applyFilters()
+            let focusEmpty = filteredNodes.isEmpty
+            if focusEmpty {
+                Task { await buildGraph() }
+            }
+        } else if graphStatus == .idle {
+            // Graph never built — applyFilters would be empty anyway;
+            // buildGraph will call applyFilters() when it finishes.
+            Task { await buildGraph() }
+        }
+        // If .computing, buildGraph is already in flight and will call applyFilters() on completion.
     }
 
     /// Clear focus mode and restore full graph.

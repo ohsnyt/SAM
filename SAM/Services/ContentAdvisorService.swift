@@ -696,8 +696,9 @@ actor ContentAdvisorService {
             let line21 = jsonLines[20] // 0-indexed
             logger.error("📝 JSON line 21: [\(line21)]")
             if line21.count >= 8 {
-                let charIdx = line21.index(line21.startIndex, offsetBy: 7)
-                logger.error("📝 JSON line 21, col 8: character = '\\(line21[charIdx])' (U+\\(String(format: \"%04X\", line21[charIdx].asciiValue ?? 0)))")
+                let char = line21[line21.index(line21.startIndex, offsetBy: 7)]
+                let charDebug = "character = '\(char)' (U+\(String(format: "%04X", char.asciiValue ?? 0)))"
+                logger.error("📝 JSON line 21, col 8: \(charDebug)")
             }
         }
         logger.debug("📝 JSON total lines: \(jsonLines.count)")
@@ -767,8 +768,9 @@ actor ContentAdvisorService {
                 let safeEnd = min(cleaned.count, errorIndex + 40)
                 let startIdx = cleaned.index(cleaned.startIndex, offsetBy: safeStart)
                 let endIdx = cleaned.index(cleaned.startIndex, offsetBy: safeEnd)
-                let errorIdx = cleaned.index(cleaned.startIndex, offsetBy: min(errorIndex, cleaned.count - 1))
-                logger.error("📝 Error at byte \(errorIndex), char='\\(cleaned[errorIdx])'. Context: [\(String(cleaned[startIdx..<endIdx]))]")
+                let errChar = cleaned[cleaned.index(cleaned.startIndex, offsetBy: min(errorIndex, cleaned.count - 1))]
+                let context = String(cleaned[startIdx..<endIdx])
+                logger.error("📝 Error at byte \(errorIndex), char='\(String(errChar))'. Context: [\(context)]")
             }
             throw error
         }
