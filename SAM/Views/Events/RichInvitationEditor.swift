@@ -124,7 +124,7 @@ final class RichInvitationEditorHandle {
 
         let containerWidth = textView.textContainer?.containerSize.width ?? 400
         let attachment = RichNoteEditor.makeImageAttachment(
-            data: data, nsImage: nsImage, containerWidth: containerWidth, resizable: true
+            data: data, nsImage: nsImage, containerWidth: containerWidth
         )
 
         let font = textView.font ?? .systemFont(ofSize: NSFont.systemFontSize)
@@ -280,7 +280,7 @@ struct RichInvitationEditor: NSViewRepresentable {
         textView.delegate = context.coordinator
         textView.isRichText = true
         textView.importsGraphics = true
-        textView.allowsImageEditing = false
+        textView.allowsImageEditing = true
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
         textView.isAutomaticTextReplacementEnabled = false

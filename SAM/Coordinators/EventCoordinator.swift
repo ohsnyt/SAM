@@ -490,17 +490,15 @@ final class EventCoordinator {
         participation.inviteStatus = .handedOff
         participation.inviteChannel = .email
 
-        // Convert to HTML and hand off to Mail.app
+        // Convert to HTML (images embedded as base64 data URIs) and hand off to Mail.app
         let conversion = AttributedStringToHTML.convert(attributedBody)
         let subject = participation.event?.title ?? "Event Invitation"
-        let imageAttachments = conversion.inlineImages.map { ($0.0, $0.2) }
 
         Task {
             let opened = await ComposeService.shared.composeHTMLEmail(
                 recipient: recipientEmail,
                 subject: subject,
-                htmlBody: conversion.html,
-                imageAttachments: imageAttachments
+                htmlBody: conversion.html
             )
             if opened {
                 // Register for sent mail detection when SAM regains focus

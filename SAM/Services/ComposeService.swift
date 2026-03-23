@@ -79,48 +79,26 @@ final class ComposeService {
         return true
     }
 
-    /// Open a Mail.app compose window with HTML body and optional inline image attachments.
-    /// Uses AppleScript with `html content` property for full rich text support.
+    /// Open a Mail.app compose window with HTML body (images embedded as base64 data URIs).
     /// HTML is written to a temp file and read by AppleScript to avoid string escaping issues.
     /// The compose window is displayed for user review — Mail does NOT auto-send.
     @discardableResult
     func composeHTMLEmail(
         recipient: String,
         subject: String,
-        htmlBody: String,
-        imageAttachments: [(Data, String)] = []  // (data, filename)
+        htmlBody: String
     ) async -> Bool {
-        let tempDir = FileManager.default.temporaryDirectory
-        var tempFiles: [URL] = []
-
         // Write HTML to a temp file so AppleScript reads it without escaping issues
-        let htmlFileURL = tempDir.appendingPathComponent("sam_invitation_\(UUID().uuidString).html")
+        let htmlFileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sam_invitation_\(UUID().uuidString).html")
         do {
             try htmlBody.write(to: htmlFileURL, atomically: true, encoding: .utf8)
-            tempFiles.append(htmlFileURL)
         } catch {
             logger.error("Failed to write temp HTML file: \(error.localizedDescription)")
             return false
         }
 
-        // Write inline images to temp files for AppleScript attachment
-        var attachmentScript = ""
-        for (data, filename) in imageAttachments {
-            let tempURL = tempDir.appendingPathComponent(filename)
-            do {
-                try data.write(to: tempURL)
-                tempFiles.append(tempURL)
-                let posixPath = tempURL.path
-                attachmentScript += """
-                    make new attachment with properties {file name:POSIX file "\(posixPath)"} at after the last paragraph
-
-                    """
-            } catch {
-                logger.warning("Failed to write temp image \(filename): \(error.localizedDescription)")
-            }
-        }
-
-        // Escape only subject and recipient for AppleScript string literals
+        // Escape subject and recipient for AppleScript string literals
         let escapedSubject = subject
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
@@ -128,8 +106,8 @@ final class ComposeService {
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
 
-        // Read HTML from temp file via shell command — avoids AppleScript string escaping entirely.
-        // Use a variable for the path so `quoted form of` handles shell escaping correctly.
+        // Read HTML from temp file via shell command to avoid AppleScript string limits.
+        // Set `html content` as a separate step after message creation for reliability.
         let escapedPath = htmlFileURL.path
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
@@ -137,10 +115,10 @@ final class ComposeService {
             set filePath to "\(escapedPath)"
             set htmlContent to do shell script "cat " & quoted form of filePath
             tell application "Mail"
-                set newMessage to make new outgoing message with properties {subject:"\(escapedSubject)", html content:htmlContent, visible:true}
+                set newMessage to make new outgoing message with properties {subject:"\(escapedSubject)", visible:true}
+                set html content of newMessage to htmlContent
                 tell newMessage
                     make new to recipient at end of to recipients with properties {address:"\(escapedRecipient)"}
-                    \(attachmentScript)
                 end tell
                 activate
             end tell
@@ -148,12 +126,10 @@ final class ComposeService {
 
         let result = await runAppleScript(script, label: "HTML email to \(recipient)")
 
-        // Clean up temp files after a delay to let Mail.app read them
+        // Clean up temp file after a delay
         Task {
             try? await Task.sleep(for: .seconds(10))
-            for url in tempFiles {
-                try? FileManager.default.removeItem(at: url)
-            }
+            try? FileManager.default.removeItem(at: htmlFileURL)
         }
 
         return result

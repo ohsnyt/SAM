@@ -363,13 +363,7 @@ struct RichNoteEditor: NSViewRepresentable {
     // MARK: - Image Attachment Factory
 
     /// Create an NSTextAttachment with proper macOS attachmentCell for rendering.
-    /// When `resizable` is true, the cell draws corner drag handles for interactive resizing.
-    static func makeImageAttachment(
-        data: Data,
-        nsImage: NSImage,
-        containerWidth: CGFloat,
-        resizable: Bool = false
-    ) -> NSTextAttachment {
+    static func makeImageAttachment(data: Data, nsImage: NSImage, containerWidth: CGFloat) -> NSTextAttachment {
         let attachment = NSTextAttachment()
         attachment.contents = data
         attachment.fileType = "public.png"
@@ -384,191 +378,16 @@ struct RichNoteEditor: NSViewRepresentable {
         // Set bounds for TextKit 2 layout
         attachment.bounds = CGRect(origin: .zero, size: displaySize)
 
-        if resizable {
-            let cell = ResizableImageAttachmentCell(
-                sourceImage: nsImage,
-                displaySize: displaySize,
-                attachment: attachment
-            )
-            attachment.attachmentCell = cell
-        } else {
-            // macOS requires an explicit attachmentCell for NSTextView (TextKit 1) rendering.
-            // Without this, images render as empty placeholders.
-            let displayImage = NSImage(size: displaySize)
-            displayImage.lockFocus()
-            nsImage.draw(in: NSRect(origin: .zero, size: displaySize),
-                         from: .zero, operation: .copy, fraction: 1.0)
-            displayImage.unlockFocus()
-            let cell = NSTextAttachmentCell(imageCell: displayImage)
-            attachment.attachmentCell = cell
-        }
-
-        return attachment
-    }
-}
-
-// MARK: - Resizable Image Attachment Cell
-
-/// NSTextAttachmentCell subclass that draws resize handles on selection and allows
-/// corner-drag resizing of inline images within NSTextView.
-final class ResizableImageAttachmentCell: NSTextAttachmentCell {
-
-    private let sourceImage: NSImage
-    private var displaySize: NSSize
-    private weak var parentAttachment: NSTextAttachment?
-    private let aspectRatio: CGFloat
-    private let handleSize: CGFloat = 8
-    private var isSelected = false
-
-    init(sourceImage: NSImage, displaySize: NSSize, attachment: NSTextAttachment) {
-        self.sourceImage = sourceImage
-        self.displaySize = displaySize
-        self.parentAttachment = attachment
-        self.aspectRatio = sourceImage.size.width / max(sourceImage.size.height, 1)
-
-        // Render the initial display image
+        // macOS requires an explicit attachmentCell for NSTextView (TextKit 1) rendering.
+        // Without this, images render as empty placeholders.
         let displayImage = NSImage(size: displaySize)
         displayImage.lockFocus()
-        sourceImage.draw(in: NSRect(origin: .zero, size: displaySize),
-                         from: .zero, operation: .copy, fraction: 1.0)
+        nsImage.draw(in: NSRect(origin: .zero, size: displaySize),
+                     from: .zero, operation: .copy, fraction: 1.0)
         displayImage.unlockFocus()
+        let cell = NSTextAttachmentCell(imageCell: displayImage)
+        attachment.attachmentCell = cell
 
-        super.init(imageCell: displayImage)
-    }
-
-    @available(*, unavailable)
-    required init(coder: NSCoder) {
-        fatalError("init(coder:) is not supported")
-    }
-
-    // MARK: - Size
-
-    nonisolated override func cellSize() -> NSSize {
-        MainActor.assumeIsolated { displaySize }
-    }
-
-    nonisolated override func cellBaselineOffset() -> NSPoint {
-        NSPoint(x: 0, y: -4)
-    }
-
-    // MARK: - Drawing
-
-    override func draw(withFrame cellFrame: NSRect, in controlView: NSView?) {
-        // Draw the image scaled to current display size
-        let imageRect = NSRect(origin: cellFrame.origin, size: displaySize)
-        sourceImage.draw(in: imageRect, from: .zero, operation: .sourceOver, fraction: 1.0)
-
-        // Draw resize handles when selected
-        if isSelected {
-            drawHandles(in: imageRect)
-        }
-    }
-
-    override func draw(withFrame cellFrame: NSRect, in controlView: NSView?, characterIndex charIndex: Int, layoutManager: NSLayoutManager) {
-        draw(withFrame: cellFrame, in: controlView)
-    }
-
-    override func highlight(_ flag: Bool, withFrame cellFrame: NSRect, in controlView: NSView?) {
-        isSelected = flag
-        controlView?.needsDisplay = true
-    }
-
-    private func drawHandles(in rect: NSRect) {
-        let handleColor = NSColor.controlAccentColor
-        handleColor.setFill()
-        NSColor.white.setStroke()
-
-        for corner in corners(of: rect) {
-            let handleRect = NSRect(
-                x: corner.x - handleSize / 2,
-                y: corner.y - handleSize / 2,
-                width: handleSize,
-                height: handleSize
-            )
-            let path = NSBezierPath(roundedRect: handleRect, xRadius: 2, yRadius: 2)
-            path.fill()
-            path.lineWidth = 0.5
-            path.stroke()
-        }
-
-        // Draw selection border
-        let borderPath = NSBezierPath(rect: rect)
-        NSColor.controlAccentColor.withAlphaComponent(0.5).setStroke()
-        borderPath.lineWidth = 1
-        borderPath.stroke()
-    }
-
-    private func corners(of rect: NSRect) -> [NSPoint] {
-        [
-            NSPoint(x: rect.minX, y: rect.minY),
-            NSPoint(x: rect.maxX, y: rect.minY),
-            NSPoint(x: rect.minX, y: rect.maxY),
-            NSPoint(x: rect.maxX, y: rect.maxY),
-        ]
-    }
-
-    // MARK: - Mouse Tracking
-
-    override func wantsToTrackMouse(for theEvent: NSEvent, in cellFrame: NSRect, of controlView: NSView?, atCharacterIndex charIndex: Int) -> Bool {
-        true
-    }
-
-    override func trackMouse(with theEvent: NSEvent, in cellFrame: NSRect, of controlView: NSView?, atCharacterIndex charIndex: Int, untilMouseUp flag: Bool) -> Bool {
-        guard let controlView else { return false }
-
-        let startPoint = controlView.convert(theEvent.locationInWindow, from: nil)
-        let imageRect = NSRect(origin: cellFrame.origin, size: displaySize)
-
-        // Check if click is near the bottom-right handle (the primary resize handle)
-        let brCorner = NSPoint(x: imageRect.maxX, y: imageRect.minY)
-        let dist = hypot(startPoint.x - brCorner.x, startPoint.y - brCorner.y)
-
-        if dist > handleSize * 2 {
-            // Not near a resize handle — just select
-            isSelected = true
-            controlView.needsDisplay = true
-            return true
-        }
-
-        // Begin resize drag
-        isSelected = true
-        let startWidth = displaySize.width
-        controlView.needsDisplay = true
-
-        var event = theEvent
-        while true {
-            guard let nextEvent = controlView.window?.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) else { break }
-            event = nextEvent
-
-            if event.type == .leftMouseUp { break }
-
-            let currentPoint = controlView.convert(event.locationInWindow, from: nil)
-            let deltaX = currentPoint.x - startPoint.x
-            let newWidth = max(40, min(startWidth + deltaX, cellFrame.width - 20))
-            let newHeight = newWidth / aspectRatio
-
-            displaySize = NSSize(width: newWidth, height: newHeight)
-            parentAttachment?.bounds = CGRect(origin: .zero, size: displaySize)
-
-            // Re-render the display image
-            let newImage = NSImage(size: displaySize)
-            newImage.lockFocus()
-            sourceImage.draw(in: NSRect(origin: .zero, size: displaySize),
-                           from: .zero, operation: .copy, fraction: 1.0)
-            newImage.unlockFocus()
-            self.image = newImage
-
-            // Force text layout to update
-            if let textView = controlView as? NSTextView {
-                textView.layoutManager?.invalidateLayout(
-                    forCharacterRange: NSRange(location: charIndex, length: 1),
-                    actualCharacterRange: nil
-                )
-                textView.needsDisplay = true
-                textView.needsLayout = true
-            }
-        }
-
-        return true
+        return attachment
     }
 }
