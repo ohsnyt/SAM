@@ -463,13 +463,22 @@ struct EventDetailView: View {
             if let participationID = selectedParticipationID,
                let participation = cachedParticipations.first(where: { $0.id == participationID }),
                !participation.isDeleted {
-                ParticipantDetailView(participation: participation, event: event) {
-                    // Remove from cached list immediately so the stale entry
-                    // can't be clicked while the deferred SwiftData delete runs
-                    cachedParticipations.removeAll { $0.id == participationID }
-                    selectedParticipationID = nil
-                    refreshToken = UUID()
-                }
+                ParticipantDetailView(
+                    participation: participation,
+                    event: event,
+                    onRemoved: {
+                        // Remove from cached list immediately so the stale entry
+                        // can't be clicked while the deferred SwiftData delete runs.
+                        // Do NOT set refreshToken here — that triggers reloadEvent()
+                        // which re-fetches from SwiftData before the deferred delete.
+                        cachedParticipations.removeAll { $0.id == participationID }
+                        selectedParticipationID = nil
+                    },
+                    onDeleted: {
+                        // SwiftData delete is done — safe to reload from database
+                        refreshToken = UUID()
+                    }
+                )
             } else {
                 ContentUnavailableView(
                     "Select a Participant",
@@ -595,6 +604,7 @@ struct ParticipantDetailView: View {
     let participation: EventParticipation
     let event: SamEvent
     var onRemoved: (() -> Void)?
+    var onDeleted: (() -> Void)?
     @State private var showInvitationDraft = false
     @State private var showRemoveConfirmation = false
 
@@ -875,8 +885,9 @@ struct ParticipantDetailView: View {
                 // re-evaluates this view's body before the parent can deselect it,
                 // causing a fault on the detached SwiftData backing store.
                 Task { @MainActor in
-                    try? await Task.sleep(for: .milliseconds(200))
+                    try? await Task.sleep(for: .milliseconds(300))
                     try? EventRepository.shared.removeParticipant(participationID: participationID, from: targetEvent)
+                    onDeleted?()
                 }
             }
             Button("Cancel", role: .cancel) { }
