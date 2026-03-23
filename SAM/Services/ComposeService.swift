@@ -79,6 +79,71 @@ final class ComposeService {
         return true
     }
 
+    /// Open a Mail.app compose window with HTML body and optional inline image attachments.
+    /// Uses AppleScript with `html content` property for full rich text support.
+    /// The compose window is displayed for user review — Mail does NOT auto-send.
+    @discardableResult
+    func composeHTMLEmail(
+        recipient: String,
+        subject: String,
+        htmlBody: String,
+        imageAttachments: [(Data, String)] = []  // (data, filename)
+    ) async -> Bool {
+        // Write inline images to temp files for AppleScript attachment
+        var tempFiles: [URL] = []
+        var attachmentScript = ""
+
+        for (data, filename) in imageAttachments {
+            let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
+            do {
+                try data.write(to: tempURL)
+                tempFiles.append(tempURL)
+                let posixPath = tempURL.path
+                attachmentScript += """
+                    make new attachment with properties {file name:POSIX file "\(posixPath)"} at after the last paragraph
+
+                    """
+            } catch {
+                logger.warning("Failed to write temp image \(filename): \(error.localizedDescription)")
+            }
+        }
+
+        let escapedHTML = htmlBody
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        let escapedSubject = subject
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        let escapedRecipient = recipient
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+
+        let script = """
+            tell application "Mail"
+                set newMessage to make new outgoing message with properties {subject:"\(escapedSubject)", html content:"\(escapedHTML)", visible:true}
+                tell newMessage
+                    make new to recipient at end of to recipients with properties {address:"\(escapedRecipient)"}
+                    \(attachmentScript)
+                end tell
+                activate
+            end tell
+            """
+
+        let result = await runAppleScript(script, label: "HTML email to \(recipient)")
+
+        // Clean up temp files after a delay to let Mail.app read them
+        if !tempFiles.isEmpty {
+            Task {
+                try? await Task.sleep(for: .seconds(5))
+                for url in tempFiles {
+                    try? FileManager.default.removeItem(at: url)
+                }
+            }
+        }
+
+        return result
+    }
+
     /// Initiate a phone call via tel: URL scheme (opens FaceTime).
     @discardableResult
     func initiateCall(recipient: String) -> Bool {

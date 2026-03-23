@@ -262,6 +262,7 @@ actor MailDatabaseService {
                 senderEmail: meta.senderEmail,
                 recipientEmails: bodyResult.recipients,
                 ccEmails: bodyResult.cc,
+                bccEmails: [],
                 date: meta.date,
                 bodyPlainText: bodyResult.plainText,
                 bodySnippet: String(bodyResult.plainText.prefix(200)),
@@ -301,7 +302,7 @@ actor MailDatabaseService {
 
         for meta in metas {
             // Query recipients for this message from the recipients table
-            let (toAddrs, ccAddrs) = queryRecipients(db: db, messageRowID: meta.mailID)
+            let (toAddrs, ccAddrs, bccAddrs) = queryRecipients(db: db, messageRowID: meta.mailID)
 
             // Skip messages with no recipients (can't link to contacts)
             guard !toAddrs.isEmpty || !ccAddrs.isEmpty else { continue }
@@ -323,6 +324,7 @@ actor MailDatabaseService {
                 senderEmail: meta.senderEmail,
                 recipientEmails: toAddrs,
                 ccEmails: ccAddrs,
+                bccEmails: bccAddrs,
                 date: meta.date,
                 bodyPlainText: snippet ?? fallback,
                 bodySnippet: snippet ?? fallback,
@@ -338,7 +340,7 @@ actor MailDatabaseService {
 
     /// Query To and CC recipients for a message from the Envelope Index.
     /// Returns (toEmails, ccEmails).
-    private func queryRecipients(db: OpaquePointer, messageRowID: Int32) -> ([String], [String]) {
+    private func queryRecipients(db: OpaquePointer, messageRowID: Int32) -> ([String], [String], [String]) {
         // First, discover the actual column names in the recipients table
         var columnNames: [String] = []
         var pragmaStmt: OpaquePointer?
@@ -370,6 +372,7 @@ actor MailDatabaseService {
 
             var toAddrs: [String] = []
             var ccAddrs: [String] = []
+            var bccAddrs: [String] = []
 
             while sqlite3_step(stmt) == SQLITE_ROW {
                 guard let addr = columnString(stmt, 0), !addr.isEmpty else { continue }
@@ -377,19 +380,20 @@ actor MailDatabaseService {
                 switch type {
                 case 0: toAddrs.append(addr.lowercased())
                 case 1: ccAddrs.append(addr.lowercased())
+                case 2: bccAddrs.append(addr.lowercased())
                 default: toAddrs.append(addr.lowercased())
                 }
             }
 
-            if !toAddrs.isEmpty || !ccAddrs.isEmpty {
-                return (toAddrs, ccAddrs)
+            if !toAddrs.isEmpty || !ccAddrs.isEmpty || !bccAddrs.isEmpty {
+                return (toAddrs, ccAddrs, bccAddrs)
             }
         } else {
             let err = String(cString: sqlite3_errmsg(db))
             logger.warning("[recipients] Query failed: \(err, privacy: .public) — columns: \(columnNames.joined(separator: ", "), privacy: .public)")
         }
 
-        return ([], [])
+        return ([], [], [])
     }
 
     /// Try to extract a message snippet/preview from the database.

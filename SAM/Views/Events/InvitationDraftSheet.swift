@@ -4,9 +4,11 @@
 //
 //  Created on March 11, 2026.
 //  Step-through invitation drafting: generate → edit → send, one participant at a time.
+//  Rich text editor for email invitations with bold, italic, links, inline images, and QR codes.
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct InvitationDraftSheet: View {
 
@@ -24,6 +26,11 @@ struct InvitationDraftSheet: View {
     @State private var skippedCount = 0
     @State private var originalDraftText = ""
     @State private var selectedChannel: CommunicationChannel = .iMessage
+    @State private var editorHandle = RichInvitationEditorHandle()
+    @State private var showLinkPopover = false
+    @State private var showImagePicker = false
+
+    private var isEmailChannel: Bool { selectedChannel == .email }
 
     private var currentParticipation: EventParticipation? {
         guard currentIndex < uninvited.count else { return nil }
@@ -63,8 +70,11 @@ struct InvitationDraftSheet: View {
             // Footer
             footer
         }
-        .frame(width: 600, height: 500)
+        .frame(width: 650, height: 550)
         .task {
+            // Wire up the link insertion callback
+            editorHandle.onInsertLink = { showLinkPopover = true }
+
             if let single = singleParticipation {
                 uninvited = [single]
             } else {
@@ -156,7 +166,13 @@ struct InvitationDraftSheet: View {
                 .background(.quaternary.opacity(0.3))
             }
 
-            // Text editor area
+            // Formatting toolbar (email only)
+            if isEmailChannel && !isGenerating {
+                formattingToolbar
+                Divider()
+            }
+
+            // Editor area
             if isGenerating {
                 VStack(spacing: 12) {
                     ProgressView()
@@ -169,7 +185,12 @@ struct InvitationDraftSheet: View {
                         .frame(width: 200)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if isEmailChannel {
+                // Rich text editor for email
+                RichInvitationEditor(plainText: $draftText, handle: editorHandle)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
+                // Plain text editor for iMessage
                 TextEditor(text: $draftText)
                     .samFont(.body)
                     .padding(8)
@@ -196,6 +217,90 @@ struct InvitationDraftSheet: View {
                 .padding(.vertical, 6)
             }
         }
+    }
+
+    // MARK: - Formatting Toolbar
+
+    private var formattingToolbar: some View {
+        HStack(spacing: 2) {
+            // Bold
+            Button {
+                editorHandle.toggleBold()
+            } label: {
+                Image(systemName: "bold")
+            }
+            .buttonStyle(.borderless)
+            .help("Bold (⌘B)")
+
+            // Italic
+            Button {
+                editorHandle.toggleItalic()
+            } label: {
+                Image(systemName: "italic")
+            }
+            .buttonStyle(.borderless)
+            .help("Italic (⌘I)")
+
+            Divider()
+                .frame(height: 16)
+                .padding(.horizontal, 4)
+
+            // Insert Link
+            Button {
+                showLinkPopover = true
+            } label: {
+                Image(systemName: "link")
+            }
+            .buttonStyle(.borderless)
+            .help("Insert Link (⌘K)")
+            .popover(isPresented: $showLinkPopover) {
+                LinkInsertionPopover(
+                    event: event,
+                    editorHandle: editorHandle,
+                    isPresented: $showLinkPopover
+                )
+            }
+
+            // Insert QR Code (quick action — uses event join link)
+            if event.joinLink != nil {
+                Button {
+                    if let link = event.joinLink {
+                        editorHandle.insertQRCode(from: link)
+                    }
+                } label: {
+                    Image(systemName: "qrcode")
+                }
+                .buttonStyle(.borderless)
+                .help("Insert QR Code for Event Link")
+            }
+
+            Divider()
+                .frame(height: 16)
+                .padding(.horizontal, 4)
+
+            // Insert Image
+            Button {
+                pickAndInsertImage()
+            } label: {
+                Image(systemName: "photo")
+            }
+            .buttonStyle(.borderless)
+            .help("Insert Image")
+
+            Spacer()
+
+            // Channel hint
+            HStack(spacing: 4) {
+                Image(systemName: "envelope.fill")
+                    .samFont(.caption2)
+                Text("Rich text — opens in Mail for review")
+                    .samFont(.caption2)
+            }
+            .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(.quaternary.opacity(0.2))
     }
 
     // MARK: - Completion View
@@ -248,7 +353,7 @@ struct InvitationDraftSheet: View {
                 }
                 .disabled(isGenerating || draftText.isEmpty)
 
-                Button("Send") {
+                Button(isEmailChannel ? "Open in Mail" : "Send") {
                     sendAndAdvance()
                 }
                 .buttonStyle(.borderedProminent)
@@ -289,18 +394,41 @@ struct InvitationDraftSheet: View {
     private func sendAndAdvance() {
         guard let participation = currentParticipation else { return }
         learnClosingIfChanged(person: participation.person)
-        do {
-            try EventCoordinator.shared.sendInvitation(for: participation, body: draftText, channel: selectedChannel)
-            sentCount += 1
-            // Auto-dismiss for single-participant flow
-            if singleParticipation != nil {
-                onComplete()
-                dismiss()
-                return
+
+        if isEmailChannel {
+            // Email: hand off to Mail.app with rich content
+            let attrString = editorHandle.extractAttributedString()
+            do {
+                try EventCoordinator.shared.sendRichInvitation(
+                    for: participation,
+                    attributedBody: attrString,
+                    plainText: draftText,
+                    channel: .email
+                )
+                sentCount += 1
+                if singleParticipation != nil {
+                    onComplete()
+                    dismiss()
+                    return
+                }
+                advanceToNext()
+            } catch {
+                errorMessage = error.localizedDescription
             }
-            advanceToNext()
-        } catch {
-            errorMessage = error.localizedDescription
+        } else {
+            // iMessage: send plain text directly
+            do {
+                try EventCoordinator.shared.sendInvitation(for: participation, body: draftText, channel: selectedChannel)
+                sentCount += 1
+                if singleParticipation != nil {
+                    onComplete()
+                    dismiss()
+                    return
+                }
+                advanceToNext()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
         }
     }
 
@@ -321,6 +449,19 @@ struct InvitationDraftSheet: View {
                 }
             }
             Task { await generateCurrentDraft() }
+        }
+    }
+
+    private func pickAndInsertImage() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image, .pdf]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.message = "Choose an image to embed in the invitation"
+
+        if panel.runModal() == .OK, let url = panel.url,
+           let data = try? Data(contentsOf: url) {
+            editorHandle.insertImage(data: data)
         }
     }
 

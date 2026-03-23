@@ -465,6 +465,69 @@ final class EventCoordinator {
         }
     }
 
+    /// Send a rich (HTML) invitation via Mail.app handoff with formatting, links, and images.
+    /// Marks the participation as `handedOff` rather than `invited` — the sent mail detection
+    /// service will confirm delivery and update to `invited` when the email appears in Sent.
+    func sendRichInvitation(
+        for participation: EventParticipation,
+        attributedBody: NSAttributedString,
+        plainText: String,
+        channel: CommunicationChannel
+    ) throws {
+        guard let person = participation.person else { return }
+        let recipientEmail = person.emailCache ?? ""
+
+        // Store the plain text version as the message record
+        try EventRepository.shared.appendMessage(
+            participationID: participation.id,
+            kind: .invitation,
+            channel: .email,
+            body: plainText,
+            isDraft: false
+        )
+
+        // Mark as handed off — will become .invited when sent mail is detected
+        participation.inviteStatus = .handedOff
+        participation.inviteChannel = .email
+
+        // Convert to HTML and hand off to Mail.app
+        let conversion = AttributedStringToHTML.convert(attributedBody)
+        let subject = participation.event?.title ?? "Event Invitation"
+        let imageAttachments = conversion.inlineImages.map { ($0.0, $0.2) }
+
+        Task {
+            let opened = await ComposeService.shared.composeHTMLEmail(
+                recipient: recipientEmail,
+                subject: subject,
+                htmlBody: conversion.html,
+                imageAttachments: imageAttachments
+            )
+            if opened {
+                // Register for sent mail detection when SAM regains focus
+                if let event = participation.event {
+                    SentMailDetectionService.shared.watchForSentInvitation(
+                        eventID: event.id,
+                        subject: subject,
+                        participationID: participation.id,
+                        recipientEmail: recipientEmail
+                    )
+                }
+                logger.debug("Handed off rich invitation to Mail.app for \(person.displayNameCache ?? "unknown")")
+            } else {
+                // Fallback: mark as invited anyway since we can't track
+                await MainActor.run {
+                    participation.inviteStatus = .invited
+                    participation.inviteSentAt = .now
+                }
+                logger.warning("HTML email handoff failed — marking as invited")
+            }
+        }
+
+        if let event = participation.event, event.status == .draft {
+            try? EventRepository.shared.updateEvent(id: event.id, status: .inviting)
+        }
+    }
+
     /// System handoff delivery — opens the system app with the draft pre-filled.
     private func deliverViaSystemHandoff(channel: CommunicationChannel, recipient: String, body: String) {
         let compose = ComposeService.shared

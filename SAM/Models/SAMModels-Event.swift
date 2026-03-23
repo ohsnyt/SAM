@@ -443,6 +443,7 @@ public enum ParticipantPriority: String, Codable, Sendable, CaseIterable {
 public enum InviteStatus: String, Codable, Sendable, CaseIterable {
     case notInvited     // Not yet in invitation queue
     case draftReady     // SAM has generated the invitation draft
+    case handedOff      // Compose window opened in Mail.app, pending sent confirmation
     case invited        // User marked as sent
     case reminderSent   // Pre-event reminder has been sent
 
@@ -450,6 +451,7 @@ public enum InviteStatus: String, Codable, Sendable, CaseIterable {
         switch self {
         case .notInvited:   return "Not Invited"
         case .draftReady:   return "Draft Ready"
+        case .handedOff:    return "Handed Off"
         case .invited:      return "Invited"
         case .reminderSent: return "Reminder Sent"
         }

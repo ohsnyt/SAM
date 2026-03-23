@@ -1970,6 +1970,13 @@ struct BusinessProfileSettingsContent: View {
                             .textFieldStyle(.roundedBorder)
                             .onSubmit { saveProfile() }
                     }
+
+                    HStack {
+                        Text("Website:")
+                        TextField("e.g., https://yoursite.com", text: $profile.website)
+                            .textFieldStyle(.roundedBorder)
+                            .onSubmit { saveProfile() }
+                    }
                 }
                 .padding(.vertical, 4)
             }

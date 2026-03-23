@@ -331,7 +331,7 @@ All models use SwiftData lightweight migration. Enum storage uses `rawValue` pat
 | **EngagementSnapshot** | Engagement metrics per period | platform, period, metrics |
 | **SocialProfileSnapshot** | Cross-platform profile storage | platform, identity, data blobs |
 | **SamEvent** | Event/workshop management | title, format, status, startDate, RSVP tracking, autoReplyUnknownSenders, presentation link |
-| **EventParticipation** | Event ↔ Person join with RSVP | event, person, rsvpStatus, invitedAt, respondedAt |
+| **EventParticipation** | Event ↔ Person join with RSVP | event, person, rsvpStatus, inviteStatus (notInvited→draftReady→handedOff→invited→reminderSent), inviteSentAt, respondedAt |
 | **SamPresentation** | Reusable presentation library | title, description, topicTags, fileAttachments, contentSummary, keyTalkingPoints |
 | **GoalJournalEntry** | Distilled learnings from goal check-in conversations | goalID, headline, whatsWorkingJSON, whatsNotWorkingJSON, barriersJSON, adjustedStrategy, keyInsight, commitmentActionsJSON, paceAtCheckIn, progressAtCheckIn, conversationTurnCount |
 | **RoleDefinition** | Role specifications for recruiting pipeline | title, description, idealProfile, refinementNotes, scoringCriteria |
@@ -378,6 +378,16 @@ Bookmark the **directory** (not file) for SQLite to cover WAL/SHM companions. `.
 - **Safari profile opener**: `SafariBrowserHelper` uses AppleScript to open LinkedIn/Facebook profiles in a sized, positioned Safari window for photo dragging. Tracks window IDs and closes them after successful drop. Requires `com.apple.Safari` in `temporary-exception.apple-events` entitlement.
 - **Profile URL resolution**: checks `SamPerson.linkedInProfileURL` / `facebookProfileURL`, then Apple Contacts `socialProfiles`, then `urlAddresses`. `sanitizeProfileURL()` strips service prefixes (e.g., `linkedin:www.linkedin.com/...`) that Apple Contacts sometimes includes. Falls back to Facebook people search for confirmed friends without a stored profile URL.
 - **LinkedIn PDF import**: Drag a LinkedIn-generated profile PDF onto the "Add a note..." bar in PersonDetailView. `LinkedInPDFParserService` (deterministic, no AI) extracts structured data. Creates `PendingEnrichment` records for email, phone, company, job title, and LinkedIn URL. Generates a concise note with summary, current position, education, skills, honors, and languages — the note triggers AI analysis for family/relationship discovery.
+
+### Rich Invitation System
+The invitation flow uses a hybrid model: rich text editor in SAM → Mail.app handoff → sent mail detection.
+
+- **Drafting**: `RichInvitationEditor` (NSTextView) supports bold, italic, links (Cmd+B/I/K), inline images, QR codes
+- **Link insertion**: `LinkInsertionPopover` offers event join URL presets, user website, custom URLs, optional QR codes
+- **HTML handoff**: `AttributedStringToHTML` converts to HTML; `ComposeService.composeHTMLEmail()` opens Mail.app via AppleScript `html content`
+- **Sent mail detection**: `SentMailDetectionService` watches NSWorkspace focus events. When SAM regains focus after Mail.app, it scans the Envelope Index for recently sent messages matching pending watch subjects (retry pattern: 1s, 3s, 8s, 15s, 30s)
+- **Recipient intelligence**: TO = invitee, BCC = informational, CC with Agent/Vendor/Referral = informational, CC with Client/Lead = ambiguous (prompts user via `InvitationRecipientReviewSheet`)
+- **Lifecycle**: participation moves notInvited → draftReady → handedOff (at Mail.app open) → invited (when sent mail confirmed)
 
 ### Text Size Scaling
 - macOS does not meaningfully scale semantic SwiftUI fonts (`.body`, `.caption`, etc.) via `DynamicTypeSize` — those are fixed point sizes
@@ -451,5 +461,5 @@ The role system (`RoleDefinition`) currently supports user-defined roles with cr
 
 ---
 
-**Document Version**: 46
+**Document Version**: 47
 **Last Updated**: March 21, 2026 — Settings restructure (sidebar navigation), AI simplification (locked hybrid+Qwen), role system evolution notes.

@@ -4,6 +4,41 @@
 
 ---
 
+## Rich Invitation Editor, Sent Mail Detection, Multi-Recipient Intelligence (March 23, 2026)
+
+### Rich Text Invitation Editor
+- **`RichInvitationEditor`** — NSViewRepresentable wrapping NSTextView with Cmd+B (bold), Cmd+I (italic), Cmd+K (insert link) keyboard shortcuts
+- **`LinkInsertionPopover`** — Low-friction link insertion with presets: event join URL, user website, custom URL. Optional QR code inline insertion via `QRCodeGenerator`
+- **`QRCodeGenerator`** — CIFilter-based QR code generation (NSImage + PNG data) for embedding shareable links
+- **`InvitationDraftSheet` rewritten** — Rich text editor for email channel with formatting toolbar (Bold/Italic/Link/QR/Image); plain TextEditor preserved for iMessage. "Send" becomes "Open in Mail" for email channel. NSOpenPanel for inline image insertion
+
+### HTML Email Handoff to Mail.app
+- **`AttributedStringToHTML`** — Converts NSAttributedString to HTML with bold, italic, links, and inline images (CID references)
+- **`ComposeService.composeHTMLEmail()`** — AppleScript automation using Mail.app's `html content` property for rich email compose windows. Temp files for image attachments
+- **`EventCoordinator.sendRichInvitation()`** — Orchestrates the flow: stores message metadata, marks participation as `.handedOff`, converts to HTML, opens Mail.app, registers for sent mail detection
+
+### Sent Mail Detection & Multi-Recipient Intelligence
+- **`SentMailDetectionService`** — @MainActor @Observable singleton observing NSWorkspace.didActivateApplicationNotification
+- When SAM regains focus after Mail.app, scans Envelope Index for recently sent messages matching pending watch subjects
+- Retry pattern: checks at 1s, 3s, 8s, 15s, 30s after focus return; watches expire after 1 hour
+- **Role-aware recipient classification**:
+  - TO recipients → invitees (auto-mark as invited)
+  - BCC recipients → always informational
+  - CC with Agent/Vendor/Referral Partner/Strategic Alliance roles → informational
+  - CC with Client/Lead/Applicant roles → ambiguous (prompts user)
+  - Unknown email addresses → new contact (prompts user)
+- **`InvitationRecipientReviewSheet`** — Review UI for ambiguous/new recipients with Add as Invitee / Informational / Ignore decisions
+- Auto-updates matched participations from `.handedOff` → `.invited` when sent mail confirmed
+
+### Supporting Changes
+- **`InviteStatus.handedOff`** — New lifecycle state between draftReady and invited, representing "Mail.app opened but not yet confirmed sent"
+- **`BusinessProfileDTO.website`** — User website field for link presets (backwards-compatible decoder)
+- **`EmailDTO.bccEmails`** — BCC recipient support throughout mail pipeline
+- **`MailDatabaseService.queryRecipients`** — Returns 3-tuple (to, cc, bcc) instead of 2-tuple
+- Settings: website text field in Business Profile section
+
+---
+
 ## Event Invitation UX, Outcome Dedup Fix (March 23, 2026)
 
 ### Event Invitation Picker — "Show More Suggestions"

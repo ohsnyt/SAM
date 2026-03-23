@@ -67,6 +67,9 @@ nonisolated public struct BusinessProfile: Codable, Sendable, Equatable {
     /// Communication channels available (e.g., ["iMessage", "Email", "Phone"]).
     public var communicationChannels: [String]
 
+    /// The user's website URL (for inclusion in event invitations, email signatures, etc.).
+    public var website: String
+
     // MARK: - Custom Context
 
     /// Free-form additional context the user wants all AI agents to know.
@@ -105,6 +108,7 @@ nonisolated public struct BusinessProfile: Codable, Sendable, Equatable {
         samIsCRM: Bool = true,
         activeSocialPlatforms: [String] = ["Facebook", "LinkedIn"],
         communicationChannels: [String] = ["iMessage", "Email", "Phone"],
+        website: String = "",
         additionalContext: String = ""
     ) {
         self.practiceType = practiceType
@@ -118,6 +122,7 @@ nonisolated public struct BusinessProfile: Codable, Sendable, Equatable {
         self.samIsCRM = samIsCRM
         self.activeSocialPlatforms = activeSocialPlatforms
         self.communicationChannels = communicationChannels
+        self.website = website
         self.additionalContext = additionalContext
     }
 
@@ -136,6 +141,7 @@ nonisolated public struct BusinessProfile: Codable, Sendable, Equatable {
         self.samIsCRM = try container.decodeIfPresent(Bool.self, forKey: .samIsCRM) ?? true
         self.activeSocialPlatforms = try container.decodeIfPresent([String].self, forKey: .activeSocialPlatforms) ?? ["Facebook", "LinkedIn"]
         self.communicationChannels = try container.decodeIfPresent([String].self, forKey: .communicationChannels) ?? ["iMessage", "Email", "Phone"]
+        self.website = try container.decodeIfPresent(String.self, forKey: .website) ?? ""
         self.additionalContext = try container.decodeIfPresent(String.self, forKey: .additionalContext) ?? ""
     }
 

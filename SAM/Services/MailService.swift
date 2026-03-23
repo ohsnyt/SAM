@@ -498,6 +498,7 @@ actor MailService {
                     senderEmail: meta.senderEmail,
                     recipientEmails: recipients,
                     ccEmails: cc,
+                    bccEmails: [],
                     date: meta.date,
                     bodyPlainText: body,
                     bodySnippet: snippet,

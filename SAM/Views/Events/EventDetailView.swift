@@ -442,6 +442,17 @@ struct EventDetailView: View {
                 refreshToken = UUID()
             }
         }
+        .sheet(isPresented: Binding(
+            get: { SentMailDetectionService.shared.pendingReviewResult != nil },
+            set: { if !$0 { SentMailDetectionService.shared.pendingReviewResult = nil } }
+        ), onDismiss: { refreshToken = UUID() }) {
+            if let (match, recipients) = SentMailDetectionService.shared.pendingReviewResult {
+                InvitationRecipientReviewSheet(matchResult: match, recipients: recipients) {
+                    SentMailDetectionService.shared.pendingReviewResult = nil
+                    refreshToken = UUID()
+                }
+            }
+        }
     }
 
     // MARK: - Participant Detail (right)

@@ -20,6 +20,7 @@ struct EmailDTO: Sendable, Identifiable {
     let senderEmail: String
     let recipientEmails: [String]
     let ccEmails: [String]
+    let bccEmails: [String]
     let date: Date
     let bodyPlainText: String  // Plain text body (stripped HTML if needed)
     let bodySnippet: String    // First ~200 chars for display
@@ -31,9 +32,9 @@ struct EmailDTO: Sendable, Identifiable {
         "mail:\(messageID)"
     }
 
-    /// All participant email addresses (sender + recipients + CC)
+    /// All participant email addresses (sender + recipients + CC + BCC)
     var allParticipantEmails: [String] {
-        [senderEmail] + recipientEmails + ccEmails
+        [senderEmail] + recipientEmails + ccEmails + bccEmails
     }
 
     /// True when this email came from a Sent/outbound mailbox.
