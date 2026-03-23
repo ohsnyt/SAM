@@ -6,6 +6,7 @@
 //  Event detail — participant list, RSVP management, invitations, and follow-ups.
 //
 
+import SwiftData
 import SwiftUI
 
 struct EventDetailView: View {
@@ -460,7 +461,8 @@ struct EventDetailView: View {
     private func participantDetail(event: SamEvent) -> some View {
         Group {
             if let participationID = selectedParticipationID,
-               let participation = cachedParticipations.first(where: { $0.id == participationID }) {
+               let participation = cachedParticipations.first(where: { $0.id == participationID }),
+               !participation.isDeleted {
                 ParticipantDetailView(participation: participation, event: event) {
                     selectedParticipationID = nil
                     refreshToken = UUID()
@@ -860,8 +862,11 @@ struct ParticipantDetailView: View {
         }
         .alert("Remove Participant?", isPresented: $showRemoveConfirmation) {
             Button("Remove", role: .destructive) {
-                try? EventRepository.shared.removeParticipant(participationID: participation.id, from: event)
+                // Clear selection BEFORE deleting to prevent SwiftUI from
+                // accessing detached model properties during the render cycle
+                let participationID = participation.id
                 onRemoved?()
+                try? EventRepository.shared.removeParticipant(participationID: participationID, from: event)
             }
             Button("Cancel", role: .cancel) { }
         } message: {
