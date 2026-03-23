@@ -89,6 +89,15 @@ final class OutcomeEngine {
             // Prune expired outcomes first
             try outcomeRepo.pruneExpired()
 
+            // Wake snoozed outcomes that have reached their wake date
+            let woken = try outcomeRepo.wakeExpiredSnoozes()
+            for outcome in woken {
+                if shouldAutoResolve(outcome) {
+                    try outcomeRepo.markCompleted(id: outcome.id)
+                    logger.info("Auto-resolved woken outcome: \(outcome.title)")
+                }
+            }
+
             let allEvidence = try evidenceRepo.fetchAll()
             let allPeople = try peopleRepo.fetchAll().filter { !$0.isMe && !$0.isArchived }
             let allNotes = try notesRepo.fetchAll()
@@ -255,6 +264,40 @@ final class OutcomeEngine {
         for outcome in active {
             outcome.priorityScore = computePriority(outcome: outcome, weights: weights, healthCache: healthCache)
         }
+    }
+
+    // MARK: - Snooze Auto-Resolve
+
+    /// Check whether a woken snoozed outcome can be auto-resolved.
+    /// Returns true if outbound evidence to the linked person appeared since the snooze,
+    /// or if the linked event already has the person as a participant.
+    private func shouldAutoResolve(_ outcome: SamOutcome) -> Bool {
+        guard let snoozedAt = outcome.snoozedAt else { return false }
+
+        // Check for outbound evidence to the linked person since snooze
+        if let person = outcome.linkedPerson {
+            let outboundSources: Set<EvidenceSource> = [.mail, .iMessage, .whatsApp]
+            let recentEvidence = (try? evidenceRepo.fetchAll()) ?? []
+            let hasOutbound = recentEvidence.contains { ev in
+                ev.isFromMe
+                && outboundSources.contains(ev.source)
+                && ev.linkedPeople.contains(where: { $0.id == person.id })
+                && ev.occurredAt > snoozedAt
+            }
+            if hasOutbound && (outcome.outcomeKind == .followUp || outcome.outcomeKind == .outreach) {
+                return true
+            }
+        }
+
+        // For event-linked outcomes: check if the person was already added as participant
+        if let event = outcome.linkedEvent, let person = outcome.linkedPerson {
+            let participations = EventRepository.shared.fetchParticipations(for: event)
+            if participations.contains(where: { $0.person?.id == person.id }) {
+                return true
+            }
+        }
+
+        return false
     }
 
     // MARK: - Scanners

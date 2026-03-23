@@ -4,6 +4,26 @@
 
 ---
 
+## Outcome Snooze & Outgoing Event Matcher (March 23, 2026)
+
+### Outcome Snooze
+- **Feature**: Users can defer coaching outcomes to a future date ("I'll handle this, but not yet"). Snooze button between Done and Skip with quick-pick popover (Tomorrow, 3 Days, Monday, 1 Week, or custom date).
+- **Model changes**: Added `snoozedAt`, `snoozeUntil`, `snoozeCount` to `SamOutcome`; added `case snoozed` to `OutcomeStatus`; extended `OutcomeSnapshot` with snooze fields for undo support.
+- **Auto-resolve**: When a snoozed outcome wakes (reaches its `snoozeUntil` date), `OutcomeEngine.shouldAutoResolve()` checks for outbound evidence to the linked person since the snooze date. If found, the outcome is auto-completed — the user already took action.
+- **Repository**: `OutcomeRepository.markSnoozed(id:until:)` sets status + captures undo snapshot with toast. `wakeExpiredSnoozes()` returns outcomes past their wake date and resets them to pending. `hasSimilarOutcome` dedup includes `.snoozed` status.
+- **Calibration**: `CalibrationService.recordSnooze()` tracks snooze as a soft signal (counted as partial dismissal in the calibration ledger).
+- **UI**: New `SnoozePickerView` popover. `OutcomeCardView` wired with `onSnooze` callback. `OutcomeQueueView` calls repository + calibration on snooze.
+
+### Outgoing Event Matcher
+- **Feature**: After mail/comms imports, SAM scans recent outgoing messages for references to upcoming events. If a recipient is not yet a participant, SAM generates a coaching outcome suggesting they be added.
+- **Matching heuristics**: Event title keywords (2+ significant words), venue name, formatted date (both "March 28" and "3/28" patterns).
+- **Dedup**: Checks active outcomes for existing person+event suggestions before creating new ones.
+- **Integration**: `OutgoingEventMatcher.shared.scanRecentOutgoing()` called from `PostImportOrchestrator.runPostImportWork()` after role deduction and insight generation.
+- **Scan state**: `lastScanDate` persisted in UserDefaults; minimum 30-second debounce between scans.
+- **Outcomes**: Generated as `.preparation` kind with `.schedule` action lane, linked to the person, deadline set to event start date.
+
+---
+
 ## Rich Email Handoff, Image Resize Slider, Invitation Resend (March 23, 2026)
 
 ### Mail.app Rich Email Handoff

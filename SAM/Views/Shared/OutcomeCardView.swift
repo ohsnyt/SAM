@@ -18,6 +18,7 @@ struct OutcomeCardView: View {
     let onAct: (() -> Void)?
     let onDone: () -> Void
     let onSkip: () -> Void
+    var onSnooze: ((Date) -> Void)?
     var onMuteKind: (() -> Void)?
 
     /// Total steps in the sequence (injected by parent or computed).
@@ -29,6 +30,8 @@ struct OutcomeCardView: View {
 
     @State private var copiedStep = false
     @State private var copiedAll = false
+    @State private var showSnoozePicker = false
+    @State private var snoozeDate = Calendar.current.date(byAdding: .day, value: 1, to: .now)!
 
     /// Compliance flags for any AI-generated draft on this outcome.
     private var draftComplianceFlags: [ComplianceFlag] {
@@ -157,6 +160,23 @@ struct OutcomeCardView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(isHero ? .regular : .small)
+                }
+
+                if onSnooze != nil {
+                    Button {
+                        showSnoozePicker = true
+                    } label: {
+                        Label("Snooze", systemImage: "moon.zzz")
+                            .samFont(.caption)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(isHero ? .regular : .small)
+                    .popover(isPresented: $showSnoozePicker) {
+                        SnoozePickerView(date: $snoozeDate) {
+                            onSnooze?(snoozeDate)
+                            showSnoozePicker = false
+                        }
+                    }
                 }
 
                 Button(action: onSkip) {

@@ -335,6 +335,82 @@ final class OutcomeRepository {
         try context.save()
     }
 
+    // MARK: - Snooze
+
+    /// Snooze an outcome until a future date. Captures undo snapshot.
+    func markSnoozed(id: UUID, until date: Date) throws {
+        guard let context else { throw RepositoryError.notConfigured }
+        guard let outcome = try fetch(id: id) else { return }
+
+        let snapshot = OutcomeSnapshot(
+            id: outcome.id,
+            title: outcome.title,
+            previousStatusRawValue: outcome.statusRawValue,
+            previousDismissedAt: outcome.dismissedAt,
+            previousCompletedAt: outcome.completedAt,
+            previousWasActedOn: outcome.wasActedOn,
+            previousSnoozedAt: outcome.snoozedAt,
+            previousSnoozeUntil: outcome.snoozeUntil,
+            previousSnoozeCount: outcome.snoozeCount
+        )
+
+        outcome.statusRawValue = OutcomeStatus.snoozed.rawValue
+        outcome.snoozedAt = .now
+        outcome.snoozeUntil = date
+        outcome.snoozeCount += 1
+        try context.save()
+        logger.debug("Outcome snoozed until \(date.formatted(.dateTime.month().day())): \(outcome.title)")
+
+        if let entry = try? UndoRepository.shared.capture(
+            operation: .statusChanged,
+            entityType: .outcome,
+            entityID: outcome.id,
+            entityDisplayName: outcome.title,
+            snapshot: snapshot
+        ) {
+            UndoCoordinator.shared.showToast(for: entry)
+        }
+    }
+
+    /// Fetch all snoozed outcomes, sorted by wake date ascending.
+    func fetchSnoozed() throws -> [SamOutcome] {
+        guard let context else { throw RepositoryError.notConfigured }
+
+        let descriptor = FetchDescriptor<SamOutcome>(
+            sortBy: [SortDescriptor(\.snoozeUntil)]
+        )
+        let all = try context.fetch(descriptor)
+        return all.filter { $0.status == .snoozed }
+    }
+
+    /// Wake snoozed outcomes whose snoozeUntil date has passed.
+    /// Sets them back to .pending and clears snooze timestamps.
+    /// Returns the woken outcomes for the engine to evaluate.
+    func wakeExpiredSnoozes() throws -> [SamOutcome] {
+        guard let context else { throw RepositoryError.notConfigured }
+
+        let now = Date.now
+        let descriptor = FetchDescriptor<SamOutcome>()
+        let all = try context.fetch(descriptor)
+        var woken: [SamOutcome] = []
+
+        for outcome in all where outcome.status == .snoozed {
+            if let wakeDate = outcome.snoozeUntil, wakeDate <= now {
+                outcome.statusRawValue = OutcomeStatus.pending.rawValue
+                // Keep snoozedAt for auto-resolve evidence window; clear snoozeUntil
+                outcome.snoozeUntil = nil
+                woken.append(outcome)
+            }
+        }
+
+        if !woken.isEmpty {
+            try context.save()
+            logger.debug("Woke \(woken.count) snoozed outcomes")
+        }
+
+        return woken
+    }
+
     // MARK: - Pruning
 
     /// Auto-expire outcomes past their deadline that are still pending.
@@ -402,7 +478,7 @@ final class OutcomeRepository {
             outcome.outcomeKindRawValue == kindRaw &&
             outcome.linkedPerson?.id == personID &&
             outcome.createdAt >= cutoff &&
-            (outcome.status == .pending || outcome.status == .inProgress)
+            (outcome.status == .pending || outcome.status == .inProgress || outcome.status == .snoozed)
         }
     }
 

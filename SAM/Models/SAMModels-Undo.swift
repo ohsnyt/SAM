@@ -133,6 +133,30 @@ public struct OutcomeSnapshot: Codable, Sendable {
     public let previousDismissedAt: Date?
     public let previousCompletedAt: Date?
     public let previousWasActedOn: Bool
+    public let previousSnoozedAt: Date?
+    public let previousSnoozeUntil: Date?
+    public let previousSnoozeCount: Int
+
+    /// Backwards-compatible initializer — snooze fields default to nil/0.
+    public init(
+        id: UUID, title: String,
+        previousStatusRawValue: String,
+        previousDismissedAt: Date?, previousCompletedAt: Date?,
+        previousWasActedOn: Bool,
+        previousSnoozedAt: Date? = nil,
+        previousSnoozeUntil: Date? = nil,
+        previousSnoozeCount: Int = 0
+    ) {
+        self.id = id
+        self.title = title
+        self.previousStatusRawValue = previousStatusRawValue
+        self.previousDismissedAt = previousDismissedAt
+        self.previousCompletedAt = previousCompletedAt
+        self.previousWasActedOn = previousWasActedOn
+        self.previousSnoozedAt = previousSnoozedAt
+        self.previousSnoozeUntil = previousSnoozeUntil
+        self.previousSnoozeCount = previousSnoozeCount
+    }
 }
 
 /// Snapshot of a deleted context — includes all participations for cascade restore.

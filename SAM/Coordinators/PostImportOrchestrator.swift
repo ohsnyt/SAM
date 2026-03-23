@@ -49,6 +49,9 @@ final class PostImportOrchestrator {
             InsightGenerator.shared.startAutoGeneration()
         }
 
+        // Scan outgoing messages for event-related content and suggest participant additions.
+        OutgoingEventMatcher.shared.scanRecentOutgoing()
+
         logger.debug("Post-import work dispatched")
     }
 }

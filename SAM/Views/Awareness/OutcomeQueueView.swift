@@ -102,6 +102,7 @@ struct OutcomeQueueView: View {
                             onAct: actClosure(for: outcome),
                             onDone: { markDone(outcome) },
                             onSkip: { markSkipped(outcome) },
+                            onSnooze: { date in snoozeOutcome(outcome, until: date) },
                             onMuteKind: {
                                 Task { await CalibrationService.shared.setMuted(kind: outcome.outcomeKindRawValue, muted: true) }
                             },
@@ -386,6 +387,11 @@ struct OutcomeQueueView: View {
 
         // Record calibration dismissal signal
         Task { await CalibrationService.shared.recordDismissal(kind: outcome.outcomeKindRawValue) }
+    }
+
+    private func snoozeOutcome(_ outcome: SamOutcome, until date: Date) {
+        try? outcomeRepo.markSnoozed(id: outcome.id, until: date)
+        Task { await CalibrationService.shared.recordSnooze(kind: outcome.outcomeKindRawValue) }
     }
 
     // MARK: - Setup Guidance UserDefaults Helpers (Phase 6)

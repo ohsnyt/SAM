@@ -995,6 +995,17 @@ public final class SamOutcome {
     /// Raw value for the trigger condition; use `triggerCondition` transient property.
     public var triggerConditionRawValue: String?
 
+    // ── Snooze ─────────────────────────────────────────────────────
+
+    /// When the user snoozed this outcome. Nil if never snoozed.
+    public var snoozedAt: Date?
+
+    /// Date this outcome should wake up and re-surface. Nil if not snoozed.
+    public var snoozeUntil: Date?
+
+    /// How many times this outcome has been snoozed.
+    public var snoozeCount: Int = 0
+
     // ── Transient computed properties ───────────────────────────────
 
     @Transient

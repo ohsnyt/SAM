@@ -1075,6 +1075,7 @@ public enum OutcomeKind: String, Codable, Sendable, CaseIterable {
 public enum OutcomeStatus: String, Codable, Sendable {
     case pending        // Active, should be shown
     case inProgress     // User acknowledged, working on it
+    case snoozed        // User deferred; will re-surface on snoozeUntil date
     case completed      // Done
     case dismissed      // User explicitly dismissed
     case expired        // Past deadline, auto-expired

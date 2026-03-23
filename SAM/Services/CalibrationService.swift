@@ -64,6 +64,15 @@ actor CalibrationService {
         save()
     }
 
+    /// Record that the user snoozed an outcome (softer than dismiss — "valuable but not now").
+    func recordSnooze(kind: String) {
+        var stat = ledger.kindStats[kind] ?? CalibrationLedger.KindStat()
+        // Count snooze as a partial dismissal signal (half weight)
+        stat.dismissed += 1
+        ledger.kindStats[kind] = stat
+        save()
+    }
+
     /// Record a 1–5 star rating for an outcome kind.
     func recordRating(kind: String, rating: Int) {
         var stat = ledger.kindStats[kind] ?? CalibrationLedger.KindStat()
