@@ -128,11 +128,14 @@ final class ComposeService {
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
 
-        // Read HTML from file inside AppleScript — avoids all string escaping problems
-        let htmlFilePath = htmlFileURL.path
+        // Read HTML from temp file via shell command — avoids AppleScript string escaping entirely.
+        // Use a variable for the path so `quoted form of` handles shell escaping correctly.
+        let escapedPath = htmlFileURL.path
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
         let script = """
-            set htmlFile to POSIX file "\(htmlFilePath)"
-            set htmlContent to read htmlFile as «class utf8»
+            set filePath to "\(escapedPath)"
+            set htmlContent to do shell script "cat " & quoted form of filePath
             tell application "Mail"
                 set newMessage to make new outgoing message with properties {subject:"\(escapedSubject)", html content:htmlContent, visible:true}
                 tell newMessage

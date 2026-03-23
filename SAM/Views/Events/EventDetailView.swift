@@ -862,11 +862,19 @@ struct ParticipantDetailView: View {
         }
         .alert("Remove Participant?", isPresented: $showRemoveConfirmation) {
             Button("Remove", role: .destructive) {
-                // Clear selection BEFORE deleting to prevent SwiftUI from
-                // accessing detached model properties during the render cycle
                 let participationID = participation.id
+                let targetEvent = event
+                // Clear selection first so the parent stops rendering this view
                 onRemoved?()
-                try? EventRepository.shared.removeParticipant(participationID: participationID, from: event)
+                // Defer deletion until after the alert dismiss animation completes
+                // and SwiftUI processes the selection change. Without this delay,
+                // the layout pass triggered by NSWindowEndWindowModalSession
+                // re-evaluates this view's body before the parent can deselect it,
+                // causing a fault on the detached SwiftData backing store.
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(200))
+                    try? EventRepository.shared.removeParticipant(participationID: participationID, from: targetEvent)
+                }
             }
             Button("Cancel", role: .cancel) { }
         } message: {

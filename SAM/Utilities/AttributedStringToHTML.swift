@@ -86,16 +86,8 @@ enum AttributedStringToHTML {
             html += text
         }
 
-        // Wrap in a basic HTML document
-        let fullHTML = """
-            <!DOCTYPE html>
-            <html>
-            <head><meta charset="utf-8"></head>
-            <body style="font-family: -apple-system, Helvetica Neue, sans-serif; font-size: 14px; color: #333;">
-            \(html)
-            </body>
-            </html>
-            """
+        // Wrap in a basic HTML document (no leading whitespace — Mail.app is sensitive to it)
+        let fullHTML = "<!DOCTYPE html><html><head><meta charset=\"utf-8\"></head><body style=\"font-family: -apple-system, Helvetica Neue, sans-serif; font-size: 14px; color: #333;\">\(html)</body></html>"
 
         return ConversionResult(html: fullHTML, inlineImages: images)
     }
