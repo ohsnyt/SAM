@@ -4,6 +4,37 @@
 
 ---
 
+## Rich Email Handoff, Image Resize Slider, Invitation Resend (March 23, 2026)
+
+### Mail.app Rich Email Handoff
+- **Problem**: Getting formatted text, links, and inline images from SAM's editor into Mail.app proved surprisingly difficult. Multiple approaches were tried and failed:
+  - AppleScript `html content` property silently fails on modern macOS — message body always empty
+  - AppleScript with temp file reads (`read POSIX file`, `do shell script "cat"`) — same silent failure
+  - Base64 data URI images in AppleScript — string too large for AppleScript runtime
+  - `NSAttributedString(data:options:.html)` roundtrip — Apple's HTML parser reorders images to end
+  - Clipboard + System Events `keystroke "v"` — requires Accessibility permissions SAM doesn't have
+- **Solution**: `NSSharingService(named: .composeEmail)` with a clean `NSAttributedString` built by `ComposeService.buildMailAttributedString()`. Images are re-rendered at the user's chosen display size (baked into PNG pixel data) so Mail shows them crisp at the correct dimensions. NSSharingService places images at the bottom as attachments — they're sharp and the user can drag them inline in Mail if needed.
+- **Architecture insight** (via ChatGPT): "Do not treat your NSTextView content format as your email transport format." The editor's internal `NSAttributedString` with `NSTextAttachment` objects is NOT what Mail wants. The transport layer must rebuild a clean attributed string with images at final dimensions.
+
+### Image Resize Slider
+- Replaced S/M/L/Full preset buttons with a **logarithmic slider** (5%–100%) in the formatting toolbar
+- Log mapping: `0.05 * pow(20, x)` — small sizes get proportionally more slider range, making fine adjustments at small scales easy
+- Slider appears when cursor is on an image attachment; percentage label shows current value
+- Slider initializes to the selected image's current scale via inverse mapping
+- Selection tracking via `textViewDidChangeSelection` delegate → `onSelectionChanged` callback
+- **QR codes are now resizable** — removed `min(1.0, ...)` cap that prevented small images from scaling up; resize now uses container-width-relative sizing with aspect ratio preservation
+
+### Invitation Resend
+- Added `.handedOff` to the resend-eligible states in `EventDetailView` quick actions
+- Previously only `.invited` and `.reminderSent` showed the resend button — `.handedOff` (Mail opened but send not confirmed) was stuck with no action
+- Button label: "Reinvite" for `.handedOff`, "Resend Invitation" for `.invited`/`.reminderSent`
+- Opens `InvitationDraftSheet` with the single participant, generating a fresh AI draft
+
+### Actor Isolation Fix
+- `RichInvitationEditor.Coordinator` marked `@MainActor` to resolve Swift 6 strict concurrency errors when calling `@MainActor`-isolated handle methods (`toggleBold`, `toggleItalic`, `onInsertLink`)
+
+---
+
 ## Rich Invitation Editor, Sent Mail Detection, Multi-Recipient Intelligence (March 23, 2026)
 
 ### Rich Text Invitation Editor

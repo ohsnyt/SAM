@@ -29,6 +29,8 @@ struct InvitationDraftSheet: View {
     @State private var editorHandle = RichInvitationEditorHandle()
     @State private var showLinkPopover = false
     @State private var showImagePicker = false
+    @State private var hasSelectedImage = false
+    @State private var imageScaleSlider: Double = 1.0  // 0.0–1.0 linear, mapped to 5%–100% log
 
     private var isEmailChannel: Bool { selectedChannel == .email }
 
@@ -72,8 +74,17 @@ struct InvitationDraftSheet: View {
         }
         .frame(width: 650, height: 550)
         .task {
-            // Wire up the link insertion callback
+            // Wire up callbacks
             editorHandle.onInsertLink = { showLinkPopover = true }
+            editorHandle.onSelectionChanged = { hasImage, currentScale in
+                hasSelectedImage = hasImage
+                if hasImage {
+                    // Inverse of log mapping: scale = 0.05 * pow(20, slider)
+                    // → slider = log(scale / 0.05) / log(20)
+                    let clamped = max(0.05, min(1.0, currentScale))
+                    imageScaleSlider = log(clamped / 0.05) / log(20)
+                }
+            }
 
             if let single = singleParticipation {
                 uninvited = [single]
@@ -286,6 +297,31 @@ struct InvitationDraftSheet: View {
             }
             .buttonStyle(.borderless)
             .help("Insert Image")
+
+            // Image size slider (visible when cursor is on an image)
+            if hasSelectedImage {
+                Divider()
+                    .frame(height: 16)
+                    .padding(.horizontal, 4)
+
+                Image(systemName: "photo.fill")
+                    .samFont(.caption2)
+                    .foregroundStyle(.secondary)
+
+                Slider(value: $imageScaleSlider, in: 0...1)
+                    .frame(width: 100)
+                    .onChange(of: imageScaleSlider) {
+                        // Logarithmic mapping: 0→5%, 0.5→~22%, 1→100%
+                        let scale = 0.05 * pow(20, imageScaleSlider)
+                        editorHandle.resizeSelectedImage(scale: scale)
+                    }
+                    .help("Image size: \(Int(0.05 * pow(20, imageScaleSlider) * 100))%")
+
+                Text("\(Int(0.05 * pow(20, imageScaleSlider) * 100))%")
+                    .samFont(.caption2)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 32, alignment: .trailing)
+            }
 
             Spacer()
 

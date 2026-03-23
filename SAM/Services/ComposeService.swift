@@ -79,57 +79,108 @@ final class ComposeService {
         return true
     }
 
-    /// Open a Mail.app compose window with HTML body (images embedded as base64 data URIs).
-    /// HTML is written to a temp file and read by AppleScript to avoid string escaping issues.
-    /// The compose window is displayed for user review — Mail does NOT auto-send.
+    /// Open Mail.app compose window with rich content (formatting, links, inline images).
+    /// Uses NSSharingService with a clean NSAttributedString where images are re-rendered
+    /// at the user's chosen display size (baked into pixel data). NSSharingService places
+    /// images at the bottom as attachments — but they're crisp at the correct dimensions
+    /// and the user can drag them inline in Mail if desired.
     @discardableResult
-    func composeHTMLEmail(
+    func composeRichEmail(
         recipient: String,
         subject: String,
-        htmlBody: String
-    ) async -> Bool {
-        // Write HTML to a temp file so AppleScript reads it without escaping issues
-        let htmlFileURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("sam_invitation_\(UUID().uuidString).html")
-        do {
-            try htmlBody.write(to: htmlFileURL, atomically: true, encoding: .utf8)
-        } catch {
-            logger.error("Failed to write temp HTML file: \(error.localizedDescription)")
+        attributedBody: NSAttributedString
+    ) -> Bool {
+        guard let service = NSSharingService(named: .composeEmail) else {
+            logger.error("NSSharingService.composeEmail not available")
             return false
         }
 
-        // Escape subject and recipient for AppleScript string literals
-        let escapedSubject = subject
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-        let escapedRecipient = recipient
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
+        // Build a clean attributed string with images re-rendered at display size
+        let mailBody = Self.buildMailAttributedString(from: attributedBody)
 
-        // Read HTML from temp file via shell command to avoid AppleScript string limits.
-        // Set `html content` as a separate step after message creation for reliability.
-        let escapedPath = htmlFileURL.path
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-        let script = """
-            set filePath to "\(escapedPath)"
-            set htmlContent to do shell script "cat " & quoted form of filePath
-            tell application "Mail"
-                set newMessage to make new outgoing message with properties {subject:"\(escapedSubject)", visible:true}
-                set html content of newMessage to htmlContent
-                tell newMessage
-                    make new to recipient at end of to recipients with properties {address:"\(escapedRecipient)"}
-                end tell
-                activate
-            end tell
-            """
+        service.recipients = [recipient]
+        service.subject = subject
+        service.perform(withItems: [mailBody])
+        logger.debug("Opened rich email compose for \(recipient, privacy: .private)")
+        return true
+    }
 
-        let result = await runAppleScript(script, label: "HTML email to \(recipient)")
+    /// Build a Mail-friendly NSAttributedString from the editor content.
+    /// Images are re-rendered at the user's display size — the actual pixel data matches
+    /// the intended dimensions so they paste at the correct size.
+    /// Text runs are copied with all attributes intact (bold, italic, links).
+    private static func buildMailAttributedString(from source: NSAttributedString) -> NSAttributedString {
+        let result = NSMutableAttributedString()
 
-        // Clean up temp file after a delay
-        Task {
-            try? await Task.sleep(for: .seconds(10))
-            try? FileManager.default.removeItem(at: htmlFileURL)
+        source.enumerateAttributes(
+            in: NSRange(location: 0, length: source.length),
+            options: []
+        ) { attrs, range, _ in
+            if let attachment = attrs[.attachment] as? NSTextAttachment,
+               let data = attachment.contents ?? attachment.fileWrapper?.regularFileContents,
+               let originalImage = NSImage(data: data) {
+
+                // Determine the user's intended display size from bounds
+                let bounds = attachment.bounds
+                let displaySize: NSSize
+                if bounds.width > 0 && bounds.height > 0 {
+                    displaySize = bounds.size
+                } else {
+                    let maxWidth: CGFloat = 560
+                    if originalImage.size.width > maxWidth {
+                        let scale = maxWidth / originalImage.size.width
+                        displaySize = NSSize(
+                            width: originalImage.size.width * scale,
+                            height: originalImage.size.height * scale
+                        )
+                    } else {
+                        displaySize = originalImage.size
+                    }
+                }
+
+                // Re-render at the display size so the pixel data IS the display size
+                let resized = NSImage(size: displaySize)
+                resized.lockFocus()
+                originalImage.draw(
+                    in: NSRect(origin: .zero, size: displaySize),
+                    from: .zero, operation: .copy, fraction: 1.0
+                )
+                resized.unlockFocus()
+
+                // Build a new attachment with the baked-in size
+                let mailAttachment = NSTextAttachment()
+                if let pngData = resized.pngData() {
+                    mailAttachment.contents = pngData
+                    mailAttachment.fileType = "public.png"
+                }
+                mailAttachment.bounds = CGRect(origin: .zero, size: displaySize)
+
+                // macOS requires an explicit attachmentCell for NSTextView rendering
+                let cell = NSTextAttachmentCell(imageCell: resized)
+                mailAttachment.attachmentCell = cell
+
+                // Wrap with newlines to keep images block-level
+                let font = NSFont.systemFont(ofSize: 14)
+                let textAttrs: [NSAttributedString.Key: Any] = [.font: font]
+                if result.length > 0 {
+                    result.append(NSAttributedString(string: "\n", attributes: textAttrs))
+                }
+                result.append(NSAttributedString(attachment: mailAttachment))
+                result.append(NSAttributedString(string: "\n", attributes: textAttrs))
+
+            } else {
+                // Text run — copy as-is (preserves bold, italic, links, font, color)
+                let substring = source.attributedSubstring(from: range)
+                let cleaned = substring.string.contains("\u{FFFC}")
+                    ? NSAttributedString(
+                        string: substring.string.replacingOccurrences(of: "\u{FFFC}", with: ""),
+                        attributes: attrs
+                    )
+                    : substring
+                if cleaned.length > 0 {
+                    result.append(cleaned)
+                }
+            }
         }
 
         return result

@@ -25,6 +25,9 @@ final class RichInvitationEditorHandle {
     /// Callback when the user presses Cmd+K to insert a link.
     var onInsertLink: (() -> Void)?
 
+    /// Callback when selection changes — reports (hasImage, currentScale 0–1).
+    var onSelectionChanged: ((Bool, CGFloat) -> Void)?
+
     // MARK: - Content Extraction
 
     /// Extract the full attributed string for HTML conversion (email sends).
@@ -148,6 +151,61 @@ final class RichInvitationEditorHandle {
         insertImage(data: pngData)
     }
 
+    /// Whether the cursor/selection is on an image attachment.
+    var selectedImageAttachment: NSTextAttachment? {
+        guard let textView, let storage = textView.textStorage else { return nil }
+        let range = textView.selectedRange()
+        // Check the character at or just before the cursor
+        let checkIndex = range.length > 0 ? range.location : max(0, range.location - 1)
+        guard checkIndex < storage.length else { return nil }
+        return storage.attribute(.attachment, at: checkIndex, effectiveRange: nil) as? NSTextAttachment
+    }
+
+    /// Current scale (0–1) of the selected image relative to container width.
+    var selectedImageScale: CGFloat {
+        guard let textView, let attachment = selectedImageAttachment else { return 1.0 }
+        let containerWidth = textView.textContainer?.containerSize.width ?? 400
+        let bounds = attachment.bounds
+        guard bounds.width > 0, containerWidth > 0 else { return 1.0 }
+        return min(1.0, bounds.width / containerWidth)
+    }
+
+    /// Resize the selected image to a percentage of the container width.
+    func resizeSelectedImage(scale: CGFloat) {
+        guard let textView, let storage = textView.textStorage else { return }
+        let range = textView.selectedRange()
+        let checkIndex = range.length > 0 ? range.location : max(0, range.location - 1)
+        guard checkIndex < storage.length else { return }
+        guard let attachment = storage.attribute(.attachment, at: checkIndex, effectiveRange: nil) as? NSTextAttachment else { return }
+        guard let data = attachment.contents ?? attachment.fileWrapper?.regularFileContents,
+              let nsImage = NSImage(data: data) else { return }
+
+        let containerWidth = textView.textContainer?.containerSize.width ?? 400
+        let targetWidth = containerWidth * scale
+        // Scale relative to container width — allow scaling up small images (e.g., QR codes)
+        let aspectRatio = nsImage.size.height / max(1, nsImage.size.width)
+        let newSize = NSSize(
+            width: targetWidth,
+            height: targetWidth * aspectRatio
+        )
+
+        // Update bounds
+        attachment.bounds = CGRect(origin: .zero, size: newSize)
+
+        // Rebuild the attachment cell with the new size
+        let displayImage = NSImage(size: newSize)
+        displayImage.lockFocus()
+        nsImage.draw(in: NSRect(origin: .zero, size: newSize),
+                     from: .zero, operation: .copy, fraction: 1.0)
+        displayImage.unlockFocus()
+        attachment.attachmentCell = NSTextAttachmentCell(imageCell: displayImage)
+
+        // Force layout update
+        let charRange = NSRange(location: checkIndex, length: 1)
+        storage.edited(.editedAttributes, range: charRange, changeInLength: 0)
+        textView.needsDisplay = true
+    }
+
     /// Move focus into the editor.
     func focus() {
         guard let textView, let window = textView.window else { return }
@@ -218,7 +276,7 @@ struct RichInvitationEditor: NSViewRepresentable {
         Coordinator(parent: self)
     }
 
-    class Coordinator: NSObject, NSTextViewDelegate {
+    @MainActor class Coordinator: NSObject, NSTextViewDelegate {
         var parent: RichInvitationEditor
         var isUpdating = false
         var hasLoaded = false
@@ -235,6 +293,12 @@ struct RichInvitationEditor: NSViewRepresentable {
             lastSyncedText = text
             parent.plainText = text
             isUpdating = false
+        }
+
+        func textViewDidChangeSelection(_ notification: Notification) {
+            let hasImage = parent.handle.selectedImageAttachment != nil
+            let scale = parent.handle.selectedImageScale
+            parent.handle.onSelectionChanged?(hasImage, scale)
         }
 
         func handleBold() {

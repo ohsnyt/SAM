@@ -822,13 +822,16 @@ struct ParticipantDetailView: View {
                         Label("Draft Invitation", systemImage: "paperplane")
                     }
                     .controlSize(.small)
-                } else if participation.inviteStatus == .invited || participation.inviteStatus == .reminderSent {
-                    // Already invited but no confirmed RSVP — allow resend
+                } else if [.handedOff, .invited, .reminderSent].contains(participation.inviteStatus) {
+                    // Already invited (or handed off to Mail) but no confirmed RSVP — allow resend
                     if participation.rsvpStatus != .accepted && participation.rsvpStatus != .declined {
                         Button {
                             showInvitationDraft = true
                         } label: {
-                            Label("Resend Invitation", systemImage: "arrow.clockwise")
+                            Label(
+                                participation.inviteStatus == .handedOff ? "Reinvite" : "Resend Invitation",
+                                systemImage: "arrow.clockwise"
+                            )
                         }
                         .controlSize(.small)
                     }

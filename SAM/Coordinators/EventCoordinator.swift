@@ -490,15 +490,14 @@ final class EventCoordinator {
         participation.inviteStatus = .handedOff
         participation.inviteChannel = .email
 
-        // Convert to HTML (images embedded as base64 data URIs) and hand off to Mail.app
-        let conversion = AttributedStringToHTML.convert(attributedBody)
+        // Hand off rich content to Mail.app via NSSharingService
         let subject = participation.event?.title ?? "Event Invitation"
 
-        Task {
-            let opened = await ComposeService.shared.composeHTMLEmail(
+        Task { @MainActor in
+            let opened = ComposeService.shared.composeRichEmail(
                 recipient: recipientEmail,
                 subject: subject,
-                htmlBody: conversion.html
+                attributedBody: attributedBody
             )
             if opened {
                 // Register for sent mail detection when SAM regains focus
