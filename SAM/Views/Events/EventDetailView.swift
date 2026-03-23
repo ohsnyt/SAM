@@ -464,6 +464,9 @@ struct EventDetailView: View {
                let participation = cachedParticipations.first(where: { $0.id == participationID }),
                !participation.isDeleted {
                 ParticipantDetailView(participation: participation, event: event) {
+                    // Remove from cached list immediately so the stale entry
+                    // can't be clicked while the deferred SwiftData delete runs
+                    cachedParticipations.removeAll { $0.id == participationID }
                     selectedParticipationID = nil
                     refreshToken = UUID()
                 }
