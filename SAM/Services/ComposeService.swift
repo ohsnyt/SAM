@@ -81,6 +81,7 @@ final class ComposeService {
 
     /// Open a Mail.app compose window with HTML body and optional inline image attachments.
     /// Uses AppleScript with `html content` property for full rich text support.
+    /// HTML is written to a temp file and read by AppleScript to avoid string escaping issues.
     /// The compose window is displayed for user review — Mail does NOT auto-send.
     @discardableResult
     func composeHTMLEmail(
@@ -89,12 +90,23 @@ final class ComposeService {
         htmlBody: String,
         imageAttachments: [(Data, String)] = []  // (data, filename)
     ) async -> Bool {
-        // Write inline images to temp files for AppleScript attachment
+        let tempDir = FileManager.default.temporaryDirectory
         var tempFiles: [URL] = []
-        var attachmentScript = ""
 
+        // Write HTML to a temp file so AppleScript reads it without escaping issues
+        let htmlFileURL = tempDir.appendingPathComponent("sam_invitation_\(UUID().uuidString).html")
+        do {
+            try htmlBody.write(to: htmlFileURL, atomically: true, encoding: .utf8)
+            tempFiles.append(htmlFileURL)
+        } catch {
+            logger.error("Failed to write temp HTML file: \(error.localizedDescription)")
+            return false
+        }
+
+        // Write inline images to temp files for AppleScript attachment
+        var attachmentScript = ""
         for (data, filename) in imageAttachments {
-            let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
+            let tempURL = tempDir.appendingPathComponent(filename)
             do {
                 try data.write(to: tempURL)
                 tempFiles.append(tempURL)
@@ -108,9 +120,7 @@ final class ComposeService {
             }
         }
 
-        let escapedHTML = htmlBody
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
+        // Escape only subject and recipient for AppleScript string literals
         let escapedSubject = subject
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
@@ -118,9 +128,13 @@ final class ComposeService {
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
 
+        // Read HTML from file inside AppleScript — avoids all string escaping problems
+        let htmlFilePath = htmlFileURL.path
         let script = """
+            set htmlFile to POSIX file "\(htmlFilePath)"
+            set htmlContent to read htmlFile as «class utf8»
             tell application "Mail"
-                set newMessage to make new outgoing message with properties {subject:"\(escapedSubject)", html content:"\(escapedHTML)", visible:true}
+                set newMessage to make new outgoing message with properties {subject:"\(escapedSubject)", html content:htmlContent, visible:true}
                 tell newMessage
                     make new to recipient at end of to recipients with properties {address:"\(escapedRecipient)"}
                     \(attachmentScript)
@@ -132,12 +146,10 @@ final class ComposeService {
         let result = await runAppleScript(script, label: "HTML email to \(recipient)")
 
         // Clean up temp files after a delay to let Mail.app read them
-        if !tempFiles.isEmpty {
-            Task {
-                try? await Task.sleep(for: .seconds(5))
-                for url in tempFiles {
-                    try? FileManager.default.removeItem(at: url)
-                }
+        Task {
+            try? await Task.sleep(for: .seconds(10))
+            for url in tempFiles {
+                try? FileManager.default.removeItem(at: url)
             }
         }
 
