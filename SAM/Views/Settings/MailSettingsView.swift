@@ -309,16 +309,3 @@ struct MailSettingsContent: View {
     }
 }
 
-// MARK: - Standalone wrapper
-
-struct MailSettingsView: View {
-    var body: some View {
-        Form {
-            Section {
-                MailSettingsContent()
-                    .padding()
-            }
-        }
-        .formStyle(.grouped)
-    }
-}

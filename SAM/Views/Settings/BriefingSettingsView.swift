@@ -127,24 +127,3 @@ struct BriefingSettingsContent: View {
     }
 }
 
-// MARK: - Standalone wrapper
-
-struct BriefingSettingsView: View {
-    var body: some View {
-        Form {
-            Section {
-                VStack(alignment: .leading, spacing: 20) {
-                    Label("Daily Briefings", systemImage: "text.book.closed")
-                        .samFont(.title2)
-                        .bold()
-
-                    Divider()
-
-                    BriefingSettingsContent()
-                }
-                .padding()
-            }
-        }
-        .formStyle(.grouped)
-    }
-}

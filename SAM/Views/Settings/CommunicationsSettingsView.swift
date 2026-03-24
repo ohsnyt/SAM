@@ -330,22 +330,3 @@ struct CommunicationsSettingsContent: View {
     }
 }
 
-// MARK: - Standalone wrapper
-
-struct CommunicationsSettingsView: View {
-    var body: some View {
-        Form {
-            Section {
-                VStack(alignment: .leading, spacing: 20) {
-                    Label("Communications", systemImage: "message.fill")
-                        .samFont(.title2)
-                        .bold()
-
-                    CommunicationsSettingsContent()
-                }
-                .padding()
-            }
-        }
-        .formStyle(.grouped)
-    }
-}

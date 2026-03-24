@@ -568,24 +568,3 @@ struct CoachingSettingsContent: View {
     }
 }
 
-// MARK: - Standalone wrapper
-
-struct CoachingSettingsView: View {
-    var body: some View {
-        Form {
-            Section {
-                VStack(alignment: .leading, spacing: 20) {
-                    Label("Coaching", systemImage: "brain.head.profile")
-                        .samFont(.title2)
-                        .bold()
-
-                    Divider()
-
-                    CoachingSettingsContent()
-                }
-                .padding()
-            }
-        }
-        .formStyle(.grouped)
-    }
-}

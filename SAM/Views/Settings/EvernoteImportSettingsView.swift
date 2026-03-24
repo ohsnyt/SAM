@@ -312,26 +312,6 @@ struct EvernoteImportSettingsContent: View {
     }
 }
 
-// MARK: - Standalone wrapper
-
-struct EvernoteImportSettingsView: View {
-    var body: some View {
-        Form {
-            Section {
-                VStack(alignment: .leading, spacing: 20) {
-                    Label("Evernote Import", systemImage: "square.and.arrow.down")
-                        .samFont(.title2)
-                        .bold()
-
-                    EvernoteImportSettingsContent()
-                }
-                .padding()
-            }
-        }
-        .formStyle(.grouped)
-    }
-}
-
 // MARK: - Import Preview Sheet (presented from File → Import)
 
 /// Standalone sheet shown when the user imports Evernote notes via File → Import.
@@ -431,7 +411,3 @@ struct EvernoteImportPreviewSheet: View {
     }
 }
 
-#Preview {
-    EvernoteImportSettingsView()
-        .frame(width: 650, height: 500)
-}

@@ -4,6 +4,15 @@
 
 ---
 
+## Dead code cleanup — Settings sidebar refactor remnants (March 24, 2026)
+
+- **Removed ~750 lines** of dead code left over from the Settings sidebar navigation refactor.
+- **SettingsView.swift**: Removed `ImportStatusDashboard`, `DataSourcesSettingsView`, `AISettingsView`, `BusinessSettingsView`, `_RemovedPermissionsView`, `ContactsSettingsView`, `CalendarSettingsView`, `IntelligenceSettingsView` — all replaced by private pane structs in the sidebar layout.
+- **7 settings files**: Removed unused standalone `*SettingsView` wrapper structs from `CommunicationsSettingsView.swift`, `MailSettingsView.swift`, `CoachingSettingsView.swift`, `BriefingSettingsView.swift`, `LinkedInImportSettingsView.swift`, `FacebookImportSettingsView.swift`, `EvernoteImportSettingsView.swift`. The `*Content` views they contained remain in use.
+- Removed orphaned `#Preview` blocks that referenced deleted wrappers.
+
+---
+
 ## Import troubleshooting, clickable people, About build date, and email fixes (March 24, 2026)
 
 ### Watermark Reset & Re-scan

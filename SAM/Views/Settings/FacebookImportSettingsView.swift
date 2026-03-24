@@ -153,27 +153,3 @@ struct FacebookImportSettingsContent: View {
     }
 }
 
-// MARK: - Standalone wrapper
-
-struct FacebookImportSettingsView: View {
-    var body: some View {
-        Form {
-            Section {
-                VStack(alignment: .leading, spacing: 20) {
-                    Label("Facebook Import", systemImage: "person.2.fill")
-                        .samFont(.title2)
-                        .bold()
-
-                    FacebookImportSettingsContent()
-                }
-                .padding()
-            }
-        }
-        .formStyle(.grouped)
-    }
-}
-
-#Preview {
-    FacebookImportSettingsView()
-        .frame(width: 650, height: 500)
-}

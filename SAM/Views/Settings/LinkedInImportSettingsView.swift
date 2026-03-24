@@ -202,27 +202,3 @@ struct LinkedInImportSettingsContent: View {
 
 }
 
-// MARK: - Standalone wrapper
-
-struct LinkedInImportSettingsView: View {
-    var body: some View {
-        Form {
-            Section {
-                VStack(alignment: .leading, spacing: 20) {
-                    Label("LinkedIn Import", systemImage: "network")
-                        .samFont(.title2)
-                        .bold()
-
-                    LinkedInImportSettingsContent()
-                }
-                .padding()
-            }
-        }
-        .formStyle(.grouped)
-    }
-}
-
-#Preview {
-    LinkedInImportSettingsView()
-        .frame(width: 650, height: 500)
-}
