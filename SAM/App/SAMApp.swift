@@ -484,6 +484,34 @@ struct SAMApp: App {
         .defaultSize(Self.mainWindowSize)
 
         .commands {
+            CommandGroup(replacing: .appInfo) {
+                Button("About SAM") {
+                    let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+                    let buildDateString: String = {
+                        guard let execURL = Bundle.main.executableURL,
+                              let attrs = try? FileManager.default.attributesOfItem(atPath: execURL.path),
+                              let date = attrs[.modificationDate] as? Date else {
+                            return "Unknown"
+                        }
+                        let fmt = DateFormatter()
+                        fmt.dateStyle = .medium
+                        fmt.timeStyle = .short
+                        return fmt.string(from: date)
+                    }()
+                    let credits = NSAttributedString(
+                        string: "Built: \(buildDateString)",
+                        attributes: [
+                            .font: NSFont.systemFont(ofSize: 11),
+                            .foregroundColor: NSColor.secondaryLabelColor
+                        ]
+                    )
+                    NSApplication.shared.orderFrontStandardAboutPanel(options: [
+                        .applicationVersion: "Version \(version)",
+                        .credits: credits
+                    ])
+                }
+            }
+
             // ⌘K Command Palette + ⌘1–4 sidebar navigation
             CommandGroup(after: .sidebar) {
                 Button("Command Palette") {
@@ -594,6 +622,22 @@ struct SAMApp: App {
 
                 Button("Import iMessage & Calls") {
                     CommunicationsImportCoordinator.shared.startImport()
+                }
+                .disabled(!BookmarkManager.shared.hasMessagesAccess && !BookmarkManager.shared.hasCallHistoryAccess)
+
+                Divider()
+
+                Button("Re-scan Mail (reset watermark)") {
+                    MailImportCoordinator.shared.resetWatermark()
+                    MailImportCoordinator.shared.startImport()
+                    logger.notice("Mail watermark reset + import triggered via Debug menu")
+                }
+                .disabled(!MailImportCoordinator.shared.mailEnabled || !MailImportCoordinator.shared.isConfigured)
+
+                Button("Re-scan iMessage & Calls (reset watermark)") {
+                    CommunicationsImportCoordinator.shared.resetWatermarks()
+                    CommunicationsImportCoordinator.shared.startImport()
+                    logger.notice("Comms watermarks reset + import triggered via Debug menu")
                 }
                 .disabled(!BookmarkManager.shared.hasMessagesAccess && !BookmarkManager.shared.hasCallHistoryAccess)
 

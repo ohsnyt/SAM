@@ -146,6 +146,16 @@ struct SettingsView: View {
     }
 }
 
+// MARK: - Helpers
+
+private func lookbackStartDescription(days: Int) -> String {
+    if days == 0 { return "the beginning of history" }
+    let date = Calendar.current.date(byAdding: .day, value: -days, to: Date()) ?? Date()
+    let formatter = DateFormatter()
+    formatter.dateStyle = .medium
+    return formatter.string(from: date)
+}
+
 // MARK: - Shared Permission Badge
 
 func permissionBadge(icon: String, color: Color, name: String, status: String) -> some View {
@@ -318,6 +328,27 @@ private struct MailSettingsPane: View {
                     Divider()
 
                     MailSettingsContent()
+
+                    if MailImportCoordinator.shared.mailEnabled {
+                        Divider()
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Troubleshooting")
+                                .samFont(.headline)
+
+                            Button {
+                                MailImportCoordinator.shared.resetWatermark()
+                                MailImportCoordinator.shared.startImport()
+                            } label: {
+                                Label("Re-scan Mail", systemImage: "arrow.counterclockwise")
+                            }
+                            .help("Reset import watermark and re-scan from the lookback date")
+
+                            Text("Re-imports mail starting from \(lookbackStartDescription(days: MailImportCoordinator.shared.lookbackDays)). Use this if emails were missed.")
+                                .samFont(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
                 .padding()
             }
@@ -406,6 +437,27 @@ private struct CommunicationsSettingsPane: View {
 
                     // Communications settings
                     CommunicationsSettingsContent()
+
+                    if bookmarkManager.hasMessagesAccess || bookmarkManager.hasCallHistoryAccess {
+                        Divider()
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Troubleshooting")
+                                .samFont(.headline)
+
+                            Button {
+                                CommunicationsImportCoordinator.shared.resetWatermarks()
+                                CommunicationsImportCoordinator.shared.startImport()
+                            } label: {
+                                Label("Re-scan iMessage & Calls", systemImage: "arrow.counterclockwise")
+                            }
+                            .help("Reset import watermark and re-scan from the lookback date")
+
+                            Text("Re-imports messages and calls starting from \(lookbackStartDescription(days: globalLookbackDays)). Use this if communications were missed.")
+                                .samFont(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
                 .padding()
             }
@@ -560,7 +612,11 @@ private struct ImportStatusDashboard: View {
                       statusText: mailCoordinator.mailEnabled
                           ? coordinatorStatusText(mailCoordinator.importStatus, mailCoordinator.lastImportedAt)
                           : "Not configured",
-                      isImporting: isImporting(mailCoordinator.importStatus)) {
+                      isImporting: isImporting(mailCoordinator.importStatus),
+                      onRescan: mailCoordinator.mailEnabled ? {
+                          mailCoordinator.resetWatermark()
+                          mailCoordinator.startImport()
+                      } : nil) {
                 if mailCoordinator.mailEnabled {
                     mailCoordinator.startImport()
                 }
@@ -570,7 +626,11 @@ private struct ImportStatusDashboard: View {
                       statusText: (bookmarkManager.hasMessagesAccess || bookmarkManager.hasCallHistoryAccess)
                           ? coordinatorStatusText(commsCoordinator.importStatus, commsCoordinator.lastImportedAt)
                           : "Not configured",
-                      isImporting: isImporting(commsCoordinator.importStatus)) {
+                      isImporting: isImporting(commsCoordinator.importStatus),
+                      onRescan: (bookmarkManager.hasMessagesAccess || bookmarkManager.hasCallHistoryAccess) ? {
+                          commsCoordinator.resetWatermarks()
+                          commsCoordinator.startImport()
+                      } : nil) {
                 if bookmarkManager.hasMessagesAccess || bookmarkManager.hasCallHistoryAccess {
                     commsCoordinator.startImport()
                 }
@@ -604,6 +664,7 @@ private struct ImportStatusDashboard: View {
 
     private func importRow(_ name: String, icon: String, statusText: String,
                            isImporting: Bool, canImport: Bool = true,
+                           onRescan: (() -> Void)? = nil,
                            action: @escaping () -> Void) -> some View {
         HStack(spacing: 10) {
             Image(systemName: icon)
@@ -622,6 +683,18 @@ private struct ImportStatusDashboard: View {
                 .samFont(.caption)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
+
+            if let onRescan {
+                Button {
+                    onRescan()
+                } label: {
+                    Image(systemName: "arrow.counterclockwise")
+                        .samFont(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Re-scan from lookback date (resets watermark)")
+            }
         }
         .padding(.vertical, 2)
     }

@@ -4,6 +4,34 @@
 
 ---
 
+## Import troubleshooting, clickable people, About build date, and email fixes (March 24, 2026)
+
+### Watermark Reset & Re-scan
+- **Problem**: When SAM ran with test data, import watermarks advanced past real emails, causing them to be permanently skipped.
+- **Debug menu**: Added "Re-scan Mail" and "Re-scan iMessage & Calls" to the Debug menu (resets watermarks + triggers import).
+- **Settings UI**: Added Troubleshooting sections to Settings → Mail and Settings → Communications with Re-scan buttons for normal (non-debug) builds. Each button shows the exact lookback start date (e.g., "Re-imports mail starting from Jan 23, 2026").
+- **MailImportCoordinator**: Added `resetWatermark()` method that clears `lastMailWatermark` and `lastSentMailWatermark`.
+
+### Clickable Person Names on Outcome Cards
+- **Feature**: Every outcome card that references a specific person now shows a clickable person name link (person.circle icon + name in blue). Clicking navigates to that contact in the People view via `samNavigateToPerson` notification.
+- **Motivation**: Outcomes like "Consider archiving…" previously had no quick way to navigate to the contact.
+
+### About SAM Build Date
+- **Feature**: Custom About panel shows build timestamp derived from the executable's modification date (e.g., "Built: Mar 24, 2026, 3:47 PM"). Updates with every build, giving users a reliable way to identify exactly which build they're running.
+
+### Email Body Truncation
+- **Problem**: Long emails caused `exceededContextWindowSize` errors (4819 tokens vs 4096 limit) during on-device LLM analysis.
+- **Fix**: Email bodies truncated to ~2500 characters before LLM analysis. System instruction + subject/from use ~800–1000 tokens; body gets the rest.
+
+### LinkedIn Notification Guidance
+- **Clarified**: Updated the "Set up LinkedIn email notifications" outcome to make clear this is a linkedin.com setting, not a SAM setting. Added instruction to ensure LinkedIn sends to the SAM-monitored email account.
+
+### Build & Distribution
+- **DMG installer script**: `scripts/build-dmg.sh` archives SAM, opens Organizer for signing/notarization, then packages the exported .app into a drag-to-Applications DMG via `create-dmg`.
+- **`.gitignore`**: Added `build/`, `DerivedData/`, `*.xcuserstate`, `xcuserdata/`, `*.dmg`.
+
+---
+
 ## Outcome Snooze & Outgoing Event Matcher (March 23, 2026)
 
 ### Outcome Snooze

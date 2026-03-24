@@ -55,6 +55,12 @@ final class MailImportCoordinator {
     private(set) var lastMailWatermark: Date?
     private(set) var lastSentMailWatermark: Date?
 
+    /// Reset watermarks so the next import re-scans from the lookback date.
+    func resetWatermark() {
+        lastMailWatermark = nil
+        lastSentMailWatermark = nil
+    }
+
     private var lastImportTime: Date?
     private var importTask: Task<Void, Never>?
     private var periodicImportTask: Task<Void, Never>?

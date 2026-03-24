@@ -178,15 +178,16 @@ public enum LinkedInNotificationSetupGuide {
         suggestionThresholdDays: 7,
         requiresUserPosts: false,
         priority: 0.8,
-        title: "Set up LinkedIn email notifications",
+        title: "Enable LinkedIn email notifications on linkedin.com",
         instructions: [
-            "Open LinkedIn Settings (link below)",
+            "Open LinkedIn.com Settings (link below) — this is a LinkedIn setting, not a SAM setting",
             "Select \"Email\" in the left sidebar",
             "Review each notification category and ensure \"Email\" delivery is enabled",
             "At minimum, enable: Messages, Invitations, and Endorsements",
-            "If you post content, also enable: Comments and Reactions on your posts"
+            "If you post content, also enable: Comments and Reactions on your posts",
+            "Make sure LinkedIn sends notifications to the email account SAM monitors"
         ],
-        whyItMatters: "SAM hasn't detected any LinkedIn notification emails yet. LinkedIn email notifications are how SAM tracks your professional interactions between data exports — messages, connection requests, endorsements, and engagement on your posts."
+        whyItMatters: "SAM hasn't detected any LinkedIn notification emails in your monitored mailbox yet. When LinkedIn sends notification emails to your work email, SAM can track professional interactions (messages, connection requests, endorsements) between LinkedIn data exports. This is configured on linkedin.com, not inside SAM."
     )
 
     /// UserDefaults key for the global "no LinkedIn emails" guidance state.

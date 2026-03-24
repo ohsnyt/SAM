@@ -42,11 +42,18 @@ actor EmailAnalysisService {
         let custom = UserDefaults.standard.string(forKey: "sam.ai.emailPrompt") ?? ""
         let instructions = custom.isEmpty ? await Self.defaultEmailPrompt() : custom
 
+        // Truncate body to ~2500 characters to stay within the 4096-token context window.
+        // The system instruction + subject/from use ~800–1000 tokens; body gets the rest.
+        let maxBodyChars = 2500
+        let trimmedBody = body.count > maxBodyChars
+            ? String(body.prefix(maxBodyChars)) + "\n[…truncated]"
+            : body
+
         let prompt = """
         Subject: \(subject)
         \(senderName.map { "From: \($0)" } ?? "")
 
-        \(body)
+        \(trimmedBody)
         """
 
         let responseText = try await AIService.shared.generate(prompt: prompt, systemInstruction: instructions)

@@ -65,6 +65,9 @@ struct OutcomeCardView: View {
             // Companion indicator
             companionIndicator
 
+            // Linked person name (clickable → navigates to People view)
+            personLink
+
             // Title
             Text(outcome.title)
                 .font(isHero ? .title3.bold() : .headline)
@@ -258,6 +261,39 @@ struct OutcomeCardView: View {
             parts.append("Draft message:\n\(draft)")
         }
         return parts.joined(separator: "\n\n")
+    }
+
+    // MARK: - Person Link
+
+    @ViewBuilder
+    private var personLink: some View {
+        if let person = outcome.linkedPerson {
+            let name = person.displayNameCache ?? person.displayName
+            Button {
+                NotificationCenter.default.post(
+                    name: .samNavigateToPerson,
+                    object: nil,
+                    userInfo: ["personID": person.id]
+                )
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "person.circle")
+                        .samFont(.caption)
+                        .foregroundStyle(.blue)
+                    Text(name)
+                        .samFont(.caption)
+                        .foregroundStyle(.blue)
+                }
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering in
+                if hovering {
+                    NSCursor.pointingHand.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
+        }
     }
 
     // MARK: - Companion Indicator
