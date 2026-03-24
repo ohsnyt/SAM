@@ -38,6 +38,10 @@ public final class UnknownSender {
     var substackPlanType: String?                // "free" or "paid"
     var substackIsActive: Bool                   // still subscribed?
 
+    // Sent-recipient metadata (only set for source == .sentMail)
+    var sentEmailCount: Int = 0                  // number of sent emails to this address
+    var earliestSentDate: Date?                  // for targeted watermark reset on approval
+
     @Transient
     var status: UnknownSenderStatus {
         get { UnknownSenderStatus(rawValue: statusRawValue) ?? .pending }

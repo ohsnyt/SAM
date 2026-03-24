@@ -51,6 +51,7 @@ final class MailImportCoordinator {
     /// Lookback days for initial import. 0 means "All" (no limit).
     private(set) var lookbackDays: Int = 30
     private(set) var filterRules: [MailFilterRule] = []
+    private(set) var sentRecipientDiscoveryEnabled: Bool = true
 
     private(set) var lastMailWatermark: Date?
     private(set) var lastSentMailWatermark: Date?
@@ -59,6 +60,17 @@ final class MailImportCoordinator {
     func resetWatermark() {
         lastMailWatermark = nil
         lastSentMailWatermark = nil
+    }
+
+    /// Rewind the inbox watermark to catch replies from a newly-added sent recipient.
+    /// Only rewinds if the target date is earlier than the current watermark.
+    func resetInboxWatermarkTo(_ date: Date) {
+        let targetDate = date.addingTimeInterval(-86400) // 1 day before earliest sent email
+        if let current = lastMailWatermark, targetDate < current {
+            lastMailWatermark = targetDate
+            UserDefaults.standard.set(targetDate.timeIntervalSinceReferenceDate, forKey: "mailLastWatermark")
+            logger.debug("Inbox watermark rewound to \(targetDate, privacy: .public) for sent recipient discovery")
+        }
     }
 
     private var lastImportTime: Date?
@@ -76,6 +88,9 @@ final class MailImportCoordinator {
             ? UserDefaults.standard.integer(forKey: "globalLookbackDays")
             : 30
         lookbackDays = days >= 0 && UserDefaults.standard.object(forKey: "mailLookbackDays") != nil ? days : globalDays
+        sentRecipientDiscoveryEnabled = UserDefaults.standard.object(forKey: "mailSentRecipientDiscovery") == nil
+            ? true
+            : UserDefaults.standard.bool(forKey: "mailSentRecipientDiscovery")
         if let data = UserDefaults.standard.data(forKey: "mailFilterRules"),
            let rules = try? JSONDecoder().decode([MailFilterRule].self, from: data) {
             filterRules = rules
@@ -136,6 +151,11 @@ final class MailImportCoordinator {
         UserDefaults.standard.removeObject(forKey: "mailLastWatermark")
         UserDefaults.standard.removeObject(forKey: "mailLastSentWatermark")
         logger.debug("Mail watermarks reset — next import will scan full lookback window")
+    }
+
+    func setSentRecipientDiscoveryEnabled(_ value: Bool) {
+        sentRecipientDiscoveryEnabled = value
+        UserDefaults.standard.set(value, forKey: "mailSentRecipientDiscovery")
     }
 
     func setFilterRules(_ value: [MailFilterRule]) {
@@ -539,6 +559,30 @@ final class MailImportCoordinator {
                     try evidenceRepository.bulkUpsertEmails(sentUpsertData, direction: .outbound)
                     logger.debug("Sent mail import: \(sentEmails.count) outbound emails from known recipients")
                 }
+
+                // ── Sent Recipient Discovery ──────────────────────────────────
+                if sentRecipientDiscoveryEnabled && !sentEmails.isEmpty {
+                    let userEmails = Set(selectedAccountIDs.map { $0.lowercased() })
+                    var unknownRecipients: [(email: String, displayName: String?, subject: String, date: Date)] = []
+
+                    for email in sentEmails {
+                        let allRecipients = email.recipientEmails + email.ccEmails
+                        for recipientEmail in allRecipients {
+                            let canonical = recipientEmail.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                            guard !canonical.isEmpty else { continue }
+                            guard !userEmails.contains(canonical) else { continue }
+                            guard !knownEmails.contains(canonical) else { continue }
+                            guard !neverInclude.contains(canonical) else { continue }
+                            guard !isNoiseRecipient(canonical) else { continue }
+                            unknownRecipients.append((email: canonical, displayName: nil, subject: email.subject, date: email.date))
+                        }
+                    }
+
+                    if !unknownRecipients.isEmpty {
+                        try UnknownSenderRepository.shared.bulkRecordSentRecipients(unknownRecipients)
+                        logger.debug("[sent-mail] Discovered \(unknownRecipients.count) unknown recipients for triage")
+                    }
+                }
             }
 
             // Update sent watermark — only advance to the newest *successfully fetched* email,
@@ -799,6 +843,33 @@ final class MailImportCoordinator {
     /// Because recipient data isn't available at the metadata stage, this returns
     /// all non-marketing metas as "known" (capped at `maxSentBodyFetches`).
     /// The actual recipient filtering happens post-body-fetch via `bulkUpsertEmails`.
+    /// Returns true if the email address is a noise/role address not worth triaging.
+    private func isNoiseRecipient(_ email: String) -> Bool {
+        let parts = email.split(separator: "@", maxSplits: 1)
+        guard parts.count == 2 else { return true }
+        let localPart = String(parts[0]).lowercased()
+        let domain = String(parts[1]).lowercased()
+
+        // Known marketing/bulk infrastructure domains
+        if MailService.marketingDomains.contains(domain) { return true }
+        for mktDomain in MailService.marketingDomains {
+            if domain.hasSuffix(".\(mktDomain)") { return true }
+        }
+
+        // Marketing/notification local parts
+        if MailService.marketingLocalParts.contains(localPart) { return true }
+
+        // Additional role addresses unlikely to be real contacts
+        let roleAddresses: Set<String> = [
+            "admin", "administrator", "postmaster", "webmaster",
+            "abuse", "billing", "sales", "help", "service",
+            "hostmaster", "root"
+        ]
+        if roleAddresses.contains(localPart) { return true }
+
+        return false
+    }
+
     private func partitionSentByRecipientKnown(
         metas: [MessageMeta],
         knownEmails: Set<String>

@@ -2846,6 +2846,7 @@ private extension EvidenceSource {
         case .clipboardCapture: return .purple
         case .whatsApp:  return .green
         case .whatsAppCall: return .green
+        case .sentMail:  return .blue
         }
     }
 }

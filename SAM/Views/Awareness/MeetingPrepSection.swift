@@ -526,6 +526,7 @@ private struct BriefingCard: View {
         case .clipboardCapture: return "doc.on.clipboard"
         case .whatsApp: return "text.bubble"
         case .whatsAppCall: return "phone.bubble"
+        case .sentMail: return "paperplane"
         }
     }
 

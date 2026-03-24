@@ -487,6 +487,7 @@ struct SAMApp: App {
             CommandGroup(replacing: .appInfo) {
                 Button("About SAM") {
                     let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+                    let build = Bundle.main.infoDictionary?[kCFBundleVersionKey as String] as? String ?? "?"
                     let buildDateString: String = {
                         guard let execURL = Bundle.main.executableURL,
                               let attrs = try? FileManager.default.attributesOfItem(atPath: execURL.path),
@@ -506,7 +507,7 @@ struct SAMApp: App {
                         ]
                     )
                     NSApplication.shared.orderFrontStandardAboutPanel(options: [
-                        .applicationVersion: "Version \(version)",
+                        .applicationVersion: "Version \(version) (\(build))",
                         .credits: credits
                     ])
                 }

@@ -677,7 +677,7 @@ struct ClipboardCaptureSettingsContent: View {
 
             // Accessibility permission status
             HStack(spacing: 8) {
-                Text("Accessibility Permission")
+                    Text("Accessibility Permission")
                     .samFont(.subheadline)
 
                 Spacer()

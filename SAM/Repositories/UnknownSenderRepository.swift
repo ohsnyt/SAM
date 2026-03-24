@@ -143,6 +143,86 @@ final class UnknownSenderRepository {
         }
     }
 
+    // MARK: - Sent Recipient Discovery
+
+    /// Upsert unknown recipients from sent mail.
+    /// Increments sentEmailCount; tracks earliestSentDate for watermark reset on approval.
+    /// Upgrades existing inbound records (.mail) to .sentMail if the user also sent to that address.
+    func bulkRecordSentRecipients(
+        _ recipients: [(email: String, displayName: String?, subject: String, date: Date)]
+    ) throws {
+        guard let modelContext else { throw RepositoryError.notConfigured }
+
+        let descriptor = FetchDescriptor<UnknownSender>()
+        let existing = try modelContext.fetch(descriptor)
+        let existingByEmail = Dictionary(
+            existing.map { ($0.email, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+
+        // Deduplicate input by email (keep latest date, accumulate count)
+        var grouped: [String: (email: String, displayName: String?, subject: String, date: Date, count: Int)] = [:]
+        for r in recipients {
+            let key = r.email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if let prev = grouped[key] {
+                grouped[key] = (key, r.displayName ?? prev.displayName,
+                                r.date > prev.date ? r.subject : prev.subject,
+                                max(r.date, prev.date), prev.count + 1)
+            } else {
+                grouped[key] = (key, r.displayName, r.subject, r.date, 1)
+            }
+        }
+
+        var created = 0
+        var updated = 0
+
+        for (canonicalEmail, r) in grouped {
+            if let record = existingByEmail[canonicalEmail] {
+                // Update existing record
+                record.sentEmailCount += r.count
+                record.latestSubject = r.subject
+                record.latestEmailDate = r.date
+                if let name = r.displayName, record.displayName == nil {
+                    record.displayName = name
+                }
+                if record.earliestSentDate == nil || r.date < (record.earliestSentDate ?? .distantFuture) {
+                    record.earliestSentDate = r.date
+                }
+                // Upgrade inbound-only record to sentMail (higher signal)
+                if record.source == .mail {
+                    record.source = .sentMail
+                }
+                // Re-surface dismissed on 2+ sends
+                if record.status == .dismissed && record.sentEmailCount >= 2 {
+                    record.status = .pending
+                }
+                updated += 1
+            } else {
+                // Create new sent-recipient record
+                let record = UnknownSender(
+                    email: canonicalEmail,
+                    displayName: r.displayName,
+                    status: .pending,
+                    firstSeenAt: r.date,
+                    emailCount: 0,
+                    latestSubject: r.subject,
+                    latestEmailDate: r.date,
+                    source: .sentMail,
+                    isLikelyMarketing: false
+                )
+                record.sentEmailCount = r.count
+                record.earliestSentDate = r.date
+                modelContext.insert(record)
+                created += 1
+            }
+        }
+
+        try modelContext.save()
+        if created > 0 || updated > 0 {
+            logger.debug("Sent recipients: \(created) new, \(updated) updated")
+        }
+    }
+
     // MARK: - Status Updates
 
     func markNeverInclude(_ sender: UnknownSender) throws {

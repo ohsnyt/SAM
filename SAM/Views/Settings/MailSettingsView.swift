@@ -90,6 +90,15 @@ struct MailSettingsContent: View {
                     Text("1 hour").tag(3600.0)
                 }
 
+                Toggle("Suggest adding unknown sent recipients", isOn: Binding(
+                    get: { coordinator.sentRecipientDiscoveryEnabled },
+                    set: { coordinator.setSentRecipientDiscoveryEnabled($0) }
+                ))
+
+                Text("When you email someone not in SAM, they'll appear in the triage list so you can add them as a contact.")
+                    .samFont(.caption)
+                    .foregroundStyle(.secondary)
+
             }
 
             Divider()

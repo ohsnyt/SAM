@@ -202,6 +202,7 @@ public enum EvidenceSource: String, Codable, Sendable {
     case clipboardCapture = "ClipboardCapture"
     case whatsApp = "WhatsApp"
     case whatsAppCall = "WhatsAppCall"
+    case sentMail = "SentMail"
 }
 
 extension EvidenceSource {
@@ -222,6 +223,7 @@ extension EvidenceSource {
         case .clipboardCapture: return 1.5  // Direct conversation evidence
         case .whatsApp:  return 1.0   // Same as iMessage
         case .whatsAppCall: return 2.5 // Same as phoneCall
+        case .sentMail:  return 1.5   // Same as inbound mail
         }
     }
 
@@ -250,6 +252,7 @@ extension EvidenceSource {
         case .clipboardCapture: return "doc.on.clipboard"
         case .whatsApp:  return "text.bubble"
         case .whatsAppCall: return "phone.bubble"
+        case .sentMail:  return "paperplane"
         }
     }
 
@@ -257,6 +260,7 @@ extension EvidenceSource {
     public var displayName: String {
         switch self {
         case .whatsAppCall: return "WhatsApp Call"
+        case .sentMail: return "Sent Mail"
         default: return rawValue
         }
     }
@@ -264,7 +268,7 @@ extension EvidenceSource {
     /// Whether this source type carries a communication direction.
     public var isDirectional: Bool {
         switch self {
-        case .mail, .iMessage, .phoneCall, .faceTime, .whatsApp, .whatsAppCall, .clipboardCapture:
+        case .mail, .iMessage, .phoneCall, .faceTime, .whatsApp, .whatsAppCall, .clipboardCapture, .sentMail:
             return true
         case .calendar:
             return false // always bidirectional

@@ -325,7 +325,7 @@ actor MailService {
     // MARK: - Marketing Detection (Swift-side)
 
     /// Common local-parts used by marketing/bulk senders.
-    private static let marketingLocalParts: Set<String> = [
+    static let marketingLocalParts: Set<String> = [
         "noreply", "no-reply", "no_reply",
         "newsletter", "newsletters",
         "marketing", "promotions", "promo",
@@ -343,7 +343,7 @@ actor MailService {
     ]
 
     /// Common domains used exclusively for marketing/transactional bulk email.
-    private static let marketingDomains: Set<String> = [
+    static let marketingDomains: Set<String> = [
         "mailchimp.com", "mandrillapp.com",
         "sendgrid.net", "sendgrid.com",
         "constantcontact.com", "ctctmail.com",

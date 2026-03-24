@@ -178,16 +178,68 @@ struct UnknownSenderTriageSection: View {
 
             // Sender list — clipped to first N rows when collapsed
             VStack(spacing: 0) {
-                let visibleLinkedIn = isExpanded ? linkedInSenders : Array(linkedInSenders.prefix(collapsedRowCount))
-                let linkedInShown = min(linkedInSenders.count, isExpanded ? linkedInSenders.count : collapsedRowCount)
-                let remainingAfterLinkedIn = collapsedRowCount - linkedInShown
+                let visibleSent = isExpanded ? sentRecipientSenders : Array(sentRecipientSenders.prefix(collapsedRowCount))
+                let sentShown = min(sentRecipientSenders.count, isExpanded ? sentRecipientSenders.count : collapsedRowCount)
+                let remainingAfterSent = collapsedRowCount - sentShown
+                let visibleLinkedIn = isExpanded ? linkedInSenders : Array(linkedInSenders.prefix(max(0, remainingAfterSent)))
+                let linkedInShown = min(linkedInSenders.count, isExpanded ? linkedInSenders.count : max(0, remainingAfterSent))
+                let remainingAfterLinkedIn = collapsedRowCount - sentShown - linkedInShown
                 let visibleFacebook = isExpanded ? facebookSenders : Array(facebookSenders.prefix(max(0, remainingAfterLinkedIn)))
                 let facebookShown = min(facebookSenders.count, isExpanded ? facebookSenders.count : max(0, remainingAfterLinkedIn))
-                let remainingAfterFacebook = collapsedRowCount - linkedInShown - facebookShown
+                let remainingAfterFacebook = collapsedRowCount - sentShown - linkedInShown - facebookShown
                 let visibleRegular = isExpanded ? regularSenders : Array(regularSenders.prefix(max(0, remainingAfterFacebook)))
                 let regularShown = min(regularSenders.count, isExpanded ? regularSenders.count : max(0, remainingAfterFacebook))
-                let remainingAfterRegular = collapsedRowCount - linkedInShown - facebookShown - regularShown
+                let remainingAfterRegular = collapsedRowCount - sentShown - linkedInShown - facebookShown - regularShown
                 let visibleMarketing = isExpanded ? marketingSenders : Array(marketingSenders.prefix(max(0, remainingAfterRegular)))
+
+                // Sent recipients (highest priority — people the user emailed)
+                if !visibleSent.isEmpty {
+                    let recommended = visibleSent.filter { isSentRecipientRecommended($0) }
+                    let review = visibleSent.filter { !isSentRecipientRecommended($0) }
+
+                    HStack(spacing: 6) {
+                        Image(systemName: "paperplane")
+                            .samFont(.caption)
+                            .foregroundStyle(.teal)
+                        Text("Sent Recipients")
+                            .samFont(.caption)
+                            .fontWeight(.medium)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text("People you emailed")
+                            .samFont(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                    .padding(.horizontal)
+                    .padding(.top, 4)
+                    .padding(.bottom, 4)
+
+                    if !recommended.isEmpty {
+                        ForEach(recommended, id: \.id) { sender in
+                            SentRecipientTriageRow(sender: sender, choice: binding(for: sender.id), isRecommended: true)
+                        }
+                    }
+
+                    if !review.isEmpty {
+                        if !recommended.isEmpty {
+                            HStack(spacing: 6) {
+                                Text("Review")
+                                    .samFont(.caption2)
+                                    .foregroundStyle(.tertiary)
+                                Spacer()
+                            }
+                            .padding(.horizontal)
+                            .padding(.top, 4)
+                        }
+                        ForEach(review, id: \.id) { sender in
+                            SentRecipientTriageRow(sender: sender, choice: binding(for: sender.id), isRecommended: false)
+                        }
+                    }
+
+                    if !visibleLinkedIn.isEmpty || !visibleFacebook.isEmpty || !visibleRegular.isEmpty || !visibleMarketing.isEmpty {
+                        Divider().padding(.horizontal)
+                    }
+                }
 
                 // LinkedIn contacts (sorted by touch score)
                 if !visibleLinkedIn.isEmpty {
@@ -347,9 +399,23 @@ struct UnknownSenderTriageSection: View {
 
     // MARK: - Sender Groups
 
-    /// All pending senders in display order: LinkedIn, Facebook, regular, marketing.
+    /// All pending senders in display order: sent recipients (highest priority), LinkedIn, Facebook, regular, marketing.
     private var allSenders: [UnknownSender] {
-        linkedInSenders + facebookSenders + regularSenders + marketingSenders
+        sentRecipientSenders + linkedInSenders + facebookSenders + regularSenders + marketingSenders
+    }
+
+    /// Sent recipients (source == .sentMail) — people the user emailed who aren't yet contacts.
+    /// Sorted by sentEmailCount descending (most-emailed first).
+    private var sentRecipientSenders: [UnknownSender] {
+        pendingSenders
+            .filter { $0.source == .sentMail && !$0.isLikelyMarketing }
+            .sorted { $0.sentEmailCount > $1.sentEmailCount }
+    }
+
+    /// Whether a sent recipient qualifies as "recommended" (default: Add).
+    /// True if they have a display name or have been emailed 2+ times.
+    private func isSentRecipientRecommended(_ sender: UnknownSender) -> Bool {
+        sender.displayName != nil || sender.sentEmailCount >= 2
     }
 
     /// LinkedIn senders (source == .linkedIn), sorted by touch score descending.
@@ -366,9 +432,9 @@ struct UnknownSenderTriageSection: View {
             .sorted { $0.intentionalTouchScore > $1.intentionalTouchScore }
     }
 
-    /// Regular (personal/business) senders from non-LinkedIn, non-Facebook sources — default choice: Later.
+    /// Regular (personal/business) senders from non-LinkedIn, non-Facebook, non-sentMail sources — default choice: Later.
     private var regularSenders: [UnknownSender] {
-        pendingSenders.filter { $0.source != .linkedIn && $0.source != .facebook && !$0.isLikelyMarketing }
+        pendingSenders.filter { $0.source != .linkedIn && $0.source != .facebook && $0.source != .sentMail && !$0.isLikelyMarketing }
     }
 
     /// Likely mailing list or marketing senders — default choice: Never.
@@ -384,9 +450,18 @@ struct UnknownSenderTriageSection: View {
             logger.debug("loadPendingSenders: fetched \(fetched.count) pending senders")
             pendingSenders = fetched
             // Set default choice for any new senders:
-            // marketing senders default to Never; personal senders default to Later.
+            // - Sent recipients (recommended): Add
+            // - Sent recipients (review): Later
+            // - Marketing senders: Never
+            // - All others: Later
             for sender in pendingSenders where choices[sender.id] == nil {
-                choices[sender.id] = sender.isLikelyMarketing ? .never : .notNow
+                if sender.isLikelyMarketing {
+                    choices[sender.id] = .never
+                } else if sender.source == .sentMail && isSentRecipientRecommended(sender) {
+                    choices[sender.id] = .add
+                } else {
+                    choices[sender.id] = .notNow
+                }
             }
             // Clean up choices for senders no longer pending
             let validIDs = Set(pendingSenders.map(\.id))
@@ -575,6 +650,14 @@ struct UnknownSenderTriageSection: View {
                 }
             }
 
+            // For sent recipients: rewind inbox watermark to catch replies
+            // that arrived before the contact was added
+            for sender in toAdd where sender.source == .sentMail {
+                if let earliest = sender.earliestSentDate {
+                    mailCoordinator.resetInboxWatermarkTo(earliest)
+                }
+            }
+
             // If there are matches needing confirmation, show the sheet; otherwise we're done
             if !matchesNeedingConfirmation.isEmpty {
                 pendingMatches = matchesNeedingConfirmation
@@ -647,6 +730,81 @@ struct UnknownSenderTriageSection: View {
 
             logger.debug("Match confirmation complete: \(addedEmails.count) contacts processed")
         }
+    }
+}
+
+// MARK: - Sent Recipient Triage Row
+
+/// A triage row for sent-mail-discovered recipients.
+/// Shows email, send count, and latest subject.
+private struct SentRecipientTriageRow: View {
+    let sender: UnknownSender
+    @Binding var choice: TriageChoice
+    let isRecommended: Bool
+
+    var body: some View {
+        HStack(spacing: 0) {
+            radioButton(.add, color: .blue)
+                .frame(width: 36)
+            radioButton(.notNow, color: .secondary)
+                .frame(width: 36)
+            radioButton(.never, color: .red)
+                .frame(width: 36)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Image(systemName: "paperplane")
+                        .samFont(.caption2)
+                        .foregroundStyle(.teal)
+                    Text(sender.displayName ?? sender.email)
+                        .samFont(.body)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+
+                    if sender.sentEmailCount > 1 {
+                        Text("Emailed \(sender.sentEmailCount)×")
+                            .samFont(.caption2)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(Color.teal.opacity(0.15))
+                            .foregroundStyle(.teal)
+                            .clipShape(Capsule())
+                    }
+                }
+
+                if sender.displayName != nil {
+                    Text(sender.email)
+                        .samFont(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                if let subject = sender.latestSubject {
+                    Text(subject)
+                        .samFont(.caption)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+            }
+            .padding(.leading, 8)
+
+            Spacer(minLength: 8)
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+    }
+
+    private func radioButton(_ value: TriageChoice, color: Color) -> some View {
+        Button {
+            choice = value
+        } label: {
+            Image(systemName: choice == value ? "largecircle.fill.circle" : "circle")
+                .samFont(.body)
+                .foregroundStyle(choice == value ? color : .secondary.opacity(0.5))
+        }
+        .buttonStyle(.plain)
     }
 }
 

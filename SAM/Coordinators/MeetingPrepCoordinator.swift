@@ -537,7 +537,7 @@ final class MeetingPrepCoordinator {
                 channelScores[.whatsApp, default: 0] += weight
             case .whatsAppCall:
                 channelScores[.whatsApp, default: 0] += weight
-            case .facebook, .substack, .clipboardCapture:
+            case .facebook, .substack, .clipboardCapture, .sentMail:
                 break  // No direct communication channel mapping
             case .calendar, .contacts, .note, .manual:
                 break
@@ -562,7 +562,7 @@ final class MeetingPrepCoordinator {
                 quickScores[.whatsApp, default: 0] += weight
             case .whatsAppCall:
                 quickScores[.whatsApp, default: 0] += weight
-            case .mail:
+            case .mail, .sentMail:
                 detailedScores[.email, default: 0] += weight
             case .faceTime:
                 detailedScores[.faceTime, default: 0] += weight

@@ -4,6 +4,19 @@
 
 ---
 
+## Sent Recipient Discovery (March 24, 2026)
+
+- **Feature**: When SAM imports sent emails, unknown recipients are collected as triage candidates. They appear at the top of the Unknown Senders triage list so the user can quickly add them as contacts.
+- **Two-tier display**: Recipients with display names or emailed 2+ times default to "Add" (Recommended). Single-send bare addresses default to "Later" (Review).
+- **Watermark reset on approval**: When a sent recipient is approved, SAM rewinds the inbox watermark to 1 day before the earliest sent email to that address. This ensures any replies that arrived before the contact was added get picked up on the next import.
+- **Noise filtering**: Skips noreply/marketing addresses, mailing list infrastructure domains, and role addresses (admin@, billing@, etc.) using shared `MailService.marketingLocalParts` and `marketingDomains`.
+- **Model changes**: Added `EvidenceSource.sentMail` enum case. Added `sentEmailCount` and `earliestSentDate` fields to `UnknownSender`.
+- **Repository**: `UnknownSenderRepository.bulkRecordSentRecipients()` handles upsert, dedup, and source upgrade (inbound `.mail` → `.sentMail` when user also sends to that address).
+- **Settings**: Toggle in Settings → Mail: "Suggest adding unknown sent recipients" (default on).
+- **Collection hook**: Runs in `MailImportCoordinator` after sent mail upsert, filtering against known contacts, neverInclude list, user's own addresses, and noise addresses.
+
+---
+
 ## Dead code cleanup — Settings sidebar refactor remnants (March 24, 2026)
 
 - **Removed ~750 lines** of dead code left over from the Settings sidebar navigation refactor.
