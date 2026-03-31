@@ -33,6 +33,7 @@ struct AwarenessView: View {
     @State private var searchText = ""
     @State private var isGenerating = false
     @State private var showMore = false
+    @State private var showingManualTaskSheet = false
 
     // MARK: - Briefing State
 
@@ -44,6 +45,11 @@ struct AwarenessView: View {
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 0) {
+                // Crash report banner
+                if CrashReportService.shared.crashDetected {
+                    CrashReportBanner()
+                }
+
                 // Legacy data migration notice
                 if legacyStoresDetected {
                     LegacyDataNoticeBanner {
@@ -73,8 +79,20 @@ struct AwarenessView: View {
         .navigationTitle("Today")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                GuideButton(articleID: "today.daily-briefing")
+                HStack(spacing: 8) {
+                    Button {
+                        showingManualTaskSheet = true
+                    } label: {
+                        Label("New Task", systemImage: "plus")
+                    }
+                    .help("Create a manual task or follow-up reminder")
+
+                    GuideButton(articleID: "today.daily-briefing")
+                }
             }
+        }
+        .sheet(isPresented: $showingManualTaskSheet) {
+            ManualTaskSheet()
         }
         .sheet(isPresented: Binding(
             get: { briefingCoordinator.showEveningBriefing },
@@ -672,6 +690,51 @@ struct ProfileAnalysisReadySection: View {
             // No fresh analysis — render nothing (section is invisible)
         }
         .task { analyses = await BusinessProfileService.shared.profileAnalyses() }
+    }
+}
+
+// MARK: - Crash Report Banner
+
+/// Banner shown when SAM detects that the previous session crashed.
+/// Offers to email the crash report to the development team.
+private struct CrashReportBanner: View {
+    private var service: CrashReportService { CrashReportService.shared }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.octagon.fill")
+                .foregroundStyle(.red)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("SAM crashed during your last session")
+                    .samFont(.subheadline)
+                    .fontWeight(.medium)
+                Text("Would you like to send a crash report to help us fix this?")
+                    .samFont(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Button("Send Report") {
+                service.sendReport()
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            .tint(.red)
+
+            Button {
+                service.dismiss()
+            } label: {
+                Image(systemName: "xmark")
+                    .samFont(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding()
+        .background(.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+        .padding()
     }
 }
 

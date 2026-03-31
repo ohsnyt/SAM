@@ -83,6 +83,7 @@ final class SAMAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidatio
         guard periodicSaveTimer != nil else { return .terminateNow }
 
         log.info("App termination requested — cancelling background tasks")
+        CrashReportService.shared.markCleanShutdown()
         periodicSaveTimer?.invalidate()
         periodicSaveTimer = nil
         ContactsImportCoordinator.shared.cancelAll()
@@ -217,6 +218,10 @@ struct SAMApp: App {
             logger.notice("Safe Mode — skipping data layer configuration")
             return
         }
+
+        // Crash detection: check if previous session exited cleanly,
+        // and scan for .ips crash reports if not.
+        CrashReportService.shared.markLaunchAndCheckPreviousCrash()
 
         // Crash guard: if the app crashed within 10 seconds of last launch,
         // reset sidebar to "today" to avoid crash loops from corrupted data
