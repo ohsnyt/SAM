@@ -4,6 +4,33 @@
 
 ---
 
+## Crash Recovery: Safe Mode, Auto-Detection & OutcomeEngine Fix (March 31, 2026)
+
+### SwiftData Crash Fix
+- **Root cause**: `OutcomeEngine.reprioritize()` crashed (SIGTRAP) when setting `outcome.priorityScore` on models with stale `linkedPerson` relationship references. During `enrichWithAI()` (~15s of AI inference), contacts import could delete/modify people in a separate `ModelContext`. SwiftData asserted when validating the outcome object during property mutation.
+- **Fix**: `reprioritize()` now flushes the context before re-fetching and re-fetches each outcome individually by ID before mutation (matching the defensive pattern in `enrichWithAI()`). Added `OutcomeRepository.save()` method. Added `isDeleted` guards on all `linkedPeople` accesses in scanner functions.
+- **Also hardened**: `enrichWithAI()` and `generateDraftMessage()` now accept outcome IDs instead of model references, with re-fetch-after-await guards at every suspension point.
+
+### Safe Mode (Option Key at Launch)
+- **Activation**: Hold Option key during app launch. Skips all normal startup — no SwiftData container, no coordinators, no imports, no AI.
+- **SafeModeService**: Runs 7 categories of deep SQLite integrity checks directly on the store file: WAL checkpoint, `PRAGMA integrity_check`, table row counts, full FK repair (12 known mappings + heuristic auto-detection), many-to-many join table cleanup, duplicate UUID scan, schema metadata.
+- **SafeModeView**: Full-window UI with streaming monospaced log, color-coded severity icons (green/yellow/orange/red), and summary bar.
+- **Email Report**: Composes email to `sam@stillwaiting.org` with `[DATABASE REBUILD] <datetime>` subject containing the full plain-text report (version, schema, hardware, all check results).
+- **Restart**: Relaunches SAM in normal mode via `NSWorkspace.openApplication`. Uses `sam.safeMode.justCompleted` UserDefaults flag to prevent re-entry if Option is still held.
+- **AppDelegate guards**: `applicationDidFinishLaunching` and `applicationShouldTerminate` skip data layer access when in safe mode.
+
+### Automatic Crash Report Detection
+- **Mechanism**: `CrashReportService` sets `sam.cleanShutdown = false` at launch and `true` in `applicationShouldTerminate`. On next launch, if the flag is `false`, the previous session crashed.
+- **Report discovery**: Scans `~/Library/Logs/DiagnosticReports/` (and `Retired/` subfolder) for `SAM_*.ips` or `sam.SAM*.ips` files created after the previous session's launch timestamp. Wraps the Apple crash report with SAM context headers (version, schema, hardware). Falls back to a minimal report with manual attachment instructions if `.ips` not yet written.
+- **UX**: Red `CrashReportBanner` at the top of the Today view. "Send Report" composes email to `sam@stillwaiting.org` with `[CRASH REPORT] <datetime>` subject. Dismiss button records the crash timestamp to prevent re-showing.
+- **First-launch safe**: `sam.lastLaunchTimestamp` defaults to 0, so crash detection is skipped on first ever launch.
+
+### Files
+- **New**: `SafeModeService.swift`, `SafeModeView.swift`, `CrashReportService.swift`
+- **Modified**: `SAMApp.swift` (Option key detection, safe mode guards, crash detection hooks), `OutcomeEngine.swift` (reprioritize + enrichWithAI hardening), `OutcomeRepository.swift` (save method), `AwarenessView.swift` (crash report banner)
+
+---
+
 ## Sent Recipient Discovery (March 24, 2026)
 
 - **Feature**: When SAM imports sent emails, unknown recipients are collected as triage candidates. They appear at the top of the Unknown Senders triage list so the user can quickly add them as contacts.

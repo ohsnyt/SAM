@@ -406,6 +406,37 @@ The invitation flow uses a hybrid model: rich text editor in SAM → Mail.app ha
 - **Keychain storage** — `KeychainService` actor wraps Security framework for sensitive credential storage (`kSecAttrAccessibleWhenUnlockedThisDeviceOnly`).
 - **Database encryption** — Not needed separately; macOS FileVault provides full-disk encryption and the app sandbox isolates data. `FileProtectionType.complete` is not used (causes SQLite I/O errors on macOS).
 
+### Crash Recovery & Database Integrity
+
+**Startup hardening** (automatic, every launch):
+- `SAMModelContainer.checkpointStoreIfNeeded()` — WAL checkpoint before opening
+- `SAMModelContainer.backupStoreBeforeOpen()` — timestamped backup of store files before migration (keeps last 3)
+- `SAMModelContainer.cleanupOrphanedReferences()` — raw SQL nullification of dangling FK references (4 known FK mappings)
+- **Crash loop guard** — if app crashed within 10s of last launch, resets sidebar to "today"
+
+**Crash report auto-detection** (`CrashReportService`):
+- `sam.cleanShutdown` flag set `false` at launch, `true` in `applicationShouldTerminate`
+- On next launch, if flag is `false` and `sam.lastLaunchTimestamp > 0`, previous session crashed
+- Scans `~/Library/Logs/DiagnosticReports/` for `SAM_*.ips` files created after previous launch
+- Wraps Apple crash report with SAM context (version, schema, hardware) or builds minimal report if `.ips` not found
+- Red `CrashReportBanner` at top of Today view: "Send Report" emails to `sam@stillwaiting.org` with `[CRASH REPORT]` subject
+- Dismiss records crash timestamp to prevent re-showing
+
+**Safe Mode** (hold Option key during launch):
+- Skips all normal startup: no `SAMModelContainer.shared`, no coordinators, no imports, no AI
+- `SafeModeService` operates on raw SQLite directly (7 check categories):
+  1. WAL checkpoint (flush pending writes)
+  2. `PRAGMA integrity_check`
+  3. Table inventory with row counts
+  4. Full FK repair — 12 known mappings + heuristic discovery of unknown FK columns
+  5. Many-to-many join table cleanup (orphaned rows)
+  6. Duplicate UUID detection
+  7. Schema metadata report
+- `SafeModeView` shows streaming log with color-coded severity icons
+- "Email Report" sends to `sam@stillwaiting.org` with `[DATABASE REBUILD]` subject
+- "Restart SAM" relaunches in normal mode (`sam.safeMode.justCompleted` flag prevents re-entry)
+- `AppDelegate.applicationDidFinishLaunching` and `applicationShouldTerminate` are guarded to skip data layer access in safe mode
+
 ---
 
 ## 8. Schema Versions
