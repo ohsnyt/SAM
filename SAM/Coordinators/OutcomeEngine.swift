@@ -12,6 +12,7 @@
 
 import Foundation
 import os.log
+import SwiftData
 
 private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "OutcomeEngine")
 
@@ -195,8 +196,14 @@ final class OutcomeEngine {
             // Score all new outcomes using calibrated weights
             let weights = CoachingAdvisor.shared.adjustedWeights()
             // Pre-compute health for all linked people to avoid redundant calls in the scoring loop
-            let linkedPeople = Set(newOutcomes.compactMap { $0.linkedPerson })
-            let healthCache = Dictionary(linkedPeople.map { ($0.id, meetingPrep.computeHealth(for: $0)) }, uniquingKeysWith: { first, _ in first })
+            let linkedPeople = Set(newOutcomes.compactMap { outcome -> SamPerson? in
+                guard let person = outcome.linkedPerson, !person.isDeleted else { return nil }
+                return person
+            })
+            let healthCache = Dictionary(linkedPeople.compactMap { person -> (UUID, RelationshipHealth)? in
+                guard !person.isDeleted else { return nil }
+                return (person.id, meetingPrep.computeHealth(for: person))
+            }, uniquingKeysWith: { first, _ in first })
             for outcome in newOutcomes {
                 outcome.priorityScore = computePriority(outcome: outcome, weights: weights, healthCache: healthCache)
             }
@@ -257,11 +264,30 @@ final class OutcomeEngine {
 
     /// Re-score and sort all active outcomes.
     func reprioritize() throws {
+        // Flush any unsaved mutations (e.g. from enrichWithAI) so the context
+        // is consistent before we re-fetch and mutate again.
+        try? outcomeRepo.save()
+
         let weights = CoachingAdvisor.shared.adjustedWeights()
         let active = try outcomeRepo.fetchActive()
-        let linkedPeople = Set(active.compactMap { $0.linkedPerson })
-        let healthCache = Dictionary(uniqueKeysWithValues: linkedPeople.map { ($0.id, meetingPrep.computeHealth(for: $0)) })
-        for outcome in active {
+        let activeIDs = active.map { $0.id }
+
+        let linkedPeople = Set(active.compactMap { outcome -> SamPerson? in
+            guard !outcome.isDeleted, let person = outcome.linkedPerson, !person.isDeleted else { return nil }
+            return person
+        })
+        let healthCache = Dictionary(uniqueKeysWithValues: linkedPeople.compactMap { person -> (UUID, RelationshipHealth)? in
+            guard !person.isDeleted else { return nil }
+            return (person.id, meetingPrep.computeHealth(for: person))
+        })
+
+        // Re-fetch each outcome individually before mutating to avoid stale
+        // relationship references that cause SwiftData assertion failures.
+        for outcomeID in activeIDs {
+            guard let outcome = try? outcomeRepo.fetch(id: outcomeID),
+                  !outcome.isDeleted else {
+                continue
+            }
             outcome.priorityScore = computePriority(outcome: outcome, weights: weights, healthCache: healthCache)
         }
     }
@@ -311,11 +337,11 @@ final class OutcomeEngine {
             $0.source == .calendar
             && $0.occurredAt > now
             && $0.occurredAt <= cutoff
-            && !$0.linkedPeople.isEmpty
+            && $0.linkedPeople.contains(where: { !$0.isDeleted })
         }
 
         return upcoming.compactMap { event -> SamOutcome? in
-            let attendees = event.linkedPeople.filter { !$0.isMe }
+            let attendees = event.linkedPeople.filter { !$0.isDeleted && !$0.isMe }
             guard let primary = attendees.first else { return nil }
 
             let hoursUntil = max(1, Int(event.occurredAt.timeIntervalSince(now) / 3600))
@@ -339,13 +365,13 @@ final class OutcomeEngine {
 
         let pastEvents = allEvidence.filter { item in
             item.source == .calendar
-            && !item.linkedPeople.isEmpty
+            && item.linkedPeople.contains(where: { !$0.isDeleted })
             && (item.endedAt ?? Calendar.current.date(byAdding: .hour, value: 1, to: item.occurredAt)!) <= now
             && (item.endedAt ?? Calendar.current.date(byAdding: .hour, value: 1, to: item.occurredAt)!) >= cutoff
         }
 
         return pastEvents.compactMap { event -> SamOutcome? in
-            let attendeeIDs = Set(event.linkedPeople.map(\.id))
+            let attendeeIDs = Set(event.linkedPeople.filter { !$0.isDeleted }.map(\.id))
 
             // Check if a note was created after the event referencing any attendee
             let hasNote = allNotes.contains { note in
@@ -354,8 +380,8 @@ final class OutcomeEngine {
             }
             guard !hasNote else { return nil }
 
-            let attendees = event.linkedPeople.filter { !$0.isMe }
-            let primary = attendees.first ?? event.linkedPeople.first
+            let attendees = event.linkedPeople.filter { !$0.isDeleted && !$0.isMe }
+            let primary = attendees.first ?? event.linkedPeople.first(where: { !$0.isDeleted })
             let eventEnd = event.endedAt ?? Calendar.current.date(byAdding: .hour, value: 1, to: event.occurredAt)!
             let minutesSince = Int(now.timeIntervalSince(eventEnd) / 60)
 
@@ -1585,6 +1611,8 @@ final class OutcomeEngine {
             outcome.actionLane = .openURL
         case .roleFilling:
             outcome.actionLane = .communicate
+        case .userTask:
+            outcome.actionLane = .record
         }
     }
 
@@ -1936,8 +1964,8 @@ final class OutcomeEngine {
         do {
             let active = try outcomeRepo.fetchActive()
             // Only enrich top 5 to avoid excessive LLM calls
-            let topOutcomes = Array(active.prefix(5))
-            guard !topOutcomes.isEmpty else { return }
+            let topOutcomeIDs = Array(active.prefix(5).map { $0.id })
+            guard !topOutcomeIDs.isEmpty else { return }
 
             let availability = await AIService.shared.checkAvailability()
             guard case .available = availability else {
@@ -1945,17 +1973,31 @@ final class OutcomeEngine {
                 return
             }
 
-            for outcome in topOutcomes {
+            for outcomeID in topOutcomeIDs {
+                // Re-fetch outcome after each await to avoid stale/deleted model crashes
+                guard let outcome = try? outcomeRepo.fetch(id: outcomeID),
+                      !outcome.isDeleted,
+                      outcome.status == .pending || outcome.status == .inProgress else {
+                    continue
+                }
+
                 // Generate suggested next step if missing
                 if outcome.suggestedNextStep == nil {
                     let context = buildEnrichmentContext(for: outcome)
                     let persona = await BusinessProfileService.shared.personaFragment()
+
+                    // Re-fetch again after await — model may have been invalidated
+                    guard let freshOutcome = try? outcomeRepo.fetch(id: outcomeID),
+                          !freshOutcome.isDeleted else {
+                        continue
+                    }
+
                     let prompt = """
                         You are a coaching assistant for \(persona).
                         Given this outcome and relationship context, suggest a concrete next step.
 
-                        Outcome: \(outcome.title)
-                        Context: \(outcome.rationale)
+                        Outcome: \(freshOutcome.title)
+                        Context: \(freshOutcome.rationale)
 
                         \(context)
 
@@ -1979,18 +2021,26 @@ final class OutcomeEngine {
                             prompt: prompt,
                             systemInstruction: systemInstruction
                         )
+                        // Re-fetch after AI call before mutating
+                        guard let liveOutcome = try? outcomeRepo.fetch(id: outcomeID),
+                              !liveOutcome.isDeleted else {
+                            continue
+                        }
                         if !nextStep.isEmpty {
-                            outcome.suggestedNextStep = nextStep
+                            liveOutcome.suggestedNextStep = nextStep
                         }
                     } catch {
-                        logger.warning("AI enrichment failed for '\(outcome.title)': \(error.localizedDescription)")
+                        logger.warning("AI enrichment failed for outcome \(outcomeID): \(error.localizedDescription)")
                     }
                 }
 
                 // Generate draft message for communicate/call lanes
-                if outcome.draftMessageText == nil,
-                   (outcome.actionLane == .communicate || outcome.actionLane == .call) {
-                    await generateDraftMessage(for: outcome)
+                // Re-fetch before checking draft eligibility
+                if let draftOutcome = try? outcomeRepo.fetch(id: outcomeID),
+                   !draftOutcome.isDeleted,
+                   draftOutcome.draftMessageText == nil,
+                   (draftOutcome.actionLane == .communicate || draftOutcome.actionLane == .call) {
+                    await generateDraftMessage(for: outcomeID)
                 }
             }
         } catch {
@@ -1999,7 +2049,10 @@ final class OutcomeEngine {
     }
 
     /// Generate a draft message for a communicate or call outcome.
-    private func generateDraftMessage(for outcome: SamOutcome) async {
+    /// Accepts an outcome ID and re-fetches before/after AI calls to avoid stale model crashes.
+    private func generateDraftMessage(for outcomeID: UUID) async {
+        guard let outcome = try? outcomeRepo.fetch(id: outcomeID),
+              !outcome.isDeleted else { return }
         let person = outcome.linkedPerson
         let personName = person?.displayNameCache ?? person?.displayName ?? "the contact"
         let channel = outcome.suggestedChannel ?? .iMessage
@@ -2089,9 +2142,12 @@ final class OutcomeEngine {
                 prompt: prompt,
                 systemInstruction: systemInstruction
             )
+            // Re-fetch after AI call to avoid mutating a stale/deleted model
+            guard let liveOutcome = try? outcomeRepo.fetch(id: outcomeID),
+                  !liveOutcome.isDeleted else { return }
             if !draft.isEmpty {
-                outcome.draftMessageText = draft
-                logger.debug("Generated draft message for '\(outcome.title)'")
+                liveOutcome.draftMessageText = draft
+                logger.debug("Generated draft message for '\(liveOutcome.title)'")
 
                 // Phase Z: Compliance audit logging
                 let flags = ComplianceScanner.scanWithSettings(draft)
@@ -2100,11 +2156,11 @@ final class OutcomeEngine {
                     recipientName: personName,
                     originalDraft: draft,
                     complianceFlags: flags,
-                    outcomeID: outcome.id
+                    outcomeID: liveOutcome.id
                 )
             }
         } catch {
-            logger.warning("Draft generation failed for '\(outcome.title)': \(error.localizedDescription)")
+            logger.warning("Draft generation failed for outcome \(outcomeID): \(error.localizedDescription)")
         }
     }
 

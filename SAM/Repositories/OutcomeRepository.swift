@@ -35,6 +35,12 @@ final class OutcomeRepository {
         self.context = ModelContext(container)
     }
 
+    /// Flush pending changes to the persistent store.
+    func save() throws {
+        guard let context else { throw RepositoryError.notConfigured }
+        try context.save()
+    }
+
     // MARK: - Fetch Operations
 
     /// Fetch active outcomes (pending + inProgress), sorted by priority descending.
@@ -423,6 +429,8 @@ final class OutcomeRepository {
 
         var expiredCount = 0
         for outcome in all where outcome.status == .pending || outcome.status == .inProgress {
+            // Never auto-expire user-created tasks — let the user manage them
+            guard outcome.outcomeKind != .userTask else { continue }
             if let deadline = outcome.deadlineDate, deadline < now {
                 outcome.statusRawValue = OutcomeStatus.expired.rawValue
                 expiredCount += 1

@@ -23,6 +23,10 @@ final class SAMAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidatio
 
     private let log = Logger(subsystem: "com.matthewsessions.SAM", category: "AppDelegate")
 
+    /// Fires every 30 s to flush any pending main-context changes that slipped past
+    /// an explicit repository save (e.g., SwiftUI bindings, environment mutations).
+    private var periodicSaveTimer: Timer?
+
     /// Disable all menu items when the app is locked (except Quit, Hide, Minimize).
     @MainActor
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
@@ -31,6 +35,12 @@ final class SAMAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidatio
 
     @MainActor
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // In Safe Mode, skip all normal startup — no data layer, no coordinators
+        if NSEvent.modifierFlags.contains(.option)
+            && !UserDefaults.standard.bool(forKey: "sam.safeMode.justCompleted") {
+            return
+        }
+
         SystemNotificationService.shared.configure()
 
         // Register global clipboard capture hotkey if enabled + Accessibility granted
@@ -41,11 +51,40 @@ final class SAMAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidatio
 
         // Start event reminder scheduler
         EventCoordinator.shared.startReminderScheduler()
+
+        // § Window-close save — macOS does NOT autosave on ⌘W.
+        // Flush the main context whenever any app window closes so edits
+        // made via @Environment(\.modelContext) are never silently discarded.
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            Task { @MainActor in
+                try? SAMModelContainer.shared.mainContext.save()
+            }
+        }
+
+        // § Periodic save safety net — every 30 s flush any pending main-context
+        // changes.  Repositories save explicitly on every write, but this covers
+        // edge-cases where mutations reach the environment context directly.
+        periodicSaveTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in
+            Task { @MainActor in
+                let ctx = SAMModelContainer.shared.mainContext
+                guard ctx.hasChanges else { return }
+                try? ctx.save()
+            }
+        }
     }
 
     @MainActor
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // In Safe Mode the data layer was never initialized — just terminate.
+        guard periodicSaveTimer != nil else { return .terminateNow }
+
         log.info("App termination requested — cancelling background tasks")
+        periodicSaveTimer?.invalidate()
+        periodicSaveTimer = nil
         ContactsImportCoordinator.shared.cancelAll()
         CalendarImportCoordinator.shared.cancelAll()
         MailImportCoordinator.shared.cancelAll()
@@ -56,6 +95,10 @@ final class SAMAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidatio
         FacebookImportCoordinator.shared.cancelAll()
         EventCoordinator.shared.stopReminderScheduler()
         GlobalHotkeyService.shared.unregisterHotkey()
+        // Flush any pending SwiftData changes before exit. macOS does NOT
+        // automatically trigger autosave on quit, so unsaved mutations
+        // from the main context would be silently lost without this call.
+        try? SAMModelContainer.shared.mainContext.save()
         // Open the MLX circuit breaker and drop the model container so any
         // in-flight generation stream exhausts before the process exits.
         Task { await AIService.shared.prepareForTermination() }
@@ -101,6 +144,9 @@ struct SAMApp: App {
     // Debug menu
     @State private var showClearDataConfirmation = false
 
+    // Safe Mode — activated by holding Option key during launch
+    @State private var safeModeActive: Bool
+
     // MARK: - Lifecycle
 
     /// True when launched as a test host (XCTest / Swift Testing).
@@ -110,6 +156,20 @@ struct SAMApp: App {
         // Initialize showOnboarding FIRST before any other operations
         let hasCompletedOnboarding = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
         _showOnboarding = State(initialValue: !hasCompletedOnboarding)
+
+        // Safe Mode: hold Option key during launch to enter safe mode.
+        // Skip if we just completed a safe mode session (prevents re-entry
+        // if Option is still held when the app relaunches).
+        if UserDefaults.standard.bool(forKey: "sam.safeMode.justCompleted") {
+            UserDefaults.standard.removeObject(forKey: "sam.safeMode.justCompleted")
+            _safeModeActive = State(initialValue: false)
+        } else {
+            let optionHeld = NSEvent.modifierFlags.contains(.option)
+            _safeModeActive = State(initialValue: optionHeld)
+            if optionHeld {
+                logger.notice("Option key held at launch — entering Safe Mode")
+            }
+        }
 
         // Skip heavy initialization when running as a test host.
         // Each parallel test runner spawns a full app instance;
@@ -149,6 +209,14 @@ struct SAMApp: App {
             logger.notice("SAMApp: store files wiped for pending seed — fresh container will be created")
         }
         #endif
+
+        // Safe Mode: skip all data layer initialization — SafeModeView handles
+        // raw SQLite checks before SwiftData ever opens the store.
+        if NSEvent.modifierFlags.contains(.option)
+            && !UserDefaults.standard.bool(forKey: "sam.safeMode.justCompleted") {
+            logger.notice("Safe Mode — skipping data layer configuration")
+            return
+        }
 
         // Crash guard: if the app crashed within 10 seconds of last launch,
         // reset sidebar to "today" to avoid crash loops from corrupted data
@@ -250,8 +318,11 @@ struct SAMApp: App {
         return CGSize(width: width, height: height)
     }
 
-    var body: some Scene {
-        WindowGroup {
+    @ViewBuilder
+    private var mainContent: some View {
+        if safeModeActive {
+            SafeModeView()
+        } else {
             ZStack {
                 AppShellView()
                     .modelContainer(SAMModelContainer.shared)
@@ -262,6 +333,12 @@ struct SAMApp: App {
                         .transition(.opacity)
                 }
             }
+        }
+    }
+
+    var body: some Scene {
+        WindowGroup {
+            mainContent
                 .environment(\.samTextScale, SAMTextSize(rawValue: textSizeRawValue)?.scale ?? 1.0)
                 .sheet(isPresented: $showOnboarding) {
                     OnboardingView()
