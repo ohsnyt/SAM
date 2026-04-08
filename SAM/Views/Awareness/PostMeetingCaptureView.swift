@@ -218,6 +218,7 @@ struct PostMeetingCaptureView: View {
             footer
         }
         .frame(minWidth: 520, idealWidth: 620, minHeight: 520, idealHeight: 680)
+        .interactiveDismissDisabled(hasContent)
         .onAppear {
             FeatureAdoptionTracker.shared.recordUsage(.postMeetingCapture)
             // Pre-check all attendees as present

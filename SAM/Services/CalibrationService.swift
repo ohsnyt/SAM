@@ -21,7 +21,7 @@ actor CalibrationService {
     private let storageKey = "sam.calibrationLedger"
 
     /// Synchronous accessor for @MainActor callers. Populated on first load, updated on every save.
-    nonisolated(unsafe) static var cachedLedger = CalibrationLedger()
+    @MainActor static var cachedLedger = CalibrationLedger()
 
     private var ledger: CalibrationLedger
 
@@ -29,7 +29,8 @@ actor CalibrationService {
         if let data = UserDefaults.standard.data(forKey: "sam.calibrationLedger"),
            let decoded = try? JSONDecoder().decode(CalibrationLedger.self, from: data) {
             self.ledger = decoded
-            CalibrationService.cachedLedger = decoded
+            let snapshot = decoded
+            Task { @MainActor in CalibrationService.cachedLedger = snapshot }
         } else {
             self.ledger = CalibrationLedger()
         }
@@ -309,7 +310,8 @@ actor CalibrationService {
         if let data = try? JSONEncoder().encode(ledger) {
             UserDefaults.standard.set(data, forKey: storageKey)
         }
-        CalibrationService.cachedLedger = ledger
+        let snapshot = ledger
+        Task { @MainActor in CalibrationService.cachedLedger = snapshot }
     }
 
     // MARK: - Formatting Helpers

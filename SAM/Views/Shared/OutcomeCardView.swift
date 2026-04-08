@@ -433,6 +433,7 @@ extension OutcomeKind {
         case .contentCreation: return "Content"
         case .setup:           return "Setup"
         case .roleFilling:     return "Role Filling"
+        case .userTask:        return "Task"
         }
     }
 
@@ -448,6 +449,7 @@ extension OutcomeKind {
         case .contentCreation: return .mint
         case .setup:           return .cyan
         case .roleFilling:     return .cyan
+        case .userTask:        return .gray
         }
     }
 
@@ -463,6 +465,7 @@ extension OutcomeKind {
         case .contentCreation: return "text.badge.star"
         case .setup:           return "gearshape.2"
         case .roleFilling:     return "person.badge.key"
+        case .userTask:        return "checklist"
         }
     }
 }

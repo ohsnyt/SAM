@@ -11,6 +11,7 @@
 
 import Foundation
 import SwiftUI
+import SwiftData
 import os.log
 
 private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "NoteAnalysisCoordinator")
@@ -178,18 +179,21 @@ final class NoteAnalysisCoordinator {
             try createEvidenceFromNote(note)
 
             // Step 8: Refresh relationship summaries for linked people
-            for person in note.linkedPeople {
+            for person in note.linkedPeople where !person.isDeleted {
                 await refreshRelationshipSummary(for: person)
             }
 
             // Step 9: Generate follow-up draft if this is a meeting-related note
+            guard !note.isDeleted else { return }
             await generateFollowUpDraftIfMeeting(note)
 
             // Step 10: Auto-create outcomes from extracted action items
+            guard !note.isDeleted else { return }
             await createOutcomesFromAnalysis(note)
 
             // Step 11: Detect death events and prompt to mark as deceased
-            detectDeceasedFromLifeEvents(lifeEvents, linkedPeople: note.linkedPeople)
+            let validLinkedPeople = note.isDeleted ? [] : note.linkedPeople.filter { !$0.isDeleted }
+            detectDeceasedFromLifeEvents(lifeEvents, linkedPeople: validLinkedPeople)
 
             // Update state
             analysisStatus = .success
@@ -335,7 +339,11 @@ final class NoteAnalysisCoordinator {
                 communicationsSummaries: commsSummaries
             )
 
-            // Store on person
+            // Store on person — guard against deletion during async AI call
+            guard !person.isDeleted else {
+                logger.debug("Person deleted during summary generation, skipping")
+                return
+            }
             person.relationshipSummary = summary.overview
             person.relationshipKeyThemes = summary.keyThemes
             person.relationshipNextSteps = summary.suggestedNextSteps
@@ -463,6 +471,7 @@ final class NoteAnalysisCoordinator {
                 personName: personName,
                 role: role
             )
+            guard !note.isDeleted else { return }
             note.followUpDraft = draft
             logger.debug("Generated follow-up draft for note linked to \(personName, privacy: .private)")
         } catch {

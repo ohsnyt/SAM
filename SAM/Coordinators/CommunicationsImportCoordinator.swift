@@ -11,6 +11,7 @@
 
 import Foundation
 import Observation
+import SwiftData
 import os.log
 
 private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "CommunicationsImportCoordinator")
@@ -649,7 +650,7 @@ final class CommunicationsImportCoordinator {
         // Find people linked to communications evidence
         var affectedPeople = Set<UUID>()
         for item in allEvidence where commsSources.contains(item.source) {
-            for person in item.linkedPeople {
+            for person in item.linkedPeople where !person.isDeleted {
                 affectedPeople.insert(person.id)
             }
         }
@@ -657,7 +658,7 @@ final class CommunicationsImportCoordinator {
         guard !affectedPeople.isEmpty else { return }
 
         let people = (try? peopleRepository.fetchAll()) ?? []
-        let toRefresh = people.filter { affectedPeople.contains($0.id) && !$0.isMe }
+        let toRefresh = people.filter { !$0.isDeleted && affectedPeople.contains($0.id) && !$0.isMe }
 
         logger.debug("Refreshing relationship summaries for \(toRefresh.count) people with communications")
 
@@ -666,6 +667,7 @@ final class CommunicationsImportCoordinator {
                 logger.debug("Summary refresh cancelled")
                 break
             }
+            guard !person.isDeleted else { continue }
             await NoteAnalysisCoordinator.shared.refreshRelationshipSummary(for: person)
         }
     }

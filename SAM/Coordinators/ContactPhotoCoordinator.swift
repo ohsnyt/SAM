@@ -8,6 +8,7 @@
 import AppKit
 import Foundation
 import os.log
+import SwiftData
 import UniformTypeIdentifiers
 
 private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "ContactPhotoCoordinator")
@@ -190,17 +191,18 @@ final class ContactPhotoCoordinator {
     func handleDrop(providers: [NSItemProvider], for person: SamPerson) {
         guard let provider = providers.first else { return }
 
-        // Capture person reference safely for use in @Sendable closures.
-        // SamPerson is a SwiftData @Model (non-Sendable) but is only accessed
-        // on @MainActor inside Task { @MainActor in }, which is safe.
-        nonisolated(unsafe) let personRef = person
+        // Capture the PersistentIdentifier (Sendable) rather than the model object.
+        // Re-fetch on @MainActor inside each task to stay Swift 6 concurrency-safe.
+        let personID = person.persistentModelID
 
         // Try loading image data directly
         if provider.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
             provider.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { data, error in
                 Task { @MainActor in
+                    guard let person = SAMModelContainer.shared.mainContext.model(for: personID) as? SamPerson,
+                          !person.isDeleted else { return }
                     if let data {
-                        await self.setPhoto(data: data, for: personRef)
+                        await self.setPhoto(data: data, for: person)
                     } else {
                         self.errorMessage = error?.localizedDescription ?? "Could not read image data."
                         self.scheduleDismissError()
@@ -214,12 +216,14 @@ final class ContactPhotoCoordinator {
         if provider.hasItemConformingToTypeIdentifier(UTType.url.identifier) {
             provider.loadItem(forTypeIdentifier: UTType.url.identifier) { item, error in
                 Task { @MainActor in
+                    guard let person = SAMModelContainer.shared.mainContext.model(for: personID) as? SamPerson,
+                          !person.isDeleted else { return }
                     guard let url = item as? URL ?? (item as? Data).flatMap({ URL(dataRepresentation: $0, relativeTo: nil) }) else {
                         self.errorMessage = "Could not read the dropped URL."
                         self.scheduleDismissError()
                         return
                     }
-                    guard let contactID = personRef.contactIdentifier else {
+                    guard let contactID = person.contactIdentifier else {
                         self.errorMessage = "This person is not linked to an Apple Contact."
                         self.scheduleDismissError()
                         return
@@ -229,7 +233,7 @@ final class ContactPhotoCoordinator {
                         let jpegData = try await self.photoService.downloadAndUpdatePhoto(
                             identifier: contactID, url: url
                         )
-                        personRef.photoThumbnailCache = jpegData
+                        person.photoThumbnailCache = jpegData
                         self.closeSafariWindows()
                     } catch {
                         self.errorMessage = error.localizedDescription

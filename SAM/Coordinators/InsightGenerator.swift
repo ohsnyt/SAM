@@ -356,18 +356,19 @@ final class InsightGenerator {
         // Generate preparation reminders for meetings
         for event in upcomingEvents {
             // Only generate insights for events with linked people
-            guard !event.linkedPeople.isEmpty else { continue }
+            let validEventPeople = event.linkedPeople.filter { !$0.isDeleted }
+            guard !validEventPeople.isEmpty else { continue }
 
             let daysUntil = Calendar.current.dateComponents([.day], from: .now, to: event.occurredAt).day ?? 0
 
             if daysUntil <= 2 {
-                let personNames = event.linkedPeople.map { $0.displayNameCache ?? $0.displayName }.joined(separator: ", ")
+                let personNames = validEventPeople.map { $0.displayNameCache ?? $0.displayName }.joined(separator: ", ")
 
                 let insight = GeneratedInsight(
                     kind: .followUpNeeded,
                     title: "Upcoming meeting: \(event.title)",
                     body: "Meeting with \(personNames) in \(daysUntil) day\(daysUntil == 1 ? "" : "s"). Review recent notes and prepare talking points.",
-                    personID: event.linkedPeople.first?.id,
+                    personID: validEventPeople.first?.id,
                     sourceType: .calendar,
                     sourceID: event.id,
                     urgency: daysUntil == 0 ? .high : .medium,
@@ -393,7 +394,7 @@ final class InsightGenerator {
         }
 
         for evidence in mailEvidence {
-            let personID = evidence.linkedPeople.first?.id
+            let personID = evidence.linkedPeople.first(where: { !$0.isDeleted })?.id
 
             for signal in evidence.signals {
                 let kind: InsightKind
@@ -455,7 +456,7 @@ final class InsightGenerator {
                     kind: .opportunity,
                     title: title,
                     body: body,
-                    personID: note.linkedPeople.first?.id,
+                    personID: note.linkedPeople.first(where: { !$0.isDeleted })?.id,
                     sourceType: .note,
                     sourceID: note.id,
                     urgency: .medium,

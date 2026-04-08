@@ -1335,7 +1335,7 @@ final class FacebookImportCoordinator {
     /// Update an existing SamPerson with Facebook data (friendship date, messaging stats, etc.).
     private func enrichMatchedPerson(personID: UUID, candidate: FacebookImportCandidate, context: ModelContext) {
         let descriptor = FetchDescriptor<SamPerson>(predicate: #Predicate { $0.id == personID })
-        guard let person = try? context.fetch(descriptor).first else { return }
+        guard let person = try? context.fetch(descriptor).first, !person.isDeleted else { return }
 
         // Set Facebook friendship date if we have one
         if let friendedOn = candidate.friendedOn {

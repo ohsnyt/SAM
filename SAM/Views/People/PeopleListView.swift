@@ -12,6 +12,7 @@
 import SwiftUI
 import SwiftData
 import TipKit
+import os.log
 
 // MARK: - Sort & Filter Types
 
@@ -71,6 +72,7 @@ struct PeopleListView: View {
     @State private var searchText = ""
     @State private var sortOrder: PeopleSortOrder = .firstName
     @State private var personToDelete: SamPerson?
+    @State private var personToMerge: SamPerson?
     @State private var showingNewPersonSheet = false
     /// Tracks allPeople count to re-trigger batch contact match check only when new people appear.
     @State private var lastCheckedPeopleCount: Int = 0
@@ -525,6 +527,10 @@ struct PeopleListView: View {
 
                     Divider()
 
+                    Button("Merge with...", systemImage: "arrow.triangle.merge") {
+                        personToMerge = person
+                    }
+
                     Button("Delete", systemImage: "trash", role: .destructive) {
                         personToDelete = person
                     }
@@ -532,6 +538,9 @@ struct PeopleListView: View {
             }
         }
         .listStyle(.sidebar)
+        .sheet(item: $personToMerge) { person in
+            MergeContactSheet(sourcePerson: person)
+        }
         .alert(
             "Delete Person?",
             isPresented: Binding(
@@ -541,10 +550,16 @@ struct PeopleListView: View {
         ) {
             Button("Delete", role: .destructive) {
                 if let person = personToDelete {
+                    let name = person.displayNameCache ?? person.displayName
                     if selectedPersonID == person.id {
                         selectedPersonID = nil
                     }
-                    try? PeopleRepository.shared.delete(person: person)
+                    do {
+                        try PeopleRepository.shared.delete(person: person)
+                    } catch {
+                        Logger(subsystem: "com.matthewsessions.SAM", category: "PeopleList")
+                            .error("Failed to delete person \(name, privacy: .private): \(error.localizedDescription)")
+                    }
                     personToDelete = nil
                 }
             }

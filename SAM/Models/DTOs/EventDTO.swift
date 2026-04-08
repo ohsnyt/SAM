@@ -370,8 +370,21 @@ extension EventDTO {
         }
     }
 
-    /// True if this event looks like a real meeting (has attendees, not free, not all-day).
+    /// True if this event looks like a real meeting.
+    /// Matches events with explicit attendees, or solo events with video meeting signals
+    /// (e.g., booked via someone's Calendly/booking link with a Zoom URL but no attendee metadata).
     var looksLikeRealMeeting: Bool {
-        hasNonSelfAttendees && !isAllDay && availability != .free
+        guard !isAllDay && availability != .free else { return false }
+        if hasNonSelfAttendees { return true }
+        // Fallback: no explicit attendees but has video meeting signals
+        return hasVideoMeetingSignals
+    }
+
+    /// Checks URL and location for common video meeting platform keywords.
+    private var hasVideoMeetingSignals: Bool {
+        let keywords = ["zoom.us", "teams.microsoft", "meet.google", "webex", "calendly", "hubspot"]
+        let urlString = url?.absoluteString.lowercased() ?? ""
+        let loc = location?.lowercased() ?? ""
+        return keywords.contains(where: { urlString.contains($0) || loc.contains($0) })
     }
 }

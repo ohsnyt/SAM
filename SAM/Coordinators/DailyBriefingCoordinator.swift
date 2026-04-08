@@ -127,6 +127,9 @@ final class DailyBriefingCoordinator {
     /// Evidence IDs of calls we've already prompted a post-call note for (session-scoped).
     private var promptedCallIDs: Set<UUID> = []
 
+    /// Tracks the last time we checked for recently ended meetings, so we never miss a window.
+    private var lastMeetingCheckTime: Date = Date.now
+
     // Dependencies
     private let evidenceRepo = EvidenceRepository.shared
     private let peopleRepo = PeopleRepository.shared
@@ -754,11 +757,14 @@ final class DailyBriefingCoordinator {
         guard enabled else { return }
 
         let now = Date()
-        let fiveMinAgo = Calendar.current.date(byAdding: .minute, value: -5, to: now)!
+        // Use lastMeetingCheckTime instead of fixed 5-min window to avoid missing meetings
+        // between timer intervals
+        let windowStart = lastMeetingCheckTime
+        lastMeetingCheckTime = now
 
         guard let allEvidence = try? evidenceRepo.fetchAll() else { return }
 
-        // Find calendar events that ended in the last 5 minutes.
+        // Find calendar events that ended since the last check.
         // Include events with unknown participants (no linkedPeople) — these are
         // real meetings with people not yet in SAM's contacts.
         let recentlyEnded = allEvidence.filter { item in
@@ -771,10 +777,10 @@ final class DailyBriefingCoordinator {
             // Unverified hints are always non-self others.
             // For verified hints, check linkedPeople for non-Me contacts.
             let hasUnverifiedAttendee = item.participantHints.contains(where: { !$0.isVerified })
-            let hasKnownNonSelfAttendee = item.linkedPeople.contains(where: { !$0.isMe })
+            let hasKnownNonSelfAttendee = item.linkedPeople.contains(where: { !$0.isDeleted && !$0.isMe })
             guard hasUnverifiedAttendee || hasKnownNonSelfAttendee else { return false }
             let endTime = item.endedAt ?? item.occurredAt.addingTimeInterval(3600)
-            return endTime >= fiveMinAgo && endTime <= now
+            return endTime >= windowStart && endTime <= now
         }
 
         // Compute Me emails once outside the loop
@@ -787,7 +793,7 @@ final class DailyBriefingCoordinator {
         }()
 
         for event in recentlyEnded {
-            let knownAttendees = event.linkedPeople.filter { !$0.isMe }
+            let knownAttendees = event.linkedPeople.filter { !$0.isDeleted && !$0.isMe }
 
             // Gather unknown attendee names from participant hints
             let unknownNames: [String] = event.participantHints.compactMap { hint in
@@ -897,7 +903,11 @@ final class DailyBriefingCoordinator {
             let now = Date()
 
             for step in awaiting {
+                // Guard against deleted/invalidated models
+                guard !step.isDeleted else { continue }
+
                 guard let previousStep = try outcomeRepo.fetchPreviousStep(for: step) else { continue }
+                guard !previousStep.isDeleted else { continue }
 
                 // Previous step must be completed
                 guard previousStep.status == .completed, let completedAt = previousStep.completedAt else { continue }
@@ -912,13 +922,23 @@ final class DailyBriefingCoordinator {
                 switch condition {
                 case .always:
                     // Activate unconditionally
+                    guard !step.isDeleted else { continue }
                     step.isAwaitingTrigger = false
                     try context?.save()
                     logger.debug("Sequence step activated (always): \(step.title)")
 
                 case .noResponse:
-                    // Check if the person has communicated since the previous step completed
-                    guard let personID = step.linkedPerson?.id ?? previousStep.linkedPerson?.id else {
+                    // Safely access linked person — guard against deleted relationships
+                    let stepPerson = step.isDeleted ? nil : step.linkedPerson
+                    let prevPerson = previousStep.isDeleted ? nil : previousStep.linkedPerson
+                    let personID: UUID? = {
+                        if let p = stepPerson, !p.isDeleted { return p.id }
+                        if let p = prevPerson, !p.isDeleted { return p.id }
+                        return nil
+                    }()
+
+                    guard let personID else {
+                        guard !step.isDeleted else { continue }
                         step.isAwaitingTrigger = false
                         try context?.save()
                         continue
@@ -937,6 +957,7 @@ final class DailyBriefingCoordinator {
                         logger.debug("Sequence step auto-dismissed (response received): \(step.title)")
                     } else {
                         // No response — activate the step
+                        guard !step.isDeleted else { continue }
                         step.isAwaitingTrigger = false
                         try context?.save()
                         logger.debug("Sequence step activated (no response): \(step.title)")
@@ -969,14 +990,14 @@ final class DailyBriefingCoordinator {
             // Call evidence uses occurredAt for the call time; duration is in the snippet
             let callTime = item.occurredAt
             return callTime >= tenMinAgo && callTime <= now
-                && !item.linkedPeople.isEmpty
+                && item.linkedPeople.contains(where: { !$0.isDeleted })
                 && !promptedCallIDs.contains(item.id)
         }
 
         guard !recentCalls.isEmpty else { return }
 
         for call in recentCalls {
-            let calledPeople = call.linkedPeople.filter { !$0.isMe }
+            let calledPeople = call.linkedPeople.filter { !$0.isDeleted && !$0.isMe }
             guard let primary = calledPeople.first else { continue }
 
             // Check if a note was already created for this person since the call
@@ -1089,7 +1110,7 @@ final class DailyBriefingCoordinator {
         }.sorted { $0.occurredAt < $1.occurredAt }
 
         return todayEvents.map { event in
-            let attendees = event.linkedPeople.filter { !$0.isMe }
+            let attendees = event.linkedPeople.filter { !$0.isDeleted && !$0.isMe }
             let names = attendees.map { $0.displayNameCache ?? $0.displayName }
             let roles = attendees.compactMap { $0.roleBadges.first }
             let healthStatuses = attendees.map { person -> String in
@@ -1230,7 +1251,7 @@ final class DailyBriefingCoordinator {
         }.sorted { $0.occurredAt < $1.occurredAt }
 
         return tomorrowEvents.prefix(5).map { event in
-            let names = event.linkedPeople.filter { !$0.isMe }.map { $0.displayNameCache ?? $0.displayName }
+            let names = event.linkedPeople.filter { !$0.isDeleted && !$0.isMe }.map { $0.displayNameCache ?? $0.displayName }
             return BriefingCalendarItem(
                 eventTitle: event.title,
                 startsAt: event.occurredAt,
@@ -1311,11 +1332,11 @@ final class DailyBriefingCoordinator {
             }
             let clientMeetings = weekMeetings.filter { event in
                 event.linkedPeople.contains { person in
-                    person.roleBadges.contains(where: { ["Client", "Applicant"].contains($0) })
+                    !person.isDeleted && person.roleBadges.contains(where: { ["Client", "Applicant"].contains($0) })
                 }
             }
             for event in clientMeetings.prefix(3) where priorities.count < 8 {
-                let names = event.linkedPeople.filter { !$0.isMe }.map { $0.displayNameCache ?? $0.displayName }
+                let names = event.linkedPeople.filter { !$0.isDeleted && !$0.isMe }.map { $0.displayNameCache ?? $0.displayName }
                 priorities.append(BriefingAction(
                     title: "Prepare for \(event.title)",
                     rationale: "\(event.occurredAt.formatted(date: .abbreviated, time: .shortened)) — \(names.joined(separator: ", "))",

@@ -210,7 +210,7 @@ struct SafeModeView: View {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
         let dateString = formatter.string(from: report.timestamp)
-        let subject = "[DATABASE REBUILD] \(dateString) — SAM Safe Mode Report"
+        let subject = "[DATABASE REBUILDDoc] \(dateString) — SAM Safe Mode Report"
         let body = report.plainText
         let recipient = "sam@stillwaiting.org"
 

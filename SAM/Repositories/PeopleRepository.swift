@@ -554,11 +554,25 @@ final class PeopleRepository {
         return mergedCount
     }
 
-    /// Delete a person
+    /// Delete a person — severs all many-to-many relationships first
+    /// to avoid SwiftData "Constraint trigger violation" on nullify inverses.
     func delete(person: SamPerson) throws {
         guard let modelContext = modelContext else {
             throw RepositoryError.notConfigured
         }
+
+        // Sever all .nullify MTM relationships before deleting
+        person.participations.removeAll()
+        person.responsibilitiesAsGuardian.removeAll()
+        person.responsibilitiesAsDependent.removeAll()
+        person.jointInterests.removeAll()
+        person.coverages.removeAll()
+        person.consentRequirements.removeAll()
+        person.linkedEvidence.removeAll()
+        person.linkedNotes.removeAll()
+        person.referredBy = nil
+        person.referrals.removeAll()
+        try modelContext.save()
 
         modelContext.delete(person)
         try modelContext.save()

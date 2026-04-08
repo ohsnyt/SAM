@@ -10,6 +10,7 @@
 
 import Foundation
 import os
+import SwiftData
 
 // MARK: - Types
 
@@ -177,7 +178,10 @@ final class RoleDeductionEngine {
             var suggestions: [RoleSuggestion] = []
 
             for person in candidates {
+                guard !person.isDeleted else { continue }
                 let contactDTO: ContactDTO? = await fetchContactDTO(for: person)
+                // Re-check after await — person may have been deleted during contact fetch
+                guard !person.isDeleted else { continue }
                 let evidence = person.linkedEvidence
 
                 let scored = scoreAllRoles(person: person, contact: contactDTO, evidence: evidence)
