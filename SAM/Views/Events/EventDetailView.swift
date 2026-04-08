@@ -31,6 +31,7 @@ struct EventDetailView: View {
     @State private var showBulkReviewSheet = false
     @State private var inferredExpanded = true
     @State private var dismissedExpanded = false
+    @State private var showEvaluationImport = false
 
     private func reloadEvent() {
         let loaded = try? EventRepository.shared.fetch(id: eventID)
@@ -429,6 +430,15 @@ struct EventDetailView: View {
                     .samFont(.caption)
             }
             .disabled(!hasUninvitedParticipants())
+
+            if event.status == .completed {
+                Button {
+                    showEvaluationImport = true
+                } label: {
+                    Label("Evaluate", systemImage: "chart.bar.doc.horizontal")
+                        .samFont(.caption)
+                }
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -440,6 +450,11 @@ struct EventDetailView: View {
         }
         .sheet(isPresented: $showInvitationDrafts, onDismiss: { refreshToken = UUID() }) {
             InvitationDraftSheet(event: event) {
+                refreshToken = UUID()
+            }
+        }
+        .sheet(isPresented: $showEvaluationImport, onDismiss: { refreshToken = UUID() }) {
+            EventEvaluationImportSheet(event: event) {
                 refreshToken = UUID()
             }
         }
@@ -479,6 +494,8 @@ struct EventDetailView: View {
                         refreshToken = UUID()
                     }
                 )
+            } else if event.status == .completed {
+                PostEventEvaluationView(event: event)
             } else {
                 ContentUnavailableView(
                     "Select a Participant",

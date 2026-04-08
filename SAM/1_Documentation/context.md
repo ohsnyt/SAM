@@ -335,6 +335,7 @@ All models use SwiftData lightweight migration. Enum storage uses `rawValue` pat
 | **SamPresentation** | Reusable presentation library | title, description, topicTags, fileAttachments, contentSummary, keyTalkingPoints |
 | **GoalJournalEntry** | Distilled learnings from goal check-in conversations | goalID, headline, whatsWorkingJSON, whatsNotWorkingJSON, barriersJSON, adjustedStrategy, keyInsight, commitmentActionsJSON, paceAtCheckIn, progressAtCheckIn, conversationTurnCount |
 | **RoleDefinition** | Role specifications for recruiting pipeline | title, description, idealProfile, refinementNotes, scoringCriteria |
+| **EventEvaluation** | Post-event workshop analysis | participantAnalyses (JSON), feedbackResponses (JSON), topQuestions, contentGapSummary, overallSummary, averageOverallRating, conversionRate |
 
 **Non-SwiftData**: `UserLinkedInProfileDTO`, `UserFacebookProfileDTO` — stored as JSON in UserDefaults, injected into AI prompts via `BusinessProfileService.contextFragment()`.
 

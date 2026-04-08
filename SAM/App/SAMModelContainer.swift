@@ -68,6 +68,7 @@ enum SAMSchema {
         RoleDefinition.self,                    // Role recruiting definitions
         RoleCandidate.self,                     // Role recruiting candidates
         GoalJournalEntry.self,                  // Goal check-in journal entries
+        EventEvaluation.self,                      // Post-event evaluation & workshop analysis
     ]
 }
 
@@ -119,8 +120,11 @@ enum SAMModelContainer {
     #if DEBUG
     // Backing storage for mutable shared container in DEBUG builds.
     nonisolated(unsafe) private static var _shared: ModelContainer = {
-        // Flush pending WAL changes and fix orphaned references before opening
+        // 1. Flush WAL so the backup contains a clean, self-contained store.
         checkpointStoreIfNeeded()
+        // 2. Snapshot the store files BEFORE opening (migration may run on open).
+        backupStoreBeforeOpen()
+        // 3. Repair any dangling foreign-key references.
         cleanupOrphanedReferences()
 
         let schema     = Schema(SAMSchema.allModels)
@@ -174,8 +178,11 @@ enum SAMModelContainer {
     #else
     /// Immutable shared container for production.
     nonisolated static let shared: ModelContainer = {
-        // Flush pending WAL changes and fix orphaned references before opening
+        // 1. Flush WAL so the backup contains a clean, self-contained store.
         checkpointStoreIfNeeded()
+        // 2. Snapshot the store files BEFORE opening (migration may run on open).
+        backupStoreBeforeOpen()
+        // 3. Repair any dangling foreign-key references.
         cleanupOrphanedReferences()
 
         let schema     = Schema(SAMSchema.allModels)
@@ -199,6 +206,74 @@ enum SAMModelContainer {
     /// created it.
     nonisolated static func newContext() -> ModelContext {
         ModelContext(shared)
+    }
+
+    // MARK: - Pre-Open Backup
+
+    /// Copy the current SQLite store files to a timestamped backup before the
+    /// container opens (which may trigger lightweight migration). Run AFTER a
+    /// WAL checkpoint so the backup is a clean, self-contained store file.
+    /// Keeps the last 3 backups per schema version; older ones are pruned.
+    private nonisolated static func backupStoreBeforeOpen() {
+        let fm = FileManager.default
+        let storeURL = defaultStoreURL
+        guard fm.fileExists(atPath: storeURL.path) else { return }
+
+        let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let backupDir = appSupport.appendingPathComponent("SAM-PreOpenBackups")
+        do {
+            try fm.createDirectory(at: backupDir, withIntermediateDirectories: true)
+        } catch {
+            containerLogger.warning("Pre-open backup: could not create directory — \(error.localizedDescription)")
+            return
+        }
+
+        // Build a filename-safe ISO-8601 timestamp (replace colons with hyphens).
+        let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
+        let backupBaseName = "\(schemaVersion)-\(stamp)"
+        let backupStoreURL = backupDir.appendingPathComponent(backupBaseName + ".store")
+
+        // Copy the main store plus its WAL and SHM companions if present.
+        for suffix in ["", "-wal", "-shm"] {
+            let src = URL(fileURLWithPath: storeURL.path + suffix)
+            guard fm.fileExists(atPath: src.path) else { continue }
+            let dst = URL(fileURLWithPath: backupStoreURL.path + suffix)
+            do {
+                try fm.copyItem(at: src, to: dst)
+            } catch {
+                containerLogger.warning("Pre-open backup: could not copy \(src.lastPathComponent) — \(error.localizedDescription)")
+            }
+        }
+        containerLogger.info("Pre-open backup written: \(backupBaseName).store")
+
+        prunePreOpenBackups(in: backupDir)
+    }
+
+    /// Remove old pre-open backups, keeping only the 3 most recent for this schema version.
+    private nonisolated static func prunePreOpenBackups(in dir: URL) {
+        let fm = FileManager.default
+        guard let items = try? fm.contentsOfDirectory(
+            at: dir,
+            includingPropertiesForKeys: [.creationDateKey],
+            options: .skipsHiddenFiles
+        ) else { return }
+
+        // Collect only the main .store files for this schema version (companions are pruned with them).
+        let stores = items
+            .filter { $0.lastPathComponent.hasPrefix(schemaVersion) && $0.pathExtension == "store" }
+            .sorted {
+                let a = (try? $0.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast
+                let b = (try? $1.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast
+                return a > b   // newest first
+            }
+
+        for old in stores.dropFirst(3) {
+            let base = old.deletingPathExtension().lastPathComponent   // e.g. SAM_v34-2026-03-30T12-00-00Z
+            for suffix in [".store", ".store-wal", ".store-shm"] {
+                try? fm.removeItem(at: dir.appendingPathComponent(base + suffix))
+            }
+            containerLogger.debug("Pre-open backup pruned: \(old.lastPathComponent)")
+        }
     }
 
     // MARK: - Startup Cleanup

@@ -203,6 +203,7 @@ public enum EvidenceSource: String, Codable, Sendable {
     case whatsApp = "WhatsApp"
     case whatsAppCall = "WhatsAppCall"
     case sentMail = "SentMail"
+    case zoomChat = "ZoomChat"
 }
 
 extension EvidenceSource {
@@ -224,6 +225,7 @@ extension EvidenceSource {
         case .whatsApp:  return 1.0   // Same as iMessage
         case .whatsAppCall: return 2.5 // Same as phoneCall
         case .sentMail:  return 1.5   // Same as inbound mail
+        case .zoomChat:  return 1.0   // Workshop chat participation
         }
     }
 
@@ -253,6 +255,7 @@ extension EvidenceSource {
         case .whatsApp:  return "text.bubble"
         case .whatsAppCall: return "phone.bubble"
         case .sentMail:  return "paperplane"
+        case .zoomChat:  return "bubble.left.and.text.bubble.right"
         }
     }
 
@@ -261,6 +264,7 @@ extension EvidenceSource {
         switch self {
         case .whatsAppCall: return "WhatsApp Call"
         case .sentMail: return "Sent Mail"
+        case .zoomChat: return "Zoom Chat"
         default: return rawValue
         }
     }
@@ -272,7 +276,7 @@ extension EvidenceSource {
             return true
         case .calendar:
             return false // always bidirectional
-        case .contacts, .note, .manual, .linkedIn, .facebook, .substack:
+        case .contacts, .note, .manual, .linkedIn, .facebook, .substack, .zoomChat:
             return false
         }
     }
@@ -1074,6 +1078,7 @@ public enum OutcomeKind: String, Codable, Sendable, CaseIterable {
     case contentCreation   // Social media / educational content
     case setup             // Platform notification setup guidance (Phase 6)
     case roleFilling       // Role recruiting discovery & cultivation
+    case userTask          // User-created manual task or follow-up
 }
 
 public enum OutcomeStatus: String, Codable, Sendable {
@@ -1100,13 +1105,14 @@ extension OutcomeKind {
         case .proposal, .preparation, .training, .compliance, .setup: return .detailed
         case .growth, .contentCreation:   return .social
         case .roleFilling:                return .quick
+        case .userTask:                   return .quick
         }
     }
 
     var defaultAction: OutcomeAction {
         switch self {
         case .followUp, .preparation: return .captureNote
-        case .proposal, .outreach, .growth, .training, .compliance, .contentCreation, .setup, .roleFilling: return .openPerson
+        case .proposal, .outreach, .growth, .training, .compliance, .contentCreation, .setup, .roleFilling, .userTask: return .openPerson
         }
     }
 
@@ -1116,6 +1122,7 @@ extension OutcomeKind {
         case .contentCreation: return "Draft"
         case .setup: return "Open Settings"
         case .roleFilling: return "View"
+        case .userTask: return "View"
         case .proposal, .outreach, .growth, .training, .compliance: return "View"
         }
     }
@@ -1126,6 +1133,7 @@ extension OutcomeKind {
         case .contentCreation: return "text.badge.star"
         case .setup: return "safari"
         case .roleFilling: return "person.badge.key"
+        case .userTask: return "checklist"
         case .proposal, .outreach, .growth, .training, .compliance: return "arrow.right.circle"
         }
     }

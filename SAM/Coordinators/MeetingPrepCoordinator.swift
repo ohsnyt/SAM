@@ -11,6 +11,7 @@
 
 import Foundation
 import SwiftUI
+import SwiftData
 import os.log
 
 private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "MeetingPrepCoordinator")
@@ -537,7 +538,7 @@ final class MeetingPrepCoordinator {
                 channelScores[.whatsApp, default: 0] += weight
             case .whatsAppCall:
                 channelScores[.whatsApp, default: 0] += weight
-            case .facebook, .substack, .clipboardCapture, .sentMail:
+            case .facebook, .substack, .clipboardCapture, .sentMail, .zoomChat:
                 break  // No direct communication channel mapping
             case .calendar, .contacts, .note, .manual:
                 break
@@ -568,7 +569,7 @@ final class MeetingPrepCoordinator {
                 detailedScores[.faceTime, default: 0] += weight
             case .linkedIn:
                 socialScores[.linkedIn, default: 0] += weight
-            case .facebook, .substack, .clipboardCapture, .calendar, .contacts, .note, .manual:
+            case .facebook, .substack, .clipboardCapture, .zoomChat, .calendar, .contacts, .note, .manual:
                 break
             }
         }
@@ -597,7 +598,7 @@ final class MeetingPrepCoordinator {
             item.source == .calendar
             && item.occurredAt > now
             && item.occurredAt <= fortyEightHoursFromNow
-            && !item.linkedPeople.isEmpty
+            && item.linkedPeople.contains(where: { !$0.isDeleted })
         }
 
         guard !upcomingEvents.isEmpty else { return [] }
@@ -608,14 +609,15 @@ final class MeetingPrepCoordinator {
         var results: [MeetingBriefing] = []
 
         for event in upcomingEvents {
-            let otherPeople = event.linkedPeople.filter { !$0.isMe }
+            let validPeople = event.linkedPeople.filter { !$0.isDeleted }
+            let otherPeople = validPeople.filter { !$0.isMe }
             let attendees = otherPeople.map { person in
                 buildAttendeeProfile(person: person, allEvidence: allEvidence)
             }
 
-            let attendeeIDs = Set(event.linkedPeople.map(\.id))
+            let attendeeIDs = Set(validPeople.map(\.id))
 
-            let recentHistory = fetchRecentHistory(for: event.linkedPeople, allEvidence: allEvidence, limit: 5)
+            let recentHistory = fetchRecentHistory(for: validPeople, allEvidence: allEvidence, limit: 5)
 
             let openActions = notesWithActions.flatMap { note in
                 note.extractedActionItems.filter { action in
@@ -624,12 +626,12 @@ final class MeetingPrepCoordinator {
                 }
             }
 
-            let topics = aggregateTopics(for: event.linkedPeople, allEvidence: allEvidence)
+            let topics = aggregateTopics(for: validPeople, allEvidence: allEvidence)
 
-            let signals = aggregateSignals(for: event.linkedPeople, allEvidence: allEvidence)
+            let signals = aggregateSignals(for: validPeople, allEvidence: allEvidence)
 
-            let sharedContexts = findSharedContexts(among: event.linkedPeople)
-            let familyRelations = findFamilyRelations(among: event.linkedPeople)
+            let sharedContexts = findSharedContexts(among: validPeople)
+            let familyRelations = findFamilyRelations(among: validPeople)
 
             // Generate AI talking points
             let talkingPoints = await generateTalkingPoints(
@@ -719,7 +721,7 @@ final class MeetingPrepCoordinator {
                 title: event.title,
                 endedAt: eventEnd,
                 hoursSinceEnd: hoursSinceEnd,
-                attendees: event.linkedPeople.filter { !$0.isMe }.map { ($0.id, $0.displayNameCache ?? $0.displayName) },
+                attendees: event.linkedPeople.filter { !$0.isDeleted && !$0.isMe }.map { ($0.id, $0.displayNameCache ?? $0.displayName) },
                 hasLinkedNote: false,
                 pendingActionItems: pendingActions
             )

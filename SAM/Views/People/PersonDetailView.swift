@@ -56,6 +56,12 @@ struct PersonDetailView: View {
     @State private var isPhotoDropTargeted = false
     @State private var photoViewScreenOrigin: CGPoint?
     @State private var photoLinks = ContactPhotoCoordinator.ProfileLinks(linkedIn: nil, facebook: nil)
+    @State private var isEditingLinkedIn = false
+    @State private var editingLinkedInURL = ""
+    @State private var isEditingFacebook = false
+    @State private var editingFacebookURL = ""
+    @State private var showingManualTaskSheet = false
+    @State private var showingMergeSheet = false
 
     @Query(filter: #Predicate<SamPerson> { $0.lifecycleStatusRawValue == "active" })
     private var allPeople: [SamPerson]
@@ -171,6 +177,20 @@ struct PersonDetailView: View {
 
                     Divider()
 
+                    Button("Create Task...", systemImage: "checklist") {
+                        showingManualTaskSheet = true
+                    }
+
+                    Button("Capture Meeting Notes...", systemImage: "note.text.badge.plus") {
+                        openCaptureSheet()
+                    }
+
+                    Button("Merge with...", systemImage: "arrow.triangle.merge") {
+                        showingMergeSheet = true
+                    }
+
+                    Divider()
+
                     Button("Refresh Contact", systemImage: "arrow.clockwise") {
                         Task {
                             await loadFullContact()
@@ -227,6 +247,12 @@ struct PersonDetailView: View {
                 }
             )
         }
+        .sheet(isPresented: $showingManualTaskSheet) {
+            ManualTaskSheet(prefilledPerson: person)
+        }
+        .sheet(isPresented: $showingMergeSheet) {
+            MergeContactSheet(sourcePerson: person)
+        }
         .alert("Error", isPresented: $showingError) {
             Button("OK") { }
         } message: {
@@ -247,11 +273,11 @@ struct PersonDetailView: View {
         } message: { status in
             switch status {
             case .archived:
-                Text("Archive \(person.displayNameCache ?? person.displayName)? They won't appear in suggestions.")
+                Text("Archive \(person.displayNameCache ?? person.displayName)? They'll be hidden from active lists and won't receive suggestions. You can find them later using the Archived filter and restore them anytime.")
             case .dnc:
-                Text("Mark \(person.displayNameCache ?? person.displayName) as Do Not Contact? No outreach will be generated.")
+                Text("Mark \(person.displayNameCache ?? person.displayName) as Do Not Contact? SAM will never generate outreach suggestions for them. You can reverse this anytime from their profile.")
             case .deceased:
-                Text("Mark \(person.displayNameCache ?? person.displayName) as deceased? Their record will be preserved but excluded from all outreach.")
+                Text("Mark \(person.displayNameCache ?? person.displayName) as deceased? Their record will be preserved for reference but excluded from all outreach and suggestions.")
             case .active:
                 Text("Reactivate \(person.displayNameCache ?? person.displayName)?")
             }
@@ -423,24 +449,28 @@ struct PersonDetailView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(person.displayNameCache ?? person.displayName)
                         .font(.system(size: 28, weight: .bold))
+                        .textSelection(.enabled)
 
                     if let contact = fullContact {
                         if !contact.organizationName.isEmpty {
                             HStack(spacing: 4) {
                                 Text(contact.organizationName)
                                     .samFont(.body)
+                                    .textSelection(.enabled)
                                 if !contact.jobTitle.isEmpty {
                                     Text("•")
                                         .foregroundStyle(.secondary)
                                     Text(contact.jobTitle)
                                         .samFont(.body)
                                         .foregroundStyle(.secondary)
+                                        .textSelection(.enabled)
                                 }
                             }
                         } else if !contact.jobTitle.isEmpty {
                             Text(contact.jobTitle)
                                 .samFont(.body)
                                 .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
                         }
                     }
 
@@ -650,6 +680,7 @@ struct PersonDetailView: View {
                         .foregroundStyle(.secondary)
                     Text(phone.number)
                         .samFont(.subheadline)
+                        .textSelection(.enabled)
                     if let label = phone.label, !label.isEmpty {
                         Text(label)
                             .samFont(.caption2)
@@ -665,6 +696,7 @@ struct PersonDetailView: View {
                     Text(email)
                         .samFont(.subheadline)
                         .foregroundStyle(.blue)
+                        .textSelection(.enabled)
                 }
             }
         }
@@ -1436,8 +1468,8 @@ struct PersonDetailView: View {
                 interactionHistorySection
             }
 
-            // Social Platforms — LinkedIn & Facebook connection metadata
-            if !person.isMe && hasSocialPlatformData {
+            // Social Platforms — LinkedIn & Facebook connection metadata + add links
+            if !person.isMe {
                 socialPlatformSection
             }
 
@@ -1597,19 +1629,22 @@ struct PersonDetailView: View {
 
     // MARK: - Social Platforms
 
-    /// Whether the person has any LinkedIn or Facebook data worth displaying.
+    /// Whether the person has any LinkedIn or Facebook data worth displaying,
+    /// or if we're in editing mode for either platform.
     private var hasSocialPlatformData: Bool {
         person.linkedInProfileURL != nil ||
         person.linkedInConnectedOn != nil ||
+        person.facebookProfileURL != nil ||
         person.facebookFriendedOn != nil ||
-        person.facebookMessageCount > 0
+        person.facebookMessageCount > 0 ||
+        isEditingLinkedIn || isEditingFacebook
     }
 
     private var socialPlatformSection: some View {
         samSection(title: "Social Platforms") {
             VStack(alignment: .leading, spacing: 10) {
                 // LinkedIn
-                if person.linkedInProfileURL != nil || person.linkedInConnectedOn != nil {
+                if person.linkedInProfileURL != nil || person.linkedInConnectedOn != nil || isEditingLinkedIn {
                     HStack(alignment: .top, spacing: 10) {
                         Image(systemName: "network")
                             .samFont(.caption)
@@ -1618,9 +1653,23 @@ struct PersonDetailView: View {
                             .padding(.top, 2)
 
                         VStack(alignment: .leading, spacing: 3) {
-                            Text("LinkedIn")
-                                .samFont(.subheadline)
-                                .fontWeight(.medium)
+                            HStack {
+                                Text("LinkedIn")
+                                    .samFont(.subheadline)
+                                    .fontWeight(.medium)
+                                Spacer()
+                                if !isEditingLinkedIn {
+                                    Button {
+                                        editingLinkedInURL = person.linkedInProfileURL ?? ""
+                                        isEditingLinkedIn = true
+                                    } label: {
+                                        Image(systemName: "pencil")
+                                            .samFont(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
 
                             if let connectedOn = person.linkedInConnectedOn {
                                 Text("Connected \(connectedOn.formatted(date: .abbreviated, time: .omitted))")
@@ -1628,7 +1677,18 @@ struct PersonDetailView: View {
                                     .foregroundStyle(.secondary)
                             }
 
-                            if let url = person.linkedInProfileURL {
+                            if isEditingLinkedIn {
+                                HStack(spacing: 4) {
+                                    TextField("LinkedIn profile URL", text: $editingLinkedInURL)
+                                        .samFont(.caption)
+                                        .textFieldStyle(.roundedBorder)
+                                        .onSubmit { commitLinkedInEdit() }
+                                    Button("Save") { commitLinkedInEdit() }
+                                        .samFont(.caption)
+                                    Button("Cancel") { isEditingLinkedIn = false }
+                                        .samFont(.caption)
+                                }
+                            } else if let url = person.linkedInProfileURL {
                                 let fullURL = url.hasPrefix("http") ? url : "https://\(url)"
                                 Button {
                                     if let nsURL = URL(string: fullURL) {
@@ -1640,6 +1700,7 @@ struct PersonDetailView: View {
                                         .foregroundStyle(.blue)
                                         .lineLimit(1)
                                         .truncationMode(.middle)
+                                        .textSelection(.enabled)
                                 }
                                 .buttonStyle(.plain)
                             }
@@ -1648,7 +1709,7 @@ struct PersonDetailView: View {
                 }
 
                 // Facebook
-                if person.facebookFriendedOn != nil || person.facebookMessageCount > 0 {
+                if person.facebookProfileURL != nil || person.facebookFriendedOn != nil || person.facebookMessageCount > 0 || isEditingFacebook {
                     HStack(alignment: .top, spacing: 10) {
                         Image(systemName: "person.2.fill")
                             .samFont(.caption)
@@ -1657,9 +1718,23 @@ struct PersonDetailView: View {
                             .padding(.top, 2)
 
                         VStack(alignment: .leading, spacing: 3) {
-                            Text("Facebook")
-                                .samFont(.subheadline)
-                                .fontWeight(.medium)
+                            HStack {
+                                Text("Facebook")
+                                    .samFont(.subheadline)
+                                    .fontWeight(.medium)
+                                Spacer()
+                                if !isEditingFacebook {
+                                    Button {
+                                        editingFacebookURL = person.facebookProfileURL ?? ""
+                                        isEditingFacebook = true
+                                    } label: {
+                                        Image(systemName: "pencil")
+                                            .samFont(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
 
                             if let friendedOn = person.facebookFriendedOn {
                                 Text("Friends since \(friendedOn.formatted(date: .abbreviated, time: .omitted))")
@@ -1691,7 +1766,18 @@ struct PersonDetailView: View {
                                     .clipShape(Capsule())
                             }
 
-                            if let url = person.facebookProfileURL {
+                            if isEditingFacebook {
+                                HStack(spacing: 4) {
+                                    TextField("Facebook profile URL", text: $editingFacebookURL)
+                                        .samFont(.caption)
+                                        .textFieldStyle(.roundedBorder)
+                                        .onSubmit { commitFacebookEdit() }
+                                    Button("Save") { commitFacebookEdit() }
+                                        .samFont(.caption)
+                                    Button("Cancel") { isEditingFacebook = false }
+                                        .samFont(.caption)
+                                }
+                            } else if let url = person.facebookProfileURL {
                                 let fullURL = url.hasPrefix("http") ? url : "https://\(url)"
                                 Button {
                                     if let nsURL = URL(string: fullURL) {
@@ -1703,15 +1789,52 @@ struct PersonDetailView: View {
                                         .foregroundStyle(.indigo)
                                         .lineLimit(1)
                                         .truncationMode(.middle)
+                                        .textSelection(.enabled)
                                 }
                                 .buttonStyle(.plain)
                             }
                         }
                     }
                 }
+
+                // Add social links when none exist
+                if person.linkedInProfileURL == nil && !isEditingLinkedIn {
+                    Button {
+                        editingLinkedInURL = ""
+                        isEditingLinkedIn = true
+                    } label: {
+                        Label("Add LinkedIn", systemImage: "plus.circle")
+                            .samFont(.caption)
+                            .foregroundStyle(.blue)
+                    }
+                    .buttonStyle(.plain)
+                }
+                if person.facebookProfileURL == nil && !isEditingFacebook {
+                    Button {
+                        editingFacebookURL = ""
+                        isEditingFacebook = true
+                    } label: {
+                        Label("Add Facebook", systemImage: "plus.circle")
+                            .samFont(.caption)
+                            .foregroundStyle(.indigo)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
             .padding(.vertical, 4)
         }
+    }
+
+    private func commitLinkedInEdit() {
+        let trimmed = editingLinkedInURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        person.linkedInProfileURL = trimmed.isEmpty ? nil : trimmed
+        isEditingLinkedIn = false
+    }
+
+    private func commitFacebookEdit() {
+        let trimmed = editingFacebookURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        person.facebookProfileURL = trimmed.isEmpty ? nil : trimmed
+        isEditingFacebook = false
     }
 
     // MARK: - More Details (collapsed by default)
@@ -2322,6 +2445,30 @@ struct PersonDetailView: View {
         NSWorkspace.shared.open(url)
     }
 
+    private func openCaptureSheet() {
+        let attendee = CaptureAttendeeInfo(
+            personID: person.id,
+            displayName: person.displayNameCache ?? person.displayName,
+            roleBadges: person.roleBadges,
+            pendingActionItems: [],
+            recentLifeEvents: []
+        )
+        let payload = CapturePayload(
+            captureKind: .meeting,
+            eventTitle: "Notes for \(person.displayNameCache ?? person.displayName)",
+            eventDate: .now,
+            attendees: [attendee],
+            talkingPoints: [],
+            openActionItems: [],
+            evidenceID: nil
+        )
+        NotificationCenter.default.post(
+            name: .samOpenPostMeetingCapture,
+            object: nil,
+            userInfo: ["payload": payload]
+        )
+    }
+
     private func viewInGraph() {
         let coordinator = RelationshipGraphCoordinator.shared
         coordinator.selectedNodeID = person.id
@@ -2847,6 +2994,7 @@ private extension EvidenceSource {
         case .whatsApp:  return .green
         case .whatsAppCall: return .green
         case .sentMail:  return .blue
+        case .zoomChat: return .purple
         }
     }
 }

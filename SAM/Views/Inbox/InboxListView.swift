@@ -313,6 +313,7 @@ private struct EvidenceRowView: View {
         case .whatsApp: return "text.bubble"
         case .whatsAppCall: return "phone.bubble"
         case .sentMail: return "paperplane"
+        case .zoomChat: return "bubble.left.and.text.bubble.right"
         }
     }
 
@@ -333,6 +334,7 @@ private struct EvidenceRowView: View {
         case .whatsApp: return .green
         case .whatsAppCall: return .green
         case .sentMail: return .blue
+        case .zoomChat: return .purple
         }
     }
 

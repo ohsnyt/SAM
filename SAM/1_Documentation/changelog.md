@@ -4,6 +4,44 @@
 
 ---
 
+## Post-Event Evaluation (April 7, 2026)
+
+### Overview
+Automated post-workshop analysis pipeline. After a workshop completes, Sarah can import the Zoom chat transcript and Google Forms feedback CSV. SAM parses participants, matches them to contacts, runs AI engagement analysis, identifies content gaps, and auto-generates follow-up outcomes for warm leads.
+
+### New Models
+- **EventEvaluation** (@Model) — linked 1:1 to SamEvent via cascade relationship. Stores chat analysis, feedback data, AI summaries, and aggregate metrics (attendance, average rating, conversion rate). No schema version bump required (additive change).
+- **ChatParticipantAnalysis** (Codable struct) — per-participant engagement data stored as JSON array on EventEvaluation: display name, matched person ID, message/reaction counts, engagement level, questions asked, topic interests, sentiment, conversion signals, inferred role (host/cohost/attendee).
+- **FeedbackResponse** (Codable struct) — per-respondent feedback stored as JSON array: name, email, areas to strengthen, overall rating, follow-up interest, current situation.
+- **FeedbackColumnMapping** (Codable struct) — maps CSV column headers to known fields. Auto-detected from header text, saved per-presentation for reuse.
+- New enums: `EvaluationStatus`, `EngagementLevel`, `InferredEventRole`, `FeedbackRating`, `FollowUpInterest`.
+- New `EvidenceSource.zoomChat` case with all exhaustive switches updated.
+
+### New Services (actors)
+- **ZoomChatParserService** — parses Zoom chat .txt export format (`HH:MM:SS From Name : message`). Cleans host markers (`!`), strips trailing URLs from display names, handles multi-line messages, detects reactions vs replies, aggregates per-participant stats (message count, reaction count, question detection).
+- **FeedbackFormParserService** — parses Google Forms CSV exports with proper quote/comma handling. Fuzzy-matches free-text ratings and follow-up interest to enums. Supports semicolon-separated multi-select fields.
+- **EventEvaluationAnalysisService** — LLM analysis via AIService: deterministic engagement scoring (heuristic thresholds), LLM enrichment for active participants (topic interests, sentiment, conversion signals, role inference), cross-reference analysis (chat questions vs presentation content → content gaps + effective sections), overall event summary generation.
+
+### New Coordinator
+- **PostEventEvaluationCoordinator** (@MainActor @Observable) — orchestrates the full pipeline: chat import with name matching (event participants first, then all contacts, fuzzy first+last name matching), feedback CSV import with column mapping UI, participant review workflow for unmatched names, cross-reference analysis, overall summary, and outcome generation. Outcomes created: warm leads (explicit follow-up requests), thank-yous (high-engagement attendees), info sends (maybe responses), content improvements.
+
+### New Views
+- **EventEvaluationImportSheet** — file import UI with pickers for chat .txt, feedback .csv, transcript .vtt. Shows import progress and status.
+- **FeedbackColumnMappingSheet** — maps CSV columns to feedback fields with auto-detection from header text. Saved per-presentation.
+- **ParticipantMatchReviewSheet** — review unmatched chat participants: match to existing contact, create new, or skip.
+- **PostEventEvaluationView** — analytics dashboard: summary cards (participants, rating, conversion, response rate), engagement bar chart, content gap/effectiveness analysis, feedback area aggregation, follow-up interest breakdown, top questions list, per-participant cards with topic tags and conversion signals. Shown in EventDetailView right pane when event is completed and no participant is selected.
+
+### Modified Files
+- `SAMModels-Event.swift`: added `evaluation: EventEvaluation?` relationship on SamEvent
+- `SAMModelContainer.swift`: registered EventEvaluation.self
+- `EventDetailView.swift`: "Evaluate" button in action bar for completed events, PostEventEvaluationView in right pane, import sheet
+- `SAMModels-Supporting.swift`, `MeetingPrepSection.swift`, `MeetingPrepCoordinator.swift`, `PersonDetailView.swift`, `SearchResultRow.swift`, `InboxDetailView.swift`, `InboxListView.swift`: added `zoomChat` to exhaustive EvidenceSource switches
+
+### Tests
+- 28 tests across 5 suites: ZoomChatParserTests (8), FeedbackFormParserTests (6), EventEvaluationModelTests (5), EvaluationEnumTests (6), EventEvaluationAnalysisTests (4). All pass.
+
+---
+
 ## Crash Recovery: Safe Mode, Auto-Detection & OutcomeEngine Fix (March 31, 2026)
 
 ### SwiftData Crash Fix

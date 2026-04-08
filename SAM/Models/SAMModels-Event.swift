@@ -99,6 +99,10 @@ public final class SamEvent {
     @Relationship(deleteRule: .nullify, inverse: \SamOutcome.linkedEvent)
     public var linkedOutcomes: [SamOutcome] = []
 
+    /// Post-event evaluation data (chat analysis, feedback, AI summaries).
+    @Relationship(deleteRule: .cascade, inverse: \EventEvaluation.event)
+    public var evaluation: EventEvaluation?
+
     // MARK: Timestamps
 
     public var createdAt: Date
