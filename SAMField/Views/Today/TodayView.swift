@@ -1,0 +1,279 @@
+//
+//  TodayView.swift
+//  SAM Field
+//
+//  Created by Assistant on 4/8/26.
+//  Phase F4: Today Tab
+//
+//  Daily overview — calendar events, pending actions, recent captures, trip stats.
+//
+
+import SwiftUI
+import SwiftData
+
+struct TodayView: View {
+    @Environment(\.modelContext) private var modelContext
+    @State private var coordinator = FieldDayCoordinator.shared
+    @State private var tripCoordinator = TripCoordinator.shared
+
+    var body: some View {
+        List {
+            // Calendar access prompt
+            if coordinator.needsCalendarAccess {
+                Section {
+                    Button {
+                        Task { await coordinator.requestCalendarAccess() }
+                    } label: {
+                        Label("Enable Calendar Access", systemImage: "calendar.badge.plus")
+                    }
+                } footer: {
+                    Text("Allow calendar access to see your meetings and appointments here.")
+                }
+            }
+
+            // Active trip banner
+            if tripCoordinator.isTracking {
+                activeTripBanner
+            }
+
+            // Today's schedule
+            scheduleSection
+
+            // Pending follow-ups
+            if !coordinator.pendingFollowUps.isEmpty {
+                pendingSection
+            }
+
+            // Recent captures
+            if !coordinator.recentCaptures.isEmpty {
+                capturesSection
+            }
+
+            // Quick stats
+            statsSection
+        }
+        .navigationTitle("Today")
+        .refreshable {
+            coordinator.refresh()
+            tripCoordinator.refreshStats()
+        }
+        .onAppear {
+            coordinator.configure(container: modelContext.container)
+            tripCoordinator.configure(container: modelContext.container)
+        }
+    }
+
+    // MARK: - Active Trip Banner
+
+    private var activeTripBanner: some View {
+        Section {
+            HStack {
+                Image(systemName: "car.fill")
+                    .foregroundStyle(.green)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Trip Active")
+                        .font(.headline)
+                    Text(String(format: "%.1f miles", tripCoordinator.totalDistanceMiles))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .foregroundStyle(.tertiary)
+            }
+        }
+    }
+
+    // MARK: - Schedule
+
+    private var scheduleSection: some View {
+        Section("Schedule") {
+            if coordinator.calendarEvents.isEmpty {
+                if coordinator.needsCalendarAccess {
+                    HStack {
+                        Image(systemName: "calendar")
+                            .foregroundStyle(.secondary)
+                        Text("Calendar access needed")
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    HStack {
+                        Image(systemName: "calendar")
+                            .foregroundStyle(.secondary)
+                        Text("No events today")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } else {
+                ForEach(coordinator.calendarEvents) { event in
+                    CalendarEventRow(event: event)
+                }
+            }
+        }
+    }
+
+    // MARK: - Pending Actions
+
+    private var pendingSection: some View {
+        Section("Follow-ups") {
+            ForEach(coordinator.pendingFollowUps) { action in
+                HStack(spacing: 12) {
+                    Circle()
+                        .fill(action.isOverdue ? .red : .orange)
+                        .frame(width: 8, height: 8)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(action.title)
+                            .font(.subheadline)
+                            .lineLimit(2)
+
+                        HStack(spacing: 4) {
+                            if let person = action.personName {
+                                Text(person)
+                            }
+                            if let deadline = action.deadline {
+                                Text("Due \(deadline, style: .relative)")
+                            }
+                        }
+                        .font(.caption)
+                        .foregroundStyle(action.isOverdue ? .red : .secondary)
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Recent Captures
+
+    private var capturesSection: some View {
+        Section("Recent Voice Notes") {
+            ForEach(coordinator.recentCaptures.prefix(5), id: \.id) { note in
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(note.summary ?? String(note.content.prefix(80)))
+                        .font(.subheadline)
+                        .lineLimit(2)
+
+                    HStack {
+                        Text(note.createdAt, style: .relative)
+                        if !note.linkedPeople.isEmpty {
+                            Text("with \(note.linkedPeople.first?.displayNameCache ?? "someone")")
+                        }
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    // MARK: - Stats
+
+    private var statsSection: some View {
+        Section("Quick Stats") {
+            HStack {
+                StatCard(icon: "calendar", value: "\(coordinator.todayStats.meetingsToday)", label: "Meetings")
+                StatCard(icon: "bell.badge", value: "\(coordinator.todayStats.pendingActions)", label: "Pending")
+                StatCard(icon: "mic.fill", value: "\(coordinator.todayStats.capturesThisWeek)", label: "Captures")
+            }
+            .listRowInsets(EdgeInsets())
+            .listRowBackground(Color.clear)
+
+            if tripCoordinator.monthBusinessMiles > 0 {
+                HStack {
+                    Image(systemName: "car.fill")
+                        .foregroundStyle(.blue)
+                    Text("This month")
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text(String(format: "%.1f mi / $%.0f", tripCoordinator.monthBusinessMiles, tripCoordinator.monthTaxDeduction))
+                        .font(.subheadline.monospacedDigit().bold())
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Calendar Event Row
+
+private struct CalendarEventRow: View {
+    let event: FieldCalendarService.CalendarEvent
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            // Time column
+            VStack {
+                if event.isAllDay {
+                    Text("All Day")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text(event.startDate, style: .time)
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(event.isNow ? .blue : (event.isPast ? .secondary : .primary))
+                }
+            }
+            .frame(width: 55, alignment: .trailing)
+
+            // Color bar
+            RoundedRectangle(cornerRadius: 2)
+                .fill(event.isNow ? .blue : .secondary)
+                .frame(width: 3)
+
+            // Event details
+            VStack(alignment: .leading, spacing: 4) {
+                Text(event.title)
+                    .font(.subheadline.weight(.medium))
+                    .lineLimit(2)
+                    .foregroundStyle(event.isPast ? .secondary : .primary)
+
+                if let location = event.location, !location.isEmpty {
+                    HStack(spacing: 4) {
+                        Image(systemName: "mappin")
+                            .font(.caption2)
+                        Text(location)
+                            .lineLimit(1)
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+
+                if !event.isAllDay {
+                    let duration = event.durationMinutes
+                    Text(duration >= 60 ? "\(duration / 60)h \(duration % 60)m" : "\(duration)m")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Stat Card
+
+private struct StatCard: View {
+    let icon: String
+    let value: String
+    let label: String
+
+    var body: some View {
+        VStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.title3)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.title2.bold())
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+    }
+}
+
+#Preview("Today") {
+    NavigationStack {
+        TodayView()
+    }
+    .modelContainer(for: SamNote.self, inMemory: true)
+}

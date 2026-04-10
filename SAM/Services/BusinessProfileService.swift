@@ -300,6 +300,10 @@ actor BusinessProfileService {
             return []
         }
 
+        #if !canImport(AppKit)
+        cachedSocialPlatforms = []
+        return []
+        #else
         do {
             let me = try store.unifiedMeContactWithKeys(toFetch: [CNContactSocialProfilesKey as CNKeyDescriptor])
             let services = me.socialProfiles.map { $0.value.service }
@@ -329,6 +333,7 @@ actor BusinessProfileService {
             cachedSocialPlatforms = []
             return []
         }
+        #endif
     }
 
     // MARK: - System Instruction Helpers

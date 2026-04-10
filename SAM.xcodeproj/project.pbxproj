@@ -28,12 +28,29 @@
 			remoteGlobalIDString = 6395F48F2F3ADF650018081A;
 			remoteInfo = SAM;
 		};
+		63CDDBC82F86B441000F9453 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 6395F4882F3ADF650018081A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 63CDDBB82F86B43D000F9453;
+			remoteInfo = SAMField;
+		};
+		63CDDBD22F86B441000F9453 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 6395F4882F3ADF650018081A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 63CDDBB82F86B43D000F9453;
+			remoteInfo = SAMField;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		6395F4902F3ADF650018081A /* SAM.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SAM.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		6395F49F2F3ADF660018081A /* SAMTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SAMTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		6395F4A92F3ADF660018081A /* SAMUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SAMUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		63CDDBB92F86B43D000F9453 /* SAMField.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SAMField.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		63CDDBC72F86B441000F9453 /* SAMFieldTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SAMFieldTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		63CDDBD12F86B441000F9453 /* SAMFieldUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SAMFieldUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		63D3627A2F3B94AF0035FC48 /* Testing.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Testing.framework; path = Platforms/MacOSX.platform/Developer/Library/Frameworks/Testing.framework; sourceTree = DEVELOPER_DIR; };
 /* End PBXFileReference section */
 
@@ -59,6 +76,133 @@
 			);
 			target = 6395F48F2F3ADF650018081A /* SAM */;
 		};
+		63CDDBFD2F86B6E0000F9453 /* Exceptions for "SAM" folder in "SAMField" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Coordinators/ContactEnrichmentCoordinator.swift,
+				Coordinators/FeatureAdoptionTracker.swift,
+				Coordinators/GoalProgressEngine.swift,
+				Coordinators/PipelineTracker.swift,
+				Coordinators/RoleDeductionEngine.swift,
+				Coordinators/ScenarioProjectionEngine.swift,
+				Coordinators/SearchCoordinator.swift,
+				Coordinators/TimeCategorizationEngine.swift,
+				Coordinators/UndoCoordinator.swift,
+				Models/DTOs/BestPracticeDTO.swift,
+				Models/DTOs/BusinessProfileDTO.swift,
+				Models/DTOs/CalibrationDTO.swift,
+				Models/DTOs/CallRecordDTO.swift,
+				Models/DTOs/ClipboardCapturePayload.swift,
+				Models/DTOs/CoachingSessionDTO.swift,
+				Models/DTOs/ContactDTO.swift,
+				Models/DTOs/ContentDraftDTO.swift,
+				Models/DTOs/EmailAnalysisDTO.swift,
+				Models/DTOs/EmailDTO.swift,
+				Models/DTOs/EventDTO.swift,
+				Models/DTOs/EventTopicDTO.swift,
+				Models/DTOs/EvernoteNoteDTO.swift,
+				Models/DTOs/FacebookAnalysisSnapshot.swift,
+				Models/DTOs/FacebookImportCandidateDTO.swift,
+				Models/DTOs/FacebookPostDTO.swift,
+				Models/DTOs/GoalJournalDTO.swift,
+				Models/DTOs/GraphEdge.swift,
+				Models/DTOs/GraphInputDTOs.swift,
+				Models/DTOs/GraphNode.swift,
+				Models/DTOs/GuideArticle.swift,
+				Models/DTOs/LinkedInImportCandidateDTO.swift,
+				Models/DTOs/MessageAnalysisDTO.swift,
+				Models/DTOs/MessageDTO.swift,
+				Models/DTOs/NoteAnalysisDTO.swift,
+				Models/DTOs/ProfileAnalysisDTO.swift,
+				Models/DTOs/RelationshipSummaryDTO.swift,
+				Models/DTOs/RSVPDetectionDTO.swift,
+				Models/DTOs/StrategicDigestDTO.swift,
+				Models/DTOs/SubstackImportCandidateDTO.swift,
+				Models/DTOs/UserFacebookProfileDTO.swift,
+				Models/DTOs/UserLinkedInProfileDTO.swift,
+				Models/DTOs/UserSubstackProfileDTO.swift,
+				Models/DTOs/WhatsAppCallDTO.swift,
+				Models/DTOs/WhatsAppMessageDTO.swift,
+				"Models/SAMModels-Compliance.swift",
+				"Models/SAMModels-ContentPost.swift",
+				"Models/SAMModels-DailyBriefing.swift",
+				"Models/SAMModels-Enrichment.swift",
+				"Models/SAMModels-Event.swift",
+				"Models/SAMModels-EventEvaluation.swift",
+				"Models/SAMModels-FacebookImport.swift",
+				"Models/SAMModels-Goal.swift",
+				"Models/SAMModels-GoalJournal.swift",
+				"Models/SAMModels-IntentionalTouch.swift",
+				"Models/SAMModels-LinkedInImport.swift",
+				"Models/SAMModels-NoteImage.swift",
+				"Models/SAMModels-Notes.swift",
+				"Models/SAMModels-Pipeline.swift",
+				"Models/SAMModels-Presentation.swift",
+				"Models/SAMModels-Production.swift",
+				"Models/SAMModels-RoleRecruiting.swift",
+				"Models/SAMModels-Social.swift",
+				"Models/SAMModels-Strategic.swift",
+				"Models/SAMModels-SubstackImport.swift",
+				"Models/SAMModels-Supporting.swift",
+				"Models/SAMModels-TimeEntry.swift",
+				"Models/SAMModels-Trip.swift",
+				"Models/SAMModels-Undo.swift",
+				"Models/SAMModels-UnknownSender.swift",
+				Models/SAMModels.swift,
+				Repositories/ComplianceAuditRepository.swift,
+				Repositories/ContentPostRepository.swift,
+				Repositories/ContextsRepository.swift,
+				Repositories/DeducedRelationRepository.swift,
+				Repositories/EnrichmentRepository.swift,
+				Repositories/EventRepository.swift,
+				Repositories/EvidenceRepository.swift,
+				Repositories/GoalJournalRepository.swift,
+				Repositories/GoalRepository.swift,
+				Repositories/IntentionalTouchRepository.swift,
+				Repositories/NotesRepository.swift,
+				Repositories/OutcomeRepository.swift,
+				Repositories/PeopleRepository.swift,
+				Repositories/PipelineRepository.swift,
+				Repositories/ProductionRepository.swift,
+				Repositories/RoleRecruitingRepository.swift,
+				Repositories/TimeTrackingRepository.swift,
+				Repositories/TripRepository.swift,
+				Repositories/UndoRepository.swift,
+				Repositories/UnknownSenderRepository.swift,
+				Services/BestPracticesService.swift,
+				Services/BusinessProfileService.swift,
+				Services/CalibrationService.swift,
+				Services/CallHistoryService.swift,
+				Services/ContactPhotoService.swift,
+				Services/ContactsService.swift,
+				Services/DictationService.swift,
+				Services/ENEXParserService.swift,
+				Services/FacebookEmailParser.swift,
+				Services/FacebookService.swift,
+				Services/FeedbackFormParserService.swift,
+				Services/GraphBuilderService.swift,
+				Services/GuideContentService.swift,
+				Services/iMessageService.swift,
+				Services/JSONExtractionUtility.swift,
+				Services/LinkedInEmailParser.swift,
+				Services/LinkedInNotificationSetupGuide.swift,
+				Services/LinkedInService.swift,
+				Services/NarrationService.swift,
+				Services/OutgoingEventMatcher.swift,
+				Services/SubstackService.swift,
+				Services/WhatsAppService.swift,
+				Services/ZoomChatParserService.swift,
+				Utilities/ComplianceScanner.swift,
+			);
+			target = 63CDDBB82F86B43D000F9453 /* SAMField */;
+		};
+		63CDDCAA2F86E54B000F9453 /* Exceptions for "SAMField" folder in "SAMField" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 63CDDBB82F86B43D000F9453 /* SAMField */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -68,6 +212,7 @@
 				63B5DF232F3AE0BB001F32AB /* Exceptions for "SAM" folder in "SAM" target */,
 				63AE127F2F53910600DF87A2 /* Exceptions for "SAM" folder in "SAMTests" target */,
 				63AE12802F53910600DF87A2 /* Exceptions for "SAM" folder in "SAMUITests" target */,
+				63CDDBFD2F86B6E0000F9453 /* Exceptions for "SAM" folder in "SAMField" target */,
 			);
 			path = SAM;
 			sourceTree = "<group>";
@@ -80,6 +225,24 @@
 		6395F4AC2F3ADF660018081A /* SAMUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = SAMUITests;
+			sourceTree = "<group>";
+		};
+		63CDDBBA2F86B43D000F9453 /* SAMField */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				63CDDCAA2F86E54B000F9453 /* Exceptions for "SAMField" folder in "SAMField" target */,
+			);
+			path = SAMField;
+			sourceTree = "<group>";
+		};
+		63CDDBCA2F86B441000F9453 /* SAMFieldTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = SAMFieldTests;
+			sourceTree = "<group>";
+		};
+		63CDDBD42F86B441000F9453 /* SAMFieldUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = SAMFieldUITests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -110,6 +273,27 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		63CDDBB62F86B43D000F9453 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		63CDDBC42F86B441000F9453 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		63CDDBCE2F86B441000F9453 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -119,6 +303,9 @@
 				6395F4922F3ADF650018081A /* SAM */,
 				6395F4A22F3ADF660018081A /* SAMTests */,
 				6395F4AC2F3ADF660018081A /* SAMUITests */,
+				63CDDBBA2F86B43D000F9453 /* SAMField */,
+				63CDDBCA2F86B441000F9453 /* SAMFieldTests */,
+				63CDDBD42F86B441000F9453 /* SAMFieldUITests */,
 				63D362792F3B94AF0035FC48 /* Frameworks */,
 				6395F4912F3ADF650018081A /* Products */,
 			);
@@ -130,6 +317,9 @@
 				6395F4902F3ADF650018081A /* SAM.app */,
 				6395F49F2F3ADF660018081A /* SAMTests.xctest */,
 				6395F4A92F3ADF660018081A /* SAMUITests.xctest */,
+				63CDDBB92F86B43D000F9453 /* SAMField.app */,
+				63CDDBC72F86B441000F9453 /* SAMFieldTests.xctest */,
+				63CDDBD12F86B441000F9453 /* SAMFieldUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -217,6 +407,74 @@
 			productReference = 6395F4A92F3ADF660018081A /* SAMUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		63CDDBB82F86B43D000F9453 /* SAMField */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 63CDDBD92F86B441000F9453 /* Build configuration list for PBXNativeTarget "SAMField" */;
+			buildPhases = (
+				63CDDBB52F86B43D000F9453 /* Sources */,
+				63CDDBB62F86B43D000F9453 /* Frameworks */,
+				63CDDBB72F86B43D000F9453 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				63CDDBBA2F86B43D000F9453 /* SAMField */,
+			);
+			name = SAMField;
+			packageProductDependencies = (
+			);
+			productName = SAMField;
+			productReference = 63CDDBB92F86B43D000F9453 /* SAMField.app */;
+			productType = "com.apple.product-type.application";
+		};
+		63CDDBC62F86B441000F9453 /* SAMFieldTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 63CDDBDC2F86B441000F9453 /* Build configuration list for PBXNativeTarget "SAMFieldTests" */;
+			buildPhases = (
+				63CDDBC32F86B441000F9453 /* Sources */,
+				63CDDBC42F86B441000F9453 /* Frameworks */,
+				63CDDBC52F86B441000F9453 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				63CDDBC92F86B441000F9453 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				63CDDBCA2F86B441000F9453 /* SAMFieldTests */,
+			);
+			name = SAMFieldTests;
+			packageProductDependencies = (
+			);
+			productName = SAMFieldTests;
+			productReference = 63CDDBC72F86B441000F9453 /* SAMFieldTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		63CDDBD02F86B441000F9453 /* SAMFieldUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 63CDDBDF2F86B441000F9453 /* Build configuration list for PBXNativeTarget "SAMFieldUITests" */;
+			buildPhases = (
+				63CDDBCD2F86B441000F9453 /* Sources */,
+				63CDDBCE2F86B441000F9453 /* Frameworks */,
+				63CDDBCF2F86B441000F9453 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				63CDDBD32F86B441000F9453 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				63CDDBD42F86B441000F9453 /* SAMFieldUITests */,
+			);
+			name = SAMFieldUITests;
+			packageProductDependencies = (
+			);
+			productName = SAMFieldUITests;
+			productReference = 63CDDBD12F86B441000F9453 /* SAMFieldUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -227,7 +485,7 @@
 				KnownAssetTags = (
 					New,
 				);
-				LastSwiftUpdateCheck = 2620;
+				LastSwiftUpdateCheck = 2640;
 				LastUpgradeCheck = 2640;
 				TargetAttributes = {
 					6395F48F2F3ADF650018081A = {
@@ -240,6 +498,17 @@
 					6395F4A82F3ADF660018081A = {
 						CreatedOnToolsVersion = 26.2;
 						TestTargetID = 6395F48F2F3ADF650018081A;
+					};
+					63CDDBB82F86B43D000F9453 = {
+						CreatedOnToolsVersion = 26.4;
+					};
+					63CDDBC62F86B441000F9453 = {
+						CreatedOnToolsVersion = 26.4;
+						TestTargetID = 63CDDBB82F86B43D000F9453;
+					};
+					63CDDBD02F86B441000F9453 = {
+						CreatedOnToolsVersion = 26.4;
+						TestTargetID = 63CDDBB82F86B43D000F9453;
 					};
 				};
 			};
@@ -254,6 +523,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				63A8C4F92F4BD173002160AD /* XCRemoteSwiftPackageReference "mlx-swift-lm" */,
+				63CDDBB42F86B2B3000F9453 /* XCLocalSwiftPackageReference "SAMKit" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 6395F4912F3ADF650018081A /* Products */;
@@ -263,6 +533,9 @@
 				6395F48F2F3ADF650018081A /* SAM */,
 				6395F49E2F3ADF660018081A /* SAMTests */,
 				6395F4A82F3ADF660018081A /* SAMUITests */,
+				63CDDBB82F86B43D000F9453 /* SAMField */,
+				63CDDBC62F86B441000F9453 /* SAMFieldTests */,
+				63CDDBD02F86B441000F9453 /* SAMFieldUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -283,6 +556,27 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		6395F4A72F3ADF660018081A /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		63CDDBB72F86B43D000F9453 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		63CDDBC52F86B441000F9453 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		63CDDBCF2F86B441000F9453 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -313,6 +607,27 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		63CDDBB52F86B43D000F9453 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		63CDDBC32F86B441000F9453 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		63CDDBCD2F86B441000F9453 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -325,6 +640,16 @@
 			isa = PBXTargetDependency;
 			target = 6395F48F2F3ADF650018081A /* SAM */;
 			targetProxy = 6395F4AA2F3ADF660018081A /* PBXContainerItemProxy */;
+		};
+		63CDDBC92F86B441000F9453 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 63CDDBB82F86B43D000F9453 /* SAMField */;
+			targetProxy = 63CDDBC82F86B441000F9453 /* PBXContainerItemProxy */;
+		};
+		63CDDBD32F86B441000F9453 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 63CDDBB82F86B43D000F9453 /* SAMField */;
+			targetProxy = 63CDDBD22F86B441000F9453 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -682,6 +1007,185 @@
 			};
 			name = Release;
 		};
+		63CDDBDA2F86B441000F9453 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = SAMField/SAMField.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 2T4555WXTA;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = SAMField/Info.plist;
+				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "SAM Field reads your calendar to show upcoming meetings and prepare briefings.";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "SAM Field uses background location to track trip mileage while you drive between appointments.";
+				INFOPLIST_KEY_NSLocationAlwaysUsageDescription = "SAM Field needs your location to track mileage and find nearby contacts.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "SAM Field needs your location to track mileage and find nearby contacts.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "SAM Field needs microphone access to record voice notes. Audio is processed on-device only.";
+				INFOPLIST_KEY_NSMotionUsageDescription = "SAM Field uses motion data to detect when you're driving for automatic trip tracking.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "SAM Field uses on-device speech recognition to transcribe your voice notes.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = sam.SAMField;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		63CDDBDB2F86B441000F9453 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = SAMField/SAMField.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 2T4555WXTA;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = SAMField/Info.plist;
+				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "SAM Field reads your calendar to show upcoming meetings and prepare briefings.";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "SAM Field uses background location to track trip mileage while you drive between appointments.";
+				INFOPLIST_KEY_NSLocationAlwaysUsageDescription = "SAM Field needs your location to track mileage and find nearby contacts.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "SAM Field needs your location to track mileage and find nearby contacts.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "SAM Field needs microphone access to record voice notes. Audio is processed on-device only.";
+				INFOPLIST_KEY_NSMotionUsageDescription = "SAM Field uses motion data to detect when you're driving for automatic trip tracking.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "SAM Field uses on-device speech recognition to transcribe your voice notes.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = sam.SAMField;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		63CDDBDD2F86B441000F9453 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 2T4555WXTA;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.4;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = sam.SAMFieldTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SAMField.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/SAMField";
+			};
+			name = Debug;
+		};
+		63CDDBDE2F86B441000F9453 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 2T4555WXTA;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.4;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = sam.SAMFieldTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SAMField.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/SAMField";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		63CDDBE02F86B441000F9453 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 2T4555WXTA;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.4;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = sam.SAMFieldUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = SAMField;
+			};
+			name = Debug;
+		};
+		63CDDBE12F86B441000F9453 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 2T4555WXTA;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.4;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = sam.SAMFieldUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = SAMField;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -721,7 +1225,41 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		63CDDBD92F86B441000F9453 /* Build configuration list for PBXNativeTarget "SAMField" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				63CDDBDA2F86B441000F9453 /* Debug */,
+				63CDDBDB2F86B441000F9453 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		63CDDBDC2F86B441000F9453 /* Build configuration list for PBXNativeTarget "SAMFieldTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				63CDDBDD2F86B441000F9453 /* Debug */,
+				63CDDBDE2F86B441000F9453 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		63CDDBDF2F86B441000F9453 /* Build configuration list for PBXNativeTarget "SAMFieldUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				63CDDBE02F86B441000F9453 /* Debug */,
+				63CDDBE12F86B441000F9453 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		63CDDBB42F86B2B3000F9453 /* XCLocalSwiftPackageReference "SAMKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = SAMKit;
+		};
+/* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
 		63A8C4F92F4BD173002160AD /* XCRemoteSwiftPackageReference "mlx-swift-lm" */ = {

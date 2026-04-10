@@ -528,6 +528,7 @@ private struct BriefingCard: View {
         case .whatsAppCall: return "phone.bubble"
         case .sentMail: return "paperplane"
         case .zoomChat: return "bubble.left.and.text.bubble.right"
+        case .voiceCapture: return "mic.fill"
         }
     }
 

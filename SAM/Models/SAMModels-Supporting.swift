@@ -204,6 +204,7 @@ public enum EvidenceSource: String, Codable, Sendable {
     case whatsAppCall = "WhatsAppCall"
     case sentMail = "SentMail"
     case zoomChat = "ZoomChat"
+    case voiceCapture = "VoiceCapture"
 }
 
 extension EvidenceSource {
@@ -226,14 +227,15 @@ extension EvidenceSource {
         case .whatsAppCall: return 2.5 // Same as phoneCall
         case .sentMail:  return 1.5   // Same as inbound mail
         case .zoomChat:  return 1.0   // Workshop chat participation
+        case .voiceCapture: return 2.0 // Direct voice debrief — high quality
         }
     }
 
     /// Whether this source represents a direct interaction (not passive data).
     public var isInteraction: Bool {
         switch self {
-        case .contacts, .note, .substack:   return false
-        default:                            return true
+        case .contacts, .note, .substack:    return false
+        default:                             return true
         }
     }
 
@@ -256,6 +258,7 @@ extension EvidenceSource {
         case .whatsAppCall: return "phone.bubble"
         case .sentMail:  return "paperplane"
         case .zoomChat:  return "bubble.left.and.text.bubble.right"
+        case .voiceCapture: return "mic.fill"
         }
     }
 
@@ -265,6 +268,7 @@ extension EvidenceSource {
         case .whatsAppCall: return "WhatsApp Call"
         case .sentMail: return "Sent Mail"
         case .zoomChat: return "Zoom Chat"
+        case .voiceCapture: return "Voice Capture"
         default: return rawValue
         }
     }
@@ -276,7 +280,7 @@ extension EvidenceSource {
             return true
         case .calendar:
             return false // always bidirectional
-        case .contacts, .note, .manual, .linkedIn, .facebook, .substack, .zoomChat:
+        case .contacts, .note, .manual, .linkedIn, .facebook, .substack, .zoomChat, .voiceCapture:
             return false
         }
     }

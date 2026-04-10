@@ -685,38 +685,5 @@ struct GeneratedInsight: Identifiable, Equatable {
     let createdAt: Date
 }
 
-/// Source type for insights
-public enum InsightSourceType: String, Codable {
-    case note = "Note"
-    case calendar = "Calendar"
-    case contacts = "Contacts"
-    case email = "Email"
-    case pattern = "Pattern" // Derived from analysis (e.g., no recent contact)
-}
-
-/// Priority level for insights
-public enum InsightPriority: Int, Codable, Comparable {
-    case low = 1
-    case medium = 2
-    case high = 3
-
-    public static func < (lhs: InsightPriority, rhs: InsightPriority) -> Bool {
-        lhs.rawValue < rhs.rawValue
-    }
-
-    var displayText: String {
-        switch self {
-        case .low: return "Low"
-        case .medium: return "Medium"
-        case .high: return "High"
-        }
-    }
-
-    var color: String {
-        switch self {
-        case .low: return "gray"
-        case .medium: return "orange"
-        case .high: return "red"
-        }
-    }
-}
+// InsightSourceType and InsightPriority moved to SAMModels.swift
+// to share across macOS and iOS targets.

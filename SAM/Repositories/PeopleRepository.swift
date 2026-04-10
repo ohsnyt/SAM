@@ -386,7 +386,11 @@ final class PeopleRepository {
                 }
                 // Skip thumbnail overwrite if we recently wrote a photo — Apple may not have
                 // generated the thumbnail yet, and the sync would erase our local cache.
+                #if canImport(AppKit)
                 let photoProtected = existing.contactIdentifier.map { ContactPhotoCoordinator.isPhotoWriteRecent(for: $0) } ?? false
+                #else
+                let photoProtected = false
+                #endif
                 if !photoProtected, existing.photoThumbnailCache != contact.thumbnailImageData {
                     existing.photoThumbnailCache = contact.thumbnailImageData
                     changed = true

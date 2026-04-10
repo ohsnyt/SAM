@@ -1050,6 +1050,7 @@ final class EvidenceRepository {
         try context.save()
 
         // Notify EventCoordinator of RSVP signals for matching
+        #if canImport(AppKit)
         if !analysis.rsvpDetections.isEmpty {
             Task { @MainActor in
                 RSVPMatchingService.shared.processDetections(
@@ -1058,6 +1059,7 @@ final class EvidenceRepository {
                 )
             }
         }
+        #endif
     }
 
     /// Update an already-persisted iMessage/WhatsApp evidence item with LLM analysis results.
@@ -1092,6 +1094,7 @@ final class EvidenceRepository {
         try context.save()
 
         // Notify EventCoordinator of RSVP signals for matching
+        #if canImport(AppKit)
         if !analysis.rsvpDetections.isEmpty {
             Task { @MainActor in
                 RSVPMatchingService.shared.processDetections(
@@ -1100,6 +1103,7 @@ final class EvidenceRepository {
                 )
             }
         }
+        #endif
     }
 
     // MARK: - Call Record Bulk Upsert

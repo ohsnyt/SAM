@@ -2995,6 +2995,7 @@ private extension EvidenceSource {
         case .whatsAppCall: return .green
         case .sentMail:  return .blue
         case .zoomChat: return .purple
+        case .voiceCapture: return .mint
         }
     }
 }

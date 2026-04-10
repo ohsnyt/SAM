@@ -56,6 +56,11 @@ public final class SamNote {
     /// Dedup key for imported notes (e.g., "evernote:<guid>")
     public var sourceImportUID: String?
 
+    /// Relative path to original audio recording file (voice captures only).
+    /// Path is relative to the app's Documents/VoiceCaptures/ directory.
+    /// Nil for typed or non-voice notes.
+    public var audioRecordingPath: String?
+
     // ── Analysis state ──────────────────────────────────────────────
 
     /// Has LLM processed this note's current content?

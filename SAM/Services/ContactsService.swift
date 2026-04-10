@@ -109,10 +109,10 @@ actor ContactsService {
                 return false
             }
             
-        case .denied, .restricted:
+        case .denied, .restricted, .limited:
             logger.warning("Contacts access denied or restricted")
             return false
-            
+
         @unknown default:
             logger.warning("Unknown contacts authorization status")
             return false
@@ -294,7 +294,20 @@ actor ContactsService {
         }
 
         do {
+            #if canImport(AppKit)
             let me = try store.unifiedMeContactWithKeys(toFetch: keys.keys)
+            #else
+            // unifiedMeContactWithKeys is unavailable on iOS; use unifiedContact search
+            let fetchRequest = CNContactFetchRequest(keysToFetch: keys.keys)
+            var meContact: CNContact?
+            try store.enumerateContacts(with: fetchRequest) { contact, stop in
+                if contact.contactType == .person {
+                    meContact = contact
+                    stop.pointee = true
+                }
+            }
+            guard let me = meContact else { return nil }
+            #endif
             logger.debug("Fetched Me contact: \(self.debugDescription(for: me), privacy: .private)")
             return ContactDTO(from: me)
         } catch {

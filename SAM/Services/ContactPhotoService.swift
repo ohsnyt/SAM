@@ -42,11 +42,15 @@ actor ContactPhotoService {
     /// Returns the processed JPEG data on success for local cache update.
     func downloadAndUpdatePhoto(identifier: String, url: URL) async throws -> Data {
         let (data, _) = try await URLSession.shared.data(from: url)
+        #if canImport(AppKit)
         guard let jpegData = ImageResizeUtility.processContactPhoto(from: data) else {
             throw ContactPhotoError.invalidImage
         }
         try updatePhoto(identifier: identifier, jpegData: jpegData)
         return jpegData
+        #else
+        throw ContactPhotoError.invalidImage
+        #endif
     }
 }
 

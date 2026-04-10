@@ -145,6 +145,7 @@ final class GoalJournalRepository {
         isSummarizing = true
         Task { @MainActor in
             do {
+                #if canImport(AppKit)
                 let dto = try await GoalCheckInService.shared.summarizeSession(
                     messages: messages,
                     context: context
@@ -152,6 +153,9 @@ final class GoalJournalRepository {
                 try create(from: dto)
                 logger.debug("Background journal summarization saved for goal \(context.goalID)")
                 onSaved?()
+                #else
+                logger.debug("Journal summarization not available on iOS")
+                #endif
             } catch {
                 logger.error("Background journal summarization failed: \(error.localizedDescription)")
             }

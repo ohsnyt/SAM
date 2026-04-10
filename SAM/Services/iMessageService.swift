@@ -263,9 +263,13 @@ actor iMessageService {
     /// used by iMessage attributedBody. NSKeyedUnarchiver does NOT work for this format.
     @available(macOS, deprecated: 10.13, message: "Required for iMessage typedstream decoding — no alternative exists")
     private nonisolated func unarchiveTypedstream(_ data: Data) -> String? {
+        #if canImport(AppKit)
         guard let attrString = NSUnarchiver.unarchiveObject(with: data) as? NSAttributedString else { return nil }
         let text = attrString.string.trimmingCharacters(in: .whitespacesAndNewlines)
         return text.isEmpty ? nil : text
+        #else
+        return nil
+        #endif
     }
 
     /// Manual fallback parser for typedstream-encoded attributedBody.
