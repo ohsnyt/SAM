@@ -182,6 +182,7 @@ struct SearchEvidenceRow: View {
         case .sentMail: return "paperplane"
         case .zoomChat: return "bubble.left.and.text.bubble.right"
         case .voiceCapture: return "mic.fill"
+        case .meetingTranscript: return "waveform.and.mic"
         }
     }
 
@@ -204,6 +205,7 @@ struct SearchEvidenceRow: View {
         case .sentMail: return .blue
         case .zoomChat: return .purple
         case .voiceCapture: return .mint
+        case .meetingTranscript: return .cyan
         }
     }
 }

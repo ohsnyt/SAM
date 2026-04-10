@@ -71,6 +71,9 @@ enum SAMSchema {
         EventEvaluation.self,                      // Post-event evaluation & workshop analysis
         SamTrip.self,                                  // Phase F1: Trip/mileage tracking (iOS companion)
         SamTripStop.self,                              // Phase F1: Trip stop locations
+        TranscriptSession.self,                        // Speaker-diarized transcription sessions
+        TranscriptSegment.self,                        // Speaker-attributed transcript segments
+        SpeakerProfile.self,                           // Enrolled voice embeddings
     ]
 }
 

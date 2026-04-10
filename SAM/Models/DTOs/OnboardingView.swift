@@ -1311,7 +1311,7 @@ struct OnboardingView: View {
         case .notificationsPermission:
             return "Next" // not used; footer overrides
         case .aiSetup:
-            return mlxModelReady ? "Finish Setup" : "Skip for Now"
+            return mlxModelReady ? "Finish Setup" : "Continue"
         case .complete:
             return "Start Using SAM"
         }

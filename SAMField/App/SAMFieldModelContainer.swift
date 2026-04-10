@@ -60,6 +60,9 @@ private let allFieldModels: [any PersistentModel.Type] = [
     EventEvaluation.self,
     SamTrip.self,
     SamTripStop.self,
+    TranscriptSession.self,
+    TranscriptSegment.self,
+    SpeakerProfile.self,
 ]
 
 /// Model container for the SAM Field iOS app.

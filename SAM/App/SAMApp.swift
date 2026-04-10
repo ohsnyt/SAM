@@ -432,6 +432,13 @@ struct SAMApp: App {
 
                     // Tell the system about our App Shortcuts so Siri/Spotlight can surface them
                     SAMShortcutsProvider.updateAppShortcutParameters()
+
+                    // Start the always-on transcription listener so the iPhone can
+                    // connect and record without needing the user to click Start on Mac.
+                    // Safe to call even if this runs before onboarding completes —
+                    // startListening() is idempotent.
+                    TranscriptionSessionCoordinator.shared.configure(container: SAMModelContainer.shared)
+                    TranscriptionSessionCoordinator.shared.startListening()
                 }
                 .fileImporter(
                     isPresented: $showImportFilePicker,

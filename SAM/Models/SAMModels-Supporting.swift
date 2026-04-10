@@ -205,6 +205,7 @@ public enum EvidenceSource: String, Codable, Sendable {
     case sentMail = "SentMail"
     case zoomChat = "ZoomChat"
     case voiceCapture = "VoiceCapture"
+    case meetingTranscript = "MeetingTranscript"
 }
 
 extension EvidenceSource {
@@ -228,6 +229,7 @@ extension EvidenceSource {
         case .sentMail:  return 1.5   // Same as inbound mail
         case .zoomChat:  return 1.0   // Workshop chat participation
         case .voiceCapture: return 2.0 // Direct voice debrief — high quality
+        case .meetingTranscript: return 3.0 // Full meeting transcript — highest quality
         }
     }
 
@@ -259,6 +261,7 @@ extension EvidenceSource {
         case .sentMail:  return "paperplane"
         case .zoomChat:  return "bubble.left.and.text.bubble.right"
         case .voiceCapture: return "mic.fill"
+        case .meetingTranscript: return "waveform.and.mic"
         }
     }
 
@@ -269,6 +272,7 @@ extension EvidenceSource {
         case .sentMail: return "Sent Mail"
         case .zoomChat: return "Zoom Chat"
         case .voiceCapture: return "Voice Capture"
+        case .meetingTranscript: return "Meeting Transcript"
         default: return rawValue
         }
     }
@@ -280,7 +284,7 @@ extension EvidenceSource {
             return true
         case .calendar:
             return false // always bidirectional
-        case .contacts, .note, .manual, .linkedIn, .facebook, .substack, .zoomChat, .voiceCapture:
+        case .contacts, .note, .manual, .linkedIn, .facebook, .substack, .zoomChat, .voiceCapture, .meetingTranscript:
             return false
         }
     }

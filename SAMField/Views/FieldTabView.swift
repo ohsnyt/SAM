@@ -6,7 +6,7 @@
 //  Phase F1: iOS Companion App Foundation
 //
 //  Root tab navigation for SAM Field.
-//  Four tabs: Today, Capture, Trips, Nearby.
+//  Five tabs: Today, Capture, Meeting, Trips, Nearby.
 //
 
 import SwiftUI
@@ -29,6 +29,12 @@ struct FieldTabView: View {
                 }
             }
 
+            Tab("Meeting", systemImage: "waveform.and.mic", value: .meeting) {
+                NavigationStack {
+                    MeetingCaptureView()
+                }
+            }
+
             Tab("Trips", systemImage: "car.fill", value: .trips) {
                 NavigationStack {
                     TripsView()
@@ -47,6 +53,7 @@ struct FieldTabView: View {
 enum FieldTab: String, Hashable {
     case today
     case capture
+    case meeting
     case trips
     case nearby
 }

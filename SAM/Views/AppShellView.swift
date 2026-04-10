@@ -196,6 +196,10 @@ struct AppShellView: View {
                 Label("Events", systemImage: "calendar.badge.clock")
             }
 
+            NavigationLink(value: "transcription") {
+                Label("Transcription", systemImage: "waveform.and.mic")
+            }
+
             NavigationLink(value: "search") {
                 Label("Search", systemImage: "magnifyingglass")
             }
@@ -243,6 +247,9 @@ struct AppShellView: View {
 
         case "events":
             EventManagerView(activeSection: $eventSection)
+
+        case "transcription":
+            TranscriptionSessionView()
 
         case "search":
             SearchView()

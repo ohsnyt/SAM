@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		639A209E2F893CB5009D684C /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = 63FA010B2FA0000000000001 /* WhisperKit */; };
 		63A8C4FB2F4BD173002160AD /* MLXEmbedders in Frameworks */ = {isa = PBXBuildFile; productRef = 63A8C4FA2F4BD173002160AD /* MLXEmbedders */; };
 		63A8C4FD2F4BD173002160AD /* MLXLLM in Frameworks */ = {isa = PBXBuildFile; productRef = 63A8C4FC2F4BD173002160AD /* MLXLLM */; };
 		63A8C4FF2F4BD173002160AD /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = 63A8C4FE2F4BD173002160AD /* MLXLMCommon */; };
@@ -123,6 +124,7 @@
 				Models/DTOs/UserSubstackProfileDTO.swift,
 				Models/DTOs/WhatsAppCallDTO.swift,
 				Models/DTOs/WhatsAppMessageDTO.swift,
+				"Models/SAMModels-AudioStreaming.swift",
 				"Models/SAMModels-Compliance.swift",
 				"Models/SAMModels-ContentPost.swift",
 				"Models/SAMModels-DailyBriefing.swift",
@@ -145,6 +147,7 @@
 				"Models/SAMModels-SubstackImport.swift",
 				"Models/SAMModels-Supporting.swift",
 				"Models/SAMModels-TimeEntry.swift",
+				"Models/SAMModels-Transcription.swift",
 				"Models/SAMModels-Trip.swift",
 				"Models/SAMModels-Undo.swift",
 				"Models/SAMModels-UnknownSender.swift",
@@ -252,6 +255,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				639A209E2F893CB5009D684C /* WhisperKit in Frameworks */,
 				63A8C4FD2F4BD173002160AD /* MLXLLM in Frameworks */,
 				63A8C4FF2F4BD173002160AD /* MLXLMCommon in Frameworks */,
 				63A8C5012F4BD173002160AD /* MLXVLM in Frameworks */,
@@ -356,6 +360,7 @@
 				63A8C4FC2F4BD173002160AD /* MLXLLM */,
 				63A8C4FE2F4BD173002160AD /* MLXLMCommon */,
 				63A8C5002F4BD173002160AD /* MLXVLM */,
+				63FA010B2FA0000000000001 /* WhisperKit */,
 			);
 			productName = SAM;
 			productReference = 6395F4902F3ADF650018081A /* SAM.app */;
@@ -524,6 +529,7 @@
 			packageReferences = (
 				63A8C4F92F4BD173002160AD /* XCRemoteSwiftPackageReference "mlx-swift-lm" */,
 				63CDDBB42F86B2B3000F9453 /* XCLocalSwiftPackageReference "SAMKit" */,
+				63FA010A2FA0000000000001 /* XCRemoteSwiftPackageReference "WhisperKit" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 6395F4912F3ADF650018081A /* Products */;
@@ -1270,6 +1276,14 @@
 				minimumVersion = 2.30.6;
 			};
 		};
+		63FA010A2FA0000000000001 /* XCRemoteSwiftPackageReference "WhisperKit" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/argmaxinc/WhisperKit";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.9.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -1292,6 +1306,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 63A8C4F92F4BD173002160AD /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
 			productName = MLXVLM;
+		};
+		63FA010B2FA0000000000001 /* WhisperKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 63FA010A2FA0000000000001 /* XCRemoteSwiftPackageReference "WhisperKit" */;
+			productName = WhisperKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

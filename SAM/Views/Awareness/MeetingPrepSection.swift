@@ -529,6 +529,7 @@ private struct BriefingCard: View {
         case .sentMail: return "paperplane"
         case .zoomChat: return "bubble.left.and.text.bubble.right"
         case .voiceCapture: return "mic.fill"
+        case .meetingTranscript: return "waveform.and.mic"
         }
     }
 

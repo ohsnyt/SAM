@@ -20,6 +20,12 @@
 	<string>SAM uses on-device speech recognition to transcribe voice notes during meetings. Audio is processed locally and never sent to external servers.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>SAM needs microphone access to record voice notes during meetings. Audio is processed on-device for transcription only.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>SAM receives audio from SAM Field on your iPhone over your local network for transcription. All audio stays on your local network and is never sent to external servers.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_samtranscript._tcp</string>
+	</array>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>

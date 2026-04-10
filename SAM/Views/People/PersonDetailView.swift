@@ -2996,6 +2996,7 @@ private extension EvidenceSource {
         case .sentMail:  return .blue
         case .zoomChat: return .purple
         case .voiceCapture: return .mint
+        case .meetingTranscript: return .cyan
         }
     }
 }
