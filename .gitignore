@@ -8,3 +8,7 @@ xcuserdata/
 
 # DMG staging
 *.dmg
+
+# Swift Package Manager
+.build/
+SAMKit/.build/
