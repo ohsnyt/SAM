@@ -20,7 +20,14 @@
 
 set -euo pipefail
 
-METRICS_FILE="$HOME/Documents/SAM-TestKit/metrics/cycles.jsonl"
+if [[ -n "${SAM_TESTKIT_ROOT:-}" ]]; then
+    TESTKIT_ROOT="$SAM_TESTKIT_ROOT"
+elif [[ -d "$HOME/Library/Containers/sam.SAM/Data/Documents/SAM-TestKit" ]]; then
+    TESTKIT_ROOT="$HOME/Library/Containers/sam.SAM/Data/Documents/SAM-TestKit"
+else
+    TESTKIT_ROOT="$HOME/Documents/SAM-TestKit"
+fi
+METRICS_FILE="$TESTKIT_ROOT/metrics/cycles.jsonl"
 
 if [[ ! -f "$METRICS_FILE" ]]; then
     echo "No metrics file found at $METRICS_FILE" >&2

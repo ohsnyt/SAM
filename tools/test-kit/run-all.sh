@@ -41,7 +41,9 @@ for SCENARIO_FILE in "$SCENARIOS_DIR"/*.txt; do
     COUNT=$((COUNT + 1))
     echo "▶ [$COUNT] $NAME"
 
-    if "$SCRIPT_DIR/run-test.sh" "$NAME" > /tmp/sam-test-result.json 2>&1; then
+    # Capture only stdout (the JSON result). Stderr (log messages) goes
+    # to a separate file so it doesn't pollute the JSON.
+    if "$SCRIPT_DIR/run-test.sh" "$NAME" > /tmp/sam-test-result.json 2>/tmp/sam-test-log.txt; then
         # Parse the success field from the result JSON (last few lines should
         # be valid JSON; the wrapping log lines go to stderr)
         SUCCESS=$(jq -r '.success // false' /tmp/sam-test-result.json 2>/dev/null || echo "false")

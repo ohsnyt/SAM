@@ -21,7 +21,16 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCENARIOS_DIR="$SCRIPT_DIR/scenarios"
-TESTKIT_ROOT="$HOME/Documents/SAM-TestKit"
+
+# SAM is sandboxed; the watcher's "Documents" is the container's, not ~.
+# Allow override via $SAM_TESTKIT_ROOT for unsandboxed dev or custom locations.
+if [[ -n "${SAM_TESTKIT_ROOT:-}" ]]; then
+    TESTKIT_ROOT="$SAM_TESTKIT_ROOT"
+elif [[ -d "$HOME/Library/Containers/sam.SAM/Data/Documents/SAM-TestKit" ]]; then
+    TESTKIT_ROOT="$HOME/Library/Containers/sam.SAM/Data/Documents/SAM-TestKit"
+else
+    TESTKIT_ROOT="$HOME/Documents/SAM-TestKit"
+fi
 INBOX="$TESTKIT_ROOT/inbox"
 OUTBOX="$TESTKIT_ROOT/outbox"
 
@@ -71,20 +80,32 @@ DURATION_NUM="${DURATION_RAW:-0}"
 
 echo "  Duration: ${DURATION_NUM}s" >&2
 
-# Build the metadata JSON. Includes optional expectations the result
-# payload echoes back so we can spot regressions.
-EXPECTED_TOPICS=$(grep -E "^# expectedTopics:" "$SCENARIO_FILE" | sed 's/^# expectedTopics: *//' | head -1 || echo "")
-EXPECTED_ACTIONS=$(grep -E "^# expectedActionItems:" "$SCENARIO_FILE" | sed 's/^# expectedActionItems: *//' | head -1 || echo "")
-EXPECTED_SPEAKERS=$(grep -E "^# expectedSpeakers:" "$SCENARIO_FILE" | sed 's/^# expectedSpeakers: *//' | head -1 || echo "")
-DESCRIPTION=$(grep -E "^# description:" "$SCENARIO_FILE" | sed 's/^# description: *//' | head -1 || echo "")
+# Build the metadata JSON. Always emit every field; null when missing.
+# (Avoids the heredoc-with-echo problem where \n is interpreted literally.)
+EXPECTED_TOPICS=$(grep -E "^# expectedTopics:" "$SCENARIO_FILE" 2>/dev/null | sed 's/^# expectedTopics: *//' | head -1 || true)
+EXPECTED_ACTIONS=$(grep -E "^# expectedActionItems:" "$SCENARIO_FILE" 2>/dev/null | sed 's/^# expectedActionItems: *//' | head -1 || true)
+EXPECTED_SPEAKERS=$(grep -E "^# expectedSpeakers:" "$SCENARIO_FILE" 2>/dev/null | sed 's/^# expectedSpeakers: *//' | head -1 || true)
+DESCRIPTION=$(grep -E "^# description:" "$SCENARIO_FILE" 2>/dev/null | sed 's/^# description: *//' | head -1 || true)
+
+# Default missing fields to null (JSON-safe)
+[[ -z "$EXPECTED_TOPICS" ]] && EXPECTED_TOPICS="null"
+[[ -z "$EXPECTED_ACTIONS" ]] && EXPECTED_ACTIONS="null"
+[[ -z "$EXPECTED_SPEAKERS" ]] && EXPECTED_SPEAKERS="null"
+[[ -z "$DURATION_NUM" ]] && DURATION_NUM="0"
+
+# Escape any double-quotes in the description
+DESCRIPTION_ESCAPED=$(printf '%s' "$DESCRIPTION" | sed 's/"/\\"/g')
 
 cat > "$META_PATH" <<EOF
 {
   "scenarioID": "$SCENARIO_NAME",
-  "durationSeconds": ${DURATION_NUM:-0},
+  "durationSeconds": $DURATION_NUM,
   "sampleRate": 16000,
   "channels": 1,
-  "description": "${DESCRIPTION}"$([[ -n "$EXPECTED_TOPICS" ]] && echo ",\n  \"expectedTopics\": $EXPECTED_TOPICS")$([[ -n "$EXPECTED_ACTIONS" ]] && echo ",\n  \"expectedActionItems\": $EXPECTED_ACTIONS")$([[ -n "$EXPECTED_SPEAKERS" ]] && echo ",\n  \"expectedSpeakers\": $EXPECTED_SPEAKERS")
+  "description": "$DESCRIPTION_ESCAPED",
+  "expectedTopics": $EXPECTED_TOPICS,
+  "expectedActionItems": $EXPECTED_ACTIONS,
+  "expectedSpeakers": $EXPECTED_SPEAKERS
 }
 EOF
 

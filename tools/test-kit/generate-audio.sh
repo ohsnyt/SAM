@@ -44,13 +44,17 @@ trap "rm -rf '$WORK_DIR'" EXIT
 UTTERANCE_LIST="$WORK_DIR/utterances.txt"
 : > "$UTTERANCE_LIST"
 
-# Map speaker label → say voice name
-declare -A VOICE_MAP=(
-    [ALEX]="Alex"
-    [SAMANTHA]="Samantha"
-    [DANIEL]="Daniel"
-    [KAREN]="Karen"
-)
+# Map speaker label → say voice name. Using a case statement for
+# compatibility with macOS's bundled Bash 3.2 (no associative arrays).
+voice_for_speaker() {
+    case "$1" in
+        ALEX)     echo "Alex" ;;
+        SAMANTHA) echo "Samantha" ;;
+        DANIEL)   echo "Daniel" ;;
+        KAREN)    echo "Karen" ;;
+        *)        echo "" ;;
+    esac
+}
 
 INDEX=0
 LINE_NUM=0
@@ -66,7 +70,7 @@ while IFS= read -r LINE || [[ -n "$LINE" ]]; do
     if [[ "$LINE" =~ ^([A-Z]+):[[:space:]]*(.+)$ ]]; then
         SPEAKER="${BASH_REMATCH[1]}"
         TEXT="${BASH_REMATCH[2]}"
-        VOICE="${VOICE_MAP[$SPEAKER]:-}"
+        VOICE=$(voice_for_speaker "$SPEAKER")
 
         if [[ -z "$VOICE" ]]; then
             echo "Warning: line $LINE_NUM unknown speaker '$SPEAKER', skipping" >&2
