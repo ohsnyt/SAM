@@ -432,7 +432,7 @@ extension OutcomeKind {
         case .compliance:      return "Compliance"
         case .contentCreation: return "Content"
         case .setup:           return "Setup"
-        case .roleFilling:     return "Role Filling"
+        case .roleFilling:     return "Recruiting"
         case .userTask:        return "Task"
         }
     }

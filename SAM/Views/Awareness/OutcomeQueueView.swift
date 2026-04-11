@@ -119,7 +119,7 @@ struct OutcomeQueueView: View {
                     Button(action: {
                         withAnimation { showAllOutcomes.toggle() }
                     }) {
-                        Text(showAllOutcomes ? "Show fewer" : "Show all \(activeOutcomes.count) outcomes")
+                        Text(showAllOutcomes ? "Show fewer" : "Show all \(activeOutcomes.count) suggestions")
                             .samFont(.subheadline)
                             .foregroundStyle(.blue)
                     }

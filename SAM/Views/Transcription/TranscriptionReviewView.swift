@@ -677,7 +677,7 @@ struct TranscriptionReviewView: View {
                 .foregroundStyle(.green)
             Text("Saved to SAM")
                 .font(.title.bold())
-            Text("The transcript is now a note with linked evidence. You can find it under People for any linked contact.")
+            Text("The transcript is saved as a note in SAM and linked to everyone you mentioned. You can find it under each person's profile in People.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

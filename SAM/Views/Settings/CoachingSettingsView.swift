@@ -209,12 +209,12 @@ struct CoachingSettingsContent: View {
                 }
             }
 
-            // ── Outcome Preferences ──
+            // ── Suggestion Type Preferences ──
             if !ledger.kindStats.isEmpty {
                 Divider()
                     .padding(.vertical, 4)
 
-                Text("Outcome Preferences")
+                Text("Which kinds of suggestions you act on")
                     .samFont(.subheadline)
                     .fontWeight(.medium)
 
@@ -426,7 +426,7 @@ struct CoachingSettingsContent: View {
                     Task { await CalibrationService.shared.resetAll() }
                 }
             } message: {
-                Text("This clears all learned preferences, timing data, and calibration. SAM will start fresh.")
+                Text("This clears everything SAM has learned about how you work — your preferences, your timing patterns, and which kinds of suggestions you act on. SAM will start fresh.")
             }
         }
     }
