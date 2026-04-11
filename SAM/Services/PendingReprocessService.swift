@@ -102,6 +102,14 @@ final class PendingReprocessService {
         let attrs = try? FileManager.default.attributesOfItem(atPath: wavURL.path)
         logger.notice("WAV file size on disk: \(attrs?[.size] as? Int64 ?? -1) bytes")
 
+        #if DEBUG
+        // Compute the WAV content hash once if the stage cache is enabled —
+        // it's the input shared by Whisper and diarization, and the file
+        // SHA256 dominates cache-key cost on multi-MB recordings.
+        let wavHash: String? = StageCache.enabled ? StageCache.sha256(file: wavURL) : nil
+        let stageCache = StageCache()
+        #endif
+
         // MARK: 1. Ensure Whisper model is loaded
         state = .loadingWAV
         let stage1Start = Date()
@@ -118,6 +126,44 @@ final class PendingReprocessService {
         state = .transcribing
         let stage2Start = Date()
         logger.notice("⏳ Stage 2 (Whisper transcription) starting on \(metadata.durationSeconds)s of audio...")
+
+        let modelID = WhisperTranscriptionService.shared.currentModelID
+            ?? WhisperTranscriptionService.defaultModelID
+
+        #if DEBUG
+        let whisperKey: String? = {
+            guard StageCache.enabled, let wavHash else { return nil }
+            return StageCache.compositeKey(
+                "whisper",
+                StageCache.Version.whisper,
+                modelID,
+                wavHash
+            )
+        }()
+
+        let whisperResult: WhisperTranscriptionService.TranscriptResult
+        if let key = whisperKey,
+           let cached = stageCache.get(
+               stage: "whisper",
+               key: key,
+               as: WhisperTranscriptionService.TranscriptResult.self
+           ) {
+            whisperResult = cached
+            logger.notice("✅ Stage 2 (Whisper): CACHE HIT — \(cached.segments.count) segments restored")
+        } else {
+            do {
+                whisperResult = try await WhisperTranscriptionService.shared.transcribe(fileURL: wavURL)
+            } catch {
+                logger.error("❌ Reprocess: Whisper transcription failed after \(String(format: "%.1f", Date().timeIntervalSince(stage2Start)))s: \(error.localizedDescription)")
+                state = .failed(error.localizedDescription)
+                return (false, "Transcription failed: \(error.localizedDescription)")
+            }
+            if let key = whisperKey {
+                stageCache.put(stage: "whisper", key: key, value: whisperResult)
+            }
+            logger.notice("✅ Stage 2 (Whisper): \(String(format: "%.1f", Date().timeIntervalSince(stage2Start)))s — returned \(whisperResult.segments.count) segments")
+        }
+        #else
         let whisperResult: WhisperTranscriptionService.TranscriptResult
         do {
             whisperResult = try await WhisperTranscriptionService.shared.transcribe(fileURL: wavURL)
@@ -127,6 +173,7 @@ final class PendingReprocessService {
             return (false, "Transcription failed: \(error.localizedDescription)")
         }
         logger.notice("✅ Stage 2 (Whisper): \(String(format: "%.1f", Date().timeIntervalSince(stage2Start)))s — returned \(whisperResult.segments.count) segments")
+        #endif
 
         // MARK: 3. Diarize — load PCM, run full-file clustering
         state = .diarizing
@@ -140,6 +187,63 @@ final class PendingReprocessService {
         logger.notice("Diarization: loaded \(monoSamples?.count ?? 0) mono float samples")
 
         let enrolledEmbedding = loadEnrolledAgentEmbedding(container: modelContainer)
+
+        #if DEBUG
+        // Diarization key includes the WAV hash, the agent embedding hash
+        // (so re-enrolling invalidates), and the tunable thresholds. We
+        // intentionally include the floats so threshold tuning sweeps don't
+        // see stale results.
+        let diarizationKey: String? = {
+            guard StageCache.enabled, let wavHash else { return nil }
+            let svc = DiarizationService.shared
+            let enrolledHash: String = {
+                guard let e = enrolledEmbedding, !e.isEmpty else { return "none" }
+                return StageCache.sha256(e.map { String($0) }.joined(separator: ",")).prefix(16).description
+            }()
+            return StageCache.compositeKey(
+                "diarization",
+                StageCache.Version.diarization,
+                wavHash,
+                "sr=\(metadata.sampleRate)",
+                "ch=\(metadata.channels)",
+                "merge=\(svc.clusterMergeThreshold)",
+                "agent=\(svc.agentMatchThreshold)",
+                "vad=\(svc.vadEnergyThreshold)",
+                "minSeg=\(svc.minSegmentDuration)",
+                "minSil=\(svc.minSilenceGap)",
+                "enrolled=\(enrolledHash)"
+            )
+        }()
+
+        let diarization: DiarizationService.DiarizationResult
+        if let key = diarizationKey,
+           let cached = stageCache.get(
+               stage: "diarization",
+               key: key,
+               as: DiarizationService.DiarizationResult.self
+           ) {
+            diarization = cached
+            logger.notice("✅ Stage 3 (diarization): CACHE HIT — \(cached.segments.count) voice segments, \(cached.centroids.count) clusters")
+        } else if let monoSamples, !monoSamples.isEmpty {
+            diarization = DiarizationService.shared.diarize(
+                samples: monoSamples,
+                sampleRate: Double(metadata.sampleRate),
+                startOffset: 0,
+                enrolledAgentEmbedding: enrolledEmbedding
+            )
+            if let key = diarizationKey {
+                stageCache.put(stage: "diarization", key: key, value: diarization)
+            }
+            logger.notice("✅ Stage 3 (diarization): \(String(format: "%.1f", Date().timeIntervalSince(stage3Start)))s — \(diarization.segments.count) voice segments, \(diarization.centroids.count) clusters")
+        } else {
+            logger.warning("Reprocess: could not load PCM for diarization; all segments will be single speaker")
+            diarization = DiarizationService.DiarizationResult(
+                segments: [],
+                centroids: [:],
+                agentClusterID: nil
+            )
+        }
+        #else
         let diarization: DiarizationService.DiarizationResult
         if let monoSamples, !monoSamples.isEmpty {
             diarization = DiarizationService.shared.diarize(
@@ -157,6 +261,7 @@ final class PendingReprocessService {
             )
         }
         logger.notice("✅ Stage 3 (diarization): \(String(format: "%.1f", Date().timeIntervalSince(stage3Start)))s — \(diarization.segments.count) voice segments, \(diarization.centroids.count) clusters")
+        #endif
 
         // MARK: 4. Persist transcript to SwiftData
         state = .persisting
@@ -454,6 +559,38 @@ final class PendingReprocessService {
 
         let knownNouns = await TranscriptPolishService.gatherKnownNouns(from: container, maxContacts: 60)
 
+        #if DEBUG
+        let stageCache = StageCache()
+        let polishKey: String? = {
+            guard StageCache.enabled else { return nil }
+            let promptHash = StageCache.sha256(TranscriptPolishService.systemInstruction())
+            let nounsHash = StageCache.sha256(knownNouns.sorted().joined(separator: "|"))
+            let transcriptHash = StageCache.sha256(transcriptText)
+            return StageCache.compositeKey(
+                "polish",
+                StageCache.Version.polish,
+                transcriptHash,
+                nounsHash,
+                promptHash
+            )
+        }()
+
+        if let key = polishKey,
+           let cached = stageCache.get(stage: "polish", key: key, as: String.self) {
+            let context = ModelContext(container)
+            let descriptor = FetchDescriptor<TranscriptSession>(
+                predicate: #Predicate { $0.id == sessionID }
+            )
+            if let fresh = try? context.fetch(descriptor).first {
+                fresh.polishedText = cached
+                fresh.polishedAt = .now
+                try? context.save()
+                logger.notice("✅ Polish: CACHE HIT — \(cached.count) chars restored")
+            }
+            return
+        }
+        #endif
+
         do {
             let polished = try await TranscriptPolishService.shared.polish(
                 transcript: transcriptText,
@@ -470,6 +607,12 @@ final class PendingReprocessService {
                 try context.save()
                 logger.info("Reprocess polish: saved \(polished.count) chars")
             }
+
+            #if DEBUG
+            if let key = polishKey {
+                stageCache.put(stage: "polish", key: key, value: polished)
+            }
+            #endif
         } catch {
             logger.warning("Reprocess polish failed: \(error.localizedDescription)")
         }
@@ -515,6 +658,41 @@ final class PendingReprocessService {
             recordedAt: session.recordedAt
         )
 
+        #if DEBUG
+        let stageCache = StageCache()
+        let summaryKey: String? = {
+            guard StageCache.enabled else { return nil }
+            let promptHash = StageCache.sha256(MeetingSummaryService.systemInstruction())
+            let transcriptHash = StageCache.sha256(transcriptText)
+            // Metadata fields that affect the prompt body. recordedAt
+            // intentionally excluded — it's display-only and would defeat
+            // caching across re-runs of the same fixture.
+            let metaKey = "dur=\(Int(metadata.durationSeconds))|spk=\(metadata.speakerCount)|lang=\(metadata.detectedLanguage ?? "")"
+            return StageCache.compositeKey(
+                "summary",
+                StageCache.Version.summary,
+                transcriptHash,
+                metaKey,
+                promptHash
+            )
+        }()
+
+        if let key = summaryKey,
+           let cached = stageCache.get(stage: "summary", key: key, as: MeetingSummary.self) {
+            let context = ModelContext(container)
+            let descriptor = FetchDescriptor<TranscriptSession>(
+                predicate: #Predicate { $0.id == sessionID }
+            )
+            if let fresh = try? context.fetch(descriptor).first {
+                fresh.meetingSummaryJSON = cached.toJSONString()
+                fresh.summaryGeneratedAt = .now
+                try? context.save()
+                logger.notice("✅ Summary: CACHE HIT — \(cached.actionItems.count) action items restored")
+            }
+            return
+        }
+        #endif
+
         do {
             let summary = try await MeetingSummaryService.shared.summarize(
                 transcript: transcriptText,
@@ -530,6 +708,12 @@ final class PendingReprocessService {
                 try context.save()
                 logger.info("Reprocess summary: saved (\(summary.actionItems.count) action items)")
             }
+
+            #if DEBUG
+            if let key = summaryKey {
+                stageCache.put(stage: "summary", key: key, value: summary)
+            }
+            #endif
         } catch {
             logger.warning("Reprocess summary failed: \(error.localizedDescription)")
         }

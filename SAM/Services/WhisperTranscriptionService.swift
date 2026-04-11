@@ -30,20 +30,20 @@ final class WhisperTranscriptionService {
         case failed(String)
     }
 
-    struct TranscriptResult: Sendable {
+    struct TranscriptResult: Sendable, Codable {
         let text: String
         let segments: [Segment]
         let detectedLanguage: String?
         let modelID: String
 
-        struct Segment: Sendable {
+        struct Segment: Sendable, Codable {
             let text: String
             let start: TimeInterval
             let end: TimeInterval
             let words: [Word]
         }
 
-        struct Word: Sendable {
+        struct Word: Sendable, Codable {
             let word: String
             let start: TimeInterval
             let end: TimeInterval

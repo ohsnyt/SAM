@@ -88,8 +88,15 @@ final class TestInboxWatcher {
             try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         }
 
+        // Opt this DEBUG-only process into the stage cache. The cache is
+        // disabled by default in PendingReprocessService — this single line
+        // is what makes the test harness reuse Whisper/diarize/polish/summary
+        // outputs across runs when their inputs haven't changed.
+        StageCache.enabled = true
+
         state = .watching
         logger.notice("📬 TestInboxWatcher started — polling \(self.inboxDirectory.path)")
+        logger.notice("💾 StageCache enabled — re-runs will skip stages with unchanged inputs")
 
         // Poll once a second for new fixtures. Polling is simpler than
         // FSEvents for our use case (low frequency, predictable inputs)

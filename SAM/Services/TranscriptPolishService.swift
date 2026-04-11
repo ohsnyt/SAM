@@ -139,7 +139,10 @@ actor TranscriptPolishService {
 
     // MARK: - Prompt
 
-    private static func systemInstruction() -> String {
+    /// Internal so the test harness's stage cache can hash the active prompt
+    /// into its cache key — when the user edits the prompt, the cache key
+    /// changes and polish re-runs without needing a manual version bump.
+    static func systemInstruction() -> String {
         let custom = UserDefaults.standard.string(forKey: "sam.ai.transcriptPolishPrompt") ?? ""
         if !custom.isEmpty { return custom }
 

@@ -53,22 +53,61 @@ final class DiarizationService {
 
     // MARK: - Types
 
-    struct VoiceSegment: Sendable, Equatable {
+    struct VoiceSegment: Sendable, Equatable, Codable {
         let start: TimeInterval  // relative to input buffer start
         let end: TimeInterval
         var embedding: [Float]
         var clusterID: Int       // assigned by clustering; -1 before
     }
 
-    struct DiarizationResult: Sendable {
+    struct DiarizationResult: Sendable, Codable {
         /// Voice segments with speaker cluster IDs assigned.
         let segments: [VoiceSegment]
 
-        /// Cluster centroids keyed by cluster ID.
+        /// Cluster centroids keyed by cluster ID. Stored as a string-keyed
+        /// dictionary on the wire to satisfy JSON encoding rules.
         let centroids: [Int: [Float]]
 
         /// Which cluster ID is the agent (nil if none matched or no enrolled profile).
         let agentClusterID: Int?
+
+        // MARK: - Codable
+
+        private enum CodingKeys: String, CodingKey {
+            case segments
+            case centroids
+            case agentClusterID
+        }
+
+        init(segments: [VoiceSegment], centroids: [Int: [Float]], agentClusterID: Int?) {
+            self.segments = segments
+            self.centroids = centroids
+            self.agentClusterID = agentClusterID
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            segments = try c.decode([VoiceSegment].self, forKey: .segments)
+            agentClusterID = try c.decodeIfPresent(Int.self, forKey: .agentClusterID)
+            // Centroids: encoded as [String: [Float]] for JSON compatibility
+            let stringKeyed = try c.decode([String: [Float]].self, forKey: .centroids)
+            var converted: [Int: [Float]] = [:]
+            for (k, v) in stringKeyed {
+                if let intKey = Int(k) { converted[intKey] = v }
+            }
+            centroids = converted
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            try c.encode(segments, forKey: .segments)
+            try c.encodeIfPresent(agentClusterID, forKey: .agentClusterID)
+            var stringKeyed: [String: [Float]] = [:]
+            for (k, v) in centroids {
+                stringKeyed[String(k)] = v
+            }
+            try c.encode(stringKeyed, forKey: .centroids)
+        }
 
         /// Number of distinct speaker clusters detected.
         var speakerCount: Int { centroids.count }

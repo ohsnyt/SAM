@@ -122,7 +122,10 @@ actor MeetingSummaryService {
 
     // MARK: - Prompt
 
-    private static func systemInstruction() -> String {
+    /// Internal so the test harness's stage cache can hash the active prompt
+    /// into its cache key — edits to the prompt invalidate the summary cache
+    /// automatically without needing a manual version bump.
+    static func systemInstruction() -> String {
         // Allow user override via Settings
         let custom = UserDefaults.standard.string(forKey: "sam.ai.meetingSummaryPrompt") ?? ""
         if !custom.isEmpty { return custom }

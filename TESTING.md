@@ -166,6 +166,46 @@ The **`vs. realtime`** number is the key headline metric. It's wall-clock time d
 
 ---
 
+## Stage cache (Breakthrough #1)
+
+When `TestInboxWatcher` starts it flips on a content-hash cache that stores each pipeline stage's output to disk. Re-running a fixture with **unchanged inputs** reuses the cached results — typically reducing a 30-second cycle to **<1 second**.
+
+### What gets cached
+
+| Stage      | Cache key inputs                                              | Cached value          |
+|------------|---------------------------------------------------------------|-----------------------|
+| Whisper    | WAV file SHA256, model ID, version constant                   | `TranscriptResult`    |
+| Diarization| WAV SHA256, sample rate, thresholds (merge/agent/VAD), enrolled embedding hash, version | `DiarizationResult`   |
+| Polish     | Transcript text SHA256, known nouns SHA256, polish prompt SHA256, version | Polished text string |
+| Summary    | Transcript text SHA256, metadata fields, summary prompt SHA256, version  | `MeetingSummary` JSON |
+
+The cache key includes the **active prompt text**, so editing the polish or summary prompt in Settings (or in the source) automatically invalidates only that downstream stage. Whisper and diarization continue to hit.
+
+### Where cached files live
+
+```
+~/Library/Containers/sam.SAM/Data/Library/Application Support/SAM-StageCache/
+├── whisper/<sha256>.json
+├── diarization/<sha256>.json
+├── polish/<sha256>.json
+└── summary/<sha256>.json
+```
+
+### Manual invalidation
+
+Two ways to force a re-run of a stage:
+
+1. **Bump the version constant** in `SAM/Services/StageCache.swift` (`Version.whisper`, etc.) — invalidates every cached entry for that stage.
+2. **Wipe the directory** — `rm -rf ~/Library/Containers/sam.SAM/Data/Library/Application\ Support/SAM-StageCache`.
+
+### When NOT to trust the cache
+
+The cache is keyed on inputs the test harness can see. If you change something the harness can't observe — for example, you modify `WhisperTranscriptionService.cleanWhisperText()` post-processing — bump `Version.whisper` so the cached results are invalidated.
+
+The cache is **DEBUG-only** and **disabled by default**. Production builds and SAM running outside the harness never read or write the cache.
+
+---
+
 ## Writing new scenarios
 
 A scenario is a plain text file in `tools/test-kit/scenarios/`. Format:
