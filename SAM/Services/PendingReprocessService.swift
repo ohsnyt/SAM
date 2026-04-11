@@ -600,10 +600,27 @@ final class PendingReprocessService {
         let knownNouns = await TranscriptPolishService.gatherKnownNouns(from: container, maxContacts: 60)
 
         do {
-            let polished = try await TranscriptPolishService.shared.polish(
-                transcript: transcriptText,
-                knownNouns: knownNouns
-            )
+            // Apple Intelligence may not be available immediately after a
+            // cold launch — checkAvailability returns .unavailable for the
+            // first ~30-60s while the foundation model warms up. Without
+            // a retry, the very first polish call after launch silently
+            // fails and polishedText stays nil. Retry once after a short
+            // delay so cold-launch test runs (and real first sessions
+            // after the user opens SAM) actually get polished output.
+            var polished: String
+            do {
+                polished = try await TranscriptPolishService.shared.polish(
+                    transcript: transcriptText,
+                    knownNouns: knownNouns
+                )
+            } catch TranscriptPolishService.PolishError.modelUnavailable {
+                logger.notice("Polish: model not ready, waiting 3s and retrying once...")
+                try? await Task.sleep(for: .seconds(3))
+                polished = try await TranscriptPolishService.shared.polish(
+                    transcript: transcriptText,
+                    knownNouns: knownNouns
+                )
+            }
 
             let context = ModelContext(container)
             let descriptor = FetchDescriptor<TranscriptSession>(
@@ -702,10 +719,24 @@ final class PendingReprocessService {
         #endif
 
         do {
-            let summary = try await MeetingSummaryService.shared.summarize(
-                transcript: transcriptText,
-                metadata: metadata
-            )
+            // Same warmup-retry as polish: AI may not be ready on first
+            // launch and the first call after a fresh process start can
+            // throw .modelUnavailable. Retry once after a short delay.
+            var summary: MeetingSummary
+            do {
+                summary = try await MeetingSummaryService.shared.summarize(
+                    transcript: transcriptText,
+                    metadata: metadata
+                )
+            } catch MeetingSummaryService.SummaryError.modelUnavailable {
+                logger.notice("Summary: model not ready, waiting 3s and retrying once...")
+                try? await Task.sleep(for: .seconds(3))
+                summary = try await MeetingSummaryService.shared.summarize(
+                    transcript: transcriptText,
+                    metadata: metadata
+                )
+            }
+
             let context = ModelContext(container)
             let descriptor = FetchDescriptor<TranscriptSession>(
                 predicate: #Predicate { $0.id == sessionID }
