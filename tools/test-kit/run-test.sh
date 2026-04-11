@@ -109,6 +109,16 @@ cat > "$META_PATH" <<EOF
 }
 EOF
 
+# Breakthrough #3: if a golden baseline exists for this scenario, copy it
+# into the inbox alongside the fixture so the watcher can run the
+# regression judge after the pipeline completes.
+GOLDEN_SOURCE="$SCRIPT_DIR/golden/${SCENARIO_NAME}.golden.json"
+if [[ -f "$GOLDEN_SOURCE" ]]; then
+    GOLDEN_DEST="$INBOX/${FIXTURE_NAME}.golden.json"
+    cp "$GOLDEN_SOURCE" "$GOLDEN_DEST"
+    echo "▶ Golden baseline available — regression check will run" >&2
+fi
+
 echo "▶ Dropped fixture into inbox, waiting for result (timeout: ${TIMEOUT_SECONDS}s)" >&2
 
 # Poll for the result file
@@ -131,6 +141,42 @@ ELAPSED_TOTAL=$(($(date +%s) - START_TIME))
 echo "✅ Result received after ${ELAPSED_TOTAL}s" >&2
 echo "" >&2
 
+# If there's a regression verdict, surface it prominently before the JSON.
+if command -v jq >/dev/null 2>&1; then
+    VERDICT=$(jq -r '.regression.overallKind // empty' "$RESULT_PATH" 2>/dev/null)
+    if [[ -n "$VERDICT" ]]; then
+        VERDICT_SUMMARY=$(jq -r '.regression.summary // ""' "$RESULT_PATH" 2>/dev/null)
+        case "$VERDICT" in
+            IDENTICAL)
+                echo "✅ REGRESSION CHECK: IDENTICAL — $VERDICT_SUMMARY" >&2
+                ;;
+            COSMETIC_DRIFT)
+                echo "✅ REGRESSION CHECK: COSMETIC_DRIFT — $VERDICT_SUMMARY" >&2
+                ;;
+            IMPROVEMENT)
+                echo "🎉 REGRESSION CHECK: IMPROVEMENT — $VERDICT_SUMMARY" >&2
+                ;;
+            REGRESSION)
+                echo "❌ REGRESSION CHECK: REGRESSION — $VERDICT_SUMMARY" >&2
+                # Print the failing field details
+                jq -r '.regression.fieldVerdicts[] | select(.kind == "REGRESSION") | "    - \(.field): \(.reason)"' "$RESULT_PATH" >&2
+                ;;
+            NEEDS_REVIEW)
+                echo "🟡 REGRESSION CHECK: NEEDS_REVIEW — $VERDICT_SUMMARY" >&2
+                jq -r '.regression.fieldVerdicts[] | select(.kind == "NEEDS_REVIEW") | "    - \(.field): \(.reason)"' "$RESULT_PATH" >&2
+                ;;
+        esac
+        echo "" >&2
+    fi
+fi
+
 # Print the result file directly. The user (or the agent reading this)
 # can pipe to jq for formatted output.
 cat "$RESULT_PATH"
+
+# Exit non-zero on regression so CI / scripts can detect it
+if command -v jq >/dev/null 2>&1; then
+    if [[ "$(jq -r '.regression.overallKind // empty' "$RESULT_PATH" 2>/dev/null)" == "REGRESSION" ]]; then
+        exit 3
+    fi
+fi

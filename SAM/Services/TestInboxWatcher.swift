@@ -227,7 +227,7 @@ final class TestInboxWatcher {
         let cycleElapsed = Date().timeIntervalSince(cycleStart)
 
         // Fetch the saved session to extract detailed results
-        let resultPayload = await buildResultPayload(
+        var resultPayload = await buildResultPayload(
             scenarioID: metadata.scenarioID,
             sessionID: sessionID,
             container: container,
@@ -236,6 +236,27 @@ final class TestInboxWatcher {
             cycleElapsed: cycleElapsed,
             metadata: metadata
         )
+
+        // Breakthrough #3: if the test runner dropped a `<basename>.golden.json`
+        // alongside the fixture, run the regression judge against it.
+        let goldenURL = inboxDirectory.appendingPathComponent("\(basename).golden.json")
+        if FileManager.default.fileExists(atPath: goldenURL.path),
+           result.success {
+            if let goldenData = try? Data(contentsOf: goldenURL),
+               let golden = try? jsonDecoder().decode(TestResultPayload.self, from: goldenData) {
+                let verdict = await RegressionJudgeService.shared.judge(
+                    scenarioID: metadata.scenarioID,
+                    golden: golden,
+                    current: resultPayload
+                )
+                resultPayload.regression = verdict
+                logger.notice("⚖️ Regression: \(verdict.overallKind.rawValue) — \(verdict.summary)")
+            } else {
+                logger.warning("⚖️ Found golden but failed to decode: \(goldenURL.lastPathComponent)")
+            }
+            // Clean up the inbox golden — it's transient
+            try? FileManager.default.removeItem(at: goldenURL)
+        }
 
         // Write the result JSON to the outbox
         let resultURL = outboxDirectory.appendingPathComponent("\(basename)-result.json")
@@ -342,6 +363,14 @@ final class TestInboxWatcher {
         return String(format: "%02d:%02d", mins, secs)
     }
 
+    /// Decoder configured to read TestResultPayload JSON written by the
+    /// outbox encoder (ISO8601 dates, sorted keys, pretty printed).
+    private func jsonDecoder() -> JSONDecoder {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
+    }
+
     // MARK: - Metrics
 
     private func appendMetricsLine(_ result: TestResultPayload) {
@@ -389,6 +418,13 @@ final class TestInboxWatcher {
 
         try? FileManager.default.moveItem(at: jsonURL, to: destJSON)
         try? FileManager.default.moveItem(at: wavURL, to: destWAV)
+
+        // Clean up any leftover golden file from this fixture (Breakthrough
+        // #3). The judge block in processFixture removes it when used; this
+        // catches the case where the judge wasn't run (no golden expected,
+        // or run against an old build that didn't know about goldens).
+        let goldenURL = inboxDirectory.appendingPathComponent("\(basename).golden.json")
+        try? FileManager.default.removeItem(at: goldenURL)
     }
 
     private func moveFixtureToFailed(jsonURL: URL, wavURL: URL, reason: String) async {
@@ -437,6 +473,7 @@ struct TestResultPayload: Codable, Sendable {
     var wallClockSeconds: TimeInterval
     var input: Input
     var output: Output
+    var regression: RegressionJudgeService.Verdict? = nil
 
     struct Input: Codable, Sendable {
         var durationSeconds: TimeInterval

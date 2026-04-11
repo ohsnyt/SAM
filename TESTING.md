@@ -278,6 +278,86 @@ Reset the override and the cache key reverts to the source-default's hash — wh
 
 ---
 
+## Regression testing (Breakthrough #3)
+
+Cycle time without regression detection only tells you whether the pipeline *runs*. It doesn't tell you whether the polish quality silently degraded after a prompt edit, whether diarization started misclassifying a speaker, or whether summary stopped extracting an action item. Traditional snapshot tests fail on cosmetic LLM drift, so they're useless for grading FoundationModels output. The harness now uses an **LLM-as-judge** approach instead.
+
+### How it works
+
+When `./run-test.sh <scenario>` runs, if a `golden/<scenario>.golden.json` file exists, the script copies it into the inbox alongside the WAV. The watcher detects the golden, runs the pipeline, then invokes `RegressionJudgeService`, which performs:
+
+**Tier 1 — deterministic comparison.** Exact-match check on:
+- `segmentCount`, `speakerCount`
+- All summary counts: action items, decisions, follow-ups, topics, life events, compliance flags
+- `detectedLanguage`
+- `transcriptSample` (raw Whisper output, byte-stable)
+
+Any difference here is automatically classified as `REGRESSION`.
+
+**Tier 2 — LLM judge.** For the stochastic text fields (`polishedSample`, `summaryTLDR`), the judge sends `{golden, current}` to the on-device foundation model with a focused prompt asking for one of:
+
+| Verdict | Meaning |
+|---|---|
+| `IDENTICAL` | Byte-for-byte the same |
+| `COSMETIC_DRIFT` | Different wording, same meaning, same named entities, same facts. Test passes. |
+| `IMPROVEMENT` | Current output is genuinely better. Consider re-recording the golden. |
+| `REGRESSION` | Current output dropped information present in the golden, mis-attributed a speaker, fabricated content, or otherwise made the output worse. Test fails. |
+| `NEEDS_REVIEW` | Judge couldn't decide with confidence. Surfaced for human attention. |
+
+The judge prompt is anchored — it asks "did this regress relative to the baseline" rather than "is this output good in absolute terms" — which sidesteps the well-known LLM-judge bias of a model grading its own output favorably.
+
+### Daily workflow
+
+```bash
+# 1. One-time: capture a baseline after manually inspecting a result
+./run-test.sh short-single-point
+# manually inspect the result, decide it's correct
+./record-golden.sh short-single-point
+
+# 2. From now on, every run reports a verdict
+./run-test.sh short-single-point
+# Output ends with:
+#   ✅ REGRESSION CHECK: COSMETIC_DRIFT — Same meaning, different word order
+```
+
+### Reading the verdict
+
+Run-test.sh exits with:
+- `0` on `IDENTICAL`, `COSMETIC_DRIFT`, `IMPROVEMENT`, `NEEDS_REVIEW`, or no golden present
+- `3` on `REGRESSION` — so CI scripts can detect failures via `$?`
+
+Inside the result JSON, the full verdict block looks like:
+
+```json
+"regression": {
+  "overallKind": "REGRESSION",
+  "summary": "Polished text dropped the named entity 'Sarah Johnson'.",
+  "judgeDurationSeconds": 2.3,
+  "fieldVerdicts": [
+    { "field": "segmentCount", "kind": "IDENTICAL", "reason": "matches (5)" },
+    { "field": "polishedSample", "kind": "REGRESSION", "reason": "Current omits 'Sarah Johnson' which was present in golden." }
+  ]
+}
+```
+
+### Updating goldens
+
+When you intentionally improve a prompt (or accept stochastic drift), re-record the golden:
+
+```bash
+./run-test.sh short-single-point          # produce a fresh result you trust
+./record-golden.sh short-single-point     # overwrite with confirmation prompt
+./record-golden.sh short-single-point --force   # skip confirmation
+```
+
+Goldens are checked into git under `tools/test-kit/golden/` so reviewers can see baseline changes in PRs alongside the code that caused them.
+
+### Cost
+
+The judge call adds ~2-3s per scenario (one extra Apple Intelligence inference per text field) on a cache hit. The deterministic tier is free. Combined with the stage cache, a regression-checked test cycle is still well under 10 seconds end-to-end for short scenarios.
+
+---
+
 ## Writing new scenarios
 
 A scenario is a plain text file in `tools/test-kit/scenarios/`. Format:
@@ -350,19 +430,23 @@ Check `output.transcriptSample` for the first 50 segments. If you see:
 ```
 SAM/Services/TestInboxWatcher.swift     # The watcher service (DEBUG only)
 SAM/Services/StageCache.swift           # Content-hash cache (Breakthrough #1, DEBUG only)
+SAM/Services/RegressionJudgeService.swift  # LLM-as-judge regression detector (Breakthrough #3, DEBUG only)
 tools/test-kit/
 ├── generate-audio.sh                   # Synthesize WAV from scenario script
-├── run-test.sh                         # Drive a single test cycle
+├── run-test.sh                         # Drive a single test cycle (with optional regression check)
 ├── run-all.sh                          # Run every scenario sequentially
 ├── metrics-report.sh                   # Aggregate cycles.jsonl into a report
 ├── prompts.sh                          # Edit polish/summary prompts (Breakthrough #2)
-└── scenarios/
-    ├── short-single-point.txt
-    ├── medium-three-topic.txt
-    ├── long-five-topic.txt
-    ├── numbers-and-dates.txt
-    ├── silence-mixed.txt
-    └── four-speaker-conference.txt
+├── record-golden.sh                    # Capture a baseline result (Breakthrough #3)
+├── scenarios/
+│   ├── short-single-point.txt
+│   ├── medium-three-topic.txt
+│   ├── long-five-topic.txt
+│   ├── numbers-and-dates.txt
+│   ├── silence-mixed.txt
+│   └── four-speaker-conference.txt
+└── golden/                             # Hand-validated baseline outputs (in git)
+    └── <scenario>.golden.json
 ```
 
 `~/Library/Containers/sam.SAM/Data/Documents/SAM-TestKit/` (created on first launch):
