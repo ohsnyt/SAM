@@ -1,0 +1,27 @@
+# description: Conversation dense with industry jargon and difficult proper nouns to stress ASR + polish
+# expectedSpeakers: 2
+# expectedTopics: 3
+# expectedActionItems: 2
+#
+# Tests two things:
+#   1. Whether the polish step preserves industry jargon (IUL, SEP-IRA,
+#      indexed annuity, fiduciary, basis points) instead of "correcting"
+#      it to plausible-sounding wrong words.
+#   2. Whether tricky proper nouns survive the round-trip from say-synth
+#      audio through Whisper through polish. Names like "Wojciechowski"
+#      and "Saoirse" are realistic for a financial advisor's book and
+#      regularly trip up ASR systems.
+#
+# Sarah's coaching value collapses if SAM keeps mangling client names —
+# she will stop trusting the auto-saved notes.
+
+ALEX: Hi Saoirse, thanks for joining today. I have your IUL illustration ready.
+KAREN: Hi Alex. I have been looking forward to going through this. Just so you know, my last name is spelled W O J C I E C H O W S K I but it is pronounced voy-cha-howski.
+ALEX: Got it, Saoirse Wojciechowski. I will make sure the policy paperwork has it correct. So the indexed universal life policy we discussed has a face amount of one and a half million dollars, with an annual premium of twelve thousand dollars going into the cash value subaccounts.
+KAREN: And remind me, what is the cap rate on the index strategy?
+ALEX: Right now the carrier is offering a nine percent annual cap on the S&P 500 point to point strategy with a zero percent floor. That has come down twenty five basis points from last year because of how rates have moved.
+KAREN: Got it. And what about the SEP-IRA contribution we talked about for my consulting business?
+ALEX: For tax year 2026 you can contribute up to twenty five percent of your net self employment income, capped at sixty nine thousand dollars. You have until the extended filing deadline next October to fund it for this year.
+KAREN: Perfect. I want to do both. Let us move forward with the IUL and I will get you my consulting K-1 numbers as soon as my CPA has them.
+ALEX: Sounds great. I will email you the application packet tomorrow morning. As your fiduciary I want to flag that the IUL has a ten year surrender period, and we should review the policy performance every year to make sure the loan strategy stays on track.
+KAREN: Understood. Thank you Alex.

@@ -1,0 +1,23 @@
+# description: Client check-in revealing a recent bereavement that should trigger empathetic follow-up
+# expectedSpeakers: 2
+# expectedTopics: 2
+# expectedActionItems: 2
+#
+# Tests SAM's ability to extract life events from natural conversation.
+# An advisor's coaching value is partly about catching these moments and
+# responding with appropriate sensitivity instead of jumping to product
+# discussions. SAM should pull "Margaret's husband passed away" into the
+# lifeEvents array so Sarah's daily briefing surfaces it, and the
+# follow-up suggestions should lean toward relationship maintenance, not
+# transactions.
+
+ALEX: Hi Margaret, thank you for taking the time today. How have you been since we last talked?
+KAREN: It has been a hard couple of months, Alex. My husband Robert passed away in February. The funeral was the second week of February. I am still figuring everything out.
+ALEX: Margaret, I am so sorry for your loss. There is no rush on anything we discuss today. Please let me know if I can do anything personally to help during this time.
+KAREN: Thank you. I appreciate that. I do need to start thinking about the survivor benefit on Robert's pension and what to do with his retirement account.
+ALEX: Of course. We can take that as slow as you want. Before we get into any of the financial pieces, can I ask, do you have your support system around you? Family nearby, anyone helping with the day to day?
+KAREN: My daughter has been here every weekend. She wants me to move closer to her in Charlotte but I am not sure I am ready to leave the house.
+ALEX: That is a big decision and one you do not need to make right now. Let us focus on the immediate things. I will pull together a checklist of accounts we need to retitle and survivor benefit forms we should file. I will email it to you by Friday so you can look at it on your own time.
+KAREN: That would help a lot. Thank you Alex.
+ALEX: One more thing. I would like to call you in two weeks just to check in, not about anything specific, just to see how you are doing. Would that be okay?
+KAREN: Yes, I would like that.

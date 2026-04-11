@@ -1,0 +1,22 @@
+# description: Joint meeting with three named action items each owned by different people
+# expectedSpeakers: 2
+# expectedTopics: 3
+# expectedActionItems: 4
+#
+# Tests action item extraction with explicit owners and due dates. The
+# summary should produce four action items, each with the correct owner
+# field ("Agent", "Jennifer", "David"), and the dueDate fields should
+# preserve the relative dates ("Tuesday", "by next Friday", "before our
+# next meeting on the 18th"). This is critical for SAM's coaching value:
+# Sarah relies on these to never drop a follow-up commitment.
+
+ALEX: Thanks for both joining us, Jennifer and David. The goal today is to wrap up the rollover paperwork and align on what each of us is doing before our next meeting on the 18th.
+KAREN: Sounds good. I want to make sure we are not missing anything because we are flying out for the cruise on the 21st.
+ALEX: Got it. So three things on my plate. I will send the rollover forms to your email by Tuesday so you have a few days to review before signing. I will also coordinate with the receiving custodian at Fidelity to make sure they are expecting the transfer. And third, I will prepare the new beneficiary designation forms because David, you mentioned wanting to add your daughter as a contingent.
+KAREN: That is right. Lily, age twelve.
+ALEX: Perfect. Now Jennifer, on your side, can you call your HR contact at the hospital this week and request the in-service distribution form? They typically take three business days to process so we want it filed by next Friday.
+KAREN: I can do that tomorrow morning. I have her cell number.
+ALEX: Excellent. And David, the one thing I need from you before our next meeting is a copy of the trust document. You mentioned your attorney sent it to you last month. If you can email me a PDF before our next meeting on the 18th, I will review it and bring questions.
+KAREN: I will dig it out tonight and send it before the weekend.
+ALEX: Wonderful. So to recap. I will send rollover forms by Tuesday, coordinate with Fidelity, and prepare beneficiary forms. Jennifer will call HR for the distribution request by next Friday. David will send the trust PDF before our next meeting on the 18th. Anything I missed?
+KAREN: I think that covers it.

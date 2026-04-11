@@ -1,0 +1,27 @@
+# description: Sales conversation with multiple compliance-relevant statements that should be flagged
+# expectedSpeakers: 2
+# expectedTopics: 2
+# expectedActionItems: 2
+#
+# This scenario stress-tests the meeting summary's compliance flagging.
+# Independent advisors face real regulatory risk when they make claims
+# about guaranteed returns, comparative product performance, or risk-free
+# alternatives. SAM's summary should pull these out as complianceFlags so
+# Sarah sees them in the post-meeting review and can decide whether to
+# self-report to her supervisor before the client follows up.
+#
+# Lines we expect to see flagged:
+#   - "guaranteed eight percent annual returns"
+#   - "this fund has outperformed the S&P 500 every year since 2015"
+#   - "there is zero risk of losing your principal"
+#   - "the agent rebate of two hundred dollars" (rebating is prohibited)
+
+ALEX: Hi Karen, thanks for coming in. I want to walk you through the indexed annuity I mentioned.
+KAREN: Great. My main concern is keeping my principal safe in retirement.
+ALEX: I understand. The good news is this product has guaranteed eight percent annual returns through the income rider, and there is zero risk of losing your principal because the carrier backstops it.
+KAREN: That sounds almost too good to be true.
+ALEX: I get that reaction a lot. But this fund has outperformed the S&P 500 every year since 2015, and you can verify that on their fact sheet. I'll send you a link.
+KAREN: What about fees?
+ALEX: There is a one and a quarter percent rider fee, and as a thank you for sitting through the presentation today I can offer you an agent rebate of two hundred dollars on the first year premium.
+KAREN: Okay, let me think about it and call you next week.
+ALEX: Sounds good. I'll email you the illustration this afternoon and we can talk Tuesday.

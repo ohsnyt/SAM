@@ -247,8 +247,19 @@ final class RegressionJudgeService {
         current: String,
         role: JudgedTextRole
     ) async -> FieldVerdict {
-        // Trivially identical — skip the LLM call.
-        if golden == current {
+        let goldenTrimmed = golden.trimmingCharacters(in: .whitespacesAndNewlines)
+        let currentTrimmed = current.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // ─── Pre-LLM safety net: deterministic checks ─────────────
+        //
+        // The judge LLM (FoundationModels) is the same model that produced
+        // the polish/summary output, and on short texts it occasionally
+        // hallucinates "byte-for-byte identical" when the texts clearly
+        // differ. We trust it for nuanced semantic comparisons but bracket
+        // its judgment with deterministic guardrails.
+
+        // 1. True byte equality short-circuits the LLM entirely.
+        if goldenTrimmed == currentTrimmed {
             return FieldVerdict(
                 field: field,
                 kind: .identical,
@@ -258,8 +269,35 @@ final class RegressionJudgeService {
             )
         }
 
+        // 2. Length-based suspicion: if current is dramatically longer than
+        //    the golden, the model is almost certainly echoing instructions
+        //    or fabricating content. This is a REGRESSION the LLM tends to
+        //    miss because both texts contain the original transcript.
+        let goldenLen = goldenTrimmed.count
+        let currentLen = currentTrimmed.count
+        let lengthRatio = Double(currentLen) / Double(max(goldenLen, 1))
+        if lengthRatio > 1.40 {
+            return FieldVerdict(
+                field: field,
+                kind: .regression,
+                reason: "Current is \(Int((lengthRatio - 1) * 100))% longer than golden (\(currentLen) vs \(goldenLen) chars). The model likely echoed prompt instructions or fabricated content.",
+                golden: String(golden.prefix(200)),
+                current: String(current.prefix(200))
+            )
+        }
+        if lengthRatio < 0.60 {
+            return FieldVerdict(
+                field: field,
+                kind: .regression,
+                reason: "Current is only \(Int(lengthRatio * 100))% of golden's length (\(currentLen) vs \(goldenLen) chars). Likely lost content.",
+                golden: String(golden.prefix(200)),
+                current: String(current.prefix(200))
+            )
+        }
+
+        // ─── LLM judge for the middle ground ──────────────────────
         let systemInstruction = Self.judgeSystemInstruction(role: role)
-        let prompt = Self.judgePrompt(golden: golden, current: current, role: role)
+        let prompt = Self.judgePrompt(golden: goldenTrimmed, current: currentTrimmed, role: role)
 
         do {
             let response = try await AIService.shared.generate(
@@ -286,11 +324,24 @@ final class RegressionJudgeService {
             }
 
             let parsed = try JSONDecoder().decode(JudgeResponse.self, from: data)
-            let kind = VerdictKind(rawValue: parsed.verdict.uppercased()) ?? .needsReview
+            var kind = VerdictKind(rawValue: parsed.verdict.uppercased()) ?? .needsReview
+            var reason = parsed.reason
+
+            // ─── Post-LLM safety net ──────────────────────────────
+            // The judge sometimes claims IDENTICAL on texts that are
+            // clearly not byte-equal (we already checked above and they
+            // differ here, otherwise we'd have returned earlier). Override
+            // to COSMETIC_DRIFT — same kind in our schema (passing) but
+            // honest about the actual state.
+            if kind == .identical {
+                kind = .cosmeticDrift
+                reason = "Judge claimed IDENTICAL but texts differ; downgraded to COSMETIC_DRIFT. Original judge reason: \(parsed.reason)"
+            }
+
             return FieldVerdict(
                 field: field,
                 kind: kind,
-                reason: parsed.reason,
+                reason: reason,
                 golden: String(golden.prefix(200)),
                 current: String(current.prefix(200))
             )
@@ -391,6 +442,14 @@ final class RegressionJudgeService {
           dropped a specific named fact or entity from the golden.
         - Do not call something an IMPROVEMENT just because it's longer or \
           more detailed.
+        - NEVER claim "IDENTICAL" unless the two texts are character-for-character \
+          the same. If they have any difference in word choice, punctuation, \
+          spacing, or content, the verdict is COSMETIC_DRIFT or worse.
+        - If the CURRENT text contains anything that looks like model \
+          instructions, prompt boilerplate, or meta-commentary about \
+          formatting (e.g. "Return ONLY...", "Output should...", "in the \
+          same paragraph format..."), that is REGRESSION — the model echoed \
+          its instructions instead of producing clean output.
 
         Respond with ONLY a JSON object in this exact shape:
 

@@ -375,15 +375,19 @@ final class TestInboxWatcher {
 
     private func appendMetricsLine(_ result: TestResultPayload) {
         // JSONL: one JSON object per line. Easy to grep and aggregate.
+        // Result fields are optional on the type so lean goldens decode,
+        // but at metrics-record time we always have real values from the
+        // current run — coalesce to safe defaults.
+        let wall = result.wallClockSeconds ?? 0
         let metric = MetricsRecord(
             scenarioID: result.scenarioID,
-            timestamp: result.timestamp,
-            wallClockSeconds: result.wallClockSeconds,
-            success: result.success,
+            timestamp: result.timestamp ?? Date(),
+            wallClockSeconds: wall,
+            success: result.success ?? false,
             segmentCount: result.output.segmentCount,
             speakerCount: result.output.speakerCount,
             inputDurationSeconds: result.input.durationSeconds,
-            realtimeRatio: result.input.durationSeconds > 0 ? result.wallClockSeconds / result.input.durationSeconds : 0,
+            realtimeRatio: result.input.durationSeconds > 0 ? wall / result.input.durationSeconds : 0,
             error: result.error
         )
 
@@ -466,11 +470,14 @@ struct TestFixtureMetadata: Codable, Sendable {
 
 struct TestResultPayload: Codable, Sendable {
     var scenarioID: String
-    var sessionID: String
-    var timestamp: Date
-    var success: Bool
-    var error: String?
-    var wallClockSeconds: TimeInterval
+    // Volatile bookkeeping fields. Made optional so lean goldens written by
+    // record-golden.sh (which strips these) round-trip cleanly through the
+    // decoder. The judge only consumes `input` + `output`.
+    var sessionID: String? = nil
+    var timestamp: Date? = nil
+    var success: Bool? = nil
+    var error: String? = nil
+    var wallClockSeconds: TimeInterval? = nil
     var input: Input
     var output: Output
     var regression: RegressionJudgeService.Verdict? = nil
