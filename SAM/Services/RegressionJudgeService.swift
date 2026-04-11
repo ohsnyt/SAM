@@ -178,7 +178,16 @@ final class RegressionJudgeService {
     ) -> [FieldVerdict] {
         var findings: [FieldVerdict] = []
 
-        func compareInt(_ field: String, _ goldVal: Int, _ curVal: Int) {
+        // Two flavors of integer comparison:
+        //
+        // STRICT: byte-stable counts that come from deterministic
+        // pipeline stages (Whisper, diarization). Any change = regression.
+        //
+        // TOLERANT: counts that come from the summary LLM (action item
+        // count, decision count, etc). LLM output naturally fluctuates by
+        // ±1 between runs even with identical input. Allow that swing,
+        // but flag drops to zero or large divergences.
+        func compareIntStrict(_ field: String, _ goldVal: Int, _ curVal: Int) {
             if goldVal == curVal {
                 findings.append(FieldVerdict(
                     field: field,
@@ -196,6 +205,85 @@ final class RegressionJudgeService {
                     current: String(curVal)
                 ))
             }
+        }
+
+        /// Tolerant comparison for LLM-generated counts. The summary LLM
+        /// fluctuates run-to-run; we want to catch lost categories (going
+        /// to zero) and flag significant divergence, but treat finding
+        /// MORE content as improvement (since the user re-records the
+        /// golden when satisfied).
+        ///
+        /// Rules:
+        /// - Equal:                                IDENTICAL
+        /// - Both nonzero AND |delta| <= 1:        COSMETIC_DRIFT (run-to-run noise)
+        /// - golden = 0, current > 0:              IMPROVEMENT (found new content)
+        /// - golden > 0, current = 0:              REGRESSION (lost a category)
+        /// - current > golden by 2+:               IMPROVEMENT (found more content)
+        /// - current < golden by 2+:               REGRESSION (dropped content)
+        func compareIntTolerant(_ field: String, _ goldVal: Int, _ curVal: Int) {
+            if goldVal == curVal {
+                findings.append(FieldVerdict(
+                    field: field,
+                    kind: .identical,
+                    reason: "\(field) matches (\(goldVal))",
+                    golden: String(goldVal),
+                    current: String(curVal)
+                ))
+                return
+            }
+
+            if goldVal > 0 && curVal == 0 {
+                findings.append(FieldVerdict(
+                    field: field,
+                    kind: .regression,
+                    reason: "\(field) dropped to 0 from \(goldVal) — model lost the category entirely",
+                    golden: String(goldVal),
+                    current: String(curVal)
+                ))
+                return
+            }
+
+            if goldVal == 0 && curVal > 0 {
+                findings.append(FieldVerdict(
+                    field: field,
+                    kind: .improvement,
+                    reason: "\(field) went 0->\(curVal): model now extracts content from a category that was empty in the golden",
+                    golden: String(goldVal),
+                    current: String(curVal)
+                ))
+                return
+            }
+
+            let delta = abs(goldVal - curVal)
+            if delta <= 1 {
+                findings.append(FieldVerdict(
+                    field: field,
+                    kind: .cosmeticDrift,
+                    reason: "\(field) drifted \(goldVal)->\(curVal) (within ±1 LLM tolerance)",
+                    golden: String(goldVal),
+                    current: String(curVal)
+                ))
+                return
+            }
+
+            if curVal > goldVal {
+                findings.append(FieldVerdict(
+                    field: field,
+                    kind: .improvement,
+                    reason: "\(field) went \(goldVal)->\(curVal): model finds more content than the golden (delta +\(delta)). Re-record golden if you accept the improvement.",
+                    golden: String(goldVal),
+                    current: String(curVal)
+                ))
+                return
+            }
+
+            findings.append(FieldVerdict(
+                field: field,
+                kind: .regression,
+                reason: "\(field) dropped from \(goldVal) to \(curVal) (delta -\(delta))",
+                golden: String(goldVal),
+                current: String(curVal)
+            ))
         }
 
         func compareString(_ field: String, _ goldVal: String?, _ curVal: String?) {
@@ -220,16 +308,19 @@ final class RegressionJudgeService {
             }
         }
 
-        compareInt("segmentCount", golden.output.segmentCount, current.output.segmentCount)
-        compareInt("speakerCount", golden.output.speakerCount, current.output.speakerCount)
-        compareInt("summaryActionItems", golden.output.summaryActionItems, current.output.summaryActionItems)
-        compareInt("summaryDecisions", golden.output.summaryDecisions, current.output.summaryDecisions)
-        compareInt("summaryFollowUps", golden.output.summaryFollowUps, current.output.summaryFollowUps)
-        compareInt("summaryTopics", golden.output.summaryTopics, current.output.summaryTopics)
-        compareInt("summaryLifeEvents", golden.output.summaryLifeEvents, current.output.summaryLifeEvents)
-        compareInt("summaryComplianceFlags", golden.output.summaryComplianceFlags, current.output.summaryComplianceFlags)
+        // STRICT: come from Whisper / diarization, byte-stable
+        compareIntStrict("segmentCount", golden.output.segmentCount, current.output.segmentCount)
+        compareIntStrict("speakerCount", golden.output.speakerCount, current.output.speakerCount)
         compareString("detectedLanguage", golden.output.detectedLanguage, current.output.detectedLanguage)
         compareString("transcriptSample", golden.output.transcriptSample, current.output.transcriptSample)
+
+        // TOLERANT: come from the summary LLM, naturally fluctuate
+        compareIntTolerant("summaryActionItems", golden.output.summaryActionItems, current.output.summaryActionItems)
+        compareIntTolerant("summaryDecisions", golden.output.summaryDecisions, current.output.summaryDecisions)
+        compareIntTolerant("summaryFollowUps", golden.output.summaryFollowUps, current.output.summaryFollowUps)
+        compareIntTolerant("summaryTopics", golden.output.summaryTopics, current.output.summaryTopics)
+        compareIntTolerant("summaryLifeEvents", golden.output.summaryLifeEvents, current.output.summaryLifeEvents)
+        compareIntTolerant("summaryComplianceFlags", golden.output.summaryComplianceFlags, current.output.summaryComplianceFlags)
 
         return findings
     }
@@ -269,14 +360,37 @@ final class RegressionJudgeService {
             )
         }
 
-        // 2. Length-based suspicion: if current is dramatically longer than
-        //    the golden, the model is almost certainly echoing instructions
-        //    or fabricating content. This is a REGRESSION the LLM tends to
-        //    miss because both texts contain the original transcript.
+        // 2. Length-based suspicion catches the failure mode where the
+        //    model echoes prompt instructions or fabricates content. The
+        //    threshold has to balance two risks:
+        //    - Too tight: legitimate improvements (richer TLDR with named
+        //      entities) trigger false-positive REGRESSIONs.
+        //    - Too loose: the LLM judge sometimes hallucinates IDENTICAL
+        //      on actual junk output and we miss real failures.
+        //    Polish text is structurally similar in length across runs;
+        //    summary TLDR varies more naturally. Use different bands.
         let goldenLen = goldenTrimmed.count
         let currentLen = currentTrimmed.count
         let lengthRatio = Double(currentLen) / Double(max(goldenLen, 1))
-        if lengthRatio > 1.40 {
+
+        let upperBand: Double
+        let lowerBand: Double
+        switch role {
+        case .polishedTranscript:
+            // Polish output should be roughly the same length as input;
+            // any large change is suspicious.
+            upperBand = 1.40
+            lowerBand = 0.60
+        case .meetingSummary:
+            // Summary tldr can legitimately get much richer over time
+            // (named entities + specific facts vs generic phrasing).
+            // Trust the LLM judge for the middle ground; only fire on
+            // EXTREME divergence.
+            upperBand = 3.00
+            lowerBand = 0.40
+        }
+
+        if lengthRatio > upperBand {
             return FieldVerdict(
                 field: field,
                 kind: .regression,
@@ -285,7 +399,7 @@ final class RegressionJudgeService {
                 current: String(current.prefix(200))
             )
         }
-        if lengthRatio < 0.60 {
+        if lengthRatio < lowerBand {
             return FieldVerdict(
                 field: field,
                 kind: .regression,

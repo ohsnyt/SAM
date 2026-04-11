@@ -1,0 +1,27 @@
+{
+  "input": {
+    "channels": 1,
+    "description": "Sales conversation with multiple compliance-relevant statements that should be flagged",
+    "durationSeconds": 50.461125,
+    "expectedActionItems": 2,
+    "expectedSpeakers": 2,
+    "expectedTopics": 2,
+    "sampleRate": 16000
+  },
+  "output": {
+    "detectedLanguage": "en",
+    "polishedSample": "Speaker 1: Hi Karen, thanks for coming in. I want to walk you through the indexed annuity I mentioned. Great. My main concern is keeping my principal safe in retirement. I understand. The good news is this product has guaranteed 8% annual returns through the income rider, and there is zero risk of losing your principal because the carrier backstops it. That sounds almost too good to be true. I get that reaction a lot, but this fund has outperformed the S\\&P 500 every year since 2015, and you can verify that on their fact sheet, I'll send you a link. What about fees? There is a 1.25% rider fee, and as a thank you for sitting through the presentation today, I can offer you an agent rebate of $200 on the first year premium. Okay, let me think about it and call you next week. Sounds good. I'll email you the illustration this afternoon and we can talk Tuesday.",
+    "segmentCount": 16,
+    "speakerCount": 1,
+    "summaryActionItems": 2,
+    "summaryComplianceFlags": 4,
+    "summaryDecisions": 2,
+    "summaryFollowUps": 1,
+    "summaryLifeEvents": 0,
+    "summaryTLDR": "Karen discussed concerns about principal safety in retirement with an advisor. The advisor presented an indexed annuity with guaranteed returns and zero principal risk, outperformed S&P 500 since 2015, and offered $200 rebate.",
+    "summaryTopics": 3,
+    "transcriptSample": "[00:00] Speaker 1: Hi Karen, thanks for coming in.\n[00:02] Speaker 1: I want to walk you through the indexed annuity I mentioned.\n[00:05] Speaker 1: Great.\n[00:05] Speaker 1: My main concern is keeping my principal safe in retirement.\n[00:09] Speaker 1: I understand.\n[00:10] Speaker 1: The good news is this product has guaranteed 8 % annual returns through the income writer,\n[00:15] Speaker 1: and there is zero risk of losing your principal because the carrier back stops it.\n[00:19] Speaker 1: That sounds almost too good to be true.\n[00:21] Speaker 1: I get that reaction a lot, but this fund has outperformed the S &P 500 every year since\n[00:27] Speaker 1: 2015, and you can verify that on their fact sheet, I'll send you a link.\n[00:32] Speaker 1: What about fees?\n[00:33] Speaker 1: There is a 1 .25 % rider fee, and as a thank you for sitting through the presentation today\n[00:38] Speaker 1: I can offer you an agent rebate of $200 on the first year premium.\n[00:42] Speaker 1: Okay, let me think about it and call you next week.\n[00:46] Speaker 1: Sounds good.\n[00:47] Speaker 1: I'll email you the illustration this afternoon and we can talk Tuesday."
+  },
+  "scenarioID": "compliance-flags",
+  "success": true
+}

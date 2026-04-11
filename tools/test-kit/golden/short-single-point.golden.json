@@ -10,15 +10,15 @@
   },
   "output": {
     "detectedLanguage": "en",
-    "polishedSample": "Speaker 1: Okay, this is a quick reminder to myself. I need to call Sarah Johnson tomorrow morning and send her the IUL illustration we discussed. Her son just started college so she's thinking about supplemental life insurance.",
+    "polishedSample": "Speaker 1: Okay, this is a quick reminder to myself. I need to call Sarah Johnson tomorrow morning and send her the IUL illustration we discussed. Her son just started college, so she's thinking about supplemental life insurance.",
     "segmentCount": 5,
     "speakerCount": 1,
     "summaryActionItems": 1,
     "summaryComplianceFlags": 0,
     "summaryDecisions": 0,
     "summaryFollowUps": 0,
-    "summaryLifeEvents": 0,
-    "summaryTLDR": "Speaker 1 reminded them of a task involving contacting Sarah Johnson and sending her an illustration related to life insurance.",
+    "summaryLifeEvents": 1,
+    "summaryTLDR": "Reminder to call Sarah Johnson about supplemental life insurance for her son's college start.",
     "summaryTopics": 1,
     "transcriptSample": "[00:00] Speaker 1: Okay, this is a quick reminder to myself.\n[00:02] Speaker 1: I need to call Sarah Johnson tomorrow morning\n[00:05] Speaker 1: and send her the IUL illustration we discussed.\n[00:08] Speaker 1: Her son just started college\n[00:09] Speaker 1: so she's thinking about supplemental life insurance."
   },

@@ -1,0 +1,27 @@
+{
+  "input": {
+    "channels": 1,
+    "description": "Joint meeting with three named action items each owned by different people",
+    "durationSeconds": 92.312187,
+    "expectedActionItems": 4,
+    "expectedSpeakers": 2,
+    "expectedTopics": 3,
+    "sampleRate": 16000
+  },
+  "output": {
+    "detectedLanguage": "en",
+    "polishedSample": "Speaker 1: Thanks for both joining us, Jennifer and David. The goal today is to wrap up the rollover paperwork and align on what each of us is doing before our next meeting on the 18th. Sounds good. I want to make sure we are not missing anything because we are flying out for the cruise on the 21st. Got it. So three things on my plate. I will send the rollover forms to your email by Tuesday so you have a few days to review before signing. I will also coordinate with the receiving custodian at Fidelity to make sure they are expecting the transfer. And third, I will prepare the new beneficiary designation forms because David, you mentioned wanting to add your daughter as a contingent. That is right, Lily, age 12. Perfect. Now Jennifer, on your side, can you call your HR contact at the hospital this week and request the in-service distribution form? They typically take three business days to process so we want it filed by next Friday. I can do that tomorrow morning. I have her cell number. Excellent. It. The one thing I need from you before our next meeting is a copy of the trust document. You mentioned your attorney sent it to you last month. If you can email me a PDF before our next meeting on the 18th, I will review it and bring questions. I will dig it out tonight and send it before the weekend. Wonderful. So to recap, I will send rollover forms by Tuesday, coordinate with Fidelity and prepare beneficiary forms. Jennifer will call HR for the distribution request by next Friday. David will send the Trust PDF before our next meeting on the 18th. Anything I miss? I think that covers it.",
+    "segmentCount": 31,
+    "speakerCount": 1,
+    "summaryActionItems": 5,
+    "summaryComplianceFlags": 4,
+    "summaryDecisions": 5,
+    "summaryFollowUps": 0,
+    "summaryLifeEvents": 1,
+    "summaryTLDR": "Jennifer and David finalized rollover paperwork and coordinated tasks for the upcoming meeting, including preparing beneficiary forms and requesting a trust document.",
+    "summaryTopics": 3,
+    "transcriptSample": "[00:00] Speaker 1: Thanks for both joining us, Jennifer and David.\n[00:03] Speaker 1: The goal today is to wrap up the rollover paperwork and align on what each of us is\n[00:07] Speaker 1: doing before our next meeting on the 18th.\n[00:09] Speaker 1: Sounds good.\n[00:10] Speaker 1: I want to make sure we are not missing anything because we are flying out for the cruise on\n[00:14] Speaker 1: the 21st.\n[00:15] Speaker 1: Got it.\n[00:16] Speaker 1: So three things on my plate.\n[00:18] Speaker 1: I will send the rollover forms to your email by Tuesday so you have a few days to review\n[00:22] Speaker 1: before signing.\n[00:23] Speaker 1: I will also coordinate with the receiving custodian at Fidelity to make sure they are\n[00:28] Speaker 1: expecting the transfer.\n[00:29] Speaker 1: And third, I will prepare the new beneficiary designation forms because David, you mentioned\n[00:35] Speaker 1: wanting to add your daughter as a contingent.\n[00:37] Speaker 1: That is right, Lily, age 12.\n[00:39] Speaker 1: Perfect.\n[00:40] Speaker 1: Now Jennifer, on your side, can you call your HR contact at the hospital this week and request\n[00:46] Speaker 1: the in -service distribution form?\n[00:48] Speaker 1: They typically take three business days to process so we want it filed by next Friday.\n[00:53] Speaker 1: I can do that tomorrow morning.\n[00:54] Speaker 1: I have her cell number.\n[00:55] Speaker 1: Excellent.\n[00:57] Speaker 1: it. The one thing I need from you before our next meeting is a copy of the trust document.\n[01:02] Speaker 1: You mentioned your attorney sent it to you last month. If you can email me a PDF before\n[01:06] Speaker 1: our next meeting on the 18th, I will review it and bring questions. I will dig it out\n[01:11] Speaker 1: tonight and send it before the weekend. Wonderful. So to recap, I will send rollover forms by\n[01:17] Speaker 1: Tuesday, coordinate with Fidelity and prepare beneficiary forms. Jennifer will call HR for\n[01:23] Speaker 1: the distribution request by next Friday.\n[01:26] Speaker 1: David will send the Trust PDF before our next meeting on the 18th.\n[01:30] Speaker 1: Anything I miss?\n[01:30] Speaker 1: I think that cover's it."
+  },
+  "scenarioID": "multi-party-actions",
+  "success": true
+}

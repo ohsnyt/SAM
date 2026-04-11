@@ -63,6 +63,19 @@ final class AppLockService {
     // MARK: - Initializer
 
     private init() {
+        #if DEBUG
+        // DEBUG-only test escape hatch. Set the user default once and SAM
+        // launches unlocked, so the test harness can drop fixtures into
+        // the inbox without anyone needing to authenticate first:
+        //   defaults write sam.SAM "sam.debug.skipAppLock" -bool true
+        // Production builds compile this whole branch out.
+        let skip = UserDefaults.standard.bool(forKey: "sam.debug.skipAppLock")
+        if skip {
+            isLocked = false
+            logger.notice("🔓 sam.debug.skipAppLock=true — bypassing app lock for this session (DEBUG only)")
+            return
+        }
+        #endif
         isLocked = true
     }
 
@@ -178,6 +191,14 @@ final class AppLockService {
 
     /// Configure lock state on app launch. Always starts locked.
     func configureOnLaunch() {
+        #if DEBUG
+        // DEBUG escape hatch — same flag honored as in init().
+        if UserDefaults.standard.bool(forKey: "sam.debug.skipAppLock") {
+            isLocked = false
+            logger.notice("🔓 sam.debug.skipAppLock=true — launching unlocked (DEBUG only)")
+            return
+        }
+        #endif
         isLocked = true
         installKeyEventMonitor()
         logger.debug("App launch — awaiting authentication")

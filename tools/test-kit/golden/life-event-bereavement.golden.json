@@ -1,0 +1,27 @@
+{
+  "input": {
+    "channels": 1,
+    "description": "Client check-in revealing a recent bereavement that should trigger empathetic follow-up",
+    "durationSeconds": 78.70375,
+    "expectedActionItems": 2,
+    "expectedSpeakers": 2,
+    "expectedTopics": 2,
+    "sampleRate": 16000
+  },
+  "output": {
+    "detectedLanguage": "en",
+    "polishedSample": "Speaker 1: Hi Margaret, thank you for taking the time today. How have you been since we last talked? It has been a hard couple of months, Alex. My husband Robert passed away in February. The funeral was the second week of February. I am still figuring everything out. Margaret, I am so sorry for your loss. There is no rush on anything we discussed today. Please let me know if I can do anything personally to help during this time. Thank you. I appreciate that. I do need to start thinking about the survivor benefit on Robert's pension and what to do with his retirement account. Of course, we can take that as slow as you want. Before we get into any of the financial pieces, can I ask, do you have your support system around you, family nearby, anyone helping with the day-to-day? My daughter has been here every weekend. She wants me to move closer to her and Charlotte, but I am not sure I am ready to leave the house. That is a big decision and one you do not need to make right now. Us focus on the immediate things. I will pull together a checklist of accounts we need to retitle and survivor benefit forms we should file. I will email it to you by Friday so you can look at it on your own time. That would help a lot. Thank you, Alex. One more thing. I would like to call you in two weeks just to check in. Not about anything specific. Just to see how you are doing. Would that be okay? Yes. I would like that. \n\nSpeaker 2:",
+    "segmentCount": 33,
+    "speakerCount": 1,
+    "summaryActionItems": 3,
+    "summaryComplianceFlags": 0,
+    "summaryDecisions": 0,
+    "summaryFollowUps": 1,
+    "summaryLifeEvents": 1,
+    "summaryTLDR": "Alex discusses survivor benefits on Robert's pension and retirement accounts with Margaret, who is grieving her husband's passing, and plans a follow-up check-in.",
+    "summaryTopics": 2,
+    "transcriptSample": "[00:00] Speaker 1: Hi Margaret, thank you for taking the time today.\n[00:03] Speaker 1: How have you been since we last talked?\n[00:04] Speaker 1: It has been a hard couple of months, Alex.\n[00:07] Speaker 1: My husband Robert passed away in February.\n[00:10] Speaker 1: The funeral was the second week of February.\n[00:12] Speaker 1: I am still figuring everything out.\n[00:14] Speaker 1: Margaret, I am so sorry for your loss.\n[00:17] Speaker 1: There is no rush on anything we discussed today.\n[00:20] Speaker 1: Please let me know if I can do anything personally to help during this time.\n[00:23] Speaker 1: Thank you.\n[00:24] Speaker 1: I appreciate that.\n[00:26] Speaker 1: I do need to start thinking about the survivor benefit on Robert's pension and what to do\n[00:30] Speaker 1: with his retirement account.\n[00:32] Speaker 1: Of course, we can take that as slow as you want.\n[00:35] Speaker 1: Before we get into any of the financial pieces, can I ask, do you have your support system\n[00:40] Speaker 1: around you, family nearby, anyone helping with the day to day?\n[00:44] Speaker 1: My daughter has been here every weekend.\n[00:46] Speaker 1: She wants me to move closer to her and Charlotte but I am not sure I am ready to leave the\n[00:50] Speaker 1: house.\n[00:51] Speaker 1: That is a big decision and one you do not need to make right now.\n[00:54] Speaker 1: us focus on the immediate things.\n[00:56] Speaker 1: I will pull together a checklist of accounts we need to retitle and survivor benefit forms\n[01:01] Speaker 1: we should file.\n[01:02] Speaker 1: I will email it to you by Friday so you can look at it on your own time.\n[01:06] Speaker 1: That would help a lot.\n[01:07] Speaker 1: Thank you, Alex.\n[01:08] Speaker 1: One more thing.\n[01:09] Speaker 1: I would like to call you in two weeks just to check in.\n[01:12] Speaker 1: Not about anything specific.\n[01:14] Speaker 1: Just to see how you are doing.\n[01:16] Speaker 1: Would that be okay?\n[01:17] Speaker 1: Yes.\n[01:17] Speaker 1: I would like that."
+  },
+  "scenarioID": "life-event-bereavement",
+  "success": true
+}

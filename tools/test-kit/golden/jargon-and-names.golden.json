@@ -1,0 +1,27 @@
+{
+  "input": {
+    "channels": 1,
+    "description": "Conversation dense with industry jargon and difficult proper nouns to stress ASR + polish",
+    "durationSeconds": 89.77025,
+    "expectedActionItems": 2,
+    "expectedSpeakers": 2,
+    "expectedTopics": 3,
+    "sampleRate": 16000
+  },
+  "output": {
+    "detectedLanguage": "en",
+    "polishedSample": "Speaker 1: Hi, Sersha, thanks for joining today. I have your IUL illustration ready. Hi, Alex. I have been looking forward to going through this. Just so you know, my last name is spelled W-O-J-C-I-E-C-H-O-W-S-K-I but it is pronounced Voicia Houski. Got it. Sersha Wojjowski, I will make sure the policy paperwork has it correct. So the indexed universal life policy we discussed has a face amount of one and a half million dollars, with an annual premium of $12,000 going into the cash value sub accounts. And remind me, what is the cap rate on the index strategy? Right now the carrier is offering a 9% annual cap on the S\\&P 500 point-to-point strategy with a 0% floor that has come down 25 basis points from last year because of how rates have moved. Got it. And what about the SIP IRA contribution we talked about for my consulting business? For tax year 2026, you can contribute up to 25% of your net self-employment income, cut that $69,000. You have until the extended filing deadline next October to fund it for this year. Perfect. I want to do both. Let us move forward with the IUL, and I will get you my consulting K-1 numbers as soon as my CPA has them. Sounds great. I will email you the application packet tomorrow morning. Your fiduciary I want to flag that the IUL has a 10-year surrender period, and we should review the policy performance every year to make sure the loan strategy stays on track. Thank you, Alex.",
+    "segmentCount": 24,
+    "speakerCount": 1,
+    "summaryActionItems": 3,
+    "summaryComplianceFlags": 2,
+    "summaryDecisions": 1,
+    "summaryFollowUps": 0,
+    "summaryLifeEvents": 0,
+    "summaryTLDR": "Voicia Houski discussed indexed universal life insurance (IUL) with Sersha Wojjowski, including policy details, SIP IRA contributions, surrender period, and application packet delivery.",
+    "summaryTopics": 2,
+    "transcriptSample": "[00:00] Speaker 1: Hi, Sersha, thanks for joining today. I have your IUL illustration ready.\n[00:04] Speaker 1: Hi, Alex. I have been looking forward to going through this. Just so you know, my last name is spelled W -O -J -C -I -E -C -H -O -W -S -K -I but it is pronounced Voicia Houski.\n[00:15] Speaker 1: Got it. Sersha Wojjowski, I will make sure the policy paperwork has it correct.\n[00:21] Speaker 1: So the indexed universal life policy we discussed has a face amount of one and a half million dollars,\n[00:26] Speaker 1: with an annual premium of $12 ,000 going into the cash value sub accounts.\n[00:31] Speaker 1: And remind me, what is the cap rate on the index strategy?\n[00:34] Speaker 1: Right now the carrier is offering a 9 % annual cap on the S &P 500 point -to -point strategy\n[00:40] Speaker 1: with a 0 % floor that has come down 25 basis points from last year because of how rates\n[00:46] Speaker 1: have moved.\n[00:46] Speaker 1: Got it.\n[00:47] Speaker 1: And what about the SIP IRA contribution we talked about for my consulting business?\n[00:52] Speaker 1: For tax year 2026 you can contribute up to 25 % of your net self -employment income,\n[00:58] Speaker 1: cut that $69 ,000.\n[01:00] Speaker 1: You have until the extended filing deadline next October to fund it for this year.\n[01:05] Speaker 1: Perfect.\n[01:06] Speaker 1: I want to do both.\n[01:07] Speaker 1: Let us move forward with the IUL and I will get you my consulting K1 numbers as soon as\n[01:12] Speaker 1: my CPA has them.\n[01:13] Speaker 1: Sounds great.\n[01:14] Speaker 1: I will email you the application packet tomorrow morning.\n[01:17] Speaker 1: your fiduciary I want to flag that the IUL has a 10 -year surrender period, and we should\n[01:23] Speaker 1: review the policy performance every year to make sure the loan strategy stays on track.\n[01:27] Speaker 1: Undistued.\n[01:28] Speaker 1: Thank you, Alex."
+  },
+  "scenarioID": "jargon-and-names",
+  "success": true
+}

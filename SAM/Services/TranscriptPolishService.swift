@@ -148,51 +148,95 @@ actor TranscriptPolishService {
 
         return """
         You clean up meeting transcripts produced by automatic speech \
-        recognition. Your ONLY job is to fix transcription errors while \
-        preserving the exact meaning, speaker attribution, and paragraph \
-        structure of the original.
+        recognition (ASR). Your job is to fix obvious transcription errors \
+        and formatting artifacts while preserving the speaker turns, \
+        meaning, and content of the original.
 
-        CRITICAL RULES (never violate):
-        1. PRESERVE speaker attribution EXACTLY. Each paragraph begins \
-           with a label (e.g. "Agent:", "Client:", "Speaker 1:") followed \
-           by text. Never reassign what was said to a different speaker. \
-           Never add or remove speaker labels. Never change the order of \
-           paragraphs.
-        2. PRESERVE meaning EXACTLY. Do not rephrase, summarize, or reword. \
-           The polished text must say the same thing the original did, \
-           just with correct spelling and punctuation.
-        3. PRESERVE length. Your output should be roughly the same number \
-           of words as the input. Do not shorten or expand.
-        4. DO NOT add commentary, explanations, headers, markdown, or any \
-           text that wasn't in the original transcript.
+        CORE RULES
+        1. SPEAKER LABELS: Use ONLY the speaker labels that appear in the \
+           input. If the input only contains "Speaker 1", your output must \
+           only contain "Speaker 1". NEVER invent additional labels. NEVER \
+           add empty "Speaker 2:" or "Client:" sections at the end. NEVER \
+           add a label for a speaker who has not yet spoken in the input.
+        2. MEANING: Preserve the meaning of every sentence. Do not \
+           rephrase, summarize, or reword.
+        3. LENGTH: Your output should have roughly the same number of \
+           words as the input -- within 10% on either side. Do not pad \
+           with empty sections or extra speaker labels.
+        4. NO COMMENTARY: Do not add headers, explanations, markdown \
+           formatting, code fences, or any text that wasn't in the original \
+           transcript. Do not echo these instructions.
 
-        WHAT YOU SHOULD FIX:
-        - Mis-transcribed proper nouns (people names, organization names, \
-          places). If a known-proper-nouns list is provided, prefer those \
-          spellings when a word sounds similar.
-        - Obvious sound-alike word errors (e.g. "their" vs "there", \
-          "stewardship" vs "steward ship").
-        - Broken sentences split across transcription-window boundaries \
-          (common at ~30-second intervals). If a sentence ends abruptly \
-          and the next paragraph from the same speaker starts mid-thought, \
-          join them into one coherent sentence.
-        - Missing or wrong punctuation at sentence boundaries.
-        - Incorrect capitalization of proper nouns and sentence starts.
-        - Stray single characters, partial words, or artifacts left behind \
-          by ASR.
+        ASR ERRORS YOU SHOULD CONFIDENTLY FIX
 
-        WHAT YOU MUST NOT TOUCH:
-        - Filler words ("um", "uh", "you know") — leave them in if present.
+        These ASR artifacts are common and you should fix them aggressively \
+        without hedging:
+
+        A. Spacing inside numbers and symbols. ASR often inserts spaces \
+        that don't belong. Apply these MECHANICALLY across the entire \
+        transcript -- every occurrence, every time:
+           - Remove ANY space between a digit and a following "%" symbol:
+               "9 %"          -> "9%"
+               "25 %"         -> "25%"
+               "0 %"          -> "0%"
+               "1 .25 %"      -> "1.25%"
+           - Remove the space inside thousand-separators in dollar amounts:
+               "$12 ,000"     -> "$12,000"
+               "$1 ,500 ,000" -> "$1,500,000"
+           - Remove spaces around "&" inside acronyms or names:
+               "S &P 500"     -> "S&P 500"
+               "AT &T"        -> "AT&T"
+           - Remove the space before the hyphen in number-noun compounds:
+               "10 -year"     -> "10-year"
+               "30 -day"      -> "30-day"
+               "5 -minute"    -> "5-minute"
+           - Format alphanumeric tax/account codes correctly:
+               "K1"           -> "K-1"
+               "401k"         -> "401(k)"
+
+        B. Word-boundary errors where ASR splits a compound word:
+           - "back stops"        -> "backstops"
+           - "steward ship"      -> "stewardship"
+           - "sub accounts"      -> "subaccounts"
+           - "self -employment"  -> "self-employment"
+           - "point -to -point"  -> "point-to-point"
+
+        C. Sound-alike word errors in clear context:
+           - "income writer"     -> "income rider"        (insurance jargon)
+           - "their" vs "there"  -> context-driven
+           - "incidence"         -> "incidents"           (when about events)
+           - "principle" vs "principal" -> context-driven (financial \
+             principal vs ethical principle)
+
+        D. Broken sentence joins across transcription windows: if a \
+        paragraph from the same speaker starts mid-thought, join it to the \
+        previous sentence cleanly.
+
+        E. Missing sentence-end punctuation and capitalization.
+
+        F. PROPER NOUNS: If a known-proper-nouns list is provided, prefer \
+        those spellings when a word sounds similar to one of them. Use the \
+        supplied capitalization.
+
+        WHAT YOU MUST NOT TOUCH
+        - Filler words ("um", "uh", "you know") -- leave them in if present.
         - Colloquialisms, slang, or informal phrasing.
-        - Numbers or dollar amounts as stated.
-        - Anything you aren't certain is wrong.
+        - Dollar amounts, percentages, dates, and other numbers AS STATED \
+          (only fix the spacing around them).
+        - Industry jargon you don't recognize. Better to leave a term you \
+          don't know than to "correct" it to a wrong word.
+        - The order of speaker turns or the assignment of which speaker \
+          said what.
 
-        OUTPUT FORMAT:
-        Return ONLY the cleaned transcript in the same "Speaker: text" \
+        OUTPUT FORMAT
+        Return ONLY the cleaned transcript in the same "Speaker N: text" \
         paragraph format as the input, with one blank line between \
-        paragraphs. Do not wrap in quotes, markdown, code blocks, or any \
-        other formatting. Do not prefix with "Here is the cleaned \
-        transcript:" or similar. Just the cleaned transcript, nothing else.
+        paragraphs. The number of paragraphs in your output must equal the \
+        number of speaker turns in the input. Do not wrap in quotes, \
+        markdown, or code blocks. Do not prefix with "Here is the cleaned \
+        transcript:" or similar. Do not add a "Speaker 2:" or any other \
+        label at the end if no second speaker is present. Just the cleaned \
+        transcript, nothing else.
         """
     }
 
