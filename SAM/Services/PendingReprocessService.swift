@@ -557,20 +557,25 @@ final class PendingReprocessService {
         let transcriptText = lines.joined(separator: "\n\n")
         guard !transcriptText.isEmpty else { return }
 
-        let knownNouns = await TranscriptPolishService.gatherKnownNouns(from: container, maxContacts: 60)
-
+        // NOTE: Cache lookup happens BEFORE gatherKnownNouns. The known nouns
+        // list comes from SwiftData (BusinessProfileService + SamPerson fetch)
+        // and can take 10–20 seconds in a populated database — long enough to
+        // wipe out the entire cache speedup if we paid for it on every hit.
+        // The cache key intentionally excludes nouns: in the test harness's
+        // primary use case (iterating polish PROMPTS), the noun list is
+        // irrelevant to what we're testing. If you need to invalidate after
+        // a known-nouns change, wipe the cache directory or bump
+        // StageCache.Version.polish.
         #if DEBUG
         let stageCache = StageCache()
         let polishKey: String? = {
             guard StageCache.enabled else { return nil }
             let promptHash = StageCache.sha256(TranscriptPolishService.systemInstruction())
-            let nounsHash = StageCache.sha256(knownNouns.sorted().joined(separator: "|"))
             let transcriptHash = StageCache.sha256(transcriptText)
             return StageCache.compositeKey(
                 "polish",
                 StageCache.Version.polish,
                 transcriptHash,
-                nounsHash,
                 promptHash
             )
         }()
@@ -590,6 +595,9 @@ final class PendingReprocessService {
             return
         }
         #endif
+
+        // Cache miss path — now we pay for known nouns + actual polish call.
+        let knownNouns = await TranscriptPolishService.gatherKnownNouns(from: container, maxContacts: 60)
 
         do {
             let polished = try await TranscriptPolishService.shared.polish(

@@ -67,6 +67,8 @@ final class TestInboxWatcher {
     private var processedDirectory: URL { rootDirectory.appendingPathComponent("processed", isDirectory: true) }
     private var metricsDirectory: URL { rootDirectory.appendingPathComponent("metrics", isDirectory: true) }
     private var logsDirectory: URL { rootDirectory.appendingPathComponent("logs", isDirectory: true) }
+    private var promptsDirectory: URL { rootDirectory.appendingPathComponent("prompts", isDirectory: true) }
+    private var promptsDefaultsDirectory: URL { promptsDirectory.appendingPathComponent("defaults", isDirectory: true) }
 
     private var metricsFile: URL { metricsDirectory.appendingPathComponent("cycles.jsonl") }
 
@@ -84,7 +86,7 @@ final class TestInboxWatcher {
 
         // Ensure the directory tree exists. The user (or a Bash script)
         // can drop files in inbox/ even if SAM hasn't created it yet.
-        for dir in [inboxDirectory, outboxDirectory, processedDirectory, metricsDirectory, logsDirectory] {
+        for dir in [inboxDirectory, outboxDirectory, processedDirectory, metricsDirectory, logsDirectory, promptsDirectory, promptsDefaultsDirectory] {
             try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         }
 
@@ -94,9 +96,16 @@ final class TestInboxWatcher {
         // outputs across runs when their inputs haven't changed.
         StageCache.enabled = true
 
+        // Export the live default prompts to disk so the prompts.sh helper
+        // can read them as a single source of truth. Always overwrite —
+        // these are read-only references and the user's working copies live
+        // in the parent prompts/ directory.
+        exportDefaultPrompts()
+
         state = .watching
         logger.notice("📬 TestInboxWatcher started — polling \(self.inboxDirectory.path)")
         logger.notice("💾 StageCache enabled — re-runs will skip stages with unchanged inputs")
+        logger.notice("📝 Default prompts exported to \(self.promptsDefaultsDirectory.path)")
 
         // Poll once a second for new fixtures. Polling is simpler than
         // FSEvents for our use case (low frequency, predictable inputs)
@@ -115,6 +124,26 @@ final class TestInboxWatcher {
         pollTask = nil
         state = .stopped
         logger.info("TestInboxWatcher stopped")
+    }
+
+    // MARK: - Prompt Defaults Export
+
+    /// Write the live default polish + summary prompts to disk so the
+    /// `prompts.sh` helper script can use them as a starting point. These
+    /// files are read-only reference copies — user edits live in the parent
+    /// `prompts/` directory and are written to UserDefaults via the script.
+    private func exportDefaultPrompts() {
+        let polishURL = promptsDefaultsDirectory.appendingPathComponent("polish.txt")
+        let summaryURL = promptsDefaultsDirectory.appendingPathComponent("summary.txt")
+
+        do {
+            try TranscriptPolishService.systemInstruction()
+                .write(to: polishURL, atomically: true, encoding: .utf8)
+            try MeetingSummaryService.systemInstruction()
+                .write(to: summaryURL, atomically: true, encoding: .utf8)
+        } catch {
+            logger.warning("Failed to export default prompts: \(error.localizedDescription)")
+        }
     }
 
     // MARK: - Scan

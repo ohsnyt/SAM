@@ -41,7 +41,9 @@ struct StageCache {
     enum Version {
         static let whisper = "1"
         static let diarization = "1"
-        static let polish = "1"
+        // Bumped to 2: polish cache key no longer includes known nouns (they
+        // were the dominant cost on cache hits, see PendingReprocessService).
+        static let polish = "2"
         static let summary = "1"
     }
 

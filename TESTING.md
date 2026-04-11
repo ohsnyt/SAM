@@ -176,8 +176,10 @@ When `TestInboxWatcher` starts it flips on a content-hash cache that stores each
 |------------|---------------------------------------------------------------|-----------------------|
 | Whisper    | WAV file SHA256, model ID, version constant                   | `TranscriptResult`    |
 | Diarization| WAV SHA256, sample rate, thresholds (merge/agent/VAD), enrolled embedding hash, version | `DiarizationResult`   |
-| Polish     | Transcript text SHA256, known nouns SHA256, polish prompt SHA256, version | Polished text string |
+| Polish     | Transcript text SHA256, polish prompt SHA256, version          | Polished text string |
 | Summary    | Transcript text SHA256, metadata fields, summary prompt SHA256, version  | `MeetingSummary` JSON |
+
+> **Note:** The polish cache key intentionally **excludes** the known-nouns list (which would otherwise come from a `BusinessProfileService` + `SamPerson` fetch). That fetch can take 10–20 seconds in a populated database, which would wipe out the cache speedup on every hit. For prompt iteration — the harness's primary use case — known nouns are irrelevant. If you need to test a known-nouns change, wipe the cache directory or bump `StageCache.Version.polish`.
 
 The cache key includes the **active prompt text**, so editing the polish or summary prompt in Settings (or in the source) automatically invalidates only that downstream stage. Whisper and diarization continue to hit.
 
@@ -203,6 +205,76 @@ Two ways to force a re-run of a stage:
 The cache is keyed on inputs the test harness can see. If you change something the harness can't observe — for example, you modify `WhisperTranscriptionService.cleanWhisperText()` post-processing — bump `Version.whisper` so the cached results are invalidated.
 
 The cache is **DEBUG-only** and **disabled by default**. Production builds and SAM running outside the harness never read or write the cache.
+
+---
+
+## Prompt iteration workflow (Breakthrough #2)
+
+`TranscriptPolishService` and `MeetingSummaryService` both check `UserDefaults` for prompt overrides before falling back to their hardcoded defaults. The `prompts.sh` helper lets you edit prompts as plain text files and push them into the running SAM **without rebuilding or relaunching** — the next test cycle picks up the new prompt automatically.
+
+Combined with the stage cache, a typical prompt iteration takes **~3-5 seconds** end-to-end:
+- Edit `prompts/polish.txt`
+- Run `./prompts.sh apply polish`
+- Run `./run-test.sh short-single-point` — Whisper + diarize hit cache, polish + summary recompute with the new prompt
+
+### Setup
+
+On launch, `TestInboxWatcher` writes the live default prompts to disk so the script has a single source of truth:
+
+```
+~/Library/Containers/sam.SAM/Data/Documents/SAM-TestKit/prompts/
+├── polish.txt          # editable working copy (after init)
+├── summary.txt         # editable working copy (after init)
+└── defaults/
+    ├── polish.txt      # read-only, written by SAM on every launch
+    └── summary.txt
+```
+
+**One-time:**
+
+```bash
+cd tools/test-kit
+./prompts.sh init      # copies defaults/* into editable working files
+```
+
+### Daily workflow
+
+```bash
+$EDITOR ~/Library/Containers/sam.SAM/Data/Documents/SAM-TestKit/prompts/polish.txt
+./prompts.sh apply polish
+./run-test.sh short-single-point
+# observe → edit → repeat
+```
+
+### Other commands
+
+```bash
+./prompts.sh apply summary               # write working summary.txt to UserDefaults
+./prompts.sh apply all                   # both
+./prompts.sh reset polish                # remove override → fall back to source default
+./prompts.sh reset all
+./prompts.sh show polish                 # print active prompt (override or default)
+./prompts.sh status                      # snapshot of which overrides are active
+./prompts.sh diff polish                 # diff working file vs source default
+./prompts.sh paths                       # show all relevant paths
+```
+
+### Why this is fast
+
+| Step                              | Old (rebuild)  | New (UserDefaults) |
+|-----------------------------------|----------------|--------------------|
+| Edit prompt                       | edit Swift     | edit text file     |
+| Reflect change in running SAM     | ~30-60s rebuild + relaunch | 0s (defaults flush) |
+| Run test                          | ~36s cold      | ~3-5s (Whisper + diarize cache hit) |
+| **Total per iteration**           | **~70-100s**   | **~3-5s**          |
+
+That's a **15-30× speedup** on the prompt iteration loop, on top of Breakthrough #1.
+
+### How prompt overrides invalidate the cache
+
+The polish + summary cache keys hash the **active prompt text**. When you call `./prompts.sh apply polish`, the new prompt's SHA256 differs from the old one, so the polish cache misses (and recomputes), then stores the new entry. Whisper and diarization keys don't depend on the prompt, so they keep hitting.
+
+Reset the override and the cache key reverts to the source-default's hash — which is already in the cache from earlier runs, so subsequent runs become full cache hits (~0.2s).
 
 ---
 
@@ -277,11 +349,13 @@ Check `output.transcriptSample` for the first 50 segments. If you see:
 
 ```
 SAM/Services/TestInboxWatcher.swift     # The watcher service (DEBUG only)
+SAM/Services/StageCache.swift           # Content-hash cache (Breakthrough #1, DEBUG only)
 tools/test-kit/
 ├── generate-audio.sh                   # Synthesize WAV from scenario script
 ├── run-test.sh                         # Drive a single test cycle
 ├── run-all.sh                          # Run every scenario sequentially
 ├── metrics-report.sh                   # Aggregate cycles.jsonl into a report
+├── prompts.sh                          # Edit polish/summary prompts (Breakthrough #2)
 └── scenarios/
     ├── short-single-point.txt
     ├── medium-three-topic.txt
@@ -291,16 +365,28 @@ tools/test-kit/
     └── four-speaker-conference.txt
 ```
 
-`~/Documents/SAM-TestKit/` (created on first launch):
+`~/Library/Containers/sam.SAM/Data/Documents/SAM-TestKit/` (created on first launch):
 
 ```
-~/Documents/SAM-TestKit/
+SAM-TestKit/
 ├── inbox/              # Drop fixtures here (.wav + .json pairs)
 ├── outbox/             # Result JSON appears here per fixture
 ├── processed/          # Source files moved here after processing
 ├── metrics/
 │   └── cycles.jsonl    # One JSON line per cycle, append-only
-└── logs/               # Future: per-cycle detailed logs
+├── prompts/            # Editable prompt working files (Breakthrough #2)
+│   ├── polish.txt
+│   ├── summary.txt
+│   └── defaults/       # Live source-of-truth, written by SAM on every launch
+│       ├── polish.txt
+│       └── summary.txt
+└── logs/
+
+~/Library/Containers/sam.SAM/Data/Library/Application Support/SAM-StageCache/
+├── whisper/            # Cached Whisper TranscriptResult per WAV+model
+├── diarization/        # Cached DiarizationResult per WAV+thresholds
+├── polish/             # Cached polished text per transcript+prompt
+└── summary/            # Cached MeetingSummary per transcript+metadata+prompt
 ```
 
 ---
