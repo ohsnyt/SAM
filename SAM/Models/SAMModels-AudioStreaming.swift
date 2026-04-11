@@ -37,6 +37,30 @@ struct AudioPacketHeader: Sendable {
         /// Mac → iPhone: JSON-encoded `MeetingSummary` payload pushed after
         /// summary generation completes.
         case summaryPush  = 0x05
+
+        // MARK: - Phase B: Pending upload / reprocess
+
+        /// iPhone → Mac: the iPhone has a recording that was captured
+        /// offline (or degraded from streaming) and wants the Mac to
+        /// transcribe it. Payload is JSON metadata:
+        /// `{ "sessionID": "...", "recordedAt": "...", "durationSeconds": N,
+        ///   "sampleRate": N, "channels": N, "byteSize": N }`
+        case uploadStart  = 0x06
+
+        /// iPhone → Mac: a chunk of raw WAV bytes belonging to the
+        /// currently-active upload. `sequenceNumber` in the header is the
+        /// chunk index, `payloadLength` is the byte count.
+        case uploadChunk  = 0x07
+
+        /// iPhone → Mac: all chunks for the active upload have been sent,
+        /// Mac can now run the full reprocess pipeline. Empty payload.
+        case uploadEnd    = 0x08
+
+        /// Mac → iPhone: a previously-uploaded session has been fully
+        /// processed (transcribed, diarized, polished, summarized). The
+        /// iPhone can safely delete its local WAV. Payload is JSON:
+        /// `{ "sessionID": "...", "success": true, "reason": "..." }`
+        case sessionProcessed = 0x09
     }
 
     /// Serialize to 32 bytes for transmission.
@@ -150,4 +174,74 @@ enum AudioStreamingConstants {
 
     /// Maximum payload size per packet (256KB — ~2.7s of stereo 48kHz 16-bit audio).
     static let maxPayloadSize: UInt32 = 256 * 1024
+
+    /// Chunk size for pending WAV uploads. Smaller chunks keep per-packet
+    /// latency low and let us show reasonable progress; 128 KB gives good
+    /// throughput on local WiFi without hitting the maxPayloadSize ceiling.
+    static let uploadChunkSize: Int = 128 * 1024
+}
+
+// MARK: - Upload Metadata
+
+/// JSON payload sent with `uploadStart` — identifies the recording and
+/// tells the Mac how to reconstruct the WAV.
+public struct PendingUploadMetadata: Codable, Sendable {
+    public var sessionID: String
+    public var recordedAt: Date
+    public var durationSeconds: Double
+    public var sampleRate: UInt32
+    public var channels: UInt16
+    public var byteSize: Int64
+
+    public init(
+        sessionID: String,
+        recordedAt: Date,
+        durationSeconds: Double,
+        sampleRate: UInt32,
+        channels: UInt16,
+        byteSize: Int64
+    ) {
+        self.sessionID = sessionID
+        self.recordedAt = recordedAt
+        self.durationSeconds = durationSeconds
+        self.sampleRate = sampleRate
+        self.channels = channels
+        self.byteSize = byteSize
+    }
+
+    public func toWireData() -> Data? {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        return try? encoder.encode(self)
+    }
+
+    public static func from(wireData: Data) -> PendingUploadMetadata? {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try? decoder.decode(PendingUploadMetadata.self, from: wireData)
+    }
+}
+
+// MARK: - Session Processed Ack
+
+/// JSON payload sent with `sessionProcessed` — tells the iPhone whether
+/// its upload was successfully transcribed.
+public struct SessionProcessedAck: Codable, Sendable {
+    public var sessionID: String
+    public var success: Bool
+    public var reason: String?
+
+    public init(sessionID: String, success: Bool, reason: String? = nil) {
+        self.sessionID = sessionID
+        self.success = success
+        self.reason = reason
+    }
+
+    public func toWireData() -> Data? {
+        try? JSONEncoder().encode(self)
+    }
+
+    public static func from(wireData: Data) -> SessionProcessedAck? {
+        try? JSONDecoder().decode(SessionProcessedAck.self, from: wireData)
+    }
 }

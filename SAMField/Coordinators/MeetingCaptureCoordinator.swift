@@ -8,6 +8,10 @@
 //
 
 import Foundation
+import AVFoundation
+import AudioToolbox
+import SwiftData
+import UIKit
 import os.log
 
 private let logger = Logger(subsystem: "com.matthewsessions.SAMField", category: "MeetingCaptureCoordinator")
@@ -15,6 +19,11 @@ private let logger = Logger(subsystem: "com.matthewsessions.SAMField", category:
 @MainActor
 @Observable
 final class MeetingCaptureCoordinator {
+
+    /// App-wide shared instance. Recording state, the TCP connection, and
+    /// the last meeting summary all live here so they survive tab switches,
+    /// the view being rebuilt, and backgrounding.
+    static let shared = MeetingCaptureCoordinator()
 
     // MARK: - State
 
@@ -75,11 +84,79 @@ final class MeetingCaptureCoordinator {
     /// Whether we're still waiting on the summary to arrive.
     private(set) var isAwaitingSummary: Bool = false
 
+    /// How the current (or most recent) session is being captured.
+    enum RecordingMode: Sendable, Equatable {
+        /// Streaming to Mac — full live transcription + summary pipeline.
+        case streaming
+        /// Recording locally with no Mac involvement. Will need to be
+        /// uploaded later for transcription + summary.
+        case localOnly
+        /// Started streaming but the connection was lost mid-session.
+        /// Now recording locally. The partial Mac transcript exists but
+        /// will be discarded on re-processing.
+        case degradedToLocal
+    }
+
+    private(set) var recordingMode: RecordingMode = .streaming
+
+    /// True if the current session had any streaming failure or was never
+    /// streamed — means it needs pending-queue upload when Mac is reachable.
+    var currentSessionNeedsUpload: Bool {
+        switch recordingMode {
+        case .streaming: return false
+        case .localOnly, .degradedToLocal: return true
+        }
+    }
+
+    /// URL of the local WAV file for the current/last session. Persistent —
+    /// survives app restarts until explicitly deleted.
+    private(set) var currentSessionLocalURL: URL?
+
+    /// Non-nil when a visible warning should be shown in the UI because the
+    /// streaming connection dropped mid-session. Cleared when the user starts
+    /// a new recording. The view watches this to display an orange pill.
+    private(set) var connectionLossWarning: String?
+
+    /// True when autoConnectIfNeeded() has been browsing for at least 5s
+    /// without finding the Mac. The view shows a prompt sheet offering
+    /// Retry or Record Locally. Cleared when either path is taken or the
+    /// Mac becomes reachable.
+    private(set) var showConnectionTimeoutPrompt: Bool = false
+
     // MARK: - Services
 
     private let recordingService = MeetingRecordingService()
     private let streamingService = AudioStreamingService()
     private var sessionID: UUID?
+
+    /// Model container — needed to create PendingUpload records and so
+    /// PendingUploadService can enumerate + upload them.
+    private var modelContainer: ModelContainer?
+
+    /// Call on app launch to wire the coordinator into the data layer.
+    func configure(container: ModelContainer) {
+        self.modelContainer = container
+        PendingUploadService.shared.configure(
+            container: container,
+            streaming: streamingService
+        )
+        // Scan for orphaned WAV files from prior crashes / force-quits
+        PendingUploadService.shared.recoverOrphanedRecordings()
+    }
+
+    /// iOS background task identifier — requested for the duration of each
+    /// recording so iOS gives us runtime even if the user backgrounds the
+    /// app to check another app during a meeting.
+    private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
+
+    /// Task that watches the streaming connection state during a recording
+    /// and detects drops. Cancelled on stop/cancel.
+    private var connectionWatchTask: Task<Void, Never>?
+
+    /// True while a phone call (or Siri, or alarm) is preempting our audio
+    /// session. The engine is paused during this time; we auto-resume
+    /// when the interruption ends.
+    private(set) var isInterruptedByPhoneCall: Bool = false
 
     // MARK: - Init
 
@@ -91,6 +168,87 @@ final class MeetingCaptureCoordinator {
                 self?.isAwaitingSummary = false
             }
         }
+
+        registerForAudioInterruptions()
+    }
+
+    // MARK: - Audio Session Interruptions
+
+    private func registerForAudioInterruptions() {
+        NotificationCenter.default.addObserver(
+            forName: AVAudioSession.interruptionNotification,
+            object: AVAudioSession.sharedInstance(),
+            queue: .main
+        ) { [weak self] notification in
+            Task { @MainActor in
+                self?.handleAudioInterruption(notification)
+            }
+        }
+    }
+
+    private func handleAudioInterruption(_ notification: Notification) {
+        guard let userInfo = notification.userInfo,
+              let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
+              let type = AVAudioSession.InterruptionType(rawValue: typeValue) else {
+            return
+        }
+
+        switch type {
+        case .began:
+            // A phone call or similar is taking over the audio session.
+            // We CANNOT continue recording during this — iOS won't let us.
+            // The local WAV file is safely closed via pauseRecording;
+            // no data is lost.
+            guard captureState == .recording else { return }
+            logger.warning("Audio interrupted (phone call?) — pausing recording")
+            isInterruptedByPhoneCall = true
+            recordingService.pauseRecording()
+            // Don't change captureState to .paused — it's still semantically
+            // recording from the user's perspective, just briefly paused.
+
+        case .ended:
+            guard isInterruptedByPhoneCall else { return }
+            isInterruptedByPhoneCall = false
+            let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
+            let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
+            if options.contains(.shouldResume), captureState == .recording {
+                logger.info("Audio interruption ended — resuming recording")
+                do {
+                    try recordingService.resumeRecording()
+                } catch {
+                    logger.error("Failed to auto-resume after interruption: \(error.localizedDescription)")
+                    captureState = .error("Couldn't resume after interruption: \(error.localizedDescription)")
+                }
+            }
+
+        @unknown default:
+            break
+        }
+    }
+
+    // MARK: - Background Task
+
+    /// Ask iOS for extended runtime while a recording is active. Without this,
+    /// aggressive backgrounding could suspend the app mid-meeting.
+    private func beginBackgroundTask() {
+        guard backgroundTaskID == .invalid else { return }
+        backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "SAM Field Recording") { [weak self] in
+            // Expiration handler — iOS is telling us we've run out of background time.
+            logger.warning("Background task expired — iOS is reclaiming runtime")
+            Task { @MainActor in
+                self?.endBackgroundTask()
+            }
+        }
+        if backgroundTaskID != .invalid {
+            logger.info("Acquired background task id=\(self.backgroundTaskID.rawValue)")
+        }
+    }
+
+    private func endBackgroundTask() {
+        guard backgroundTaskID != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(backgroundTaskID)
+        backgroundTaskID = .invalid
+        logger.info("Released background task")
     }
 
     // MARK: - Lifecycle
@@ -109,6 +267,14 @@ final class MeetingCaptureCoordinator {
                 try? await Task.sleep(for: .milliseconds(200))
                 if streamingService.connectionState == .connected {
                     captureState = .connected
+                    // We made it — dismiss any pending timeout prompt.
+                    showConnectionTimeoutPrompt = false
+                    connectionTimeoutTask?.cancel()
+                    connectionTimeoutTask = nil
+                    // Kick the pending upload queue now that the Mac is
+                    // reachable. Safe to call any time — it's a no-op if
+                    // the queue is empty or we're recording.
+                    maybeProcessPendingQueue()
                     break
                 }
                 if case .disconnected = streamingService.connectionState,
@@ -122,8 +288,9 @@ final class MeetingCaptureCoordinator {
 
     /// Called when the Meeting tab appears. If we're already connected from
     /// a previous session (view dismissed then re-shown, or app backgrounded),
-    /// stay put. Otherwise start browsing automatically so the user never has
-    /// to tap a "Connect" button on the happy path.
+    /// stay put. Otherwise start browsing automatically and, if the browse
+    /// takes longer than 5 seconds, show a user-facing prompt offering
+    /// Retry / Record Locally.
     func autoConnectIfNeeded() {
         // Already active in some form — nothing to do
         switch captureState {
@@ -140,8 +307,52 @@ final class MeetingCaptureCoordinator {
             return
         }
 
-        // Otherwise start browsing.
+        // Start browsing + arm a 5s timeout.
         connectToMac()
+        startConnectionTimeoutWatch()
+    }
+
+    private var connectionTimeoutTask: Task<Void, Never>?
+
+    /// Wait 5 seconds after browse begins; if still not connected, flip
+    /// `showConnectionTimeoutPrompt` so the view presents the sheet.
+    private func startConnectionTimeoutWatch() {
+        connectionTimeoutTask?.cancel()
+        connectionTimeoutTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(5))
+            guard !Task.isCancelled, let self else { return }
+            // Still not connected? Prompt the user.
+            if self.captureState == .connecting || self.captureState == .idle,
+               self.streamingService.connectionState != .connected {
+                logger.info("Connection timeout after 5s — prompting user")
+                self.showConnectionTimeoutPrompt = true
+            }
+        }
+    }
+
+    /// User tapped Retry in the connection timeout prompt.
+    func dismissConnectionTimeoutAndRetry() {
+        showConnectionTimeoutPrompt = false
+        // Restart the browse
+        streamingService.disconnect()
+        captureState = .idle
+        connectToMac()
+        startConnectionTimeoutWatch()
+    }
+
+    /// User tapped Record Locally in the connection timeout prompt.
+    func dismissConnectionTimeoutAndRecordLocally() {
+        showConnectionTimeoutPrompt = false
+        connectionTimeoutTask?.cancel()
+        connectionTimeoutTask = nil
+        startLocalOnlyRecording()
+    }
+
+    /// User tapped Cancel / dismissed the prompt without choosing.
+    func dismissConnectionTimeoutPrompt() {
+        showConnectionTimeoutPrompt = false
+        connectionTimeoutTask?.cancel()
+        connectionTimeoutTask = nil
     }
 
     /// Single-tap "record another meeting" path. Skips the browse/connect
@@ -165,9 +376,16 @@ final class MeetingCaptureCoordinator {
         connectToMac()
     }
 
-    /// Start recording and streaming to the Mac.
-    /// Callable from `.connected` (after a fresh connection) or `.completed`
-    /// (after a previous recording — connection is still alive).
+    /// Start recording.
+    ///
+    /// Always records locally to a persistent WAV file. Streams to the Mac
+    /// as an overlay if and only if the TCP connection is currently live.
+    /// If the connection drops mid-session, local recording continues
+    /// uninterrupted and the session gets queued for later upload.
+    ///
+    /// Callable from `.connected` (fresh connection), `.completed` (after a
+    /// previous recording), or `.idle` (local-only mode after the user chose
+    /// to record without the Mac).
     func startRecording() {
         guard captureState == .connected || captureState == .completed || captureState == .idle else {
             logger.warning("Cannot start recording in state: \(String(describing: self.captureState))")
@@ -177,33 +395,191 @@ final class MeetingCaptureCoordinator {
         // Clear state from any previous session
         lastSummary = nil
         isAwaitingSummary = false
+        connectionLossWarning = nil
 
         let id = UUID()
         self.sessionID = id
 
-        // Wire up audio chunks to streaming service
+        // Determine initial mode based on connection state
+        let startingStreaming = streamingService.connectionState == .connected
+        recordingMode = startingStreaming ? .streaming : .localOnly
+
+        // Audio chunks always flow through this closure. If streaming mode
+        // is active, they also go to the Mac. If we drop to degraded mode
+        // mid-session, subsequent chunks simply stop being forwarded.
         recordingService.onAudioChunk = { [weak self] chunk in
             Task { @MainActor in
-                self?.streamingService.send(chunk: chunk)
+                guard let self else { return }
+                switch self.recordingMode {
+                case .streaming:
+                    self.streamingService.send(chunk: chunk)
+                case .localOnly, .degradedToLocal:
+                    // Local-only: chunks still get written to the ring buffer
+                    // WAV by MeetingRecordingService itself; we just don't
+                    // forward them to the Mac.
+                    break
+                }
             }
         }
 
         do {
-            try recordingService.startRecording()
+            try recordingService.startRecording(sessionID: id)
+            currentSessionLocalURL = recordingService.currentRingBufferURL
 
-            // Send session start to Mac
-            streamingService.sendSessionStart(
-                sessionID: id,
-                sampleRate: UInt32(recordingService.sampleRate),
-                channels: UInt16(recordingService.channelCount)
-            )
+            // Streaming overlay — tell the Mac we're starting if connected
+            if startingStreaming {
+                streamingService.sendSessionStart(
+                    sessionID: id,
+                    sampleRate: UInt32(recordingService.sampleRate),
+                    channels: UInt16(recordingService.channelCount)
+                )
+            }
+
+            // Ask iOS for extended background runtime for the duration of
+            // the recording. Released in stopRecording/cancelRecording.
+            beginBackgroundTask()
+
+            // If streaming, watch the connection and detect mid-session drops.
+            if startingStreaming {
+                startConnectionWatch()
+            }
 
             captureState = .recording
-            logger.info("Meeting capture started: \(id.uuidString)")
+            logger.info("Meeting capture started: \(id.uuidString) mode=\(String(describing: self.recordingMode))")
         } catch {
             captureState = .error(error.localizedDescription)
             logger.error("Failed to start recording: \(error.localizedDescription)")
         }
+    }
+
+    // MARK: - Connection Monitoring
+
+    /// Poll the streaming connection every half-second while recording.
+    /// Only declares the session degraded if the connection has been
+    /// unhealthy for longer than `gracePeriodSeconds` — gives the
+    /// AudioStreamingService reconnect logic (exponential backoff up to
+    /// ~14 seconds total) a chance to recover from brief blips without
+    /// tripping the user-facing alert.
+    private func startConnectionWatch() {
+        connectionWatchTask?.cancel()
+        connectionWatchTask = Task { [weak self] in
+            let pollInterval: TimeInterval = 0.5
+            let gracePeriodSeconds: TimeInterval = 10.0
+            var unhealthySeconds: TimeInterval = 0
+
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(Int(pollInterval * 1000)))
+                guard let self else { return }
+
+                // Only interesting during a live recording in streaming mode
+                guard self.captureState == .recording || self.captureState == .paused,
+                      self.recordingMode == .streaming else {
+                    return
+                }
+
+                if self.streamingService.connectionState == .connected {
+                    // Reset timer — brief drops that self-heal don't count
+                    unhealthySeconds = 0
+                } else {
+                    unhealthySeconds += pollInterval
+                    if unhealthySeconds >= gracePeriodSeconds {
+                        logger.warning("Connection unhealthy for \(String(format: "%.1f", unhealthySeconds))s, flipping to degraded mode")
+                        self.handleStreamingConnectionLost()
+                        return
+                    }
+                }
+            }
+        }
+    }
+
+    private func stopConnectionWatch() {
+        connectionWatchTask?.cancel()
+        connectionWatchTask = nil
+    }
+
+    /// Called when we detect the streaming connection was lost during a
+    /// recording. Flips mode, alerts user, keeps recording locally.
+    private func handleStreamingConnectionLost() {
+        // Guard against double-firing
+        guard recordingMode == .streaming else { return }
+
+        logger.warning("Streaming connection lost mid-session — falling back to local-only recording")
+        recordingMode = .degradedToLocal
+        connectionLossWarning = "Mac connection lost. Recording continues on your phone — the meeting will sync when you're back in range."
+
+        // Fire feedback — one chime, one haptic, then done. Honors silent
+        // switch for the sound; haptic always fires.
+        playConnectionLossAlert()
+    }
+
+    /// Play a short chime + distinctive haptic to alert the user that the
+    /// connection dropped. Silent switch suppresses the sound automatically.
+    private func playConnectionLossAlert() {
+        // SystemSoundID 1053 is "Tweet" — a short, clean two-tone chirp.
+        // 1521 is "Vibrate" which pairs naturally. Using AudioServicesPlaySystemSound
+        // means iOS honors the ringer switch automatically.
+        let soundID: SystemSoundID = 1053
+        AudioServicesPlaySystemSound(soundID)
+
+        // Distinctive 3-tap warning haptic pattern.
+        let generator = UINotificationFeedbackGenerator()
+        generator.prepare()
+        generator.notificationOccurred(.warning)
+    }
+
+    /// Start a recording that explicitly does NOT stream to the Mac — used
+    /// when the user chose "Record Locally" from the timeout prompt on
+    /// startup, or from elsewhere when the Mac is not reachable.
+    func startLocalOnlyRecording() {
+        // Disconnect any pending browse so the streaming service doesn't
+        // flip to .connected mid-session and confuse us.
+        streamingService.disconnect()
+        captureState = .idle
+        startRecording()
+    }
+
+    // MARK: - Pending Upload
+
+    /// Enqueue the current (just-stopped) session into the pending upload
+    /// queue so it can be sent to the Mac later for full transcription.
+    private func enqueueCurrentSessionForUpload() {
+        guard let sessionID, let localURL = currentSessionLocalURL else {
+            logger.warning("enqueueCurrentSessionForUpload: missing sessionID or local URL")
+            return
+        }
+        PendingUploadService.shared.enqueue(
+            sessionID: sessionID,
+            localWAVURL: localURL,
+            recordedAt: Date().addingTimeInterval(-recordingService.elapsedTime),
+            durationSeconds: recordingService.elapsedTime,
+            sampleRate: recordingService.sampleRate,
+            channelCount: recordingService.channelCount
+        )
+        logger.info("Enqueued session \(sessionID.uuidString) for upload (\(String(format: "%.1f", self.recordingService.elapsedTime))s local)")
+    }
+
+    /// Try to upload the oldest pending session. Called from:
+    ///   - `connectToMac` success path (so we drain the queue when the
+    ///     Mac first becomes reachable)
+    ///   - `startConnectionWatch` on reconnect recovery
+    ///   - The Record tab's `.onAppear`
+    func maybeProcessPendingQueue() {
+        // Don't interrupt an active recording
+        let isRecording: Bool
+        switch captureState {
+        case .recording, .paused, .stopping, .connecting:
+            isRecording = true
+        default:
+            isRecording = false
+        }
+        Task {
+            await PendingUploadService.shared.attemptNextUpload(isRecording: isRecording)
+        }
+    }
+
+    /// Number of pending uploads for UI badge display.
+    var pendingUploadCount: Int {
+        PendingUploadService.shared.pendingCount
     }
 
     /// Pause recording.
@@ -232,23 +608,54 @@ final class MeetingCaptureCoordinator {
 
         // Stop recording (flushes final chunk)
         let ringBufferURL = recordingService.stopRecording()
+        currentSessionLocalURL = ringBufferURL
 
-        // Send session end to Mac
-        streamingService.sendSessionEnd()
+        // Send session end to Mac based on the current mode.
+        switch recordingMode {
+        case .streaming:
+            streamingService.sendSessionEnd()
+            isAwaitingSummary = true
+            lastSummary = nil
+        case .degradedToLocal:
+            // We dropped mid-session, but the reconnect logic may have
+            // restored the connection in the meantime. If so, tell the
+            // Mac to clean up its partial session — otherwise it stays
+            // in "recording" state forever. We don't expect a useful
+            // summary since the Mac only got part of the audio.
+            if streamingService.connectionState == .connected {
+                streamingService.sendSessionEnd()
+            }
+            isAwaitingSummary = false
+            lastSummary = nil
+            enqueueCurrentSessionForUpload()
+        case .localOnly:
+            // No Mac involvement — nothing to notify. Session goes to
+            // pending queue for upload later.
+            isAwaitingSummary = false
+            lastSummary = nil
+            enqueueCurrentSessionForUpload()
+        }
 
-        // Clear any stale summary and start waiting for the new one
-        lastSummary = nil
-        isAwaitingSummary = true
+        // Release the iOS background task; recording is done.
+        endBackgroundTask()
+        stopConnectionWatch()
 
         captureState = .completed
-        logger.info("Meeting capture completed. Ring buffer: \(ringBufferURL?.lastPathComponent ?? "none") — awaiting summary from Mac")
+        logger.info("Meeting capture completed. Local file: \(ringBufferURL?.lastPathComponent ?? "none") mode=\(String(describing: self.recordingMode))")
     }
 
-    /// Cancel the current recording.
+    /// Cancel the current recording. Deletes the local WAV file and tells
+    /// the Mac to discard its partial session (if we were streaming).
     func cancelRecording() {
         recordingService.cancelRecording()
-        streamingService.sendSessionEnd()
+        if recordingMode == .streaming {
+            streamingService.sendSessionEnd()
+        }
+        endBackgroundTask()
+        stopConnectionWatch()
         sessionID = nil
+        currentSessionLocalURL = nil
+        connectionLossWarning = nil
         captureState = .idle
     }
 

@@ -138,6 +138,7 @@
 				"Models/SAMModels-LinkedInImport.swift",
 				"Models/SAMModels-NoteImage.swift",
 				"Models/SAMModels-Notes.swift",
+				"Models/SAMModels-PendingUpload.swift",
 				"Models/SAMModels-Pipeline.swift",
 				"Models/SAMModels-Presentation.swift",
 				"Models/SAMModels-Production.swift",

@@ -74,6 +74,7 @@ enum SAMSchema {
         TranscriptSession.self,                        // Speaker-diarized transcription sessions
         TranscriptSegment.self,                        // Speaker-attributed transcript segments
         SpeakerProfile.self,                           // Enrolled voice embeddings
+        PendingUpload.self,                            // Phase B: iPhone-side pending upload queue
     ]
 }
 

@@ -56,6 +56,19 @@ public final class TranscriptSession {
     /// When the meeting summary was generated.
     public var summaryGeneratedAt: Date?
 
+    /// Polished, speaker-attributed transcript produced by
+    /// `TranscriptPolishService`. Same "Speaker: text" paragraph format as
+    /// the raw segments but with proper nouns corrected, window-seam
+    /// sentence breaks stitched, and punctuation fixed.
+    ///
+    /// The raw `segments` remain the source of truth (word timings intact)
+    /// so future reprocessing is still possible. `polishedText` is purely
+    /// a display/consumption convenience.
+    public var polishedText: String?
+
+    /// When the polished transcript was generated.
+    public var polishedAt: Date?
+
     // MARK: - Relationships
 
     @Relationship(deleteRule: .cascade, inverse: \TranscriptSegment.session)
@@ -102,7 +115,9 @@ public final class TranscriptSession {
         whisperModelID: String? = nil,
         detectedLanguage: String? = nil,
         meetingSummaryJSON: String? = nil,
-        summaryGeneratedAt: Date? = nil
+        summaryGeneratedAt: Date? = nil,
+        polishedText: String? = nil,
+        polishedAt: Date? = nil
     ) {
         self.id = id
         self.recordedAt = recordedAt
@@ -114,6 +129,8 @@ public final class TranscriptSession {
         self.detectedLanguage = detectedLanguage
         self.meetingSummaryJSON = meetingSummaryJSON
         self.summaryGeneratedAt = summaryGeneratedAt
+        self.polishedText = polishedText
+        self.polishedAt = polishedAt
     }
 }
 

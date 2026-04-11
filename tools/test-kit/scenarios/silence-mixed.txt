@@ -1,0 +1,26 @@
+# description: Short conversation with intentional pauses to test VAD + window logic
+# expectedSpeakers: 2
+# expectedTopics: 1
+# expectedActionItems: 2
+
+ALEX: Karen, I appreciate you stopping by. So tell me, what's on your mind today?
+
+KAREN: Well, I've been thinking a lot about the trip we have planned for next year.
+
+ALEX: The Italy trip?
+
+KAREN: Yes. And I'm worried about whether we can afford it after my husband retires in March.
+
+ALEX: That's a fair question. Let me pull up your projections. Okay, so based on our last review, you have about two hundred and twenty thousand in liquid savings, plus the brokerage account of three hundred and fifty thousand. The trip is going to cost about fifteen thousand all in.
+
+KAREN: Right, that sounds about right.
+
+ALEX: Honestly, you can do this trip without it affecting your retirement plan at all. The fifteen thousand is less than four percent of your liquid savings, and you'll replenish it within a few years from your normal savings rate.
+
+KAREN: Oh that's a relief. I was stressed about it.
+
+ALEX: Don't be. Go enjoy Italy. I will however suggest you wait until after the first quarter results come out in April before you book the more expensive flights, because we want to see if the year starts well.
+
+KAREN: That makes sense. I'll let you know.
+
+ALEX: And book travel insurance. At your age it's worth it.

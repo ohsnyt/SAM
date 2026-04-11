@@ -1,0 +1,42 @@
+# description: Four-speaker conference call testing diarization clustering with multiple voices
+# expectedSpeakers: 4
+# expectedTopics: 2
+# expectedActionItems: 4
+
+ALEX: Thanks everyone for joining. We have Karen, Daniel, and Samantha on the call today. Let's quickly go around and then dive into the agenda.
+
+KAREN: Hi everyone, glad to be here.
+
+DANIEL: Good morning.
+
+SAMANTHA: Hello, thanks for setting this up Alex.
+
+ALEX: We have two things to cover. First the joint trust we've been discussing for the family, and second the charitable giving plan for the year. Let's start with the trust. Daniel, you and Karen are the trustees and Samantha is one of the beneficiaries along with the other children. The attorney sent over a draft last week.
+
+KAREN: I've read through it twice. I have questions about the distribution provisions.
+
+DANIEL: I had questions about that section too.
+
+SAMANTHA: I haven't read it yet, can you send me a copy?
+
+ALEX: I'll forward it to you right after this call. Karen, what's your concern about the distributions?
+
+KAREN: The current draft says distributions are at the trustees' discretion. I want to make sure that doesn't put Daniel and me in an awkward position with the kids.
+
+DANIEL: Yeah, I'd prefer some objective criteria.
+
+ALEX: That's a fair point. We can add a provision that ties distributions to specific life events: education, first home purchase, business startup, medical emergency. I'll ask the attorney to draft those.
+
+SAMANTHA: That sounds reasonable.
+
+ALEX: Good. Second topic, charitable giving. Daniel and Karen, you mentioned wanting to involve the children in the giving decisions this year. How do you envision that working?
+
+KAREN: We'd like a family meeting in November where each of the four kids picks one organization to support, and we contribute equally to each.
+
+DANIEL: We're thinking five thousand to each cause.
+
+ALEX: That's a great approach. I'll set up the donor advised fund mechanics so you can do the distributions easily once the family decides. Samantha, will you help your siblings think through their picks?
+
+SAMANTHA: Of course, happy to.
+
+ALEX: Perfect. Action items: I send the trust draft to Samantha today, I get the attorney to revise the distribution language by end of next week, I set up the DAF mechanics by the end of the month, and we schedule the family meeting for the second week of November.

@@ -40,6 +40,11 @@ final class AudioStreamingService {
     /// MeetingCaptureCoordinator sets this to display the summary in the UI.
     var onMeetingSummary: (@Sendable (MeetingSummary) -> Void)?
 
+    /// Fired when the Mac acknowledges that a pending upload finished
+    /// processing (success or failure). `PendingUploadService` uses this
+    /// to unblock the upload task and clean up the local WAV on success.
+    var onSessionProcessed: (@Sendable (SessionProcessedAck) -> Void)?
+
     // MARK: - Private
 
     private var browser: NWBrowser?
@@ -51,12 +56,23 @@ final class AudioStreamingService {
     private var sessionID: UUID?
     private var receiveBuffer = Data()
 
+    /// NWPathMonitor watches for WiFi restored / network interface changes
+    /// so we can re-kick the Bonjour browse when the user walks back into
+    /// range. Without this, a long offline period leaves the iPhone stuck
+    /// in `.disconnected` or `.reconnecting` state with no fresh browse.
+    private var pathMonitor: NWPathMonitor?
+    private var lastPathStatus: NWPath.Status = .requiresConnection
+
     private let networkQueue = DispatchQueue(label: "com.matthewsessions.SAMField.audioStreaming", qos: .userInitiated)
 
     // MARK: - Browse & Connect
 
     /// Start browsing for Mac transcription services on the local network.
     func startBrowsing() {
+        // Ensure the path monitor is running so we can recover from
+        // walk-out-of-range scenarios. Safe to call repeatedly.
+        startPathMonitor()
+
         guard connectionState == .disconnected else { return }
 
         let params = NWParameters()
@@ -85,7 +101,20 @@ final class AudioStreamingService {
         browser.browseResultsChangedHandler = { [weak self] results, changes in
             Task { @MainActor in
                 guard let self else { return }
-                // Connect to the first available Mac
+
+                // Dedupe: the browse handler can fire multiple times in
+                // rapid succession (IPv4 + IPv6 dual-stack, retransmitted
+                // Bonjour announcements). If we already have a connection
+                // in flight or established, ignore additional results —
+                // otherwise we'd open parallel TCP sockets to the same Mac
+                // and cause a race that kills the active stream.
+                switch self.connectionState {
+                case .connecting, .connected, .reconnecting:
+                    return
+                case .disconnected, .browsing:
+                    break
+                }
+
                 if let result = results.first {
                     logger.info("Found Mac transcription service: \(result.endpoint.debugDescription)")
                     self.browser?.cancel()
@@ -115,8 +144,55 @@ final class AudioStreamingService {
         connectedMacName = nil
         reconnectionAttempt = 0
         connectionState = .disconnected
+        pathMonitor?.cancel()
+        pathMonitor = nil
 
         logger.info("Disconnected from Mac")
+    }
+
+    // MARK: - Network Path Monitoring
+
+    /// Watch for network path changes (WiFi restored, interface swap,
+    /// etc.) so we can re-trigger the Bonjour browse when connectivity
+    /// returns after a disconnection. Without this, a user walking back
+    /// into range with the app backgrounded might never reconnect.
+    private func startPathMonitor() {
+        guard pathMonitor == nil else { return }
+
+        let monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { [weak self] path in
+            Task { @MainActor in
+                guard let self else { return }
+                self.handlePathUpdate(path)
+            }
+        }
+        monitor.start(queue: networkQueue)
+        pathMonitor = monitor
+        logger.debug("NWPathMonitor started")
+    }
+
+    private func handlePathUpdate(_ path: NWPath) {
+        let wasOffline = lastPathStatus != .satisfied
+        lastPathStatus = path.status
+
+        // Only interesting: we just went from offline → online
+        guard path.status == .satisfied, wasOffline else { return }
+
+        logger.info("Network path restored (interfaces: \(path.availableInterfaces.map { $0.name }.joined(separator: ", ")))")
+
+        // If we're in a state where a new connection attempt would help,
+        // kick the browse again. Avoid interrupting healthy live sessions.
+        switch connectionState {
+        case .disconnected, .reconnecting:
+            logger.info("Restarting Bonjour browse after network restore")
+            browser?.cancel()
+            browser = nil
+            reconnectionAttempt = 0
+            connectionState = .disconnected
+            startBrowsing()
+        case .browsing, .connecting, .connected:
+            break
+        }
     }
 
     // MARK: - Sending
@@ -166,9 +242,85 @@ final class AudioStreamingService {
         sessionID = nil
     }
 
+    // MARK: - Pending Upload (Phase B)
+
+    /// Send an `uploadStart` message with metadata describing the
+    /// pending recording that's about to be streamed. Returns false
+    /// if we're not currently connected.
+    @discardableResult
+    func sendUploadStart(metadata: PendingUploadMetadata) -> Bool {
+        guard connectionState == .connected, let _ = connection else { return false }
+        guard let payload = metadata.toWireData() else { return false }
+
+        let header = AudioPacketHeader(
+            version: AudioPacketHeader.currentVersion,
+            messageType: .uploadStart,
+            sequenceNumber: 0,
+            timestamp: 0,
+            sampleRate: metadata.sampleRate,
+            channels: metadata.channels,
+            payloadLength: UInt32(payload.count)
+        )
+        sendPacket(header: header, payload: payload)
+        return true
+    }
+
+    /// Send a single chunk of the pending upload. Typical size is
+    /// `AudioStreamingConstants.uploadChunkSize` (128 KB).
+    @discardableResult
+    func sendUploadChunk(payload: Data) -> Bool {
+        guard connectionState == .connected, let _ = connection else { return false }
+        guard payload.count <= Int(AudioStreamingConstants.maxPayloadSize) else {
+            logger.warning("uploadChunk: payload too large (\(payload.count) bytes)")
+            return false
+        }
+
+        let header = AudioPacketHeader(
+            version: AudioPacketHeader.currentVersion,
+            messageType: .uploadChunk,
+            sequenceNumber: 0,
+            timestamp: 0,
+            sampleRate: 0,
+            channels: 0,
+            payloadLength: UInt32(payload.count)
+        )
+        sendPacket(header: header, payload: payload)
+        return true
+    }
+
+    /// Tell the Mac that all chunks for the current upload have been sent
+    /// and it can begin the reprocess pipeline.
+    @discardableResult
+    func sendUploadEnd() -> Bool {
+        guard connectionState == .connected, let _ = connection else { return false }
+
+        let header = AudioPacketHeader(
+            version: AudioPacketHeader.currentVersion,
+            messageType: .uploadEnd,
+            sequenceNumber: 0,
+            timestamp: 0,
+            sampleRate: 0,
+            channels: 0,
+            payloadLength: 0
+        )
+        sendPacket(header: header, payload: Data())
+        return true
+    }
+
     // MARK: - Private: Connection
 
     private func connectToEndpoint(_ endpoint: NWEndpoint) {
+        // Belt + suspenders: refuse to create a new NWConnection if we
+        // already have one on file. The browse handler has a similar guard
+        // based on connectionState, but this check catches any other path
+        // that might call connectToEndpoint while a connection exists —
+        // e.g. a stale attemptReconnection scheduled from before the
+        // current connection was established.
+        if connection != nil {
+            logger.warning("connectToEndpoint: already have an NWConnection; ignoring duplicate create for \(endpoint.debugDescription)")
+            return
+        }
+
         connectionState = .connecting
 
         let params = NWParameters.tcp
@@ -208,14 +360,19 @@ final class AudioStreamingService {
     }
 
     private func attemptReconnection(to endpoint: NWEndpoint) {
-        let backoffs = AudioStreamingConstants.reconnectionBackoffs
-        guard reconnectionAttempt < backoffs.count else {
-            logger.error("Max reconnection attempts reached — giving up")
-            connectionState = .disconnected
-            return
-        }
+        // Unbounded reconnection with an exponential backoff capped at ~30s.
+        // A user can walk out of WiFi range for an hour, come back, and we
+        // keep trying. The previous "give up after 4 attempts" behavior
+        // broke that scenario entirely — the iPhone would stop trying after
+        // ~30 seconds and never reconnect.
+        //
+        // Schedule: 2, 4, 8, 16, 30, 30, 30, 30, ...
+        let backoffs = AudioStreamingConstants.reconnectionBackoffs  // [2, 4, 8, 16]
+        let maxInterval: TimeInterval = 30
+        let delay: TimeInterval = reconnectionAttempt < backoffs.count
+            ? backoffs[reconnectionAttempt]
+            : maxInterval
 
-        let delay = backoffs[reconnectionAttempt]
         reconnectionAttempt += 1
         connectionState = .reconnecting(attempt: reconnectionAttempt)
 
@@ -346,6 +503,14 @@ final class AudioStreamingService {
             }
             logger.info("Received meeting summary from Mac: \(summary.actionItems.count) action items")
             onMeetingSummary?(summary)
+
+        case .sessionProcessed:
+            guard let ack = SessionProcessedAck.from(wireData: payload) else {
+                logger.warning("Failed to decode sessionProcessed ack (\(payload.count) bytes)")
+                return
+            }
+            logger.info("Received sessionProcessed ack: \(ack.sessionID) success=\(ack.success)")
+            onSessionProcessed?(ack)
 
         case .heartbeat:
             break // Mac acknowledging liveness

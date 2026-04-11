@@ -37,11 +37,19 @@ final class DiarizationService {
     var minSilenceGap: TimeInterval = 0.3
 
     /// Cosine similarity threshold for merging clusters (higher = more strict / more speakers).
-    /// Typical: 0.55–0.75 for MFCC features. Tuning will come from real-world testing.
-    var clusterMergeThreshold: Float = 0.65
+    /// Typical: 0.55–0.75 for MFCC features. Lowered from 0.65 → 0.60 to
+    /// be more willing to split similar-sounding voices into separate
+    /// clusters when the MFCC distance is ambiguous.
+    var clusterMergeThreshold: Float = 0.60
 
-    /// Cosine similarity threshold for labeling as "Agent" against enrolled profile.
-    var agentMatchThreshold: Float = 0.55
+    /// Cosine similarity threshold for labeling as "Agent" against enrolled
+    /// profile. Raised from 0.55 → 0.80 after a test where a podcast played
+    /// through a speaker was mis-labeled as the enrolled agent (MFCC is
+    /// channel-sensitive, so any voice through the same mic/speaker path
+    /// gets ~0.55–0.70 similarity regardless of who it is). A clean close-mic
+    /// match of the enrolled speaker typically scores 0.90+, so 0.80 is a
+    /// safe floor that keeps legitimate matches while rejecting channel noise.
+    var agentMatchThreshold: Float = 0.80
 
     // MARK: - Types
 
@@ -304,21 +312,32 @@ final class DiarizationService {
     private func findAgentCluster(centroids: [Int: [Float]], enrolledEmbedding: [Float]?) -> Int? {
         guard let enrolled = enrolledEmbedding, !enrolled.isEmpty else { return nil }
 
+        // Compute similarity to every cluster, log all of them so the
+        // user can diagnose why diarization is or isn't labeling the
+        // agent. Useful for threshold tuning.
         var bestSim: Float = -2
         var bestCluster: Int? = nil
+        var allSims: [(clusterID: Int, sim: Float)] = []
         for (clusterID, centroid) in centroids {
             let sim = SpeakerEmbeddingService.cosineSimilarity(centroid, enrolled)
+            allSims.append((clusterID, sim))
             if sim > bestSim {
                 bestSim = sim
                 bestCluster = clusterID
             }
         }
 
+        let simSummary = allSims
+            .sorted { $0.clusterID < $1.clusterID }
+            .map { "cluster \($0.clusterID)=\(String(format: "%.3f", $0.sim))" }
+            .joined(separator: ", ")
+        logger.info("Agent similarities: \(simSummary) (threshold=\(String(format: "%.2f", self.agentMatchThreshold)))")
+
         if bestSim >= agentMatchThreshold {
-            logger.info("Agent match: cluster \(bestCluster ?? -1) sim=\(bestSim)")
+            logger.info("✅ Agent matched: cluster \(bestCluster ?? -1) sim=\(String(format: "%.3f", bestSim))")
             return bestCluster
         }
-        logger.debug("No agent match above threshold (best sim=\(bestSim))")
+        logger.info("❌ No agent match: best sim=\(String(format: "%.3f", bestSim)) < threshold \(String(format: "%.2f", self.agentMatchThreshold))")
         return nil
     }
 }

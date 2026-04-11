@@ -63,6 +63,7 @@ private let allFieldModels: [any PersistentModel.Type] = [
     TranscriptSession.self,
     TranscriptSegment.self,
     SpeakerProfile.self,
+    PendingUpload.self,
 ]
 
 /// Model container for the SAM Field iOS app.

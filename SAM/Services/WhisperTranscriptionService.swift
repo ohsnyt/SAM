@@ -193,23 +193,41 @@ final class WhisperTranscriptionService {
             if language == nil, !result.language.isEmpty {
                 language = result.language
             }
-            fullText += result.text
+            fullText += Self.cleanWhisperText(result.text)
 
             for segment in result.segments {
                 let words: [TranscriptResult.Word] = (segment.words ?? []).map { w in
                     TranscriptResult.Word(
-                        word: w.word,
+                        word: Self.cleanWhisperText(w.word),
                         start: TimeInterval(w.start),
                         end: TimeInterval(w.end),
                         confidence: w.probability
                     )
                 }
+                let nonEmptyWords = words.filter { !$0.word.isEmpty }
+
+                // Rebuild segment text from the word tokens when they're
+                // available. `segment.text` as returned by WhisperKit 0.18.0
+                // can have missing inter-word spaces when word timestamps
+                // are enabled (especially at window boundaries and dense
+                // sentences), so always prefer reconstructing from the
+                // word array when we have one.
+                let cleanedText: String
+                if !nonEmptyWords.isEmpty {
+                    cleanedText = Self.rebuildText(from: nonEmptyWords.map { $0.word })
+                } else {
+                    cleanedText = Self.cleanWhisperText(segment.text)
+                }
+
+                // Skip segments that were ENTIRELY markers (e.g. silence
+                // slots that WhisperKit emits with only <|0.00|>).
+                guard !cleanedText.isEmpty else { continue }
 
                 allSegments.append(TranscriptResult.Segment(
-                    text: segment.text,
+                    text: cleanedText,
                     start: TimeInterval(segment.start),
                     end: TimeInterval(segment.end),
-                    words: words
+                    words: nonEmptyWords
                 ))
             }
         }
@@ -220,6 +238,48 @@ final class WhisperTranscriptionService {
             detectedLanguage: language,
             modelID: currentModelID ?? Self.defaultModelID
         )
+    }
+
+    /// Reconstruct a clean text string from a word array, normalizing
+    /// whitespace. Individual words may come with leading spaces (Whisper
+    /// tokenizer convention) or without them (some code paths trim); this
+    /// helper joins them with explicit single spaces either way.
+    static func rebuildText(from words: [String]) -> String {
+        let trimmed = words
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        return trimmed.joined(separator: " ")
+    }
+
+    /// Strip WhisperKit internal special tokens from raw segment/word text.
+    ///
+    /// WhisperKit's decoder surfaces timestamp markers (`<|0.00|>`,
+    /// `<|5.00|>`), session markers (`<|startoftranscript|>`, `<|endoftext|>`,
+    /// `<|notimestamps|>`), language tags (`<|en|>`), and task tags
+    /// (`<|transcribe|>`, `<|translate|>`) inside the decoded text when
+    /// word-level timestamps are enabled. These are internal model tokens
+    /// and should never be shown to the user.
+    ///
+    /// We strip anything matching `<|...|>`, then collapse whitespace.
+    private static func cleanWhisperText(_ text: String) -> String {
+        guard !text.isEmpty else { return text }
+
+        // Match any Whisper special token: <| followed by non-pipe chars, then |>
+        let tokenPattern = #"<\|[^|]*\|>"#
+        var cleaned = text.replacingOccurrences(
+            of: tokenPattern,
+            with: " ",
+            options: .regularExpression
+        )
+
+        // Collapse runs of whitespace into single spaces
+        cleaned = cleaned.replacingOccurrences(
+            of: #"\s+"#,
+            with: " ",
+            options: .regularExpression
+        )
+
+        return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     // MARK: - Errors

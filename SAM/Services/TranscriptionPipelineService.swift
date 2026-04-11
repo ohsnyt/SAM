@@ -184,6 +184,11 @@ final class TranscriptionPipelineService {
     }
 
     /// Reset all state for a new session.
+    ///
+    /// IMPORTANT: This clobbers in-flight state. Callers must ensure no window
+    /// is currently being transcribed before calling this — use
+    /// `waitForQuiescence()` first. The coordinator does this via
+    /// `handleSessionStart`.
     func reset() {
         pcmBuffer = Data()
         sessionSampleRate = 0
@@ -196,6 +201,25 @@ final class TranscriptionPipelineService {
         windowsProcessed = 0
         detectedSpeakerCount = 0
         cleanupTempFiles()
+    }
+
+    /// Wait until no window is currently being transcribed. Returns true if
+    /// the pipeline went quiet within `timeout` seconds, false on timeout.
+    /// Used before `reset()` to avoid the race where a prior session's
+    /// in-flight window would clobber the new session's state.
+    func waitForQuiescence(timeout: TimeInterval = 60) async -> Bool {
+        let step: TimeInterval = 0.1
+        let maxIterations = Int(timeout / step)
+        var i = 0
+        while isTranscribing && i < maxIterations {
+            try? await Task.sleep(for: .milliseconds(100))
+            i += 1
+        }
+        if isTranscribing {
+            logger.warning("waitForQuiescence timed out after \(timeout)s — pipeline still busy")
+            return false
+        }
+        return true
     }
 
     // MARK: - Window Processing
@@ -349,10 +373,13 @@ final class TranscriptionPipelineService {
             // If the whole segment's words were already committed, skip
             if !seg.words.isEmpty && words.isEmpty { continue }
 
-            // Rebuild segment text from surviving words if we trimmed any
+            // Rebuild segment text from surviving words if we trimmed any.
+            // IMPORTANT: join with explicit single spaces and trim each
+            // individual word first, otherwise words without leading spaces
+            // smash together (produces things like "daysbefore").
             let text: String
             if words.count < seg.words.count, !words.isEmpty {
-                text = words.map { $0.word }.joined().trimmingCharacters(in: CharacterSet.whitespaces)
+                text = WhisperTranscriptionService.rebuildText(from: words.map { $0.word })
             } else {
                 text = seg.text
             }

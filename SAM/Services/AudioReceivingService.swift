@@ -9,6 +9,7 @@
 
 import Foundation
 import Network
+import SwiftData
 import os.log
 
 private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "AudioReceivingService")
@@ -64,6 +65,28 @@ final class AudioReceivingService {
     private var totalAudioBytesWritten: UInt32 = 0
     private var sessionSampleRate: UInt32 = 0
     private var sessionChannels: UInt16 = 0
+
+    // MARK: - Pending Upload (Phase B)
+
+    /// Metadata for an in-flight pending upload. Non-nil only between
+    /// `uploadStart` and `uploadEnd` messages.
+    private var pendingUploadMetadata: PendingUploadMetadata?
+    private var pendingUploadFileHandle: FileHandle?
+    private var pendingUploadURL: URL?
+    private var pendingUploadBytesReceived: Int64 = 0
+
+    /// Callback fired when reprocess finishes (success or failure). The
+    /// coordinator uses this to send the `sessionProcessed` ack back to
+    /// the iPhone.
+    var onPendingReprocessComplete: ((UUID, Bool, String?) -> Void)?
+
+    /// Model container for persistence — set by the coordinator via
+    /// `configure(container:)`. Only required for pending reprocess.
+    private var modelContainer: ModelContainer?
+
+    func configure(container: ModelContainer) {
+        self.modelContainer = container
+    }
 
     // MARK: - Outbound Messages (Mac → iPhone)
 
@@ -175,9 +198,40 @@ final class AudioReceivingService {
     // MARK: - Connection Handling
 
     private func handleNewConnection(_ connection: NWConnection) {
-        // Accept only one connection at a time
+        // Duplicate-connection handling is session-aware:
+        //
+        //   - During an active recording (currentSessionID != nil) with a
+        //     healthy existing connection, REJECT the new one so the live
+        //     stream isn't disrupted.
+        //
+        //   - Otherwise (idle state, no active session), REPLACE the old
+        //     connection. The iPhone might be legitimately reconnecting
+        //     after a network flap, and the old connection could be a
+        //     half-closed zombie that would otherwise block reconnection
+        //     forever.
+        //
+        // This replaces an earlier "always reject if ready" rule that
+        // caused a reconnection loop when the iPhone repeatedly tried to
+        // establish a new connection and was always rejected.
         if let existing = activeConnection {
-            logger.info("Replacing existing connection")
+            let existingState = existing.state
+            let isHealthy: Bool
+            switch existingState {
+            case .ready, .preparing, .setup:
+                isHealthy = true
+            default:
+                isHealthy = false
+            }
+
+            if currentSessionID != nil && isHealthy {
+                // Mid-session and healthy — protect the active stream.
+                logger.warning("Rejecting duplicate connection from \(connection.endpoint.debugDescription) — recording in progress")
+                connection.cancel()
+                return
+            }
+
+            // Idle or unhealthy — replace freely.
+            logger.info("Replacing existing connection (state=\(String(describing: existingState)), sessionActive=\(self.currentSessionID != nil))")
             existing.cancel()
         }
 
@@ -324,7 +378,179 @@ final class AudioReceivingService {
             // Mac doesn't expect to receive summaries — this is an outbound-only
             // message type. Ignore if the iPhone ever echoes one.
             break
+
+        case .uploadStart:
+            handleUploadStart(payload: payload)
+
+        case .uploadChunk:
+            handleUploadChunk(payload: payload)
+
+        case .uploadEnd:
+            handleUploadEnd()
+
+        case .sessionProcessed:
+            // Mac doesn't expect to receive this — it's an outbound-only ack
+            // from the Mac to the iPhone. Ignore if the iPhone echoes one.
+            break
         }
+    }
+
+    // MARK: - Pending Upload Handlers (Phase B)
+
+    private func handleUploadStart(payload: Data) {
+        guard let metadata = PendingUploadMetadata.from(wireData: payload) else {
+            logger.error("uploadStart: could not decode metadata payload")
+            return
+        }
+
+        // Clean up any stale upload state from a previous partial attempt
+        pendingUploadFileHandle?.closeFile()
+        pendingUploadFileHandle = nil
+        if let oldURL = pendingUploadURL {
+            try? FileManager.default.removeItem(at: oldURL)
+        }
+        pendingUploadURL = nil
+        pendingUploadBytesReceived = 0
+
+        // Create a fresh temp file to receive the WAV bytes
+        let tempDir = pendingUploadDirectory
+        let tempURL = tempDir.appendingPathComponent("upload-\(metadata.sessionID).wav")
+        FileManager.default.createFile(atPath: tempURL.path, contents: nil)
+
+        do {
+            let handle = try FileHandle(forWritingTo: tempURL)
+            pendingUploadFileHandle = handle
+            pendingUploadURL = tempURL
+            pendingUploadMetadata = metadata
+            logger.info("uploadStart: receiving session \(metadata.sessionID) — \(metadata.byteSize) bytes expected")
+        } catch {
+            logger.error("uploadStart: could not open temp file: \(error.localizedDescription)")
+            pendingUploadMetadata = nil
+        }
+    }
+
+    private func handleUploadChunk(payload: Data) {
+        guard let handle = pendingUploadFileHandle else {
+            logger.warning("uploadChunk received with no active upload")
+            return
+        }
+        handle.write(payload)
+        pendingUploadBytesReceived += Int64(payload.count)
+    }
+
+    private func handleUploadEnd() {
+        guard let metadata = pendingUploadMetadata,
+              let url = pendingUploadURL,
+              let handle = pendingUploadFileHandle else {
+            logger.warning("uploadEnd with no active upload")
+            return
+        }
+
+        // Close the file so AVAudioFile can open it for reading
+        handle.closeFile()
+        pendingUploadFileHandle = nil
+
+        logger.info("uploadEnd: received \(self.pendingUploadBytesReceived) bytes for session \(metadata.sessionID)")
+
+        // Clear the upload state before kicking off reprocess
+        let capturedMetadata = metadata
+        let capturedURL = url
+        pendingUploadMetadata = nil
+        pendingUploadURL = nil
+        pendingUploadBytesReceived = 0
+
+        // Fire the reprocess asynchronously. Notify caller (coordinator)
+        // when it completes so they can send the ack + move the WAV to
+        // the permanent MeetingAudio directory.
+        Task { [weak self] in
+            guard let self, let container = self.modelContainer else {
+                logger.error("No model container configured for reprocess")
+                return
+            }
+            let result = await PendingReprocessService.shared.reprocess(
+                wavURL: capturedURL,
+                metadata: capturedMetadata,
+                modelContainer: container
+            )
+
+            // Move the temp WAV to the permanent audio directory so it's
+            // still available for playback from the review view.
+            if result.success, let sessionID = UUID(uuidString: capturedMetadata.sessionID) {
+                let destURL = self.audioDirectory.appendingPathComponent("\(sessionID.uuidString).wav")
+                try? FileManager.default.removeItem(at: destURL)
+                do {
+                    try FileManager.default.moveItem(at: capturedURL, to: destURL)
+                    // Update the session's audioFilePath so playback works
+                    let context = ModelContext(container)
+                    let descriptor = FetchDescriptor<TranscriptSession>(
+                        predicate: #Predicate { $0.id == sessionID }
+                    )
+                    if let session = try? context.fetch(descriptor).first {
+                        session.audioFilePath = self.relativeAudioPath(for: sessionID)
+                        try? context.save()
+                    }
+                } catch {
+                    logger.warning("Could not move upload to audio dir: \(error.localizedDescription)")
+                }
+            } else {
+                // On failure, clean up the temp WAV
+                try? FileManager.default.removeItem(at: capturedURL)
+            }
+
+            // Fire ack back to the iPhone
+            if let sessionID = UUID(uuidString: capturedMetadata.sessionID) {
+                self.sendSessionProcessed(
+                    sessionID: sessionID,
+                    success: result.success,
+                    reason: result.reason
+                )
+                self.onPendingReprocessComplete?(sessionID, result.success, result.reason)
+            }
+        }
+    }
+
+    /// Persistent temp directory for in-flight pending WAV uploads.
+    private var pendingUploadDirectory: URL {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let dir = appSupport.appendingPathComponent("PendingUploads", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    /// Send a `sessionProcessed` ack to the iPhone so it can delete the
+    /// local WAV after a successful reprocess.
+    func sendSessionProcessed(sessionID: UUID, success: Bool, reason: String?) {
+        guard let connection = activeConnection else {
+            logger.info("sendSessionProcessed: no active connection")
+            return
+        }
+
+        let ack = SessionProcessedAck(
+            sessionID: sessionID.uuidString,
+            success: success,
+            reason: reason
+        )
+        guard let payload = ack.toWireData() else { return }
+
+        let header = AudioPacketHeader(
+            version: AudioPacketHeader.currentVersion,
+            messageType: .sessionProcessed,
+            sequenceNumber: 0,
+            timestamp: 0,
+            sampleRate: 0,
+            channels: 0,
+            payloadLength: UInt32(payload.count)
+        )
+        var packet = header.serialize()
+        packet.append(payload)
+
+        connection.send(content: packet, completion: .contentProcessed { error in
+            if let error {
+                logger.error("sendSessionProcessed failed: \(error.localizedDescription)")
+            } else {
+                logger.info("sessionProcessed ack sent for \(sessionID.uuidString) success=\(success)")
+            }
+        })
     }
 
     private func handleSessionStart(header: AudioPacketHeader, payload: Data) {

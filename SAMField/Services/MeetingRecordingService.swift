@@ -53,10 +53,15 @@ final class MeetingRecordingService {
     private var sequenceNumber: UInt64 = 0
     private var sessionStartTime: UInt64 = 0 // mach_absolute_time at session start
 
-    // Ring buffer: circular file-backed buffer of recent audio for dropout recovery
+    // Local recording: full file-backed WAV for the entire session, kept
+    // in persistent storage so the pending-queue can upload it later.
     private var ringBufferFile: AVAudioFile?
-    private var ringBufferURL: URL?
+    private(set) var currentRingBufferURL: URL?
     private var ringBufferFramesWritten: Int64 = 0
+    private var ringBufferURL: URL? {
+        get { currentRingBufferURL }
+        set { currentRingBufferURL = newValue }
+    }
 
     // Chunk accumulation
     private var chunkAccumulator = Data()
@@ -64,14 +69,38 @@ final class MeetingRecordingService {
     private var framesAccumulated: Int = 0
 
     /// Directory for temporary ring buffer files.
-    private var tempDirectory: URL {
-        FileManager.default.temporaryDirectory.appendingPathComponent("MeetingCapture", isDirectory: true)
+    /// Persistent directory for local meeting recordings. Files here survive
+    /// app backgrounding and launches so the pending-queue can upload them
+    /// later. (Previously lived in /tmp, which iOS evicts aggressively.)
+    private var recordingsDirectory: URL {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let dir = docs.appendingPathComponent("MeetingRecordings", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    /// Back-compat alias so older call sites don't break during refactor.
+    private var tempDirectory: URL { recordingsDirectory }
+
+    /// Stable relative path (from the Documents directory) for a given ring
+    /// buffer URL. Used to persist pending-queue references to files.
+    static func relativePath(for url: URL) -> String {
+        "MeetingRecordings/\(url.lastPathComponent)"
+    }
+
+    /// Resolve a stored relative path back to an absolute URL.
+    static func url(fromRelativePath relative: String) -> URL {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        return docs.appendingPathComponent(relative)
     }
 
     // MARK: - Recording
 
     /// Start capturing audio from the microphone.
-    func startRecording() throws {
+    /// - Parameter sessionID: used to name the local WAV file so crash
+    ///   recovery and pending-queue lookups can match the audio to a
+    ///   TranscriptSession record.
+    func startRecording(sessionID: UUID) throws {
         guard state == .idle else {
             logger.warning("Cannot start recording — not idle (state: \(String(describing: self.state)))")
             return
@@ -98,8 +127,9 @@ final class MeetingRecordingService {
 
         logger.info("Recording format: \(nativeFormat.sampleRate)Hz, \(nativeFormat.channelCount) channels")
 
-        // Set up ring buffer file
-        try setupRingBuffer(format: nativeFormat)
+        // Set up local WAV file (persistent — survives app restart for
+        // pending-queue upload later).
+        try setupRingBuffer(format: nativeFormat, sessionID: sessionID)
 
         // Reset state
         sequenceNumber = 0
@@ -303,9 +333,14 @@ final class MeetingRecordingService {
 
     // MARK: - Ring Buffer
 
-    private func setupRingBuffer(format: AVAudioFormat) throws {
-        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
-        let url = tempDirectory.appendingPathComponent("ring-\(UUID().uuidString).wav")
+    private func setupRingBuffer(format: AVAudioFormat, sessionID: UUID) throws {
+        // Filename format: "<ISO8601-date>_<sessionID>.wav". The leading date
+        // makes orphaned-file sorting easy (newest first) during crash
+        // recovery, and embedding the session ID lets us match recovered
+        // files back to SwiftData records.
+        let stamp = ISO8601DateFormatter().string(from: Date())
+            .replacingOccurrences(of: ":", with: "-")
+        let url = recordingsDirectory.appendingPathComponent("\(stamp)_\(sessionID.uuidString).wav")
 
         let file = try AVAudioFile(forWriting: url, settings: [
             AVFormatIDKey: Int(kAudioFormatLinearPCM),
@@ -319,7 +354,7 @@ final class MeetingRecordingService {
         self.ringBufferURL = url
         self.ringBufferFramesWritten = 0
 
-        logger.debug("Ring buffer created at \(url.lastPathComponent)")
+        logger.info("Local recording file: \(url.lastPathComponent)")
     }
 
     private nonisolated func writeToRingBuffer(buffer: AVAudioPCMBuffer, file: AVAudioFile) {

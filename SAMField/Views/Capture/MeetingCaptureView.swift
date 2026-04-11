@@ -9,7 +9,9 @@
 import SwiftUI
 
 struct MeetingCaptureView: View {
-    @State private var coordinator = MeetingCaptureCoordinator()
+    /// Use the app-wide singleton so state survives tab switches and
+    /// backgrounding. Acquired + configured in SAMFieldApp on launch.
+    private let coordinator = MeetingCaptureCoordinator.shared
 
     var body: some View {
         VStack(spacing: 24) {
@@ -23,6 +25,16 @@ struct MeetingCaptureView: View {
                 timeDisplay
                 audioLevelIndicator
             }
+
+            // Orange warning if the streaming connection dropped mid-session.
+            if let warning = coordinator.connectionLossWarning {
+                connectionLossBanner(warning)
+            }
+
+            // Pending upload status — shown when there are queued
+            // recordings waiting to sync to the Mac, OR when an upload
+            // is currently in progress.
+            pendingUploadStatusBanner
 
             Spacer()
 
@@ -42,10 +54,145 @@ struct MeetingCaptureView: View {
             Spacer()
         }
         .padding()
-        .navigationTitle("Meeting")
+        .navigationTitle("Record")
         .onAppear {
             coordinator.autoConnectIfNeeded()
+            // Refresh pending queue count so the badge is accurate when
+            // the user opens the tab.
+            PendingUploadService.shared.refreshPendingCount()
+            // If we're already connected and idle, try to drain the queue.
+            coordinator.maybeProcessPendingQueue()
         }
+        .alert(
+            "Can't find your Mac",
+            isPresented: Binding(
+                get: { coordinator.showConnectionTimeoutPrompt },
+                set: { newValue in
+                    if !newValue { coordinator.dismissConnectionTimeoutPrompt() }
+                }
+            )
+        ) {
+            Button("Retry") {
+                coordinator.dismissConnectionTimeoutAndRetry()
+            }
+            Button("Record Locally") {
+                coordinator.dismissConnectionTimeoutAndRecordLocally()
+            }
+            Button("Cancel", role: .cancel) {
+                coordinator.dismissConnectionTimeoutPrompt()
+            }
+        } message: {
+            Text("SAM couldn't find your Mac on the local network. Make sure SAM is open on your Mac and both devices are on the same WiFi, or record locally and SAM will sync this meeting later.")
+        }
+    }
+
+    // MARK: - Pending Upload Banner
+
+    @ViewBuilder
+    private var pendingUploadStatusBanner: some View {
+        let pendingCount = coordinator.pendingUploadCount
+        let uploadState = PendingUploadService.shared.uploadState
+
+        switch uploadState {
+        case .sendingChunks(_, let bytesSent, let totalBytes):
+            let progress = totalBytes > 0 ? Double(bytesSent) / Double(totalBytes) : 0
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Image(systemName: "icloud.and.arrow.up")
+                        .foregroundStyle(.blue)
+                    Text("Syncing meeting to Mac")
+                        .font(.subheadline.bold())
+                    Spacer()
+                    Text("\(Int(progress * 100))%")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+                ProgressView(value: progress)
+                    .progressViewStyle(.linear)
+                    .tint(.blue)
+            }
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color.blue.opacity(0.1))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(Color.blue.opacity(0.3), lineWidth: 1)
+                    )
+            )
+            .padding(.horizontal)
+
+        case .sendingStart, .sendingEnd:
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("Starting sync…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+        case .awaitingAck:
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("Mac is processing…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+        case .failed(_, let reason):
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                Text("Sync failed: \(reason)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+            .padding(.horizontal)
+
+        case .idle:
+            if pendingCount > 0 {
+                HStack(spacing: 8) {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .foregroundStyle(.secondary)
+                    Text("\(pendingCount) meeting\(pendingCount == 1 ? "" : "s") waiting to sync")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .padding(.horizontal)
+            }
+        }
+    }
+
+    // MARK: - Connection Loss Banner
+
+    @ViewBuilder
+    private func connectionLossBanner(_ message: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "wifi.exclamationmark")
+                .font(.title3)
+                .foregroundStyle(.orange)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Recording locally")
+                    .font(.subheadline.bold())
+                    .foregroundStyle(.orange)
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.orange.opacity(0.12))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(Color.orange.opacity(0.4), lineWidth: 1)
+                )
+        )
+        .padding(.horizontal)
     }
 
     // MARK: - Connection Status

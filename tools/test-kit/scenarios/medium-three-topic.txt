@@ -1,0 +1,28 @@
+# description: 2-minute two-speaker meeting covering three topics with action items
+# expectedSpeakers: 2
+# expectedTopics: 3
+# expectedActionItems: 4
+
+ALEX: Hi Samantha, thanks for coming in today. I want to cover three things: your retirement timeline, the indexed universal life policy you asked about, and the tax planning we started last meeting.
+
+SAMANTHA: Sounds good. Let's start with retirement.
+
+ALEX: So you're targeting age 62, which is about eight years away. Based on your current contributions, you're on track for the income goal, but we need to think about sequence of returns risk in those first few years.
+
+SAMANTHA: What does that mean exactly?
+
+ALEX: It means if the market drops right when you start drawing income, your portfolio takes longer to recover. We can mitigate that by having a few years of expenses in something more stable.
+
+SAMANTHA: Got it. What do you suggest?
+
+ALEX: I'll send you a proposal this week. Let me also pull together the IUL illustration with three scenarios: conservative, moderate, and aggressive funding.
+
+SAMANTHA: Perfect. And about the tax planning?
+
+ALEX: You mentioned you have some appreciated stock you've been holding for a while. I want to introduce you to a CPA who specializes in capital gains strategies. I'll make the introduction by Friday.
+
+SAMANTHA: That would be great. Anything I need to do on my end?
+
+ALEX: Just gather last year's tax return and your most recent brokerage statement before our next meeting in two weeks.
+
+SAMANTHA: I can do that. Thanks Alex.

@@ -1,0 +1,52 @@
+# description: 5-minute meeting covering five topics with multiple action items per topic
+# expectedSpeakers: 2
+# expectedTopics: 5
+# expectedActionItems: 8
+
+ALEX: Hi Daniel, good to see you again. I have us scheduled for about an hour but I've got a tight agenda so let's see if we can move through it. I want to cover five things today: your kids' college funding, the disability insurance review, the new business succession planning, charitable giving for this year, and finally we should talk about your wife's IRA situation.
+
+DANIEL: That's a lot. Let's go.
+
+ALEX: Starting with college. Both girls are now thirteen and fifteen, so we're looking at college expenses starting in three years for the older one. The 529 plans we set up are growing but at the current pace we'll be about forty thousand dollars short for the older one's full four years at a state school.
+
+DANIEL: What are my options?
+
+ALEX: Three things. First, increase the monthly contribution by two hundred dollars. Second, we can look at converting some of the more aggressive growth allocations to a target-date glide path. Third, if your business has a good year, we can do a bigger lump sum contribution before December thirty first.
+
+DANIEL: Let's do the contribution increase right away. I'll think about the lump sum after I see the third quarter numbers.
+
+ALEX: Good. I'll send you the change forms tomorrow. Now, disability insurance. The policy you have through your business owner's group only covers about forty percent of your income, and it has a ninety day elimination period.
+
+DANIEL: That doesn't sound great.
+
+ALEX: It's not. For someone in your income bracket I usually recommend supplementing with an individual policy that brings total coverage closer to seventy percent and has a thirty day elimination. The cost would be around two hundred dollars a month.
+
+DANIEL: Send me a couple options. I want to compare two carriers.
+
+ALEX: Will do. Third item is the business succession plan. You mentioned last time that your son might be interested in taking over the practice in five to seven years. Have you talked to him about it more?
+
+DANIEL: We had dinner about it last month. He's interested but he wants to finish his MBA first.
+
+ALEX: That's perfect timing because we have a window to set up a structured buy-sell agreement and start funding it now. I want to introduce you to an attorney who specializes in family business transitions. I'll set up that introduction this month.
+
+DANIEL: Good.
+
+ALEX: Fourth, charitable giving. You usually do about twenty five thousand a year split between the church and a couple of mission organizations. This year because of the higher business income I'd suggest we look at a donor advised fund. You could front load three years of giving now, get the full deduction this tax year, and distribute it over time.
+
+DANIEL: Interesting. How much of a tax benefit are we talking?
+
+ALEX: Roughly twelve to fifteen thousand depending on your final bracket. I'll run the numbers and send you a one page comparison.
+
+DANIEL: Yes, do that.
+
+ALEX: And finally, your wife's IRA. She's turning seventy two next year, which means required minimum distributions kick in. The total IRA balance is about four hundred thousand which means her first RMD will be around fifteen thousand dollars. We need to plan for that.
+
+DANIEL: She mentioned something about wanting to give some of it away to charity.
+
+ALEX: Then a qualified charitable distribution is exactly what we want. We can have up to one hundred thousand a year sent directly from her IRA to qualified charities and it counts toward the RMD without showing up as income. Tell her we should talk about it specifically. I'll bring it up at our next joint meeting.
+
+DANIEL: Sounds good. Anything I need to do today?
+
+ALEX: Just confirm you want me to send the 529 change forms. The rest will follow up via email.
+
+DANIEL: Yes, send them. Thanks Alex.

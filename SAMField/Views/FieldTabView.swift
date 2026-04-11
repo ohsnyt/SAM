@@ -6,7 +6,7 @@
 //  Phase F1: iOS Companion App Foundation
 //
 //  Root tab navigation for SAM Field.
-//  Five tabs: Today, Capture, Meeting, Trips, Nearby.
+//  Four tabs: Today, Record, Trips, Nearby.
 //
 
 import SwiftUI
@@ -23,13 +23,10 @@ struct FieldTabView: View {
                 }
             }
 
-            Tab("Capture", systemImage: "mic.badge.plus", value: .capture) {
-                NavigationStack {
-                    CaptureView()
-                }
-            }
-
-            Tab("Meeting", systemImage: "waveform.and.mic", value: .meeting) {
+            // Unified recording tab — connects to the Mac when available
+            // (live transcription + summary) or records locally and queues
+            // for later sync when the Mac can't be reached.
+            Tab("Record", systemImage: "waveform.and.mic", value: .record) {
                 NavigationStack {
                     MeetingCaptureView()
                 }
@@ -52,8 +49,7 @@ struct FieldTabView: View {
 
 enum FieldTab: String, Hashable {
     case today
-    case capture
-    case meeting
+    case record
     case trips
     case nearby
 }

@@ -6,6 +6,9 @@ DerivedData/
 *.xcuserstate
 xcuserdata/
 
+# Swift Package Manager local state
+.swiftpm/
+
 # DMG staging
 *.dmg
 

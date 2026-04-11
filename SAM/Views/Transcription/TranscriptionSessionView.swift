@@ -20,6 +20,15 @@ struct TranscriptionSessionView: View {
     @Query(sort: \TranscriptSession.recordedAt, order: .reverse)
     private var sessions: [TranscriptSession]
 
+    /// Query for the enrolled agent voice profile — nil if the user hasn't
+    /// enrolled yet, in which case we show a friendly nudge banner.
+    @Query(filter: #Predicate<SpeakerProfile> { $0.isAgent == true })
+    private var agentProfiles: [SpeakerProfile]
+
+    private var hasEnrolledVoice: Bool {
+        !agentProfiles.isEmpty
+    }
+
     var body: some View {
         HSplitView {
             // Left: status + controls + history
@@ -66,6 +75,12 @@ struct TranscriptionSessionView: View {
     @ViewBuilder
     private var activeSessionPanel: some View {
         VStack(spacing: 16) {
+            // Gentle nudge when the user hasn't enrolled their voice yet.
+            // Shown above the status icon so it's the first thing they see.
+            if !hasEnrolledVoice {
+                enrollmentNudge
+            }
+
             // Status icon
             Image(systemName: statusIcon)
                 .font(.system(size: 40))
@@ -123,6 +138,51 @@ struct TranscriptionSessionView: View {
         }
         .padding()
         .frame(maxWidth: .infinity)
+    }
+
+    // MARK: - Enrollment Nudge
+
+    /// Friendly "train your voice" card shown when no agent profile exists.
+    /// Tapping it opens the enrollment wizard.
+    private var enrollmentNudge: some View {
+        Button {
+            showEnrollment = true
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "person.wave.2.fill")
+                    .font(.title2)
+                    .foregroundStyle(.blue)
+                    .frame(width: 32)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Train me to learn your voice")
+                        .font(.subheadline.bold())
+                        .foregroundStyle(.primary)
+                    Text("So I can tell you apart from clients in meeting transcripts")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .multilineTextAlignment(.leading)
+                }
+
+                Spacer(minLength: 8)
+
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color.blue.opacity(0.08))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(Color.blue.opacity(0.25), lineWidth: 1)
+                    )
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Summary Status Badge
@@ -398,6 +458,9 @@ struct TranscriptionSessionView: View {
                         description: Text("Recorded meeting transcriptions will appear here.")
                     )
                 } else {
+                    // Sessions are click-to-open only. Deletion lives in
+                    // the review view header, so the user can verify the
+                    // actual transcript text before confirming the delete.
                     ForEach(sessions) { session in
                         Button {
                             reviewSession = session

@@ -439,6 +439,14 @@ struct SAMApp: App {
                     // startListening() is idempotent.
                     TranscriptionSessionCoordinator.shared.configure(container: SAMModelContainer.shared)
                     TranscriptionSessionCoordinator.shared.startListening()
+
+                    #if DEBUG
+                    // Start the test inbox watcher so the dev cycle can drive
+                    // pipeline tests via Bash without needing the iPhone or
+                    // a microphone. See TESTING.md for the workflow.
+                    TestInboxWatcher.shared.configure(container: SAMModelContainer.shared)
+                    TestInboxWatcher.shared.start()
+                    #endif
                 }
                 .fileImporter(
                     isPresented: $showImportFilePicker,

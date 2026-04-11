@@ -78,10 +78,20 @@ final class TranscriptionSessionCoordinator {
     private var modelContainer: ModelContainer?
     private var segmentIndexCounter: Int = 0
 
+    /// True while a new session's pipeline reset is in progress. Any audio
+    /// chunks that arrive in this window are buffered in `pendingChunks`
+    /// and replayed into the pipeline once the reset completes. Prevents
+    /// chunks from the new session leaking into the prior session's buffer.
+    private var sessionTransitionInProgress = false
+    private var pendingChunks: [AudioChunk] = []
+
     // MARK: - Configuration
 
     func configure(container: ModelContainer) {
         self.modelContainer = container
+        // Propagate the container to the receiving service so it can
+        // reprocess pending uploads against the same store.
+        receivingService.configure(container: container)
     }
 
     // MARK: - Listener Lifecycle
@@ -175,41 +185,80 @@ final class TranscriptionSessionCoordinator {
     // MARK: - Session Handling
 
     private func handleSessionStart(sessionID: UUID, sampleRate: UInt32, channels: UInt16) {
-        currentSessionID = sessionID
+        // Immediately reflect that a session is beginning so the UI flips out
+        // of any .completed state from a prior session. The actual pipeline
+        // setup is deferred until any in-flight window from the prior session
+        // has finished — otherwise `pipelineService.reset()` would clobber
+        // its buffers mid-transcription.
         sessionState = .receiving
-        segmentIndexCounter = 0
+        sessionTransitionInProgress = true
+        pendingChunks.removeAll()
 
-        // Reset pipeline for the new session (model stays loaded)
-        pipelineService.reset()
+        Task { [weak self, sessionID, sampleRate, channels] in
+            guard let self else { return }
 
-        // Load enrolled agent embedding (if any) so diarization can auto-label the agent
-        pipelineService.enrolledAgentEmbedding = loadEnrolledAgentEmbedding()
+            // Wait for any in-flight window from the previous session to
+            // complete before resetting state. If it's already idle this is
+            // an immediate no-op.
+            let wentQuiet = await self.pipelineService.waitForQuiescence(timeout: 30)
+            if !wentQuiet {
+                logger.warning("Pipeline did not go quiescent before new session \(sessionID.uuidString) — proceeding anyway")
+            }
 
-        // Create TranscriptSession in SwiftData
-        guard let container = modelContainer else {
-            logger.error("No model container configured")
-            return
-        }
+            self.currentSessionID = sessionID
+            self.segmentIndexCounter = 0
 
-        let context = ModelContext(container)
-        let session = TranscriptSession(
-            id: sessionID,
-            status: .recording,
-            audioFilePath: receivingService.relativeAudioPath(for: sessionID),
-            whisperModelID: WhisperTranscriptionService.defaultModelID
-        )
-        context.insert(session)
+            // Reset pipeline for the new session (model stays loaded).
+            self.pipelineService.reset()
 
-        do {
-            try context.save()
-            logger.info("TranscriptSession created: \(sessionID.uuidString)")
-        } catch {
-            logger.error("Failed to save TranscriptSession: \(error.localizedDescription)")
+            // Load enrolled agent embedding (if any) so diarization can
+            // auto-label the agent in the new session.
+            self.pipelineService.enrolledAgentEmbedding = self.loadEnrolledAgentEmbedding()
+
+            // Create TranscriptSession in SwiftData.
+            if let container = self.modelContainer {
+                let context = ModelContext(container)
+                let session = TranscriptSession(
+                    id: sessionID,
+                    status: .recording,
+                    audioFilePath: self.receivingService.relativeAudioPath(for: sessionID),
+                    whisperModelID: WhisperTranscriptionService.defaultModelID
+                )
+                context.insert(session)
+                do {
+                    try context.save()
+                    logger.info("TranscriptSession created: \(sessionID.uuidString) (format: \(sampleRate)Hz \(channels)ch)")
+                } catch {
+                    logger.error("Failed to save TranscriptSession: \(error.localizedDescription)")
+                }
+            } else {
+                logger.error("No model container configured")
+            }
+
+            // Replay any chunks that arrived while the pipeline was being
+            // reset. Order is preserved because `pendingChunks` is a simple
+            // FIFO array appended to in order, and both append + drain run
+            // on the main actor.
+            let queued = self.pendingChunks
+            self.pendingChunks.removeAll()
+            self.sessionTransitionInProgress = false
+            if !queued.isEmpty {
+                logger.info("Draining \(queued.count) chunks buffered during session transition")
+                for chunk in queued {
+                    self.pipelineService.ingest(chunk: chunk)
+                }
+            }
         }
     }
 
     private func handleAudioChunk(_ chunk: AudioChunk) {
-        // Feed the chunk into the transcription pipeline for streaming Whisper processing.
+        // If we're mid-transition (new session starting, old one still
+        // winding down), buffer the chunk instead of ingesting it into the
+        // stale pipeline state. It'll be replayed once reset completes.
+        if sessionTransitionInProgress {
+            pendingChunks.append(chunk)
+            return
+        }
         pipelineService.ingest(chunk: chunk)
     }
 
@@ -361,6 +410,12 @@ final class TranscriptionSessionCoordinator {
                 }
             }
 
+            // Trigger transcript polish (fixes proper nouns, window-seam
+            // sentence breaks, punctuation). Runs in parallel with summary.
+            Task(priority: .utility) { [weak self, sessionID] in
+                await self?.generatePolishedTranscript(for: sessionID)
+            }
+
             // Trigger meeting summary generation (Phase 3) — this runs in parallel
             // with note analysis and persists the summary back onto the session.
             Task(priority: .utility) { [weak self, sessionID] in
@@ -370,6 +425,72 @@ final class TranscriptionSessionCoordinator {
             self.lastFinalizedSessionID = sessionID
             self.currentSessionID = nil
             self.returnToListening()
+        }
+    }
+
+    // MARK: - Transcript Polish (Layer 2 cleanup)
+
+    /// Generation state for the polish pass — useful for UI spinners.
+    enum PolishState: Sendable, Equatable {
+        case idle
+        case polishing
+        case ready
+        case failed(String)
+    }
+
+    private(set) var polishState: PolishState = .idle
+
+    /// Generate a polished transcript for the session and persist it to
+    /// `TranscriptSession.polishedText`. The review view and summary can
+    /// prefer this over the raw segment text.
+    ///
+    /// Runs at `.utility` priority in parallel with summary generation.
+    private func generatePolishedTranscript(for sessionID: UUID) async {
+        guard let container = modelContainer else { return }
+
+        polishState = .polishing
+
+        // Build the same speaker-grouped transcript we feed to the summary,
+        // then hand it to the polish service along with known proper nouns
+        // pulled from SAM's business profile + contacts.
+        let context = ModelContext(container)
+        let (transcriptText, _) = buildSummaryInput(
+            sessionID: sessionID,
+            context: context
+        )
+
+        guard let transcriptText, !transcriptText.isEmpty else {
+            logger.info("Polish skipped — empty transcript")
+            polishState = .idle
+            return
+        }
+
+        let knownNouns = await TranscriptPolishService.gatherKnownNouns(
+            from: container,
+            maxContacts: 60
+        )
+
+        do {
+            let polished = try await TranscriptPolishService.shared.polish(
+                transcript: transcriptText,
+                knownNouns: knownNouns
+            )
+
+            // Persist to the session
+            let descriptor = FetchDescriptor<TranscriptSession>(
+                predicate: #Predicate { $0.id == sessionID }
+            )
+            if let session = try context.fetch(descriptor).first {
+                session.polishedText = polished
+                session.polishedAt = .now
+                try context.save()
+            }
+
+            polishState = .ready
+            logger.info("Polished transcript generated and saved for session \(sessionID.uuidString)")
+        } catch {
+            logger.error("Transcript polish failed: \(error.localizedDescription)")
+            polishState = .failed(error.localizedDescription)
         }
     }
 

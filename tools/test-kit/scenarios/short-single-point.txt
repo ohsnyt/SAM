@@ -1,0 +1,6 @@
+# description: 15-second monologue with one clear action item
+# expectedSpeakers: 1
+# expectedTopics: 1
+# expectedActionItems: 1
+
+ALEX: Okay, this is a quick reminder to myself. I need to call Sarah Johnson tomorrow morning and send her the IUL illustration we discussed. Her son just started college so she's thinking about supplemental life insurance.

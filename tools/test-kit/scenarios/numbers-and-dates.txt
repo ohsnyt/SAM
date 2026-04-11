@@ -1,0 +1,6 @@
+# description: Speech that's heavy on numbers, dates, and percentages — common error sources for ASR
+# expectedSpeakers: 1
+# expectedTopics: 1
+# expectedActionItems: 3
+
+ALEX: Quick capture for my notes. I just got off the phone with John Robinson. He wants to put two hundred and fifty thousand dollars into a fixed index annuity with a seven percent first year bonus. The contract he's looking at has a ten year surrender period that starts at twelve percent and decreases by one and a half percent per year. I need to send him the carrier comparison by April fifteenth, and we have a follow up call scheduled for April twenty second at ten thirty in the morning. He also asked about converting his old four oh one k from his previous employer, that balance is about six hundred and seventy two thousand. I told him I'd run two illustrations: one assuming a six percent return over twenty years and one assuming four point five percent. His birthday is November third nineteen fifty eight so he'll be sixty seven this year and seventy when the surrender period ends.

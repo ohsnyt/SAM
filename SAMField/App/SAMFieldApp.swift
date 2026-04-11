@@ -26,6 +26,13 @@ struct SAMFieldApp: App {
         WindowGroup {
             FieldTabView()
                 .modelContainer(container)
+                .task {
+                    // Configure the meeting capture coordinator with the
+                    // shared container. This also wires up the pending
+                    // upload service and runs crash recovery on any
+                    // orphaned WAV files from force-quits / crashes.
+                    MeetingCaptureCoordinator.shared.configure(container: container)
+                }
         }
     }
 }
