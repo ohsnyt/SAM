@@ -440,6 +440,14 @@ struct SAMApp: App {
                     TranscriptionSessionCoordinator.shared.configure(container: SAMModelContainer.shared)
                     TranscriptionSessionCoordinator.shared.startListening()
 
+                    // Run the audio retention pass on launch in the background.
+                    // Looks for sessions signed off >30d ago (configurable) and
+                    // purges their WAV files to free disk + reduce privacy
+                    // surface. Polished text + summary + linked note remain.
+                    Task(priority: .utility) {
+                        await RetentionService.shared.runOnce(container: SAMModelContainer.shared)
+                    }
+
                     #if DEBUG
                     // Start the test inbox watcher so the dev cycle can drive
                     // pipeline tests via Bash without needing the iPhone or

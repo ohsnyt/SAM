@@ -509,12 +509,20 @@ final class TranscriptionSessionCoordinator {
 
     private(set) var summaryState: SummaryState = .idle
 
+    /// Hard ceiling for a single summary generation attempt. The summary
+    /// service can occasionally hang on cold-start Apple Intelligence. After
+    /// this timeout the UI surfaces a "Try again" button so the user isn't
+    /// stuck staring at a spinner.
+    private static let summaryGenerationTimeout: TimeInterval = 30
+
     /// Generate a `MeetingSummary` for the given session ID, persist it to
     /// the `TranscriptSession.meetingSummaryJSON` field, and (in Phase 4)
     /// push it back to the connected iPhone.
     ///
     /// Runs at `.utility` priority so it yields to any in-flight Whisper
-    /// transcription on the next session.
+    /// transcription on the next session. Wrapped in a 30s watchdog so a
+    /// stuck FoundationModels call doesn't leave the UI in `.generating`
+    /// forever.
     private func generateMeetingSummary(for sessionID: UUID) async {
         guard let container = modelContainer else { return }
 
@@ -534,10 +542,12 @@ final class TranscriptionSessionCoordinator {
         }
 
         do {
-            let summary = try await MeetingSummaryService.shared.summarize(
-                transcript: transcriptText,
-                metadata: metadata
-            )
+            let summary = try await Self.withTimeout(seconds: Self.summaryGenerationTimeout) {
+                try await MeetingSummaryService.shared.summarize(
+                    transcript: transcriptText,
+                    metadata: metadata
+                )
+            }
 
             // Persist to the session
             let descriptor = FetchDescriptor<TranscriptSession>(
@@ -555,9 +565,42 @@ final class TranscriptionSessionCoordinator {
 
             // Phase 4: push summary back to iPhone over the same TCP connection.
             receivingService.sendMeetingSummary(summary)
+        } catch is SummaryTimeoutError {
+            logger.warning("Meeting summary timed out after \(Self.summaryGenerationTimeout)s — surfacing retry to user")
+            summaryState = .failed("Summary timed out after \(Int(Self.summaryGenerationTimeout))s. Apple Intelligence may not be ready yet — try again in a moment.")
         } catch {
             logger.error("Meeting summary failed: \(error.localizedDescription)")
             summaryState = .failed(error.localizedDescription)
+        }
+    }
+
+    /// Sentinel thrown by the timeout helper. Caught by the summary loop so
+    /// it can present a friendlier "try again" message instead of the raw
+    /// error path.
+    private struct SummaryTimeoutError: Error {}
+
+    /// Race the operation against a sleep. If the sleep wins, throw a
+    /// timeout error and let the caller decide how to recover. The
+    /// underlying operation may still complete in the background — we
+    /// just stop waiting on it.
+    private static func withTimeout<T: Sendable>(
+        seconds: TimeInterval,
+        operation: @escaping @Sendable () async throws -> T
+    ) async throws -> T {
+        try await withThrowingTaskGroup(of: T.self) { group in
+            group.addTask {
+                try await operation()
+            }
+            group.addTask {
+                try await Task.sleep(for: .seconds(seconds))
+                throw SummaryTimeoutError()
+            }
+            // First to finish wins; cancel the other.
+            guard let result = try await group.next() else {
+                throw SummaryTimeoutError()
+            }
+            group.cancelAll()
+            return result
         }
     }
 

@@ -69,6 +69,34 @@ public final class TranscriptSession {
     /// When the polished transcript was generated.
     public var polishedAt: Date?
 
+    // MARK: - Retention (Phase C)
+    //
+    // SAM keeps the recording, the raw segments, the polished transcript,
+    // the summary, and the linked note for each meeting. That is enough
+    // historical context to be useful but is also a privacy liability if
+    // it sits forever. The retention fields below let the user explicitly
+    // sign off on a meeting (locking the record) and let SAM auto-purge
+    // the heavy parts (audio file, raw segments) after a configurable
+    // grace window while keeping the lightweight summary + linked note.
+
+    /// When the user explicitly reviewed and signed off on the transcript.
+    /// nil while the meeting is still in flight or unreviewed. Once set,
+    /// the audio purge timer starts counting from this date.
+    public var signedOffAt: Date?
+
+    /// When the audio file was purged from disk. nil while the audio is
+    /// still present. Set by `RetentionService` after the configured
+    /// grace window. Independent from session deletion — the transcript
+    /// and summary can outlive the audio.
+    public var audioPurgedAt: Date?
+
+    /// User override: when true, RetentionService will never auto-purge
+    /// the audio file for this session. The user can pin a specific
+    /// meeting they want to keep listenable indefinitely.
+    /// Default = false ensures lightweight SwiftData migration works
+    /// against existing on-disk sessions.
+    public var pinAudioRetention: Bool = false
+
     // MARK: - Relationships
 
     @Relationship(deleteRule: .cascade, inverse: \TranscriptSegment.session)
@@ -117,7 +145,10 @@ public final class TranscriptSession {
         meetingSummaryJSON: String? = nil,
         summaryGeneratedAt: Date? = nil,
         polishedText: String? = nil,
-        polishedAt: Date? = nil
+        polishedAt: Date? = nil,
+        signedOffAt: Date? = nil,
+        audioPurgedAt: Date? = nil,
+        pinAudioRetention: Bool = false
     ) {
         self.id = id
         self.recordedAt = recordedAt
@@ -131,6 +162,9 @@ public final class TranscriptSession {
         self.summaryGeneratedAt = summaryGeneratedAt
         self.polishedText = polishedText
         self.polishedAt = polishedAt
+        self.signedOffAt = signedOffAt
+        self.audioPurgedAt = audioPurgedAt
+        self.pinAudioRetention = pinAudioRetention
     }
 }
 

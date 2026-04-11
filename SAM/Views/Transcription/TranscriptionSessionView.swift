@@ -239,13 +239,23 @@ struct TranscriptionSessionView: View {
             }
 
         case .failed(let msg):
-            Label(msg, systemImage: "exclamationmark.triangle.fill")
-                .font(.caption)
-                .foregroundStyle(.red)
-                .lineLimit(2)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
-                .background(Color.red.opacity(0.1), in: Capsule())
+            HStack(spacing: 8) {
+                Label(msg, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .lineLimit(2)
+                Button {
+                    coordinator.regenerateSummary()
+                } label: {
+                    Label("Try again", systemImage: "arrow.clockwise")
+                        .font(.caption)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Color.red.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
         }
     }
 

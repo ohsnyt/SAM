@@ -28,6 +28,7 @@ struct TranscriptionReviewView: View {
     @State private var savedAsNote: Bool = false
     @State private var showRawSegments: Bool = false
     @State private var confirmDelete: Bool = false
+    @State private var confirmSignOff: Bool = false
 
     @Query(sort: \SamPerson.displayName) private var allPeople: [SamPerson]
 
@@ -100,6 +101,29 @@ struct TranscriptionReviewView: View {
             }
             .buttonStyle(.bordered)
 
+            // Sign Off / Signed Off badge. Once signed off, SAM starts the
+            // 30-day audio retention timer (per RetentionService).
+            if session.signedOffAt != nil {
+                Label {
+                    Text("Signed off")
+                        .font(.caption)
+                } icon: {
+                    Image(systemName: "checkmark.seal.fill")
+                        .foregroundStyle(.green)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(Color.green.opacity(0.12), in: Capsule())
+            } else {
+                Button {
+                    confirmSignOff = true
+                } label: {
+                    Label("Sign Off", systemImage: "checkmark.seal")
+                }
+                .buttonStyle(.bordered)
+                .help("Mark this meeting as reviewed. SAM will purge the audio file after \(RetentionService.shared.audioRetentionDays) days.")
+            }
+
             Button("Close") { dismiss() }
                 .buttonStyle(.bordered)
 
@@ -133,6 +157,26 @@ struct TranscriptionReviewView: View {
         } message: {
             Text(deleteDialogMessage)
         }
+        .confirmationDialog(
+            "Sign off on this meeting?",
+            isPresented: $confirmSignOff,
+            titleVisibility: .visible
+        ) {
+            Button("Sign Off") {
+                performSignOff()
+            }
+            Button("Cancel", role: .cancel) {
+                confirmSignOff = false
+            }
+        } message: {
+            Text("Marks the meeting as reviewed. SAM will keep the polished transcript, summary, and linked note forever, and will purge the audio recording from disk after \(RetentionService.shared.audioRetentionDays) days. You can also pin specific meetings to keep their audio indefinitely.")
+        }
+    }
+
+    private func performSignOff() {
+        let container = modelContext.container
+        _ = RetentionService.shared.signOff(session: session, container: container)
+        confirmSignOff = false
     }
 
     // MARK: - Delete (local to the review view)
