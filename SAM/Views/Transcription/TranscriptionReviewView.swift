@@ -294,7 +294,7 @@ struct TranscriptionReviewView: View {
             VStack(alignment: .leading, spacing: 12) {
                 // TLDR
                 if !summary.tldr.isEmpty {
-                    Text(summary.tldr)
+                    Text("Summary: \(summary.tldr)")
                         .font(.body)
                         .foregroundStyle(.primary)
                         .fixedSize(horizontal: false, vertical: true)

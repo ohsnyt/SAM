@@ -209,7 +209,7 @@ struct TranscriptionSessionView: View {
                 GroupBox("Meeting Summary") {
                     VStack(alignment: .leading, spacing: 8) {
                         if !summary.tldr.isEmpty {
-                            Text(summary.tldr)
+                            Text("Summary: \(summary.tldr)")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
