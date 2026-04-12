@@ -81,8 +81,13 @@ final class MeetingCaptureCoordinator {
     /// recording stops.
     private(set) var lastSummary: MeetingSummary?
 
-    /// Whether we're still waiting on the summary to arrive.
+    /// Whether we're still waiting on the summary to arrive. Auto-clears
+    /// after 60 seconds to prevent the phone from showing a spinner forever
+    /// if the Mac-side connection dropped before the summary could be pushed.
     private(set) var isAwaitingSummary: Bool = false
+
+    /// Watchdog task that auto-clears `isAwaitingSummary` after a timeout.
+    private var summaryWatchdog: Task<Void, Never>?
 
     /// How the current (or most recent) session is being captured.
     enum RecordingMode: Sendable, Equatable {
@@ -164,6 +169,8 @@ final class MeetingCaptureCoordinator {
         // Wire up the summary callback once — retained for the coordinator's lifetime.
         streamingService.onMeetingSummary = { [weak self] summary in
             Task { @MainActor in
+                self?.summaryWatchdog?.cancel()
+                self?.summaryWatchdog = nil
                 self?.lastSummary = summary
                 self?.isAwaitingSummary = false
             }
@@ -616,6 +623,7 @@ final class MeetingCaptureCoordinator {
             streamingService.sendSessionEnd()
             isAwaitingSummary = true
             lastSummary = nil
+            startSummaryWatchdog()
         case .degradedToLocal:
             // We dropped mid-session, but the reconnect logic may have
             // restored the connection in the meantime. If so, tell the
@@ -665,6 +673,29 @@ final class MeetingCaptureCoordinator {
         sessionID = nil
         lastSummary = nil
         isAwaitingSummary = false
+        summaryWatchdog?.cancel()
+        summaryWatchdog = nil
         captureState = .idle
+    }
+
+    // MARK: - Summary Watchdog
+
+    /// Start a 60-second watchdog that auto-clears the "Generating summary"
+    /// spinner if the Mac never pushes the result (e.g., connection dropped
+    /// before the summary was ready). Without this the phone shows a spinner
+    /// forever. If the Mac reconnects and pushes the summary later, the
+    /// onMeetingSummary callback will populate lastSummary regardless of
+    /// whether the watchdog already fired.
+    private func startSummaryWatchdog() {
+        summaryWatchdog?.cancel()
+        summaryWatchdog = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(60))
+            guard !Task.isCancelled else { return }
+            guard let self else { return }
+            if self.isAwaitingSummary {
+                self.isAwaitingSummary = false
+                logger.info("Summary watchdog: timed out after 60s, clearing awaiting state")
+            }
+        }
     }
 }

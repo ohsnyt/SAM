@@ -207,35 +207,106 @@ struct TranscriptionSessionView: View {
         case .ready:
             if let summary = coordinator.lastMeetingSummary, summary.hasContent {
                 GroupBox("Meeting Summary") {
-                    VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: 8) {
                         if !summary.tldr.isEmpty {
                             Text(summary.tldr)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
-                        HStack(spacing: 10) {
-                            if !summary.actionItems.isEmpty {
-                                Label("\(summary.actionItems.count)", systemImage: "checkmark.circle")
-                                    .font(.caption2)
+
+                        // Compliance flags — front and center when present
+                        if !summary.complianceFlags.isEmpty {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Label("Compliance Review", systemImage: "exclamationmark.shield.fill")
+                                    .font(.caption2.bold())
+                                    .foregroundStyle(.red)
+                                ForEach(summary.complianceFlags, id: \.self) { flag in
+                                    Text("• \(flag)")
+                                        .font(.caption2)
+                                        .foregroundStyle(.red.opacity(0.8))
+                                }
                             }
-                            if !summary.decisions.isEmpty {
-                                Label("\(summary.decisions.count)", systemImage: "hand.raised")
-                                    .font(.caption2)
-                            }
-                            if !summary.followUps.isEmpty {
-                                Label("\(summary.followUps.count)", systemImage: "person.2")
-                                    .font(.caption2)
-                            }
-                            if !summary.lifeEvents.isEmpty {
-                                Label("\(summary.lifeEvents.count)", systemImage: "heart")
-                                    .font(.caption2)
+                            .padding(6)
+                            .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+                        }
+
+                        // Action items — the most valuable structured output
+                        if !summary.actionItems.isEmpty {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Label("Action Items", systemImage: "checkmark.circle")
+                                    .font(.caption2.bold())
+                                    .foregroundStyle(.secondary)
+                                ForEach(Array(summary.actionItems.enumerated()), id: \.offset) { _, item in
+                                    HStack(alignment: .top, spacing: 4) {
+                                        Image(systemName: "circle")
+                                            .font(.system(size: 7))
+                                            .foregroundStyle(.tertiary)
+                                            .padding(.top, 3)
+                                        VStack(alignment: .leading, spacing: 0) {
+                                            Text(item.task)
+                                                .font(.caption)
+                                            if item.owner != nil || item.dueDate != nil {
+                                                HStack(spacing: 6) {
+                                                    if let owner = item.owner {
+                                                        Text(owner)
+                                                            .font(.caption2)
+                                                            .foregroundStyle(.blue)
+                                                    }
+                                                    if let due = item.dueDate {
+                                                        Text(due)
+                                                            .font(.caption2)
+                                                            .foregroundStyle(.orange)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
-                        .foregroundStyle(.secondary)
+
+                        // Decisions
+                        if !summary.decisions.isEmpty {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Label("Decisions", systemImage: "checkmark.seal")
+                                    .font(.caption2.bold())
+                                    .foregroundStyle(.secondary)
+                                ForEach(summary.decisions, id: \.self) { decision in
+                                    Text("• \(decision)")
+                                        .font(.caption)
+                                }
+                            }
+                        }
+
+                        // Follow-ups
+                        if !summary.followUps.isEmpty {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Label("Follow-ups", systemImage: "person.2")
+                                    .font(.caption2.bold())
+                                    .foregroundStyle(.secondary)
+                                ForEach(Array(summary.followUps.enumerated()), id: \.offset) { _, followUp in
+                                    Text("• \(followUp.person): \(followUp.reason)")
+                                        .font(.caption)
+                                }
+                            }
+                        }
+
+                        // Life events
+                        if !summary.lifeEvents.isEmpty {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Label("Life Events", systemImage: "heart")
+                                    .font(.caption2.bold())
+                                    .foregroundStyle(.secondary)
+                                ForEach(summary.lifeEvents, id: \.self) { event in
+                                    Text("• \(event)")
+                                        .font(.caption)
+                                }
+                            }
+                        }
                     }
                 }
-                .frame(maxWidth: 280)
+                .frame(maxWidth: 380)
             }
 
         case .failed(let msg):

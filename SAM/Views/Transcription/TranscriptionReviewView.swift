@@ -28,7 +28,6 @@ struct TranscriptionReviewView: View {
     @State private var savedAsNote: Bool = false
     @State private var showRawSegments: Bool = false
     @State private var confirmDelete: Bool = false
-    @State private var confirmSignOff: Bool = false
 
     @Query(sort: \SamPerson.displayName) private var allPeople: [SamPerson]
 
@@ -90,10 +89,6 @@ struct TranscriptionReviewView: View {
 
             Spacer()
 
-            // Destructive delete lives in the header of the transcript
-            // itself — users see the actual transcript text before
-            // confirming, so there's no ambiguity about which session
-            // is being deleted.
             Button(role: .destructive) {
                 confirmDelete = true
             } label: {
@@ -101,11 +96,16 @@ struct TranscriptionReviewView: View {
             }
             .buttonStyle(.bordered)
 
-            // Sign Off / Signed Off badge. Once signed off, SAM starts the
-            // 30-day audio retention timer (per RetentionService).
+            Button("Close") { dismiss() }
+                .buttonStyle(.bordered)
+
+            // "Looks Good" is the single primary action: saves the note,
+            // triggers analysis, AND signs off (starts the retention
+            // timer). Sarah's mental model is "I've reviewed this, use it."
             if session.signedOffAt != nil {
+                // Already approved — show a green badge, no action needed.
                 Label {
-                    Text("Signed off")
+                    Text("Saved")
                         .font(.caption)
                 } icon: {
                     Image(systemName: "checkmark.seal.fill")
@@ -116,100 +116,39 @@ struct TranscriptionReviewView: View {
                 .background(Color.green.opacity(0.12), in: Capsule())
             } else {
                 Button {
-                    confirmSignOff = true
+                    Task { await saveAndSignOff() }
                 } label: {
-                    Label("Sign Off", systemImage: "checkmark.seal")
-                }
-                .buttonStyle(.bordered)
-                .help("Mark this meeting as reviewed. SAM will purge the audio file after \(RetentionService.shared.audioRetentionDays) days.")
-            }
-
-            Button("Close") { dismiss() }
-                .buttonStyle(.bordered)
-
-            Button {
-                Task { await saveAsNote() }
-            } label: {
-                if isSaving {
-                    HStack(spacing: 6) {
-                        ProgressView().controlSize(.small)
-                        Text("Saving…")
+                    if isSaving {
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.small)
+                            Text("Saving…")
+                        }
+                    } else {
+                        Label("Looks Good", systemImage: "checkmark.seal")
                     }
-                } else {
-                    Label("Save to SAM", systemImage: "square.and.arrow.down")
                 }
+                .buttonStyle(.borderedProminent)
+                .disabled(isSaving)
             }
-            .buttonStyle(.borderedProminent)
-            .disabled(isSaving)
         }
         .padding()
         .confirmationDialog(
-            "Delete this meeting?",
+            "Delete this recording?",
             isPresented: $confirmDelete,
             titleVisibility: .visible
         ) {
-            Button("Delete Meeting", role: .destructive) {
+            Button("Delete Recording", role: .destructive) {
                 performDelete()
             }
             Button("Cancel", role: .cancel) {
                 confirmDelete = false
             }
         } message: {
-            Text(deleteDialogMessage)
-        }
-        .confirmationDialog(
-            "Sign off on this meeting?",
-            isPresented: $confirmSignOff,
-            titleVisibility: .visible
-        ) {
-            Button("Sign Off") {
-                performSignOff()
-            }
-            Button("Cancel", role: .cancel) {
-                confirmSignOff = false
-            }
-        } message: {
-            Text("Marks the meeting as reviewed. SAM will keep the polished transcript, summary, and linked note forever, and will purge the audio recording from disk after \(RetentionService.shared.audioRetentionDays) days. You can also pin specific meetings to keep their audio indefinitely.")
+            Text("This permanently removes the transcript, summary, and all related notes. Linked contacts are not affected.")
         }
     }
 
-    private func performSignOff() {
-        let container = modelContext.container
-        _ = RetentionService.shared.signOff(session: session, container: container)
-        confirmSignOff = false
-    }
-
-    // MARK: - Delete (local to the review view)
-
-    private var deleteDialogMessage: String {
-        var lostItems: [String] = []
-
-        let segmentCount = session.segments?.count ?? 0
-        if segmentCount > 0 {
-            lostItems.append("The full transcript (\(segmentCount) segment\(segmentCount == 1 ? "" : "s")) with speaker labels")
-        }
-        if session.polishedText != nil {
-            lostItems.append("The polished transcript")
-        }
-        if session.audioFilePath != nil {
-            lostItems.append("The audio recording")
-        }
-        if let json = session.meetingSummaryJSON, !json.isEmpty {
-            lostItems.append("The AI-generated summary (TL;DR, action items, decisions, follow-ups)")
-        }
-        if session.linkedNote != nil {
-            lostItems.append("The linked note in SAM and any extracted action items, topics, and mentions")
-        }
-
-        let header = "This permanently removes this meeting from SAM. The following will be lost:"
-        let bullets = lostItems.map { "• \($0)" }.joined(separator: "\n")
-        let footer = "\n\nLinked contacts are NOT deleted — they stay in your People list."
-
-        if lostItems.isEmpty {
-            return "This permanently removes this meeting from SAM.\(footer)"
-        }
-        return "\(header)\n\n\(bullets)\(footer)"
-    }
+    // MARK: - Delete
 
     private func performDelete() {
         // Delete the audio file on disk if present
@@ -312,6 +251,10 @@ struct TranscriptionReviewView: View {
     private var transcriptPane: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 14) {
+                // Meeting summary at the top — the actionable output Sarah
+                // reads first before scrolling down into the full transcript.
+                meetingSummarySection
+
                 // Show the polished transcript when SAM has generated one.
                 // Fall back to raw paragraphs if polish hasn't run yet or
                 // failed. "Show raw segments" toggle lets users verify the
@@ -338,6 +281,235 @@ struct TranscriptionReviewView: View {
             .padding()
         }
         .background(Color(nsColor: .textBackgroundColor))
+    }
+
+    // MARK: - Meeting Summary Section
+
+    @ViewBuilder
+    private var meetingSummarySection: some View {
+        if let json = session.meetingSummaryJSON,
+           let summary = MeetingSummary.from(jsonString: json),
+           summary.hasContent {
+
+            VStack(alignment: .leading, spacing: 12) {
+                // TLDR
+                if !summary.tldr.isEmpty {
+                    Text(summary.tldr)
+                        .font(.body)
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                // Topics as inline tags
+                if !summary.topics.isEmpty {
+                    FlowLayout(spacing: 6) {
+                        ForEach(summary.topics, id: \.self) { topic in
+                            Text(topic)
+                                .font(.caption)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(Color.blue.opacity(0.1), in: Capsule())
+                                .foregroundStyle(.blue)
+                        }
+                    }
+                }
+
+                // Compliance flags — shown first and prominently if present
+                if !summary.complianceFlags.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label("Compliance Review Needed", systemImage: "exclamationmark.shield.fill")
+                            .font(.caption.bold())
+                            .foregroundStyle(.red)
+                        ForEach(summary.complianceFlags, id: \.self) { flag in
+                            HStack(alignment: .top, spacing: 6) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .font(.caption2)
+                                    .foregroundStyle(.red)
+                                Text(flag)
+                                    .font(.caption)
+                                    .foregroundStyle(.primary)
+                            }
+                        }
+                    }
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+                }
+
+                // Action items
+                if !summary.actionItems.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Label("Action Items", systemImage: "checkmark.circle")
+                            .font(.caption.bold())
+                            .foregroundStyle(.secondary)
+                        ForEach(Array(summary.actionItems.enumerated()), id: \.offset) { _, item in
+                            HStack(alignment: .top, spacing: 6) {
+                                Image(systemName: "circle")
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                                    .padding(.top, 2)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(item.task)
+                                        .font(.callout)
+                                    HStack(spacing: 8) {
+                                        if let owner = item.owner, !owner.isEmpty {
+                                            Label(owner, systemImage: "person")
+                                                .font(.caption2)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        if let due = item.dueDate, !due.isEmpty {
+                                            Label(due, systemImage: "calendar")
+                                                .font(.caption2)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Decisions
+                if !summary.decisions.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label("Decisions", systemImage: "checkmark.seal")
+                            .font(.caption.bold())
+                            .foregroundStyle(.secondary)
+                        ForEach(summary.decisions, id: \.self) { decision in
+                            HStack(alignment: .top, spacing: 6) {
+                                Image(systemName: "arrow.right.circle.fill")
+                                    .font(.caption2)
+                                    .foregroundStyle(.green)
+                                    .padding(.top, 2)
+                                Text(decision)
+                                    .font(.callout)
+                            }
+                        }
+                    }
+                }
+
+                // Follow-ups
+                if !summary.followUps.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label("Follow-ups", systemImage: "person.2")
+                            .font(.caption.bold())
+                            .foregroundStyle(.secondary)
+                        ForEach(Array(summary.followUps.enumerated()), id: \.offset) { _, followUp in
+                            HStack(alignment: .top, spacing: 6) {
+                                Image(systemName: "arrow.turn.down.right")
+                                    .font(.caption2)
+                                    .foregroundStyle(.orange)
+                                    .padding(.top, 2)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(followUp.person)
+                                        .font(.callout.bold())
+                                    Text(followUp.reason)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Life events
+                if !summary.lifeEvents.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label("Life Events", systemImage: "heart")
+                            .font(.caption.bold())
+                            .foregroundStyle(.secondary)
+                        ForEach(summary.lifeEvents, id: \.self) { event in
+                            HStack(alignment: .top, spacing: 6) {
+                                Image(systemName: "heart.fill")
+                                    .font(.caption2)
+                                    .foregroundStyle(.pink)
+                                Text(event)
+                                    .font(.callout)
+                            }
+                        }
+                    }
+                }
+
+                // Open questions
+                if !summary.openQuestions.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label("Open Questions", systemImage: "questionmark.circle")
+                            .font(.caption.bold())
+                            .foregroundStyle(.secondary)
+                        ForEach(summary.openQuestions, id: \.self) { question in
+                            HStack(alignment: .top, spacing: 6) {
+                                Image(systemName: "questionmark.circle")
+                                    .font(.caption2)
+                                    .foregroundStyle(.purple)
+                                Text(question)
+                                    .font(.callout)
+                            }
+                        }
+                    }
+                }
+
+                // Sentiment
+                if let sentiment = summary.sentiment, !sentiment.isEmpty {
+                    HStack(spacing: 4) {
+                        Image(systemName: "face.smiling")
+                            .font(.caption2)
+                        Text("Tone: \(sentiment)")
+                            .font(.caption)
+                    }
+                    .foregroundStyle(.tertiary)
+                }
+            }
+            .padding()
+            .background(Color(nsColor: .controlBackgroundColor))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(Color.primary.opacity(0.1), lineWidth: 1)
+            )
+
+            Divider()
+                .padding(.vertical, 4)
+        }
+    }
+
+    /// Simple horizontal wrapping layout for topic tags.
+    private struct FlowLayout: Layout {
+        var spacing: CGFloat = 6
+
+        func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+            let result = layout(in: proposal.width ?? 0, subviews: subviews)
+            return result.size
+        }
+
+        func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+            let result = layout(in: bounds.width, subviews: subviews)
+            for (index, position) in result.positions.enumerated() where index < subviews.count {
+                subviews[index].place(at: CGPoint(x: bounds.minX + position.x, y: bounds.minY + position.y), proposal: .unspecified)
+            }
+        }
+
+        private func layout(in maxWidth: CGFloat, subviews: Subviews) -> (size: CGSize, positions: [CGPoint]) {
+            var positions: [CGPoint] = []
+            var x: CGFloat = 0
+            var y: CGFloat = 0
+            var rowHeight: CGFloat = 0
+            var maxX: CGFloat = 0
+
+            for subview in subviews {
+                let size = subview.sizeThatFits(.unspecified)
+                if x + size.width > maxWidth && x > 0 {
+                    x = 0
+                    y += rowHeight + spacing
+                    rowHeight = 0
+                }
+                positions.append(CGPoint(x: x, y: y))
+                rowHeight = max(rowHeight, size.height)
+                x += size.width + spacing
+                maxX = max(maxX, x)
+            }
+
+            return (CGSize(width: maxX, height: y + rowHeight), positions)
+        }
     }
 
     /// Display the polished, speaker-attributed transcript. We render each
@@ -705,7 +877,22 @@ struct TranscriptionReviewView: View {
         }
     }
 
-    // MARK: - Save to SAM (M6)
+    // MARK: - "Looks Good" — save + sign off in one action
+
+    /// Combined save + sign-off. Creates (or updates) the SamNote, triggers
+    /// NoteAnalysisCoordinator, AND sets signedOffAt so the retention timer
+    /// starts. This is the single primary action in the review view.
+    private func saveAndSignOff() async {
+        await saveAsNote()
+
+        // Sign off the session (starts the retention timer). Only runs if
+        // save succeeded (savedAsNote is true). Idempotent via
+        // RetentionService — calling on an already-signed session is a no-op.
+        if savedAsNote {
+            let container = modelContext.container
+            _ = RetentionService.shared.signOff(session: session, container: container)
+        }
+    }
 
     private func saveAsNote() async {
         isSaving = true

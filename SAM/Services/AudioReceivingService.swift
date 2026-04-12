@@ -90,13 +90,19 @@ final class AudioReceivingService {
 
     // MARK: - Outbound Messages (Mac → iPhone)
 
+    /// Pending summary that couldn't be pushed because the phone wasn't
+    /// connected. Retried when a new connection arrives.
+    private var pendingSummary: MeetingSummary?
+
     /// Serialize a meeting summary as JSON and push it to the connected iPhone.
-    /// Silently drops if no iPhone is currently connected.
+    /// If no connection is active, queues the summary and retries on next connect.
     func sendMeetingSummary(_ summary: MeetingSummary) {
         guard let connection = activeConnection, let payload = summary.toWireData() else {
-            logger.info("sendMeetingSummary: no active connection or empty payload")
+            pendingSummary = summary
+            logger.info("sendMeetingSummary: no active connection — queued for next connect")
             return
         }
+        pendingSummary = nil
 
         // Split large payloads? Summaries are ~1-3KB, well under maxPayloadSize.
         guard UInt32(payload.count) <= AudioStreamingConstants.maxPayloadSize else {
@@ -246,6 +252,13 @@ final class AudioReceivingService {
                 switch state {
                 case .ready:
                     logger.info("iPhone connected: \(connection.endpoint.debugDescription)")
+                    // Flush any pending summary that couldn't be pushed because
+                    // the phone wasn't connected when the Mac finished generating.
+                    if let pending = self.pendingSummary {
+                        self.pendingSummary = nil
+                        logger.info("Flushing pending summary to newly connected iPhone")
+                        self.sendMeetingSummary(pending)
+                    }
                 case .failed(let error):
                     logger.error("Connection failed: \(error.localizedDescription)")
                     self.activeConnection = nil

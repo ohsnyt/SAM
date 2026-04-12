@@ -14,46 +14,55 @@ struct MeetingCaptureView: View {
     private let coordinator = MeetingCaptureCoordinator.shared
 
     var body: some View {
-        VStack(spacing: 24) {
-            Spacer()
+        ScrollView {
+            VStack(spacing: 24) {
+                Spacer(minLength: 40)
 
-            // Connection status
-            connectionStatusView
+                // Connection status
+                connectionStatusView
 
-            // Recording time
-            if coordinator.captureState == .recording || coordinator.captureState == .paused {
-                timeDisplay
-                audioLevelIndicator
+                // Recording time
+                if coordinator.captureState == .recording || coordinator.captureState == .paused {
+                    timeDisplay
+                    audioLevelIndicator
+                }
+
+                // Orange warning if the streaming connection dropped mid-session.
+                if let warning = coordinator.connectionLossWarning {
+                    connectionLossBanner(warning)
+                }
+
+                // Pending upload status — shown when there are queued
+                // recordings waiting to sync to the Mac, OR when an upload
+                // is currently in progress.
+                pendingUploadStatusBanner
+
+                Spacer(minLength: 20)
+
+                // Controls
+                controlsView
+
+                // Buffered chunks indicator
+                if coordinator.bufferedChunkCount > 0 {
+                    Label(
+                        "\(coordinator.bufferedChunkCount) chunks buffered",
+                        systemImage: "arrow.triangle.2.circlepath"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: 40)
             }
-
-            // Orange warning if the streaming connection dropped mid-session.
-            if let warning = coordinator.connectionLossWarning {
-                connectionLossBanner(warning)
-            }
-
-            // Pending upload status — shown when there are queued
-            // recordings waiting to sync to the Mac, OR when an upload
-            // is currently in progress.
-            pendingUploadStatusBanner
-
-            Spacer()
-
-            // Controls
-            controlsView
-
-            // Buffered chunks indicator
-            if coordinator.bufferedChunkCount > 0 {
-                Label(
-                    "\(coordinator.bufferedChunkCount) chunks buffered",
-                    systemImage: "arrow.triangle.2.circlepath"
-                )
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
-
-            Spacer()
+            .padding()
+            .frame(maxWidth: .infinity)
         }
-        .padding()
+        .refreshable {
+            // Pull-to-refresh restarts the Bonjour browse and reconnect
+            // flow. Sarah's instinct when "Not Connected" appears is to
+            // pull down, same as refreshing email.
+            coordinator.autoConnectIfNeeded()
+        }
         .navigationTitle("Record")
         .onAppear {
             coordinator.autoConnectIfNeeded()
@@ -209,11 +218,9 @@ struct MeetingCaptureView: View {
                 .font(.headline)
                 .foregroundStyle(.secondary)
 
-            if let name = coordinator.connectedMacName {
-                Text(name)
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-            }
+            // Intentionally omitting the raw Bonjour endpoint name
+            // (e.g. "David's\032MacBook\032Pro..._tcp.local") which is
+            // meaningless to Sarah. "Connected to Mac" is enough.
         }
     }
 
