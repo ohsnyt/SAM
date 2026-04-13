@@ -56,10 +56,37 @@ actor MeetingSummaryService {
             throw SummaryError.emptyTranscript
         }
 
-        let systemInstruction = Self.systemInstruction()
-        let prompt = Self.buildPrompt(transcript: trimmed, metadata: metadata)
+        // Short transcripts: single-pass (original path).
+        if trimmed.count <= TranscriptPolishService.maxChunkChars {
+            return try await summarizeSingleChunk(trimmed, metadata: metadata)
+        }
 
-        logger.info("Generating meeting summary (\(trimmed.count) chars)")
+        // Long transcripts: summarize each chunk independently, then
+        // merge all the per-chunk summaries into one combined result.
+        // Action items, decisions, follow-ups accumulate across chunks;
+        // the TLDR is re-synthesized from the merged findings.
+        let chunks = TranscriptPolishService.chunkTranscript(trimmed, maxChars: TranscriptPolishService.maxChunkChars)
+        logger.info("Summarizing long transcript in \(chunks.count) chunks (\(trimmed.count) total chars)")
+
+        var allSummaries: [MeetingSummary] = []
+        for (i, chunk) in chunks.enumerated() {
+            logger.info("Summarizing chunk \(i + 1)/\(chunks.count) (\(chunk.count) chars)")
+            let chunkSummary = try await summarizeSingleChunk(chunk, metadata: metadata)
+            allSummaries.append(chunkSummary)
+        }
+
+        let merged = Self.mergeSummaries(allSummaries)
+        logger.info("Merged \(chunks.count) chunk summaries: \(merged.actionItems.count) action items, \(merged.decisions.count) decisions")
+        return merged
+    }
+
+    /// Summarize a single chunk that fits within the context window.
+    private func summarizeSingleChunk(
+        _ transcript: String,
+        metadata: Metadata
+    ) async throws -> MeetingSummary {
+        let systemInstruction = Self.systemInstruction()
+        let prompt = Self.buildPrompt(transcript: transcript, metadata: metadata)
 
         let responseText = try await AIService.shared.generate(
             prompt: prompt,
@@ -76,7 +103,6 @@ actor MeetingSummaryService {
 
         do {
             let decoded = try JSONDecoder().decode(MeetingSummary.self, from: data)
-            logger.info("Meeting summary generated: \(decoded.decisions.count) decisions, \(decoded.actionItems.count) action items, \(decoded.followUps.count) follow-ups")
             return decoded
         } catch {
             // Fallback: if JSON decode fails but we got non-empty text,
@@ -90,6 +116,69 @@ actor MeetingSummaryService {
             }
             throw SummaryError.invalidResponse
         }
+    }
+
+    /// Merge multiple per-chunk summaries into one combined summary.
+    /// Structured fields (action items, decisions, etc.) are concatenated
+    /// and deduplicated. The TLDR is joined from per-chunk TLDRs.
+    static func mergeSummaries(_ summaries: [MeetingSummary]) -> MeetingSummary {
+        guard !summaries.isEmpty else { return .empty }
+        if summaries.count == 1 { return summaries[0] }
+
+        // Join TLDRs with a space — each chunk's TLDR covers a portion
+        // of the meeting, and concatenation gives a natural multi-sentence
+        // summary without needing another LLM pass.
+        let combinedTldr = summaries
+            .map(\.tldr)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+
+        // Accumulate structured fields across all chunks.
+        var allActionItems: [MeetingSummary.ActionItem] = []
+        var allDecisions: [String] = []
+        var allOpenQuestions: [String] = []
+        var allFollowUps: [MeetingSummary.FollowUp] = []
+        var allLifeEvents: [String] = []
+        var allTopics: [String] = []
+        var allComplianceFlags: [String] = []
+        var sentiment: String?
+
+        for summary in summaries {
+            allActionItems.append(contentsOf: summary.actionItems)
+            allDecisions.append(contentsOf: summary.decisions)
+            allOpenQuestions.append(contentsOf: summary.openQuestions)
+            allFollowUps.append(contentsOf: summary.followUps)
+            allLifeEvents.append(contentsOf: summary.lifeEvents)
+            allTopics.append(contentsOf: summary.topics)
+            allComplianceFlags.append(contentsOf: summary.complianceFlags)
+            if sentiment == nil, let s = summary.sentiment, !s.isEmpty {
+                sentiment = s
+            }
+        }
+
+        // Deduplicate simple string arrays (topics, decisions, etc.)
+        // using case-insensitive comparison.
+        func dedup(_ items: [String]) -> [String] {
+            var seen = Set<String>()
+            return items.filter { item in
+                let key = item.lowercased()
+                if seen.contains(key) { return false }
+                seen.insert(key)
+                return true
+            }
+        }
+
+        return MeetingSummary(
+            tldr: combinedTldr,
+            decisions: dedup(allDecisions),
+            actionItems: allActionItems, // keep all — deduping tasks is risky
+            openQuestions: dedup(allOpenQuestions),
+            followUps: allFollowUps, // keep all — different person/reason pairs
+            lifeEvents: dedup(allLifeEvents),
+            topics: dedup(allTopics),
+            complianceFlags: dedup(allComplianceFlags),
+            sentiment: sentiment
+        )
     }
 
     // MARK: - Metadata

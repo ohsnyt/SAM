@@ -678,6 +678,17 @@ final class MeetingCaptureCoordinator {
         captureState = .idle
     }
 
+    /// Manually clear the "Generating summary" state. Called by
+    /// pull-to-refresh when the phone is stuck on the spinner because the
+    /// Mac never pushed the result. The watchdog auto-fires after 60s, but
+    /// pull-to-refresh lets Sarah clear it immediately.
+    func clearStaleSummaryState() {
+        summaryWatchdog?.cancel()
+        summaryWatchdog = nil
+        isAwaitingSummary = false
+        logger.info("Cleared stale summary-awaiting state via pull-to-refresh")
+    }
+
     // MARK: - Summary Watchdog
 
     /// Start a 60-second watchdog that auto-clears the "Generating summary"

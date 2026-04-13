@@ -58,10 +58,16 @@ struct MeetingCaptureView: View {
             .frame(maxWidth: .infinity)
         }
         .refreshable {
-            // Pull-to-refresh restarts the Bonjour browse and reconnect
-            // flow. Sarah's instinct when "Not Connected" appears is to
-            // pull down, same as refreshing email.
+            // Pull-to-refresh does two things:
+            // 1. Restart the Bonjour browse and reconnect flow.
+            // 2. If the phone is stuck on "Generating summary..." because
+            //    the Mac never pushed the result (connection dropped, Mac
+            //    errored), clear the stale awaiting state so Sarah isn't
+            //    stuck on a spinner forever.
             coordinator.autoConnectIfNeeded()
+            if coordinator.isAwaitingSummary {
+                coordinator.clearStaleSummaryState()
+            }
         }
         .navigationTitle("Record")
         .onAppear {

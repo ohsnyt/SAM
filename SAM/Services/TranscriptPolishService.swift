@@ -43,6 +43,13 @@ actor TranscriptPolishService {
     /// - Returns: The cleaned transcript in the same format.
     /// - Throws: `PolishError` if the AI backend is unavailable or the
     ///   response is invalid.
+    /// Approximate character budget per chunk. Apple Intelligence has a
+    /// hard 4096-token context window. The system instruction + prompt
+    /// wrapper consume ~800-1000 tokens, leaving ~3000 tokens for
+    /// transcript content. At ~4 chars/token that's ~12,000 characters.
+    /// We use 10,000 to leave a comfortable margin.
+    static let maxChunkChars = 10_000
+
     func polish(
         transcript: String,
         knownNouns: [String] = []
@@ -56,14 +63,37 @@ actor TranscriptPolishService {
             throw PolishError.emptyTranscript
         }
 
+        // Short transcripts: single-pass (original path).
+        if trimmed.count <= Self.maxChunkChars {
+            return try await polishSingleChunk(trimmed, knownNouns: knownNouns)
+        }
+
+        // Long transcripts: chunk by paragraph boundaries, polish each
+        // chunk independently, concatenate. This handles recordings that
+        // exceed the Apple Intelligence 4096-token context window.
+        let chunks = Self.chunkTranscript(trimmed, maxChars: Self.maxChunkChars)
+        logger.info("Polishing long transcript in \(chunks.count) chunks (\(trimmed.count) total chars)")
+
+        var polishedChunks: [String] = []
+        for (i, chunk) in chunks.enumerated() {
+            logger.info("Polishing chunk \(i + 1)/\(chunks.count) (\(chunk.count) chars)")
+            let polished = try await polishSingleChunk(chunk, knownNouns: knownNouns)
+            polishedChunks.append(polished)
+        }
+
+        let combined = polishedChunks.joined(separator: "\n\n")
+        logger.info("Polished long transcript: \(combined.count) chars from \(chunks.count) chunks")
+        return combined
+    }
+
+    /// Polish a single chunk that fits within the context window.
+    private func polishSingleChunk(
+        _ transcript: String,
+        knownNouns: [String]
+    ) async throws -> String {
         let systemInstruction = Self.systemInstruction()
-        let prompt = Self.buildPrompt(transcript: trimmed, knownNouns: knownNouns)
+        let prompt = Self.buildPrompt(transcript: transcript, knownNouns: knownNouns)
 
-        logger.info("Polishing transcript (\(trimmed.count) chars, \(knownNouns.count) known nouns)")
-
-        // Note: we allow a generous token budget because polished output
-        // is typically very close to input length. If we cut it off
-        // early the user ends up with a truncated transcript.
         let responseText = try await AIService.shared.generate(
             prompt: prompt,
             systemInstruction: systemInstruction,
@@ -81,16 +111,41 @@ actor TranscriptPolishService {
         // as the input (within 50-200% range). If the LLM truncated
         // aggressively or rambled, fall back to the original rather than
         // deliver broken data.
-        let inputLen = trimmed.count
+        let inputLen = transcript.count
         let outputLen = cleaned.count
         let ratio = Double(outputLen) / Double(max(inputLen, 1))
         if ratio < 0.5 || ratio > 2.5 {
             logger.warning("Polished text length ratio suspicious (\(String(format: "%.2f", ratio))× input); falling back to raw")
-            return trimmed
+            return transcript
         }
 
-        logger.info("Polished transcript ready: \(outputLen) chars (ratio \(String(format: "%.2f", ratio))×)")
         return cleaned
+    }
+
+    /// Split a transcript into chunks that fit within the context window.
+    /// Splits on paragraph boundaries (blank lines between "Speaker: text"
+    /// paragraphs) to preserve speaker turns intact. Never splits mid-turn.
+    static func chunkTranscript(_ text: String, maxChars: Int) -> [String] {
+        let paragraphs = text.components(separatedBy: "\n\n")
+        var chunks: [String] = []
+        var currentChunk: [String] = []
+        var currentLength = 0
+
+        for paragraph in paragraphs {
+            let paragraphLen = paragraph.count + 2 // +2 for the "\n\n" separator
+            if currentLength + paragraphLen > maxChars && !currentChunk.isEmpty {
+                chunks.append(currentChunk.joined(separator: "\n\n"))
+                currentChunk = []
+                currentLength = 0
+            }
+            currentChunk.append(paragraph)
+            currentLength += paragraphLen
+        }
+        if !currentChunk.isEmpty {
+            chunks.append(currentChunk.joined(separator: "\n\n"))
+        }
+
+        return chunks
     }
 
     // MARK: - Known Noun Gathering (convenience)
