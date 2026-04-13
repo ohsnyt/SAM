@@ -262,16 +262,38 @@ final class PendingReprocessService {
             diarization = cached
             logger.notice("✅ Stage 3 (diarization): CACHE HIT — \(cached.segments.count) voice segments, \(cached.centroids.count) clusters")
         } else if let monoSamples, !monoSamples.isEmpty {
-            diarization = DiarizationService.shared.diarize(
-                samples: monoSamples,
-                sampleRate: Double(metadata.sampleRate),
-                startOffset: 0,
-                enrolledAgentEmbedding: enrolledEmbedding
-            )
+            // Try SpeakerKit (neural Pyannote) first. Falls back to MFCC
+            // if SpeakerKit isn't available or fails to load.
+            if DiarizationService.shared.preferNeuralDiarization {
+                do {
+                    diarization = try await DiarizationService.shared.diarizeWithSpeakerKit(
+                        samples: monoSamples,
+                        sampleRate: Double(metadata.sampleRate),
+                        startOffset: 0
+                    )
+                    logger.notice("✅ Stage 3 (neural diarization): \(String(format: "%.1f", Date().timeIntervalSince(stage3Start)))s — \(diarization.segments.count) voice segments, \(diarization.centroids.count) clusters")
+                } catch {
+                    logger.warning("SpeakerKit diarization failed (\(error.localizedDescription)), falling back to MFCC")
+                    diarization = DiarizationService.shared.diarize(
+                        samples: monoSamples,
+                        sampleRate: Double(metadata.sampleRate),
+                        startOffset: 0,
+                        enrolledAgentEmbedding: enrolledEmbedding
+                    )
+                    logger.notice("✅ Stage 3 (MFCC fallback): \(String(format: "%.1f", Date().timeIntervalSince(stage3Start)))s — \(diarization.segments.count) voice segments, \(diarization.centroids.count) clusters")
+                }
+            } else {
+                diarization = DiarizationService.shared.diarize(
+                    samples: monoSamples,
+                    sampleRate: Double(metadata.sampleRate),
+                    startOffset: 0,
+                    enrolledAgentEmbedding: enrolledEmbedding
+                )
+                logger.notice("✅ Stage 3 (MFCC diarization): \(String(format: "%.1f", Date().timeIntervalSince(stage3Start)))s — \(diarization.segments.count) voice segments, \(diarization.centroids.count) clusters")
+            }
             if let key = diarizationKey {
                 stageCache.put(stage: "diarization", key: key, value: diarization)
             }
-            logger.notice("✅ Stage 3 (diarization): \(String(format: "%.1f", Date().timeIntervalSince(stage3Start)))s — \(diarization.segments.count) voice segments, \(diarization.centroids.count) clusters")
         } else {
             logger.warning("Reprocess: could not load PCM for diarization; all segments will be single speaker")
             diarization = DiarizationService.DiarizationResult(
@@ -283,12 +305,30 @@ final class PendingReprocessService {
         #else
         let diarization: DiarizationService.DiarizationResult
         if let monoSamples, !monoSamples.isEmpty {
-            diarization = DiarizationService.shared.diarize(
-                samples: monoSamples,
-                sampleRate: Double(metadata.sampleRate),
-                startOffset: 0,
-                enrolledAgentEmbedding: enrolledEmbedding
-            )
+            if DiarizationService.shared.preferNeuralDiarization {
+                do {
+                    diarization = try await DiarizationService.shared.diarizeWithSpeakerKit(
+                        samples: monoSamples,
+                        sampleRate: Double(metadata.sampleRate),
+                        startOffset: 0
+                    )
+                } catch {
+                    logger.warning("SpeakerKit failed, falling back to MFCC: \(error.localizedDescription)")
+                    diarization = DiarizationService.shared.diarize(
+                        samples: monoSamples,
+                        sampleRate: Double(metadata.sampleRate),
+                        startOffset: 0,
+                        enrolledAgentEmbedding: enrolledEmbedding
+                    )
+                }
+            } else {
+                diarization = DiarizationService.shared.diarize(
+                    samples: monoSamples,
+                    sampleRate: Double(metadata.sampleRate),
+                    startOffset: 0,
+                    enrolledAgentEmbedding: enrolledEmbedding
+                )
+            }
         } else {
             logger.warning("Reprocess: could not load PCM for diarization; all segments will be single speaker")
             diarization = DiarizationService.DiarizationResult(
