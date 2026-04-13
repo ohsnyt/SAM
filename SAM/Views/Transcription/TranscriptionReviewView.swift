@@ -604,19 +604,31 @@ struct TranscriptionReviewView: View {
                     .controlSize(.small)
                 }
             } else {
-                // Display mode: diff-highlighted text with click-to-edit
-                diffHighlightedText(diffParagraph.words)
-                    .font(.body)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .lineSpacing(2)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        // Enter edit mode for this paragraph
+                // Display mode: diff-highlighted text with click-to-edit.
+                // The edit button is an overlay so it doesn't conflict with
+                // text selection (textSelection(.enabled) steals taps).
+                ZStack(alignment: .topTrailing) {
+                    diffHighlightedText(diffParagraph.words)
+                        .font(.body)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .lineSpacing(2)
+
+                    Button {
                         let plainText = diffParagraph.words.map(\.text).joined(separator: " ")
                         polishedEditDraft = plainText
                         editingPolishedParagraphIndex = diffParagraph.id.hashValue
+                    } label: {
+                        Image(systemName: "pencil")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(4)
+                            .background(.ultraThinMaterial, in: Circle())
                     }
+                    .buttonStyle(.plain)
+                    .help("Edit this paragraph")
+                    .opacity(0.6)
+                }
             }
         }
         .padding(12)
@@ -626,24 +638,90 @@ struct TranscriptionReviewView: View {
         )
     }
 
-    /// Render diff-highlighted text. Changed words get a subtle blue background.
-    /// On hover, a tooltip shows the original raw text.
+    /// Render diff-highlighted text using a wrapping flow of individual word
+    /// views. Changed words get a subtle blue background + a macOS tooltip
+    /// showing the original raw text on hover.
     private func diffHighlightedText(_ words: [DiffWord]) -> some View {
-        let parts: [AttributedString] = words.map { word in
-            var attr = AttributedString(word.text + " ")
-            if word.isChanged {
-                attr.backgroundColor = Color.blue.opacity(0.12)
+        // Use a wrapping HStack (WrappingHFlow) for per-word hover tooltips.
+        // Each word is its own Text view so we can attach .help() individually.
+        WrappingHFlow(alignment: .leading, spacing: 0) {
+            ForEach(words) { word in
+                if word.isChanged, let original = word.originalRaw {
+                    Text(word.text + " ")
+                        .padding(.vertical, 1)
+                        .padding(.horizontal, 1)
+                        .background(Color.blue.opacity(0.12), in: RoundedRectangle(cornerRadius: 2))
+                        .help("Original: \(original)")
+                } else if word.isInsertion {
+                    Text(word.text + " ")
+                        .padding(.vertical, 1)
+                        .padding(.horizontal, 1)
+                        .background(Color.green.opacity(0.12), in: RoundedRectangle(cornerRadius: 2))
+                        .help("Added by polish")
+                } else {
+                    Text(word.text + " ")
+                }
             }
-            return attr
         }
-        let combined = parts.reduce(AttributedString(), +)
+        .textSelection(.enabled)
+    }
 
-        // For the hover tooltips, we use a custom view that wraps each word
-        // individually. But AttributedString + Text is simpler for basic
-        // display. Use Text for now; hover tooltips can be added when
-        // NSView interop is implemented.
-        return Text(combined)
-            .textSelection(.enabled)
+    /// Simple wrapping horizontal layout that flows words to the next line
+    /// when they exceed the available width. Like FlowLayout but for inline
+    /// text words that need to wrap naturally.
+    private struct WrappingHFlow<Content: View>: View {
+        let alignment: HorizontalAlignment
+        let spacing: CGFloat
+        @ViewBuilder let content: () -> Content
+
+        var body: some View {
+            // Use the Layout protocol for proper word wrapping
+            _WrappingHFlowLayout(spacing: spacing) {
+                content()
+            }
+        }
+    }
+
+    private struct _WrappingHFlowLayout: Layout {
+        var spacing: CGFloat
+
+        func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+            let result = layout(in: proposal.width ?? .infinity, subviews: subviews)
+            return result.size
+        }
+
+        func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+            let result = layout(in: bounds.width, subviews: subviews)
+            for (index, position) in result.positions.enumerated() where index < subviews.count {
+                subviews[index].place(
+                    at: CGPoint(x: bounds.minX + position.x, y: bounds.minY + position.y),
+                    proposal: .unspecified
+                )
+            }
+        }
+
+        private func layout(in maxWidth: CGFloat, subviews: Subviews) -> (size: CGSize, positions: [CGPoint]) {
+            var positions: [CGPoint] = []
+            var x: CGFloat = 0
+            var y: CGFloat = 0
+            var rowHeight: CGFloat = 0
+            var maxX: CGFloat = 0
+
+            for subview in subviews {
+                let size = subview.sizeThatFits(.unspecified)
+                if x + size.width > maxWidth && x > 0 {
+                    x = 0
+                    y += rowHeight + spacing
+                    rowHeight = 0
+                }
+                positions.append(CGPoint(x: x, y: y))
+                rowHeight = max(rowHeight, size.height)
+                x += size.width + spacing
+                maxX = max(maxX, x)
+            }
+
+            return (CGSize(width: maxX, height: y + rowHeight), positions)
+        }
     }
 
     /// Commit a user edit to the polished text. Updates the full
