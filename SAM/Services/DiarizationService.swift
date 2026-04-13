@@ -279,6 +279,10 @@ final class DiarizationService {
     private func clusterSegments(_ segments: [VoiceSegment]) -> [VoiceSegment] {
         guard !segments.isEmpty else { return segments }
 
+        #if DEBUG
+        dumpPairwiseSimilarities(segments)
+        #endif
+
         // Each segment starts in its own cluster
         var clusterOf = Array(0..<segments.count)
         var clusterEmbeddings: [[Float]] = segments.map(\.embedding)
@@ -379,4 +383,100 @@ final class DiarizationService {
         logger.info("❌ No agent match: best sim=\(String(format: "%.3f", bestSim)) < threshold \(String(format: "%.2f", self.agentMatchThreshold))")
         return nil
     }
+
+    // MARK: - Diagnostics
+
+    #if DEBUG
+    /// Write a pairwise cosine similarity matrix for all voice segments
+    /// to a JSON file. This is the key diagnostic for understanding why
+    /// clustering over-merges: if same-speaker pairs are at 0.90+ and
+    /// cross-speaker pairs are at 0.50-0.60, the threshold just needs
+    /// adjusting. If all pairs are at 0.70-0.85, MFCC can't distinguish
+    /// the speakers and we need a better embedding model.
+    private func dumpPairwiseSimilarities(_ segments: [VoiceSegment]) {
+        guard segments.count >= 2 else { return }
+
+        let testKitDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("SAM-TestKit/diagnostics", isDirectory: true)
+        try? FileManager.default.createDirectory(at: testKitDir, withIntermediateDirectories: true)
+
+        struct SegmentInfo: Encodable {
+            let index: Int
+            let start: Double
+            let end: Double
+            let duration: Double
+        }
+
+        struct PairSimilarity: Encodable {
+            let segA: Int
+            let segB: Int
+            let similarity: Float
+        }
+
+        var segmentInfos: [SegmentInfo] = []
+        var pairs: [PairSimilarity] = []
+
+        for (i, seg) in segments.enumerated() {
+            segmentInfos.append(SegmentInfo(
+                index: i,
+                start: seg.start,
+                end: seg.end,
+                duration: seg.end - seg.start
+            ))
+        }
+
+        // Compute all pairwise similarities
+        var allSims: [Float] = []
+        for i in 0..<segments.count {
+            for j in (i + 1)..<segments.count {
+                let sim = SpeakerEmbeddingService.cosineSimilarity(
+                    segments[i].embedding,
+                    segments[j].embedding
+                )
+                pairs.append(PairSimilarity(segA: i, segB: j, similarity: sim))
+                allSims.append(sim)
+            }
+        }
+
+        // Summary stats
+        allSims.sort()
+        let minSim = allSims.first ?? 0
+        let maxSim = allSims.last ?? 0
+        let medianSim = allSims.count > 0 ? allSims[allSims.count / 2] : Float(0)
+        let meanSim = allSims.reduce(Float(0), +) / max(Float(allSims.count), 1)
+
+        struct DiagnosticReport: Encodable {
+            let segmentCount: Int
+            let pairCount: Int
+            let clusterMergeThreshold: Float
+            let minSimilarity: Float
+            let maxSimilarity: Float
+            let medianSimilarity: Float
+            let meanSimilarity: Float
+            let segments: [SegmentInfo]
+            let pairs: [PairSimilarity]
+        }
+
+        let report = DiagnosticReport(
+            segmentCount: segments.count,
+            pairCount: pairs.count,
+            clusterMergeThreshold: clusterMergeThreshold,
+            minSimilarity: minSim,
+            maxSimilarity: maxSim,
+            medianSimilarity: medianSim,
+            meanSimilarity: meanSim,
+            segments: segmentInfos,
+            pairs: pairs
+        )
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        if let data = try? encoder.encode(report) {
+            let url = testKitDir.appendingPathComponent("diarization-similarities.json")
+            try? data.write(to: url)
+            logger.notice("📊 Diarization diagnostic: \(segments.count) segments, similarity range [\(String(format: "%.3f", minSim))–\(String(format: "%.3f", maxSim))], mean=\(String(format: "%.3f", meanSim)), median=\(String(format: "%.3f", medianSim)), threshold=\(String(format: "%.2f", self.clusterMergeThreshold))")
+            logger.notice("📊 Diagnostic written to: \(url.path)")
+        }
+    }
+    #endif
 }

@@ -122,6 +122,41 @@ final class PendingReprocessService {
         }
         logger.notice("✅ Stage 1 (model load): \(String(format: "%.1f", Date().timeIntervalSince(stage1Start)))s")
 
+        // MARK: 1b. Preprocess audio (noise gate + AGC + high-pass filter)
+        //
+        // Load the WAV into a float buffer, run the preprocessing pipeline,
+        // write the cleaned audio back to a temp file for Whisper to read.
+        // Diarization uses the same cleaned samples directly.
+        let preprocessStart = Date()
+        let rawSamples = loadMonoFloatSamples(
+            from: wavURL,
+            expectedSampleRate: Double(metadata.sampleRate),
+            expectedChannels: Int(metadata.channels)
+        )
+
+        var preprocessedSamples: [Float]?
+        var preprocessedWavURL = wavURL
+        if let raw = rawSamples, !raw.isEmpty {
+            let cleaned = AudioPreprocessingService.preprocess(
+                samples: raw,
+                sampleRate: Float(metadata.sampleRate)
+            )
+            preprocessedSamples = cleaned
+
+            // Write preprocessed audio to a temp file so Whisper can read it
+            // (Whisper takes a file URL, not a sample array, in the reprocess path).
+            let tempDir = FileManager.default.temporaryDirectory
+            let tempURL = tempDir.appendingPathComponent("preprocessed-\(sessionID.uuidString).wav")
+            if writeWAV(samples: cleaned, sampleRate: metadata.sampleRate, to: tempURL) {
+                preprocessedWavURL = tempURL
+                logger.notice("✅ Stage 1b (preprocess): \(String(format: "%.1f", Date().timeIntervalSince(preprocessStart)))s — \(raw.count) samples cleaned")
+            } else {
+                logger.warning("Stage 1b: failed to write preprocessed WAV, using original")
+            }
+        } else {
+            logger.warning("Stage 1b: could not load raw samples for preprocessing")
+        }
+
         // MARK: 2. Transcribe the full WAV (Whisper handles its own windowing)
         state = .transcribing
         let stage2Start = Date()
@@ -152,7 +187,7 @@ final class PendingReprocessService {
             logger.notice("✅ Stage 2 (Whisper): CACHE HIT — \(cached.segments.count) segments restored")
         } else {
             do {
-                whisperResult = try await WhisperTranscriptionService.shared.transcribe(fileURL: wavURL)
+                whisperResult = try await WhisperTranscriptionService.shared.transcribe(fileURL: preprocessedWavURL)
             } catch {
                 logger.error("❌ Reprocess: Whisper transcription failed after \(String(format: "%.1f", Date().timeIntervalSince(stage2Start)))s: \(error.localizedDescription)")
                 state = .failed(error.localizedDescription)
@@ -166,7 +201,7 @@ final class PendingReprocessService {
         #else
         let whisperResult: WhisperTranscriptionService.TranscriptResult
         do {
-            whisperResult = try await WhisperTranscriptionService.shared.transcribe(fileURL: wavURL)
+            whisperResult = try await WhisperTranscriptionService.shared.transcribe(fileURL: preprocessedWavURL)
         } catch {
             logger.error("❌ Reprocess: Whisper transcription failed after \(String(format: "%.1f", Date().timeIntervalSince(stage2Start)))s: \(error.localizedDescription)")
             state = .failed(error.localizedDescription)
@@ -179,12 +214,14 @@ final class PendingReprocessService {
         state = .diarizing
         let stage3Start = Date()
         logger.notice("⏳ Stage 3 (diarization) starting...")
-        let monoSamples = loadMonoFloatSamples(
+        // Use preprocessed samples if available (same cleaning that Whisper
+        // got). Falls back to loading raw from the original WAV.
+        let monoSamples: [Float]? = preprocessedSamples ?? loadMonoFloatSamples(
             from: wavURL,
             expectedSampleRate: Double(metadata.sampleRate),
             expectedChannels: Int(metadata.channels)
         )
-        logger.notice("Diarization: loaded \(monoSamples?.count ?? 0) mono float samples")
+        logger.notice("Diarization: loaded \(monoSamples?.count ?? 0) mono float samples (preprocessed=\(preprocessedSamples != nil))")
 
         let enrolledEmbedding = loadEnrolledAgentEmbedding(container: modelContainer)
 
@@ -473,6 +510,33 @@ final class PendingReprocessService {
         } catch {
             logger.error("loadMonoFloatSamples failed: \(error.localizedDescription)")
             return nil
+        }
+    }
+
+    /// Write a Float sample array to a WAV file on disk. Used to feed
+    /// preprocessed audio to Whisper (which takes a file URL).
+    private func writeWAV(samples: [Float], sampleRate: UInt32, to url: URL) -> Bool {
+        let format = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: Double(sampleRate),
+            channels: 1,
+            interleaved: false
+        )!
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(samples.count)) else {
+            return false
+        }
+        buffer.frameLength = AVAudioFrameCount(samples.count)
+        let channelData = buffer.floatChannelData![0]
+        for i in 0..<samples.count {
+            channelData[i] = samples[i]
+        }
+        do {
+            let file = try AVAudioFile(forWriting: url, settings: format.settings)
+            try file.write(from: buffer)
+            return true
+        } catch {
+            logger.warning("writeWAV failed: \(error.localizedDescription)")
+            return false
         }
     }
 
