@@ -97,6 +97,11 @@ public final class TranscriptSession {
     /// against existing on-disk sessions.
     public var pinAudioRetention: Bool = false
 
+    /// Whether the user has manually edited the polished text. When true,
+    /// re-polish operations (e.g., from a prompt improvement) won't
+    /// overwrite the user's corrections.
+    public var polishedEditedByUser: Bool = false
+
     // MARK: - Relationships
 
     @Relationship(deleteRule: .cascade, inverse: \TranscriptSegment.session)

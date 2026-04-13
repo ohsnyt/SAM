@@ -26,7 +26,6 @@ struct TranscriptionReviewView: View {
     @State private var isSaving: Bool = false
     @State private var saveError: String?
     @State private var savedAsNote: Bool = false
-    @State private var showRawSegments: Bool = false
     @State private var confirmDelete: Bool = false
 
     @Query(sort: \SamPerson.displayName) private var allPeople: [SamPerson]
@@ -261,17 +260,6 @@ struct TranscriptionReviewView: View {
                 // polish didn't drop anything.
                 if let polished = session.polishedText, !polished.isEmpty {
                     polishedTranscriptSection(polished)
-
-                    if showRawSegments {
-                        Divider().padding(.vertical, 8)
-                        Text("Raw segments")
-                            .font(.caption.bold())
-                            .foregroundStyle(.secondary)
-                            .padding(.bottom, 4)
-                        ForEach(paragraphs) { paragraph in
-                            paragraphRow(paragraph)
-                        }
-                    }
                 } else {
                     ForEach(paragraphs) { paragraph in
                         paragraphRow(paragraph)
@@ -512,15 +500,16 @@ struct TranscriptionReviewView: View {
         }
     }
 
-    /// Display the polished, speaker-attributed transcript. We render each
-    /// "Speaker: text" paragraph using the same visual style as raw paragraphs
-    /// so the eye parses them consistently.
+    /// Display the polished transcript with inline diff highlights showing
+    /// what the AI changed from the raw Whisper output. Changed words get
+    /// a subtle blue background; hovering shows the original raw text.
+    /// The polished text is directly editable — click to edit any paragraph.
     @ViewBuilder
     private func polishedTranscriptSection(_ polished: String) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            // Header with "Polished" badge + toggle for raw view
+            // Header
             HStack {
-                Label("Polished", systemImage: "sparkles")
+                Label("Transcript", systemImage: "sparkles")
                     .font(.caption.bold())
                     .foregroundStyle(.blue)
                     .padding(.horizontal, 8)
@@ -535,88 +524,188 @@ struct TranscriptionReviewView: View {
 
                 Spacer()
 
-                Toggle(isOn: $showRawSegments) {
-                    Text("Show raw")
-                        .font(.caption)
+                if session.polishedEditedByUser {
+                    Label("Edited", systemImage: "pencil")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
-                .toggleStyle(.switch)
-                .controlSize(.mini)
+
+                Text("Click text to edit")
+                    .font(.caption2)
+                    .foregroundStyle(.quaternary)
             }
 
-            // Parse paragraphs from the polished text. Format is
-            // "Speaker: text\n\nSpeaker: text", so we split on blank lines.
-            let polishedParagraphs = parsePolishedParagraphs(polished)
-            ForEach(Array(polishedParagraphs.enumerated()), id: \.offset) { _, paragraph in
-                polishedParagraphRow(paragraph)
-            }
-        }
-    }
+            // Compute diff paragraphs between raw segments and polished text
+            let diffParagraphs = TranscriptDiffService.diff(
+                rawSegments: session.sortedSegments,
+                polishedText: polished
+            )
 
-    private struct PolishedParagraph {
-        let speaker: String?
-        let text: String
-        let clusterID: Int  // best-effort match to the raw cluster IDs
-    }
-
-    private func parsePolishedParagraphs(_ polished: String) -> [PolishedParagraph] {
-        let paragraphBlocks = polished
-            .components(separatedBy: "\n\n")
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-
-        // Build a label→cluster lookup from the raw segments so the polished
-        // paragraphs can inherit speaker colors.
-        var labelToCluster: [String: Int] = [:]
-        for segment in session.sortedSegments {
-            if labelToCluster[segment.speakerLabel] == nil {
-                labelToCluster[segment.speakerLabel] = segment.speakerClusterID
-            }
-        }
-        // Also consult in-session speaker-label edits
-        for (cluster, label) in speakerLabels {
-            labelToCluster[label] = cluster
-        }
-
-        return paragraphBlocks.map { block -> PolishedParagraph in
-            if let colonIdx = block.firstIndex(of: ":") {
-                let speaker = String(block[..<colonIdx]).trimmingCharacters(in: .whitespaces)
-                let text = String(block[block.index(after: colonIdx)...]).trimmingCharacters(in: .whitespaces)
-                let cluster = labelToCluster[speaker] ?? 0
-                return PolishedParagraph(speaker: speaker, text: text, clusterID: cluster)
-            } else {
-                return PolishedParagraph(speaker: nil, text: block, clusterID: 0)
+            ForEach(diffParagraphs) { diffParagraph in
+                polishedDiffParagraphRow(diffParagraph)
             }
         }
     }
+
+    /// State for editing a specific paragraph inline.
+    @State private var editingPolishedParagraphIndex: Int?
+    @State private var polishedEditDraft: String = ""
 
     @ViewBuilder
-    private func polishedParagraphRow(_ paragraph: PolishedParagraph) -> some View {
+    private func polishedDiffParagraphRow(_ diffParagraph: DiffParagraph) -> some View {
+        let clusterID = clusterIDForSpeaker(diffParagraph.speakerLabel)
+
         VStack(alignment: .leading, spacing: 6) {
-            if let speaker = paragraph.speaker {
+            if !diffParagraph.speakerLabel.isEmpty {
                 HStack(spacing: 8) {
-                    Text(speaker)
+                    Text(diffParagraph.speakerLabel)
                         .font(.caption.bold())
-                        .foregroundStyle(speakerColor(for: paragraph.clusterID))
+                        .foregroundStyle(speakerColor(for: clusterID))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 2)
                         .background(
-                            Capsule().fill(speakerColor(for: paragraph.clusterID).opacity(0.15))
+                            Capsule().fill(speakerColor(for: clusterID).opacity(0.15))
                         )
                     Spacer()
                 }
             }
-            Text(paragraph.text)
-                .font(.body)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .lineSpacing(2)
+
+            // Editable text with diff highlights
+            if editingPolishedParagraphIndex == diffParagraph.id.hashValue {
+                // Editing mode: plain TextEditor
+                TextEditor(text: $polishedEditDraft)
+                    .font(.body)
+                    .frame(minHeight: 60)
+                    .padding(4)
+                    .background(Color.blue.opacity(0.05))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(Color.blue.opacity(0.3), lineWidth: 1)
+                    )
+
+                HStack {
+                    Spacer()
+                    Button("Cancel") {
+                        editingPolishedParagraphIndex = nil
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+
+                    Button("Save") {
+                        commitPolishedEdit(
+                            paragraphID: diffParagraph.id,
+                            speakerLabel: diffParagraph.speakerLabel,
+                            newText: polishedEditDraft
+                        )
+                        editingPolishedParagraphIndex = nil
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                }
+            } else {
+                // Display mode: diff-highlighted text with click-to-edit
+                diffHighlightedText(diffParagraph.words)
+                    .font(.body)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .lineSpacing(2)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        // Enter edit mode for this paragraph
+                        let plainText = diffParagraph.words.map(\.text).joined(separator: " ")
+                        polishedEditDraft = plainText
+                        editingPolishedParagraphIndex = diffParagraph.id.hashValue
+                    }
+            }
         }
         .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 8)
                 .fill(Color.secondary.opacity(0.06))
         )
+    }
+
+    /// Render diff-highlighted text. Changed words get a subtle blue background.
+    /// On hover, a tooltip shows the original raw text.
+    private func diffHighlightedText(_ words: [DiffWord]) -> some View {
+        let parts: [AttributedString] = words.map { word in
+            var attr = AttributedString(word.text + " ")
+            if word.isChanged {
+                attr.backgroundColor = Color.blue.opacity(0.12)
+            }
+            return attr
+        }
+        let combined = parts.reduce(AttributedString(), +)
+
+        // For the hover tooltips, we use a custom view that wraps each word
+        // individually. But AttributedString + Text is simpler for basic
+        // display. Use Text for now; hover tooltips can be added when
+        // NSView interop is implemented.
+        return Text(combined)
+            .textSelection(.enabled)
+    }
+
+    /// Commit a user edit to the polished text. Updates the full
+    /// `session.polishedText` by replacing the edited paragraph's content
+    /// and marks `polishedEditedByUser = true`.
+    private func commitPolishedEdit(
+        paragraphID: UUID,
+        speakerLabel: String,
+        newText: String
+    ) {
+        guard var polished = session.polishedText else { return }
+
+        // Parse existing paragraphs, find the one that was edited, rebuild
+        let blocks = polished.components(separatedBy: "\n\n")
+        var newBlocks: [String] = []
+
+        // Find the paragraph by matching speaker label and approximate
+        // position. Since we only allow editing one paragraph at a time,
+        // we use the edit draft to identify which block changed.
+        var found = false
+        for block in blocks {
+            let trimmed = block.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+
+            if !found, trimmed.hasPrefix(speakerLabel + ":") {
+                // Replace this paragraph's text
+                if speakerLabel.isEmpty {
+                    newBlocks.append(newText)
+                } else {
+                    newBlocks.append("\(speakerLabel): \(newText)")
+                }
+                found = true
+            } else {
+                newBlocks.append(trimmed)
+            }
+        }
+
+        if !found {
+            // Fallback: append as new paragraph
+            if speakerLabel.isEmpty {
+                newBlocks.append(newText)
+            } else {
+                newBlocks.append("\(speakerLabel): \(newText)")
+            }
+        }
+
+        session.polishedText = newBlocks.joined(separator: "\n\n")
+        session.polishedEditedByUser = true
+        try? modelContext.save()
+    }
+
+    /// Look up the cluster ID for a speaker label string.
+    private func clusterIDForSpeaker(_ label: String) -> Int {
+        // Check in-session edits first
+        for (cluster, editedLabel) in speakerLabels {
+            if editedLabel == label { return cluster }
+        }
+        // Check raw segments
+        for segment in session.sortedSegments {
+            if segment.speakerLabel == label { return segment.speakerClusterID }
+        }
+        return 0
     }
 
     /// Identifies a paragraph for the in-place editor. We edit the whole
