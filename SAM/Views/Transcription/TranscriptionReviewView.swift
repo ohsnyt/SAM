@@ -541,18 +541,19 @@ struct TranscriptionReviewView: View {
                 polishedText: polished
             )
 
-            ForEach(diffParagraphs) { diffParagraph in
-                polishedDiffParagraphRow(diffParagraph)
+            ForEach(Array(diffParagraphs.enumerated()), id: \.element.id) { index, diffParagraph in
+                polishedDiffParagraphRow(diffParagraph, index: index)
             }
         }
     }
 
-    /// State for editing a specific paragraph inline.
+    /// State for editing a specific paragraph inline. Uses the paragraph's
+    /// positional index (not UUID, which regenerates each render).
     @State private var editingPolishedParagraphIndex: Int?
     @State private var polishedEditDraft: String = ""
 
     @ViewBuilder
-    private func polishedDiffParagraphRow(_ diffParagraph: DiffParagraph) -> some View {
+    private func polishedDiffParagraphRow(_ diffParagraph: DiffParagraph, index: Int) -> some View {
         let clusterID = clusterIDForSpeaker(diffParagraph.speakerLabel)
 
         VStack(alignment: .leading, spacing: 6) {
@@ -571,7 +572,7 @@ struct TranscriptionReviewView: View {
             }
 
             // Editable text with diff highlights
-            if editingPolishedParagraphIndex == diffParagraph.id.hashValue {
+            if editingPolishedParagraphIndex == index {
                 // Editing mode: plain TextEditor
                 TextEditor(text: $polishedEditDraft)
                     .font(.body)
@@ -617,7 +618,7 @@ struct TranscriptionReviewView: View {
                     Button {
                         let plainText = diffParagraph.words.map(\.text).joined(separator: " ")
                         polishedEditDraft = plainText
-                        editingPolishedParagraphIndex = diffParagraph.id.hashValue
+                        editingPolishedParagraphIndex = index
                     } label: {
                         Image(systemName: "pencil")
                             .font(.caption)
