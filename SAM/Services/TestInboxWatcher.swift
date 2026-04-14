@@ -107,6 +107,14 @@ final class TestInboxWatcher {
         logger.notice("💾 StageCache enabled — re-runs will skip stages with unchanged inputs")
         logger.notice("📝 Default prompts exported to \(self.promptsDefaultsDirectory.path)")
 
+        // Run the RSVP test harness on launch (async, background priority).
+        // Results appear in Console and in SAM-TestKit/diagnostics/rsvp-test-results.txt.
+        Task(priority: .utility) {
+            // Small delay so Apple Intelligence has time to warm up
+            try? await Task.sleep(for: .seconds(10))
+            await RSVPTestHarness.runAll()
+        }
+
         // Poll once a second for new fixtures. Polling is simpler than
         // FSEvents for our use case (low frequency, predictable inputs)
         // and the latency cost is negligible compared to pipeline processing.
