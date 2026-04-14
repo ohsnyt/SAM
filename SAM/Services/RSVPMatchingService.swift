@@ -28,11 +28,25 @@ final class RSVPMatchingService {
     ///
     /// Only processes RSVP detections from INCOMING messages (isFromMe == false).
     /// Outgoing messages contain the user's own words, not the contact's RSVP response.
+    /// Minimum detection confidence to process an RSVP. Detections below
+    /// this are discarded — they're too likely to be false positives from
+    /// generic "yes" / "sounds good" in unrelated conversation context.
+    static let minimumConfidence: Double = 0.80
+
     func processDetections(
         _ detections: [RSVPDetectionDTO],
         fromEvidence evidence: SamEvidenceItem
     ) {
-        guard !detections.isEmpty else { return }
+        // Filter to high-confidence detections only — the LLM tends to
+        // over-match affirmatives to events mentioned elsewhere in the
+        // conversation thread. Low-confidence detections are noise.
+        let confident = detections.filter { $0.confidence >= Self.minimumConfidence }
+        guard !confident.isEmpty else {
+            if !detections.isEmpty {
+                logger.debug("Filtered out \(detections.count) low-confidence RSVP detection(s) from evidence \(evidence.id)")
+            }
+            return
+        }
 
         // Skip outgoing messages — RSVP language in messages the user sent
         // should not be attributed to the linked contact as their response.
@@ -54,8 +68,8 @@ final class RSVPMatchingService {
             do {
                 let activeParticipations = try EventRepository.shared.activeEventParticipations(for: person.id)
 
-                // Use the highest-confidence detection
-                guard let bestDetection = detections.max(by: { $0.confidence < $1.confidence }) else { continue }
+                // Use the highest-confidence detection from the filtered set
+                guard let bestDetection = confident.max(by: { $0.confidence < $1.confidence }) else { continue }
                 let rsvpStatus = mapToRSVPStatus(bestDetection.detectedStatus)
 
                 if activeParticipations.isEmpty {
@@ -133,9 +147,14 @@ final class RSVPMatchingService {
             // Match to the best event using event_reference
             let targetEvent = matchEvent(from: candidates, detection: detection)
 
-            // Only auto-add if the match scored above zero (actual reference match)
-            guard matchScore(from: candidates, detection: detection) > 0 else {
-                logger.debug("RSVP from \(personName) event_reference '\(reference)' did not match any event — skipping auto-add")
+            // Only auto-add if the match is STRONG — a score of 20+ means
+            // at least a day-of-week match or multiple word overlaps with
+            // an event title. A score of 10 (single word overlap) is too
+            // weak and causes false positives when the LLM hallucinates
+            // an event_reference from unrelated conversation context.
+            let score = matchScore(from: candidates, detection: detection)
+            guard score >= 20 else {
+                logger.debug("RSVP from \(personName) event_reference '\(reference)' scored only \(score) — too weak for auto-add (need 20+)")
                 return
             }
 
@@ -161,29 +180,16 @@ final class RSVPMatchingService {
                 try EventRepository.shared.updateEvent(id: targetEvent.id, status: .inviting)
             }
 
-            // Send holding reply if auto-ack is enabled and direct send is on
-            if (targetEvent.autoAcknowledgeEnabled || targetEvent.autoReplyUnknownSenders),
-               ComposeService.shared.directSendEnabled {
-                let name = EventCoordinator.friendlyFirstName(for: person)
-                let holdingReply = "Got your message about \(targetEvent.title), \(name) — I'll get back to you soon!"
-                let handle = person.phoneAliases.first ?? person.emailAliases.first ?? ""
-                if !handle.isEmpty {
-                    Task {
-                        let sent = await ComposeService.shared.sendDirectIMessage(recipient: handle, body: holdingReply)
-                        if sent {
-                            // Log the holding reply on the participation
-                            try? EventRepository.shared.appendMessage(
-                                participationID: participation.id,
-                                kind: .acknowledgment,
-                                channel: .iMessage,
-                                body: holdingReply,
-                                isDraft: false
-                            )
-                            self.logger.debug("Sent holding reply to \(personName) for event '\(targetEvent.title)'")
-                        }
-                    }
-                }
-            }
+            // NEVER auto-send a holding reply to someone who was auto-added.
+            // They weren't on the invite list, so sending "Got your message
+            // about [event]!" to someone who never mentioned the event is
+            // confusing and damages trust. The auto-reply only fires for
+            // people who are ALREADY on the participant list (handled in
+            // processDetections → EventCoordinator.processRSVPSignal).
+            //
+            // Previous behavior sent holding replies here, which caused
+            // Sarah's contacts to receive messages about events they didn't
+            // know about.
 
             NotificationCenter.default.post(
                 name: .samRSVPAutoAdded,

@@ -112,16 +112,18 @@ actor MessageAnalysisService {
         - Action items are things that need follow-up
         - If the conversation is too short or trivial, keep the summary brief
 
-        RSVP Detection Rules:
-        - ONLY detect RSVPs when someone is explicitly confirming, declining, or tentatively responding to a SPECIFIC event, meeting, workshop, seminar, or gathering that is being organized
-        - The message MUST reference a specific event by name, date, or clear context (e.g., "the Thursday workshop", "your seminar", "the test event today", "count me in for Saturday")
-        - Include rsvp_detections when the contact says things like "I'll be there", "count me in", "can't make it", "let me check my schedule" — but ONLY in reference to a specific event
-        - Do NOT treat casual mentions of wanting to "meet up", "get together", "catch up", or "hang out" as RSVPs — these are social conversation, not event responses
-        - Do NOT treat third-party mentions like "Joseph wants to meet up" as RSVPs unless they explicitly reference a specific organized event
-        - If they mention bringing others to a specific event ("I'll bring my team", "Mike and Lisa are coming too"), set additional_guest_count and additional_guest_names
-        - The event_reference field is REQUIRED for all rsvp_detections — set it to the event name, date, or description referenced in the message
-        - If they reference a specific event by name or date ("the Thursday workshop", "March 20 seminar"), set event_reference to that reference
-        - Omit rsvp_detections entirely if no RSVP-like language referencing a specific event is present
+        RSVP Detection Rules (BE VERY CONSERVATIVE — false positives are worse than missed RSVPs):
+        - ONLY detect an RSVP when the contact's message is a DIRECT RESPONSE to an explicit invitation or event-specific question
+        - The contact must reference the event BY NAME or BY DATE in the SAME message as their response — a "yes" or "sounds good" in a conversation that ALSO mentions an event elsewhere is NOT an RSVP
+        - NEVER detect an RSVP from a "yes", "ok", "sounds good", "great", or other generic affirmative UNLESS it is IMMEDIATELY following an invitation with a specific event name and date
+        - Do NOT treat these as RSVPs: casual agreement ("yes" to any question), social conversation ("let's meet up"), scheduling a 1-on-1 meeting, agreeing to a phone call, confirming receipt of information
+        - DO treat these as RSVPs: "I'll be at the Thursday workshop", "count me in for the March 20 seminar", "can't make the Saturday training", "we'll be there for the Financial Foundations event"
+        - Set confidence to 0.95+ only when the contact explicitly names the event in their response
+        - Set confidence to 0.80-0.94 when the event is implied but not named (e.g., reply to an invitation message)
+        - Set confidence BELOW 0.80 for anything ambiguous — these will be filtered out
+        - The event_reference field is REQUIRED — set it to the EXACT event name or date the contact referenced
+        - If you cannot identify a specific event being referenced, do NOT add an rsvp_detection
+        - When in doubt, omit the rsvp_detection entirely — it is FAR better to miss an RSVP than to falsely flag one
         - The response MUST be raw JSON with no markdown formatting
         """
     }

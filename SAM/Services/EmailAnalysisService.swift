@@ -185,12 +185,15 @@ actor EmailAnalysisService {
         - Sentiment reflects the overall tone (urgent if action is required immediately)
         - If the email is too short or generic, return empty arrays
 
-        RSVP Detection Rules:
-        - Detect when someone is confirming, declining, or tentatively responding to an event/meeting/workshop
-        - If they mention bringing others, set additional_guest_count and additional_guest_names
-        - If they reference a specific event by name or date, set event_reference
-        - If the email mentions another person is coming, include their name in additional_guest_names
-        - Omit rsvp_detections if no RSVP-like language is present
+        RSVP Detection Rules (BE VERY CONSERVATIVE — false positives are worse than missed RSVPs):
+        - ONLY detect an RSVP when the email is a DIRECT RESPONSE to an event invitation and the sender explicitly confirms, declines, or tentatively responds
+        - The sender must reference the event BY NAME or BY DATE in the email
+        - Do NOT detect an RSVP from generic affirmatives ("sounds good", "thank you") unless they explicitly mention the event
+        - Set confidence to 0.95+ only when the sender names the specific event
+        - Set confidence below 0.80 for anything ambiguous — these will be filtered out
+        - The event_reference field is REQUIRED — set it to the exact event name referenced
+        - If you cannot identify a specific event being referenced, do NOT add an rsvp_detection
+        - When in doubt, omit — missing an RSVP is far better than a false one
         """
     }
 }
