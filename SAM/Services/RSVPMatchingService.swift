@@ -31,7 +31,9 @@ final class RSVPMatchingService {
     /// Minimum detection confidence to process an RSVP. Detections below
     /// this are discarded — they're too likely to be false positives from
     /// generic "yes" / "sounds good" in unrelated conversation context.
-    static let minimumConfidence: Double = 0.80
+    /// Raised from 0.80 to 0.90 after RSVP test harness showed 6/7 false
+    /// positives still passing at 0.80.
+    static let minimumConfidence: Double = 0.90
 
     func processDetections(
         _ detections: [RSVPDetectionDTO],
@@ -73,12 +75,20 @@ final class RSVPMatchingService {
                 let rsvpStatus = mapToRSVPStatus(bestDetection.detectedStatus)
 
                 if activeParticipations.isEmpty {
-                    // Person is not on any event — try to auto-add to nearest upcoming event
-                    tryAutoAddToEvent(
-                        person: person,
-                        rsvpStatus: rsvpStatus,
-                        detection: bestDetection
-                    )
+                    // Person is NOT on any event's invite list. Do NOT auto-add.
+                    //
+                    // The LLM consistently produces false-positive RSVP
+                    // detections from generic affirmatives ("yes", "sounds
+                    // good", "ok") in conversations that also mention events.
+                    // The prompt-level fix is insufficient — Apple Intelligence
+                    // is too eager. The structural fix: if SAM didn't invite
+                    // this person, their messages are NOT RSVPs, period.
+                    //
+                    // This eliminates phantom attendees. Real RSVPs from
+                    // people SAM invited will be caught because those people
+                    // are already on the event's participant list (added when
+                    // the invitation was sent via EventCoordinator).
+                    logger.debug("RSVP detection from \(person.displayNameCache ?? "unknown") but they're not on any event — ignoring (not invited)")
                     continue
                 }
 
@@ -147,14 +157,16 @@ final class RSVPMatchingService {
             // Match to the best event using event_reference
             let targetEvent = matchEvent(from: candidates, detection: detection)
 
-            // Only auto-add if the match is STRONG — a score of 20+ means
-            // at least a day-of-week match or multiple word overlaps with
-            // an event title. A score of 10 (single word overlap) is too
-            // weak and causes false positives when the LLM hallucinates
-            // an event_reference from unrelated conversation context.
+            // Only auto-add if the match is VERY STRONG — a score of 50+
+            // means the event_reference is a direct substring match of the
+            // event title. Anything weaker (day-of-week = 20, single word
+            // = 10) is too unreliable — the LLM frequently hallucinates
+            // event_references from unrelated conversation context.
+            // For people who ARE on the invite list, the match goes through
+            // processRSVPSignal (no auto-add needed, no score threshold).
             let score = matchScore(from: candidates, detection: detection)
-            guard score >= 20 else {
-                logger.debug("RSVP from \(personName) event_reference '\(reference)' scored only \(score) — too weak for auto-add (need 20+)")
+            guard score >= 50 else {
+                logger.debug("RSVP from \(personName) event_reference '\(reference)' scored only \(score) — too weak for auto-add (need 50+)")
                 return
             }
 
