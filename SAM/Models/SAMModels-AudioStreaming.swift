@@ -61,6 +61,19 @@ struct AudioPacketHeader: Sendable {
         /// iPhone can safely delete its local WAV. Payload is JSON:
         /// `{ "sessionID": "...", "success": true, "reason": "..." }`
         case sessionProcessed = 0x09
+
+        // MARK: - Phase C: Session lifecycle (iPhone → Mac)
+
+        /// iPhone → Mac: user is done with this meeting. Mac should ensure
+        /// note is saved and analysis is running, but does NOT sign off
+        /// (no retention timer). Session stays available for review on Mac.
+        /// Payload: session UUID string.
+        case sessionDone    = 0x0A
+
+        /// iPhone → Mac: user wants to delete this session entirely.
+        /// Mac removes audio file, transcript, linked note, evidence.
+        /// Payload: session UUID string.
+        case sessionDeleted = 0x0B
     }
 
     /// Serialize to 32 bytes for transmission.

@@ -13,6 +13,8 @@ struct MeetingCaptureView: View {
     /// backgrounding. Acquired + configured in SAMFieldApp on launch.
     private let coordinator = MeetingCaptureCoordinator.shared
 
+    @State private var showDeleteConfirmation = false
+
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
@@ -98,6 +100,18 @@ struct MeetingCaptureView: View {
             }
         } message: {
             Text("SAM couldn't find your Mac on the local network. Make sure SAM is open on your Mac and both devices are on the same WiFi, or record locally and SAM will sync this meeting later.")
+        }
+        .confirmationDialog(
+            "Delete this recording?",
+            isPresented: $showDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete Recording", role: .destructive) {
+                coordinator.deleteSession()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This will permanently delete the recording, transcript, and summary from your Mac.")
         }
     }
 
@@ -410,6 +424,40 @@ struct MeetingCaptureView: View {
                     Text("Saved to SAM")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                }
+
+                // Session lifecycle actions — Done tells Mac to finalize,
+                // Delete tells Mac to discard everything.
+                if coordinator.captureState == .completed {
+                    if coordinator.showDoneConfirmation {
+                        Label("Done!", systemImage: "checkmark.circle.fill")
+                            .font(.headline)
+                            .foregroundStyle(.green)
+                            .transition(.scale.combined(with: .opacity))
+                            .padding(.top, 8)
+                    } else {
+                        HStack(spacing: 12) {
+                            Button(role: .destructive) {
+                                showDeleteConfirmation = true
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.large)
+
+                            Button {
+                                coordinator.markSessionDone()
+                            } label: {
+                                Label("Done", systemImage: "checkmark")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.green)
+                            .controlSize(.large)
+                        }
+                        .padding(.top, 8)
+                    }
                 }
 
                 // Single-tap "record another meeting" — reuses the existing

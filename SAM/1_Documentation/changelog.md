@@ -4,6 +4,26 @@
 
 ---
 
+## Phone Done + Delete for Recordings (April 14, 2026)
+
+### Overview
+Added two new iPhone→Mac protocol messages so Sarah can mark a recording as "Done" or delete it directly from the phone without returning to the Mac. "Done" ensures the note is saved and analysis runs but does NOT sign off — the session stays available for review/editing on Mac. "Delete" permanently removes the recording, transcript, note, and evidence.
+
+### Changes
+- `SAMModels-AudioStreaming.swift` — Added `sessionDone` (0x0A) and `sessionDeleted` (0x0B) message types to the TCP protocol.
+- `AudioReceivingService.swift` — Added `onSessionDone` and `onSessionDeleted` callbacks, dispatch in `handleMessage()`.
+- `TranscriptionSessionCoordinator.swift` — Added `handleSessionDone(sessionID:)` (idempotent ensure-saved) and `handleSessionDeleted(sessionID:)` (full delete path mirroring TranscriptionReviewView.performDelete). Wired callbacks in `startListening()`.
+- `AudioStreamingService.swift` (SAMField) — Added `sendSessionDone(sessionID:)` and `sendSessionDeleted(sessionID:)` methods.
+- `MeetingCaptureCoordinator.swift` (SAMField) — Added `markSessionDone()` with double-send prevention and checkmark confirmation, `deleteSession()` with local state cleanup.
+- `MeetingCaptureView.swift` (SAMField) — Added "Done" button (green, sends sessionDone) and "Delete" button (destructive, with confirmation dialog) to the completed session view. Done shows a brief checkmark animation.
+
+### Architecture Notes
+- Both messages are fire-and-forget (no Mac→iPhone ack). If the connection drops mid-message, the session still exists on Mac for manual action. The `send*` methods return `Bool` so future UI can detect "not connected" if needed.
+- "Done" is intentionally lighter than "Looks Good" on Mac — it does not start the retention timer or sign off. Sarah can still review and edit on Mac before final approval.
+- Delete handler is idempotent: if the session was already deleted, it logs a warning and returns.
+
+---
+
 ## Transcript Editing Overhaul + Post-Edit Re-Analysis (April 14, 2026)
 
 ### Overview

@@ -689,6 +689,53 @@ final class MeetingCaptureCoordinator {
         logger.info("Cleared stale summary-awaiting state via pull-to-refresh")
     }
 
+    // MARK: - Session Lifecycle (Done / Delete)
+
+    /// Sessions that have been marked done, to prevent double-sends.
+    private var doneSentSessionIDs: Set<UUID> = []
+
+    /// Brief checkmark confirmation after marking done.
+    private(set) var showDoneConfirmation: Bool = false
+
+    /// Mark the current session as done. Tells Mac to ensure note is saved
+    /// and analysis runs, but does not sign off — session stays available
+    /// for review/editing on the Mac.
+    func markSessionDone() {
+        guard let id = sessionID else { return }
+        guard !doneSentSessionIDs.contains(id) else { return }
+
+        doneSentSessionIDs.insert(id)
+        let sent = streamingService.sendSessionDone(sessionID: id)
+
+        if sent {
+            showDoneConfirmation = true
+            Task {
+                try? await Task.sleep(for: .seconds(2))
+                showDoneConfirmation = false
+            }
+        }
+
+        logger.info("sessionDone sent=\(sent) for \(id.uuidString)")
+    }
+
+    /// Delete the current session. Tells Mac to remove audio, transcript,
+    /// note, and evidence. Resets local state to idle.
+    func deleteSession() {
+        guard let id = sessionID else { return }
+        let sent = streamingService.sendSessionDeleted(sessionID: id)
+
+        // Clean up local state
+        sessionID = nil
+        lastSummary = nil
+        isAwaitingSummary = false
+        summaryWatchdog?.cancel()
+        summaryWatchdog = nil
+        doneSentSessionIDs.remove(id)
+        captureState = .idle
+
+        logger.info("sessionDeleted sent=\(sent) for \(id.uuidString)")
+    }
+
     // MARK: - Summary Watchdog
 
     /// Start a 60-second watchdog that auto-clears the "Generating summary"

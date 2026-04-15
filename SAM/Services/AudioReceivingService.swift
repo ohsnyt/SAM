@@ -80,6 +80,12 @@ final class AudioReceivingService {
     /// the iPhone.
     var onPendingReprocessComplete: ((UUID, Bool, String?) -> Void)?
 
+    /// Callback fired when the iPhone sends sessionDone for a session.
+    var onSessionDone: ((UUID) -> Void)?
+
+    /// Callback fired when the iPhone sends sessionDeleted for a session.
+    var onSessionDeleted: ((UUID) -> Void)?
+
     /// Model container for persistence — set by the coordinator via
     /// `configure(container:)`. Only required for pending reprocess.
     private var modelContainer: ModelContainer?
@@ -405,6 +411,24 @@ final class AudioReceivingService {
             // Mac doesn't expect to receive this — it's an outbound-only ack
             // from the Mac to the iPhone. Ignore if the iPhone echoes one.
             break
+
+        case .sessionDone:
+            if let idString = String(data: payload, encoding: .utf8),
+               let sessionID = UUID(uuidString: idString) {
+                logger.info("sessionDone received for \(sessionID.uuidString)")
+                onSessionDone?(sessionID)
+            } else {
+                logger.warning("sessionDone: invalid payload")
+            }
+
+        case .sessionDeleted:
+            if let idString = String(data: payload, encoding: .utf8),
+               let sessionID = UUID(uuidString: idString) {
+                logger.info("sessionDeleted received for \(sessionID.uuidString)")
+                onSessionDeleted?(sessionID)
+            } else {
+                logger.warning("sessionDeleted: invalid payload")
+            }
         }
     }
 

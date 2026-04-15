@@ -133,6 +133,12 @@ final class TranscriptionSessionCoordinator {
             pipelineService.onLanguageDetected = { [weak self] lang in
                 self?.handleLanguageDetected(lang)
             }
+            receivingService.onSessionDone = { [weak self] sessionID in
+                self?.handleSessionDone(sessionID: sessionID)
+            }
+            receivingService.onSessionDeleted = { [weak self] sessionID in
+                self?.handleSessionDeleted(sessionID: sessionID)
+            }
             isWired = true
         }
 
@@ -665,6 +671,83 @@ final class TranscriptionSessionCoordinator {
     /// The most recent session ID, even after `currentSessionID` has been cleared.
     /// Used for the regenerate-summary flow.
     private var lastFinalizedSessionID: UUID?
+
+    // MARK: - Phone Session Lifecycle (Done / Delete)
+
+    /// Handle sessionDone from iPhone. Ensures note is saved and analysis
+    /// has started, but does NOT sign off — the session stays available for
+    /// review and editing on the Mac.
+    private func handleSessionDone(sessionID: UUID) {
+        guard let container = modelContainer else { return }
+        let context = ModelContext(container)
+
+        let descriptor = FetchDescriptor<TranscriptSession>(
+            predicate: #Predicate { $0.id == sessionID }
+        )
+        guard let session = try? context.fetch(descriptor).first else {
+            logger.warning("sessionDone: session \(sessionID.uuidString) not found")
+            return
+        }
+
+        // If autoSaveAsNote hasn't run yet (edge case: sessionDone arrives
+        // before handleSessionEnd finishes), trigger it now.
+        if session.linkedNote == nil {
+            let note = autoSaveAsNote(session: session, context: context)
+            if let note {
+                Task(priority: .utility) {
+                    await NoteAnalysisCoordinator.shared.analyzeNote(note)
+                }
+            }
+        }
+
+        logger.info("sessionDone acknowledged for \(sessionID.uuidString)")
+    }
+
+    /// Handle sessionDeleted from iPhone. Removes audio file, linked note +
+    /// evidence, and the session itself. Mirrors TranscriptionReviewView.performDelete().
+    private func handleSessionDeleted(sessionID: UUID) {
+        // If this is the currently active session, clear coordinator state
+        if currentSessionID == sessionID {
+            currentSessionID = nil
+            sessionState = .listening
+        }
+
+        guard let container = modelContainer else { return }
+        let context = ModelContext(container)
+
+        let descriptor = FetchDescriptor<TranscriptSession>(
+            predicate: #Predicate { $0.id == sessionID }
+        )
+        guard let session = try? context.fetch(descriptor).first else {
+            logger.warning("sessionDeleted: session \(sessionID.uuidString) not found — may already be deleted")
+            return
+        }
+
+        // 1. Delete audio file on disk
+        if let relativePath = session.audioFilePath {
+            let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            let audioURL = appSupport.appendingPathComponent(relativePath)
+            try? FileManager.default.removeItem(at: audioURL)
+        }
+
+        // 2. Delete linked note + evidence
+        if let note = session.linkedNote {
+            for evidence in note.linkedEvidence {
+                context.delete(evidence)
+            }
+            context.delete(note)
+        }
+
+        // 3. Delete the session (segments cascade automatically)
+        context.delete(session)
+
+        do {
+            try context.save()
+            logger.info("sessionDeleted: successfully deleted session \(sessionID.uuidString)")
+        } catch {
+            logger.error("sessionDeleted: save failed: \(error.localizedDescription)")
+        }
+    }
 
     /// After a session completes (or errors out), transition back to listening
     /// so the user can immediately start another recording without Mac intervention.

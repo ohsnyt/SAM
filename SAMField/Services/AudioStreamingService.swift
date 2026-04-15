@@ -307,6 +307,45 @@ final class AudioStreamingService {
         return true
     }
 
+    // MARK: - Session Lifecycle (Phase C)
+
+    /// Tell the Mac the user is done with this session. Mac ensures note
+    /// is saved and analysis runs, but does not sign off.
+    @discardableResult
+    func sendSessionDone(sessionID: UUID) -> Bool {
+        guard connectionState == .connected, let _ = connection else { return false }
+        let payload = Data(sessionID.uuidString.utf8)
+        let header = AudioPacketHeader(
+            version: AudioPacketHeader.currentVersion,
+            messageType: .sessionDone,
+            sequenceNumber: 0,
+            timestamp: 0,
+            sampleRate: 0,
+            channels: 0,
+            payloadLength: UInt32(payload.count)
+        )
+        sendPacket(header: header, payload: payload)
+        return true
+    }
+
+    /// Tell the Mac to delete this session entirely.
+    @discardableResult
+    func sendSessionDeleted(sessionID: UUID) -> Bool {
+        guard connectionState == .connected, let _ = connection else { return false }
+        let payload = Data(sessionID.uuidString.utf8)
+        let header = AudioPacketHeader(
+            version: AudioPacketHeader.currentVersion,
+            messageType: .sessionDeleted,
+            sequenceNumber: 0,
+            timestamp: 0,
+            sampleRate: 0,
+            channels: 0,
+            payloadLength: UInt32(payload.count)
+        )
+        sendPacket(header: header, payload: payload)
+        return true
+    }
+
     // MARK: - Private: Connection
 
     private func connectToEndpoint(_ endpoint: NWEndpoint) {
