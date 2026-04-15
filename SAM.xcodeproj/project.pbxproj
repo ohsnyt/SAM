@@ -8,11 +8,11 @@
 
 /* Begin PBXBuildFile section */
 		639A209E2F893CB5009D684C /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = 63FA010B2FA0000000000001 /* WhisperKit */; };
-		63FA010C2FA0000000000002 /* SpeakerKit in Frameworks */ = {isa = PBXBuildFile; productRef = 63FA010D2FA0000000000002 /* SpeakerKit */; };
 		63A8C4FB2F4BD173002160AD /* MLXEmbedders in Frameworks */ = {isa = PBXBuildFile; productRef = 63A8C4FA2F4BD173002160AD /* MLXEmbedders */; };
 		63A8C4FD2F4BD173002160AD /* MLXLLM in Frameworks */ = {isa = PBXBuildFile; productRef = 63A8C4FC2F4BD173002160AD /* MLXLLM */; };
 		63A8C4FF2F4BD173002160AD /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = 63A8C4FE2F4BD173002160AD /* MLXLMCommon */; };
 		63A8C5012F4BD173002160AD /* MLXVLM in Frameworks */ = {isa = PBXBuildFile; productRef = 63A8C5002F4BD173002160AD /* MLXVLM */; };
+		63FA010C2FA0000000000002 /* SpeakerKit in Frameworks */ = {isa = PBXBuildFile; productRef = 63FA010D2FA0000000000002 /* SpeakerKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
