@@ -153,20 +153,31 @@ final class TranscriptionSessionCoordinator {
             logger.info("Listener started — advertising \(AudioStreamingConstants.bonjourServiceType)")
 
             // Watch for connection state transitions — kept alive across sessions.
+            // Also detects mid-session disconnects and auto-finalizes orphaned sessions.
             connectionWatchTask?.cancel()
             connectionWatchTask = Task { [weak self] in
                 while !Task.isCancelled {
                     try? await Task.sleep(for: .milliseconds(500))
                     guard let self else { return }
-                    // listenerState .connected means we have an active TCP peer,
-                    // which can exist between sessions (iPhone keeps connection open)
-                    if self.receivingService.listenerState == .connected,
+
+                    let listenerState = self.receivingService.listenerState
+
+                    if listenerState == .connected,
                        self.sessionState == .listening {
                         self.sessionState = .connected
-                    } else if self.receivingService.listenerState == .advertising,
+                    } else if listenerState == .advertising,
                               (self.sessionState == .connected || self.sessionState == .completed) {
-                        // Peer disconnected — go back to listening
                         self.sessionState = .listening
+                    }
+
+                    // Auto-finalize if the connection dropped during an active session.
+                    // The phone may have disconnected, crashed, or lost network —
+                    // without this the Mac stays stuck on "Recording" forever.
+                    if listenerState != .connected,
+                       self.sessionState == .receiving,
+                       self.currentSessionID != nil {
+                        logger.warning("Connection dropped during active session — auto-finalizing")
+                        self.handleSessionEnd()
                     }
                 }
             }
