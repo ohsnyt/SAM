@@ -40,7 +40,7 @@ struct StageCache {
     /// algorithm changes. The TestInboxWatcher uses these in cache keys.
     enum Version {
         static let whisper = "1"
-        static let diarization = "1"
+        static let diarization = "2"  // Bumped: 16kHz resampling + SpeakerKit options
         // Bumped to 2: polish cache key no longer includes known nouns (they
         // were the dominant cost on cache hits, see PendingReprocessService).
         static let polish = "2"

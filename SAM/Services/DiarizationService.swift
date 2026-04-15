@@ -166,6 +166,17 @@ final class DiarizationService {
         try await task.value
     }
 
+    /// Expected number of speakers, if known. Setting this avoids unreliable
+    /// auto-detection on mono recordings. Nil = let SpeakerKit auto-detect.
+    /// Most advisor calls are 2 people; set per-session when more are expected
+    /// (e.g., from calendar event attendee count).
+    var expectedSpeakerCount: Int? = nil
+
+    /// Clustering distance threshold for SpeakerKit. Lower = more speakers
+    /// detected (stricter separation). Default 0.5 (SpeakerKit's own default
+    /// is 0.6, which over-merges on mono phone audio).
+    var neuralClusterDistanceThreshold: Float = 0.5
+
     /// Diarize using SpeakerKit's Pyannote pipeline. Returns our
     /// `DiarizationResult` format adapted from SpeakerKit's output.
     func diarizeWithSpeakerKit(
@@ -178,8 +189,38 @@ final class DiarizationService {
             throw DiarizationError.modelNotLoaded
         }
 
-        logger.notice("⏳ Running SpeakerKit neural diarization on \(samples.count) samples...")
-        let skResult = try await kit.diarize(audioArray: samples)
+        // SpeakerKit expects 16kHz mono audio (WhisperKit.sampleRate = 16000).
+        // Resample if the input is at a different rate.
+        let targetRate = 16000.0
+        let inputSamples: [Float]
+        if abs(sampleRate - targetRate) > 1 {
+            let ratio = targetRate / sampleRate
+            let outputCount = Int(Double(samples.count) * ratio)
+            var output = [Float](repeating: 0, count: outputCount)
+            // Linear interpolation resampling via Accelerate
+            for i in 0..<outputCount {
+                let srcIdx = Double(i) / ratio
+                let lo = Int(srcIdx)
+                let hi = min(lo + 1, samples.count - 1)
+                let frac = Float(srcIdx - Double(lo))
+                output[i] = samples[lo] * (1 - frac) + samples[hi] * frac
+            }
+            inputSamples = output
+            logger.notice("Resampled \(samples.count) samples from \(Int(sampleRate))Hz to \(Int(targetRate))Hz (\(outputCount) samples)")
+        } else {
+            inputSamples = samples
+        }
+
+        let options = PyannoteDiarizationOptions(
+            numberOfSpeakers: expectedSpeakerCount,
+            clusterDistanceThreshold: neuralClusterDistanceThreshold,
+            useExclusiveReconciliation: false
+        )
+
+        let speakerDesc = expectedSpeakerCount?.description ?? "auto"
+        let threshDesc = String(format: "%.2f", neuralClusterDistanceThreshold)
+        logger.notice("⏳ Running SpeakerKit neural diarization on \(inputSamples.count) samples at \(Int(targetRate))Hz (speakers=\(speakerDesc), threshold=\(threshDesc))...")
+        let skResult = try await kit.diarize(audioArray: inputSamples, options: options)
         logger.notice("✅ SpeakerKit: \(skResult.speakerCount) speakers, \(skResult.segments.count) segments")
 
         // Convert SpeakerKit segments to our format.

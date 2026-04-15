@@ -248,6 +248,9 @@ final class PendingReprocessService {
                 "vad=\(svc.vadEnergyThreshold)",
                 "minSeg=\(svc.minSegmentDuration)",
                 "minSil=\(svc.minSilenceGap)",
+                "neural=\(svc.preferNeuralDiarization)",
+                "neuralThresh=\(svc.neuralClusterDistanceThreshold)",
+                "speakers=\(svc.expectedSpeakerCount?.description ?? "auto")",
                 "enrolled=\(enrolledHash)"
             )
         }()

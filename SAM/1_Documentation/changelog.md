@@ -4,6 +4,31 @@
 
 ---
 
+## Diarization Fix: 16kHz Resampling + SpeakerKit Tuning (April 15, 2026)
+
+### Overview
+Fixed a critical sample rate mismatch that caused SpeakerKit (Pyannote) to see garbled audio, collapsing all speakers into one cluster. SpeakerKit expects 16kHz input but SAM was passing 48kHz samples without resampling. Added tunable parameters for speaker count and clustering threshold.
+
+### Root Cause
+SpeakerKit uses `WhisperKit.sampleRate = 16000` internally for all frame-to-timestamp conversions. Passing 48kHz samples caused: (1) every 3rd sample treated as consecutive, producing garbled audio that couldn't distinguish speakers; (2) all timestamps inflated by 3x (120s clip produced 360s timestamps); (3) speaker embeddings computed from wrong-rate audio.
+
+### Changes
+- `DiarizationService.swift` — Added 16kHz linear interpolation resampling before calling `kit.diarize()`. Added `expectedSpeakerCount` and `neuralClusterDistanceThreshold` (0.50, down from SpeakerKit default 0.60) as tunables. Now passes `PyannoteDiarizationOptions` with `numberOfSpeakers`, `clusterDistanceThreshold`, and `useExclusiveReconciliation: false` (allows overlap detection).
+- `PendingReprocessService.swift` — Added neural diarization parameters (`neuralThresh`, `speakers`, `neural`) to stage cache key so threshold changes invalidate cached results.
+- `StageCache.swift` — Bumped diarization version to "2".
+
+### Results (2-minute 3-speaker phone call test clip)
+- **Before fix**: 1 speaker, 52 segments, max timestamp 359s, 65s voiced
+- **After fix (auto-detect)**: 2 speakers (male vs female separated), 33 segments, max 120s, 110s voiced
+- **After fix (numberOfSpeakers: 3)**: 4 speakers (3 real + 1 fragment), correct turn transitions
+
+### Architecture Notes
+- `expectedSpeakerCount` defaults to nil (auto-detect). Should be set per-session from calendar event attendee count or user input for best results — Grok's recommendation confirmed.
+- The resampling uses linear interpolation which is adequate for speech. A polyphase filter would be higher quality but the improvement is marginal for diarization embeddings.
+- Overlap detection (`useExclusiveReconciliation: false`) captures backchannel responses ("yeah, yeah") as separate speaker segments.
+
+---
+
 ## Phone Done + Delete for Recordings (April 14, 2026)
 
 ### Overview
