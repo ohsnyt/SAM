@@ -426,8 +426,8 @@ struct MeetingCaptureView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                // Session lifecycle actions — Done tells Mac to finalize,
-                // Delete tells Mac to discard everything.
+                // Session lifecycle actions — Delete is always available,
+                // Done waits until the summary has arrived (or timed out).
                 if coordinator.captureState == .completed {
                     if coordinator.showDoneConfirmation {
                         Label("Done!", systemImage: "checkmark.circle.fill")
@@ -436,6 +436,8 @@ struct MeetingCaptureView: View {
                             .transition(.scale.combined(with: .opacity))
                             .padding(.top, 8)
                     } else {
+                        let summaryReady = !coordinator.isAwaitingSummary
+
                         HStack(spacing: 12) {
                             Button(role: .destructive) {
                                 showDeleteConfirmation = true
@@ -446,15 +448,17 @@ struct MeetingCaptureView: View {
                             .buttonStyle(.bordered)
                             .controlSize(.large)
 
-                            Button {
-                                coordinator.markSessionDone()
-                            } label: {
-                                Label("Done", systemImage: "checkmark")
-                                    .frame(maxWidth: .infinity)
+                            if summaryReady {
+                                Button {
+                                    coordinator.markSessionDone()
+                                } label: {
+                                    Label("Done", systemImage: "checkmark")
+                                        .frame(maxWidth: .infinity)
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .tint(.green)
+                                .controlSize(.large)
                             }
-                            .buttonStyle(.borderedProminent)
-                            .tint(.green)
-                            .controlSize(.large)
                         }
                         .padding(.top, 8)
                     }
