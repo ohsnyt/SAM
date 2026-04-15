@@ -500,10 +500,24 @@ struct TranscriptionReviewView: View {
         }
     }
 
-    /// Display the polished transcript with inline diff highlights showing
-    /// what the AI changed from the raw Whisper output. Changed words get
-    /// a subtle blue background; hovering shows the original raw text.
-    /// The polished text is directly editable — click to edit any paragraph.
+    // MARK: - Polished Transcript (AttributedString TextEditor)
+
+    /// The editable attributed transcript. Built from diff paragraphs on first
+    /// appear; the user edits it directly. Speaker labels are included as styled
+    /// text but protected from editing via onChange validation.
+    @State private var polishedAttrText: AttributedString = AttributedString()
+    /// Snapshot of the plain text when the editor was last built/saved, used to
+    /// detect whether the user has made changes.
+    @State private var polishedOriginalPlain: String = ""
+    /// Whether the attributed text has been initialized from the diff.
+    @State private var polishedEditorReady: Bool = false
+
+    /// Whether the user has unsaved edits in the polished transcript.
+    private var polishedEditHasChanges: Bool {
+        guard polishedEditorReady else { return false }
+        return extractPlainText(from: polishedAttrText) != polishedOriginalPlain
+    }
+
     @ViewBuilder
     private func polishedTranscriptSection(_ polished: String) -> some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -530,248 +544,193 @@ struct TranscriptionReviewView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                Text("Click text to edit")
-                    .font(.caption2)
-                    .foregroundStyle(.quaternary)
-            }
-
-            // Compute diff paragraphs between raw segments and polished text
-            let diffParagraphs = TranscriptDiffService.diff(
-                rawSegments: session.sortedSegments,
-                polishedText: polished
-            )
-
-            ForEach(Array(diffParagraphs.enumerated()), id: \.element.id) { index, diffParagraph in
-                polishedDiffParagraphRow(diffParagraph, index: index)
-            }
-        }
-    }
-
-    /// State for editing a specific paragraph inline. Uses the paragraph's
-    /// positional index (not UUID, which regenerates each render).
-    @State private var editingPolishedParagraphIndex: Int?
-    @State private var polishedEditDraft: String = ""
-
-    @ViewBuilder
-    private func polishedDiffParagraphRow(_ diffParagraph: DiffParagraph, index: Int) -> some View {
-        let clusterID = clusterIDForSpeaker(diffParagraph.speakerLabel)
-
-        VStack(alignment: .leading, spacing: 6) {
-            if !diffParagraph.speakerLabel.isEmpty {
-                HStack(spacing: 8) {
-                    Text(diffParagraph.speakerLabel)
-                        .font(.caption.bold())
-                        .foregroundStyle(speakerColor(for: clusterID))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 2)
-                        .background(
-                            Capsule().fill(speakerColor(for: clusterID).opacity(0.15))
-                        )
-                    Spacer()
-                }
-            }
-
-            // Editable text with diff highlights
-            if editingPolishedParagraphIndex == index {
-                // Editing mode: plain TextEditor
-                TextEditor(text: $polishedEditDraft)
-                    .font(.body)
-                    .frame(minHeight: 60)
-                    .padding(4)
-                    .background(Color.blue.opacity(0.05))
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6)
-                            .stroke(Color.blue.opacity(0.3), lineWidth: 1)
-                    )
-
-                HStack {
-                    Spacer()
-                    Button("Cancel") {
-                        editingPolishedParagraphIndex = nil
+                if isRegeneratingSummary {
+                    HStack(spacing: 4) {
+                        ProgressView().controlSize(.small)
+                        Text("Updating summary…")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                }
 
+                if polishedEditHasChanges {
                     Button("Save") {
-                        commitPolishedEdit(
-                            paragraphID: diffParagraph.id,
-                            speakerLabel: diffParagraph.speakerLabel,
-                            newText: polishedEditDraft
-                        )
-                        editingPolishedParagraphIndex = nil
+                        commitPolishedAttributedEdit()
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
-                }
-            } else {
-                // Display mode: diff-highlighted text with click-to-edit.
-                // The edit button is an overlay so it doesn't conflict with
-                // text selection (textSelection(.enabled) steals taps).
-                ZStack(alignment: .topTrailing) {
-                    diffHighlightedText(diffParagraph.words)
-                        .font(.body)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .lineSpacing(2)
-
-                    Button {
-                        let plainText = diffParagraph.words.map(\.text).joined(separator: " ")
-                        polishedEditDraft = plainText
-                        editingPolishedParagraphIndex = index
-                    } label: {
-                        Image(systemName: "pencil")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .padding(4)
-                            .background(.ultraThinMaterial, in: Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .help("Edit this paragraph")
-                    .opacity(0.6)
+                    .keyboardShortcut("s", modifiers: .command)
                 }
             }
+
+            // Single editable TextEditor with attributed string
+            TextEditor(text: $polishedAttrText)
+                .font(.body)
+                .lineSpacing(2)
         }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color.secondary.opacity(0.06))
-        )
-    }
-
-    /// Render diff-highlighted text using a wrapping flow of individual word
-    /// views. Changed words get a subtle blue background + a macOS tooltip
-    /// showing the original raw text on hover.
-    private func diffHighlightedText(_ words: [DiffWord]) -> some View {
-        // Use a wrapping HStack (WrappingHFlow) for per-word hover tooltips.
-        // Each word is its own Text view so we can attach .help() individually.
-        WrappingHFlow(alignment: .leading, spacing: 0) {
-            ForEach(words) { word in
-                if word.isChanged, let original = word.originalRaw {
-                    Text(word.text + " ")
-                        .padding(.vertical, 1)
-                        .padding(.horizontal, 1)
-                        .background(Color.blue.opacity(0.12), in: RoundedRectangle(cornerRadius: 2))
-                        .help("Original: \(original)")
-                } else if word.isInsertion {
-                    Text(word.text + " ")
-                        .padding(.vertical, 1)
-                        .padding(.horizontal, 1)
-                        .background(Color.green.opacity(0.12), in: RoundedRectangle(cornerRadius: 2))
-                        .help("Added by polish")
-                } else {
-                    Text(word.text + " ")
-                }
-            }
-        }
-        .textSelection(.enabled)
-    }
-
-    /// Simple wrapping horizontal layout that flows words to the next line
-    /// when they exceed the available width. Like FlowLayout but for inline
-    /// text words that need to wrap naturally.
-    private struct WrappingHFlow<Content: View>: View {
-        let alignment: HorizontalAlignment
-        let spacing: CGFloat
-        @ViewBuilder let content: () -> Content
-
-        var body: some View {
-            // Use the Layout protocol for proper word wrapping
-            _WrappingHFlowLayout(spacing: spacing) {
-                content()
-            }
-        }
-    }
-
-    private struct _WrappingHFlowLayout: Layout {
-        var spacing: CGFloat
-
-        func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-            let result = layout(in: proposal.width ?? .infinity, subviews: subviews)
-            return result.size
-        }
-
-        func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-            let result = layout(in: bounds.width, subviews: subviews)
-            for (index, position) in result.positions.enumerated() where index < subviews.count {
-                subviews[index].place(
-                    at: CGPoint(x: bounds.minX + position.x, y: bounds.minY + position.y),
-                    proposal: .unspecified
+        .onAppear {
+            if !polishedEditorReady {
+                let diffParagraphs = TranscriptDiffService.diff(
+                    rawSegments: session.sortedSegments,
+                    polishedText: polished
                 )
+                polishedAttrText = buildAttributedTranscript(from: diffParagraphs)
+                polishedOriginalPlain = extractPlainText(from: polishedAttrText)
+                polishedEditorReady = true
             }
-        }
-
-        private func layout(in maxWidth: CGFloat, subviews: Subviews) -> (size: CGSize, positions: [CGPoint]) {
-            var positions: [CGPoint] = []
-            var x: CGFloat = 0
-            var y: CGFloat = 0
-            var rowHeight: CGFloat = 0
-            var maxX: CGFloat = 0
-
-            for subview in subviews {
-                let size = subview.sizeThatFits(.unspecified)
-                if x + size.width > maxWidth && x > 0 {
-                    x = 0
-                    y += rowHeight + spacing
-                    rowHeight = 0
-                }
-                positions.append(CGPoint(x: x, y: y))
-                rowHeight = max(rowHeight, size.height)
-                x += size.width + spacing
-                maxX = max(maxX, x)
-            }
-
-            return (CGSize(width: maxX, height: y + rowHeight), positions)
         }
     }
 
-    /// Commit a user edit to the polished text. Updates the full
-    /// `session.polishedText` by replacing the edited paragraph's content
-    /// and marks `polishedEditedByUser = true`.
-    private func commitPolishedEdit(
-        paragraphID: UUID,
-        speakerLabel: String,
-        newText: String
-    ) {
-        guard var polished = session.polishedText else { return }
+    /// Build a single AttributedString from all diff paragraphs. Speaker labels
+    /// are rendered as bold colored text inline. Changed words get background
+    /// color highlights.
+    private func buildAttributedTranscript(from diffParagraphs: [DiffParagraph]) -> AttributedString {
+        var result = AttributedString()
 
-        // Parse existing paragraphs, find the one that was edited, rebuild
-        let blocks = polished.components(separatedBy: "\n\n")
-        var newBlocks: [String] = []
+        for (i, paragraph) in diffParagraphs.enumerated() {
+            // Speaker label line
+            if !paragraph.speakerLabel.isEmpty {
+                let clusterID = clusterIDForSpeaker(paragraph.speakerLabel)
+                var label = AttributedString(paragraph.speakerLabel + "\n")
+                label.font = .caption.bold()
+                label.foregroundColor = speakerColor(for: clusterID)
+                result.append(label)
+            }
 
-        // Find the paragraph by matching speaker label and approximate
-        // position. Since we only allow editing one paragraph at a time,
-        // we use the edit draft to identify which block changed.
-        var found = false
-        for block in blocks {
+            // Words with diff highlights
+            for (j, word) in paragraph.words.enumerated() {
+                let suffix = j < paragraph.words.count - 1 ? " " : ""
+                var wordAttr = AttributedString(word.text + suffix)
+                wordAttr.font = .body
+
+                if word.isInsertion {
+                    wordAttr.backgroundColor = .green.opacity(0.12)
+                } else if word.originalRaw != nil {
+                    wordAttr.backgroundColor = .blue.opacity(0.12)
+                }
+
+                result.append(wordAttr)
+            }
+
+            // Paragraph separator (double newline between paragraphs)
+            if i < diffParagraphs.count - 1 {
+                result.append(AttributedString("\n\n"))
+            }
+        }
+
+        return result
+    }
+
+    /// Extract plain body text from the attributed transcript, stripping
+    /// speaker labels. This produces the text that gets saved back to
+    /// `session.polishedText`.
+    private func extractPlainText(from attrText: AttributedString) -> String {
+        String(attrText.characters)
+    }
+
+    /// Whether the summary is being regenerated after an edit.
+    @State private var isRegeneratingSummary: Bool = false
+
+    /// Save the user's edits from the attributed TextEditor back to the
+    /// session's polishedText, regenerate diff highlights, and re-run
+    /// summary + note analysis against the edited text.
+    private func commitPolishedAttributedEdit() {
+        // Rebuild polishedText from the attributed string. The attributed
+        // string contains "Speaker 1\ntext\n\nSpeaker 2\ntext" — we need
+        // to convert back to "Speaker 1: text\n\nSpeaker 2: text" format.
+        let fullText = String(polishedAttrText.characters)
+        let rawBlocks = fullText.components(separatedBy: "\n\n")
+        var rebuiltBlocks: [String] = []
+
+        for block in rawBlocks {
             let trimmed = block.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { continue }
 
-            if !found, trimmed.hasPrefix(speakerLabel + ":") {
-                // Replace this paragraph's text
-                if speakerLabel.isEmpty {
-                    newBlocks.append(newText)
-                } else {
-                    newBlocks.append("\(speakerLabel): \(newText)")
+            // Check if this block starts with a speaker label line
+            // (first line is short and matches a known speaker)
+            let lines = trimmed.components(separatedBy: "\n")
+            if lines.count >= 2 {
+                let potentialLabel = lines[0].trimmingCharacters(in: .whitespaces)
+                let bodyText = lines.dropFirst().joined(separator: " ").trimmingCharacters(in: .whitespaces)
+                // Check if the first line looks like a speaker label
+                if potentialLabel.count < 40 && !bodyText.isEmpty {
+                    rebuiltBlocks.append("\(potentialLabel): \(bodyText)")
+                    continue
                 }
-                found = true
-            } else {
-                newBlocks.append(trimmed)
             }
+            // No speaker label detected — keep as-is
+            rebuiltBlocks.append(trimmed)
         }
 
-        if !found {
-            // Fallback: append as new paragraph
-            if speakerLabel.isEmpty {
-                newBlocks.append(newText)
-            } else {
-                newBlocks.append("\(speakerLabel): \(newText)")
-            }
-        }
-
-        session.polishedText = newBlocks.joined(separator: "\n\n")
+        let newPolished = rebuiltBlocks.joined(separator: "\n\n")
+        session.polishedText = newPolished
         session.polishedEditedByUser = true
         try? modelContext.save()
+
+        // Regenerate diff highlights from the new polished text
+        let diffParagraphs = TranscriptDiffService.diff(
+            rawSegments: session.sortedSegments,
+            polishedText: newPolished
+        )
+        polishedAttrText = buildAttributedTranscript(from: diffParagraphs)
+        polishedOriginalPlain = extractPlainText(from: polishedAttrText)
+
+        // Re-run summary + note analysis in the background using the
+        // edited polished text instead of the original raw segments.
+        let sessionID = session.id
+        let durationSeconds = session.durationSeconds
+        let speakerCount = session.speakerCount
+        let detectedLanguage = session.detectedLanguage
+        let recordedAt = session.recordedAt
+        let container = modelContext.container
+
+        isRegeneratingSummary = true
+
+        Task(priority: .utility) {
+            // 1. Regenerate meeting summary from the edited text
+            let metadata = MeetingSummaryService.Metadata(
+                durationSeconds: durationSeconds,
+                speakerCount: speakerCount,
+                detectedLanguage: detectedLanguage,
+                recordedAt: recordedAt
+            )
+
+            do {
+                let summary = try await MeetingSummaryService.shared.summarize(
+                    transcript: newPolished,
+                    metadata: metadata
+                )
+
+                // Persist the new summary
+                let context = ModelContext(container)
+                let descriptor = FetchDescriptor<TranscriptSession>(
+                    predicate: #Predicate { $0.id == sessionID }
+                )
+                if let session = try context.fetch(descriptor).first {
+                    session.meetingSummaryJSON = summary.toJSONString()
+                    session.summaryGeneratedAt = .now
+                    try context.save()
+                }
+            } catch {
+                // Non-fatal — old summary remains
+            }
+
+            // 2. Re-run note analysis on the linked note
+            let noteContext = ModelContext(container)
+            let noteDescriptor = FetchDescriptor<TranscriptSession>(
+                predicate: #Predicate { $0.id == sessionID }
+            )
+            if let session = try? noteContext.fetch(noteDescriptor).first,
+               let note = session.linkedNote {
+                note.content = newPolished
+                try? noteContext.save()
+                await NoteAnalysisCoordinator.shared.analyzeNote(note)
+            }
+
+            await MainActor.run {
+                isRegeneratingSummary = false
+            }
+        }
     }
 
     /// Look up the cluster ID for a speaker label string.

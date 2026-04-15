@@ -105,15 +105,34 @@ actor MeetingSummaryService {
             let decoded = try JSONDecoder().decode(MeetingSummary.self, from: data)
             return decoded
         } catch {
-            // Fallback: if JSON decode fails but we got non-empty text,
-            // treat the whole response as the tl;dr so users at least see something.
-            let plainText = responseText.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !plainText.isEmpty {
-                logger.warning("Meeting summary JSON decode failed; using plain-text fallback: \(error.localizedDescription)")
+            logger.warning("Meeting summary JSON decode failed; using plain-text fallback: \(error.localizedDescription)")
+
+            // Try to salvage the tldr field from the cleaned JSON even if
+            // the full struct decode failed (e.g. a nested field has a
+            // wrong type). This avoids showing raw JSON to the user.
+            if let jsonObj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let tldr = jsonObj["tldr"] as? String, !tldr.isEmpty {
+                var fallback = MeetingSummary.empty
+                fallback.tldr = tldr
+                // Also salvage simple string arrays if present
+                if let topics = jsonObj["topics"] as? [String] { fallback.topics = topics }
+                if let decisions = jsonObj["decisions"] as? [String] { fallback.decisions = decisions }
+                if let questions = jsonObj["openQuestions"] as? [String] { fallback.openQuestions = questions }
+                if let sentiment = jsonObj["sentiment"] as? String { fallback.sentiment = sentiment }
+                return fallback
+            }
+
+            // Last resort: strip JSON/markdown artifacts and use as plain summary
+            let plainText = cleaned
+                .replacingOccurrences(of: "```json", with: "")
+                .replacingOccurrences(of: "```", with: "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !plainText.isEmpty, !plainText.hasPrefix("{") {
                 var fallback = MeetingSummary.empty
                 fallback.tldr = String(plainText.prefix(500))
                 return fallback
             }
+
             throw SummaryError.invalidResponse
         }
     }

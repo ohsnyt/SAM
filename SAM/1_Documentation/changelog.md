@@ -4,6 +4,24 @@
 
 ---
 
+## Transcript Editing Overhaul + Post-Edit Re-Analysis (April 14, 2026)
+
+### Overview
+Replaced the broken NSTextView/NSScrollView-based transcript editor with a single native SwiftUI `TextEditor` backed by `AttributedString` (macOS 26). Diff highlights (blue for AI-changed words, green for insertions) are now rendered as `backgroundColor` attributes inline in the editable text. Added automatic re-generation of meeting summary and note analysis after user edits.
+
+### Changes
+- `TranscriptionReviewView.swift` — Removed the per-paragraph editing system (pencil icon, mode switching, DiffHighlightEditor NSViewRepresentable, AutoSizingScrollView, WrappingHFlow layout). Replaced with a single `TextEditor(text: $polishedAttrText)` using `AttributedString`. Speaker labels are inline bold colored text. Save button appears only when text differs from original. On save, polished text is committed, diff highlights regenerate, and summary + note analysis re-run in the background.
+- `TranscriptionReviewView.swift` — Added `commitPolishedAttributedEdit()` which triggers `MeetingSummaryService.summarize()` and `NoteAnalysisCoordinator.analyzeNote()` against the edited polished text (not raw segments). Shows "Updating summary…" spinner during regeneration.
+- `MeetingSummaryService.swift` — Improved JSON decode fallback. When full `MeetingSummary` decode fails, now uses `JSONSerialization` to salvage individual fields (tldr, topics, decisions, etc.) before falling back to plain text. Strips markdown fences and JSON artifacts so users never see raw JSON in the summary display.
+- `TestInboxWatcher.swift` — Removed auto-run of RSVP test harness on every launch (11 AI inference calls competing with foreground UI). Available manually via `RSVPTestHarness.runAll()`.
+
+### Architecture Notes
+- The macOS 26 `TextEditor` with `AttributedString` eliminates all NSViewRepresentable complexity — no height calculation, no nested scroll views, no focus management. Speaker labels are part of the attributed string rather than separate SwiftUI views.
+- Post-edit re-analysis uses the polished text (what the user sees and edited) rather than raw Whisper segments, so the summary reflects the user's corrections.
+- Summary regeneration runs at `.utility` priority on a background `ModelContext` to avoid blocking the UI.
+
+---
+
 ## Post-Event Evaluation (April 7, 2026)
 
 ### Overview
