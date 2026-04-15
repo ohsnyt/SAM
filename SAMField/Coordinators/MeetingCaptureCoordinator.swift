@@ -710,8 +710,16 @@ final class MeetingCaptureCoordinator {
         if sent {
             showDoneConfirmation = true
             Task {
-                try? await Task.sleep(for: .seconds(2))
+                try? await Task.sleep(for: .seconds(1.5))
                 showDoneConfirmation = false
+                // Clear session state → view returns to ready-to-record
+                sessionID = nil
+                lastSummary = nil
+                isAwaitingSummary = false
+                summaryWatchdog?.cancel()
+                summaryWatchdog = nil
+                captureState = streamingService.connectionState == .connected
+                    ? .connected : .idle
             }
         }
 

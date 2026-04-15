@@ -34,10 +34,13 @@ struct MeetingCaptureView: View {
                     connectionLossBanner(warning)
                 }
 
-                // Pending upload status — shown when there are queued
-                // recordings waiting to sync to the Mac, OR when an upload
-                // is currently in progress.
-                pendingUploadStatusBanner
+                // Pending upload status — only shown when idle/connected
+                // (not during recording or completed session review).
+                if coordinator.captureState == .idle
+                    || coordinator.captureState == .connected
+                    || coordinator.captureState == .connecting {
+                    pendingUploadStatusBanner
+                }
 
                 Spacer(minLength: 20)
 
