@@ -182,7 +182,8 @@ final class DiarizationService {
     func diarizeWithSpeakerKit(
         samples: [Float],
         sampleRate: Double,
-        startOffset: TimeInterval = 0
+        startOffset: TimeInterval = 0,
+        enrolledAgentEmbedding: [Float]? = nil
     ) async throws -> DiarizationResult {
         try await loadSpeakerKit()
         guard let kit = speakerKit else {
@@ -223,38 +224,68 @@ final class DiarizationService {
         let skResult = try await kit.diarize(audioArray: inputSamples, options: options)
         logger.notice("✅ SpeakerKit: \(skResult.speakerCount) speakers, \(skResult.segments.count) segments")
 
-        // Convert SpeakerKit segments to our format.
-        // SpeakerKit segments have: speaker (SpeakerInfo), startFrame,
-        // endFrame, frameRate. We need: start/end in seconds + clusterID.
+        // Convert SpeakerKit segments to our format and extract MFCC
+        // embeddings from the longer segments for agent matching.
         var voiceSegments: [VoiceSegment] = []
-        var centroids: [Int: [Float]] = [:]
+        // Group segments by speaker for centroid computation
+        var speakerEmbeddings: [Int: [[Float]]] = [:]
 
         for skSeg in skResult.segments {
             let startTime = Double(skSeg.startFrame) / Double(skResult.frameRate) + startOffset
             let endTime = Double(skSeg.endFrame) / Double(skResult.frameRate) + startOffset
             let speakerID = skSeg.speaker.speakerId ?? 0
+            let duration = endTime - startTime
+
+            // Extract MFCC embedding from longer segments (≥2s) for
+            // agent matching. Short backchannels ("yeah", "right") are
+            // poor identification material — skip them (per Grok).
+            var embedding: [Float] = []
+            if duration >= 2.0 {
+                let startSample = Int(startTime * targetRate)
+                let endSample = min(Int(endTime * targetRate), inputSamples.count)
+                if startSample < endSample {
+                    let chunk = Array(inputSamples[startSample..<endSample])
+                    if let emb = SpeakerEmbeddingService.shared.embedding(for: chunk, sampleRate: targetRate) {
+                        embedding = emb
+                        speakerEmbeddings[speakerID, default: []].append(emb)
+                    }
+                }
+            }
 
             voiceSegments.append(VoiceSegment(
                 start: startTime,
                 end: endTime,
-                embedding: [],  // SpeakerKit doesn't expose per-segment embeddings
+                embedding: embedding,
                 clusterID: speakerID
             ))
+        }
 
-            // Track which speakers we've seen for centroids
-            // (empty embeddings — we can't do agent matching without them,
-            // but the speaker labels are what matter for the transcript)
-            if centroids[speakerID] == nil {
-                centroids[speakerID] = []
+        // Build centroids from the per-speaker embeddings
+        var centroids: [Int: [Float]] = [:]
+        for (speakerID, embeddings) in speakerEmbeddings {
+            if let centroid = SpeakerEmbeddingService.centroid(of: embeddings) {
+                centroids[speakerID] = centroid
+            }
+        }
+        // Ensure all speakers appear in centroids even if no long segments
+        for seg in voiceSegments {
+            if centroids[seg.clusterID] == nil {
+                centroids[seg.clusterID] = []
             }
         }
 
-        logger.info("SpeakerKit diarization: \(voiceSegments.count) voice segments, \(centroids.count) clusters")
+        // Agent matching using MFCC centroids against enrolled profile
+        let agentClusterID = findAgentCluster(
+            centroids: centroids,
+            enrolledEmbedding: enrolledAgentEmbedding
+        )
+
+        logger.info("SpeakerKit diarization: \(voiceSegments.count) voice segments, \(centroids.count) clusters, agent=\(agentClusterID?.description ?? "none")")
 
         return DiarizationResult(
             segments: voiceSegments,
             centroids: centroids,
-            agentClusterID: nil  // Agent matching deferred — no embeddings from SpeakerKit
+            agentClusterID: agentClusterID
         )
     }
 

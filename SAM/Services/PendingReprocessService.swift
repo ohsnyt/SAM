@@ -272,9 +272,10 @@ final class PendingReprocessService {
                     diarization = try await DiarizationService.shared.diarizeWithSpeakerKit(
                         samples: monoSamples,
                         sampleRate: Double(metadata.sampleRate),
-                        startOffset: 0
+                        startOffset: 0,
+                        enrolledAgentEmbedding: enrolledEmbedding
                     )
-                    logger.notice("✅ Stage 3 (neural diarization): \(String(format: "%.1f", Date().timeIntervalSince(stage3Start)))s — \(diarization.segments.count) voice segments, \(diarization.centroids.count) clusters")
+                    logger.notice("✅ Stage 3 (neural diarization): \(String(format: "%.1f", Date().timeIntervalSince(stage3Start)))s — \(diarization.segments.count) voice segments, \(diarization.centroids.count) clusters, agent=\(diarization.agentClusterID?.description ?? "none")")
                 } catch {
                     logger.warning("SpeakerKit diarization failed (\(error.localizedDescription)), falling back to MFCC")
                     diarization = DiarizationService.shared.diarize(
@@ -313,7 +314,8 @@ final class PendingReprocessService {
                     diarization = try await DiarizationService.shared.diarizeWithSpeakerKit(
                         samples: monoSamples,
                         sampleRate: Double(metadata.sampleRate),
-                        startOffset: 0
+                        startOffset: 0,
+                        enrolledAgentEmbedding: enrolledEmbedding
                     )
                 } catch {
                     logger.warning("SpeakerKit failed, falling back to MFCC: \(error.localizedDescription)")
