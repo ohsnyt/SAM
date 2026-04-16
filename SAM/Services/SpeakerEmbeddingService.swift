@@ -351,12 +351,14 @@ final class SpeakerEmbeddingService {
     var embeddingDimension: Int { provider.embeddingDimension }
 
     /// Extract an embedding for a PCM buffer. Returns nil for silent/short input.
-    func embedding(for samples: [Float], sampleRate: Double) -> [Float]? {
+    /// Pure CPU DSP via vDSP — safe to call from any actor.
+    nonisolated func embedding(for samples: [Float], sampleRate: Double) -> [Float]? {
         provider.embedding(for: samples, sampleRate: sampleRate)
     }
 
     /// Cosine similarity between two L2-normalized embeddings (range -1…1).
-    static func cosineSimilarity(_ a: [Float], _ b: [Float]) -> Float {
+    /// Pure math — safe to call from any actor.
+    nonisolated static func cosineSimilarity(_ a: [Float], _ b: [Float]) -> Float {
         guard a.count == b.count, !a.isEmpty else { return 0 }
         var dot: Float = 0
         vDSP_dotpr(a, 1, b, 1, &dot, vDSP_Length(a.count))
@@ -364,7 +366,8 @@ final class SpeakerEmbeddingService {
     }
 
     /// Average a set of L2-normalized embeddings into a single centroid, re-normalized.
-    static func centroid(of embeddings: [[Float]]) -> [Float]? {
+    /// Pure math — safe to call from any actor.
+    nonisolated static func centroid(of embeddings: [[Float]]) -> [Float]? {
         guard let first = embeddings.first, !embeddings.isEmpty else { return nil }
         let dim = first.count
         var sum = [Float](repeating: 0, count: dim)
@@ -386,14 +389,14 @@ final class SpeakerEmbeddingService {
     }
 
     /// Serialize an embedding to `Data` for SwiftData storage.
-    static func encode(_ embedding: [Float]) -> Data {
+    nonisolated static func encode(_ embedding: [Float]) -> Data {
         embedding.withUnsafeBufferPointer { ptr in
             Data(buffer: ptr)
         }
     }
 
     /// Deserialize an embedding from `Data`.
-    static func decode(_ data: Data) -> [Float] {
+    nonisolated static func decode(_ data: Data) -> [Float] {
         data.withUnsafeBytes { raw -> [Float] in
             let buffer = raw.bindMemory(to: Float.self)
             return Array(buffer)
