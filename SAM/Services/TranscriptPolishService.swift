@@ -46,9 +46,11 @@ actor TranscriptPolishService {
     /// Approximate character budget per chunk. Apple Intelligence has a
     /// hard 4096-token context window. The system instruction + prompt
     /// wrapper consume ~800-1000 tokens, leaving ~3000 tokens for
-    /// transcript content. At ~4 chars/token that's ~12,000 characters.
-    /// We use 10,000 to leave a comfortable margin.
-    static let maxChunkChars = 10_000
+    /// transcript content. At ~3 chars/token (conservative for
+    /// conversational English) that's ~9,000 characters. We use 6,000
+    /// to leave a comfortable margin for the system instruction +
+    /// prompt wrapper + JSON schema in summary prompts.
+    static let maxChunkChars = 6_000
 
     func polish(
         transcript: String,

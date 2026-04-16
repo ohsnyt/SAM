@@ -758,18 +758,15 @@ struct TranscriptionReviewView: View {
     }
 
     /// Generate (or regenerate) the meeting summary from the current
-    /// transcript. Uses polished text if available, falls back to raw segments
-    /// formatted as speaker turns (natural chunk boundaries for AI processing).
+    /// transcript. Always uses raw segments formatted as speaker turns
+    /// (natural chunk boundaries for AI processing) rather than polished
+    /// text, because polished text may lack paragraph breaks needed for
+    /// chunking within the AI context window.
     private func generateSummaryFromTranscript() {
-        let transcript: String
-        if let polished = session.polishedText, !polished.isEmpty {
-            transcript = polished
-        } else {
-            let turns = TranscriptionSessionCoordinator.buildSpeakerTurns(
-                from: session.sortedSegments
-            )
-            transcript = turns.joined(separator: "\n\n")
-        }
+        let turns = TranscriptionSessionCoordinator.buildSpeakerTurns(
+            from: session.sortedSegments
+        )
+        let transcript = turns.joined(separator: "\n\n")
 
         guard !transcript.isEmpty else { return }
 
