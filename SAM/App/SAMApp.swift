@@ -1077,13 +1077,17 @@ struct SAMApp: App {
         // One-time migration: backfill directionRaw on existing evidence
         SAMModelContainer.runDirectionBackfillIfNeeded()
 
-        // Repair corrupted SwiftData relationships before views render
-        EventRepository.shared.repairIntegrity()
-        EventRepository.shared.backfillPersonNameCache()
+        // Defer heavy database maintenance to background — these were
+        // blocking the main actor during startup and causing beachball.
+        // EventRepository.repairIntegrity() has N+1 fetch patterns that
+        // scale with data size (events × participations × people).
+        Task(priority: .utility) {
+            EventRepository.shared.repairIntegrity()
+            EventRepository.shared.backfillPersonNameCache()
 
-        // Prune expired compliance audit entries on launch
-        let retentionDays = UserDefaults.standard.object(forKey: "complianceAuditRetentionDays") as? Int ?? 90
-        try? ComplianceAuditRepository.shared.pruneExpired(retentionDays: retentionDays)
+            let retentionDays = UserDefaults.standard.object(forKey: "complianceAuditRetentionDays") as? Int ?? 90
+            try? ComplianceAuditRepository.shared.pruneExpired(retentionDays: retentionDays)
+        }
     }
     
     /// Check permissions and decide whether to show onboarding or proceed with imports
