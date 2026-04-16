@@ -641,22 +641,40 @@ final class TranscriptionSessionCoordinator {
             let segments = session.sortedSegments
             guard !segments.isEmpty else { return (nil, MeetingSummaryService.Metadata()) }
 
-            // Same grouping as autoSaveAsNote — consecutive segments from the
-            // same speaker are joined on a single line.
+            // Group consecutive same-speaker segments into paragraphs,
+            // but also break within a speaker's run at sentence boundaries
+            // so the result has natural paragraph breaks for chunking.
+            // Without this, a single-speaker transcript becomes one giant
+            // paragraph that exceeds the AI context window.
+            let sentenceEndChars: Set<Character> = [".", "!", "?"]
             var lines: [String] = []
             var lastSpeaker: String? = nil
             var currentBuffer: [String] = []
+            var currentCharCount = 0
+            let maxParagraphChars = 2000  // Force a break after ~2000 chars at next sentence end
+
             func flush() {
                 guard let speaker = lastSpeaker, !currentBuffer.isEmpty else { return }
                 lines.append("\(speaker): \(currentBuffer.joined(separator: " "))")
                 currentBuffer.removeAll()
+                currentCharCount = 0
             }
             for segment in segments {
+                let text = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
                 if segment.speakerLabel != lastSpeaker {
                     flush()
                     lastSpeaker = segment.speakerLabel
                 }
-                currentBuffer.append(segment.text.trimmingCharacters(in: .whitespacesAndNewlines))
+                currentBuffer.append(text)
+                currentCharCount += text.count
+
+                // Break at sentence boundaries when the paragraph is getting long
+                if currentCharCount >= maxParagraphChars,
+                   let lastChar = text.last,
+                   sentenceEndChars.contains(lastChar) {
+                    flush()
+                    lastSpeaker = segment.speakerLabel
+                }
             }
             flush()
 
