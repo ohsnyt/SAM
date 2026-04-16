@@ -758,41 +758,17 @@ struct TranscriptionReviewView: View {
     }
 
     /// Generate (or regenerate) the meeting summary from the current
-    /// transcript. Uses polished text if available, falls back to raw segments.
+    /// transcript. Uses polished text if available, falls back to raw segments
+    /// formatted as speaker turns (natural chunk boundaries for AI processing).
     private func generateSummaryFromTranscript() {
         let transcript: String
         if let polished = session.polishedText, !polished.isEmpty {
             transcript = polished
         } else {
-            // Build from raw segments with sentence-boundary paragraph breaks
-            let segments = session.sortedSegments
-            guard !segments.isEmpty else { return }
-            let sentenceEnd: Set<Character> = [".", "!", "?"]
-            var lines: [String] = []
-            var lastSpeaker: String? = nil
-            var buffer: [String] = []
-            var charCount = 0
-            func flush() {
-                guard let speaker = lastSpeaker, !buffer.isEmpty else { return }
-                lines.append("\(speaker): \(buffer.joined(separator: " "))")
-                buffer.removeAll()
-                charCount = 0
-            }
-            for seg in segments {
-                let text = seg.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                if seg.speakerLabel != lastSpeaker {
-                    flush()
-                    lastSpeaker = seg.speakerLabel
-                }
-                buffer.append(text)
-                charCount += text.count
-                if charCount >= 2000, let last = text.last, sentenceEnd.contains(last) {
-                    flush()
-                    lastSpeaker = seg.speakerLabel
-                }
-            }
-            flush()
-            transcript = lines.joined(separator: "\n\n")
+            let turns = TranscriptionSessionCoordinator.buildSpeakerTurns(
+                from: session.sortedSegments
+            )
+            transcript = turns.joined(separator: "\n\n")
         }
 
         guard !transcript.isEmpty else { return }

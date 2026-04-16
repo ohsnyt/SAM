@@ -625,7 +625,18 @@ final class TranscriptionSessionCoordinator {
         }
     }
 
-    /// Fetch a session and format its transcript + metadata for the summarizer.
+    /// Fetch a session and build speaker-attributed transcript as an array
+    /// of speaker turns. Each turn is a natural chunk boundary for downstream
+    /// AI processing (polish, summary, analysis).
+    ///
+    /// A "turn" is a group of consecutive same-speaker Whisper segments.
+    /// Speaker changes always start a new turn. Within a single speaker's
+    /// run, a new turn is forced at sentence-final punctuation after ~2000
+    /// chars (safety valve for long monologues).
+    ///
+    /// Returns `([turn strings], metadata)`. Each turn is formatted as
+    /// `"Speaker: text"` and turns are joined with `"\n\n"` for the
+    /// final transcript string.
     private func buildSummaryInput(
         sessionID: UUID,
         context: ModelContext
@@ -638,45 +649,8 @@ final class TranscriptionSessionCoordinator {
                 return (nil, MeetingSummaryService.Metadata())
             }
 
-            let segments = session.sortedSegments
-            guard !segments.isEmpty else { return (nil, MeetingSummaryService.Metadata()) }
-
-            // Group consecutive same-speaker segments into paragraphs,
-            // but also break within a speaker's run at sentence boundaries
-            // so the result has natural paragraph breaks for chunking.
-            // Without this, a single-speaker transcript becomes one giant
-            // paragraph that exceeds the AI context window.
-            let sentenceEndChars: Set<Character> = [".", "!", "?"]
-            var lines: [String] = []
-            var lastSpeaker: String? = nil
-            var currentBuffer: [String] = []
-            var currentCharCount = 0
-            let maxParagraphChars = 2000  // Force a break after ~2000 chars at next sentence end
-
-            func flush() {
-                guard let speaker = lastSpeaker, !currentBuffer.isEmpty else { return }
-                lines.append("\(speaker): \(currentBuffer.joined(separator: " "))")
-                currentBuffer.removeAll()
-                currentCharCount = 0
-            }
-            for segment in segments {
-                let text = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                if segment.speakerLabel != lastSpeaker {
-                    flush()
-                    lastSpeaker = segment.speakerLabel
-                }
-                currentBuffer.append(text)
-                currentCharCount += text.count
-
-                // Break at sentence boundaries when the paragraph is getting long
-                if currentCharCount >= maxParagraphChars,
-                   let lastChar = text.last,
-                   sentenceEndChars.contains(lastChar) {
-                    flush()
-                    lastSpeaker = segment.speakerLabel
-                }
-            }
-            flush()
+            let turns = Self.buildSpeakerTurns(from: session.sortedSegments)
+            guard !turns.isEmpty else { return (nil, MeetingSummaryService.Metadata()) }
 
             let metadata = MeetingSummaryService.Metadata(
                 durationSeconds: session.durationSeconds,
@@ -685,11 +659,57 @@ final class TranscriptionSessionCoordinator {
                 recordedAt: session.recordedAt
             )
 
-            return (lines.joined(separator: "\n\n"), metadata)
+            return (turns.joined(separator: "\n\n"), metadata)
         } catch {
             logger.error("buildSummaryInput fetch failed: \(error.localizedDescription)")
             return (nil, MeetingSummaryService.Metadata())
         }
+    }
+
+    /// Build speaker turns from Whisper segments. Each turn is a group of
+    /// consecutive same-speaker segments formatted as "Speaker: text".
+    /// Turns break on speaker changes and at sentence boundaries after
+    /// ~2000 chars (so no single turn overflows the AI context window).
+    static func buildSpeakerTurns(from segments: [TranscriptSegment]) -> [String] {
+        guard !segments.isEmpty else { return [] }
+
+        let sentenceEnd: Set<Character> = [".", "!", "?"]
+        let maxTurnChars = 2000
+        var turns: [String] = []
+        var lastSpeaker: String? = nil
+        var buffer: [String] = []
+        var charCount = 0
+
+        func flush() {
+            guard let speaker = lastSpeaker, !buffer.isEmpty else { return }
+            turns.append("\(speaker): \(buffer.joined(separator: " "))")
+            buffer.removeAll()
+            charCount = 0
+        }
+
+        for segment in segments {
+            let text = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { continue }
+
+            // Speaker change → new turn
+            if segment.speakerLabel != lastSpeaker {
+                flush()
+                lastSpeaker = segment.speakerLabel
+            }
+
+            buffer.append(text)
+            charCount += text.count
+
+            // Long monologue safety: break at sentence end after ~2000 chars
+            if charCount >= maxTurnChars,
+               let lastChar = text.last,
+               sentenceEnd.contains(lastChar) {
+                flush()
+                lastSpeaker = segment.speakerLabel
+            }
+        }
+        flush()
+        return turns
     }
 
     /// Manual trigger for re-running the summary on the most recent session.

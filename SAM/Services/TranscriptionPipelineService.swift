@@ -305,14 +305,36 @@ final class TranscriptionPipelineService {
                 onLanguageDetected?(lang)
             }
 
-            // Run diarization on the same audio (converted to mono Float at native rate)
+            // Run diarization on the same audio. Prefer SpeakerKit (neural)
+            // with 16kHz resampled audio for best speaker separation.
+            // Falls back to MFCC if SpeakerKit isn't available.
             let monoFloats = convertInt16PCMToMonoFloat(pcmData: data, channels: Int(channels))
-            let diarization = DiarizationService.shared.diarize(
-                samples: monoFloats,
-                sampleRate: Double(sampleRate),
-                startOffset: absoluteStartOffset,
-                enrolledAgentEmbedding: enrolledAgentEmbedding
-            )
+            let diarization: DiarizationService.DiarizationResult
+            if DiarizationService.shared.preferNeuralDiarization {
+                do {
+                    diarization = try await DiarizationService.shared.diarizeWithSpeakerKit(
+                        samples: monoFloats,
+                        sampleRate: Double(sampleRate),
+                        startOffset: absoluteStartOffset,
+                        enrolledAgentEmbedding: enrolledAgentEmbedding
+                    )
+                } catch {
+                    logger.warning("SpeakerKit diarization failed on window, falling back to MFCC: \(error.localizedDescription)")
+                    diarization = DiarizationService.shared.diarize(
+                        samples: monoFloats,
+                        sampleRate: Double(sampleRate),
+                        startOffset: absoluteStartOffset,
+                        enrolledAgentEmbedding: enrolledAgentEmbedding
+                    )
+                }
+            } else {
+                diarization = DiarizationService.shared.diarize(
+                    samples: monoFloats,
+                    sampleRate: Double(sampleRate),
+                    startOffset: absoluteStartOffset,
+                    enrolledAgentEmbedding: enrolledAgentEmbedding
+                )
+            }
 
             // Merge: assign speaker labels to WhisperKit segments based on diarization
             let newSegments = dedupeAndOffsetSegments(
