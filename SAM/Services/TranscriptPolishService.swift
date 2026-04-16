@@ -132,6 +132,35 @@ actor TranscriptPolishService {
         var currentLength = 0
 
         for paragraph in paragraphs {
+            // If a single paragraph exceeds maxChars (e.g., all segments
+            // assigned to one speaker), split it by sentences.
+            if paragraph.count > maxChars {
+                // Flush anything accumulated so far
+                if !currentChunk.isEmpty {
+                    chunks.append(currentChunk.joined(separator: "\n\n"))
+                    currentChunk = []
+                    currentLength = 0
+                }
+                // Split the oversized paragraph by sentence boundaries
+                let sentences = paragraph.components(separatedBy: ". ")
+                var sentenceChunk: [String] = []
+                var sentenceLength = 0
+                for sentence in sentences {
+                    let sLen = sentence.count + 2
+                    if sentenceLength + sLen > maxChars && !sentenceChunk.isEmpty {
+                        chunks.append(sentenceChunk.joined(separator: ". "))
+                        sentenceChunk = []
+                        sentenceLength = 0
+                    }
+                    sentenceChunk.append(sentence)
+                    sentenceLength += sLen
+                }
+                if !sentenceChunk.isEmpty {
+                    chunks.append(sentenceChunk.joined(separator: ". "))
+                }
+                continue
+            }
+
             let paragraphLen = paragraph.count + 2 // +2 for the "\n\n" separator
             if currentLength + paragraphLen > maxChars && !currentChunk.isEmpty {
                 chunks.append(currentChunk.joined(separator: "\n\n"))
