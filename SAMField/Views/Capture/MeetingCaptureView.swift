@@ -442,7 +442,7 @@ struct MeetingCaptureView: View {
                             } label: {
                                 Image(systemName: "plus.circle.fill")
                                     .font(.title2)
-                                    .foregroundStyle(.accentColor)
+                                    .foregroundStyle(Color.accentColor)
                             }
                             .buttonStyle(.plain)
                         }
