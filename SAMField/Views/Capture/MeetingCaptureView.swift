@@ -16,6 +16,8 @@ struct MeetingCaptureView: View {
     @State private var showDeleteConfirmation = false
     @State private var speakerCount: Int = 2
     @State private var speakerNames: [String] = ["You (Agent)", "Client"]
+    @State private var upcomingMeetingTitle: String? = nil
+    @State private var hasCheckedCalendar = false
 
     var body: some View {
         ScrollView {
@@ -79,11 +81,26 @@ struct MeetingCaptureView: View {
         .navigationTitle("Record")
         .onAppear {
             coordinator.autoConnectIfNeeded()
-            // Refresh pending queue count so the badge is accurate when
-            // the user opens the tab.
             PendingUploadService.shared.refreshPendingCount()
-            // If we're already connected and idle, try to drain the queue.
             coordinator.maybeProcessPendingQueue()
+
+            // Auto-populate participants from upcoming calendar event
+            if !hasCheckedCalendar {
+                hasCheckedCalendar = true
+                if let meeting = FieldCalendarService.shared.upcomingMeeting() {
+                    upcomingMeetingTitle = meeting.title
+                    // Build speaker list: "You (Agent)" + attendee names
+                    var names = ["You (Agent)"]
+                    names.append(contentsOf: meeting.attendeeNames.filter {
+                        // Skip the user's own name if it appears in attendees
+                        !$0.lowercased().contains("agent")
+                    })
+                    if names.count > 1 {
+                        speakerNames = names
+                        speakerCount = names.count
+                    }
+                }
+            }
         }
         .alert(
             "Can't find your Mac",
@@ -405,6 +422,18 @@ struct MeetingCaptureView: View {
     @ViewBuilder
     private var participantPrepAndRecord: some View {
         VStack(spacing: 16) {
+            // Upcoming meeting from calendar
+            if let title = upcomingMeetingTitle {
+                HStack(spacing: 8) {
+                    Image(systemName: "calendar")
+                        .foregroundStyle(.blue)
+                    Text(title)
+                        .font(.subheadline.bold())
+                    Spacer()
+                }
+                .padding(.horizontal)
+            }
+
             // Speaker count stepper
             GroupBox {
                 VStack(alignment: .leading, spacing: 12) {

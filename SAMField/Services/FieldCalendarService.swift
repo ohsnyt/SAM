@@ -63,19 +63,7 @@ final class FieldCalendarService {
 
         return ekEvents
             .sorted { $0.startDate < $1.startDate }
-            .map { event in
-                CalendarEvent(
-                    id: event.eventIdentifier,
-                    title: event.title ?? "Untitled",
-                    startDate: event.startDate,
-                    endDate: event.endDate,
-                    location: event.location,
-                    notes: event.notes,
-                    isAllDay: event.isAllDay,
-                    calendarName: event.calendar.title,
-                    calendarColor: event.calendar.cgColor
-                )
-            }
+            .map { makeCalendarEvent(from: $0) }
     }
 
     /// Refresh today's events.
@@ -85,6 +73,59 @@ final class FieldCalendarService {
     }
 
     // MARK: - Types
+
+    /// Find the upcoming or current meeting closest to now (within ±30 min).
+    /// Used by the recording tab to auto-populate participant info.
+    func upcomingMeeting() -> CalendarEvent? {
+        guard isAuthorized else { return nil }
+
+        let now = Date()
+        let windowStart = now.addingTimeInterval(-30 * 60)
+        let windowEnd = now.addingTimeInterval(30 * 60)
+
+        let predicate = store.predicateForEvents(withStart: windowStart, end: windowEnd, calendars: nil)
+        let ekEvents = store.events(matching: predicate)
+            .filter { !$0.isAllDay }
+            .sorted { $0.startDate < $1.startDate }
+
+        // Prefer: currently happening > starting soon > recently started
+        if let current = ekEvents.first(where: { $0.startDate <= now && $0.endDate >= now }) {
+            return makeCalendarEvent(from: current)
+        }
+        if let upcoming = ekEvents.first(where: { $0.startDate > now }) {
+            return makeCalendarEvent(from: upcoming)
+        }
+        return ekEvents.first.map { makeCalendarEvent(from: $0) }
+    }
+
+    private func makeCalendarEvent(from event: EKEvent) -> CalendarEvent {
+        let attendeeNames = (event.attendees ?? [])
+            .filter { $0.participantRole != .nonParticipant }
+            .compactMap { attendee -> String? in
+                // Prefer display name, fall back to URL-derived name
+                if let name = attendee.name, !name.isEmpty {
+                    return name
+                }
+                let email = attendee.url.absoluteString.replacingOccurrences(of: "mailto:", with: "")
+                if !email.isEmpty {
+                    return email
+                }
+                return nil
+            }
+
+        return CalendarEvent(
+            id: event.eventIdentifier,
+            title: event.title ?? "Untitled",
+            startDate: event.startDate,
+            endDate: event.endDate,
+            location: event.location,
+            notes: event.notes,
+            isAllDay: event.isAllDay,
+            calendarName: event.calendar.title,
+            calendarColor: event.calendar.cgColor,
+            attendeeNames: attendeeNames
+        )
+    }
 
     struct CalendarEvent: Identifiable, Sendable {
         let id: String
@@ -96,24 +137,31 @@ final class FieldCalendarService {
         let isAllDay: Bool
         let calendarName: String
         let calendarColor: CGColor?
+        let attendeeNames: [String]
 
-        /// Minutes until this event starts (negative if already started)
+        init(id: String, title: String, startDate: Date, endDate: Date,
+             location: String?, notes: String?, isAllDay: Bool,
+             calendarName: String, calendarColor: CGColor?,
+             attendeeNames: [String] = []) {
+            self.id = id; self.title = title; self.startDate = startDate
+            self.endDate = endDate; self.location = location; self.notes = notes
+            self.isAllDay = isAllDay; self.calendarName = calendarName
+            self.calendarColor = calendarColor; self.attendeeNames = attendeeNames
+        }
+
         var minutesUntilStart: Int {
             Int(startDate.timeIntervalSinceNow / 60)
         }
 
-        /// Whether this event is happening now
         var isNow: Bool {
             let now = Date()
             return startDate <= now && endDate >= now
         }
 
-        /// Whether this event is in the past
         var isPast: Bool {
             endDate < Date()
         }
 
-        /// Duration in minutes
         var durationMinutes: Int {
             Int(endDate.timeIntervalSince(startDate) / 60)
         }
