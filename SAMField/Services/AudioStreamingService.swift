@@ -211,9 +211,21 @@ final class AudioStreamingService {
         }
     }
 
-    /// Send a session start message.
-    func sendSessionStart(sessionID: UUID, sampleRate: UInt32, channels: UInt16) {
+    /// Send a session start message with optional speaker metadata.
+    func sendSessionStart(
+        sessionID: UUID,
+        sampleRate: UInt32,
+        channels: UInt16,
+        expectedSpeakerCount: Int? = nil,
+        speakerNames: [String] = []
+    ) {
         self.sessionID = sessionID
+        let metadata = SessionStartMetadata(
+            sessionID: sessionID.uuidString,
+            expectedSpeakerCount: expectedSpeakerCount,
+            speakerNames: speakerNames
+        )
+        let payload = metadata.toWireData() ?? Data(sessionID.uuidString.utf8)
         let header = AudioPacketHeader(
             version: AudioPacketHeader.currentVersion,
             messageType: .sessionStart,
@@ -221,9 +233,8 @@ final class AudioStreamingService {
             timestamp: 0,
             sampleRate: sampleRate,
             channels: channels,
-            payloadLength: UInt32(sessionID.uuidString.utf8.count)
+            payloadLength: UInt32(payload.count)
         )
-        let payload = Data(sessionID.uuidString.utf8)
         sendPacket(header: header, payload: payload)
     }
 

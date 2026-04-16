@@ -590,8 +590,12 @@ final class AudioReceivingService {
         })
     }
 
+    /// Most recent session start metadata (speaker count, names).
+    private(set) var lastSessionMetadata: SessionStartMetadata?
+
     private func handleSessionStart(header: AudioPacketHeader, payload: Data) {
-        let sessionIDString = String(data: payload, encoding: .utf8) ?? UUID().uuidString
+        let metadata = SessionStartMetadata.from(wireData: payload)
+        let sessionIDString = metadata?.sessionID ?? String(data: payload, encoding: .utf8) ?? UUID().uuidString
         let sessionID = UUID(uuidString: sessionIDString) ?? UUID()
 
         self.currentSessionID = sessionID
@@ -600,12 +604,16 @@ final class AudioReceivingService {
         self.reorderBuffer.removeAll()
         self.sessionSampleRate = header.sampleRate
         self.sessionChannels = header.channels
+        self.lastSessionMetadata = metadata
 
         // Start WAV file
         startAudioFile(sessionID: sessionID, sampleRate: header.sampleRate, channels: header.channels)
 
         onSessionStart?(sessionID, header.sampleRate, header.channels)
-        logger.info("Session started: \(sessionID.uuidString), \(header.sampleRate)Hz, \(header.channels)ch")
+
+        let speakerDesc = metadata?.expectedSpeakerCount?.description ?? "auto"
+        let namesDesc = metadata?.speakerNames.isEmpty == false ? metadata!.speakerNames.joined(separator: ", ") : "none"
+        logger.info("Session started: \(sessionID.uuidString), \(header.sampleRate)Hz, \(header.channels)ch, speakers=\(speakerDesc), names=[\(namesDesc)]")
     }
 
     private func handleAudioChunk(_ chunk: AudioChunk) {

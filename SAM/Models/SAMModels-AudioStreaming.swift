@@ -194,6 +194,49 @@ enum AudioStreamingConstants {
     static let uploadChunkSize: Int = 128 * 1024
 }
 
+// MARK: - Session Start Metadata
+
+/// JSON payload sent with `sessionStart` — carries speaker metadata
+/// for diarization. Backwards compatible: if the payload is just a
+/// UUID string (old format), the Mac creates a default metadata with
+/// no speaker info.
+public struct SessionStartMetadata: Codable, Sendable {
+    public var sessionID: String
+    /// Expected number of speakers (nil = auto-detect).
+    public var expectedSpeakerCount: Int?
+    /// Expected speaker names (e.g., ["Sarah", "John", "David"]).
+    /// First entry is typically the agent/user.
+    public var speakerNames: [String]
+
+    public init(
+        sessionID: String,
+        expectedSpeakerCount: Int? = nil,
+        speakerNames: [String] = []
+    ) {
+        self.sessionID = sessionID
+        self.expectedSpeakerCount = expectedSpeakerCount
+        self.speakerNames = speakerNames
+    }
+
+    public func toWireData() -> Data? {
+        try? JSONEncoder().encode(self)
+    }
+
+    /// Parse from wire data. Falls back to treating the payload as a
+    /// plain UUID string for backwards compatibility with older clients.
+    public static func from(wireData: Data) -> SessionStartMetadata? {
+        // Try JSON first (new format)
+        if let decoded = try? JSONDecoder().decode(SessionStartMetadata.self, from: wireData) {
+            return decoded
+        }
+        // Fall back to plain UUID string (old format)
+        if let uuidString = String(data: wireData, encoding: .utf8) {
+            return SessionStartMetadata(sessionID: uuidString)
+        }
+        return nil
+    }
+}
+
 // MARK: - Upload Metadata
 
 /// JSON payload sent with `uploadStart` — identifies the recording and

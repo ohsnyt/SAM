@@ -134,6 +134,16 @@ final class MeetingCaptureCoordinator {
     private let streamingService = AudioStreamingService()
     private var sessionID: UUID?
 
+    // MARK: - Speaker Prep
+
+    /// Expected number of speakers for the next recording. Set from
+    /// calendar event attendees or user input before recording starts.
+    var expectedSpeakerCount: Int? = nil
+
+    /// Expected speaker names for the next recording. Set from
+    /// calendar event attendees or user input before recording starts.
+    var expectedSpeakerNames: [String] = []
+
     /// Model container — needed to create PendingUpload records and so
     /// PendingUploadService can enumerate + upload them.
     private var modelContainer: ModelContainer?
@@ -438,7 +448,9 @@ final class MeetingCaptureCoordinator {
                 streamingService.sendSessionStart(
                     sessionID: id,
                     sampleRate: UInt32(recordingService.sampleRate),
-                    channels: UInt16(recordingService.channelCount)
+                    channels: UInt16(recordingService.channelCount),
+                    expectedSpeakerCount: expectedSpeakerCount,
+                    speakerNames: expectedSpeakerNames
                 )
             }
 

@@ -72,6 +72,10 @@ final class TranscriptionPipelineService {
     /// Enrolled agent embedding used to label segments — nil if no profile enrolled.
     var enrolledAgentEmbedding: [Float]?
 
+    /// Expected speaker names from the phone's session prep screen.
+    /// Used to label diarization clusters with real names.
+    var expectedSpeakerNames: [String] = []
+
     /// Callback fired on the main actor when new segments are emitted.
     var onSegmentsEmitted: (([EmittedSegment]) -> Void)?
 

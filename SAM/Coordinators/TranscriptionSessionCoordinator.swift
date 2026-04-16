@@ -232,6 +232,22 @@ final class TranscriptionSessionCoordinator {
             // Reset pipeline for the new session (model stays loaded).
             self.pipelineService.reset()
 
+            // Apply speaker metadata from the phone (if provided).
+            // This sets expectedSpeakerCount on the diarization engine
+            // so SpeakerKit produces the right number of clusters.
+            if let metadata = self.receivingService.lastSessionMetadata {
+                let diarService = DiarizationService.shared
+                diarService.expectedSpeakerCount = metadata.expectedSpeakerCount
+                // Store speaker names on the pipeline for cluster labeling
+                self.pipelineService.expectedSpeakerNames = metadata.speakerNames
+                if let count = metadata.expectedSpeakerCount {
+                    logger.info("Session speaker prep: \(count) speakers, names=\(metadata.speakerNames)")
+                }
+            } else {
+                DiarizationService.shared.expectedSpeakerCount = nil
+                self.pipelineService.expectedSpeakerNames = []
+            }
+
             // Load enrolled agent embedding (if any) so diarization can
             // auto-label the agent in the new session.
             self.pipelineService.enrolledAgentEmbedding = self.loadEnrolledAgentEmbedding()
