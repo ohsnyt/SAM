@@ -36,6 +36,10 @@ final class TranscriptionSessionCoordinator {
 
     private(set) var sessionState: SessionState = .idle
 
+    /// True when a recording session is actively receiving audio.
+    /// Background tasks should defer heavy work while this is true.
+    var isSessionActive: Bool { sessionState == .receiving }
+
     /// Chunks received in the current session.
     var chunksReceived: Int { receivingService.chunksReceived }
 

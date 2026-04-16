@@ -220,6 +220,9 @@ final class MailImportCoordinator {
                 try? await Task.sleep(for: .seconds(self?.importIntervalSeconds ?? 600))
                 guard !Task.isCancelled else { break }
                 guard let self, self.mailEnabled, self.isConfigured else { continue }
+                if TranscriptionSessionCoordinator.shared.isSessionActive {
+                    continue  // Defer while recording
+                }
                 await self.performImport()
             }
         }

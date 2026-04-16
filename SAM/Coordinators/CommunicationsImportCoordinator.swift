@@ -290,6 +290,13 @@ final class CommunicationsImportCoordinator {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(importIntervalSeconds))
                 guard !Task.isCancelled else { break }
+                // Defer import while a recording session is active —
+                // DB reads and AI analysis compete with the streaming
+                // pipeline and can cause connection drops on long sessions.
+                if TranscriptionSessionCoordinator.shared.isSessionActive {
+                    logger.debug("Periodic import deferred — recording session active")
+                    continue
+                }
                 logger.debug("Periodic communications import triggered")
                 await performImport()
             }

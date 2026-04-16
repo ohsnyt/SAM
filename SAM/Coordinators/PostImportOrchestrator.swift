@@ -36,12 +36,22 @@ final class PostImportOrchestrator {
     }
 
     private func runPostImportWork() async {
+        // Defer AI-heavy work while a recording session is active —
+        // role deduction and insight generation use LLM calls that
+        // compete with the streaming pipeline for CPU and memory.
+        if TranscriptionSessionCoordinator.shared.isSessionActive {
+            logger.debug("Post-import work deferred — recording session active")
+            // Re-trigger after a delay so we don't lose the work entirely
+            debounceTask = Task {
+                try? await Task.sleep(for: .seconds(30))
+                guard !Task.isCancelled else { return }
+                await runPostImportWork()
+            }
+            return
+        }
+
         logger.debug("Running debounced post-import work")
 
-        // Dispatch AI-heavy work to background so it doesn't block the main actor.
-        // Both engines are @MainActor @Observable, but their heavy lifting (LLM calls,
-        // SwiftData queries) should yield back to the main actor between steps.
-        // By not awaiting them here, the UI stays responsive during processing.
         Task(priority: .utility) {
             await RoleDeductionEngine.shared.deduceRoles()
         }
@@ -49,7 +59,6 @@ final class PostImportOrchestrator {
             InsightGenerator.shared.startAutoGeneration()
         }
 
-        // Scan outgoing messages for event-related content and suggest participant additions.
         OutgoingEventMatcher.shared.scanRecentOutgoing()
 
         logger.debug("Post-import work dispatched")
