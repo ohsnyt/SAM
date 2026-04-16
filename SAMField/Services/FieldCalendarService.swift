@@ -50,7 +50,8 @@ final class FieldCalendarService {
 
     // MARK: - Fetch Events
 
-    /// Fetch events for a specific date.
+    /// Fetch events for a specific date. Filters to SAM work calendars
+    /// if workspace settings have been synced from the Mac.
     func fetchEvents(for date: Date) -> [CalendarEvent] {
         guard isAuthorized else { return [] }
 
@@ -58,7 +59,12 @@ final class FieldCalendarService {
         guard let dayStart = calendar.date(from: calendar.dateComponents([.year, .month, .day], from: date)),
               let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else { return [] }
 
-        let predicate = store.predicateForEvents(withStart: dayStart, end: dayEnd, calendars: nil)
+        let calendars = samWorkCalendars()
+        let predicate = store.predicateForEvents(
+            withStart: dayStart,
+            end: dayEnd,
+            calendars: calendars.isEmpty ? nil : calendars
+        )
         let ekEvents = store.events(matching: predicate)
 
         return ekEvents
