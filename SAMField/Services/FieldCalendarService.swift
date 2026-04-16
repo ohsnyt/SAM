@@ -59,11 +59,18 @@ final class FieldCalendarService {
         guard let dayStart = calendar.date(from: calendar.dateComponents([.year, .month, .day], from: date)),
               let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else { return [] }
 
+        // Only read from SAM-configured work calendars. Never read
+        // from all calendars — we told the user we only access SAM groups.
         let calendars = samWorkCalendars()
+        guard !calendars.isEmpty else {
+            logger.debug("No SAM work calendars configured — skipping calendar fetch")
+            return []
+        }
+
         let predicate = store.predicateForEvents(
             withStart: dayStart,
             end: dayEnd,
-            calendars: calendars.isEmpty ? nil : calendars
+            calendars: calendars
         )
         let ekEvents = store.events(matching: predicate)
 
@@ -91,12 +98,14 @@ final class FieldCalendarService {
         let windowStart = now.addingTimeInterval(-30 * 60)
         let windowEnd = now.addingTimeInterval(30 * 60)
 
-        // Use SAM's work calendars if synced from Mac, otherwise all
+        // Only read from SAM-configured work calendars.
         let calendars = samWorkCalendars()
+        guard !calendars.isEmpty else { return nil }
+
         let predicate = store.predicateForEvents(
             withStart: windowStart,
             end: windowEnd,
-            calendars: calendars.isEmpty ? nil : calendars
+            calendars: calendars
         )
         let ekEvents = store.events(matching: predicate)
             .filter { !$0.isAllDay }
