@@ -103,10 +103,11 @@ final class PendingReprocessService {
         logger.notice("WAV file size on disk: \(attrs?[.size] as? Int64 ?? -1) bytes")
 
         #if DEBUG
-        // Compute the WAV content hash once if the stage cache is enabled —
-        // it's the input shared by Whisper and diarization, and the file
-        // SHA256 dominates cache-key cost on multi-MB recordings.
-        let wavHash: String? = StageCache.enabled ? StageCache.sha256(file: wavURL) : nil
+        // Compute the WAV content hash off main actor — SHA256 on 165MB
+        // files blocks the main thread for several seconds.
+        let wavHash: String? = await Task.detached(priority: .utility) {
+            StageCache.enabled ? StageCache.sha256(file: wavURL) : nil
+        }.value
         let stageCache = StageCache()
         #endif
 
@@ -126,33 +127,41 @@ final class PendingReprocessService {
         //
         // Load the WAV into a float buffer, run the preprocessing pipeline,
         // write the cleaned audio back to a temp file for Whisper to read.
-        // Diarization uses the same cleaned samples directly.
+        // Runs off main actor to avoid beachball on large files (165MB+).
         let preprocessStart = Date()
-        let rawSamples = loadMonoFloatSamples(
-            from: wavURL,
-            expectedSampleRate: Double(metadata.sampleRate),
-            expectedChannels: Int(metadata.channels)
-        )
+        let capturedWavURL = wavURL
+        let capturedSampleRate = metadata.sampleRate
+        let capturedChannels = metadata.channels
+        let capturedSessionID = sessionID
 
-        var preprocessedSamples: [Float]?
-        var preprocessedWavURL = wavURL
-        if let raw = rawSamples, !raw.isEmpty {
+        let preprocessResult: (samples: [Float]?, wavURL: URL) = await Task.detached(priority: .userInitiated) {
+            let rawSamples = self.loadMonoFloatSamples(
+                from: capturedWavURL,
+                expectedSampleRate: Double(capturedSampleRate),
+                expectedChannels: Int(capturedChannels)
+            )
+
+            guard let raw = rawSamples, !raw.isEmpty else {
+                return (nil, capturedWavURL)
+            }
+
             let cleaned = AudioPreprocessingService.preprocess(
                 samples: raw,
-                sampleRate: Float(metadata.sampleRate)
+                sampleRate: Float(capturedSampleRate)
             )
-            preprocessedSamples = cleaned
 
-            // Write preprocessed audio to a temp file so Whisper can read it
-            // (Whisper takes a file URL, not a sample array, in the reprocess path).
             let tempDir = FileManager.default.temporaryDirectory
-            let tempURL = tempDir.appendingPathComponent("preprocessed-\(sessionID.uuidString).wav")
-            if writeWAV(samples: cleaned, sampleRate: metadata.sampleRate, to: tempURL) {
-                preprocessedWavURL = tempURL
-                logger.notice("✅ Stage 1b (preprocess): \(String(format: "%.1f", Date().timeIntervalSince(preprocessStart)))s — \(raw.count) samples cleaned")
-            } else {
-                logger.warning("Stage 1b: failed to write preprocessed WAV, using original")
+            let tempURL = tempDir.appendingPathComponent("preprocessed-\(capturedSessionID.uuidString).wav")
+            if self.writeWAV(samples: cleaned, sampleRate: capturedSampleRate, to: tempURL) {
+                return (cleaned, tempURL)
             }
+            return (cleaned, capturedWavURL)
+        }.value
+
+        let preprocessedSamples = preprocessResult.samples
+        let preprocessedWavURL = preprocessResult.wavURL
+        if preprocessedSamples != nil {
+            logger.notice("✅ Stage 1b (preprocess): \(String(format: "%.1f", Date().timeIntervalSince(preprocessStart)))s — \(preprocessedSamples!.count) samples cleaned")
         } else {
             logger.warning("Stage 1b: could not load raw samples for preprocessing")
         }
@@ -214,13 +223,20 @@ final class PendingReprocessService {
         state = .diarizing
         let stage3Start = Date()
         logger.notice("⏳ Stage 3 (diarization) starting...")
-        // Use preprocessed samples if available (same cleaning that Whisper
-        // got). Falls back to loading raw from the original WAV.
-        let monoSamples: [Float]? = preprocessedSamples ?? loadMonoFloatSamples(
-            from: wavURL,
-            expectedSampleRate: Double(metadata.sampleRate),
-            expectedChannels: Int(metadata.channels)
-        )
+        // Use preprocessed samples if available (already loaded off main actor).
+        // Falls back to loading raw from the original WAV off main actor.
+        let monoSamples: [Float]?
+        if let preprocessedSamples {
+            monoSamples = preprocessedSamples
+        } else {
+            monoSamples = await Task.detached(priority: .userInitiated) {
+                self.loadMonoFloatSamples(
+                    from: capturedWavURL,
+                    expectedSampleRate: Double(capturedSampleRate),
+                    expectedChannels: Int(capturedChannels)
+                )
+            }.value
+        }
         logger.notice("Diarization: loaded \(monoSamples?.count ?? 0) mono float samples (preprocessed=\(preprocessedSamples != nil))")
 
         let enrolledEmbedding = loadEnrolledAgentEmbedding(container: modelContainer)
@@ -518,7 +534,7 @@ final class PendingReprocessService {
 
     /// Decode a WAV file to mono Float samples. Uses AVAudioFile which
     /// handles both linear PCM and various container formats.
-    private func loadMonoFloatSamples(
+    private nonisolated func loadMonoFloatSamples(
         from url: URL,
         expectedSampleRate: Double,
         expectedChannels: Int
@@ -560,7 +576,7 @@ final class PendingReprocessService {
 
     /// Write a Float sample array to a WAV file on disk. Used to feed
     /// preprocessed audio to Whisper (which takes a file URL).
-    private func writeWAV(samples: [Float], sampleRate: UInt32, to url: URL) -> Bool {
+    private nonisolated func writeWAV(samples: [Float], sampleRate: UInt32, to url: URL) -> Bool {
         let format = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
             sampleRate: Double(sampleRate),
