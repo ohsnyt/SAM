@@ -89,13 +89,11 @@ struct MeetingCaptureView: View {
                 hasCheckedCalendar = true
                 if let meeting = FieldCalendarService.shared.upcomingMeeting() {
                     upcomingMeetingTitle = meeting.title
-                    // Build speaker list: "You (Agent)" + attendee names
-                    var names = ["You (Agent)"]
-                    names.append(contentsOf: meeting.attendeeNames.filter {
-                        // Skip the user's own name if it appears in attendees
-                        !$0.lowercased().contains("agent")
-                    })
-                    if names.count > 1 {
+                    // Use attendee names directly from the calendar event.
+                    // The user (organizer) is already in the attendee list
+                    // so we don't add "You (Agent)" separately.
+                    let names = meeting.attendeeNames
+                    if !names.isEmpty {
                         speakerNames = names
                         speakerCount = names.count
                     }
