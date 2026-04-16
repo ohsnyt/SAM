@@ -6,7 +6,11 @@
 //  Loads the model lazily, transcribes PCM WAV files or Float sample arrays,
 //  and returns segments with word-level timings.
 //
-//  Model: openai_whisper-large-v3_turbo (~1.6GB, runs on Apple Silicon ANE).
+//  Architecture:
+//    WhisperTranscriptionEngine (actor) — owns WhisperKit, does all heavy
+//      compute on its own executor (NOT the main thread).
+//    WhisperTranscriptionService (@MainActor @Observable) — thin state
+//      holder for SwiftUI observation. Delegates all work to the engine.
 //
 
 import Foundation
@@ -15,130 +19,139 @@ import WhisperKit
 
 private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "WhisperTranscriptionService")
 
-@MainActor
-@Observable
-final class WhisperTranscriptionService {
+// MARK: - Shared Types
 
-    static let shared = WhisperTranscriptionService()
+/// Observable state for the Whisper model lifecycle.
+enum WhisperModelState: Sendable, Equatable {
+    case notLoaded
+    case loading(progress: Double)
+    case ready(modelID: String)
+    case failed(String)
+}
 
-    // MARK: - Types
+/// Transcription result — fully Sendable, safe to cross actor boundaries.
+struct WhisperTranscriptResult: Sendable, Codable {
+    let text: String
+    let segments: [Segment]
+    let detectedLanguage: String?
+    let modelID: String
 
-    enum ModelState: Sendable, Equatable {
-        case notLoaded
-        case loading(progress: Double)
-        case ready(modelID: String)
-        case failed(String)
-    }
-
-    struct TranscriptResult: Sendable, Codable {
+    struct Segment: Sendable, Codable {
         let text: String
-        let segments: [Segment]
-        let detectedLanguage: String?
-        let modelID: String
-
-        struct Segment: Sendable, Codable {
-            let text: String
-            let start: TimeInterval
-            let end: TimeInterval
-            let words: [Word]
-        }
-
-        struct Word: Sendable, Codable {
-            let word: String
-            let start: TimeInterval
-            let end: TimeInterval
-            let confidence: Float
-        }
+        let start: TimeInterval
+        let end: TimeInterval
+        let words: [Word]
     }
 
-    // MARK: - State
+    struct Word: Sendable, Codable {
+        let word: String
+        let start: TimeInterval
+        let end: TimeInterval
+        let confidence: Float
+    }
+}
 
-    private(set) var modelState: ModelState = .notLoaded
+enum WhisperTranscriptionError: LocalizedError {
+    case modelNotLoaded
+    case transcriptionFailed(String)
 
-    /// The WhisperKit model ID currently loaded / being loaded.
-    private(set) var currentModelID: String?
+    var errorDescription: String? {
+        switch self {
+        case .modelNotLoaded: return "Whisper model is not loaded."
+        case .transcriptionFailed(let msg): return "Transcription failed: \(msg)"
+        }
+    }
+}
 
-    /// Default model — `base.en` is ~140MB, downloads in well under a minute,
-    /// and is accurate enough for English meeting speech. Users can switch to
-    /// `openai_whisper-large-v3-turbo` (1.6GB) for higher accuracy.
+// MARK: - WhisperTranscriptionEngine (background actor)
+
+/// Owns WhisperKit and runs all transcription on its own executor.
+/// This is NOT @MainActor — all compute happens off the main thread.
+actor WhisperTranscriptionEngine {
+
+    static let shared = WhisperTranscriptionEngine()
+
+    /// Default model — `base.en` is ~140MB, accurate for English meeting speech.
     static let defaultModelID = "openai_whisper-base.en"
 
-    // MARK: - Private
-
     private var whisperKit: WhisperKit?
-    private var loadTask: Task<Void, Error>?
-
-    private init() {}
+    private var loadedModelID: String?
+    private var isLoading = false
 
     // MARK: - Model Loading
 
-    /// Load the Whisper model. Safe to call multiple times — subsequent calls wait for the first.
+    /// Load the Whisper model. Safe to call multiple times.
     func loadModel(modelID: String = defaultModelID) async throws {
-        // If already loaded with this model, return immediately
-        if case .ready(let loaded) = modelState, loaded == modelID {
-            return
+        if loadedModelID == modelID && whisperKit != nil { return }
+        guard !isLoading else {
+            // Wait for in-flight load by polling (simple, avoids continuation complexity)
+            while isLoading { try await Task.sleep(for: .milliseconds(100)) }
+            if whisperKit != nil { return }
+            throw WhisperTranscriptionError.modelNotLoaded
         }
 
-        // If a load is already in flight, await it
-        if let existing = loadTask {
-            try await existing.value
-            return
+        isLoading = true
+        defer { isLoading = false }
+
+        logger.info("Loading WhisperKit model: \(modelID) — first run will download, subsequent runs load from cache")
+
+        // Notify main actor of loading state
+        await MainActor.run {
+            WhisperTranscriptionService.shared.modelState = .loading(progress: 0)
+            WhisperTranscriptionService.shared.currentModelID = modelID
         }
 
-        let task = Task { [weak self] in
-            guard let self else { return }
-            do {
-                self.modelState = .loading(progress: 0)
-                self.currentModelID = modelID
+        do {
+            let config = WhisperKitConfig(
+                model: modelID,
+                verbose: false,
+                logLevel: .error,
+                prewarm: true,
+                load: true,
+                download: true
+            )
 
-                logger.info("Loading WhisperKit model: \(modelID) — first run will download, subsequent runs load from cache")
+            let kit = try await WhisperKit(config)
+            whisperKit = kit
+            loadedModelID = modelID
 
-                let config = WhisperKitConfig(
-                    model: modelID,
-                    verbose: false,
-                    logLevel: .error,
-                    prewarm: true,
-                    load: true,
-                    download: true
-                )
+            logger.info("✅ WhisperKit model loaded: \(modelID)")
 
-                let kit = try await WhisperKit(config)
-                self.whisperKit = kit
-                self.modelState = .ready(modelID: modelID)
-
-                logger.info("✅ WhisperKit model loaded: \(modelID)")
-            } catch {
-                logger.error("❌ WhisperKit load failed: \(error.localizedDescription)")
-                self.modelState = .failed(error.localizedDescription)
-                self.whisperKit = nil
-                self.loadTask = nil
-                throw error
+            await MainActor.run {
+                WhisperTranscriptionService.shared.modelState = .ready(modelID: modelID)
             }
-            self.loadTask = nil
+        } catch {
+            logger.error("❌ WhisperKit load failed: \(error.localizedDescription)")
+            whisperKit = nil
+            loadedModelID = nil
+
+            await MainActor.run {
+                WhisperTranscriptionService.shared.modelState = .failed(error.localizedDescription)
+            }
+            throw error
         }
-        self.loadTask = task
-        try await task.value
     }
 
     /// Unload the model to free memory.
-    func unloadModel() {
+    func unloadModel() async {
         whisperKit = nil
-        loadTask?.cancel()
-        loadTask = nil
-        modelState = .notLoaded
-        currentModelID = nil
+        loadedModelID = nil
+
+        await MainActor.run {
+            WhisperTranscriptionService.shared.modelState = .notLoaded
+            WhisperTranscriptionService.shared.currentModelID = nil
+        }
     }
 
     // MARK: - Transcription
 
-    /// Transcribe an audio file (WAV/any format WhisperKit can read).
-    /// Returns segments with word-level timestamps.
-    func transcribe(fileURL: URL) async throws -> TranscriptResult {
+    /// Transcribe an audio file. Runs entirely off the main thread.
+    func transcribe(fileURL: URL) async throws -> WhisperTranscriptResult {
         if whisperKit == nil {
             try await loadModel()
         }
         guard let kit = whisperKit else {
-            throw TranscriptionError.modelNotLoaded
+            throw WhisperTranscriptionError.modelNotLoaded
         }
 
         logger.debug("Transcribing file: \(fileURL.lastPathComponent)")
@@ -155,16 +168,16 @@ final class WhisperTranscriptionService {
             decodeOptions: options
         )
 
-        return buildResult(from: results)
+        return Self.buildResult(from: results, modelID: loadedModelID ?? Self.defaultModelID)
     }
 
-    /// Transcribe a float sample array (16kHz mono expected — WhisperKit will resample if needed).
-    func transcribe(audioArray: [Float]) async throws -> TranscriptResult {
+    /// Transcribe a float sample array. Runs entirely off the main thread.
+    func transcribe(audioArray: [Float]) async throws -> WhisperTranscriptResult {
         if whisperKit == nil {
             try await loadModel()
         }
         guard let kit = whisperKit else {
-            throw TranscriptionError.modelNotLoaded
+            throw WhisperTranscriptionError.modelNotLoaded
         }
 
         let options = DecodingOptions(
@@ -179,13 +192,13 @@ final class WhisperTranscriptionService {
             decodeOptions: options
         )
 
-        return buildResult(from: results)
+        return Self.buildResult(from: results, modelID: loadedModelID ?? Self.defaultModelID)
     }
 
-    // MARK: - Result Assembly
+    // MARK: - Result Assembly (nonisolated — pure functions)
 
-    private func buildResult(from results: [TranscriptionResult]) -> TranscriptResult {
-        var allSegments: [TranscriptResult.Segment] = []
+    private static func buildResult(from results: [TranscriptionResult], modelID: String) -> WhisperTranscriptResult {
+        var allSegments: [WhisperTranscriptResult.Segment] = []
         var fullText = ""
         var language: String?
 
@@ -193,12 +206,12 @@ final class WhisperTranscriptionService {
             if language == nil, !result.language.isEmpty {
                 language = result.language
             }
-            fullText += Self.cleanWhisperText(result.text)
+            fullText += cleanWhisperText(result.text)
 
             for segment in result.segments {
-                let words: [TranscriptResult.Word] = (segment.words ?? []).map { w in
-                    TranscriptResult.Word(
-                        word: Self.cleanWhisperText(w.word),
+                let words: [WhisperTranscriptResult.Word] = (segment.words ?? []).map { w in
+                    WhisperTranscriptResult.Word(
+                        word: cleanWhisperText(w.word),
                         start: TimeInterval(w.start),
                         end: TimeInterval(w.end),
                         confidence: w.probability
@@ -206,24 +219,16 @@ final class WhisperTranscriptionService {
                 }
                 let nonEmptyWords = words.filter { !$0.word.isEmpty }
 
-                // Rebuild segment text from the word tokens when they're
-                // available. `segment.text` as returned by WhisperKit 0.18.0
-                // can have missing inter-word spaces when word timestamps
-                // are enabled (especially at window boundaries and dense
-                // sentences), so always prefer reconstructing from the
-                // word array when we have one.
                 let cleanedText: String
                 if !nonEmptyWords.isEmpty {
-                    cleanedText = Self.rebuildText(from: nonEmptyWords.map { $0.word })
+                    cleanedText = rebuildText(from: nonEmptyWords.map { $0.word })
                 } else {
-                    cleanedText = Self.cleanWhisperText(segment.text)
+                    cleanedText = cleanWhisperText(segment.text)
                 }
 
-                // Skip segments that were ENTIRELY markers (e.g. silence
-                // slots that WhisperKit emits with only <|0.00|>).
                 guard !cleanedText.isEmpty else { continue }
 
-                allSegments.append(TranscriptResult.Segment(
+                allSegments.append(WhisperTranscriptResult.Segment(
                     text: cleanedText,
                     start: TimeInterval(segment.start),
                     end: TimeInterval(segment.end),
@@ -232,18 +237,14 @@ final class WhisperTranscriptionService {
             }
         }
 
-        return TranscriptResult(
+        return WhisperTranscriptResult(
             text: fullText.trimmingCharacters(in: .whitespacesAndNewlines),
             segments: allSegments,
             detectedLanguage: language,
-            modelID: currentModelID ?? Self.defaultModelID
+            modelID: modelID
         )
     }
 
-    /// Reconstruct a clean text string from a word array, normalizing
-    /// whitespace. Individual words may come with leading spaces (Whisper
-    /// tokenizer convention) or without them (some code paths trim); this
-    /// helper joins them with explicit single spaces either way.
     static func rebuildText(from words: [String]) -> String {
         let trimmed = words
             .map { $0.trimmingCharacters(in: .whitespaces) }
@@ -251,48 +252,74 @@ final class WhisperTranscriptionService {
         return trimmed.joined(separator: " ")
     }
 
-    /// Strip WhisperKit internal special tokens from raw segment/word text.
-    ///
-    /// WhisperKit's decoder surfaces timestamp markers (`<|0.00|>`,
-    /// `<|5.00|>`), session markers (`<|startoftranscript|>`, `<|endoftext|>`,
-    /// `<|notimestamps|>`), language tags (`<|en|>`), and task tags
-    /// (`<|transcribe|>`, `<|translate|>`) inside the decoded text when
-    /// word-level timestamps are enabled. These are internal model tokens
-    /// and should never be shown to the user.
-    ///
-    /// We strip anything matching `<|...|>`, then collapse whitespace.
     private static func cleanWhisperText(_ text: String) -> String {
         guard !text.isEmpty else { return text }
-
-        // Match any Whisper special token: <| followed by non-pipe chars, then |>
         let tokenPattern = #"<\|[^|]*\|>"#
         var cleaned = text.replacingOccurrences(
             of: tokenPattern,
             with: " ",
             options: .regularExpression
         )
-
-        // Collapse runs of whitespace into single spaces
         cleaned = cleaned.replacingOccurrences(
             of: #"\s+"#,
             with: " ",
             options: .regularExpression
         )
-
         return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
     }
+}
 
-    // MARK: - Errors
+// MARK: - WhisperTranscriptionService (@MainActor state holder)
 
-    enum TranscriptionError: LocalizedError {
-        case modelNotLoaded
-        case transcriptionFailed(String)
+/// Thin @MainActor wrapper for SwiftUI observation. All heavy work is
+/// delegated to `WhisperTranscriptionEngine` which runs on its own actor.
+@MainActor
+@Observable
+final class WhisperTranscriptionService {
 
-        var errorDescription: String? {
-            switch self {
-            case .modelNotLoaded: return "Whisper model is not loaded."
-            case .transcriptionFailed(let msg): return "Transcription failed: \(msg)"
-            }
-        }
+    static let shared = WhisperTranscriptionService()
+
+    // MARK: - Observable State (SwiftUI watches these)
+
+    var modelState: WhisperModelState = .notLoaded
+    var currentModelID: String?
+
+    // MARK: - Type Aliases (preserve API compatibility)
+
+    typealias ModelState = WhisperModelState
+    typealias TranscriptResult = WhisperTranscriptResult
+    typealias TranscriptionError = WhisperTranscriptionError
+
+    static let defaultModelID = WhisperTranscriptionEngine.defaultModelID
+
+    private init() {}
+
+    // MARK: - Delegated API
+
+    /// Load the Whisper model. Updates observable state on main actor,
+    /// but the actual model loading runs off main thread.
+    func loadModel(modelID: String = defaultModelID) async throws {
+        try await WhisperTranscriptionEngine.shared.loadModel(modelID: modelID)
+    }
+
+    /// Unload the model to free memory.
+    func unloadModel() async {
+        await WhisperTranscriptionEngine.shared.unloadModel()
+    }
+
+    /// Transcribe an audio file. The heavy compute runs off main thread;
+    /// only this call/return crosses the main actor.
+    func transcribe(fileURL: URL) async throws -> TranscriptResult {
+        try await WhisperTranscriptionEngine.shared.transcribe(fileURL: fileURL)
+    }
+
+    /// Transcribe a float sample array.
+    func transcribe(audioArray: [Float]) async throws -> TranscriptResult {
+        try await WhisperTranscriptionEngine.shared.transcribe(audioArray: audioArray)
+    }
+
+    /// Reconstruct text from word array (convenience — delegates to engine).
+    static func rebuildText(from words: [String]) -> String {
+        WhisperTranscriptionEngine.rebuildText(from: words)
     }
 }
