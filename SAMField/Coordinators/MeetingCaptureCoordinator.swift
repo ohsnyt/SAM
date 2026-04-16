@@ -186,6 +186,13 @@ final class MeetingCaptureCoordinator {
             }
         }
 
+        // Refresh calendar when workspace settings arrive from Mac
+        streamingService.onWorkspaceSettingsReceived = {
+            Task { @MainActor in
+                FieldCalendarService.shared.refreshToday()
+            }
+        }
+
         registerForAudioInterruptions()
     }
 

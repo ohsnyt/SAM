@@ -45,6 +45,9 @@ final class AudioStreamingService {
     /// to unblock the upload task and clean up the local WAV on success.
     var onSessionProcessed: (@Sendable (SessionProcessedAck) -> Void)?
 
+    /// Fired when the Mac pushes workspace settings (calendar/contact config).
+    var onWorkspaceSettingsReceived: (@Sendable () -> Void)?
+
     // MARK: - Private
 
     private var browser: NWBrowser?
@@ -568,7 +571,8 @@ final class AudioStreamingService {
                 return
             }
             settings.cache()
-            logger.info("Received workspace settings: \(settings.calendarNames.joined(separator: ", ")), groups=\(settings.contactGroupNames.joined(separator: ", "))")
+            logger.info("Received workspace settings: calendars=\(settings.calendarNames.joined(separator: ", ")), groups=\(settings.contactGroupNames.joined(separator: ", "))")
+            onWorkspaceSettingsReceived?()
 
         case .heartbeat:
             break // Mac acknowledging liveness
