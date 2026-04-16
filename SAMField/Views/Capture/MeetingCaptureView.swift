@@ -14,6 +14,8 @@ struct MeetingCaptureView: View {
     private let coordinator = MeetingCaptureCoordinator.shared
 
     @State private var showDeleteConfirmation = false
+    @State private var speakerCount: Int = 2
+    @State private var speakerNames: [String] = ["You (Agent)", "Client"]
 
     var body: some View {
         ScrollView {
@@ -331,16 +333,7 @@ struct MeetingCaptureView: View {
             .buttonStyle(.bordered)
 
         case .connected:
-            Button {
-                coordinator.startRecording()
-            } label: {
-                Label("Start Recording", systemImage: "record.circle")
-                    .font(.title3)
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(.red)
-            .controlSize(.large)
+            participantPrepAndRecord
 
         case .recording:
             HStack(spacing: 32) {
@@ -403,6 +396,107 @@ struct MeetingCaptureView: View {
                 .buttonStyle(.bordered)
             }
         }
+    }
+
+    // MARK: - Participant Prep
+
+    /// Shown when connected to Mac and ready to record. Lets the user
+    /// set the expected speaker count and names before starting.
+    @ViewBuilder
+    private var participantPrepAndRecord: some View {
+        VStack(spacing: 16) {
+            // Speaker count stepper
+            GroupBox {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Participants")
+                        .font(.subheadline.bold())
+
+                    HStack {
+                        Text("How many people?")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        HStack(spacing: 0) {
+                            Button {
+                                if speakerCount > 1 {
+                                    speakerCount -= 1
+                                    syncSpeakerNames()
+                                }
+                            } label: {
+                                Image(systemName: "minus.circle.fill")
+                                    .font(.title2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+
+                            Text("\(speakerCount)")
+                                .font(.title2.bold())
+                                .frame(width: 40)
+                                .multilineTextAlignment(.center)
+
+                            Button {
+                                if speakerCount < 8 {
+                                    speakerCount += 1
+                                    syncSpeakerNames()
+                                }
+                            } label: {
+                                Image(systemName: "plus.circle.fill")
+                                    .font(.title2)
+                                    .foregroundStyle(.accentColor)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+
+                    // Speaker name fields
+                    ForEach(0..<speakerNames.count, id: \.self) { i in
+                        HStack(spacing: 8) {
+                            Circle()
+                                .fill(speakerDotColor(i))
+                                .frame(width: 8, height: 8)
+                            TextField("Speaker \(i + 1)", text: $speakerNames[i])
+                                .textFieldStyle(.roundedBorder)
+                                .font(.subheadline)
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal)
+
+            // Start Recording button
+            Button {
+                // Set speaker metadata on coordinator before starting
+                coordinator.expectedSpeakerCount = speakerCount
+                coordinator.expectedSpeakerNames = speakerNames
+                coordinator.startRecording()
+            } label: {
+                Label("Start Recording", systemImage: "record.circle")
+                    .font(.title3)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 4)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.red)
+            .controlSize(.large)
+            .padding(.horizontal)
+        }
+    }
+
+    /// Keep speakerNames array in sync with speakerCount.
+    private func syncSpeakerNames() {
+        let defaults = ["You (Agent)", "Client", "Spouse", "Speaker 4", "Speaker 5", "Speaker 6", "Speaker 7", "Speaker 8"]
+        while speakerNames.count < speakerCount {
+            let idx = speakerNames.count
+            speakerNames.append(idx < defaults.count ? defaults[idx] : "Speaker \(idx + 1)")
+        }
+        while speakerNames.count > speakerCount {
+            speakerNames.removeLast()
+        }
+    }
+
+    private func speakerDotColor(_ index: Int) -> Color {
+        let colors: [Color] = [.blue, .green, .orange, .purple, .teal, .pink, .indigo, .brown]
+        return colors[index % colors.count]
     }
 
     // MARK: - Completed / Summary
