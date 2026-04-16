@@ -273,8 +273,32 @@ struct TranscriptionReviewView: View {
 
     // MARK: - Meeting Summary Section
 
+    @State private var isGeneratingSummary: Bool = false
+
     @ViewBuilder
     private var meetingSummarySection: some View {
+        if isGeneratingSummary {
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("Generating summary…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding()
+        } else if session.meetingSummaryJSON == nil || MeetingSummary.from(jsonString: session.meetingSummaryJSON ?? "") == nil || !(MeetingSummary.from(jsonString: session.meetingSummaryJSON ?? "")?.hasContent ?? false) {
+            // No summary yet — offer to generate one
+            if session.polishedText != nil || !session.sortedSegments.isEmpty {
+                Button {
+                    generateSummaryFromTranscript()
+                } label: {
+                    Label("Generate Summary", systemImage: "sparkles")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .padding(.vertical, 4)
+            }
+        }
+
         if let json = session.meetingSummaryJSON,
            let summary = MeetingSummary.from(jsonString: json),
            summary.hasContent {
@@ -729,6 +753,80 @@ struct TranscriptionReviewView: View {
 
             await MainActor.run {
                 isRegeneratingSummary = false
+            }
+        }
+    }
+
+    /// Generate (or regenerate) the meeting summary from the current
+    /// transcript. Uses polished text if available, falls back to raw segments.
+    private func generateSummaryFromTranscript() {
+        let transcript: String
+        if let polished = session.polishedText, !polished.isEmpty {
+            transcript = polished
+        } else {
+            // Build from raw segments with sentence-boundary paragraph breaks
+            let segments = session.sortedSegments
+            guard !segments.isEmpty else { return }
+            let sentenceEnd: Set<Character> = [".", "!", "?"]
+            var lines: [String] = []
+            var lastSpeaker: String? = nil
+            var buffer: [String] = []
+            var charCount = 0
+            func flush() {
+                guard let speaker = lastSpeaker, !buffer.isEmpty else { return }
+                lines.append("\(speaker): \(buffer.joined(separator: " "))")
+                buffer.removeAll()
+                charCount = 0
+            }
+            for seg in segments {
+                let text = seg.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                if seg.speakerLabel != lastSpeaker {
+                    flush()
+                    lastSpeaker = seg.speakerLabel
+                }
+                buffer.append(text)
+                charCount += text.count
+                if charCount >= 2000, let last = text.last, sentenceEnd.contains(last) {
+                    flush()
+                    lastSpeaker = seg.speakerLabel
+                }
+            }
+            flush()
+            transcript = lines.joined(separator: "\n\n")
+        }
+
+        guard !transcript.isEmpty else { return }
+
+        let sessionID = session.id
+        let metadata = MeetingSummaryService.Metadata(
+            durationSeconds: session.durationSeconds,
+            speakerCount: session.speakerCount,
+            detectedLanguage: session.detectedLanguage,
+            recordedAt: session.recordedAt
+        )
+        let container = modelContext.container
+        isGeneratingSummary = true
+
+        Task(priority: .utility) {
+            do {
+                let summary = try await MeetingSummaryService.shared.summarize(
+                    transcript: transcript,
+                    metadata: metadata
+                )
+                let context = ModelContext(container)
+                let descriptor = FetchDescriptor<TranscriptSession>(
+                    predicate: #Predicate { $0.id == sessionID }
+                )
+                if let session = try context.fetch(descriptor).first {
+                    session.meetingSummaryJSON = summary.toJSONString()
+                    session.summaryGeneratedAt = .now
+                    try context.save()
+                }
+            } catch {
+                // Non-fatal — button stays visible for retry
+            }
+            await MainActor.run {
+                isGeneratingSummary = false
             }
         }
     }
