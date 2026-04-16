@@ -190,9 +190,6 @@ actor ContactsService {
         
         logger.debug("Fetched \(contacts.count) contacts")
         let results = contacts.map { ContactDTO(from: $0) }
-        #if DEBUG
-        for dto in results { if dto.emailAddresses.isEmpty { let name = dto.displayName; logger.debug("Contact has no emails: \(name, privacy: .private)") } }
-        #endif
         return results
     }
 
@@ -248,15 +245,8 @@ actor ContactsService {
             let predicate = CNContact.predicateForContactsInGroup(withIdentifier: groupIdentifier)
             let contacts = try store.unifiedContacts(matching: predicate, keysToFetch: keys.keys)
             
-            for c in contacts {
-                logger.debug("group(id) contact: \(self.debugDescription(for: c), privacy: .private)")
-            }
-            
             logger.debug("Fetched \(contacts.count) contacts from group ID '\(groupIdentifier)'")
             let results = contacts.map { ContactDTO(from: $0) }
-            #if DEBUG
-            for dto in results { if dto.emailAddresses.isEmpty { let name = dto.displayName; logger.debug("Contact has no emails: \(name, privacy: .private)") } }
-            #endif
             return results
 
         } catch {

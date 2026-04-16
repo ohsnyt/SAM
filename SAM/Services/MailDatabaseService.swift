@@ -94,9 +94,6 @@ actor MailDatabaseService {
         let db = try openDatabase(at: dbURL)
         defer { sqlite3_close(db) }
 
-        // Log schema on first use to help diagnose column mismatches
-        logSchema(db: db)
-
         // Envelope Index uses Unix timestamps (seconds since 1970-01-01)
         let sinceTimestamp = since.timeIntervalSince1970
 
@@ -737,40 +734,6 @@ actor MailDatabaseService {
             }
         }
         return accountEmails.first ?? "unknown"
-    }
-
-    // MARK: - Schema Discovery
-
-    /// Log the schema of key tables so we can diagnose column mismatches across macOS versions.
-    private func logSchema(db: OpaquePointer) {
-        for table in ["messages", "subjects", "addresses", "mailboxes", "recipients", "associations"] {
-            var stmt: OpaquePointer?
-            let query = "PRAGMA table_info(\(table))"
-            guard sqlite3_prepare_v2(db, query, -1, &stmt, nil) == SQLITE_OK else { continue }
-            defer { sqlite3_finalize(stmt) }
-
-            var columns: [String] = []
-            while sqlite3_step(stmt) == SQLITE_ROW {
-                if let name = sqlite3_column_text(stmt, 1) {
-                    columns.append(String(cString: name))
-                }
-            }
-            logger.debug("Schema for '\(table)': \(columns.joined(separator: ", "), privacy: .public)")
-        }
-
-        // Also log all table names in the database
-        var stmt: OpaquePointer?
-        let query = "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-        guard sqlite3_prepare_v2(db, query, -1, &stmt, nil) == SQLITE_OK else { return }
-        defer { sqlite3_finalize(stmt) }
-
-        var tables: [String] = []
-        while sqlite3_step(stmt) == SQLITE_ROW {
-            if let name = sqlite3_column_text(stmt, 0) {
-                tables.append(String(cString: name))
-            }
-        }
-        logger.debug("All tables in Envelope Index: \(tables.joined(separator: ", "), privacy: .public)")
     }
 
     // MARK: - SQLite Helpers
