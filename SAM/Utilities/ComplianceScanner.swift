@@ -166,34 +166,35 @@ enum ComplianceScanner {
     }
 
     /// Convenience: scan using current UserDefaults settings.
-    /// Returns empty for non-financial practice types.
+    /// For regulated practice types (WFG Financial Advisor), all categories
+    /// are always enabled — compliance cannot be turned off.
+    /// For General, only custom keywords are scanned (if any).
     static func scanWithSettings(_ text: String) -> [ComplianceFlag] {
-        // Skip compliance scanning for non-financial practice types
+        let practiceType: PracticeType
         if let data = UserDefaults.standard.data(forKey: "sam.businessProfile"),
-           let profile = try? JSONDecoder().decode(BusinessProfile.self, from: data),
-           !profile.isFinancial {
-            return []
+           let profile = try? JSONDecoder().decode(BusinessProfile.self, from: data) {
+            practiceType = profile.practiceType
+        } else {
+            practiceType = .wfgFinancialAdvisor  // Default to regulated for safety
         }
 
-        let enabled = UserDefaults.standard.bool(forKey: "complianceCheckingEnabled")
-        guard enabled else { return [] }
-
-        var categories = Set<ComplianceCategory>()
-        for cat in ComplianceCategory.allCases {
-            // Default to true if key not set
-            let isOn = UserDefaults.standard.object(forKey: cat.settingsKey) == nil
-                ? true
-                : UserDefaults.standard.bool(forKey: cat.settingsKey)
-            if isOn { categories.insert(cat) }
-        }
-
+        // Load custom keywords (available for all practice types)
         let customStr = UserDefaults.standard.string(forKey: "complianceCustomKeywords") ?? ""
         let customKeywords = customStr
             .components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
 
-        return scan(text, enabledCategories: categories, customKeywords: customKeywords)
+        switch practiceType {
+        case .wfgFinancialAdvisor:
+            // All categories always enabled for regulated industries
+            return scan(text, enabledCategories: Set(ComplianceCategory.allCases), customKeywords: customKeywords)
+
+        case .general:
+            // Only custom keywords scanned — no industry-specific categories
+            if customKeywords.isEmpty { return [] }
+            return scan(text, enabledCategories: [.specificAdvice], customKeywords: customKeywords)
+        }
     }
 
     // MARK: - Private

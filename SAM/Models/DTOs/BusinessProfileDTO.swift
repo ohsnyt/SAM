@@ -16,9 +16,35 @@ import Foundation
 /// Controls which features SAM surfaces and how AI prompts describe the user's role.
 public enum PracticeType: String, Codable, Sendable, CaseIterable {
     /// Full WFG financial advisor experience — production, recruiting, compliance.
-    case financialAdvisor = "Financial Advisor"
-    /// Generic relationship coaching — hides financial-specific features.
+    /// Compliance rules based on WFGIA Agent Insurance Guide (April 2025).
+    case wfgFinancialAdvisor = "WFG Financial Advisor"
+    /// Generic relationship coaching — no industry-specific compliance.
+    /// User can optionally define custom compliance keywords.
     case general = "General"
+
+    /// Display name for the Settings picker.
+    public var displayName: String { rawValue }
+
+    /// Whether this practice type has SAM-maintained compliance rules
+    /// that cannot be turned off by the user.
+    public var hasMandatoryCompliance: Bool {
+        switch self {
+        case .wfgFinancialAdvisor: return true
+        case .general: return false
+        }
+    }
+
+    // Legacy support: decode old "Financial Advisor" values as wfgFinancialAdvisor
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let raw = try container.decode(String.self)
+        switch raw {
+        case "WFG Financial Advisor": self = .wfgFinancialAdvisor
+        case "Financial Advisor": self = .wfgFinancialAdvisor  // migrate old data
+        case "General": self = .general
+        default: self = .general
+        }
+    }
 }
 
 /// The user's business context profile — injected into all AI specialist system instructions.
@@ -79,7 +105,7 @@ nonisolated public struct BusinessProfile: Codable, Sendable, Equatable {
     // MARK: - Computed Helpers
 
     /// Whether this profile uses the financial advisor practice type.
-    public var isFinancial: Bool { practiceType == .financialAdvisor }
+    public var isFinancial: Bool { practiceType == .wfgFinancialAdvisor }
 
     /// A natural-language description of the user's role for AI system instructions.
     public var personaDescription: String {
@@ -97,7 +123,7 @@ nonisolated public struct BusinessProfile: Codable, Sendable, Equatable {
     // MARK: - Init
 
     public init(
-        practiceType: PracticeType = .financialAdvisor,
+        practiceType: PracticeType = .wfgFinancialAdvisor,
         isSoloPractitioner: Bool = true,
         organization: String = "World Financial Group",
         roleTitle: String = "",
@@ -130,7 +156,7 @@ nonisolated public struct BusinessProfile: Codable, Sendable, Equatable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.practiceType = try container.decodeIfPresent(PracticeType.self, forKey: .practiceType) ?? .financialAdvisor
+        self.practiceType = try container.decodeIfPresent(PracticeType.self, forKey: .practiceType) ?? .wfgFinancialAdvisor
         self.isSoloPractitioner = try container.decodeIfPresent(Bool.self, forKey: .isSoloPractitioner) ?? true
         self.organization = try container.decodeIfPresent(String.self, forKey: .organization) ?? "World Financial Group"
         self.roleTitle = try container.decodeIfPresent(String.self, forKey: .roleTitle) ?? ""

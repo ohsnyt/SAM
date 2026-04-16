@@ -542,7 +542,7 @@ private struct PromptLabSettingsPane: View {
 }
 
 private struct BusinessTypeSettingsPane: View {
-    @State private var practiceType: PracticeType = .financialAdvisor
+    @State private var practiceType: PracticeType = .wfgFinancialAdvisor
 
     var body: some View {
         Form {
@@ -562,13 +562,13 @@ private struct BusinessTypeSettingsPane: View {
 }
 
 private struct ComplianceSettingsPane: View {
-    @State private var practiceType: PracticeType = .financialAdvisor
+    @State private var practiceType: PracticeType = .wfgFinancialAdvisor
 
     var body: some View {
         Form {
             Section {
                 VStack(alignment: .leading, spacing: 20) {
-                    ComplianceSettingsContent(isFinancial: practiceType == .financialAdvisor)
+                    ComplianceSettingsContent(practiceType: practiceType)
                 }
                 .padding()
             }
@@ -1247,17 +1247,21 @@ struct BusinessProfileSettingsContent: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Picker("Type", selection: $profile.practiceType) {
                         ForEach(PracticeType.allCases, id: \.self) { type in
-                            Text(type.rawValue).tag(type)
+                            Text(type.displayName).tag(type)
                         }
                     }
-                    .pickerStyle(.segmented)
                     .onChange(of: profile.practiceType) { _, _ in saveProfile() }
 
-                    Text(profile.isFinancial
-                         ? "Full financial advisor experience with production tracking, recruiting pipeline, and compliance scanning."
-                         : "Generic relationship coaching, event management, and social media. Financial-specific features are hidden.")
-                        .samFont(.caption)
-                        .foregroundStyle(.secondary)
+                    switch profile.practiceType {
+                    case .wfgFinancialAdvisor:
+                        Text("Full financial advisor experience with production tracking, recruiting pipeline, and WFG compliance scanning.")
+                            .samFont(.caption)
+                            .foregroundStyle(.secondary)
+                    case .general:
+                        Text("Relationship coaching, event management, and social media. No industry-specific compliance rules applied.")
+                            .samFont(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 .padding(.vertical, 4)
             }

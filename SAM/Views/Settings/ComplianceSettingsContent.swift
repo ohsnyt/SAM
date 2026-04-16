@@ -15,15 +15,8 @@ private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "Com
 
 struct ComplianceSettingsContent: View {
 
-    let isFinancial: Bool
+    let practiceType: PracticeType
 
-    @AppStorage("complianceCheckingEnabled") private var masterEnabled = true
-    @AppStorage("complianceCat_guarantees") private var catGuarantees = true
-    @AppStorage("complianceCat_returns") private var catReturns = true
-    @AppStorage("complianceCat_promises") private var catPromises = true
-    @AppStorage("complianceCat_comparativeClaims") private var catComparative = true
-    @AppStorage("complianceCat_suitability") private var catSuitability = true
-    @AppStorage("complianceCat_specificAdvice") private var catSpecificAdvice = true
     @AppStorage("complianceCustomKeywords") private var customKeywords = ""
     @AppStorage("complianceAuditRetentionDays") private var retentionDays = 90
 
@@ -32,73 +25,57 @@ struct ComplianceSettingsContent: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            // Master toggle
-            Toggle("Enable compliance checking", isOn: $masterEnabled)
+            // Compliance profile description based on practice type
+            complianceProfileSection
 
-            if masterEnabled {
-                // Financial category toggles (only for financial practice)
-                if isFinancial {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Financial Categories")
-                            .samFont(.subheadline)
-                            .fontWeight(.medium)
+            Divider()
 
-                        categoryToggle(.guarantees, isOn: $catGuarantees)
-                        categoryToggle(.returns, isOn: $catReturns)
-                        categoryToggle(.promises, isOn: $catPromises)
-                        categoryToggle(.comparativeClaims, isOn: $catComparative)
-                        categoryToggle(.suitability, isOn: $catSuitability)
-                        categoryToggle(.specificAdvice, isOn: $catSpecificAdvice)
-                    }
+            // Custom keywords (available for all practice types)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Custom Flagging")
+                    .samFont(.subheadline)
+                    .fontWeight(.medium)
+                Text("Add phrases you want SAM to watch for in your recordings and drafts. One per line.")
+                    .samFont(.caption)
+                    .foregroundStyle(.secondary)
+                TextEditor(text: $customKeywords)
+                    .samFont(.caption)
+                    .frame(height: 60)
+                    .scrollContentBackground(.hidden)
+                    .padding(6)
+                    .background(Color(nsColor: .controlBackgroundColor))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+            }
+
+            Divider()
+
+            // Audit section
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Audit Trail")
+                    .samFont(.subheadline)
+                    .fontWeight(.medium)
+
+                Picker("Retention", selection: $retentionDays) {
+                    Text("30 days").tag(30)
+                    Text("60 days").tag(60)
+                    Text("90 days").tag(90)
+                    Text("180 days").tag(180)
                 }
+                .pickerStyle(.menu)
+                .frame(maxWidth: 200)
 
-                // Custom keywords (available for all practice types)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Custom Keywords")
-                        .samFont(.subheadline)
-                        .fontWeight(.medium)
-                    Text("One phrase per line. SAM will flag these in draft content for your review.")
+                HStack {
+                    Text("\(auditCount) audit entries")
                         .samFont(.caption)
                         .foregroundStyle(.secondary)
-                    TextEditor(text: $customKeywords)
-                        .samFont(.caption)
-                        .frame(height: 60)
-                        .scrollContentBackground(.hidden)
-                        .padding(6)
-                        .background(Color(nsColor: .controlBackgroundColor))
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                }
 
-                Divider()
+                    Spacer()
 
-                // Audit section
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Audit Trail")
-                        .samFont(.subheadline)
-                        .fontWeight(.medium)
-
-                    Picker("Retention", selection: $retentionDays) {
-                        Text("30 days").tag(30)
-                        Text("60 days").tag(60)
-                        Text("90 days").tag(90)
-                        Text("180 days").tag(180)
+                    Button("Clear Audit Log", role: .destructive) {
+                        showClearConfirmation = true
                     }
-                    .pickerStyle(.menu)
-                    .frame(maxWidth: 200)
-
-                    HStack {
-                        Text("\(auditCount) audit entries")
-                            .samFont(.caption)
-                            .foregroundStyle(.secondary)
-
-                        Spacer()
-
-                        Button("Clear Audit Log", role: .destructive) {
-                            showClearConfirmation = true
-                        }
-                        .samFont(.caption)
-                        .disabled(auditCount == 0)
-                    }
+                    .samFont(.caption)
+                    .disabled(auditCount == 0)
                 }
             }
         }
@@ -116,20 +93,46 @@ struct ComplianceSettingsContent: View {
         }
     }
 
-    // MARK: - Helpers
+    // MARK: - Compliance Profile Section
 
-    private func categoryToggle(_ category: ComplianceCategory, isOn: Binding<Bool>) -> some View {
-        Toggle(isOn: isOn) {
-            HStack(spacing: 6) {
-                Image(systemName: category.icon)
+    @ViewBuilder
+    private var complianceProfileSection: some View {
+        switch practiceType {
+        case .wfgFinancialAdvisor:
+            VStack(alignment: .leading, spacing: 8) {
+                Label("WFG Compliance Active", systemImage: "checkmark.shield.fill")
+                    .samFont(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundStyle(.green)
+
+                Text("Compliance checking is based on the WFG U.S. Agent Agreement Packet (April 2025). SAM monitors your recordings and drafts for potential compliance issues including guarantees, rebating, misrepresentation, twisting, churning, and other prohibited practices.")
                     .samFont(.caption)
-                    .foregroundStyle(category.color)
-                    .frame(width: 16)
-                Text(category.displayName)
-                    .samFont(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text("This tool is designed to assist you as an agent, but you remain fully responsible for all compliance matters. When in doubt, consult your SMD or WFGIA Compliance.")
+                    .samFont(.caption)
+                    .foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .italic()
+            }
+
+        case .general:
+            VStack(alignment: .leading, spacing: 8) {
+                Label("No Industry Compliance Rules", systemImage: "shield.slash")
+                    .samFont(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundStyle(.secondary)
+
+                Text("No industry-specific compliance rules are applied. SAM will only flag clearly deceptive or misleading statements. You can add custom phrases below to watch for specific terms relevant to your work.")
+                    .samFont(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
+
+    // MARK: - Helpers
 
     private func refreshCount() {
         auditCount = (try? ComplianceAuditRepository.shared.count()) ?? 0
