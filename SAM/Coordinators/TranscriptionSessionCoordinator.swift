@@ -169,6 +169,8 @@ final class TranscriptionSessionCoordinator {
                     if listenerState == .connected,
                        self.sessionState == .listening {
                         self.sessionState = .connected
+                        // Push workspace settings to phone on first connect
+                        self.pushWorkspaceSettings()
                     } else if listenerState == .advertising,
                               (self.sessionState == .connected || self.sessionState == .completed) {
                         self.sessionState = .listening
@@ -740,6 +742,39 @@ final class TranscriptionSessionCoordinator {
     /// The most recent session ID, even after `currentSessionID` has been cleared.
     /// Used for the regenerate-summary flow.
     private var lastFinalizedSessionID: UUID?
+
+    // MARK: - Workspace Settings Sync
+
+    /// Push SAM's calendar and contact group settings to the phone
+    /// so it knows which calendars and groups to access.
+    private func pushWorkspaceSettings() {
+        let calendarID = UserDefaults.standard.string(forKey: "selectedCalendarIdentifier") ?? ""
+        let contactGroupID = UserDefaults.standard.string(forKey: "sam.contacts.groupIdentifier") ?? ""
+        let contactGroupName = UserDefaults.standard.string(forKey: "sam.contacts.groupName") ?? ""
+
+        let practiceType: String
+        if let data = UserDefaults.standard.data(forKey: "sam.businessProfile"),
+           let profile = try? JSONDecoder().decode(BusinessProfile.self, from: data) {
+            practiceType = profile.practiceType.rawValue
+        } else {
+            practiceType = "General"
+        }
+
+        // Calendar name lookup: the phone will match by identifier first,
+        // then by name as fallback. We send both so the phone works even
+        // if calendar identifiers differ across devices.
+        let calendarName = UserDefaults.standard.string(forKey: "selectedCalendarName") ?? ""
+
+        let settings = WorkspaceSettings(
+            calendarIdentifiers: calendarID.isEmpty ? [] : [calendarID],
+            calendarNames: calendarName.isEmpty ? [] : [calendarName],
+            contactGroupIdentifiers: contactGroupID.isEmpty ? [] : [contactGroupID],
+            contactGroupNames: contactGroupName.isEmpty ? [] : [contactGroupName],
+            practiceType: practiceType
+        )
+
+        receivingService.sendWorkspaceSettings(settings)
+    }
 
     // MARK: - Phone Session Lifecycle (Done / Delete)
 

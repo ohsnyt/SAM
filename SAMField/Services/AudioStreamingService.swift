@@ -562,6 +562,14 @@ final class AudioStreamingService {
             logger.info("Received sessionProcessed ack: \(ack.sessionID) success=\(ack.success)")
             onSessionProcessed?(ack)
 
+        case .settingsSync:
+            guard let settings = WorkspaceSettings.from(wireData: payload) else {
+                logger.warning("Failed to decode workspace settings (\(payload.count) bytes)")
+                return
+            }
+            settings.cache()
+            logger.info("Received workspace settings: \(settings.calendarNames.joined(separator: ", ")), groups=\(settings.contactGroupNames.joined(separator: ", "))")
+
         case .heartbeat:
             break // Mac acknowledging liveness
 

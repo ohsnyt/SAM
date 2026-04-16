@@ -75,7 +75,9 @@ final class FieldCalendarService {
     // MARK: - Types
 
     /// Find the upcoming or current meeting closest to now (within ±30 min).
-    /// Used by the recording tab to auto-populate participant info.
+    /// Filters to SAM's configured work calendars if workspace settings
+    /// have been synced from the Mac. Falls back to all calendars if
+    /// no settings are cached.
     func upcomingMeeting() -> CalendarEvent? {
         guard isAuthorized else { return nil }
 
@@ -83,7 +85,13 @@ final class FieldCalendarService {
         let windowStart = now.addingTimeInterval(-30 * 60)
         let windowEnd = now.addingTimeInterval(30 * 60)
 
-        let predicate = store.predicateForEvents(withStart: windowStart, end: windowEnd, calendars: nil)
+        // Use SAM's work calendars if synced from Mac, otherwise all
+        let calendars = samWorkCalendars()
+        let predicate = store.predicateForEvents(
+            withStart: windowStart,
+            end: windowEnd,
+            calendars: calendars.isEmpty ? nil : calendars
+        )
         let ekEvents = store.events(matching: predicate)
             .filter { !$0.isAllDay }
             .sorted { $0.startDate < $1.startDate }
@@ -96,6 +104,31 @@ final class FieldCalendarService {
             return makeCalendarEvent(from: upcoming)
         }
         return ekEvents.first.map { makeCalendarEvent(from: $0) }
+    }
+
+    /// Return the EKCalendar objects matching SAM's workspace settings.
+    /// Uses cached settings from the Mac. Returns empty if no settings cached
+    /// (caller should pass nil to search all calendars).
+    private func samWorkCalendars() -> [EKCalendar] {
+        guard let settings = WorkspaceSettings.loadCached() else { return [] }
+
+        let allCalendars = store.calendars(for: .event)
+
+        // Match by identifier first (exact), then by name (fallback)
+        var matched: [EKCalendar] = []
+        for cal in allCalendars {
+            if settings.calendarIdentifiers.contains(cal.calendarIdentifier) {
+                matched.append(cal)
+            } else if settings.calendarNames.contains(cal.title) {
+                matched.append(cal)
+            }
+        }
+
+        if !matched.isEmpty {
+            logger.debug("Filtered to \(matched.count) SAM work calendar(s): \(matched.map(\.title).joined(separator: ", "))")
+        }
+
+        return matched
     }
 
     private func makeCalendarEvent(from event: EKEvent) -> CalendarEvent {

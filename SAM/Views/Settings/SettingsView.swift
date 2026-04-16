@@ -1009,6 +1009,7 @@ struct CalendarSettingsContent: View {
     @State private var coordinator = CalendarImportCoordinator.shared
     @AppStorage("calendarAutoImportEnabled") private var autoImportEnabled: Bool = true
     @AppStorage("selectedCalendarIdentifier") private var selectedCalendarIdentifier: String = ""
+    @AppStorage("selectedCalendarName") private var selectedCalendarName: String = ""
 
     @State private var availableCalendars: [CalendarDTO] = []
     @State private var isLoadingCalendars = false
@@ -1178,6 +1179,13 @@ struct CalendarSettingsContent: View {
                 if selectedCalendarIdentifier.isEmpty,
                    let samCalendar = calendars.first(where: { $0.title == "SAM" }) {
                     selectedCalendarIdentifier = samCalendar.id
+                    selectedCalendarName = samCalendar.title
+                }
+                // Keep name in sync with identifier
+                if !selectedCalendarIdentifier.isEmpty {
+                    if let cal = calendars.first(where: { $0.id == selectedCalendarIdentifier }) {
+                        selectedCalendarName = cal.title
+                    }
                 }
             }
 

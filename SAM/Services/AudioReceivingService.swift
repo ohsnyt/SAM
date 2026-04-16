@@ -102,6 +102,35 @@ final class AudioReceivingService {
 
     /// Serialize a meeting summary as JSON and push it to the connected iPhone.
     /// If no connection is active, queues the summary and retries on next connect.
+    /// Push workspace settings (calendars, contact groups) to the phone.
+    /// Called once when the phone connects.
+    func sendWorkspaceSettings(_ settings: WorkspaceSettings) {
+        guard let connection = activeConnection, let payload = settings.toWireData() else {
+            logger.info("sendWorkspaceSettings: no active connection")
+            return
+        }
+
+        let header = AudioPacketHeader(
+            version: AudioPacketHeader.currentVersion,
+            messageType: .settingsSync,
+            sequenceNumber: 0,
+            timestamp: 0,
+            sampleRate: 0,
+            channels: 0,
+            payloadLength: UInt32(payload.count)
+        )
+        var packet = header.serialize()
+        packet.append(payload)
+
+        connection.send(content: packet, completion: .contentProcessed { error in
+            if let error {
+                logger.error("sendWorkspaceSettings failed: \(error.localizedDescription)")
+            } else {
+                logger.info("Workspace settings pushed to iPhone (\(payload.count) bytes)")
+            }
+        })
+    }
+
     func sendMeetingSummary(_ summary: MeetingSummary) {
         guard let connection = activeConnection, let payload = summary.toWireData() else {
             pendingSummary = summary
@@ -429,6 +458,10 @@ final class AudioReceivingService {
             } else {
                 logger.warning("sessionDeleted: invalid payload")
             }
+
+        case .settingsSync:
+            // Mac doesn't receive settings sync — it sends them. Ignore.
+            break
         }
     }
 

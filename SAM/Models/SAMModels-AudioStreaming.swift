@@ -74,6 +74,14 @@ struct AudioPacketHeader: Sendable {
         /// Mac removes audio file, transcript, linked note, evidence.
         /// Payload: session UUID string.
         case sessionDeleted = 0x0B
+
+        // MARK: - Phase D: Settings sync (Mac → iPhone)
+
+        /// Mac → iPhone: push SAM's workspace settings (calendar IDs,
+        /// contact group IDs) so the phone knows which calendars and
+        /// groups to use. Sent once on connection. Payload: JSON
+        /// `WorkspaceSettings`.
+        case settingsSync   = 0x0C
     }
 
     /// Serialize to 32 bytes for transmission.
@@ -192,6 +200,61 @@ enum AudioStreamingConstants {
     /// latency low and let us show reasonable progress; 128 KB gives good
     /// throughput on local WiFi without hitting the maxPayloadSize ceiling.
     static let uploadChunkSize: Int = 128 * 1024
+}
+
+// MARK: - Workspace Settings (Mac → iPhone)
+
+/// SAM's workspace configuration pushed to the phone on connection.
+/// The phone caches this in UserDefaults so it works offline.
+public struct WorkspaceSettings: Codable, Sendable {
+    /// Calendar identifier(s) SAM monitors for events.
+    public var calendarIdentifiers: [String]
+    /// Calendar display name(s) — for UI display and fallback matching.
+    public var calendarNames: [String]
+    /// Contact group identifier(s) SAM uses.
+    public var contactGroupIdentifiers: [String]
+    /// Contact group display name(s).
+    public var contactGroupNames: [String]
+    /// User's practice type (e.g., "WFG Financial Advisor", "General").
+    public var practiceType: String
+
+    public init(
+        calendarIdentifiers: [String] = [],
+        calendarNames: [String] = [],
+        contactGroupIdentifiers: [String] = [],
+        contactGroupNames: [String] = [],
+        practiceType: String = "General"
+    ) {
+        self.calendarIdentifiers = calendarIdentifiers
+        self.calendarNames = calendarNames
+        self.contactGroupIdentifiers = contactGroupIdentifiers
+        self.contactGroupNames = contactGroupNames
+        self.practiceType = practiceType
+    }
+
+    public func toWireData() -> Data? {
+        try? JSONEncoder().encode(self)
+    }
+
+    public static func from(wireData: Data) -> WorkspaceSettings? {
+        try? JSONDecoder().decode(WorkspaceSettings.self, from: wireData)
+    }
+
+    /// Cache key for UserDefaults persistence on the phone.
+    public static let cacheKey = "sam.cachedWorkspaceSettings"
+
+    /// Save to UserDefaults.
+    public func cache() {
+        if let data = try? JSONEncoder().encode(self) {
+            UserDefaults.standard.set(data, forKey: Self.cacheKey)
+        }
+    }
+
+    /// Load from UserDefaults cache.
+    public static func loadCached() -> WorkspaceSettings? {
+        guard let data = UserDefaults.standard.data(forKey: cacheKey) else { return nil }
+        return try? JSONDecoder().decode(WorkspaceSettings.self, from: data)
+    }
 }
 
 // MARK: - Session Start Metadata
