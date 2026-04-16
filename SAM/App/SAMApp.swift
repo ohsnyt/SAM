@@ -430,8 +430,11 @@ struct SAMApp: App {
                         await DailyBriefingCoordinator.shared.checkFirstOpenOfDay()
                     }
 
-                    // Tell the system about our App Shortcuts so Siri/Spotlight can surface them
-                    SAMShortcutsProvider.updateAppShortcutParameters()
+                    // Tell the system about our App Shortcuts so Siri/Spotlight can surface them.
+                    // Runs in background — the AppleEvent can timeout and block main thread.
+                    Task.detached(priority: .utility) {
+                        SAMShortcutsProvider.updateAppShortcutParameters()
+                    }
 
                     // Start the always-on transcription listener so the iPhone can
                     // connect and record without needing the user to click Start on Mac.
@@ -1227,18 +1230,18 @@ struct SAMApp: App {
             ? true
             : UserDefaults.standard.bool(forKey: "commsCallsEnabled")
 
-        // Contacts first — other sources resolve people by known emails/phones
-        if contactsEnabled {
-            await ContactsImportCoordinator.shared.importNow()
-        }
-
         if !contactsEnabled && !calendarEnabled && !mailEnabled && !commsMessagesEnabled && !commsCallsEnabled {
             logger.info("No sources enabled — app running in limited mode")
             return
         }
 
-        // Remaining imports fire concurrently, non-blocking.
-        // Each coordinator stores its own Task so AppDelegate can cancel on quit.
+        // Contacts first — other sources resolve people by known emails/phones.
+        // Uses startImport() (non-blocking) instead of await importNow()
+        // which was blocking the main actor for the full 256-contact upsert.
+        // Calendar import defers automatically if contacts import is in progress.
+        if contactsEnabled {
+            Task { await ContactsImportCoordinator.shared.importNow() }
+        }
         if calendarEnabled {
             CalendarImportCoordinator.shared.startImport()
         }

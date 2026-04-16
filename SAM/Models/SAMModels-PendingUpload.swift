@@ -5,7 +5,7 @@
 //  Phase B: iPhone-side tracking of recordings that need to be uploaded
 //  to the Mac for transcription. A `PendingUpload` record exists for any
 //  session that finished in `localOnly` or `degradedToLocal` mode — the
-//  audio is sitting in a local WAV file and needs to be sent to the Mac
+//  audio is sitting in a local file and needs to be sent to the Mac
 //  the next time both devices are connected and the iPhone isn't
 //  actively recording something else.
 //
