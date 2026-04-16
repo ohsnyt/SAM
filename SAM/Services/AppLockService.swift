@@ -87,12 +87,9 @@ final class AppLockService {
     func authenticate() {
         guard isLocked else { return }
 
-        // Cancel any in-flight auth so the new dialog gets focus
-        if isAuthenticating, let existing = currentAuthContext {
-            existing.invalidate()
-            currentAuthContext = nil
-            isAuthenticating = false
-        }
+        // Prevent duplicate auth dialogs — if one is already in flight,
+        // let it complete rather than spawning a second.
+        guard !isAuthenticating else { return }
 
         isAuthenticating = true
         authError = nil

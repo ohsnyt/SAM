@@ -328,16 +328,8 @@ struct SAMApp: App {
         if safeModeActive {
             SafeModeView()
         } else {
-            ZStack {
-                AppShellView()
-                    .modelContainer(SAMModelContainer.shared)
-                    .blur(radius: lockService.isLocked ? 20 : 0)
-
-                if lockService.isLocked {
-                    AppLockView()
-                        .transition(.opacity)
-                }
-            }
+            AppShellView()
+                .modelContainer(SAMModelContainer.shared)
         }
     }
 
@@ -588,6 +580,7 @@ struct SAMApp: App {
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                     lockService.appDidBecomeActive()
                 }
+                .lockGuarded()
         }
         .defaultSize(Self.mainWindowSize)
 
