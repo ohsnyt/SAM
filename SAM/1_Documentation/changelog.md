@@ -4,6 +4,34 @@
 
 ---
 
+## Streaming Stability + Speaker Turn Chunking (April 15, 2026)
+
+### Overview
+Fixed long recording failures (40+ min), context window overflow on summary/polish, and refactored the transcript pipeline to use speaker turns as natural chunk boundaries for AI processing.
+
+### Streaming Stability
+- `TranscriptionSessionCoordinator.swift` — Auto-finalize session when phone disconnects mid-recording. Connection watch task detects drop within 500ms and calls `handleSessionEnd()`. Previously the Mac stayed stuck on "Recording" forever.
+- `CommunicationsImportCoordinator.swift`, `MailImportCoordinator.swift`, `PostImportOrchestrator.swift` — Defer background imports (comms, mail, role deduction, insight generation) while `isSessionActive`. These were competing with the streaming pipeline and likely causing connection drops on long recordings. Confirmed: 40-minute podcast recorded successfully after this fix.
+
+### Speaker Turn Architecture
+- `TranscriptionSessionCoordinator.buildSpeakerTurns()` — New static method builds transcript as speaker turns (one turn = consecutive same-speaker segments, max ~2000 chars with sentence-boundary safety). Replaces the old `buildSummaryInput()` that joined all segments into giant paragraphs.
+- Each speaker turn is a natural chunk boundary (~200-2000 chars) that fits well within the 4096-token AI context window.
+- `TranscriptPolishService.maxChunkChars` lowered from 10,000 to 6,000 to account for Apple Intelligence tokenizing at ~3 chars/token.
+- `chunkTranscript()` — Added sentence-boundary fallback for oversized paragraphs.
+
+### Live Path Improvements
+- `TranscriptionPipelineService.swift` — Live streaming now uses SpeakerKit (neural, 16kHz resampled) for diarization instead of MFCC-only. Falls back to MFCC if SpeakerKit fails. Gives live recordings the same speaker separation quality as batch reprocessing.
+
+### UI
+- `TranscriptionReviewView.swift` — Added "Generate Summary" button for sessions with transcript but no summary (e.g., after context window failure). Always uses raw segments with turn formatting for reliable chunking.
+
+### Confirmed Results
+- 40-minute podcast: connection survived full duration (previously failed at ~30 min)
+- 46,848 chars split into 10 chunks, all summarized successfully
+- Summary correctly captured podcast's thematic arc across chunks
+
+---
+
 ## Diarization Fix: 16kHz Resampling + SpeakerKit Tuning (April 15, 2026)
 
 ### Overview
