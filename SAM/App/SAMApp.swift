@@ -415,11 +415,15 @@ struct SAMApp: App {
                     await checkPermissionsAndSetup()
                     hasCheckedPermissions = true
 
-                    // Ensure briefing generation runs regardless of onboarding/import state.
-                    // checkPermissionsAndSetup may skip triggerImports (e.g. test data, pending
-                    // onboarding, lost permissions), but the briefing only reads existing data.
-                    if DailyBriefingCoordinator.shared.morningBriefing == nil {
-                        await DailyBriefingCoordinator.shared.checkFirstOpenOfDay()
+                    // Briefing generation is deferred until after imports complete
+                    // (triggered by PostImportOrchestrator). This ensures calendar
+                    // events are available when the briefing is built. If no imports
+                    // run (e.g. no sources enabled), generate the briefing now.
+                    if !UserDefaults.standard.bool(forKey: "sam.contacts.enabled")
+                        && !UserDefaults.standard.bool(forKey: "calendarAutoImportEnabled") {
+                        if DailyBriefingCoordinator.shared.morningBriefing == nil {
+                            await DailyBriefingCoordinator.shared.checkFirstOpenOfDay()
+                        }
                     }
 
                     // Tell the system about our App Shortcuts so Siri/Spotlight can surface them.

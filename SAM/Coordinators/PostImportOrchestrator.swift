@@ -61,6 +61,16 @@ final class PostImportOrchestrator {
 
         OutgoingEventMatcher.shared.scanRecentOutgoing()
 
+        // Generate or refresh the morning briefing now that calendar
+        // events and contacts are imported. This ensures the briefing
+        // includes today's meetings (previously it ran before calendar
+        // import completed).
+        if DailyBriefingCoordinator.shared.morningBriefing == nil {
+            Task(priority: .utility) {
+                await DailyBriefingCoordinator.shared.checkFirstOpenOfDay()
+            }
+        }
+
         logger.debug("Post-import work dispatched")
     }
 }
