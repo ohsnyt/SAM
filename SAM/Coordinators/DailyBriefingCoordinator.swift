@@ -386,6 +386,26 @@ final class DailyBriefingCoordinator {
 
             logger.info("Morning briefing generated: \(calendarItems.count) calendar, \(priorityActions.count) actions, \(followUps.count) follow-ups, \(briefing.strategicHighlights.count) strategic")
 
+            // Push to CloudKit so the phone can access it anywhere.
+            // Encode Codable sub-structs into a JSON dictionary.
+            Task(priority: .utility) {
+                let encoder = JSONEncoder()
+                encoder.dateEncodingStrategy = .iso8601
+                var dict: [String: String] = [
+                    "date": ISO8601DateFormatter().string(from: briefing.generatedAt),
+                    "meetingCount": String(briefing.meetingCount),
+                    "narrativeSummary": briefing.narrativeSummary ?? ""
+                ]
+                if let d = try? encoder.encode(briefing.calendarItems) { dict["calendarItems"] = String(data: d, encoding: .utf8) }
+                if let d = try? encoder.encode(briefing.priorityActions) { dict["priorityActions"] = String(data: d, encoding: .utf8) }
+                if let d = try? encoder.encode(briefing.followUps) { dict["followUps"] = String(data: d, encoding: .utf8) }
+                if let d = try? encoder.encode(briefing.strategicHighlights) { dict["strategicHighlights"] = String(data: d, encoding: .utf8) }
+                if let data = try? encoder.encode(dict),
+                   let json = String(data: data, encoding: .utf8) {
+                    await CloudSyncService.shared.pushBriefing(briefingJSON: json)
+                }
+            }
+
         } catch {
             generationStatus = .failed
             logger.error("Morning briefing generation failed: \(error.localizedDescription)")

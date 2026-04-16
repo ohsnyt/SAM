@@ -56,10 +56,21 @@ struct TodayView: View {
         .refreshable {
             coordinator.refresh()
             tripCoordinator.refreshStats()
+            // Pull latest briefing + settings from CloudKit
+            await CloudSyncService.shared.fetchAndCacheWorkspaceSettings()
+            FieldCalendarService.shared.refreshToday()
         }
         .onAppear {
             coordinator.configure(container: modelContext.container)
             tripCoordinator.configure(container: modelContext.container)
+            // Fetch workspace settings from CloudKit on first appear
+            // (in case we haven't connected to Mac via TCP yet)
+            Task {
+                if WorkspaceSettings.loadCached() == nil {
+                    await CloudSyncService.shared.fetchAndCacheWorkspaceSettings()
+                    FieldCalendarService.shared.refreshToday()
+                }
+            }
         }
     }
 

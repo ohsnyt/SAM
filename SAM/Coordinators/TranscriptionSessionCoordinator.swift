@@ -774,6 +774,11 @@ final class TranscriptionSessionCoordinator {
         )
 
         receivingService.sendWorkspaceSettings(settings)
+
+        // Also push to CloudKit so the phone has them even when offline
+        Task(priority: .utility) {
+            await CloudSyncService.shared.pushWorkspaceSettings(settings)
+        }
     }
 
     // MARK: - Phone Session Lifecycle (Done / Delete)
