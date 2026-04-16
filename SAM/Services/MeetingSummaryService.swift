@@ -238,8 +238,23 @@ actor MeetingSummaryService {
         let custom = UserDefaults.standard.string(forKey: "sam.ai.meetingSummaryPrompt") ?? ""
         if !custom.isEmpty { return custom }
 
+        // Read practice type to determine persona and compliance rules
+        let isFinancial: Bool
+        if let data = UserDefaults.standard.data(forKey: "sam.businessProfile"),
+           let profile = try? JSONDecoder().decode(BusinessProfile.self, from: data) {
+            isFinancial = profile.isFinancial
+        } else {
+            isFinancial = true  // Default to financial for safety
+        }
+
+        let persona = isFinancial
+            ? "a financial advisor"
+            : "a professional"
+
+        let complianceSection = isFinancial ? complianceSectionFinancialAdvisor : complianceSectionGeneral
+
         return """
-        You summarize meeting transcripts for a financial advisor. Output \
+        You summarize meeting transcripts for \(persona). Output \
         ONLY a JSON object matching the exact schema below. Every value you \
         emit must come from the transcript -- NEVER invent people, tasks, \
         topics, dates, or any other content.
@@ -272,9 +287,8 @@ actor MeetingSummaryService {
           paperwork" -- name the people and the specific things they decided.
 
         - decisions: Concrete commitments or choices made during the \
-          meeting (e.g. "Karen will move forward with the indexed annuity", \
-          "Margaret postponed retitling Robert's accounts until April"). \
-          NOT plans to discuss or explore -- only commitments that were made.
+          meeting. NOT plans to discuss or explore -- only commitments \
+          that were made.
 
         - actionItems: Concrete tasks. Each has { task, owner, dueDate }. \
           owner is who will do it ("Agent", "Client", or a name from the \
@@ -296,12 +310,35 @@ actor MeetingSummaryService {
 
         - topics: Short topic tags (1-4 words each) describing what was \
           discussed. Include 2-6 topics for any meeting longer than a quick \
-          reminder. Examples: "retirement planning", "indexed annuity", \
-          "estate planning", "529 college savings", "rollover paperwork", \
-          "beneficiary designations", "trust documents", "tax planning". \
-          This field should rarely be empty -- if anything substantive was \
-          discussed, name the topics.
+          reminder. This field should rarely be empty -- if anything \
+          substantive was discussed, name the topics.
 
+        \(complianceSection)
+
+        - sentiment: Optional brief phrase describing the tone (e.g. "warm \
+          and trusting", "cautious", "grieving").
+
+        JSON SCHEMA (structure only)
+        {
+          "tldr": "<string>",
+          "decisions": ["<string>", ...],
+          "actionItems": [{"task": "<string>", "owner": "<string or null>", "dueDate": "<string or null>"}, ...],
+          "openQuestions": ["<string>", ...],
+          "followUps": [{"person": "<string>", "reason": "<string>"}, ...],
+          "lifeEvents": ["<string>", ...],
+          "topics": ["<string>", ...],
+          "complianceFlags": ["<string>", ...],
+          "sentiment": "<string or null>"
+        }
+        """
+    }
+
+    // MARK: - Compliance Profiles
+
+    /// Financial Advisor compliance rules (WFG/insurance industry).
+    /// Based on WFGIA Agent Insurance Guide (April 2025) — Trade Practices,
+    /// Ethical Sales Practice Guidelines, and Quick Reference Do's and Don'ts.
+    private static let complianceSectionFinancialAdvisor = """
         - complianceFlags: STATEMENTS that could trigger a regulatory \
           review. This is the MOST IMPORTANT field. The advisor's livelihood \
           depends on catching every potential violation. Be aggressive: if \
@@ -325,6 +362,16 @@ actor MeetingSummaryService {
              time horizon
            * PROHIBITED CLAIMS: "FDIC insured" on non-FDIC products, \
              "tax-free" on taxable products, "no fees" when fees exist
+           * TWISTING: misrepresenting a policy to induce replacement \
+             with another insurer's product
+           * CHURNING: replacing a policy from the same insurer to earn \
+             commission rather than benefit the client
+           * MISREPRESENTATION: false statements about policy terms, \
+             benefits, rates, advantages, or conditions
+           * TAX OR LEGAL ADVICE: giving specific tax or legal advice \
+             beyond commenting on product tax treatment
+           * BORROWING/LENDING: offering to lend money to or borrow \
+             from a client or client's family
 
            Worked example. Suppose the transcript contains:
 
@@ -347,24 +394,16 @@ actor MeetingSummaryService {
            Do NOT mention these things only in the tldr -- they must \
            appear in complianceFlags as well, even if you cover them in \
            the tldr.
-
-        - sentiment: Optional brief phrase describing the tone (e.g. "warm \
-          and trusting", "cautious", "grieving").
-
-        JSON SCHEMA (structure only)
-        {
-          "tldr": "<string>",
-          "decisions": ["<string>", ...],
-          "actionItems": [{"task": "<string>", "owner": "<string or null>", "dueDate": "<string or null>"}, ...],
-          "openQuestions": ["<string>", ...],
-          "followUps": [{"person": "<string>", "reason": "<string>"}, ...],
-          "lifeEvents": ["<string>", ...],
-          "topics": ["<string>", ...],
-          "complianceFlags": ["<string>", ...],
-          "sentiment": "<string or null>"
-        }
         """
-    }
+
+    /// General (non-regulated) compliance rules — minimal, universal ethics only.
+    private static let complianceSectionGeneral = """
+        - complianceFlags: This field is for noting any statements that \
+          could be misleading, deceptive, or ethically problematic. For \
+          most meetings this will be an empty array. Only flag clear \
+          issues like false claims, deceptive promises, or discriminatory \
+          language. Do not flag normal business discussion.
+        """
 
     private static func buildPrompt(transcript: String, metadata: Metadata) -> String {
         let metaLines = metadata.promptLines()
