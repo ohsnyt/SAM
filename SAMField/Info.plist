@@ -7,6 +7,10 @@
 		<string>location</string>
 		<string>audio</string>
 	</array>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>SAM Field uses your location to track business mileage for IRS documentation and to find nearby contacts.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>SAM Field uses background location to accurately track business mileage during trips.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>SAM Field streams meeting audio to your Mac running SAM for on-device transcription. All audio stays on your local network and is never sent to external servers.</string>
 	<key>NSBonjourServices</key>
