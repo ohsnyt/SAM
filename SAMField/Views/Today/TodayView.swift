@@ -15,9 +15,15 @@ struct TodayView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var coordinator = FieldDayCoordinator.shared
     @State private var tripCoordinator = TripCoordinator.shared
+    @State private var briefingJSON: String? = nil
 
     var body: some View {
         List {
+            // Morning briefing from Mac via CloudKit
+            if let json = briefingJSON {
+                briefingSection(json)
+            }
+
             // Calendar access prompt
             if coordinator.needsCalendarAccess {
                 Section {
@@ -58,17 +64,91 @@ struct TodayView: View {
             tripCoordinator.refreshStats()
             // Pull latest briefing + settings from CloudKit
             await CloudSyncService.shared.fetchAndCacheWorkspaceSettings()
+            briefingJSON = await CloudSyncService.shared.fetchBriefing()
             FieldCalendarService.shared.refreshToday()
         }
         .onAppear {
             coordinator.configure(container: modelContext.container)
             tripCoordinator.configure(container: modelContext.container)
-            // Fetch workspace settings from CloudKit on first appear
-            // (in case we haven't connected to Mac via TCP yet)
             Task {
+                // Fetch workspace settings and briefing from CloudKit
                 if WorkspaceSettings.loadCached() == nil {
                     await CloudSyncService.shared.fetchAndCacheWorkspaceSettings()
                     FieldCalendarService.shared.refreshToday()
+                }
+                if briefingJSON == nil {
+                    briefingJSON = await CloudSyncService.shared.fetchBriefing()
+                }
+            }
+        }
+    }
+
+    // MARK: - Briefing
+
+    @ViewBuilder
+    private func briefingSection(_ json: String) -> some View {
+        if let data = json.data(using: .utf8),
+           let dict = try? JSONDecoder().decode([String: String].self, from: data) {
+
+            Section("Morning Briefing") {
+                // Narrative summary
+                if let narrative = dict["narrativeSummary"], !narrative.isEmpty {
+                    Text(narrative)
+                        .font(.subheadline)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                // Priority actions
+                if let actionsJSON = dict["priorityActions"],
+                   let actionsData = actionsJSON.data(using: .utf8),
+                   let actions = try? JSONDecoder().decode([BriefingAction].self, from: actionsData),
+                   !actions.isEmpty {
+                    ForEach(actions.prefix(5)) { action in
+                        HStack(spacing: 8) {
+                            Image(systemName: "arrow.right.circle.fill")
+                                .foregroundStyle(.blue)
+                                .font(.caption)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(action.title)
+                                    .font(.subheadline)
+                                    .lineLimit(2)
+                                if let person = action.personName, !person.isEmpty {
+                                    Text(person)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Follow-ups
+                if let followUpsJSON = dict["followUps"],
+                   let followUpsData = followUpsJSON.data(using: .utf8),
+                   let followUps = try? JSONDecoder().decode([BriefingFollowUp].self, from: followUpsData),
+                   !followUps.isEmpty {
+                    ForEach(followUps.prefix(3)) { followUp in
+                        HStack(spacing: 8) {
+                            Image(systemName: "person.circle")
+                                .foregroundStyle(.orange)
+                                .font(.caption)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(followUp.personName)
+                                    .font(.subheadline)
+                                Text(followUp.reason)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
+                        }
+                    }
+                }
+
+                // Generation time
+                if let dateStr = dict["date"] {
+                    Text("Updated \(dateStr)")
+                        .font(.caption2)
+                        .foregroundStyle(.quaternary)
                 }
             }
         }
