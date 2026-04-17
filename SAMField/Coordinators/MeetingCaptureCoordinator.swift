@@ -758,7 +758,8 @@ final class MeetingCaptureCoordinator {
         summaryWatchdog?.cancel()
         summaryWatchdog = nil
         doneSentSessionIDs.remove(id)
-        captureState = .idle
+        captureState = streamingService.connectionState == .connected
+            ? .connected : .idle
 
         logger.info("sessionDeleted sent=\(sent) for \(id.uuidString)")
     }

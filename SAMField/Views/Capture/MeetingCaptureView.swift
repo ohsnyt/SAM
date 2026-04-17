@@ -167,12 +167,8 @@ struct MeetingCaptureView: View {
         } message: {
             Text("SAM couldn't find your Mac on the local network. Make sure SAM is open on your Mac and both devices are on the same WiFi, or record locally and SAM will sync this meeting later.")
         }
-        .confirmationDialog(
-            "Delete this recording?",
-            isPresented: $showDeleteConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("Delete Recording", role: .destructive) {
+        .alert("Delete this recording?", isPresented: $showDeleteConfirmation) {
+            Button("Delete", role: .destructive) {
                 coordinator.deleteSession()
             }
             Button("Cancel", role: .cancel) {}
@@ -579,49 +575,36 @@ struct MeetingCaptureView: View {
     /// Participant list with contact thumbnails (or person icon fallback).
     /// Tight spacing, no heading. Editable when not recording.
     private var participantListView: some View {
-        VStack(spacing: 0) {
-            ForEach(0..<speakerNames.count, id: \.self) { i in
-                VStack(spacing: 0) {
-                    HStack(spacing: 12) {
-                        // Contact thumbnail or fallback — Contacts app style
-                        Image(systemName: "person.crop.circle.fill")
-                            .font(.system(size: 36))
-                            .foregroundStyle(speakerDotColor(i).opacity(0.7))
+        // Use a List for native swipe-to-delete support
+        List {
+            ForEach(Array(speakerNames.enumerated()), id: \.offset) { i, name in
+                HStack(spacing: 12) {
+                    Image(systemName: "person.crop.circle.fill")
+                        .font(.system(size: 36))
+                        .foregroundStyle(speakerDotColor(i).opacity(0.7))
 
-                        if coordinator.captureState == .connected || coordinator.captureState == .paused {
-                            TextField("Participant", text: $speakerNames[i])
-                                .font(.body)
-                        } else {
-                            Text(speakerNames[i])
-                                .font(.body)
-                        }
-
-                        Spacer()
-
-                        // Swipe hint — remove button when editable
-                        if (coordinator.captureState == .connected || coordinator.captureState == .paused)
-                            && speakerNames.count > 1 {
-                            Button {
-                                speakerNames.remove(at: i)
-                                speakerCount = speakerNames.count
-                            } label: {
-                                Image(systemName: "minus.circle.fill")
-                                    .foregroundStyle(.red.opacity(0.6))
-                            }
-                            .buttonStyle(.plain)
-                        }
+                    if coordinator.captureState == .connected || coordinator.captureState == .paused {
+                        TextField("Participant", text: $speakerNames[i])
+                            .font(.body)
+                    } else {
+                        Text(name)
+                            .font(.body)
                     }
-                    .padding(.vertical, 8)
-                    .padding(.horizontal)
 
-                    // Divider between participants (not after last)
-                    if i < speakerNames.count - 1 {
-                        Divider()
-                            .padding(.leading, 60) // Indent to align with text, past icon
-                    }
+                    Spacer()
                 }
+                .listRowSeparatorTint(.secondary.opacity(0.2))
+                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+            }
+            .onDelete { indices in
+                guard speakerNames.count > 1 else { return }
+                speakerNames.remove(atOffsets: indices)
+                speakerCount = speakerNames.count
             }
         }
+        .listStyle(.plain)
+        .frame(height: CGFloat(speakerNames.count) * 52)
+        .scrollDisabled(true)
     }
 
     /// Add participant row — appears below the list
@@ -656,59 +639,52 @@ struct MeetingCaptureView: View {
             // Audio level glow (recording only)
             if coordinator.captureState == .recording {
                 Circle()
-                    .fill(Color.red.opacity(0.15 + Double(coordinator.audioLevel) * 0.4))
+                    .fill(Color.red.opacity(0.2 + Double(coordinator.audioLevel) * 0.5))
                     .frame(width: 140, height: 140)
                     .blur(radius: 20)
                     .animation(.easeOut(duration: 0.1), value: coordinator.audioLevel)
             }
 
-            Button {
-                if coordinator.captureState == .connected {
+            if coordinator.captureState == .connected {
+                // Start recording button
+                Button {
                     coordinator.expectedSpeakerCount = speakerCount
                     coordinator.expectedSpeakerNames = speakerNames
                     coordinator.startRecording()
+                } label: {
+                    ZStack {
+                        Circle()
+                            .fill(.ultraThinMaterial)
+                            .frame(width: 80, height: 80)
+                            .overlay(
+                                Circle()
+                                    .stroke(Color.red.opacity(0.6), lineWidth: 3)
+                            )
+                        Circle()
+                            .fill(Color.red)
+                            .frame(width: 28, height: 28)
+                    }
                 }
-            } label: {
-                ZStack {
-                    Circle()
-                        .fill(recordButtonColor.gradient)
-                        .frame(width: 100, height: 100)
-                        .shadow(color: recordButtonColor.opacity(0.4), radius: 10)
+                .buttonStyle(.plain)
+            } else {
+                // Timer display during recording/paused
+                VStack(spacing: 4) {
+                    Text(formatTime(coordinator.elapsedTime))
+                        .font(.system(size: 40, weight: .light, design: .monospaced))
+                        .monospacedDigit()
+                        .foregroundStyle(.primary)
+                        .contentTransition(.numericText())
 
-                    VStack(spacing: 2) {
-                        if coordinator.captureState == .recording {
-                            Text(formatTime(coordinator.elapsedTime))
-                                .font(.system(size: 20, weight: .medium, design: .monospaced))
-                                .monospacedDigit()
-                                .foregroundStyle(.white)
-                        } else if coordinator.captureState == .paused {
-                            Image(systemName: "pause.fill")
-                                .font(.title)
-                                .foregroundStyle(.white)
-                            Text(formatTime(coordinator.elapsedTime))
-                                .font(.caption.monospaced())
-                                .foregroundStyle(.white.opacity(0.8))
-                        } else {
-                            // Connected — start recording
-                            Circle()
-                                .fill(.white)
-                                .frame(width: 24, height: 24)
-                        }
+                    if coordinator.captureState == .paused {
+                        Text("PAUSED")
+                            .font(.caption.bold())
+                            .foregroundStyle(.orange)
                     }
                 }
             }
-            .buttonStyle(.plain)
-            .disabled(coordinator.captureState != .connected)
         }
     }
 
-    private var recordButtonColor: Color {
-        switch coordinator.captureState {
-        case .recording: return .red
-        case .paused: return .orange
-        default: return .red
-        }
-    }
 
     // MARK: - Secondary Controls (Pause / Stop)
 
