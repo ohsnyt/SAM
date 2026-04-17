@@ -22,26 +22,76 @@ struct MeetingCaptureView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 24) {
-                Spacer(minLength: 40)
+            VStack(spacing: 16) {
+                switch coordinator.captureState {
+                case .idle, .connecting:
+                    // Not connected — show connection status + connect button
+                    Spacer(minLength: 60)
+                    connectionStatusView
+                    Spacer(minLength: 20)
+                    controlsView
 
-                // Connection status
-                connectionStatusView
+                case .connected, .recording, .paused:
+                    // Unified recording screen: title, participants,
+                    // record button, controls
+                    Spacer(minLength: 20)
 
-                // Compact participant list during recording/paused
-                if coordinator.captureState == .recording || coordinator.captureState == .paused {
-                    compactParticipantList
-                    timeDisplay
-                    audioLevelIndicator
+                    // Meeting title
+                    if let title = upcomingMeetingTitle {
+                        Text(title)
+                            .font(.headline)
+                    } else if coordinator.captureState == .connected {
+                        Text("New Meeting")
+                            .font(.headline)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    // Participant list — always visible
+                    participantListView
+
+                    // Add participant (only before and during pause)
+                    if coordinator.captureState != .recording {
+                        addParticipantButton
+                    }
+
+                    Spacer(minLength: 8)
+
+                    // Record / timer button
+                    recordButton
+
+                    // Pause + Stop controls (during recording/paused)
+                    if coordinator.captureState == .recording || coordinator.captureState == .paused {
+                        secondaryControls
+                    }
+
+                    // Connection loss warning
+                    if let warning = coordinator.connectionLossWarning {
+                        connectionLossBanner(warning)
+                    }
+
+                case .stopping:
+                    Spacer(minLength: 60)
+                    ProgressView("Finalizing…")
+
+                case .completed:
+                    completedView
+
+                case .error(let message):
+                    Spacer(minLength: 60)
+                    VStack(spacing: 12) {
+                        Label("Error", systemImage: "exclamationmark.triangle.fill")
+                            .font(.title3)
+                            .foregroundStyle(.red)
+                        Text(message)
+                            .font(.body)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                        Button("Try Again") { coordinator.reset() }
+                            .buttonStyle(.bordered)
+                    }
                 }
 
-                // Orange warning if the streaming connection dropped mid-session.
-                if let warning = coordinator.connectionLossWarning {
-                    connectionLossBanner(warning)
-                }
-
-                // Pending upload status — only shown when idle/connected
-                // (not during recording or completed session review).
+                // Pending upload status (idle/connecting/connected only)
                 if coordinator.captureState == .idle
                     || coordinator.captureState == .connected
                     || coordinator.captureState == .connecting {
@@ -49,21 +99,6 @@ struct MeetingCaptureView: View {
                 }
 
                 Spacer(minLength: 20)
-
-                // Controls
-                controlsView
-
-                // Buffered chunks indicator
-                if coordinator.bufferedChunkCount > 0 {
-                    Label(
-                        "\(coordinator.bufferedChunkCount) chunks buffered",
-                        systemImage: "arrow.triangle.2.circlepath"
-                    )
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                }
-
-                Spacer(minLength: 40)
             }
             .padding()
             .frame(maxWidth: .infinity)
@@ -530,7 +565,176 @@ struct MeetingCaptureView: View {
         }
     }
 
+    // MARK: - Unified Participant List
+
+    /// Participant list with contact thumbnails (or person icon fallback).
+    /// Tight spacing, no heading. Editable when not recording.
+    private var participantListView: some View {
+        VStack(spacing: 0) {
+            ForEach(0..<speakerNames.count, id: \.self) { i in
+                HStack(spacing: 10) {
+                    // Contact thumbnail or fallback icon
+                    Image(systemName: "person.circle.fill")
+                        .font(.title2)
+                        .foregroundStyle(speakerDotColor(i))
+
+                    if coordinator.captureState == .connected || coordinator.captureState == .paused {
+                        // Editable name
+                        TextField("Participant \(i + 1)", text: $speakerNames[i])
+                            .font(.body)
+                    } else {
+                        // Read-only during recording
+                        Text(speakerNames[i])
+                            .font(.body)
+                    }
+
+                    Spacer()
+                }
+                .padding(.vertical, 6)
+                .padding(.horizontal)
+            }
+            .onDelete { indices in
+                speakerNames.remove(atOffsets: indices)
+                speakerCount = speakerNames.count
+            }
+        }
+    }
+
+    /// Add participant row — appears below the list
+    private var addParticipantButton: some View {
+        Button {
+            speakerCount += 1
+            syncSpeakerNames()
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "plus.circle.fill")
+                    .font(.title2)
+                    .foregroundStyle(.secondary)
+                Text("Add participant...")
+                    .font(.body)
+                    .foregroundStyle(.tertiary)
+                Spacer()
+            }
+            .padding(.vertical, 6)
+            .padding(.horizontal)
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Record Button
+
+    /// Large circular button that transforms between states:
+    /// - Connected: red "Start Recording" with glass effect
+    /// - Recording: pulsing red glow with timer, audio level drives glow intensity
+    /// - Paused: orange, static, "Paused"
+    private var recordButton: some View {
+        ZStack {
+            // Audio level glow (recording only)
+            if coordinator.captureState == .recording {
+                Circle()
+                    .fill(Color.red.opacity(0.15 + Double(coordinator.audioLevel) * 0.4))
+                    .frame(width: 140, height: 140)
+                    .blur(radius: 20)
+                    .animation(.easeOut(duration: 0.1), value: coordinator.audioLevel)
+            }
+
+            Button {
+                if coordinator.captureState == .connected {
+                    coordinator.expectedSpeakerCount = speakerCount
+                    coordinator.expectedSpeakerNames = speakerNames
+                    coordinator.startRecording()
+                }
+            } label: {
+                ZStack {
+                    Circle()
+                        .fill(recordButtonColor.gradient)
+                        .frame(width: 100, height: 100)
+                        .shadow(color: recordButtonColor.opacity(0.4), radius: 10)
+
+                    VStack(spacing: 2) {
+                        if coordinator.captureState == .recording {
+                            Text(formatTime(coordinator.elapsedTime))
+                                .font(.system(size: 20, weight: .medium, design: .monospaced))
+                                .monospacedDigit()
+                                .foregroundStyle(.white)
+                        } else if coordinator.captureState == .paused {
+                            Image(systemName: "pause.fill")
+                                .font(.title)
+                                .foregroundStyle(.white)
+                            Text(formatTime(coordinator.elapsedTime))
+                                .font(.caption.monospaced())
+                                .foregroundStyle(.white.opacity(0.8))
+                        } else {
+                            // Connected — start recording
+                            Circle()
+                                .fill(.white)
+                                .frame(width: 24, height: 24)
+                        }
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+            .disabled(coordinator.captureState != .connected)
+        }
+    }
+
+    private var recordButtonColor: Color {
+        switch coordinator.captureState {
+        case .recording: return .red
+        case .paused: return .orange
+        default: return .red
+        }
+    }
+
+    // MARK: - Secondary Controls (Pause / Stop)
+
+    private var secondaryControls: some View {
+        HStack(spacing: 40) {
+            if coordinator.captureState == .recording {
+                Button {
+                    coordinator.pauseRecording()
+                } label: {
+                    VStack(spacing: 4) {
+                        Image(systemName: "pause.circle.fill")
+                            .font(.system(size: 36))
+                            .foregroundStyle(.orange)
+                        Text("Pause")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } else if coordinator.captureState == .paused {
+                Button {
+                    coordinator.resumeRecording()
+                } label: {
+                    VStack(spacing: 4) {
+                        Image(systemName: "play.circle.fill")
+                            .font(.system(size: 36))
+                            .foregroundStyle(.green)
+                        Text("Resume")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            Button {
+                coordinator.stopRecording()
+            } label: {
+                VStack(spacing: 4) {
+                    Image(systemName: "stop.circle.fill")
+                        .font(.system(size: 36))
+                        .foregroundStyle(.red)
+                    Text("Stop")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
     /// Compact participant list shown during recording — no heading, scrollable if >3
+    @available(*, deprecated, message: "Use participantListView instead")
     private var compactParticipantList: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
