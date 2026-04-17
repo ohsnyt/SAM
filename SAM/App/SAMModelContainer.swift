@@ -137,7 +137,8 @@ enum SAMModelContainer {
         let config     = ModelConfiguration(
             schemaVersion,
             schema: schema,
-            isStoredInMemoryOnly: false   // persistent on disk
+            isStoredInMemoryOnly: false,  // persistent on disk
+            cloudKitDatabase: .none       // CloudKit used via CKContainer directly, not SwiftData sync
         )
         do {
             return try ModelContainer(for: schema, configurations: config)
@@ -195,7 +196,8 @@ enum SAMModelContainer {
         let config     = ModelConfiguration(
             schemaVersion,
             schema: schema,
-            isStoredInMemoryOnly: false   // persistent on disk
+            isStoredInMemoryOnly: false,  // persistent on disk
+            cloudKitDatabase: .none       // CloudKit used via CKContainer directly, not SwiftData sync
         )
         do {
             return try ModelContainer(for: schema, configurations: config)
