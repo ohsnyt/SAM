@@ -79,7 +79,8 @@ enum SAMFieldModelContainer {
         let config = ModelConfiguration(
             "SAM_v34",
             schema: schema,
-            isStoredInMemoryOnly: false
+            isStoredInMemoryOnly: false,
+            cloudKitDatabase: .none  // CloudKit used via CKContainer directly, not SwiftData sync
         )
         do {
             return try ModelContainer(for: schema, configurations: config)
