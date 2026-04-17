@@ -18,6 +18,7 @@ struct MeetingCaptureView: View {
     @State private var speakerNames: [String] = ["You (Agent)", "Client"]
     @State private var upcomingMeetingTitle: String? = nil
     @State private var hasCheckedCalendar = false
+    @State private var showEditParticipants = false
 
     var body: some View {
         ScrollView {
@@ -27,8 +28,9 @@ struct MeetingCaptureView: View {
                 // Connection status
                 connectionStatusView
 
-                // Recording time
+                // Compact participant list during recording/paused
                 if coordinator.captureState == .recording || coordinator.captureState == .paused {
+                    compactParticipantList
                     timeDisplay
                     audioLevelIndicator
                 }
@@ -370,6 +372,25 @@ struct MeetingCaptureView: View {
             }
 
         case .paused:
+            VStack(spacing: 12) {
+                Button {
+                    showEditParticipants.toggle()
+                } label: {
+                    Label(
+                        showEditParticipants ? "Hide Participants" : "Edit Participants",
+                        systemImage: "person.2"
+                    )
+                    .font(.caption)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+                if showEditParticipants {
+                    participantEditor
+                }
+            }
+            .padding(.horizontal)
+
             HStack(spacing: 32) {
                 Button {
                     coordinator.resumeRecording()
@@ -507,6 +528,74 @@ struct MeetingCaptureView: View {
             .controlSize(.large)
             .padding(.horizontal)
         }
+    }
+
+    /// Compact participant list shown during recording — no heading, scrollable if >3
+    private var compactParticipantList: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(0..<speakerNames.count, id: \.self) { i in
+                    HStack(spacing: 4) {
+                        Circle()
+                            .fill(speakerDotColor(i))
+                            .frame(width: 6, height: 6)
+                        Text(speakerNames[i])
+                            .font(.caption)
+                            .lineLimit(1)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(Color.secondary.opacity(0.1)))
+                }
+            }
+            .padding(.horizontal)
+        }
+    }
+
+    /// Editable participant list shown when paused and "Edit Participants" is tapped
+    private var participantEditor: some View {
+        VStack(spacing: 8) {
+            HStack {
+                Text("Participants")
+                    .font(.caption.bold())
+                Spacer()
+                HStack(spacing: 0) {
+                    Button {
+                        if speakerCount > 1 { speakerCount -= 1; syncSpeakerNames() }
+                    } label: {
+                        Image(systemName: "minus.circle.fill").foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+
+                    Text("\(speakerCount)").font(.subheadline.bold()).frame(width: 30)
+
+                    Button {
+                        if speakerCount < 8 { speakerCount += 1; syncSpeakerNames() }
+                    } label: {
+                        Image(systemName: "plus.circle.fill").foregroundStyle(Color.accentColor)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            ForEach(0..<speakerNames.count, id: \.self) { i in
+                HStack(spacing: 6) {
+                    Circle().fill(speakerDotColor(i)).frame(width: 6, height: 6)
+                    TextField("Speaker \(i + 1)", text: $speakerNames[i])
+                        .textFieldStyle(.roundedBorder)
+                        .font(.caption)
+                }
+            }
+
+            Button("Update") {
+                coordinator.expectedSpeakerCount = speakerCount
+                coordinator.expectedSpeakerNames = speakerNames
+                showEditParticipants = false
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.secondary.opacity(0.08)))
     }
 
     /// Keep speakerNames array in sync with speakerCount.
