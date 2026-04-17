@@ -168,14 +168,17 @@ struct PersistentBriefingSection: View {
                 allDoneBanner
             }
 
-            // Schedule
-            if !briefing.calendarItems.isEmpty {
+            // Schedule — filter out past events so the briefing stays current
+            let upcomingEvents = briefing.calendarItems.filter {
+                ($0.endsAt ?? $0.startsAt) > Date()
+            }
+            if !upcomingEvents.isEmpty {
                 checkableSection(
                     title: "Schedule",
                     icon: "calendar",
                     color: .blue
                 ) {
-                    ForEach(briefing.calendarItems) { item in
+                    ForEach(upcomingEvents) { item in
                         calendarRow(item)
                     }
                 }

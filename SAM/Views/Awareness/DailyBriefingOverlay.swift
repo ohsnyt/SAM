@@ -33,9 +33,12 @@ struct DailyBriefingOverlay: View {
                         narrativeSection(narrative)
                     }
 
-                    // Calendar timeline
-                    if !briefing.calendarItems.isEmpty {
-                        calendarSection(briefing.calendarItems)
+                    // Calendar timeline — filter out past events
+                    let upcoming = briefing.calendarItems.filter {
+                        ($0.endsAt ?? $0.startsAt) > Date()
+                    }
+                    if !upcoming.isEmpty {
+                        calendarSection(upcoming)
                     }
 
                     // Priority actions
@@ -424,9 +427,10 @@ struct DailyBriefingOverlay: View {
             }
         }
 
-        if !briefing.calendarItems.isEmpty {
+        let upcomingCal = briefing.calendarItems.filter { ($0.endsAt ?? $0.startsAt) > Date() }
+        if !upcomingCal.isEmpty {
             parts.append("TODAY'S SCHEDULE:")
-            for item in briefing.calendarItems {
+            for item in upcomingCal {
                 let time = item.startsAt.formatted(date: .omitted, time: .shortened)
                 var line = "\(time)  \(item.eventTitle)"
                 if !item.attendeeNames.isEmpty { line += " (\(item.attendeeNames.joined(separator: ", ")))" }
