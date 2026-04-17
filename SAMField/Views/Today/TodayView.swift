@@ -98,58 +98,16 @@ struct TodayView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                // Priority actions
-                if let actionsJSON = dict["priorityActions"],
-                   let actionsData = actionsJSON.data(using: .utf8),
-                   let actions = try? JSONDecoder().decode([BriefingAction].self, from: actionsData),
-                   !actions.isEmpty {
-                    ForEach(actions.prefix(5)) { action in
-                        HStack(spacing: 8) {
-                            Image(systemName: "arrow.right.circle.fill")
-                                .foregroundStyle(.blue)
-                                .font(.caption)
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(action.title)
-                                    .font(.subheadline)
-                                    .lineLimit(2)
-                                if let person = action.personName, !person.isEmpty {
-                                    Text(person)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Follow-ups
-                if let followUpsJSON = dict["followUps"],
-                   let followUpsData = followUpsJSON.data(using: .utf8),
-                   let followUps = try? JSONDecoder().decode([BriefingFollowUp].self, from: followUpsData),
-                   !followUps.isEmpty {
-                    ForEach(followUps.prefix(3)) { followUp in
-                        HStack(spacing: 8) {
-                            Image(systemName: "person.circle")
-                                .foregroundStyle(.orange)
-                                .font(.caption)
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(followUp.personName)
-                                    .font(.subheadline)
-                                Text(followUp.reason)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(2)
-                            }
-                        }
-                    }
-                }
-
                 // Generation time
                 if let dateStr = dict["date"] {
                     Text("Updated \(dateStr)")
                         .font(.caption2)
                         .foregroundStyle(.quaternary)
                 }
+
+                // NOTE: Priority actions and follow-ups suppressed until
+                // they are actionable on the phone (call, text, email).
+                // See project_phone_actionable_items.md for the plan.
             }
         }
     }
