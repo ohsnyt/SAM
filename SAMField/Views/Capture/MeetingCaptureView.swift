@@ -32,19 +32,7 @@ struct MeetingCaptureView: View {
                     controlsView
 
                 case .connected, .recording, .paused:
-                    // Unified recording screen: title, participants,
-                    // record button, controls
                     Spacer(minLength: 20)
-
-                    // Meeting title
-                    if let title = upcomingMeetingTitle {
-                        Text(title)
-                            .font(.headline)
-                    } else if coordinator.captureState == .connected {
-                        Text("New Meeting")
-                            .font(.headline)
-                            .foregroundStyle(.secondary)
-                    }
 
                     // Participant list — always visible
                     participantListView
@@ -115,7 +103,7 @@ struct MeetingCaptureView: View {
                 coordinator.clearStaleSummaryState()
             }
         }
-        .navigationTitle("Record")
+        .navigationTitle(upcomingMeetingTitle != nil ? "Record Meeting" : "New Recording")
         .onAppear {
             coordinator.autoConnectIfNeeded()
             PendingUploadService.shared.refreshPendingCount()
@@ -135,6 +123,27 @@ struct MeetingCaptureView: View {
                         speakerCount = names.count
                     }
                 }
+            }
+        }
+        .onChange(of: coordinator.captureState) { _, newState in
+            // Reset participant list when returning to connected after a session
+            if newState == .connected {
+                hasCheckedCalendar = false
+                upcomingMeetingTitle = nil
+                speakerCount = 2
+                speakerNames = ["You (Agent)", "Client"]
+                showEditParticipants = false
+
+                // Re-check calendar for the next meeting
+                if let meeting = FieldCalendarService.shared.upcomingMeeting() {
+                    upcomingMeetingTitle = meeting.title
+                    let names = meeting.attendeeNames
+                    if !names.isEmpty {
+                        speakerNames = names
+                        speakerCount = names.count
+                    }
+                }
+                hasCheckedCalendar = true
             }
         }
         .alert(
@@ -572,30 +581,45 @@ struct MeetingCaptureView: View {
     private var participantListView: some View {
         VStack(spacing: 0) {
             ForEach(0..<speakerNames.count, id: \.self) { i in
-                HStack(spacing: 10) {
-                    // Contact thumbnail or fallback icon
-                    Image(systemName: "person.circle.fill")
-                        .font(.title2)
-                        .foregroundStyle(speakerDotColor(i))
+                VStack(spacing: 0) {
+                    HStack(spacing: 12) {
+                        // Contact thumbnail or fallback — Contacts app style
+                        Image(systemName: "person.crop.circle.fill")
+                            .font(.system(size: 36))
+                            .foregroundStyle(speakerDotColor(i).opacity(0.7))
 
-                    if coordinator.captureState == .connected || coordinator.captureState == .paused {
-                        // Editable name
-                        TextField("Participant \(i + 1)", text: $speakerNames[i])
-                            .font(.body)
-                    } else {
-                        // Read-only during recording
-                        Text(speakerNames[i])
-                            .font(.body)
+                        if coordinator.captureState == .connected || coordinator.captureState == .paused {
+                            TextField("Participant", text: $speakerNames[i])
+                                .font(.body)
+                        } else {
+                            Text(speakerNames[i])
+                                .font(.body)
+                        }
+
+                        Spacer()
+
+                        // Swipe hint — remove button when editable
+                        if (coordinator.captureState == .connected || coordinator.captureState == .paused)
+                            && speakerNames.count > 1 {
+                            Button {
+                                speakerNames.remove(at: i)
+                                speakerCount = speakerNames.count
+                            } label: {
+                                Image(systemName: "minus.circle.fill")
+                                    .foregroundStyle(.red.opacity(0.6))
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
+                    .padding(.vertical, 8)
+                    .padding(.horizontal)
 
-                    Spacer()
+                    // Divider between participants (not after last)
+                    if i < speakerNames.count - 1 {
+                        Divider()
+                            .padding(.leading, 60) // Indent to align with text, past icon
+                    }
                 }
-                .padding(.vertical, 6)
-                .padding(.horizontal)
-            }
-            .onDelete { indices in
-                speakerNames.remove(atOffsets: indices)
-                speakerCount = speakerNames.count
             }
         }
     }
