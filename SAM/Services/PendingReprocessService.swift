@@ -512,6 +512,7 @@ final class PendingReprocessService {
             durationSeconds: metadata.durationSeconds,
             speakerCount: 0,
             status: .processing,
+            recordingContext: metadata.recordingContext ?? .clientMeeting,
             audioFilePath: nil,
             whisperModelID: WhisperTranscriptionService.defaultModelID,
             detectedLanguage: nil
@@ -822,7 +823,8 @@ final class PendingReprocessService {
             durationSeconds: session.durationSeconds,
             speakerCount: session.speakerCount,
             detectedLanguage: session.detectedLanguage,
-            recordedAt: session.recordedAt
+            recordedAt: session.recordedAt,
+            recordingContext: session.recordingContext
         )
 
         #if DEBUG

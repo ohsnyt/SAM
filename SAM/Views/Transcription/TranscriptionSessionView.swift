@@ -304,6 +304,92 @@ struct TranscriptionSessionView: View {
                                 }
                             }
                         }
+
+                        // Training/Lecture fields
+                        if !summary.keyPoints.isEmpty {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Label("Key Points", systemImage: "lightbulb")
+                                    .font(.caption2.bold())
+                                    .foregroundStyle(.secondary)
+                                ForEach(summary.keyPoints, id: \.self) { pt in
+                                    Text("• \(pt)").font(.caption)
+                                }
+                            }
+                        }
+
+                        if !summary.learningObjectives.isEmpty {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Label("Learning Objectives", systemImage: "target")
+                                    .font(.caption2.bold())
+                                    .foregroundStyle(.secondary)
+                                ForEach(summary.learningObjectives, id: \.self) { obj in
+                                    Text("• \(obj)").font(.caption)
+                                }
+                            }
+                        }
+
+                        if let notes = summary.reviewNotes, !notes.isEmpty {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Label("Review Notes", systemImage: "doc.text")
+                                    .font(.caption2.bold())
+                                    .foregroundStyle(.secondary)
+                                Text(notes).font(.caption)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+
+                        // Board Meeting fields
+                        if !summary.attendees.isEmpty {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Label("Attendees", systemImage: "person.3")
+                                    .font(.caption2.bold())
+                                    .foregroundStyle(.secondary)
+                                Text(summary.attendees.joined(separator: ", "))
+                                    .font(.caption)
+                            }
+                        }
+
+                        if !summary.agendaItems.isEmpty {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Label("Agenda", systemImage: "list.bullet.clipboard")
+                                    .font(.caption2.bold())
+                                    .foregroundStyle(.secondary)
+                                ForEach(Array(summary.agendaItems.enumerated()), id: \.offset) { _, item in
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        HStack(alignment: .top, spacing: 4) {
+                                            Text("•").foregroundStyle(.tertiary).font(.caption)
+                                            VStack(alignment: .leading, spacing: 1) {
+                                                Text(item.title).font(.caption.bold())
+                                                if let s = item.summary {
+                                                    Text(s).font(.caption2).foregroundStyle(.secondary)
+                                                }
+                                                if let outcome = item.outcome {
+                                                    Text(outcome).font(.caption2).foregroundStyle(.blue)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if !summary.votes.isEmpty {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Label("Votes", systemImage: "hand.raised")
+                                    .font(.caption2.bold())
+                                    .foregroundStyle(.secondary)
+                                ForEach(Array(summary.votes.enumerated()), id: \.offset) { _, vote in
+                                    HStack(alignment: .top, spacing: 4) {
+                                        Text("•").foregroundStyle(.tertiary).font(.caption)
+                                        VStack(alignment: .leading, spacing: 1) {
+                                            Text(vote.motion).font(.caption)
+                                            Text(vote.result).font(.caption2.bold())
+                                                .foregroundStyle(vote.result == "Passed" ? .green : vote.result == "Failed" ? .red : .secondary)
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
                 .frame(maxWidth: 380)
@@ -581,6 +667,16 @@ struct TranscriptionSessionView: View {
             }
 
             Spacer()
+
+            // Context badge — only shown for non-default contexts
+            if session.recordingContext != .clientMeeting {
+                Label(session.recordingContext.displayName, systemImage: session.recordingContext.systemIcon)
+                    .font(.caption2)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(Color.purple.opacity(0.12)))
+                    .foregroundStyle(.purple)
+            }
 
             Text(session.status.rawValue.capitalized)
                 .font(.caption)

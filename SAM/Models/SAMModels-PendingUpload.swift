@@ -80,12 +80,21 @@ public final class PendingUpload {
     /// current upload attempt. Enables progress UI.
     public var bytesUploaded: Int64
 
+    /// Raw storage for RecordingContext. nil on legacy records → defaults to .clientMeeting.
+    public var recordingContextRawValue: String?
+
     // MARK: - Computed
 
     @Transient
     public var status: PendingUploadStatus {
         get { PendingUploadStatus(rawValue: statusRawValue) ?? .pending }
         set { statusRawValue = newValue.rawValue }
+    }
+
+    @Transient
+    public var recordingContext: RecordingContext {
+        get { RecordingContext(rawValue: recordingContextRawValue ?? "") ?? .clientMeeting }
+        set { recordingContextRawValue = newValue.rawValue }
     }
 
     /// Fraction of bytes uploaded (0.0 - 1.0). Useful for progress bars.
@@ -105,6 +114,7 @@ public final class PendingUpload {
         localWAVPath: String = "",
         createdAt: Date = .now,
         status: PendingUploadStatus = .pending,
+        recordingContext: RecordingContext = .clientMeeting,
         lastAttemptAt: Date? = nil,
         attemptCount: Int = 0,
         failureReason: String? = nil,
@@ -119,6 +129,7 @@ public final class PendingUpload {
         self.localWAVPath = localWAVPath
         self.createdAt = createdAt
         self.statusRawValue = status.rawValue
+        self.recordingContextRawValue = recordingContext.rawValue
         self.lastAttemptAt = lastAttemptAt
         self.attemptCount = attemptCount
         self.failureReason = failureReason

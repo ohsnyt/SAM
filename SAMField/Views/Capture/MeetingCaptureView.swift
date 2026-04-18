@@ -22,6 +22,8 @@ struct MeetingCaptureView: View {
     @State private var upcomingMeetingTitle: String? = nil
     @State private var hasCheckedCalendar = false
     @State private var showEditParticipants = false
+    /// Recording context chosen by the user. Hidden for calendar-matched meetings (always .clientMeeting).
+    @State private var selectedContext: RecordingContext = .clientMeeting
 
     var body: some View {
         ScrollView {
@@ -45,8 +47,18 @@ struct MeetingCaptureView: View {
                         .padding(.horizontal)
                     }
 
-                    participantListView
-                    addParticipantButton
+                    // Context picker — only for ad-hoc recordings (no calendar match)
+                    if upcomingMeetingTitle == nil {
+                        contextPicker
+                    }
+
+                    // Participant list — hidden for solo training recordings
+                    if selectedContext != .trainingLecture {
+                        participantListView
+                        addParticipantButton
+                    } else {
+                        soloRecordingLabel
+                    }
 
                     Spacer(minLength: 8)
                     recordButton
@@ -366,6 +378,49 @@ struct MeetingCaptureView: View {
         coordinator.captureState == .connecting
     }
 
+    // MARK: - Context Picker
+
+    private var contextPicker: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Recording Type")
+                .font(.caption.bold())
+                .foregroundStyle(.secondary)
+                .padding(.horizontal)
+
+            Picker("Recording Type", selection: $selectedContext) {
+                ForEach(RecordingContext.allCases, id: \.self) { ctx in
+                    Label(ctx.displayName, systemImage: ctx.systemIcon).tag(ctx)
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal)
+        }
+    }
+
+    /// Shown instead of participant list when Training/Lecture is selected.
+    private var soloRecordingLabel: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "person.fill")
+                .font(.title3)
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Solo recording")
+                    .font(.subheadline.bold())
+                Text("No participants needed — SAM will extract key points and learning objectives.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.secondary.opacity(0.08))
+        )
+        .padding(.horizontal)
+    }
+
     // MARK: - Connection Status Pill
 
     /// Subtle ambient indicator shown above participant list when Mac is not yet connected.
@@ -607,9 +662,9 @@ struct MeetingCaptureView: View {
 
             // Start Recording button
             Button {
-                // Set speaker metadata on coordinator before starting
-                coordinator.expectedSpeakerCount = speakerCount
-                coordinator.expectedSpeakerNames = speakerNames
+                coordinator.expectedSpeakerCount = selectedContext == .trainingLecture ? 1 : speakerCount
+                coordinator.expectedSpeakerNames = selectedContext == .trainingLecture ? [] : speakerNames
+                coordinator.expectedRecordingContext = upcomingMeetingTitle != nil ? .clientMeeting : selectedContext
                 coordinator.startRecording()
             } label: {
                 Label("Start Recording", systemImage: "record.circle")
@@ -720,8 +775,9 @@ struct MeetingCaptureView: View {
             if canStartRecording {
                 // Start recording button — works regardless of Mac connection
                 Button {
-                    coordinator.expectedSpeakerCount = speakerCount
-                    coordinator.expectedSpeakerNames = speakerNames
+                    coordinator.expectedSpeakerCount = selectedContext == .trainingLecture ? 1 : speakerCount
+                    coordinator.expectedSpeakerNames = selectedContext == .trainingLecture ? [] : speakerNames
+                    coordinator.expectedRecordingContext = upcomingMeetingTitle != nil ? .clientMeeting : selectedContext
                     coordinator.startRecording()
                 } label: {
                     ZStack {
@@ -958,9 +1014,12 @@ struct MeetingCaptureView: View {
                 // Single-tap "record another meeting" — reuses the existing
                 // TCP connection so there's no browse/connect step.
                 Button {
+                    upcomingMeetingTitle = nil
+                    hasCheckedCalendar = false
+                    selectedContext = .clientMeeting
                     coordinator.recordAgain()
                 } label: {
-                    Label("Record Another Meeting", systemImage: "record.circle")
+                    Label(selectedContext == .trainingLecture ? "Record Another Training" : selectedContext == .boardMeeting ? "Record Another Board Meeting" : "Record Another Meeting", systemImage: "record.circle")
                         .font(.title3)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 4)
@@ -1080,6 +1139,86 @@ struct MeetingCaptureView: View {
             if !summary.lifeEvents.isEmpty {
                 summarySection(title: "Life Events", systemImage: "heart") {
                     bulletList(summary.lifeEvents)
+                }
+            }
+
+            // Training/Lecture fields
+            if !summary.keyPoints.isEmpty {
+                summarySection(title: "Key Points", systemImage: "lightbulb") {
+                    bulletList(summary.keyPoints)
+                }
+            }
+
+            if !summary.learningObjectives.isEmpty {
+                summarySection(title: "Learning Objectives", systemImage: "target") {
+                    bulletList(summary.learningObjectives)
+                }
+            }
+
+            if let reviewNotes = summary.reviewNotes, !reviewNotes.isEmpty {
+                summarySection(title: "Review Notes", systemImage: "doc.text") {
+                    Text(reviewNotes)
+                        .font(.subheadline)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            // Board Meeting fields
+            if !summary.attendees.isEmpty {
+                summarySection(title: "Attendees", systemImage: "person.3") {
+                    Text(summary.attendees.joined(separator: ", "))
+                        .font(.subheadline)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            if !summary.agendaItems.isEmpty {
+                summarySection(title: "Agenda", systemImage: "list.bullet.clipboard") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(Array(summary.agendaItems.enumerated()), id: \.offset) { _, item in
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack(alignment: .top, spacing: 6) {
+                                    Text("•").foregroundStyle(.tertiary)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(item.title).font(.subheadline.bold())
+                                        if let summary = item.summary {
+                                            Text(summary)
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                                .fixedSize(horizontal: false, vertical: true)
+                                        }
+                                        if let outcome = item.outcome {
+                                            Text(outcome)
+                                                .font(.caption2)
+                                                .padding(.horizontal, 6)
+                                                .padding(.vertical, 1)
+                                                .background(Capsule().fill(Color.blue.opacity(0.12)))
+                                                .foregroundStyle(.blue)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if !summary.votes.isEmpty {
+                summarySection(title: "Votes", systemImage: "hand.raised") {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(Array(summary.votes.enumerated()), id: \.offset) { _, vote in
+                            HStack(alignment: .top, spacing: 6) {
+                                Text("•").foregroundStyle(.tertiary)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(vote.motion).font(.subheadline)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                    Text(vote.result)
+                                        .font(.caption2.bold())
+                                        .foregroundStyle(vote.result == "Passed" ? .green : vote.result == "Failed" ? .red : .secondary)
+                                }
+                            }
+                        }
+                    }
                 }
             }
 

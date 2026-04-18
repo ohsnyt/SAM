@@ -85,7 +85,7 @@ actor MeetingSummaryService {
         _ transcript: String,
         metadata: Metadata
     ) async throws -> MeetingSummary {
-        let systemInstruction = Self.systemInstruction()
+        let systemInstruction = Self.systemInstruction(for: metadata.recordingContext)
         let prompt = Self.buildPrompt(transcript: transcript, metadata: metadata)
 
         let responseText = try await AIService.shared.generate(
@@ -160,6 +160,12 @@ actor MeetingSummaryService {
         var allLifeEvents: [String] = []
         var allTopics: [String] = []
         var allComplianceFlags: [String] = []
+        var allKeyPoints: [String] = []
+        var allLearningObjectives: [String] = []
+        var allReviewNotes: [String] = []
+        var allAttendees: [String] = []
+        var allAgendaItems: [MeetingSummary.AgendaItem] = []
+        var allVotes: [MeetingSummary.VoteRecord] = []
         var sentiment: String?
 
         for summary in summaries {
@@ -170,6 +176,12 @@ actor MeetingSummaryService {
             allLifeEvents.append(contentsOf: summary.lifeEvents)
             allTopics.append(contentsOf: summary.topics)
             allComplianceFlags.append(contentsOf: summary.complianceFlags)
+            allKeyPoints.append(contentsOf: summary.keyPoints)
+            allLearningObjectives.append(contentsOf: summary.learningObjectives)
+            if let rn = summary.reviewNotes, !rn.isEmpty { allReviewNotes.append(rn) }
+            allAttendees.append(contentsOf: summary.attendees)
+            allAgendaItems.append(contentsOf: summary.agendaItems)
+            allVotes.append(contentsOf: summary.votes)
             if sentiment == nil, let s = summary.sentiment, !s.isEmpty {
                 sentiment = s
             }
@@ -187,16 +199,25 @@ actor MeetingSummaryService {
             }
         }
 
+        // reviewNotes: join all non-empty chunk review notes into one prose block.
+        let mergedReviewNotes = allReviewNotes.isEmpty ? nil : allReviewNotes.joined(separator: "\n\n")
+
         return MeetingSummary(
             tldr: combinedTldr,
             decisions: dedup(allDecisions),
-            actionItems: allActionItems, // keep all — deduping tasks is risky
+            actionItems: allActionItems,        // keep all — deduping tasks is risky
             openQuestions: dedup(allOpenQuestions),
-            followUps: allFollowUps, // keep all — different person/reason pairs
+            followUps: allFollowUps,            // keep all — different person/reason pairs
             lifeEvents: dedup(allLifeEvents),
             topics: dedup(allTopics),
             complianceFlags: dedup(allComplianceFlags),
-            sentiment: sentiment
+            sentiment: sentiment,
+            keyPoints: dedup(allKeyPoints),
+            learningObjectives: dedup(allLearningObjectives),
+            reviewNotes: mergedReviewNotes,
+            attendees: dedup(allAttendees),
+            agendaItems: allAgendaItems,        // keep all — order matters for minutes
+            votes: allVotes                     // keep all — each vote is distinct
         )
     }
 
@@ -207,6 +228,7 @@ actor MeetingSummaryService {
         var speakerCount: Int = 0
         var detectedLanguage: String? = nil
         var recordedAt: Date? = nil
+        var recordingContext: RecordingContext = .clientMeeting
 
         func promptLines() -> String {
             var lines: [String] = []
@@ -224,16 +246,37 @@ actor MeetingSummaryService {
             if let recordedAt {
                 lines.append("Recorded: \(recordedAt.formatted(date: .abbreviated, time: .shortened))")
             }
+            lines.append("Recording type: \(recordingContext.displayName)")
             return lines.joined(separator: "\n")
         }
     }
 
     // MARK: - Prompt
 
+    /// Returns the system instruction appropriate for the given recording context.
+    ///
     /// Internal so the test harness's stage cache can hash the active prompt
     /// into its cache key — edits to the prompt invalidate the summary cache
     /// automatically without needing a manual version bump.
-    static func systemInstruction() -> String {
+    static func systemInstruction(for context: RecordingContext = .clientMeeting) -> String {
+        switch context {
+        case .clientMeeting:
+            return clientMeetingInstruction()
+        case .trainingLecture:
+            // Allow user override via Settings
+            let custom = UserDefaults.standard.string(forKey: "sam.ai.trainingSummaryPrompt") ?? ""
+            if !custom.isEmpty { return custom }
+            return trainingLectureInstruction()
+        case .boardMeeting:
+            let custom = UserDefaults.standard.string(forKey: "sam.ai.boardSummaryPrompt") ?? ""
+            if !custom.isEmpty { return custom }
+            return boardMeetingInstruction()
+        }
+    }
+
+    // MARK: - Client Meeting Instruction
+
+    private static func clientMeetingInstruction() -> String {
         // Allow user override via Settings
         let custom = UserDefaults.standard.string(forKey: "sam.ai.meetingSummaryPrompt") ?? ""
         if !custom.isEmpty { return custom }
@@ -247,10 +290,7 @@ actor MeetingSummaryService {
             isFinancial = true  // Default to financial for safety
         }
 
-        let persona = isFinancial
-            ? "a financial advisor"
-            : "a professional"
-
+        let persona = isFinancial ? "a financial advisor" : "a professional"
         let complianceSection = isFinancial ? complianceSectionFinancialAdvisor : complianceSectionGeneral
 
         return """
@@ -329,6 +369,159 @@ actor MeetingSummaryService {
           "topics": ["<string>", ...],
           "complianceFlags": ["<string>", ...],
           "sentiment": "<string or null>"
+        }
+        """
+    }
+
+    // MARK: - Training / Lecture Instruction
+
+    private static func trainingLectureInstruction() -> String {
+        """
+        You extract learning content from training session or lecture transcripts. \
+        Output ONLY a JSON object matching the exact schema below. Every value you \
+        emit must come from the transcript -- NEVER invent content.
+
+        CRITICAL OUTPUT RULES
+        - Respond with ONLY a raw JSON object starting with { and ending with }.
+        - Do NOT wrap the JSON in markdown code blocks or prose.
+        - Use ONLY ASCII characters (no smart quotes, no em-dashes).
+        - If the transcript does not contain something for a field, use an \
+          empty string or empty array. NEVER fill fields with invented content.
+
+        GROUNDING RULES
+        - Every point, objective, topic, and quote must be explicitly \
+          present in the transcript. Do not paraphrase in ways that add information.
+        - When in doubt, leave fields empty.
+
+        FIELD DEFINITIONS
+
+        - tldr: 2-3 sentences summarizing what this training or lecture covered \
+          and the central lesson or skill it aimed to develop.
+
+        - keyPoints: The most important takeaways from the session. Each entry \
+          is one complete sentence capturing a single insight, concept, or fact \
+          the listener should remember. Aim for 4-8 entries for a full session.
+
+        - learningObjectives: What this training or lecture explicitly aimed to \
+          teach. If the presenter stated goals or outcomes, use those. Otherwise \
+          infer from the content. Each entry is one sentence.
+
+        - reviewNotes: A single prose paragraph (3-6 sentences) that a learner \
+          could read to quickly review the core concepts covered. Write it as a \
+          study aid, not a transcript summary. Connect the key ideas and explain \
+          why they matter.
+
+        - topics: Short topic tags (1-4 words each) describing subjects covered. \
+          Include 2-8 tags for a full session.
+
+        - actionItems: Follow-up study or practice tasks the presenter assigned \
+          or that naturally follow from the content. Each has { task, owner, dueDate }. \
+          owner is null (self-directed). dueDate is free text if mentioned. \
+          If no tasks were assigned, return an empty array.
+
+        JSON SCHEMA (structure only)
+        {
+          "tldr": "<string>",
+          "keyPoints": ["<string>", ...],
+          "learningObjectives": ["<string>", ...],
+          "reviewNotes": "<string>",
+          "topics": ["<string>", ...],
+          "actionItems": [{"task": "<string>", "owner": null, "dueDate": "<string or null>"}, ...]
+        }
+        """
+    }
+
+    // MARK: - Board Meeting Instruction
+
+    private static func boardMeetingInstruction() -> String {
+        """
+        You extract structured governance records from board meeting transcripts. \
+        Output ONLY a JSON object matching the exact schema below. Every value you \
+        emit must come from the transcript -- NEVER invent people, motions, \
+        outcomes, or any other content.
+
+        CRITICAL OUTPUT RULES
+        - Respond with ONLY a raw JSON object starting with { and ending with }.
+        - Do NOT wrap the JSON in markdown code blocks or prose.
+        - Use ONLY ASCII characters (no smart quotes, no em-dashes).
+        - If the transcript does not contain something for a field, use an \
+          empty string or empty array. NEVER fill fields with invented content.
+        - Use names exactly as they appear in the transcript.
+
+        GROUNDING RULES
+        - Every name, motion, decision, vote result, and date must be \
+          explicitly present in the transcript.
+        - Do not infer votes not stated. If a vote outcome is unclear, use \
+          result: "Unclear" and add a note.
+        - When in doubt, leave fields empty.
+
+        FIELD DEFINITIONS
+
+        - tldr: 2-3 sentences summarizing the meeting: who attended, the \
+          main business conducted, and any significant decisions made.
+
+        - attendees: Names of all people identified as present. Use names \
+          exactly as they appear. If a quorum call or roll call is present, \
+          use those names.
+
+        - agendaItems: Each formal topic brought before the board. Each has:
+            title: The agenda item name or topic heading (1-8 words).
+            summary: 1-2 sentences describing what was discussed under \
+              this item and any key points raised.
+            outcome: "Approved", "Rejected", "Tabled", "Deferred", \
+              "Discussed" (no formal action), or null if not stated.
+            notes: Optional additional context (motion text, conditions, \
+              dissenting views). null if none.
+
+        - votes: Each formal vote taken, even if already captured in \
+          agendaItems. Each has:
+            motion: The exact text of the motion or a close paraphrase \
+              from the transcript.
+            movedBy: Name of who moved the motion. null if not stated.
+            secondedBy: Name of who seconded. null if not stated.
+            result: "Passed", "Failed", "Tabled", "Withdrawn", \
+              "No vote taken", or "Unclear".
+            notes: Optional (e.g. vote count, conditions). null if none.
+
+        - decisions: Formal decisions or resolutions adopted, as short \
+          declarative statements. Draws from approved agenda items and \
+          passed votes. May overlap with agendaItems -- include both.
+
+        - actionItems: Tasks assigned during the meeting. Each has \
+          { task, owner, dueDate }. owner is the name from the transcript \
+          or null. dueDate is free text or null.
+
+        - openQuestions: Items raised but not resolved or deferred for \
+          future meetings.
+
+        - topics: Short topic tags (1-4 words) for search and filing. \
+          Include 2-8 tags.
+
+        JSON SCHEMA (structure only)
+        {
+          "tldr": "<string>",
+          "attendees": ["<string>", ...],
+          "agendaItems": [
+            {
+              "title": "<string>",
+              "summary": "<string or null>",
+              "outcome": "<string or null>",
+              "notes": "<string or null>"
+            }, ...
+          ],
+          "votes": [
+            {
+              "motion": "<string>",
+              "movedBy": "<string or null>",
+              "secondedBy": "<string or null>",
+              "result": "<string>",
+              "notes": "<string or null>"
+            }, ...
+          ],
+          "decisions": ["<string>", ...],
+          "actionItems": [{"task": "<string>", "owner": "<string or null>", "dueDate": "<string or null>"}, ...],
+          "openQuestions": ["<string>", ...],
+          "topics": ["<string>", ...]
         }
         """
     }

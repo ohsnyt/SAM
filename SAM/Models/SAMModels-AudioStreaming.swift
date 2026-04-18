@@ -270,15 +270,20 @@ public struct SessionStartMetadata: Codable, Sendable {
     /// Expected speaker names (e.g., ["Sarah", "John", "David"]).
     /// First entry is typically the agent/user.
     public var speakerNames: [String]
+    /// Recording context selected by the user before starting.
+    /// nil on legacy clients → defaults to .clientMeeting on the Mac.
+    public var recordingContext: RecordingContext?
 
     public init(
         sessionID: String,
         expectedSpeakerCount: Int? = nil,
-        speakerNames: [String] = []
+        speakerNames: [String] = [],
+        recordingContext: RecordingContext? = nil
     ) {
         self.sessionID = sessionID
         self.expectedSpeakerCount = expectedSpeakerCount
         self.speakerNames = speakerNames
+        self.recordingContext = recordingContext
     }
 
     public func toWireData() -> Data? {
@@ -311,6 +316,8 @@ public struct PendingUploadMetadata: Codable, Sendable {
     public var sampleRate: UInt32
     public var channels: UInt16
     public var byteSize: Int64
+    /// Recording context selected before the session. nil on legacy uploads → .clientMeeting.
+    public var recordingContext: RecordingContext?
 
     public init(
         sessionID: String,
@@ -318,7 +325,8 @@ public struct PendingUploadMetadata: Codable, Sendable {
         durationSeconds: Double,
         sampleRate: UInt32,
         channels: UInt16,
-        byteSize: Int64
+        byteSize: Int64,
+        recordingContext: RecordingContext? = nil
     ) {
         self.sessionID = sessionID
         self.recordedAt = recordedAt
@@ -326,6 +334,7 @@ public struct PendingUploadMetadata: Codable, Sendable {
         self.sampleRate = sampleRate
         self.channels = channels
         self.byteSize = byteSize
+        self.recordingContext = recordingContext
     }
 
     public func toWireData() -> Data? {

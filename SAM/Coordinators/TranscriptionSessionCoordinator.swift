@@ -257,9 +257,11 @@ final class TranscriptionSessionCoordinator {
             // Create TranscriptSession in SwiftData.
             if let container = self.modelContainer {
                 let context = ModelContext(container)
+                let recordingContext = self.receivingService.lastSessionMetadata?.recordingContext ?? .clientMeeting
                 let session = TranscriptSession(
                     id: sessionID,
                     status: .recording,
+                    recordingContext: recordingContext,
                     audioFilePath: self.receivingService.relativeAudioPath(for: sessionID),
                     whisperModelID: WhisperTranscriptionService.defaultModelID
                 )
@@ -674,7 +676,8 @@ final class TranscriptionSessionCoordinator {
                 durationSeconds: session.durationSeconds,
                 speakerCount: session.speakerCount,
                 detectedLanguage: session.detectedLanguage,
-                recordedAt: session.recordedAt
+                recordedAt: session.recordedAt,
+                recordingContext: session.recordingContext
             )
 
             return (turns.joined(separator: "\n\n"), metadata)
@@ -908,13 +911,16 @@ final class TranscriptionSessionCoordinator {
         let transcriptText = lines.joined(separator: "\n\n")
         guard !transcriptText.isEmpty else { return nil }
 
-        // Collect any pre-linked people from segments (speaker → SamPerson links)
+        // Collect pre-linked people from segments (speaker → SamPerson links).
+        // Skipped for training lectures — no CRM person-linking.
         var linkedPeople: [SamPerson] = []
-        var seenIDs = Set<PersistentIdentifier>()
-        for segment in segments {
-            if let person = segment.speakerPerson, !seenIDs.contains(person.persistentModelID) {
-                linkedPeople.append(person)
-                seenIDs.insert(person.persistentModelID)
+        if session.recordingContext.supportsPersonLinking {
+            var seenIDs = Set<PersistentIdentifier>()
+            for segment in segments {
+                if let person = segment.speakerPerson, !seenIDs.contains(person.persistentModelID) {
+                    linkedPeople.append(person)
+                    seenIDs.insert(person.persistentModelID)
+                }
             }
         }
 
@@ -927,14 +933,22 @@ final class TranscriptionSessionCoordinator {
             note.linkedPeople = linkedPeople
             context.insert(note)
 
-            // Create SamEvidenceItem with meetingTranscript source
+            // Context-specific evidence title
             let titleDate = session.recordedAt.formatted(date: .abbreviated, time: .shortened)
+            let evidenceTitle: String
+            switch session.recordingContext {
+            case .clientMeeting:   evidenceTitle = "Meeting transcript — \(titleDate)"
+            case .trainingLecture: evidenceTitle = "Training recording — \(titleDate)"
+            case .boardMeeting:    evidenceTitle = "Board meeting recording — \(titleDate)"
+            }
+
+            // Create SamEvidenceItem with meetingTranscript source
             let evidence = SamEvidenceItem(
                 id: UUID(),
                 state: .done,
                 source: .meetingTranscript,
                 occurredAt: session.recordedAt,
-                title: "Meeting transcript — \(titleDate)",
+                title: evidenceTitle,
                 snippet: String(transcriptText.prefix(200))
             )
             evidence.direction = .bidirectional
@@ -949,7 +963,7 @@ final class TranscriptionSessionCoordinator {
             session.linkedPeople = linkedPeople
 
             try context.save()
-            logger.info("Auto-saved transcript as SamNote (\(transcriptText.count) chars, \(linkedPeople.count) linked people)")
+            logger.info("Auto-saved transcript as SamNote (\(transcriptText.count) chars, \(linkedPeople.count) linked people, context=\(session.recordingContext.rawValue))")
             return note
         } catch {
             logger.error("autoSaveAsNote failed: \(error.localizedDescription)")

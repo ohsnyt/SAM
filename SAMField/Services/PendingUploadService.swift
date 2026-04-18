@@ -111,7 +111,8 @@ final class PendingUploadService {
         recordedAt: Date,
         durationSeconds: TimeInterval,
         sampleRate: Double,
-        channelCount: UInt32
+        channelCount: UInt32,
+        recordingContext: RecordingContext = .clientMeeting
     ) {
         guard let container = modelContainer else {
             logger.error("enqueue: no container configured")
@@ -143,7 +144,8 @@ final class PendingUploadService {
             byteSize: byteSize,
             localWAVPath: relativePath,
             createdAt: .now,
-            status: .pending
+            status: .pending,
+            recordingContext: recordingContext
         )
         context.insert(pending)
         do {
@@ -217,7 +219,8 @@ final class PendingUploadService {
             durationSeconds: pending.durationSeconds,
             sampleRate: pending.sampleRate,
             channels: pending.channels,
-            byteSize: pending.byteSize
+            byteSize: pending.byteSize,
+            recordingContext: pending.recordingContext
         )
         guard streaming.sendUploadStart(metadata: metadata) else {
             failUpload(pending: pending, reason: "Could not send uploadStart", container: container)

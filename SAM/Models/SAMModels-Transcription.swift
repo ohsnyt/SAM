@@ -20,6 +20,44 @@ public enum TranscriptSessionStatus: String, Codable, Sendable {
     case failed      = "failed"
 }
 
+// MARK: - RecordingContext
+
+/// The purpose of a recording session. Drives summary prompts, output fields,
+/// compliance scanning, and people-linking behavior.
+public enum RecordingContext: String, Codable, Sendable, CaseIterable {
+    /// Standard client or team meeting — full pipeline including compliance scanning
+    /// and person-linking. Default for calendar-matched meetings.
+    case clientMeeting   = "ClientMeeting"
+    /// Training session, lecture, or professional development — key points and
+    /// learning objectives only; no compliance scan, no person-linking.
+    case trainingLecture = "TrainingLecture"
+    /// Board or governance meeting — agenda items, votes, and minutes;
+    /// no compliance scan; attendee list but no CRM person-linking.
+    case boardMeeting    = "BoardMeeting"
+
+    public var displayName: String {
+        switch self {
+        case .clientMeeting:   return "Client / Team Meeting"
+        case .trainingLecture: return "Training / Lecture"
+        case .boardMeeting:    return "Board Meeting"
+        }
+    }
+
+    public var systemIcon: String {
+        switch self {
+        case .clientMeeting:   return "person.2"
+        case .trainingLecture: return "graduationcap"
+        case .boardMeeting:    return "building.columns"
+        }
+    }
+
+    /// Whether this context requires compliance flag extraction.
+    public var requiresCompliance: Bool { self == .clientMeeting }
+
+    /// Whether participants should be linked to SamPerson CRM records.
+    public var supportsPersonLinking: Bool { self != .trainingLecture }
+}
+
 // MARK: - TranscriptSession
 
 /// A complete recording + transcription session, linked to events and people.
@@ -102,6 +140,9 @@ public final class TranscriptSession {
     /// overwrite the user's corrections.
     public var polishedEditedByUser: Bool = false
 
+    /// Raw storage for RecordingContext enum. nil on legacy sessions → defaults to .clientMeeting.
+    public var recordingContextRawValue: String?
+
     // MARK: - Relationships
 
     @Relationship(deleteRule: .cascade, inverse: \TranscriptSegment.session)
@@ -124,6 +165,12 @@ public final class TranscriptSession {
         set { statusRawValue = newValue.rawValue }
     }
 
+    @Transient
+    public var recordingContext: RecordingContext {
+        get { RecordingContext(rawValue: recordingContextRawValue ?? "") ?? .clientMeeting }
+        set { recordingContextRawValue = newValue.rawValue }
+    }
+
     /// Sorted segments by start time.
     @Transient
     public var sortedSegments: [TranscriptSegment] {
@@ -144,6 +191,7 @@ public final class TranscriptSession {
         durationSeconds: TimeInterval = 0,
         speakerCount: Int = 0,
         status: TranscriptSessionStatus = .recording,
+        recordingContext: RecordingContext = .clientMeeting,
         audioFilePath: String? = nil,
         whisperModelID: String? = nil,
         detectedLanguage: String? = nil,
@@ -160,6 +208,7 @@ public final class TranscriptSession {
         self.durationSeconds = durationSeconds
         self.speakerCount = speakerCount
         self.statusRawValue = status.rawValue
+        self.recordingContextRawValue = recordingContext.rawValue
         self.audioFilePath = audioFilePath
         self.whisperModelID = whisperModelID
         self.detectedLanguage = detectedLanguage
@@ -254,6 +303,8 @@ public struct MeetingSummary: Codable, Sendable, Equatable {
     /// 2-3 sentence high-level summary of what the meeting was about.
     public var tldr: String
 
+    // MARK: - Client/Team Meeting fields
+
     /// Key decisions that were made during the meeting.
     public var decisions: [String]
 
@@ -273,10 +324,35 @@ public struct MeetingSummary: Codable, Sendable, Equatable {
     public var topics: [String]
 
     /// Compliance flags (return claims, guarantees, comparative statements).
+    /// Always empty for non-client meeting contexts.
     public var complianceFlags: [String]
 
     /// Overall sentiment / affect of the meeting.
     public var sentiment: String?
+
+    // MARK: - Training/Lecture fields
+
+    /// Major takeaways from the lecture or training session.
+    public var keyPoints: [String]
+
+    /// What the lecture or training session was designed to teach.
+    public var learningObjectives: [String]
+
+    /// Prose study guide paragraph summarizing key concepts for review.
+    public var reviewNotes: String?
+
+    // MARK: - Board Meeting fields
+
+    /// Names of attendees present at the board meeting.
+    public var attendees: [String]
+
+    /// Formal agenda items discussed with outcomes.
+    public var agendaItems: [AgendaItem]
+
+    /// Formal votes taken during the meeting.
+    public var votes: [VoteRecord]
+
+    // MARK: - Nested types
 
     public struct ActionItem: Codable, Sendable, Equatable {
         public var task: String
@@ -300,16 +376,57 @@ public struct MeetingSummary: Codable, Sendable, Equatable {
         }
     }
 
+    public struct AgendaItem: Codable, Sendable, Equatable {
+        public var title: String
+        /// 1-2 sentence description of what was discussed under this agenda item.
+        public var summary: String?
+        /// e.g. "Approved", "Tabled", "Discussed", "Deferred"
+        public var outcome: String?
+        public var notes: String?
+
+        public init(title: String, summary: String? = nil, outcome: String? = nil, notes: String? = nil) {
+            self.title = title
+            self.summary = summary
+            self.outcome = outcome
+            self.notes = notes
+        }
+    }
+
+    public struct VoteRecord: Codable, Sendable, Equatable {
+        public var motion: String
+        public var movedBy: String?
+        public var secondedBy: String?
+        /// e.g. "Passed", "Failed", "Tabled", "No vote taken"
+        public var result: String
+        public var notes: String?
+
+        public init(motion: String, movedBy: String? = nil, secondedBy: String? = nil, result: String, notes: String? = nil) {
+            self.motion = motion
+            self.movedBy = movedBy
+            self.secondedBy = secondedBy
+            self.result = result
+            self.notes = notes
+        }
+    }
+
+    // MARK: - Init
+
     public init(
         tldr: String,
-        decisions: [String],
-        actionItems: [ActionItem],
-        openQuestions: [String],
-        followUps: [FollowUp],
-        lifeEvents: [String],
-        topics: [String],
-        complianceFlags: [String],
-        sentiment: String?
+        decisions: [String] = [],
+        actionItems: [ActionItem] = [],
+        openQuestions: [String] = [],
+        followUps: [FollowUp] = [],
+        lifeEvents: [String] = [],
+        topics: [String] = [],
+        complianceFlags: [String] = [],
+        sentiment: String? = nil,
+        keyPoints: [String] = [],
+        learningObjectives: [String] = [],
+        reviewNotes: String? = nil,
+        attendees: [String] = [],
+        agendaItems: [AgendaItem] = [],
+        votes: [VoteRecord] = []
     ) {
         self.tldr = tldr
         self.decisions = decisions
@@ -320,19 +437,43 @@ public struct MeetingSummary: Codable, Sendable, Equatable {
         self.topics = topics
         self.complianceFlags = complianceFlags
         self.sentiment = sentiment
+        self.keyPoints = keyPoints
+        self.learningObjectives = learningObjectives
+        self.reviewNotes = reviewNotes
+        self.attendees = attendees
+        self.agendaItems = agendaItems
+        self.votes = votes
     }
 
-    public static let empty = MeetingSummary(
-        tldr: "",
-        decisions: [],
-        actionItems: [],
-        openQuestions: [],
-        followUps: [],
-        lifeEvents: [],
-        topics: [],
-        complianceFlags: [],
-        sentiment: nil
-    )
+    // MARK: - Codable (custom decoder for backward compatibility)
+
+    private enum CodingKeys: String, CodingKey {
+        case tldr, decisions, actionItems, openQuestions, followUps
+        case lifeEvents, topics, complianceFlags, sentiment
+        case keyPoints, learningObjectives, reviewNotes
+        case attendees, agendaItems, votes
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        tldr               = try c.decodeIfPresent(String.self,       forKey: .tldr)               ?? ""
+        decisions          = try c.decodeIfPresent([String].self,      forKey: .decisions)          ?? []
+        actionItems        = try c.decodeIfPresent([ActionItem].self,  forKey: .actionItems)        ?? []
+        openQuestions      = try c.decodeIfPresent([String].self,      forKey: .openQuestions)      ?? []
+        followUps          = try c.decodeIfPresent([FollowUp].self,    forKey: .followUps)          ?? []
+        lifeEvents         = try c.decodeIfPresent([String].self,      forKey: .lifeEvents)         ?? []
+        topics             = try c.decodeIfPresent([String].self,      forKey: .topics)             ?? []
+        complianceFlags    = try c.decodeIfPresent([String].self,      forKey: .complianceFlags)    ?? []
+        sentiment          = try c.decodeIfPresent(String.self,        forKey: .sentiment)
+        keyPoints          = try c.decodeIfPresent([String].self,      forKey: .keyPoints)          ?? []
+        learningObjectives = try c.decodeIfPresent([String].self,      forKey: .learningObjectives) ?? []
+        reviewNotes        = try c.decodeIfPresent(String.self,        forKey: .reviewNotes)
+        attendees          = try c.decodeIfPresent([String].self,      forKey: .attendees)          ?? []
+        agendaItems        = try c.decodeIfPresent([AgendaItem].self,  forKey: .agendaItems)        ?? []
+        votes              = try c.decodeIfPresent([VoteRecord].self,  forKey: .votes)              ?? []
+    }
+
+    public static let empty = MeetingSummary(tldr: "")
 }
 
 public extension MeetingSummary {
@@ -374,6 +515,12 @@ public extension MeetingSummary {
         || !followUps.isEmpty
         || !lifeEvents.isEmpty
         || !topics.isEmpty
+        || !keyPoints.isEmpty
+        || !learningObjectives.isEmpty
+        || !(reviewNotes?.isEmpty ?? true)
+        || !attendees.isEmpty
+        || !agendaItems.isEmpty
+        || !votes.isEmpty
     }
 }
 

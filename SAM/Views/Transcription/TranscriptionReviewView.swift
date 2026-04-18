@@ -460,6 +460,114 @@ struct TranscriptionReviewView: View {
                     }
                 }
 
+                // --- Training / Lecture fields ---
+                if !summary.keyPoints.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Label("Key Points", systemImage: "lightbulb")
+                            .font(.caption.bold())
+                            .foregroundStyle(.secondary)
+                        ForEach(Array(summary.keyPoints.enumerated()), id: \.offset) { _, point in
+                            HStack(alignment: .top, spacing: 6) {
+                                Image(systemName: "lightbulb")
+                                    .font(.caption2)
+                                    .foregroundStyle(.yellow)
+                                Text(point)
+                                    .font(.callout)
+                            }
+                        }
+                    }
+                }
+
+                if !summary.learningObjectives.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Label("Learning Objectives", systemImage: "graduationcap")
+                            .font(.caption.bold())
+                            .foregroundStyle(.secondary)
+                        ForEach(Array(summary.learningObjectives.enumerated()), id: \.offset) { _, obj in
+                            HStack(alignment: .top, spacing: 6) {
+                                Image(systemName: "circle.fill")
+                                    .font(.system(size: 5))
+                                    .foregroundStyle(.secondary)
+                                    .padding(.top, 5)
+                                Text(obj)
+                                    .font(.callout)
+                            }
+                        }
+                    }
+                }
+
+                if let reviewNotes = summary.reviewNotes, !reviewNotes.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label("Review Notes", systemImage: "note.text")
+                            .font(.caption.bold())
+                            .foregroundStyle(.secondary)
+                        Text(reviewNotes)
+                            .font(.callout)
+                    }
+                }
+
+                // --- Board Meeting fields ---
+                if !summary.attendees.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label("Attendees", systemImage: "person.3")
+                            .font(.caption.bold())
+                            .foregroundStyle(.secondary)
+                        Text(summary.attendees.joined(separator: ", "))
+                            .font(.callout)
+                    }
+                }
+
+                if !summary.agendaItems.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("Agenda Items", systemImage: "list.bullet.clipboard")
+                            .font(.caption.bold())
+                            .foregroundStyle(.secondary)
+                        ForEach(Array(summary.agendaItems.enumerated()), id: \.offset) { _, item in
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(item.title)
+                                    .font(.callout.bold())
+                                if let summary = item.summary, !summary.isEmpty {
+                                    Text(summary)
+                                        .font(.callout)
+                                        .foregroundStyle(.secondary)
+                                }
+                                if let outcome = item.outcome, !outcome.isEmpty {
+                                    Text(outcome)
+                                        .font(.caption)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(Color.accentColor.opacity(0.12))
+                                        .clipShape(Capsule())
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if !summary.votes.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("Votes", systemImage: "checkmark.seal")
+                            .font(.caption.bold())
+                            .foregroundStyle(.secondary)
+                        ForEach(Array(summary.votes.enumerated()), id: \.offset) { _, vote in
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(vote.motion)
+                                    .font(.callout)
+                                HStack(spacing: 6) {
+                                    Text(vote.result)
+                                        .font(.caption.bold())
+                                        .foregroundStyle(vote.result.localizedCaseInsensitiveContains("passed") || vote.result.localizedCaseInsensitiveContains("approved") ? Color.green : Color.red)
+                                    if let movedBy = vote.movedBy {
+                                        Text("Moved: \(movedBy)")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // Sentiment
                 if let sentiment = summary.sentiment, !sentiment.isEmpty {
                     HStack(spacing: 4) {
@@ -706,6 +814,7 @@ struct TranscriptionReviewView: View {
         let speakerCount = session.speakerCount
         let detectedLanguage = session.detectedLanguage
         let recordedAt = session.recordedAt
+        let recordingContext = session.recordingContext
         let container = modelContext.container
 
         isRegeneratingSummary = true
@@ -716,7 +825,8 @@ struct TranscriptionReviewView: View {
                 durationSeconds: durationSeconds,
                 speakerCount: speakerCount,
                 detectedLanguage: detectedLanguage,
-                recordedAt: recordedAt
+                recordedAt: recordedAt,
+                recordingContext: recordingContext
             )
 
             do {
@@ -775,7 +885,8 @@ struct TranscriptionReviewView: View {
             durationSeconds: session.durationSeconds,
             speakerCount: session.speakerCount,
             detectedLanguage: session.detectedLanguage,
-            recordedAt: session.recordedAt
+            recordedAt: session.recordedAt,
+            recordingContext: session.recordingContext
         )
         let container = modelContext.container
         isGeneratingSummary = true

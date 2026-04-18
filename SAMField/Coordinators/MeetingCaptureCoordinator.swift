@@ -144,6 +144,10 @@ final class MeetingCaptureCoordinator {
     /// calendar event attendees or user input before recording starts.
     var expectedSpeakerNames: [String] = []
 
+    /// Recording context selected by the user before starting.
+    /// Calendar-matched meetings always use .clientMeeting.
+    var expectedRecordingContext: RecordingContext = .clientMeeting
+
     /// Model container — needed to create PendingUpload records and so
     /// PendingUploadService can enumerate + upload them.
     private var modelContainer: ModelContainer?
@@ -465,7 +469,8 @@ final class MeetingCaptureCoordinator {
                     sampleRate: UInt32(recordingService.sampleRate),
                     channels: UInt16(recordingService.channelCount),
                     expectedSpeakerCount: expectedSpeakerCount,
-                    speakerNames: expectedSpeakerNames
+                    speakerNames: expectedSpeakerNames,
+                    recordingContext: expectedRecordingContext
                 )
             }
 
@@ -587,7 +592,8 @@ final class MeetingCaptureCoordinator {
             recordedAt: Date().addingTimeInterval(-recordingService.elapsedTime),
             durationSeconds: recordingService.elapsedTime,
             sampleRate: recordingService.sampleRate,
-            channelCount: recordingService.channelCount
+            channelCount: recordingService.channelCount,
+            recordingContext: expectedRecordingContext
         )
         logger.info("Enqueued session \(sessionID.uuidString) for upload (\(String(format: "%.1f", self.recordingService.elapsedTime))s local)")
     }

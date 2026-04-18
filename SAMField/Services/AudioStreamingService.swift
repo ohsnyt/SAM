@@ -220,13 +220,15 @@ final class AudioStreamingService {
         sampleRate: UInt32,
         channels: UInt16,
         expectedSpeakerCount: Int? = nil,
-        speakerNames: [String] = []
+        speakerNames: [String] = [],
+        recordingContext: RecordingContext? = nil
     ) {
         self.sessionID = sessionID
         let metadata = SessionStartMetadata(
             sessionID: sessionID.uuidString,
             expectedSpeakerCount: expectedSpeakerCount,
-            speakerNames: speakerNames
+            speakerNames: speakerNames,
+            recordingContext: recordingContext
         )
         let payload = metadata.toWireData() ?? Data(sessionID.uuidString.utf8)
         let header = AudioPacketHeader(

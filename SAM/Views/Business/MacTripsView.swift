@@ -85,7 +85,7 @@ struct MacTripsView: View {
             // Trips list
             if filteredTrips.isEmpty {
                 ContentUnavailableView(
-                    "No Trips in \(selectedYear)",
+                    "No Trips in \(selectedYear.formatted(.number.grouping(.never)))",
                     systemImage: "car.fill",
                     description: Text("Record trips in SAM Field on your iPhone.")
                 )
@@ -168,7 +168,7 @@ struct MacTripsView: View {
     private func exportCSV() {
         let csv = MacMileageExportService.csv(for: filteredTrips, irsRatePerMile: irsRatePerMile)
         let panel = NSSavePanel()
-        panel.nameFieldStringValue = "Mileage_Log_\(selectedYear).csv"
+        panel.nameFieldStringValue = "Mileage_Log_\(selectedYear.formatted(.number.grouping(.never))).csv"
         panel.allowedContentTypes = [.commaSeparatedText]
         panel.canCreateDirectories = true
         if panel.runModal() == .OK, let url = panel.url {
@@ -181,7 +181,7 @@ struct MacTripsView: View {
         let label = String(selectedYear)
         let data = await MacMileageExportService.pdf(for: filteredTrips, irsRatePerMile: irsRatePerMile, periodLabel: label)
         let panel = NSSavePanel()
-        panel.nameFieldStringValue = "Mileage_Log_\(selectedYear).pdf"
+        panel.nameFieldStringValue = "Mileage_Log_\(selectedYear.formatted(.number.grouping(.never))).pdf"
         panel.allowedContentTypes = [.pdf]
         panel.canCreateDirectories = true
         if panel.runModal() == .OK, let url = panel.url {
