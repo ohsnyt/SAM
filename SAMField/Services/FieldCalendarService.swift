@@ -13,13 +13,13 @@ import Foundation
 import EventKit
 import os.log
 
-private let logger = Logger(subsystem: "com.matthewsessions.SAMField", category: "FieldCalendarService")
-
 @MainActor
 @Observable
 final class FieldCalendarService {
 
     static let shared = FieldCalendarService()
+
+    nonisolated let logger = Logger(subsystem: "com.matthewsessions.SAMField", category: "FieldCalendarService")
 
     private let store = EKEventStore()
 
@@ -33,7 +33,7 @@ final class FieldCalendarService {
     // MARK: - Authorization
 
     var isAuthorized: Bool {
-        authorizationStatus == .fullAccess || authorizationStatus == .authorized
+        authorizationStatus == .fullAccess
     }
 
     func requestAccess() async -> Bool {

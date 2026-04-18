@@ -11,8 +11,6 @@ import Foundation
 import SQLite3
 import os.log
 
-private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "SafeMode")
-
 /// Result of a single integrity check.
 struct SafeModeCheckResult: Identifiable, Sendable {
     let id = UUID()
@@ -105,6 +103,10 @@ private extension String {
 /// before SwiftData opens it. All operations use raw SQLite to avoid
 /// triggering SwiftData faults on corrupted data.
 enum SafeModeService {
+
+    private nonisolated static var logger: Logger {
+        Logger(subsystem: "com.matthewsessions.SAM", category: "SafeMode")
+    }
 
     // MARK: - Public
 

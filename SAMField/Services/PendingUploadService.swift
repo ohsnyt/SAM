@@ -23,13 +23,13 @@ import SwiftData
 import AVFoundation
 import os.log
 
-private let logger = Logger(subsystem: "com.matthewsessions.SAMField", category: "PendingUploadService")
-
 @MainActor
 @Observable
 final class PendingUploadService {
 
     static let shared = PendingUploadService()
+
+    nonisolated let logger = Logger(subsystem: "com.matthewsessions.SAMField", category: "PendingUploadService")
 
     private init() {}
 
@@ -68,7 +68,7 @@ final class PendingUploadService {
 
         // Wire the streaming service's sessionProcessed handler to us.
         streaming.onSessionProcessed = { [weak self] ack in
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 self?.handleSessionProcessedAck(ack)
             }
         }

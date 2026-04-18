@@ -28,8 +28,6 @@ import AVFoundation
 import SwiftData
 import os.log
 
-private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "PendingReprocessService")
-
 @MainActor
 @Observable
 final class PendingReprocessService {
@@ -37,6 +35,8 @@ final class PendingReprocessService {
     static let shared = PendingReprocessService()
 
     private init() {}
+
+    nonisolated let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "PendingReprocessService")
 
     // MARK: - State
 

@@ -16,16 +16,16 @@
 import Foundation
 import os.log
 
-private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "GoHighLevelRegistration")
-
-/// UserDefaults key for the GoHighLevel sender address.
-/// Defaults to sarah.snyder@nofamilyleftbehind.co; can be overridden in Settings.
-private let kSenderKey = "sam.goHighLevel.registrationSenderEmail"
-
 actor GoHighLevelRegistrationService {
 
     static let shared = GoHighLevelRegistrationService()
     private init() {}
+
+    nonisolated let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "GoHighLevelRegistration")
+
+    /// UserDefaults key for the GoHighLevel sender address.
+    /// Defaults to sarah.snyder@nofamilyleftbehind.co; can be overridden in Settings.
+    nonisolated static let kSenderKey = "sam.goHighLevel.registrationSenderEmail"
 
     // MARK: - Public API
 

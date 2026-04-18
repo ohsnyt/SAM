@@ -14,8 +14,6 @@ import Foundation
 import AppKit
 import os.log
 
-private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "ComposeService")
-
 @MainActor
 @Observable
 final class ComposeService {
@@ -23,6 +21,8 @@ final class ComposeService {
     // MARK: - Singleton
 
     static let shared = ComposeService()
+
+    nonisolated let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "ComposeService")
 
     private init() {}
 

@@ -105,9 +105,7 @@ private struct ImagePasteMonitor: ViewModifier {
                        ImagePasteUtility.pasteboardHasImageOnly() {
                         // Capture cursor position synchronously while NSTextView is still first responder
                         let cursorPosition = ImagePasteUtility.currentTextViewCursorPosition()
-                        DispatchQueue.main.async {
-                            onImagePaste(cursorPosition)
-                        }
+                        Task { @MainActor in onImagePaste(cursorPosition) }
                         return nil  // consume the event
                     }
                     return event  // pass through

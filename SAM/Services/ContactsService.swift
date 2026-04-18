@@ -15,20 +15,29 @@ import os.log
 ///
 /// Phase B: Clean architecture - Services own their external API access
 actor ContactsService {
-    
+
     // MARK: - Singleton
-    
+
     static let shared = ContactsService()
-    
+
     // MARK: - Properties
-    
+
     /// Shared CNContactStore instance (singleton pattern required on macOS)
     /// This is the single source of truth for Contacts access in the app
     private let store: CNContactStore
     private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "ContactsService")
-    
+
+    // Pin actor work to userInitiated QoS so mixed-priority callers don't
+    // trigger priority inversion when the synchronous CNContactStore reads
+    // block the actor. Without this the OS warns when a .userInitiated task
+    // waits behind a .background task already holding the actor.
+    private let executorQueue = DispatchSerialQueue(label: "com.matthewsessions.SAM.ContactsService", qos: .userInitiated)
+    nonisolated var unownedExecutor: UnownedSerialExecutor {
+        executorQueue.asUnownedSerialExecutor()
+    }
+
     // MARK: - Initialization
-    
+
     private init() {
         self.store = CNContactStore()
         logger.debug("ContactsService initialized with dedicated CNContactStore")

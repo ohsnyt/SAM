@@ -12,11 +12,11 @@ import Foundation
 import Network
 import os.log
 
-private let logger = Logger(subsystem: "com.matthewsessions.SAMField", category: "AudioStreamingService")
-
 @MainActor
 @Observable
 final class AudioStreamingService {
+
+    nonisolated let logger = Logger(subsystem: "com.matthewsessions.SAMField", category: "AudioStreamingService")
 
     // MARK: - State
 
@@ -87,13 +87,13 @@ final class AudioStreamingService {
         )
 
         browser.stateUpdateHandler = { [weak self] state in
-            Task { @MainActor in
-                guard let self else { return }
+            guard let self else { return }
+            Task { @MainActor [self] in
                 switch state {
                 case .ready:
-                    logger.info("Bonjour browser ready")
+                    self.logger.info("Bonjour browser ready")
                 case .failed(let error):
-                    logger.error("Bonjour browser failed: \(error.localizedDescription)")
+                    self.logger.error("Bonjour browser failed: \(error.localizedDescription)")
                     self.connectionState = .disconnected
                 default:
                     break
@@ -102,9 +102,8 @@ final class AudioStreamingService {
         }
 
         browser.browseResultsChangedHandler = { [weak self] results, changes in
-            Task { @MainActor in
-                guard let self else { return }
-
+            guard let self else { return }
+            Task { @MainActor [self] in
                 // Dedupe: the browse handler can fire multiple times in
                 // rapid succession (IPv4 + IPv6 dual-stack, retransmitted
                 // Bonjour announcements). If we already have a connection
@@ -119,7 +118,7 @@ final class AudioStreamingService {
                 }
 
                 if let result = results.first {
-                    logger.info("Found Mac transcription service: \(result.endpoint.debugDescription)")
+                    self.logger.info("Found Mac transcription service: \(result.endpoint.debugDescription)")
                     self.browser?.cancel()
                     self.browser = nil
                     self.connectToEndpoint(result.endpoint)
@@ -164,7 +163,7 @@ final class AudioStreamingService {
 
         let monitor = NWPathMonitor()
         monitor.pathUpdateHandler = { [weak self] path in
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.handlePathUpdate(path)
             }
@@ -384,11 +383,11 @@ final class AudioStreamingService {
         let connection = NWConnection(to: endpoint, using: params)
 
         connection.stateUpdateHandler = { [weak self] state in
-            Task { @MainActor in
-                guard let self else { return }
+            guard let self else { return }
+            Task { @MainActor [self] in
                 switch state {
                 case .ready:
-                    logger.info("Connected to Mac")
+                    self.logger.info("Connected to Mac")
                     self.connectionState = .connected
                     self.connectedMacName = endpoint.debugDescription
                     self.reconnectionAttempt = 0
@@ -397,12 +396,12 @@ final class AudioStreamingService {
                     self.startReceiving()
 
                 case .failed(let error):
-                    logger.error("Connection failed: \(error.localizedDescription)")
+                    self.logger.error("Connection failed: \(error.localizedDescription)")
                     self.connection = nil
                     self.attemptReconnection(to: endpoint)
 
                 case .waiting(let error):
-                    logger.warning("Connection waiting: \(error.localizedDescription)")
+                    self.logger.warning("Connection waiting: \(error.localizedDescription)")
 
                 default:
                     break
@@ -462,7 +461,7 @@ final class AudioStreamingService {
         var packet = header.serialize()
         packet.append(payload)
 
-        connection.send(content: packet, completion: .contentProcessed { error in
+        connection.send(content: packet, completion: .contentProcessed { [logger] error in
             if let error {
                 logger.error("Send error: \(error.localizedDescription)")
             }
@@ -496,7 +495,7 @@ final class AudioStreamingService {
 
     private func receiveLoop(on connection: NWConnection) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] content, _, isComplete, error in
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 guard let self else { return }
 
                 if let content {
@@ -505,12 +504,12 @@ final class AudioStreamingService {
                 }
 
                 if let error {
-                    logger.error("Receive error: \(error.localizedDescription)")
+                    self.logger.error("Receive error: \(error.localizedDescription)")
                     return
                 }
 
                 if isComplete {
-                    logger.info("Inbound stream closed")
+                    self.logger.info("Inbound stream closed")
                     return
                 }
 
@@ -593,7 +592,7 @@ final class AudioStreamingService {
             withTimeInterval: AudioStreamingConstants.heartbeatIntervalSeconds,
             repeats: true
         ) { [weak self] _ in
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 self?.sendHeartbeat()
             }
         }

@@ -13,9 +13,9 @@ import SwiftUI
 import AppKit
 import os.log
 
-private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "ComposeWindowView")
-
 struct ComposeWindowView: View {
+
+    private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "ComposeWindowView")
 
     let payload: ComposePayload
 
@@ -196,9 +196,7 @@ struct ComposeWindowView: View {
                 Button("Copy Draft") {
                     composeService.copyToClipboard(draftBody)
                     showCopiedToast = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                        showCopiedToast = false
-                    }
+                    Task { try? await Task.sleep(for: .seconds(2)); showCopiedToast = false }
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.regular)

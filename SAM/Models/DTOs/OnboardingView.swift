@@ -153,10 +153,7 @@ struct OnboardingView: View {
 
             // Quit button - escape hatch for users who want to exit
             Button("Quit") {
-                // Dispatch async to avoid SwiftUI view-update-cycle issues
-                DispatchQueue.main.async {
-                    NSApplication.shared.terminate(nil)
-                }
+                NSApplication.shared.terminate(nil)
             }
             .keyboardShortcut("q", modifiers: .command)
         }

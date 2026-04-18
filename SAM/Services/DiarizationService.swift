@@ -19,14 +19,18 @@ import os.log
 import SpeakerKit
 import ArgmaxCore
 
-private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "DiarizationService")
-
 // MARK: - DiarizationEngine (background actor)
 
 /// All diarization compute runs on this actor's executor — never on the main thread.
 actor DiarizationEngine {
 
     static let shared = DiarizationEngine()
+
+    private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "DiarizationService")
+
+    /// Own embedding provider so we never need to hop to @MainActor
+    /// just to call nonisolated methods on SpeakerEmbeddingService.shared.
+    private let embeddingProvider: any SpeakerEmbeddingProvider = MFCCSpeakerEmbeddingProvider()
 
     // MARK: - Tunables
 
@@ -43,17 +47,16 @@ actor DiarizationEngine {
 
     private var speakerKit: SpeakerKit?
     private var isSpeakerKitLoading = false
+    private var speakerKitContinuations: [CheckedContinuation<Void, Error>] = []
 
     func loadSpeakerKit() async throws {
         if speakerKit != nil { return }
-        guard !isSpeakerKitLoading else {
-            while isSpeakerKitLoading { try await Task.sleep(for: .milliseconds(100)) }
-            if speakerKit != nil { return }
-            throw DiarizationService.DiarizationError.modelNotLoaded
+        if isSpeakerKitLoading {
+            try await withCheckedThrowingContinuation { speakerKitContinuations.append($0) }
+            return
         }
 
         isSpeakerKitLoading = true
-        defer { isSpeakerKitLoading = false }
 
         logger.notice("⏳ Loading SpeakerKit (Pyannote) models — first run will download ~50MB")
         let config = PyannoteConfig(
@@ -62,9 +65,21 @@ actor DiarizationEngine {
             verbose: false,
             logLevel: .error
         )
-        let kit = try await SpeakerKit(config)
-        speakerKit = kit
-        logger.notice("✅ SpeakerKit loaded — neural speaker diarization ready")
+        do {
+            let kit = try await SpeakerKit(config)
+            speakerKit = kit
+            isSpeakerKitLoading = false
+            logger.notice("✅ SpeakerKit loaded — neural speaker diarization ready")
+            let waiting = speakerKitContinuations
+            speakerKitContinuations.removeAll()
+            for c in waiting { c.resume() }
+        } catch {
+            isSpeakerKitLoading = false
+            let waiting = speakerKitContinuations
+            speakerKitContinuations.removeAll()
+            for c in waiting { c.resume(throwing: error) }
+            throw error
+        }
     }
 
     // MARK: - SpeakerKit Diarization
@@ -74,10 +89,10 @@ actor DiarizationEngine {
         sampleRate: Double,
         startOffset: TimeInterval = 0,
         enrolledAgentEmbedding: [Float]? = nil
-    ) async throws -> DiarizationService.DiarizationResult {
+    ) async throws -> DiarizationResultDTO {
         try await loadSpeakerKit()
         guard let kit = speakerKit else {
-            throw DiarizationService.DiarizationError.modelNotLoaded
+            throw DiarizationErrorType.modelNotLoaded
         }
 
         // Resample to 16kHz for SpeakerKit
@@ -113,7 +128,7 @@ actor DiarizationEngine {
         logger.notice("✅ SpeakerKit: \(skResult.speakerCount) speakers, \(skResult.segments.count) segments")
 
         // Convert SpeakerKit segments and extract MFCC embeddings for agent matching
-        var voiceSegments: [DiarizationService.VoiceSegment] = []
+        var voiceSegments: [DiarizationVoiceSegment] = []
         var speakerEmbeddings: [Int: [[Float]]] = [:]
 
         for skSeg in skResult.segments {
@@ -128,14 +143,14 @@ actor DiarizationEngine {
                 let endSample = min(Int(endTime * targetRate), inputSamples.count)
                 if startSample < endSample {
                     let chunk = Array(inputSamples[startSample..<endSample])
-                    if let emb = SpeakerEmbeddingService.shared.embedding(for: chunk, sampleRate: targetRate) {
+                    if let emb = embeddingProvider.embedding(for: chunk, sampleRate: targetRate) {
                         embedding = emb
                         speakerEmbeddings[speakerID, default: []].append(emb)
                     }
                 }
             }
 
-            voiceSegments.append(DiarizationService.VoiceSegment(
+            voiceSegments.append(DiarizationVoiceSegment(
                 start: startTime,
                 end: endTime,
                 embedding: embedding,
@@ -162,7 +177,7 @@ actor DiarizationEngine {
 
         logger.info("SpeakerKit diarization: \(voiceSegments.count) voice segments, \(centroids.count) clusters, agent=\(agentClusterID?.description ?? "none")")
 
-        return DiarizationService.DiarizationResult(
+        return DiarizationResultDTO(
             segments: voiceSegments,
             centroids: centroids,
             agentClusterID: agentClusterID
@@ -176,21 +191,21 @@ actor DiarizationEngine {
         sampleRate: Double,
         startOffset: TimeInterval = 0,
         enrolledAgentEmbedding: [Float]? = nil
-    ) -> DiarizationService.DiarizationResult {
+    ) -> DiarizationResultDTO {
         let rawSegments = detectVoiceSegments(samples: samples, sampleRate: sampleRate)
         guard !rawSegments.isEmpty else {
-            return DiarizationService.DiarizationResult(segments: [], centroids: [:], agentClusterID: nil)
+            return DiarizationResultDTO(segments: [], centroids: [:], agentClusterID: nil)
         }
 
-        var segments: [DiarizationService.VoiceSegment] = []
+        var segments: [DiarizationVoiceSegment] = []
         for (startSample, endSample) in rawSegments {
             let chunk = Array(samples[startSample..<endSample])
-            guard let embedding = SpeakerEmbeddingService.shared.embedding(for: chunk, sampleRate: sampleRate) else {
+            guard let embedding = embeddingProvider.embedding(for: chunk, sampleRate: sampleRate) else {
                 continue
             }
             let startTime = Double(startSample) / sampleRate + startOffset
             let endTime = Double(endSample) / sampleRate + startOffset
-            segments.append(DiarizationService.VoiceSegment(
+            segments.append(DiarizationVoiceSegment(
                 start: startTime,
                 end: endTime,
                 embedding: embedding,
@@ -199,7 +214,7 @@ actor DiarizationEngine {
         }
 
         guard !segments.isEmpty else {
-            return DiarizationService.DiarizationResult(segments: [], centroids: [:], agentClusterID: nil)
+            return DiarizationResultDTO(segments: [], centroids: [:], agentClusterID: nil)
         }
 
         let clustered = clusterSegments(segments)
@@ -220,7 +235,7 @@ actor DiarizationEngine {
 
         logger.info("Diarization: \(segments.count) voice segments, \(centroids.count) clusters, agent=\(agentClusterID?.description ?? "none")")
 
-        return DiarizationService.DiarizationResult(
+        return DiarizationResultDTO(
             segments: clustered,
             centroids: centroids,
             agentClusterID: agentClusterID
@@ -300,7 +315,7 @@ actor DiarizationEngine {
 
     // MARK: - Clustering
 
-    private func clusterSegments(_ segments: [DiarizationService.VoiceSegment]) -> [DiarizationService.VoiceSegment] {
+    private func clusterSegments(_ segments: [DiarizationVoiceSegment]) -> [DiarizationVoiceSegment] {
         guard !segments.isEmpty else { return segments }
 
         #if DEBUG
@@ -400,7 +415,7 @@ actor DiarizationEngine {
     // MARK: - Diagnostics
 
     #if DEBUG
-    private func dumpPairwiseSimilarities(_ segments: [DiarizationService.VoiceSegment]) {
+    private func dumpPairwiseSimilarities(_ segments: [DiarizationVoiceSegment]) {
         guard segments.count >= 2 else { return }
 
         let testKitDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
@@ -462,6 +477,77 @@ actor DiarizationEngine {
     #endif
 }
 
+// MARK: - Diarization Value Types (file-level to avoid @MainActor inference)
+
+/// A speaker-attributed voice segment from the diarization pipeline.
+nonisolated struct DiarizationVoiceSegment: Sendable, Equatable, Codable {
+    let start: TimeInterval
+    let end: TimeInterval
+    var embedding: [Float]
+    var clusterID: Int
+
+    nonisolated init(start: TimeInterval, end: TimeInterval, embedding: [Float], clusterID: Int) {
+        self.start = start
+        self.end = end
+        self.embedding = embedding
+        self.clusterID = clusterID
+    }
+}
+
+/// The result of a complete diarization pass.
+nonisolated struct DiarizationResultDTO: Sendable, Codable {
+    let segments: [DiarizationVoiceSegment]
+    let centroids: [Int: [Float]]
+    let agentClusterID: Int?
+
+    private enum CodingKeys: String, CodingKey {
+        case segments, centroids, agentClusterID
+    }
+
+    nonisolated init(segments: [DiarizationVoiceSegment], centroids: [Int: [Float]], agentClusterID: Int?) {
+        self.segments = segments
+        self.centroids = centroids
+        self.agentClusterID = agentClusterID
+    }
+
+    nonisolated init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        segments = try c.decode([DiarizationVoiceSegment].self, forKey: .segments)
+        agentClusterID = try c.decodeIfPresent(Int.self, forKey: .agentClusterID)
+        let stringKeyed = try c.decode([String: [Float]].self, forKey: .centroids)
+        var converted: [Int: [Float]] = [:]
+        for (k, v) in stringKeyed {
+            if let intKey = Int(k) { converted[intKey] = v }
+        }
+        centroids = converted
+    }
+
+    nonisolated func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(segments, forKey: .segments)
+        try c.encodeIfPresent(agentClusterID, forKey: .agentClusterID)
+        var stringKeyed: [String: [Float]] = [:]
+        for (k, v) in centroids { stringKeyed[String(k)] = v }
+        try c.encode(stringKeyed, forKey: .centroids)
+    }
+
+    var speakerCount: Int { centroids.count }
+
+    func label(for clusterID: Int) -> String {
+        if clusterID == agentClusterID { return "Agent" }
+        let otherIDs = centroids.keys.filter { $0 != agentClusterID }.sorted()
+        if let idx = otherIDs.firstIndex(of: clusterID) {
+            return "Speaker \(idx + 1)"
+        }
+        return "Speaker"
+    }
+}
+
+enum DiarizationErrorType: Error, LocalizedError {
+    case modelNotLoaded
+    var errorDescription: String? { "SpeakerKit model not loaded" }
+}
+
 // MARK: - DiarizationService (@MainActor API-compatible wrapper)
 
 /// Thin @MainActor wrapper preserving the existing API. All heavy compute
@@ -472,67 +558,11 @@ final class DiarizationService {
 
     static let shared = DiarizationService()
 
-    // MARK: - Types (unchanged — used throughout the codebase)
+    // MARK: - Types (typealiases to preserve existing API)
 
-    struct VoiceSegment: Sendable, Equatable, Codable {
-        let start: TimeInterval
-        let end: TimeInterval
-        var embedding: [Float]
-        var clusterID: Int
-    }
-
-    struct DiarizationResult: Sendable, Codable {
-        let segments: [VoiceSegment]
-        let centroids: [Int: [Float]]
-        let agentClusterID: Int?
-
-        private enum CodingKeys: String, CodingKey {
-            case segments, centroids, agentClusterID
-        }
-
-        init(segments: [VoiceSegment], centroids: [Int: [Float]], agentClusterID: Int?) {
-            self.segments = segments
-            self.centroids = centroids
-            self.agentClusterID = agentClusterID
-        }
-
-        init(from decoder: Decoder) throws {
-            let c = try decoder.container(keyedBy: CodingKeys.self)
-            segments = try c.decode([VoiceSegment].self, forKey: .segments)
-            agentClusterID = try c.decodeIfPresent(Int.self, forKey: .agentClusterID)
-            let stringKeyed = try c.decode([String: [Float]].self, forKey: .centroids)
-            var converted: [Int: [Float]] = [:]
-            for (k, v) in stringKeyed {
-                if let intKey = Int(k) { converted[intKey] = v }
-            }
-            centroids = converted
-        }
-
-        func encode(to encoder: Encoder) throws {
-            var c = encoder.container(keyedBy: CodingKeys.self)
-            try c.encode(segments, forKey: .segments)
-            try c.encodeIfPresent(agentClusterID, forKey: .agentClusterID)
-            var stringKeyed: [String: [Float]] = [:]
-            for (k, v) in centroids { stringKeyed[String(k)] = v }
-            try c.encode(stringKeyed, forKey: .centroids)
-        }
-
-        var speakerCount: Int { centroids.count }
-
-        func label(for clusterID: Int) -> String {
-            if clusterID == agentClusterID { return "Agent" }
-            let otherIDs = centroids.keys.filter { $0 != agentClusterID }.sorted()
-            if let idx = otherIDs.firstIndex(of: clusterID) {
-                return "Speaker \(idx + 1)"
-            }
-            return "Speaker"
-        }
-    }
-
-    enum DiarizationError: Error, LocalizedError {
-        case modelNotLoaded
-        var errorDescription: String? { "SpeakerKit model not loaded" }
-    }
+    typealias VoiceSegment = DiarizationVoiceSegment
+    typealias DiarizationResult = DiarizationResultDTO
+    typealias DiarizationError = DiarizationErrorType
 
     // MARK: - Tunable Access (read from engine for cache keys)
 
@@ -559,6 +589,8 @@ final class DiarizationService {
     var minSilenceGap: TimeInterval { 0.3 }
     var clusterMergeThreshold: Float { 0.60 }
     var agentMatchThreshold: Float { 0.80 }
+
+    private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "DiarizationService")
 
     private init() {}
 
@@ -588,7 +620,6 @@ final class DiarizationService {
         // runs on the main actor when called from @MainActor context.
         // The SpeakerKit path (async) is the preferred path and runs
         // entirely off main thread via DiarizationEngine.
-        let engine = DiarizationEngine.shared
         // We can't call actor methods synchronously, so for the sync
         // MFCC path we run the computation inline. This is acceptable
         // because MFCC diarization is the fallback path and typically

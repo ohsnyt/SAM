@@ -13,13 +13,13 @@ import Foundation
 import LocalAuthentication
 import os.log
 
-private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "AppLockService")
-
 @MainActor
 @Observable
 final class AppLockService {
 
     static let shared = AppLockService()
+
+    nonisolated let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "AppLockService")
 
     // MARK: - Observable State
 

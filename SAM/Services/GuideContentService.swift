@@ -8,13 +8,13 @@
 import Foundation
 import os.log
 
-private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "GuideContent")
-
 @MainActor
 @Observable
 final class GuideContentService: @unchecked Sendable {
 
     static let shared = GuideContentService()
+
+    nonisolated let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "GuideContent")
 
     // MARK: - Navigation State (shared for deep-linking)
 

@@ -14,13 +14,13 @@ import CoreLocation
 import SwiftData
 import os.log
 
-private let logger = Logger(subsystem: "com.matthewsessions.SAMField", category: "TripTrackingService")
-
 @MainActor
 @Observable
 final class TripTrackingService {
 
     static let shared = TripTrackingService()
+
+    nonisolated let logger = Logger(subsystem: "com.matthewsessions.SAMField", category: "TripTrackingService")
 
     // MARK: - State
 

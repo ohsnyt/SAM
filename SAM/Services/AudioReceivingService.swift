@@ -12,13 +12,13 @@ import Network
 import SwiftData
 import os.log
 
-private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "AudioReceivingService")
-
 @MainActor
 @Observable
 final class AudioReceivingService {
 
     // MARK: - State
+
+    nonisolated let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "AudioReceivingService")
 
     enum ListenerState: Sendable, Equatable {
         case idle
@@ -157,7 +157,7 @@ final class AudioReceivingService {
         var packet = header.serialize()
         packet.append(payload)
 
-        connection.send(content: packet, completion: .contentProcessed { error in
+        connection.send(content: packet, completion: .contentProcessed { [logger] error in
             if let error {
                 logger.error("sendWorkspaceSettings failed: \(error.localizedDescription)")
             } else {
@@ -192,7 +192,7 @@ final class AudioReceivingService {
         var packet = header.serialize()
         packet.append(payload)
 
-        connection.send(content: packet, completion: .contentProcessed { error in
+        connection.send(content: packet, completion: .contentProcessed { [logger] error in
             if let error {
                 logger.error("sendMeetingSummary failed: \(error.localizedDescription)")
             } else {
@@ -227,16 +227,16 @@ final class AudioReceivingService {
         )
 
         listener.stateUpdateHandler = { [weak self] state in
-            Task { @MainActor in
-                guard let self else { return }
+            guard let self else { return }
+            Task { @MainActor [self] in
                 switch state {
                 case .ready:
                     if let port = self.listener?.port {
-                        logger.info("Listening on port \(port.rawValue)")
+                        self.logger.info("Listening on port \(port.rawValue)")
                     }
                     self.listenerState = .advertising
                 case .failed(let error):
-                    logger.error("Listener failed: \(error.localizedDescription)")
+                    self.logger.error("Listener failed: \(error.localizedDescription)")
                     self.listenerState = .idle
                 default:
                     break
@@ -245,8 +245,9 @@ final class AudioReceivingService {
         }
 
         listener.newConnectionHandler = { [weak self] connection in
-            Task { @MainActor in
-                self?.handleNewConnection(connection)
+            guard let self else { return }
+            Task { @MainActor [self] in
+                self.handleNewConnection(connection)
             }
         }
 
@@ -317,16 +318,16 @@ final class AudioReceivingService {
         listenerState = .connected
 
         connection.stateUpdateHandler = { [weak self] state in
-            Task { @MainActor in
-                guard let self else { return }
+            guard let self else { return }
+            Task { @MainActor [self] in
                 switch state {
                 case .ready:
-                    logger.info("iPhone connected: \(connection.endpoint.debugDescription)")
+                    self.logger.info("iPhone connected: \(connection.endpoint.debugDescription)")
                     // Flush any pending summary that couldn't be pushed because
                     // the phone wasn't connected when the Mac finished generating.
                     if let pending = self.pendingSummary {
                         self.pendingSummary = nil
-                        logger.info("Flushing pending summary to newly connected iPhone")
+                        self.logger.info("Flushing pending summary to newly connected iPhone")
                         self.sendMeetingSummary(pending)
                     }
                     // Drain any queued sessionProcessed acks whose sends were
@@ -336,7 +337,7 @@ final class AudioReceivingService {
                     if !self.pendingAcks.isEmpty {
                         let acks = self.pendingAcks
                         self.pendingAcks = []
-                        logger.info("Draining \(acks.count) pending ack(s) to reconnected iPhone")
+                        self.logger.info("Draining \(acks.count) pending ack(s) to reconnected iPhone")
                         for ack in acks {
                             self.sendSessionProcessed(
                                 sessionID: ack.sessionID,
@@ -346,7 +347,7 @@ final class AudioReceivingService {
                         }
                     }
                 case .failed(let error):
-                    logger.error("Connection failed: \(error.localizedDescription)")
+                    self.logger.error("Connection failed: \(error.localizedDescription)")
                     self.activeConnection = nil
                     self.connectedDeviceName = nil
                     self.listenerState = .advertising
@@ -370,21 +371,20 @@ final class AudioReceivingService {
 
     private func startReceiving(on connection: NWConnection) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] content, _, isComplete, error in
-            Task { @MainActor in
-                guard let self else { return }
-
+            guard let self else { return }
+            Task { @MainActor [self] in
                 if let content {
                     self.receiveBuffer.append(content)
                     self.processReceiveBuffer()
                 }
 
                 if let error {
-                    logger.error("Receive error: \(error.localizedDescription)")
+                    self.logger.error("Receive error: \(error.localizedDescription)")
                     return
                 }
 
                 if isComplete {
-                    logger.info("Connection completed")
+                    self.logger.info("Connection completed")
                     return
                 }
 
@@ -617,7 +617,7 @@ final class AudioReceivingService {
         // Fire the reprocess asynchronously.
         Task { [weak self] in
             guard let self, let container = self.modelContainer else {
-                logger.error("No model container configured for reprocess")
+                self?.logger.error("No model container configured for reprocess")
                 return
             }
             let result = await PendingReprocessService.shared.reprocess(
@@ -699,7 +699,7 @@ final class AudioReceivingService {
         var packet = header.serialize()
         packet.append(payload)
 
-        connection.send(content: packet, completion: .contentProcessed { error in
+        connection.send(content: packet, completion: .contentProcessed { [logger] error in
             if let error {
                 logger.error("sendSessionProcessed failed: \(error.localizedDescription)")
             } else {
@@ -787,7 +787,7 @@ final class AudioReceivingService {
         let url = audioDirectory.appendingPathComponent("\(sessionID.uuidString).wav")
 
         // Write WAV header placeholder (will be updated on finalize)
-        var header = wavHeader(sampleRate: sampleRate, channels: channels, dataSize: 0)
+        let header = wavHeader(sampleRate: sampleRate, channels: channels, dataSize: 0)
         FileManager.default.createFile(atPath: url.path, contents: nil)
 
         do {

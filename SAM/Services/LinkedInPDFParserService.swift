@@ -11,8 +11,6 @@ import Foundation
 import PDFKit
 import os.log
 
-private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "LinkedInPDFParser")
-
 // MARK: - DTOs
 
 struct LinkedInPDFProfileDTO: Sendable {
@@ -48,6 +46,8 @@ struct LinkedInPDFEducation: Sendable {
 // MARK: - Parser
 
 enum LinkedInPDFParserService {
+
+    private static let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "LinkedInPDFParser")
 
     enum ParseError: LocalizedError {
         case cannotLoadPDF

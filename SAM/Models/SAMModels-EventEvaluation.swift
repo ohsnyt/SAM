@@ -157,7 +157,7 @@ public struct ChatParticipantAnalysis: Codable, Sendable, Identifiable {
 // MARK: - FeedbackResponse
 
 /// A single feedback form response from a workshop participant.
-public struct FeedbackResponse: Codable, Sendable, Identifiable {
+public nonisolated struct FeedbackResponse: Codable, Sendable, Identifiable {
     public var id: UUID
     public var respondentName: String?
     public var respondentEmail: String?
@@ -181,7 +181,7 @@ public struct FeedbackResponse: Codable, Sendable, Identifiable {
         wouldContinueRawValue.flatMap { FollowUpInterest(rawValue: $0) }
     }
 
-    public init(
+    public nonisolated init(
         id: UUID = UUID(),
         respondentName: String? = nil,
         respondentEmail: String? = nil,

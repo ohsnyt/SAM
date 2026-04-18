@@ -14,8 +14,6 @@
 import Foundation
 import os.log
 
-private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "MeetingSummaryService")
-
 // `MeetingSummary` is defined in SAMModels-Transcription.swift so both the
 // Mac and iPhone targets can share the wire format.
 
@@ -26,6 +24,8 @@ actor MeetingSummaryService {
     static let shared = MeetingSummaryService()
 
     private init() {}
+
+    nonisolated let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "MeetingSummaryService")
 
     // MARK: - Availability
 

@@ -97,10 +97,9 @@ struct NotesJournalView: View {
                 .onChange(of: editingNoteID) { _, newID in
                     // Scroll editing note into view after layout settles
                     if let id = newID {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                proxy.scrollTo(id, anchor: .top)
-                            }
+                        Task {
+                            try? await Task.sleep(for: .milliseconds(150))
+                            withAnimation(.easeInOut(duration: 0.2)) { proxy.scrollTo(id, anchor: .top) }
                         }
                     }
                 }

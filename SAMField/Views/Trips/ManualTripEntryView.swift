@@ -316,12 +316,12 @@ struct ManualTripEntryView: View {
         isGeocodingStart = true
         defer { isGeocodingStart = false }
 
-        let geocoder = CLGeocoder()
-        guard let placemark = try? await geocoder.geocodeAddressString(query).first,
-              let loc = placemark.location else { return }
+        guard let request = MKGeocodingRequest(addressString: query),
+              let mapItem = try? await request.mapItems.first else { return }
+        let loc = mapItem.location
 
         startCoordinate = loc.coordinate
-        startGeocodedAddress = formatted(placemark)
+        startGeocodedAddress = formatted(mapItem)
 
         // Recompute first stop's segment if it has a coordinate
         if !stops.isEmpty, let firstCoord = stops[0].coordinate {
@@ -336,19 +336,19 @@ struct ManualTripEntryView: View {
         guard !query.isEmpty else { return }
 
         stops[idx].isGeocoding = true
-        let geocoder = CLGeocoder()
-        guard let placemark = try? await geocoder.geocodeAddressString(query).first,
-              let loc = placemark.location else {
+        guard let request = MKGeocodingRequest(addressString: query),
+              let mapItem = try? await request.mapItems.first else {
             stops[idx].isGeocoding = false
             return
         }
+        let loc = mapItem.location
 
         // Re-find index after await in case list changed
         guard let newIdx = stops.firstIndex(where: { $0.id == id }) else { return }
         stops[newIdx].coordinate = loc.coordinate
-        stops[newIdx].geocodedAddress = formatted(placemark)
+        stops[newIdx].geocodedAddress = formatted(mapItem)
         if stops[newIdx].locationName.isEmpty {
-            stops[newIdx].locationName = placemark.name ?? ""
+            stops[newIdx].locationName = mapItem.name ?? ""
         }
         stops[newIdx].isGeocoding = false
 
@@ -373,8 +373,8 @@ struct ManualTripEntryView: View {
         guard idx < stops.count else { return }
 
         let req = MKDirections.Request()
-        req.source = MKMapItem(placemark: MKPlacemark(coordinate: from))
-        req.destination = MKMapItem(placemark: MKPlacemark(coordinate: to))
+        req.source = MKMapItem(location: CLLocation(latitude: from.latitude, longitude: from.longitude), address: nil)
+        req.destination = MKMapItem(location: CLLocation(latitude: to.latitude, longitude: to.longitude), address: nil)
         req.transportType = .automobile
 
         if let resp = try? await MKDirections(request: req).calculate(),
@@ -486,13 +486,8 @@ struct ManualTripEntryView: View {
 
     // MARK: - Helpers
 
-    private func formatted(_ placemark: CLPlacemark) -> String {
-        [placemark.subThoroughfare,
-         placemark.thoroughfare,
-         placemark.locality,
-         placemark.administrativeArea]
-            .compactMap { $0 }
-            .joined(separator: " ")
+    private func formatted(_ mapItem: MKMapItem) -> String {
+        mapItem.address?.fullAddress ?? mapItem.name ?? ""
     }
 
     private func combining(date: Date, time: Date, using cal: Calendar) -> Date {

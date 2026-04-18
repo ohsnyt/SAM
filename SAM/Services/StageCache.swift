@@ -25,16 +25,23 @@
 import Foundation
 import CryptoKit
 import os.log
-
-private let cacheLogger = Logger(subsystem: "com.matthewsessions.SAM", category: "StageCache")
+import Synchronization
 
 /// File-backed cache for pipeline stage outputs.
-struct StageCache {
+nonisolated struct StageCache {
+
+    private nonisolated static var cacheLogger: Logger {
+        Logger(subsystem: "com.matthewsessions.SAM", category: "StageCache")
+    }
 
     /// Whether the cache is enabled. Off by default — flipped on by the
     /// test harness via `enabled = true` so production code paths are
     /// never affected unless we explicitly opt in.
-    static var enabled: Bool = false
+    nonisolated private static let _enabled = Mutex<Bool>(false)
+    nonisolated static var enabled: Bool {
+        get { _enabled.withLock { $0 } }
+        set { _enabled.withLock { $0 = newValue } }
+    }
 
     /// Bumped per-stage to invalidate prior cache entries when an
     /// algorithm changes. The TestInboxWatcher uses these in cache keys.
@@ -65,10 +72,10 @@ struct StageCache {
         }
         do {
             let decoded = try JSONDecoder().decode(type, from: data)
-            cacheLogger.notice("💾 CACHE HIT [\(stage)] key=\(key.prefix(12))…")
+            Self.cacheLogger.notice("💾 CACHE HIT [\(stage)] key=\(key.prefix(12))…")
             return decoded
         } catch {
-            cacheLogger.warning("Cache decode failed for [\(stage)] key=\(key.prefix(12))…: \(error.localizedDescription)")
+            Self.cacheLogger.warning("Cache decode failed for [\(stage)] key=\(key.prefix(12))…: \(error.localizedDescription)")
             return nil
         }
     }
@@ -78,14 +85,14 @@ struct StageCache {
         let url = cacheURL(stage: stage, key: key)
         let encoder = JSONEncoder()
         guard let data = try? encoder.encode(value) else {
-            cacheLogger.warning("Cache encode failed for [\(stage)] key=\(key.prefix(12))…")
+            Self.cacheLogger.warning("Cache encode failed for [\(stage)] key=\(key.prefix(12))…")
             return
         }
         do {
             try data.write(to: url, options: .atomic)
-            cacheLogger.notice("💾 CACHE STORE [\(stage)] key=\(key.prefix(12))… (\(data.count) bytes)")
+            Self.cacheLogger.notice("💾 CACHE STORE [\(stage)] key=\(key.prefix(12))… (\(data.count) bytes)")
         } catch {
-            cacheLogger.warning("Cache write failed: \(error.localizedDescription)")
+            Self.cacheLogger.warning("Cache write failed: \(error.localizedDescription)")
         }
     }
 

@@ -15,11 +15,11 @@
 import Foundation
 import os.log
 
-private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "TranscriptionPipelineService")
-
 @MainActor
 @Observable
 final class TranscriptionPipelineService {
+
+    nonisolated let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "TranscriptionPipelineService")
 
     // MARK: - Types
 

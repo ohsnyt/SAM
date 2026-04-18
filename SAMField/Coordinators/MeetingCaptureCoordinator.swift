@@ -14,11 +14,11 @@ import SwiftData
 import UIKit
 import os.log
 
-private let logger = Logger(subsystem: "com.matthewsessions.SAMField", category: "MeetingCaptureCoordinator")
-
 @MainActor
 @Observable
 final class MeetingCaptureCoordinator {
+
+    nonisolated let logger = Logger(subsystem: "com.matthewsessions.SAMField", category: "MeetingCaptureCoordinator")
 
     /// App-wide shared instance. Recording state, the TCP connection, and
     /// the last meeting summary all live here so they survive tab switches,
@@ -182,7 +182,7 @@ final class MeetingCaptureCoordinator {
     init() {
         // Wire up the summary callback once — retained for the coordinator's lifetime.
         streamingService.onMeetingSummary = { [weak self] summary in
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 self?.summaryWatchdog?.cancel()
                 self?.summaryWatchdog = nil
                 self?.lastSummary = summary
@@ -208,15 +208,17 @@ final class MeetingCaptureCoordinator {
             object: AVAudioSession.sharedInstance(),
             queue: .main
         ) { [weak self] notification in
-            Task { @MainActor in
-                self?.handleAudioInterruption(notification)
+            let userInfo = notification.userInfo
+            let typeValue = userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
+            let optionsValue = userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt
+            Task { @MainActor [weak self] in
+                self?.handleAudioInterruption(typeValue: typeValue, optionsValue: optionsValue)
             }
         }
     }
 
-    private func handleAudioInterruption(_ notification: Notification) {
-        guard let userInfo = notification.userInfo,
-              let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
+    private func handleAudioInterruption(typeValue: UInt?, optionsValue: UInt?) {
+        guard let typeValue,
               let type = AVAudioSession.InterruptionType(rawValue: typeValue) else {
             return
         }
@@ -237,8 +239,7 @@ final class MeetingCaptureCoordinator {
         case .ended:
             guard isInterruptedByPhoneCall else { return }
             isInterruptedByPhoneCall = false
-            let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
-            let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
+            let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue ?? 0)
             if options.contains(.shouldResume), captureState == .recording {
                 logger.info("Audio interruption ended — resuming recording")
                 do {
@@ -260,7 +261,7 @@ final class MeetingCaptureCoordinator {
     /// aggressive backgrounding could suspend the app mid-meeting.
     private func beginBackgroundTask() {
         guard backgroundTaskID == .invalid else { return }
-        backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "SAM Field Recording") { [weak self] in
+        backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "SAM Field Recording") { [weak self, logger] in
             // Expiration handler — iOS is telling us we've run out of background time.
             logger.warning("Background task expired — iOS is reclaiming runtime")
             Task { @MainActor in
@@ -444,7 +445,7 @@ final class MeetingCaptureCoordinator {
         // is active, they also go to the Mac. If we drop to degraded mode
         // mid-session, subsequent chunks simply stop being forwarded.
         recordingService.onAudioChunk = { [weak self] chunk in
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 guard let self else { return }
                 switch self.recordingMode {
                 case .streaming:

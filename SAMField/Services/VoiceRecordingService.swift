@@ -15,13 +15,13 @@ import AVFoundation
 import Speech
 import os.log
 
-private let logger = Logger(subsystem: "com.matthewsessions.SAMField", category: "VoiceRecordingService")
-
 @MainActor
 @Observable
 final class VoiceRecordingService {
 
     static let shared = VoiceRecordingService()
+
+    nonisolated let logger = Logger(subsystem: "com.matthewsessions.SAMField", category: "VoiceRecordingService")
 
     // MARK: - State
 
@@ -176,7 +176,7 @@ final class VoiceRecordingService {
 
         // Audio session
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.playAndRecord, mode: .measurement, options: [.defaultToSpeaker, .allowBluetooth])
+        try session.setCategory(.playAndRecord, mode: .measurement, options: [.defaultToSpeaker, .allowBluetoothHFP])
         try session.setActive(true)
 
         // Configure voice processing mode based on user selection
@@ -185,13 +185,13 @@ final class VoiceRecordingService {
             case .voiceIsolation:
                 try? session.setPreferredInputOrientation(.portrait)
                 if session.availableCategories.contains(.playAndRecord) {
-                    try? session.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetooth])
+                    try? session.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetoothHFP])
                 }
             case .wideSpectrum:
                 // Measurement mode with no voice processing — captures everything
-                try? session.setCategory(.playAndRecord, mode: .measurement, options: [.defaultToSpeaker, .allowBluetooth])
+                try? session.setCategory(.playAndRecord, mode: .measurement, options: [.defaultToSpeaker, .allowBluetoothHFP])
             case .standard:
-                try? session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
+                try? session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetoothHFP])
             }
         }
 
@@ -240,7 +240,7 @@ final class VoiceRecordingService {
             do {
                 try file.write(from: buffer)
             } catch {
-                logger.error("Audio file write error: \(error.localizedDescription)")
+                self?.logger.error("Audio file write error: \(error.localizedDescription)")
             }
 
             // Compute audio level
@@ -329,7 +329,7 @@ final class VoiceRecordingService {
 
             if let file {
                 do { try file.write(from: buffer) } catch {
-                    logger.error("Audio file write error: \(error.localizedDescription)")
+                    self?.logger.error("Audio file write error: \(error.localizedDescription)")
                 }
             }
 

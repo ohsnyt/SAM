@@ -514,12 +514,9 @@ final class SystemNotificationService: NSObject, UNUserNotificationCenterDelegat
                     object: nil,
                     userInfo: ["section": "today"]
                 )
-                // Small delay so sidebar navigates before expanding
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    NotificationCenter.default.post(
-                        name: .samExpandMeetingPrep,
-                        object: nil
-                    )
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(300))
+                    NotificationCenter.default.post(name: .samExpandMeetingPrep, object: nil)
                 }
 
             case Self.substackExportCategory:

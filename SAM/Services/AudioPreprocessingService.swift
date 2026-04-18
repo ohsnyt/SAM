@@ -37,9 +37,11 @@ import Foundation
 import Accelerate
 import os.log
 
-private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "AudioPreprocessing")
+nonisolated struct AudioPreprocessingService {
 
-struct AudioPreprocessingService {
+    private nonisolated static var logger: Logger {
+        Logger(subsystem: "com.matthewsessions.SAM", category: "AudioPreprocessing")
+    }
 
     // MARK: - Configuration
 
@@ -65,7 +67,7 @@ struct AudioPreprocessingService {
 
     /// Apply the full preprocessing pipeline to a mono PCM buffer.
     /// Returns the cleaned buffer at the same sample rate.
-    static func preprocess(
+    nonisolated static func preprocess(
         samples: [Float],
         sampleRate: Float
     ) -> [Float] {

@@ -21,13 +21,13 @@ import Foundation
 import SwiftData
 import os.log
 
-private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "TranscriptPolishService")
-
 actor TranscriptPolishService {
 
     static let shared = TranscriptPolishService()
 
     private init() {}
+
+    nonisolated let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "TranscriptPolishService")
 
     // MARK: - Public API
 
@@ -217,7 +217,8 @@ actor TranscriptPolishService {
                 }
             }
         } catch {
-            logger.warning("Could not fetch contacts for polish nouns: \(error.localizedDescription)")
+            Logger(subsystem: "com.matthewsessions.SAM", category: "TranscriptPolishService")
+                .warning("Could not fetch contacts for polish nouns: \(error.localizedDescription)")
         }
 
         return nouns

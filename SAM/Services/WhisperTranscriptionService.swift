@@ -17,8 +17,6 @@ import Foundation
 import os.log
 import WhisperKit
 
-private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "WhisperTranscriptionService")
-
 // MARK: - Shared Types
 
 /// Observable state for the Whisper model lifecycle.
@@ -72,26 +70,26 @@ actor WhisperTranscriptionEngine {
     static let shared = WhisperTranscriptionEngine()
 
     /// Default model — `base.en` is ~140MB, accurate for English meeting speech.
-    static let defaultModelID = "openai_whisper-base.en"
+    nonisolated static let defaultModelID = "openai_whisper-base.en"
+
+    private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "WhisperTranscriptionService")
 
     private var whisperKit: WhisperKit?
     private var loadedModelID: String?
     private var isLoading = false
+    private var loadContinuations: [CheckedContinuation<Void, Error>] = []
 
     // MARK: - Model Loading
 
     /// Load the Whisper model. Safe to call multiple times.
     func loadModel(modelID: String = defaultModelID) async throws {
         if loadedModelID == modelID && whisperKit != nil { return }
-        guard !isLoading else {
-            // Wait for in-flight load by polling (simple, avoids continuation complexity)
-            while isLoading { try await Task.sleep(for: .milliseconds(100)) }
-            if whisperKit != nil { return }
-            throw WhisperTranscriptionError.modelNotLoaded
+        if isLoading {
+            try await withCheckedThrowingContinuation { loadContinuations.append($0) }
+            return
         }
 
         isLoading = true
-        defer { isLoading = false }
 
         logger.info("Loading WhisperKit model: \(modelID) — first run will download, subsequent runs load from cache")
 
@@ -114,6 +112,10 @@ actor WhisperTranscriptionEngine {
             let kit = try await WhisperKit(config)
             whisperKit = kit
             loadedModelID = modelID
+            isLoading = false
+            let waiting = loadContinuations
+            loadContinuations.removeAll()
+            for c in waiting { c.resume() }
 
             logger.info("✅ WhisperKit model loaded: \(modelID)")
 
@@ -121,9 +123,14 @@ actor WhisperTranscriptionEngine {
                 WhisperTranscriptionService.shared.modelState = .ready(modelID: modelID)
             }
         } catch {
-            logger.error("❌ WhisperKit load failed: \(error.localizedDescription)")
+            isLoading = false
             whisperKit = nil
             loadedModelID = nil
+            let waiting = loadContinuations
+            loadContinuations.removeAll()
+            for c in waiting { c.resume(throwing: error) }
+
+            logger.error("❌ WhisperKit load failed: \(error.localizedDescription)")
 
             await MainActor.run {
                 WhisperTranscriptionService.shared.modelState = .failed(error.localizedDescription)
@@ -290,7 +297,7 @@ final class WhisperTranscriptionService {
     typealias TranscriptResult = WhisperTranscriptResult
     typealias TranscriptionError = WhisperTranscriptionError
 
-    static let defaultModelID = WhisperTranscriptionEngine.defaultModelID
+    nonisolated static let defaultModelID = WhisperTranscriptionEngine.defaultModelID
 
     private init() {}
 

@@ -12,11 +12,11 @@ import Foundation
 import AVFoundation
 import os.log
 
-private let logger = Logger(subsystem: "com.matthewsessions.SAMField", category: "MeetingRecordingService")
-
 @MainActor
 @Observable
 final class MeetingRecordingService {
+
+    nonisolated let logger = Logger(subsystem: "com.matthewsessions.SAMField", category: "MeetingRecordingService")
 
     // MARK: - State
 
@@ -108,7 +108,7 @@ final class MeetingRecordingService {
 
         // Configure audio session for high-quality stereo capture
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
+        try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetoothHFP])
         try session.setActive(true)
 
         let engine = AVAudioEngine()

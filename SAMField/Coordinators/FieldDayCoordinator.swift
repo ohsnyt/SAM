@@ -13,13 +13,13 @@ import Foundation
 import SwiftData
 import os.log
 
-private let logger = Logger(subsystem: "com.matthewsessions.SAMField", category: "FieldDayCoordinator")
-
 @MainActor
 @Observable
 final class FieldDayCoordinator {
 
     static let shared = FieldDayCoordinator()
+
+    nonisolated let logger = Logger(subsystem: "com.matthewsessions.SAMField", category: "FieldDayCoordinator")
 
     // MARK: - State
 

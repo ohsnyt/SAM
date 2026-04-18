@@ -13,13 +13,13 @@ import SwiftData
 import CoreLocation
 import os.log
 
-private let logger = Logger(subsystem: "com.matthewsessions.SAMField", category: "TripCoordinator")
-
 @MainActor
 @Observable
 final class TripCoordinator {
 
     static let shared = TripCoordinator()
+
+    nonisolated let logger = Logger(subsystem: "com.matthewsessions.SAMField", category: "TripCoordinator")
 
     private var container: ModelContainer?
     private let tracker = TripTrackingService.shared

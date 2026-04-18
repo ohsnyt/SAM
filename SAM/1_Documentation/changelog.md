@@ -4,6 +4,36 @@
 
 ---
 
+## Swift 6 Concurrency + iOS 26 API Cleanup (April 18, 2026)
+
+**What**: Swept both SAM and SAMField to zero build warnings under Swift 6 strict concurrency and the iOS 26 SDK. Also addressed a runtime priority-inversion warning in `ContactsService`.
+
+**Why**: The project has `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, which implicitly isolates every declaration to `@MainActor` unless marked `nonisolated`. This caused a backlog of isolation warnings — most flagged as "this is an error in the Swift 6 language mode" — that would block the eventual move to Swift 6 mode. SAMField additionally had deprecated MapKit/CLGeocoder and AVAudioSession symbols.
+
+### Swift 6 Isolation Fixes
+- Marked DTOs, value types, and their inits `nonisolated` where they cross actor boundaries: `DiarizationVoiceSegment`, `DiarizationResultDTO`, `MeetingSummary` + static `empty` + custom `init(from:)`, `RecordingContext` and its computed properties (`displayName`, `systemIcon`, etc.), `FeedbackResponse`, `LLMCandidateScore`, `AudioPreprocessingService.preprocess(...)`, `WhisperTranscriptionEngine.defaultModelID`.
+- `SpeakerEmbeddingProvider` protocol requirements marked `nonisolated`; `SpeakerEmbeddingService.provider` / `init` / `embeddingDimension` made `nonisolated`; `MFCCSpeakerEmbeddingProvider.init` marked `nonisolated`.
+- Moved file-scope `private let logger` into the owning types across services (AppLockService, FieldContactLookupService, etc.) to satisfy strict-concurrency file-level global rules.
+- `[weak self]` added to nested `Task { }` closures in AudioStreamingService, MeetingCaptureCoordinator, PendingUploadService, VoiceRecordingService, AudioReceivingService; extracted non-`Sendable` `Notification.userInfo` values before capture in `MeetingCaptureCoordinator.handleAudioInterruption`.
+- Replaced `DispatchQueue.main.asyncAfter` with `Task.sleep` in `CopyButton`.
+- `StageCache.enabled` converted from plain static var to `Mutex<Bool>`-backed accessor (avoids `nonisolated(unsafe)` per CLAUDE.md).
+
+### iOS 26 Deprecations (SAMField)
+- `CLGeocoder` → `MKReverseGeocodingRequest` / `MKGeocodingRequest` in `LocationService` and `ManualTripEntryView`.
+- `MKPlacemark` initializers → `MKMapItem(location:address:)`; `CLPlacemark.formatted()` → `MKMapItem.address?.fullAddress`.
+- `AVAudioSession.CategoryOptions.allowBluetooth` → `.allowBluetoothHFP` (MeetingRecordingService, VoiceRecordingService).
+- `EKAuthorizationStatus.authorized` comparisons simplified to `.fullAccess` only (FieldCalendarService).
+
+### ContactsService Priority-Inversion Fix
+Pinned the `ContactsService` actor to a `DispatchSerialQueue` at `.userInitiated` QoS via a custom `unownedExecutor`, so mixed-priority callers don't trigger inversion when a background-QoS task is already holding the actor during a synchronous CN read.
+
+**Residual Hang-Risk warnings at `store.unifiedContacts(...)` and `store.unifiedMeContactWithKeys(...)` are accepted**. The inversions the OS reports happen inside Apple's `contactsd` XPC response path (Background-QoS internal thread on the daemon side) and cannot be suppressed per-line. macOS priority inheritance typically resolves the wait within milliseconds. Documented in `context.md` §7 "Accepted Hang Risk Warnings" so a future audit knows these are intentional.
+
+### Result
+Both SAM and SAMField targets now build clean (zero warnings, zero errors) under the current Swift 5 language mode with strict-concurrency diagnostics enabled. The fixes should translate directly to Swift 6 mode when the project migrates.
+
+---
+
 ## SAMField: Recording Sync Handshake Fixes + Polish Pipeline Guards (April 17, 2026)
 
 **What**: Fixed three compounding bugs that caused pending recordings to get stuck permanently in the upload queue ("Mac is processing" with no resolution), and added guards in the Stage 5 polish pipeline to skip polish on silence/noise recordings and cap any polish operation at 30 seconds.

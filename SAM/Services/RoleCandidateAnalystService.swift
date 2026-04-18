@@ -60,11 +60,32 @@ struct RoleCandidateScoringResult: Sendable, Codable {
 // MARK: - LLM Response DTO
 
 private struct LLMCandidateScore: Codable, Sendable {
-    let index: Int?
-    let match_score: Double?
-    let match_rationale: String?
-    let strength_signals: [String]?
-    let gap_signals: [String]?
+    nonisolated let index: Int?
+    nonisolated let match_score: Double?
+    nonisolated let match_rationale: String?
+    nonisolated let strength_signals: [String]?
+    nonisolated let gap_signals: [String]?
+
+    nonisolated init(index: Int? = nil, match_score: Double? = nil, match_rationale: String? = nil, strength_signals: [String]? = nil, gap_signals: [String]? = nil) {
+        self.index = index
+        self.match_score = match_score
+        self.match_rationale = match_rationale
+        self.strength_signals = strength_signals
+        self.gap_signals = gap_signals
+    }
+
+    nonisolated init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.index = try c.decodeIfPresent(Int.self, forKey: .index)
+        self.match_score = try c.decodeIfPresent(Double.self, forKey: .match_score)
+        self.match_rationale = try c.decodeIfPresent(String.self, forKey: .match_rationale)
+        self.strength_signals = try c.decodeIfPresent([String].self, forKey: .strength_signals)
+        self.gap_signals = try c.decodeIfPresent([String].self, forKey: .gap_signals)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case index, match_score, match_rationale, strength_signals, gap_signals
+    }
 }
 
 // MARK: - Service
@@ -72,7 +93,7 @@ private struct LLMCandidateScore: Codable, Sendable {
 actor RoleCandidateAnalystService {
 
     static let shared = RoleCandidateAnalystService()
-    private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "RoleCandidateAnalystService")
+    nonisolated let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "RoleCandidateAnalystService")
 
     private init() {}
 

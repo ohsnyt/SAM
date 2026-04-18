@@ -10,6 +10,7 @@
 
 import Foundation
 import CoreLocation
+import MapKit
 import UIKit
 import os.log
 
@@ -100,24 +101,11 @@ final class LocationService: NSObject {
 
     /// Reverse geocode a location to a street address.
     func reverseGeocode(_ location: CLLocation) async -> (address: String, name: String?)? {
-        let geocoder = CLGeocoder()
+        guard let request = MKReverseGeocodingRequest(location: location) else { return nil }
         do {
-            let placemarks = try await geocoder.reverseGeocodeLocation(location)
-            guard let placemark = placemarks.first else { return nil }
-
-            var parts: [String] = []
-            if let street = placemark.thoroughfare {
-                if let number = placemark.subThoroughfare {
-                    parts.append("\(number) \(street)")
-                } else {
-                    parts.append(street)
-                }
-            }
-            if let city = placemark.locality { parts.append(city) }
-            if let state = placemark.administrativeArea { parts.append(state) }
-
-            let address = parts.joined(separator: ", ")
-            return (address: address, name: placemark.name)
+            let mapItems = try await request.mapItems
+            guard let mapItem = mapItems.first, let address = mapItem.address else { return nil }
+            return (address: address.fullAddress, name: mapItem.name)
         } catch {
             logger.warning("Reverse geocode failed: \(error.localizedDescription)")
             return nil

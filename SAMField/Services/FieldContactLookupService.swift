@@ -10,13 +10,12 @@ import Foundation
 import Contacts
 import os.log
 
-private let logger = Logger(subsystem: "com.matthewsessions.SAMField", category: "FieldContactLookup")
-
 actor FieldContactLookupService {
 
     static let shared = FieldContactLookupService()
     private init() {}
 
+    private let logger = Logger(subsystem: "com.matthewsessions.SAMField", category: "FieldContactLookup")
     private let store = CNContactStore()
 
     // MARK: - Authorization

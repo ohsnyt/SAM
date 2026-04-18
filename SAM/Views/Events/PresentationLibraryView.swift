@@ -161,7 +161,7 @@ struct PresentationLibraryView: View {
         )
         let results = (try? context.fetch(descriptor)) ?? []
         if results != presentations {
-            DispatchQueue.main.async { presentations = results }
+            presentations = results
         }
         return results
     }

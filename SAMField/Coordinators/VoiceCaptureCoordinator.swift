@@ -13,13 +13,13 @@ import Foundation
 import SwiftData
 import os.log
 
-private let logger = Logger(subsystem: "com.matthewsessions.SAMField", category: "VoiceCaptureCoordinator")
-
 @MainActor
 @Observable
 final class VoiceCaptureCoordinator {
 
     static let shared = VoiceCaptureCoordinator()
+
+    nonisolated let logger = Logger(subsystem: "com.matthewsessions.SAMField", category: "VoiceCaptureCoordinator")
 
     // MARK: - State
 

@@ -33,11 +33,11 @@ import Foundation
 import SwiftData
 import os.log
 
-private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "RetentionService")
-
 @MainActor
 @Observable
 final class RetentionService {
+
+    nonisolated let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "RetentionService")
 
     static let shared = RetentionService()
 

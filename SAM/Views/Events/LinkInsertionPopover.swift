@@ -27,9 +27,11 @@ struct LinkInsertionPopover: View {
             links.append(PresetLink(label: "Event Join Link", url: joinLink))
         }
 
-        let profile = BusinessProfileService.shared.profile()
-        if !profile.website.isEmpty {
-            links.append(PresetLink(label: "Your Website", url: profile.website))
+        // Read profile synchronously from UserDefaults to avoid actor hop in sync context.
+        let profileData = UserDefaults.standard.data(forKey: "sam.businessProfile")
+        let profile = profileData.flatMap { try? JSONDecoder().decode(BusinessProfile.self, from: $0) }
+        if let website = profile?.website, !website.isEmpty {
+            links.append(PresetLink(label: "Your Website", url: website))
         }
 
         return links

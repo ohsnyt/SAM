@@ -10,9 +10,9 @@
 import SwiftUI
 import os.log
 
-private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "SafeModeView")
-
 struct SafeModeView: View {
+
+    private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "SafeModeView")
 
     @State private var phase: Phase = .running
     @State private var report: SafeModeReport?
@@ -256,13 +256,10 @@ struct SafeModeView: View {
         NSWorkspace.shared.openApplication(at: appURL, configuration: config) { _, error in
             if let error {
                 logger.error("Failed to relaunch SAM: \(error.localizedDescription)")
-                // If relaunch fails, just let the user quit manually
-                DispatchQueue.main.async {
-                    phase = .done
-                }
+                Task { @MainActor in phase = .done }
             } else {
-                // Give the new instance a moment to start, then terminate this one
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(1))
                     NSApplication.shared.terminate(nil)
                 }
             }

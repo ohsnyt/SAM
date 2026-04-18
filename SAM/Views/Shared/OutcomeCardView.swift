@@ -97,9 +97,7 @@ struct OutcomeCardView: View {
                     Button {
                         ClipboardSecurity.copy(step, clearAfter: 60)
                         copiedStep = true
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                            copiedStep = false
-                        }
+                        Task { try? await Task.sleep(for: .seconds(1.5)); copiedStep = false }
                     } label: {
                         Image(systemName: copiedStep ? "checkmark" : "doc.on.doc")
                             .samFont(.caption2)
@@ -226,9 +224,7 @@ struct OutcomeCardView: View {
             Button {
                 ClipboardSecurity.copy(outcomeTextForCopy, clearAfter: 120)
                 copiedAll = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                    copiedAll = false
-                }
+                Task { try? await Task.sleep(for: .seconds(1.5)); copiedAll = false }
             } label: {
                 Label("Copy", systemImage: "doc.on.doc")
             }
@@ -236,9 +232,7 @@ struct OutcomeCardView: View {
                 Button {
                     ClipboardSecurity.copy(outcome.draftMessageText ?? "", clearAfter: 120)
                     copiedAll = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                        copiedAll = false
-                    }
+                    Task { try? await Task.sleep(for: .seconds(1.5)); copiedAll = false }
                 } label: {
                     Label("Copy Draft Message", systemImage: "text.bubble")
                 }

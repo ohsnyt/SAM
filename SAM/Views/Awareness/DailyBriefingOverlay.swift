@@ -68,9 +68,7 @@ struct DailyBriefingOverlay: View {
                         if let briefing = coordinator.morningBriefing {
                             ClipboardSecurity.copy(briefingTextForCopy(briefing), clearAfter: 120)
                             copiedBriefing = true
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                                copiedBriefing = false
-                            }
+                            Task { try? await Task.sleep(for: .seconds(1.5)); copiedBriefing = false }
                         }
                     } label: {
                         Label(copiedBriefing ? "Copied" : "Copy Briefing",

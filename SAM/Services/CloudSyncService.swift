@@ -17,13 +17,13 @@ import Foundation
 import CloudKit
 import os.log
 
-private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "CloudSyncService")
-
 @MainActor
 @Observable
 final class CloudSyncService {
 
     static let shared = CloudSyncService()
+
+    nonisolated let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "CloudSyncService")
 
     private let container = CKContainer(identifier: "iCloud.sam.SAM")
     private var database: CKDatabase { container.privateCloudDatabase }
@@ -61,7 +61,7 @@ final class CloudSyncService {
         record["updatedAt"] = Date() as CKRecordValue
 
         do {
-            let saved = try await database.save(record)
+            _ = try await database.save(record)
             lastSyncDate = Date()
             syncError = nil
             logger.info("Briefing pushed to CloudKit (\(briefingJSON.count) chars)")

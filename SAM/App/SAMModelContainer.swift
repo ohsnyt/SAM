@@ -14,8 +14,7 @@ import Foundation
 import Combine
 import SQLite3
 import os.log
-
-private let containerLogger = Logger(subsystem: "com.matthewsessions.SAM", category: "SAMModelContainer")
+import Synchronization
 
 // ─────────────────────────────────────────────────────────────────────
 // MARK: - Schema
@@ -86,6 +85,10 @@ enum SAMSchema {
 /// a ModelContext should derive one from here.
 enum SAMModelContainer {
 
+    private nonisolated static var containerLogger: Logger {
+        Logger(subsystem: "com.matthewsessions.SAM", category: "SAMModelContainer")
+    }
+
     // IMPORTANT: Do NOT change schemaVersion for additive schema changes.
     // SwiftData handles new models and new fields with defaults via
     // lightweight migration automatically. Changing the config name
@@ -124,17 +127,14 @@ enum SAMModelContainer {
     }
 
     #if DEBUG
-    // Backing storage for mutable shared container in DEBUG builds.
-    nonisolated(unsafe) private static var _shared: ModelContainer = {
-        // 1. Flush WAL so the backup contains a clean, self-contained store.
+    // Mutex-protected backing storage for mutable shared container in DEBUG builds.
+    private nonisolated static let _sharedMutex: Mutex<ModelContainer> = Mutex({
         checkpointStoreIfNeeded()
-        // 2. Snapshot the store files BEFORE opening (migration may run on open).
         backupStoreBeforeOpen()
-        // 3. Repair any dangling foreign-key references.
         cleanupOrphanedReferences()
 
-        let schema     = Schema(SAMSchema.allModels)
-        let config     = ModelConfiguration(
+        let schema = Schema(SAMSchema.allModels)
+        let config = ModelConfiguration(
             schemaVersion,
             schema: schema,
             isStoredInMemoryOnly: false,  // persistent on disk
@@ -143,13 +143,12 @@ enum SAMModelContainer {
         do {
             return try ModelContainer(for: schema, configurations: config)
         } catch {
-            // Fatal: without a container the app cannot function.
             fatalError("SAMModelContainer: failed to create ModelContainer — \(error)")
         }
-    }()
+    }())
 
     /// DEBUG-only mutable shared container for reset flows.
-    nonisolated static var shared: ModelContainer { _shared }
+    nonisolated static var shared: ModelContainer { _sharedMutex.withLock { $0 } }
 
     /// Delete the on-disk SQLite store files (main + -shm + -wal).
     /// MUST be called before _shared is first accessed; once any ModelContainer
@@ -180,7 +179,7 @@ enum SAMModelContainer {
 
     /// Replace the shared container with a new one.
     nonisolated static func replaceShared(with container: ModelContainer) {
-        _shared = container
+        _sharedMutex.withLock { $0 = container }
     }
     #else
     /// Immutable shared container for production.

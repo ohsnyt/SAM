@@ -11,13 +11,11 @@ import AppKit
 import Foundation
 import os.log
 
-private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "CrashReport")
-
 // Keys outside the @MainActor class so nonisolated methods can access them
 private enum CrashReportKeys {
-    static let cleanShutdown = "sam.cleanShutdown"
-    static let lastLaunch = "sam.lastLaunchTimestamp"
-    static let dismissedCrash = "sam.crashReport.dismissedTimestamp"
+    nonisolated static let cleanShutdown = "sam.cleanShutdown"
+    nonisolated static let lastLaunch = "sam.lastLaunchTimestamp"
+    nonisolated static let dismissedCrash = "sam.crashReport.dismissedTimestamp"
 }
 
 @MainActor
@@ -25,6 +23,8 @@ private enum CrashReportKeys {
 final class CrashReportService {
 
     static let shared = CrashReportService()
+
+    nonisolated let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "CrashReport")
 
     // MARK: - Observable State
 

@@ -22,7 +22,7 @@ actor FeedbackFormParserService {
 
     static let shared = FeedbackFormParserService()
 
-    private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "FeedbackFormParser")
+    nonisolated let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "FeedbackFormParser")
 
     private init() {}
 
@@ -187,5 +187,5 @@ actor FeedbackFormParserService {
 // MARK: - CharacterSet Extension
 
 private extension CharacterSet {
-    static let carriageReturns = CharacterSet(charactersIn: "\r")
+    nonisolated static let carriageReturns = CharacterSet(charactersIn: "\r")
 }

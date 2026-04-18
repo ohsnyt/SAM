@@ -38,7 +38,7 @@ private final class SidebarToggleInstallerView: NSView {
         super.viewDidMoveToWindow()
         guard !installed, let window else { return }
 
-        DispatchQueue.main.async { [weak self, weak window] in
+        Task { @MainActor [weak self, weak window] in
             guard let self, let window, !self.installed else { return }
             self.installToggle(in: window)
         }

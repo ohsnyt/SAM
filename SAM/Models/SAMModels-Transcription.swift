@@ -24,7 +24,7 @@ public enum TranscriptSessionStatus: String, Codable, Sendable {
 
 /// The purpose of a recording session. Drives summary prompts, output fields,
 /// compliance scanning, and people-linking behavior.
-public enum RecordingContext: String, Codable, Sendable, CaseIterable {
+public nonisolated enum RecordingContext: String, Codable, Sendable, CaseIterable {
     /// Standard client or team meeting — full pipeline including compliance scanning
     /// and person-linking. Default for calendar-matched meetings.
     case clientMeeting   = "ClientMeeting"
@@ -35,7 +35,7 @@ public enum RecordingContext: String, Codable, Sendable, CaseIterable {
     /// no compliance scan; attendee list but no CRM person-linking.
     case boardMeeting    = "BoardMeeting"
 
-    public var displayName: String {
+    public nonisolated var displayName: String {
         switch self {
         case .clientMeeting:   return "Client / Team Meeting"
         case .trainingLecture: return "Training / Lecture"
@@ -43,7 +43,7 @@ public enum RecordingContext: String, Codable, Sendable, CaseIterable {
         }
     }
 
-    public var systemIcon: String {
+    public nonisolated var systemIcon: String {
         switch self {
         case .clientMeeting:   return "person.2"
         case .trainingLecture: return "graduationcap"
@@ -52,10 +52,10 @@ public enum RecordingContext: String, Codable, Sendable, CaseIterable {
     }
 
     /// Whether this context requires compliance flag extraction.
-    public var requiresCompliance: Bool { self == .clientMeeting }
+    public nonisolated var requiresCompliance: Bool { self == .clientMeeting }
 
     /// Whether participants should be linked to SamPerson CRM records.
-    public var supportsPersonLinking: Bool { self != .trainingLecture }
+    public nonisolated var supportsPersonLinking: Bool { self != .trainingLecture }
 }
 
 // MARK: - TranscriptSession
@@ -299,7 +299,7 @@ public final class TranscriptSegment {
 /// pushed back to the phone over the TCP transcription connection.
 ///
 /// Persisted as a JSON string on `TranscriptSession.meetingSummaryJSON`.
-public struct MeetingSummary: Codable, Sendable, Equatable {
+public nonisolated struct MeetingSummary: Codable, Sendable, Equatable {
     /// 2-3 sentence high-level summary of what the meeting was about.
     public var tldr: String
 
@@ -411,7 +411,7 @@ public struct MeetingSummary: Codable, Sendable, Equatable {
 
     // MARK: - Init
 
-    public init(
+    public nonisolated init(
         tldr: String,
         decisions: [String] = [],
         actionItems: [ActionItem] = [],
@@ -454,7 +454,7 @@ public struct MeetingSummary: Codable, Sendable, Equatable {
         case attendees, agendaItems, votes
     }
 
-    public init(from decoder: Decoder) throws {
+    public nonisolated init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         tldr               = try c.decodeIfPresent(String.self,       forKey: .tldr)               ?? ""
         decisions          = try c.decodeIfPresent([String].self,      forKey: .decisions)          ?? []
@@ -473,7 +473,7 @@ public struct MeetingSummary: Codable, Sendable, Equatable {
         votes              = try c.decodeIfPresent([VoteRecord].self,  forKey: .votes)              ?? []
     }
 
-    public static let empty = MeetingSummary(tldr: "")
+    public nonisolated static let empty = MeetingSummary(tldr: "")
 }
 
 public extension MeetingSummary {

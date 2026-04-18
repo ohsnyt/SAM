@@ -381,20 +381,13 @@ struct MeetingCaptureView: View {
     // MARK: - Context Picker
 
     private var contextPicker: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Recording Type")
-                .font(.caption.bold())
-                .foregroundStyle(.secondary)
-                .padding(.horizontal)
-
-            Picker("Recording Type", selection: $selectedContext) {
-                ForEach(RecordingContext.allCases, id: \.self) { ctx in
-                    Label(ctx.displayName, systemImage: ctx.systemIcon).tag(ctx)
-                }
+        Picker("Recording Type", selection: $selectedContext) {
+            ForEach(RecordingContext.allCases, id: \.self) { ctx in
+                Label(ctx.displayName, systemImage: ctx.systemIcon).tag(ctx)
             }
-            .pickerStyle(.segmented)
-            .padding(.horizontal)
         }
+        .pickerStyle(.menu)
+        .padding(.horizontal)
     }
 
     /// Shown instead of participant list when Training/Lecture is selected.
@@ -858,29 +851,6 @@ struct MeetingCaptureView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-        }
-    }
-
-    /// Compact participant list shown during recording — no heading, scrollable if >3
-    @available(*, deprecated, message: "Use participantListView instead")
-    private var compactParticipantList: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(0..<speakerNames.count, id: \.self) { i in
-                    HStack(spacing: 4) {
-                        Circle()
-                            .fill(speakerDotColor(i))
-                            .frame(width: 6, height: 6)
-                        Text(speakerNames[i])
-                            .font(.caption)
-                            .lineLimit(1)
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Capsule().fill(Color.secondary.opacity(0.1)))
-                }
-            }
-            .padding(.horizontal)
         }
     }
 

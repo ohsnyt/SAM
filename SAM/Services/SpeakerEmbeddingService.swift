@@ -27,25 +27,26 @@ import Foundation
 import Accelerate
 import os.log
 
-private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "SpeakerEmbeddingService")
 
 // MARK: - Protocol
 
 /// Abstract interface for a speaker embedding model.
 protocol SpeakerEmbeddingProvider: Sendable {
     /// Dimension of the embedding vector this provider produces.
-    var embeddingDimension: Int { get }
+    nonisolated var embeddingDimension: Int { get }
 
     /// Extract a normalized embedding from a mono PCM audio buffer at `sampleRate`.
     /// Returns nil if the input is too short or silent.
-    func embedding(for samples: [Float], sampleRate: Double) -> [Float]?
+    nonisolated func embedding(for samples: [Float], sampleRate: Double) -> [Float]?
 }
 
 // MARK: - MFCC Implementation
 
 /// Default embedding provider built on MFCC features + statistical pooling.
 /// All DSP runs on the CPU via vDSP — no model file required.
-final class MFCCSpeakerEmbeddingProvider: SpeakerEmbeddingProvider, @unchecked Sendable {
+nonisolated final class MFCCSpeakerEmbeddingProvider: SpeakerEmbeddingProvider, @unchecked Sendable {
+
+    private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "SpeakerEmbeddingService")
 
     // Feature configuration
     private let targetSampleRate: Double = 16_000
@@ -64,7 +65,7 @@ final class MFCCSpeakerEmbeddingProvider: SpeakerEmbeddingProvider, @unchecked S
     private let window: [Float]
     private let fftSetup: vDSP.FFT<DSPSplitComplex>
 
-    init() {
+    nonisolated init() {
         // MFCC coefficients + deltas + double-deltas = 39
         // Statistical pooling doubles it → 78
         self.embeddingDimension = 13 * 3 * 2
@@ -342,13 +343,13 @@ final class SpeakerEmbeddingService {
 
     static let shared = SpeakerEmbeddingService()
 
-    private let provider: SpeakerEmbeddingProvider
+    nonisolated private let provider: SpeakerEmbeddingProvider
 
-    init(provider: SpeakerEmbeddingProvider = MFCCSpeakerEmbeddingProvider()) {
+    nonisolated init(provider: SpeakerEmbeddingProvider = MFCCSpeakerEmbeddingProvider()) {
         self.provider = provider
     }
 
-    var embeddingDimension: Int { provider.embeddingDimension }
+    nonisolated var embeddingDimension: Int { provider.embeddingDimension }
 
     /// Extract an embedding for a PCM buffer. Returns nil for silent/short input.
     /// Pure CPU DSP via vDSP — safe to call from any actor.

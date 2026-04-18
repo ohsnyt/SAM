@@ -68,7 +68,7 @@ struct TodayView: View {
             coordinator.refresh()
             tripCoordinator.refreshStats()
             // Pull latest briefing + settings from CloudKit
-            await CloudSyncService.shared.fetchAndCacheWorkspaceSettings()
+            _ = await CloudSyncService.shared.fetchAndCacheWorkspaceSettings()
             briefingJSON = await CloudSyncService.shared.fetchBriefing()
             FieldCalendarService.shared.refreshToday()
         }
@@ -78,7 +78,7 @@ struct TodayView: View {
             Task {
                 // Fetch workspace settings and briefing from CloudKit
                 if WorkspaceSettings.loadCached() == nil {
-                    await CloudSyncService.shared.fetchAndCacheWorkspaceSettings()
+                    _ = await CloudSyncService.shared.fetchAndCacheWorkspaceSettings()
                     FieldCalendarService.shared.refreshToday()
                 }
                 if briefingJSON == nil {
