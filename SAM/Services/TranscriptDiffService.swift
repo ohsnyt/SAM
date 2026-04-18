@@ -212,7 +212,7 @@ struct TranscriptDiffService {
                 var closestRawWord: String? = nil
                 let searchStart = max(0, pIdx - 3)
                 let searchEnd = min(rawWords.count, pIdx + 4)
-                for rIdx in searchStart..<searchEnd {
+                for rIdx in searchStart..<max(searchStart, searchEnd) {
                     if !usedRawIndices.contains(rIdx) {
                         closestRawWord = rawWords[rIdx]
                         usedRawIndices.insert(rIdx)

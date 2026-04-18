@@ -41,6 +41,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     case businessType = "Business Type"
     case compliance = "Compliance"
     case roles = "Roles"
+    case tripsAndMileage = "Trips & Mileage"
 
     var id: String { rawValue }
 
@@ -61,6 +62,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .businessType: return "briefcase"
         case .compliance: return "checkmark.shield"
         case .roles: return "person.badge.key"
+        case .tripsAndMileage: return "car.fill"
         }
     }
 
@@ -69,7 +71,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .personalization, .appearance, .security: return "General"
         case .contacts, .calendar, .mail, .communications, .clipboardCapture: return "Data"
         case .coaching, .briefings, .dictationVoice, .promptLab: return "AI"
-        case .businessType, .compliance, .roles: return "Business"
+        case .businessType, .compliance, .roles, .tripsAndMileage: return "Business"
         }
     }
 
@@ -142,6 +144,8 @@ struct SettingsView: View {
             ComplianceSettingsPane()
         case .roles:
             RolesSettingsPane()
+        case .tripsAndMileage:
+            TripsAndMileageSettingsPane()
         }
     }
 }

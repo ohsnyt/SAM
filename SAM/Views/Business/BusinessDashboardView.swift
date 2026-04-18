@@ -21,9 +21,9 @@ struct BusinessDashboardView: View {
     /// Tab definitions that adapt to practice type.
     private var tabs: [(label: String, tag: Int)] {
         if isFinancial {
-            return [("Strategic", 0), ("Pipeline", 1), ("Production", 2), ("Goals", 3)]
+            return [("Strategic", 0), ("Pipeline", 1), ("Production", 2), ("Goals", 3), ("Mileage", 4)]
         } else {
-            return [("Strategic", 0), ("Pipeline", 1), ("Goals", 3)]
+            return [("Strategic", 0), ("Pipeline", 1), ("Goals", 3), ("Mileage", 4)]
         }
     }
 
@@ -63,6 +63,8 @@ struct BusinessDashboardView: View {
                     ProductionDashboardView(tracker: tracker)
                 case 3:
                     GoalProgressView()
+                case 4:
+                    MacTripsView()
                 default:
                     EmptyView()
                 }

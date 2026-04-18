@@ -33,14 +33,14 @@ final class TripCoordinator {
     /// Current month's business miles
     private(set) var monthBusinessMiles: Double = 0
 
-    /// Current month's tax deduction
-    private(set) var monthTaxDeduction: Double = 0
-
     /// Year-to-date business miles
     private(set) var ytdBusinessMiles: Double = 0
 
     /// The last completed trip (for summary display)
     private(set) var completedTrip: SamTrip?
+
+    /// Count of recorded trips not yet confirmed by the user
+    private(set) var unconfirmedCount: Int = 0
 
     /// Whether to show the trip summary sheet
     var showTripSummary = false
@@ -108,6 +108,14 @@ final class TripCoordinator {
     /// Current location from the location service.
     var currentLocation: CLLocation? { location.currentLocation }
 
+    // MARK: - Delete
+
+    func deleteTrip(_ trip: SamTrip, context: ModelContext) {
+        context.delete(trip)
+        try? context.save()
+        refreshStats()
+    }
+
     // MARK: - Stats
 
     func refreshStats() {
@@ -125,6 +133,7 @@ final class TripCoordinator {
         )
         let allTrips = (try? context.fetch(allDescriptor)) ?? []
         recentTrips = allTrips
+        unconfirmedCount = allTrips.filter { $0.confirmedAt == nil && $0.statusRawValue == TripStatus.recorded.rawValue }.count
 
         // Current month
         guard let monthStart = calendar.date(from: DateComponents(year: year, month: month, day: 1)),
@@ -132,7 +141,6 @@ final class TripCoordinator {
 
         let monthTrips = allTrips.filter { $0.date >= monthStart && $0.date < monthEnd }
         monthBusinessMiles = monthTrips.reduce(0) { $0 + $1.businessDistanceMiles }
-        monthTaxDeduction = monthTrips.reduce(0) { $0 + $1.taxDeduction }
 
         // YTD
         guard let yearStart = calendar.date(from: DateComponents(year: year, month: 1, day: 1)) else { return }

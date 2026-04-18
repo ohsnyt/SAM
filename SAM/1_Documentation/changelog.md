@@ -4,6 +4,93 @@
 
 ---
 
+## SAMField: Recording Sync Handshake Fixes + Polish Pipeline Guards (April 17, 2026)
+
+**What**: Fixed three compounding bugs that caused pending recordings to get stuck permanently in the upload queue ("Mac is processing" with no resolution), and added guards in the Stage 5 polish pipeline to skip polish on silence/noise recordings and cap any polish operation at 30 seconds.
+
+**Why**: Sarah had 3 recordings stuck in the sync queue that she could not clear without deleting them. Root cause analysis found the handshake had three independent failure modes that could each independently orphan a session. The polish fix was discovered while debugging: a 5.5-second silence recording spent 60 seconds in Stage 5 before failing with "Exceeded model context window" — caused by Whisper hallucinating text on silence which was then sent to FoundationModels.
+
+### Sync Handshake Fixes
+
+**Bug 1 — `awaitingAck` records never retried** (`PendingUploadService.swift`)
+
+Records stuck in `.awaitingAck` or `.uploading` at app launch (from crashes, force-quits, or connection loss during a previous session) were invisible to `attemptNextUpload`, which only queried `.pending` and `.failed`. Added `resetOrphanedInProgressRecords()` called from `configure()` that resets any orphaned in-progress records to `.pending` on startup.
+
+**Bug 2 — Ack silently dropped when iPhone disconnects during reprocess** (`AudioReceivingService.swift`)
+
+`sendSessionProcessed()` returned silently when `activeConnection` was nil. For a 60-second reprocess, the phone's connection frequently drops before the Mac finishes. Fixed by queuing pending acks in `pendingAcks: [PendingAck]` and draining them in the `.ready` state handler when the iPhone reconnects (same pattern as the existing `pendingSummary` flush). The ack now survives connection drops across the reprocess window.
+
+**Bug 3 — Late acks discarded (timing gap between uploadStart and continuation setup)** (`PendingUploadService.swift`)
+
+`handleSessionProcessedAck()` did nothing when `ackContinuation` was nil. An ack that arrives in the window between the phone sending `uploadStart` and setting up the `withCheckedContinuation` (after `uploadEnd`) was silently lost. Fixed by adding a SwiftData fallback path: if no continuation is active, the ack is applied directly to the `PendingUpload` record, deleting the file and record on success or marking `.failed` on failure.
+
+**Bonus — Processed session ledger prevents re-processing** (`AudioReceivingService.swift`)
+
+Added `processedSessionIDs: Set<String>` backed by UserDefaults (max 500 entries, evicts oldest). When the Mac receives `uploadStart` for a session already in the ledger, it sends an immediate `sessionProcessed` ack and ignores all subsequent chunks and `uploadEnd` for that session — no reprocessing, no duplicate `TranscriptSession`. This makes re-uploads (which happen after the phone resets an orphaned record) nearly instantaneous.
+
+**Auto-chain** (`PendingUploadService.swift`)
+
+After each upload completes (success or failure), `attemptNextUpload(isRecording: false)` is called automatically. Previously the queue only advanced on tab appearance or Mac reconnect; now it drains in sequence without user interaction.
+
+**Pending uploads management UI** (`PendingUploadsManagementView.swift`, `MeetingCaptureView.swift`)
+
+The "N recordings waiting to sync" banner is now tappable and opens a sheet listing each pending recording with status (Waiting/Uploading/Processing/Failed), duration, size, attempt count, and error message. Swipe-left deletes the WAV file and SwiftData record.
+
+### Stage 5 Polish Pipeline Guards
+
+**Guard 1 — Skip polish when diarization finds 0 voice segments** (`PendingReprocessService.polishSession`)
+
+If SpeakerKit/MFCC diarization returns 0 voice segments, polish is skipped entirely before any model call. Zero voice segments means the recording is silence or noise; Whisper's output is almost certainly a hallucination and not worth polishing. Saves the entire Stage 5 cost (~60s) for silence recordings.
+
+**Guard 2 — 30-second hard timeout on FoundationModels calls** (`AIService.generateWithFoundationModels`)
+
+`withThrowingTaskGroup` races the `session.respond(to:)` call against a 30-second sleep. If the model doesn't respond in time, `AIError.timeout` is thrown and polish fails gracefully. Previously a hanging model call could block the pipeline for 60+ seconds before returning an error. The pipeline continues to Stage 6 regardless.
+
+### Architecture Notes
+
+- No schema version bump — all changes are in-memory or UserDefaults
+- `processedSessionIDs` UserDefaults key: `sam.processedUploadSessions` (max 500 UUIDs as string array)
+- The pending ack queue is in-memory only; Mac app restarts clear it. For acks lost across restarts, the phone's startup reset + re-upload + immediate ledger ack path covers recovery.
+
+---
+
+## SAMField: IRS Mileage Tracking — Full Feature Set (April 17, 2026)
+
+**What**: Completed the SAMField mileage tracking feature with IRS-compliant export (CSV + PDF), manual trip entry, vehicle management, trip confirmation flow, commuting exclusion, Mac-side trips view, and related settings.
+
+**Why**: Sarah needed a way to export her business driving records for tax purposes. The feature already captured GPS-tracked trips; this work added all the structure and export capability the IRS requires for mileage deductions plus UI to manage and review trips from both phone and Mac.
+
+### Key Design Decisions
+
+- **IRS rate stored per-device via `@AppStorage`**, not per-trip — the rate changes annually and is only needed at filing time, not per-trip. Sarah updates it once in Settings when the IRS publishes the new rate.
+- **Commuting exclusion as a manual toggle** (`isCommuting: Bool` on `SamTrip`) rather than auto-detection from office address — reduces false positives, keeps user in control of what's deductible.
+- **Manual trip entry uses Expensify-style route computation** — forward-geocodes addresses via `CLGeocoder`, computes driving distances via `MKDirections` per segment, shows a live map with route polylines. Produces IRS-defensible derived miles without requiring odometer readings.
+- **PDF export via `WKWebView.pdf()`** — cross-platform (iOS + macOS); HTML rendered with 800ms sleep for load completion. Landscape US Letter (792×612).
+
+### New Files (8)
+
+- `SAMField/Services/VehicleStore.swift` — UserDefaults-backed vehicle picklist ("Personal Vehicle", "Rental" as protected defaults; user-addable)
+- `SAMField/Services/MileageExportService.swift` — CSV (UTF-8 BOM for Excel) + PDF (WKWebView HTML) generation with commuting exclusion, confirmed column, IRS rate
+- `SAMField/Views/Trips/MileageExportView.swift` — Export sheet: year/custom range picker, IRS rate field, format toggle (CSV/PDF), progress indicator for PDF
+- `SAMField/Views/Trips/ManualTripEntryView.swift` — Form-based manual entry with geocoding, MKDirections routing, live map, vehicle picker
+- `SAM/Services/MacMileageExportService.swift` — Mac-side mirror of MileageExportService (SAMField target not available to Mac)
+- `SAM/Views/Business/MacTripsView.swift` — Mac trips view with year filter, stats header, trip table, NSSavePanel export, MacTripDetailView sheet
+- `SAM/Views/Settings/TripsAndMileageSettingsPane.swift` — Mac settings: IRS rate, regular office address, vehicle list management
+- `SAMField/Views/Capture/PendingUploadsManagementView.swift` — Pending upload management (see sync fixes above)
+
+### Modified Models
+
+- `SAMModels-Trip.swift` — Added: `startAddress: String?`, `vehicle: String`, `tripPurposeRawValue: String?` + `@Transient tripPurpose`, `confirmedAt: Date?`, `isCommuting: Bool`. Removed: `irsRatePerMile` (was per-trip; now applied at export time only). All new properties have safe defaults for backward compatibility.
+
+### Architecture Notes
+
+- No schema version bump — new `SamTrip` properties have defaults; existing records load cleanly
+- `VehicleStore` is in SAMField target; Mac reimplements inline using `UserDefaults.standard.stringArray(forKey: "sam.vehicles")`
+- `TripCoordinator.unconfirmedCount` drives the Trips tab badge and a TodayView banner prompting review
+- The IRS "contemporaneous record" requirement is satisfied by `confirmedAt: Date?` — the timestamp records when the user verified the trip log
+
+---
+
 ## Streaming Stability + Speaker Turn Chunking (April 15, 2026)
 
 ### Overview

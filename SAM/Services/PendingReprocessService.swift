@@ -459,7 +459,11 @@ final class PendingReprocessService {
         let stage5Start = Date()
         logger.notice("⏳ Stage 5 (polish) starting...")
         if let session = savedSession {
-            await polishSession(session: session, container: modelContainer)
+            await polishSession(
+                session: session,
+                diarizationVoiceSegmentCount: diarization.segments.count,
+                container: modelContainer
+            )
         }
         logger.notice("✅ Stage 5 (polish): \(String(format: "%.1f", Date().timeIntervalSince(stage5Start)))s")
 
@@ -656,8 +660,21 @@ final class PendingReprocessService {
     }
 
     /// Run polish service on the saved session, persisting `polishedText`.
-    private func polishSession(session: TranscriptSession, container: ModelContainer) async {
+    private func polishSession(
+        session: TranscriptSession,
+        diarizationVoiceSegmentCount: Int,
+        container: ModelContainer
+    ) async {
         let sessionID = session.id
+
+        // Skip polish if diarization found no voice activity. Whisper is
+        // prone to hallucinating plausible text on silence or noise — there
+        // is nothing worth polishing, and sending a hallucinated transcript
+        // to the model wastes 30–60s and can trigger context-window errors.
+        guard diarizationVoiceSegmentCount > 0 else {
+            logger.info("Stage 5: skipping polish — diarization found 0 voice segments (silence/noise recording)")
+            return
+        }
 
         // Build the same speaker-grouped transcript format polish expects
         let segments = session.sortedSegments

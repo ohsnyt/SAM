@@ -14,6 +14,8 @@ import SwiftData
 
 struct FieldTabView: View {
     @State private var selectedTab: FieldTab = .today
+    @Environment(\.modelContext) private var modelContext
+    @State private var coordinator = TripCoordinator.shared
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -37,12 +39,16 @@ struct FieldTabView: View {
                     TripsView()
                 }
             }
+            .badge(coordinator.unconfirmedCount > 0 ? coordinator.unconfirmedCount : 0)
 
             Tab("Nearby", systemImage: "map", value: .nearby) {
                 NavigationStack {
                     NearbyView()
                 }
             }
+        }
+        .task {
+            coordinator.configure(container: modelContext.container)
         }
     }
 }

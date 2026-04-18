@@ -45,11 +45,13 @@ actor AIService {
     enum AIError: Error, LocalizedError {
         case modelUnavailable(String)
         case generationFailed(String)
+        case timeout(String)
 
         var errorDescription: String? {
             switch self {
             case .modelUnavailable(let reason): return "AI model unavailable: \(reason)"
             case .generationFailed(let reason): return "AI generation failed: \(reason)"
+            case .timeout(let reason): return "AI generation timed out: \(reason)"
             }
         }
     }
@@ -311,8 +313,23 @@ actor AIService {
             session = LanguageModelSession()
         }
 
-        let response = try await session.respond(to: prompt)
-        return response.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        // 30-second hard timeout. FoundationModels can hang for 60+ seconds
+        // when hitting context-window or resource issues before returning an
+        // error — this ensures the polish stage never blocks the pipeline for
+        // more than half a minute regardless of the model's behaviour.
+        return try await withThrowingTaskGroup(of: String.self) { group in
+            group.addTask {
+                let response = try await session.respond(to: prompt)
+                return response.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            group.addTask {
+                try await Task.sleep(for: .seconds(30))
+                throw AIError.timeout("FoundationModels did not respond within 30s")
+            }
+            let result = try await group.next()!
+            group.cancelAll()
+            return result
+        }
     }
 
     // MARK: - MLX Backend

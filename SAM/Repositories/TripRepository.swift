@@ -97,7 +97,6 @@ final class TripRepository {
     func createTrip(
         date: Date = .now,
         status: TripStatus = .recorded,
-        irsRatePerMile: Double = 0.70,
         notes: String? = nil,
         startedAt: Date? = nil
     ) throws -> SamTrip {
@@ -105,7 +104,6 @@ final class TripRepository {
 
         let trip = SamTrip(
             date: date,
-            irsRatePerMile: irsRatePerMile,
             status: status,
             notes: notes,
             startedAt: startedAt
@@ -184,12 +182,6 @@ final class TripRepository {
         return trips.reduce(0) { $0 + $1.businessDistanceMiles }
     }
 
-    /// Total tax deduction for a given month.
-    func taxDeduction(year: Int, month: Int) throws -> Double {
-        let trips = try fetchTrips(year: year, month: month)
-        return trips.reduce(0) { $0 + $1.taxDeduction }
-    }
-
     /// Year-to-date business miles.
     func businessMilesYTD(year: Int) throws -> Double {
         let calendar = Calendar.current
@@ -200,13 +192,4 @@ final class TripRepository {
         return trips.reduce(0) { $0 + $1.businessDistanceMiles }
     }
 
-    /// Year-to-date tax deduction.
-    func taxDeductionYTD(year: Int) throws -> Double {
-        let calendar = Calendar.current
-        guard let startDate = calendar.date(from: DateComponents(year: year, month: 1, day: 1)) else {
-            return 0
-        }
-        let trips = try fetchTrips(from: startDate, to: .now)
-        return trips.reduce(0) { $0 + $1.taxDeduction }
-    }
 }

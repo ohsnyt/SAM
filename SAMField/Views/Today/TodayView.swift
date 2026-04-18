@@ -37,6 +37,11 @@ struct TodayView: View {
                 }
             }
 
+            // Unconfirmed trips banner
+            if tripCoordinator.unconfirmedCount > 0 {
+                unconfirmedTripsBanner
+            }
+
             // Active trip banner
             if tripCoordinator.isTracking {
                 activeTripBanner
@@ -90,25 +95,52 @@ struct TodayView: View {
         if let data = json.data(using: .utf8),
            let dict = try? JSONDecoder().decode([String: String].self, from: data) {
 
-            Section("Morning Briefing") {
+            let heading = dict["sectionHeading"] ?? "Morning Briefing"
+            let generatedAt: Date? = dict["date"].flatMap {
+                ISO8601DateFormatter().date(from: $0)
+            }
+
+            Section {
                 // Narrative summary
                 if let narrative = dict["narrativeSummary"], !narrative.isEmpty {
                     Text(narrative)
                         .font(.subheadline)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-
-                // Generation time
-                if let dateStr = dict["date"] {
-                    Text("Updated \(dateStr)")
-                        .font(.caption2)
-                        .foregroundStyle(.quaternary)
-                }
-
                 // NOTE: Priority actions and follow-ups suppressed until
                 // they are actionable on the phone (call, text, email).
                 // See project_phone_actionable_items.md for the plan.
+            } header: {
+                HStack {
+                    Text(heading)
+                    Spacer()
+                    if let date = generatedAt {
+                        let minutes = max(1, Int(ceil(Date().timeIntervalSince(date) / 60.0)))
+                        Text(minutes == 1 ? "1 min ago" : "\(minutes) min ago")
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
+        }
+    }
+
+    // MARK: - Unconfirmed Trips Banner
+
+    private var unconfirmedTripsBanner: some View {
+        Section {
+            HStack(spacing: 12) {
+                Image(systemName: "checkmark.seal")
+                    .font(.title2)
+                    .foregroundStyle(.orange)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(tripCoordinator.unconfirmedCount) trip\(tripCoordinator.unconfirmedCount == 1 ? "" : "s") need review")
+                        .font(.headline)
+                    Text("Confirm recent trips to satisfy IRS contemporaneous record requirements.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.vertical, 4)
         }
     }
 
@@ -234,7 +266,7 @@ struct TodayView: View {
                     Text("This month")
                         .foregroundStyle(.secondary)
                     Spacer()
-                    Text(String(format: "%.1f mi / $%.0f", tripCoordinator.monthBusinessMiles, tripCoordinator.monthTaxDeduction))
+                    Text(String(format: "%.1f mi", tripCoordinator.monthBusinessMiles))
                         .font(.subheadline.monospacedDigit().bold())
                 }
             }

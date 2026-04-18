@@ -52,6 +52,7 @@ final class TripTrackingService {
     private var dwellLocation: CLLocation?
     private var trackingTask: Task<Void, Never>?
     private var previousStopLocation: CLLocation?
+    private var startAddressCaptured = false
 
     private init() {}
 
@@ -69,7 +70,6 @@ final class TripTrackingService {
         let context = ModelContext(container)
         let trip = SamTrip(
             date: .now,
-            irsRatePerMile: currentIRSRate,
             status: .tracking,
             startedAt: .now
         )
@@ -81,6 +81,7 @@ final class TripTrackingService {
         totalDistanceMiles = 0
         lastMovingLocation = nil
         previousStopLocation = nil
+        startAddressCaptured = false
         state = .tracking
 
         location.startUpdating()
@@ -219,6 +220,24 @@ final class TripTrackingService {
     private func processLocationUpdate() {
         guard let current = location.currentLocation else { return }
 
+        // Capture starting address on the first GPS fix
+        if !startAddressCaptured, let trip = currentTrip, let container {
+            startAddressCaptured = true
+            let cloc = CLLocation(latitude: current.coordinate.latitude, longitude: current.coordinate.longitude)
+            let tripID = trip.id
+            Task {
+                let geo = await LocationService.shared.reverseGeocode(cloc)
+                let address = geo?.address ?? geo?.name
+                guard let address else { return }
+                let ctx = ModelContext(container)
+                let desc = FetchDescriptor<SamTrip>(predicate: #Predicate { $0.id == tripID })
+                if let localTrip = try? ctx.fetch(desc).first {
+                    localTrip.startAddress = address
+                    try? ctx.save()
+                }
+            }
+        }
+
         // Add to route
         routePoints.append(current.coordinate)
 
@@ -259,6 +278,4 @@ final class TripTrackingService {
         }
     }
 
-    /// Current IRS standard mileage rate (2026).
-    private var currentIRSRate: Double { 0.70 }
 }

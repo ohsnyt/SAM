@@ -42,11 +42,6 @@ public final class SamTrip {
     public var startOdometer: Double?
     public var endOdometer: Double?
 
-    /// IRS standard mileage rate at the time of the trip (cents per mile).
-    /// Stored so historical trips retain the rate that was current.
-    /// 2026 rate: 70.0 (i.e. $0.70/mile)
-    public var irsRatePerMile: Double
-
     /// Trip lifecycle status
     public var statusRawValue: String = "recorded"
 
@@ -65,6 +60,27 @@ public final class SamTrip {
     /// When the trip ended (last stop departure or tracking stop)
     public var endedAt: Date?
 
+    /// Reverse-geocoded address of the trip's starting point
+    public var startAddress: String?
+
+    /// Vehicle used (e.g. "Personal Vehicle", "Rental", or user-defined)
+    public var vehicle: String = "Personal Vehicle"
+
+    /// Trip-level business purpose (overrides per-stop derivation in exports)
+    public var tripPurposeRawValue: String?
+
+    @Transient
+    public var tripPurpose: StopPurpose? {
+        get { tripPurposeRawValue.flatMap { StopPurpose(rawValue: $0) } }
+        set { tripPurposeRawValue = newValue?.rawValue }
+    }
+
+    /// Timestamp set when the user confirms the trip log is accurate
+    public var confirmedAt: Date?
+
+    /// Whether this trip was commuting (home↔regular office) — non-deductible, excluded from business miles totals
+    public var isCommuting: Bool = false
+
     // ── Relationships ───────────────────────────────────────────────
 
     /// All stops on this trip, ordered by arrival time
@@ -72,12 +88,6 @@ public final class SamTrip {
     public var stops: [SamTripStop] = []
 
     // ── Computed ────────────────────────────────────────────────────
-
-    /// Tax deduction amount based on business miles × IRS rate
-    @Transient
-    public var taxDeduction: Double {
-        businessDistanceMiles * irsRatePerMile
-    }
 
     /// Number of business stops
     @Transient
@@ -91,22 +101,30 @@ public final class SamTrip {
         totalDistanceMiles: Double = 0,
         businessDistanceMiles: Double = 0,
         personalDistanceMiles: Double = 0,
-        irsRatePerMile: Double = 0.70,
         status: TripStatus = .recorded,
         notes: String? = nil,
         startedAt: Date? = nil,
-        endedAt: Date? = nil
+        endedAt: Date? = nil,
+        startAddress: String? = nil,
+        vehicle: String = "Personal Vehicle",
+        tripPurpose: StopPurpose? = nil,
+        confirmedAt: Date? = nil,
+        isCommuting: Bool = false
     ) {
         self.id = id
         self.date = date
         self.totalDistanceMiles = totalDistanceMiles
         self.businessDistanceMiles = businessDistanceMiles
         self.personalDistanceMiles = personalDistanceMiles
-        self.irsRatePerMile = irsRatePerMile
         self.statusRawValue = status.rawValue
         self.notes = notes
         self.startedAt = startedAt
         self.endedAt = endedAt
+        self.startAddress = startAddress
+        self.vehicle = vehicle
+        self.tripPurposeRawValue = tripPurpose?.rawValue
+        self.confirmedAt = confirmedAt
+        self.isCommuting = isCommuting
     }
 }
 

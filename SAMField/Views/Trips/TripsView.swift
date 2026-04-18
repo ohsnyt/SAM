@@ -2,23 +2,56 @@
 //  TripsView.swift
 //  SAM Field
 //
-//  Created by Assistant on 4/8/26.
-//  Phase F3: Trip Tracking
-//
-//  Trip tracking tab — map, stops, controls, mileage summaries.
+//  Trip tracking tab — map, stops, controls, and IRS-compliant mileage history.
 //
 
 import SwiftUI
 import SwiftData
 import MapKit
 
+// MARK: - Period Filter
+
+private enum TripPeriod: String, CaseIterable {
+    case today = "Today"
+    case week = "Week"
+    case month = "Month"
+
+    func includes(_ date: Date) -> Bool {
+        let cal = Calendar.current
+        let now = Date()
+        switch self {
+        case .today: return cal.isDateInToday(date)
+        case .week:  return cal.isDate(date, equalTo: now, toGranularity: .weekOfYear)
+        case .month: return cal.isDate(date, equalTo: now, toGranularity: .month)
+        }
+    }
+}
+
+// MARK: - TripsView
+
 struct TripsView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var coordinator = TripCoordinator.shared
+    @State private var selectedPeriod: TripPeriod = .month
+    @State private var showExport = false
+    @State private var showManualEntry = false
     @State private var showAddStop = false
+    @State private var selectedTrip: SamTrip? = nil
     @State private var stopPurpose: StopPurpose = .prospecting
     @State private var stopName = ""
     @State private var stopNotes = ""
+
+    private var filteredTrips: [SamTrip] {
+        coordinator.recentTrips.filter { selectedPeriod.includes($0.date) }
+    }
+
+    private var periodTotalMiles: Double {
+        filteredTrips.reduce(0) { $0 + $1.totalDistanceMiles }
+    }
+
+    private var periodBusinessMiles: Double {
+        filteredTrips.reduce(0) { $0 + $1.businessDistanceMiles }
+    }
 
     var body: some View {
         Group {
@@ -29,8 +62,28 @@ struct TripsView: View {
             }
         }
         .navigationTitle("Trips")
+        .toolbar {
+            if !coordinator.isTracking && !coordinator.isPaused {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showExport = true } label: {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showManualEntry = true } label: {
+                        Image(systemName: "plus")
+                    }
+                }
+            }
+        }
         .onAppear {
             coordinator.configure(container: modelContext.container)
+        }
+        .sheet(isPresented: $showExport) {
+            MileageExportView()
+        }
+        .sheet(isPresented: $showManualEntry) {
+            ManualTripEntryView()
         }
         .sheet(isPresented: $showAddStop) {
             addStopSheet
@@ -40,13 +93,15 @@ struct TripsView: View {
                 TripSummaryView(trip: trip)
             }
         }
+        .sheet(item: $selectedTrip) { trip in
+            TripSummaryView(trip: trip)
+        }
     }
 
-    // MARK: - Active Trip (Map + Controls)
+    // MARK: - Active Trip
 
     private var activeTrip: some View {
         VStack(spacing: 0) {
-            // Map
             TripMapView(
                 routePoints: coordinator.routePoints,
                 stops: coordinator.currentTrip?.stops ?? [],
@@ -54,14 +109,17 @@ struct TripsView: View {
             )
             .frame(maxHeight: .infinity)
 
-            // Bottom panel
             VStack(spacing: 12) {
-                // Stats bar
                 HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(coordinator.isPaused ? "Paused" : "Tracking")
-                            .font(.caption)
-                            .foregroundStyle(coordinator.isPaused ? .orange : .green)
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(coordinator.isPaused ? Color.orange : Color.green)
+                                .frame(width: 8, height: 8)
+                            Text(coordinator.isPaused ? "Paused" : "Tracking")
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(coordinator.isPaused ? .orange : .green)
+                        }
                         Text(String(format: "%.1f mi", coordinator.totalDistanceMiles))
                             .font(.title.monospacedDigit().bold())
                     }
@@ -69,7 +127,7 @@ struct TripsView: View {
                     Spacer()
 
                     if let trip = coordinator.currentTrip {
-                        VStack(alignment: .trailing, spacing: 2) {
+                        VStack(alignment: .trailing, spacing: 4) {
                             Text("Stops")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
@@ -79,7 +137,6 @@ struct TripsView: View {
                     }
                 }
 
-                // Stop list (scrollable if many)
                 if let trip = coordinator.currentTrip, !trip.stops.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 10) {
@@ -90,43 +147,42 @@ struct TripsView: View {
                     }
                 }
 
-                // Controls
                 HStack(spacing: 12) {
                     Button {
                         showAddStop = true
                     } label: {
-                        Image(systemName: "mappin.and.ellipse")
+                        Label("Add Stop", systemImage: "mappin.and.ellipse")
                     }
 
                     if coordinator.isTracking {
                         Button {
                             coordinator.pauseTrip()
                         } label: {
-                            Image(systemName: "pause.fill")
+                            Label("Pause", systemImage: "pause.fill")
                         }
                     } else {
                         Button {
                             coordinator.resumeTrip()
                         } label: {
-                            Image(systemName: "play.fill")
+                            Label("Resume", systemImage: "play.fill")
                         }
                     }
 
                     Button(role: .destructive) {
                         coordinator.stopTrip()
                     } label: {
-                        Image(systemName: "stop.fill")
+                        Label("Stop", systemImage: "stop.fill")
                     }
                 }
                 .buttonStyle(.bordered)
-                .controlSize(.large)
+                .controlSize(.regular)
             }
             .padding()
             .background(.ultraThinMaterial)
         }
     }
 
-    // MARK: - Idle (Start + History)
+    // MARK: - Idle
 
     private var idleTrips: some View {
         List {
@@ -151,18 +207,40 @@ struct TripsView: View {
                 }
             }
 
-            // Stats
-            Section("Mileage Summary") {
-                StatRow(label: "This Month (Business)", value: String(format: "%.1f mi", coordinator.monthBusinessMiles))
-                StatRow(label: "Tax Deduction (Month)", value: String(format: "$%.2f", coordinator.monthTaxDeduction))
-                StatRow(label: "Year to Date (Business)", value: String(format: "%.1f mi", coordinator.ytdBusinessMiles))
+            Section {
+                Picker("Period", selection: $selectedPeriod) {
+                    ForEach(TripPeriod.allCases, id: \.self) { period in
+                        Text(period.rawValue).tag(period)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .listRowBackground(Color.clear)
+                .listRowInsets(.init())
+            } footer: {
+                if filteredTrips.isEmpty {
+                    Text("No trips recorded.")
+                } else {
+                    HStack(spacing: 4) {
+                        Text(String(format: "%.1f mi total", periodTotalMiles))
+                        if periodBusinessMiles > 0 {
+                            Text("·")
+                            Text(String(format: "%.1f mi business", periodBusinessMiles))
+                        }
+                    }
+                }
             }
 
-            // Trip history
-            if !coordinator.recentTrips.isEmpty {
-                Section("Recent Trips") {
-                    ForEach(coordinator.recentTrips.prefix(20), id: \.id) { trip in
+            if !filteredTrips.isEmpty {
+                Section {
+                    ForEach(filteredTrips, id: \.id) { trip in
                         TripHistoryRow(trip: trip)
+                            .contentShape(Rectangle())
+                            .onTapGesture { selectedTrip = trip }
+                    }
+                    .onDelete { offsets in
+                        for index in offsets {
+                            coordinator.deleteTrip(filteredTrips[index], context: modelContext)
+                        }
                     }
                 }
             }
@@ -180,7 +258,6 @@ struct TripsView: View {
                             .tag(purpose)
                     }
                 }
-
                 TextField("Business Name (optional)", text: $stopName)
                 TextField("Notes (optional)", text: $stopNotes)
             }
@@ -221,13 +298,11 @@ struct TripMapView: View {
 
     var body: some View {
         Map(position: $position) {
-            // Route line
             if routePoints.count >= 2 {
                 MapPolyline(coordinates: routePoints)
                     .stroke(.blue, lineWidth: 4)
             }
 
-            // Stop pins
             ForEach(stops.sorted(by: { $0.sortOrder < $1.sortOrder }), id: \.id) { stop in
                 Annotation(
                     stop.locationName ?? stop.address ?? "Stop \(stop.sortOrder + 1)",
@@ -244,7 +319,6 @@ struct TripMapView: View {
                 }
             }
 
-            // Current location
             UserAnnotation()
         }
         .mapControls {
@@ -290,28 +364,72 @@ private struct StopChip: View {
 private struct TripHistoryRow: View {
     let trip: SamTrip
 
+    private var timeRange: String {
+        guard let start = trip.startedAt else {
+            return trip.date.formatted(date: .abbreviated, time: .omitted)
+        }
+        let startStr = start.formatted(date: .omitted, time: .shortened)
+        guard let end = trip.endedAt else { return startStr }
+        return "\(startStr) – \(end.formatted(date: .omitted, time: .shortened))"
+    }
+
+    private var locationSummary: String? {
+        let from = trip.startAddress
+        let sorted = trip.stops.sorted { $0.sortOrder < $1.sortOrder }
+        let to = sorted.last.flatMap { $0.locationName ?? $0.address }
+        if let from, let to { return "\(from) → \(to)" }
+        if let from { return from }
+        // Fallback: first → last stop
+        let origin = sorted.first.flatMap { $0.locationName ?? $0.address }
+        let dest = sorted.count > 1 ? sorted.last.flatMap { $0.locationName ?? $0.address } : nil
+        if let origin, let dest { return "\(origin) → \(dest)" }
+        return origin
+    }
+
+    private var primaryPurpose: String {
+        if let tp = trip.tripPurpose { return tp.displayName }
+        let business = trip.stops.filter { $0.purpose.isBusiness }.map { $0.purpose }
+        guard !business.isEmpty else { return trip.stops.first?.purpose.displayName ?? "Trip" }
+        let counts = Dictionary(grouping: business) { $0 }
+        return counts.max(by: { $0.value.count < $1.value.count })?.key.displayName ?? "Business"
+    }
+
     var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(trip.date, style: .date)
-                    .font(.headline)
-                HStack(spacing: 8) {
-                    Label("\(trip.stops.count)", systemImage: "mappin")
-                    if trip.businessDistanceMiles > 0 {
-                        Label(String(format: "%.1f biz mi", trip.businessDistanceMiles), systemImage: "briefcase")
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 4) {
+                    Text(timeRange)
+                        .font(.subheadline.weight(.medium))
+                    if trip.confirmedAt != nil {
+                        Image(systemName: "checkmark.seal.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.green)
+                    }
+                }
+                if let loc = locationSummary {
+                    Text(loc)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                HStack(spacing: 6) {
+                    Text(primaryPurpose)
+                    if !trip.vehicle.isEmpty {
+                        Text("·")
+                        Text(trip.vehicle)
                     }
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
             }
             Spacer()
-            VStack(alignment: .trailing, spacing: 4) {
+            VStack(alignment: .trailing, spacing: 2) {
                 Text(String(format: "%.1f mi", trip.totalDistanceMiles))
-                    .font(.headline.monospacedDigit())
-                if trip.taxDeduction > 0 {
-                    Text(String(format: "$%.2f", trip.taxDeduction))
-                        .font(.caption)
-                        .foregroundStyle(.green)
+                    .font(.subheadline.monospacedDigit().weight(.semibold))
+                if trip.businessDistanceMiles > 0 && trip.businessDistanceMiles < trip.totalDistanceMiles {
+                    Text(String(format: "%.1f biz", trip.businessDistanceMiles))
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.secondary)
                 }
             }
         }
@@ -322,80 +440,32 @@ private struct TripHistoryRow: View {
 
 struct TripSummaryView: View {
     let trip: SamTrip
+    @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+
+    @State private var vehicle: String = "Personal Vehicle"
+    @State private var selectedPurpose: StopPurpose = .clientMeeting
+    @State private var isCommuting: Bool = false
+    @State private var vehicles: [String] = VehicleStore.load()
+    @State private var showAddVehicle = false
+    @State private var newVehicleName = ""
+    @State private var isConfirmed = false
+    @State private var confirmedAt: Date?
+
+    private var visitedStops: [SamTripStop] {
+        trip.stops.filter { $0.linkedPerson != nil }.sorted { $0.sortOrder < $1.sortOrder }
+    }
 
     var body: some View {
         NavigationStack {
             List {
-                // Overview
-                Section {
-                    HStack {
-                        Image(systemName: "car.fill")
-                            .font(.largeTitle)
-                            .foregroundStyle(.blue)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Trip Complete")
-                                .font(.title2.bold())
-                            Text(trip.date, style: .date)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .listRowBackground(Color.clear)
-                }
-
-                // Mileage
-                Section("Mileage") {
-                    StatRow(label: "Total Distance", value: String(format: "%.1f mi", trip.totalDistanceMiles))
-                    StatRow(label: "Business Miles", value: String(format: "%.1f mi", trip.businessDistanceMiles))
-                    StatRow(label: "Personal Miles", value: String(format: "%.1f mi", trip.personalDistanceMiles))
-                    StatRow(label: "Tax Deduction", value: String(format: "$%.2f", trip.taxDeduction))
-                }
-
-                // Duration
-                if let start = trip.startedAt, let end = trip.endedAt {
-                    Section("Time") {
-                        StatRow(label: "Started", value: start.formatted(date: .omitted, time: .shortened))
-                        StatRow(label: "Ended", value: end.formatted(date: .omitted, time: .shortened))
-                        let duration = end.timeIntervalSince(start)
-                        let hours = Int(duration) / 3600
-                        let minutes = (Int(duration) % 3600) / 60
-                        StatRow(label: "Duration", value: hours > 0 ? "\(hours)h \(minutes)m" : "\(minutes)m")
-                    }
-                }
-
-                // Stops
-                if !trip.stops.isEmpty {
-                    Section("Stops (\(trip.stops.count))") {
-                        ForEach(trip.stops.sorted(by: { $0.sortOrder < $1.sortOrder }), id: \.id) { stop in
-                            VStack(alignment: .leading, spacing: 4) {
-                                HStack {
-                                    Image(systemName: stop.purpose.iconName)
-                                        .foregroundStyle(stop.purpose.isBusiness ? .blue : .secondary)
-                                    Text(stop.locationName ?? stop.address ?? "Stop \(stop.sortOrder + 1)")
-                                        .font(.subheadline.weight(.medium))
-                                }
-                                HStack(spacing: 12) {
-                                    Text(stop.purpose.displayName)
-                                    if let outcome = stop.outcome {
-                                        Text(outcome.displayName)
-                                            .foregroundStyle(outcome.isPositiveContact ? .green : .secondary)
-                                    }
-                                    if let dist = stop.distanceFromPreviousMiles {
-                                        Text(String(format: "%.1f mi", dist))
-                                    }
-                                }
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-
-                                if let notes = stop.notes, !notes.isEmpty {
-                                    Text(notes)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                        }
-                    }
-                }
+                headerSection
+                tripDetailsSection
+                if !visitedStops.isEmpty { visitedSection }
+                mileageSection
+                if trip.startedAt != nil { timeSection }
+                if !trip.stops.isEmpty { stopsSection }
+                confirmSection
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -403,7 +473,193 @@ struct TripSummaryView: View {
                     Button("Done") { dismiss() }
                 }
             }
+            .alert("Add Vehicle", isPresented: $showAddVehicle) {
+                TextField("Vehicle name", text: $newVehicleName)
+                Button("Add") {
+                    VehicleStore.add(newVehicleName)
+                    vehicles = VehicleStore.load()
+                    if !newVehicleName.trimmingCharacters(in: .whitespaces).isEmpty {
+                        vehicle = newVehicleName.trimmingCharacters(in: .whitespaces)
+                    }
+                    newVehicleName = ""
+                }
+                Button("Cancel", role: .cancel) { newVehicleName = "" }
+            }
         }
+        .onAppear {
+            vehicle = trip.vehicle.isEmpty ? (VehicleStore.load().first ?? "Personal Vehicle") : trip.vehicle
+            selectedPurpose = trip.tripPurpose ?? .clientMeeting
+            isCommuting = trip.isCommuting
+            isConfirmed = trip.confirmedAt != nil
+            confirmedAt = trip.confirmedAt
+        }
+    }
+
+    // MARK: - Sections
+
+    private var headerSection: some View {
+        Section {
+            HStack {
+                Image(systemName: "car.fill").font(.largeTitle).foregroundStyle(.blue)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Trip Complete").font(.title2.bold())
+                    Text(trip.date, style: .date).foregroundStyle(.secondary)
+                }
+                Spacer()
+                if isConfirmed {
+                    Image(systemName: "checkmark.seal.fill").foregroundStyle(.green).font(.title2)
+                }
+            }
+            .listRowBackground(Color.clear)
+        }
+    }
+
+    private var tripDetailsSection: some View {
+        Section("Trip Details") {
+            Picker("Vehicle", selection: $vehicle) {
+                ForEach(vehicles, id: \.self) { v in Text(v).tag(v) }
+            }
+            Button("Add Vehicle…") { showAddVehicle = true }
+                .foregroundStyle(.blue)
+            Picker("Purpose", selection: $selectedPurpose) {
+                ForEach(StopPurpose.allCases.filter { $0.isBusiness }, id: \.self) { p in
+                    Text(p.displayName).tag(p)
+                }
+            }
+            Toggle(isOn: Binding(
+                get: { isCommuting },
+                set: { v in
+                    isCommuting = v
+                    trip.isCommuting = v
+                    try? modelContext.save()
+                }
+            )) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Commuting Trip")
+                    Text("Home ↔ regular office. Not tax-deductible.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            if let addr = trip.startAddress {
+                LabeledContent("From", value: addr)
+                    .font(.subheadline)
+            }
+        }
+    }
+
+    private var visitedSection: some View {
+        Section("Who Was Visited") {
+            ForEach(visitedStops, id: \.id) { stop in
+                if let person = stop.linkedPerson {
+                    HStack(spacing: 10) {
+                        Image(systemName: stop.purpose.iconName).foregroundStyle(.blue)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(person.displayNameCache ?? "Unknown").font(.subheadline.weight(.medium))
+                            Text(stop.purpose.displayName).font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if let outcome = stop.outcome {
+                            Text(outcome.displayName).font(.caption)
+                                .foregroundStyle(outcome.isPositiveContact ? .green : .secondary)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var mileageSection: some View {
+        Section("Mileage") {
+            StatRow(label: "Total Distance", value: String(format: "%.1f mi", trip.totalDistanceMiles))
+            if trip.businessDistanceMiles > 0 {
+                StatRow(label: "Business Miles", value: String(format: "%.1f mi", trip.businessDistanceMiles))
+            }
+        }
+    }
+
+    private var timeSection: some View {
+        Section("Time") {
+            if let start = trip.startedAt {
+                StatRow(label: "Started", value: start.formatted(date: .omitted, time: .shortened))
+            }
+            if let end = trip.endedAt {
+                StatRow(label: "Ended", value: end.formatted(date: .omitted, time: .shortened))
+                if let start = trip.startedAt {
+                    let d = Int(end.timeIntervalSince(start))
+                    let h = d / 3600, m = (d % 3600) / 60
+                    StatRow(label: "Duration", value: h > 0 ? "\(h)h \(m)m" : "\(m)m")
+                }
+            }
+        }
+    }
+
+    private var stopsSection: some View {
+        Section("Stops (\(trip.stops.count))") {
+            ForEach(trip.stops.sorted { $0.sortOrder < $1.sortOrder }, id: \.id) { stop in
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Image(systemName: stop.purpose.iconName)
+                            .foregroundStyle(stop.purpose.isBusiness ? .blue : .secondary)
+                        Text(stop.locationName ?? stop.address ?? "Stop \(stop.sortOrder + 1)")
+                            .font(.subheadline.weight(.medium))
+                    }
+                    HStack(spacing: 12) {
+                        Text(stop.purpose.displayName)
+                        if let outcome = stop.outcome {
+                            Text(outcome.displayName)
+                                .foregroundStyle(outcome.isPositiveContact ? .green : .secondary)
+                        }
+                        if let dist = stop.distanceFromPreviousMiles {
+                            Text(String(format: "%.1f mi", dist))
+                        }
+                    }
+                    .font(.caption).foregroundStyle(.secondary)
+                    if let notes = stop.notes, !notes.isEmpty {
+                        Text(notes).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+    }
+
+    private var confirmSection: some View {
+        Section {
+            if isConfirmed, let at = confirmedAt {
+                HStack {
+                    Image(systemName: "checkmark.seal.fill").foregroundStyle(.green)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Trip Confirmed").font(.subheadline.weight(.medium))
+                        Text(at.formatted(date: .abbreviated, time: .shortened))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            } else {
+                Button {
+                    confirmTrip()
+                } label: {
+                    Label("Confirm Trip", systemImage: "checkmark.seal")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+            }
+        } footer: {
+            if !isConfirmed {
+                Text("Confirming stamps the log with today's date and time, satisfying the IRS contemporaneous record requirement.")
+            }
+        }
+    }
+
+    // MARK: - Actions
+
+    private func confirmTrip() {
+        trip.vehicle = vehicle
+        trip.tripPurpose = selectedPurpose
+        trip.isCommuting = isCommuting
+        trip.confirmedAt = .now
+        trip.status = .confirmed
+        try? modelContext.save()
+        isConfirmed = true
+        confirmedAt = trip.confirmedAt
     }
 }
 

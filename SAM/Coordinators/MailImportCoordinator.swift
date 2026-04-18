@@ -376,7 +376,7 @@ final class MailImportCoordinator {
             let facebookMetas = regularMetas.filter {
                 $0.senderEmail.hasSuffix("@facebookmail.com") || $0.senderEmail.hasSuffix("@facebook.com")
             }
-            let regularMetasFiltered = regularMetas.filter {
+            let regularMetasAfterFacebook = regularMetas.filter {
                 !$0.senderEmail.hasSuffix("@facebookmail.com") && !$0.senderEmail.hasSuffix("@facebook.com")
             }
 
@@ -385,13 +385,28 @@ final class MailImportCoordinator {
                 await processFacebookNotifications(facebookMetas)
             }
 
+            // 1d. Intercept GoHighLevel registration notification emails.
+            // These come from a configured sender address (e.g. sarah.snyder@nofamilyleftbehind.co)
+            // with a "Registered: {name} has registered for {event}" subject pattern.
+            // They are system notifications, not relationship emails — route to the registration
+            // pipeline and remove from the main flow to avoid polluting the Unknown Senders queue.
+            let goHighLevelMetas = regularMetasAfterFacebook.filter { GoHighLevelRegistrationService.isRegistrationEmail($0) }
+            let regularMetasFiltered = regularMetasAfterFacebook.filter { !GoHighLevelRegistrationService.isRegistrationEmail($0) }
+
+            if !goHighLevelMetas.isEmpty {
+                logger.info("[mail-import] \(goHighLevelMetas.count) GoHighLevel registration email(s) detected")
+                Task(priority: .utility) {
+                    await GoHighLevelRegistrationService.shared.processRegistrations(goHighLevelMetas)
+                }
+            }
+
             // 2. Build known emails set from PeopleRepository
             let knownEmails = try peopleRepository.allKnownEmails()
 
             // 3. Also exclude neverInclude senders
             let neverInclude = try UnknownSenderRepository.shared.neverIncludeEmails()
 
-            // 4. Partition metas → known vs unknown (LinkedIn + Facebook excluded)
+            // 4. Partition metas → known vs unknown (LinkedIn + Facebook + GoHighLevel excluded)
             let (knownMetas, unknownMetas) = partitionBySenderKnown(
                 metas: regularMetasFiltered,
                 knownEmails: knownEmails,
@@ -417,7 +432,7 @@ final class MailImportCoordinator {
                 try UnknownSenderRepository.shared.bulkRecordUnknownSenders(senderData)
             }
 
-            logger.debug("[mail-import] Partitioned: \(knownMetas.count) known, \(unknownMetas.count) unknown, \(linkedInMetas.count) LinkedIn, \(facebookMetas.count) Facebook")
+            logger.debug("[mail-import] Partitioned: \(knownMetas.count) known, \(unknownMetas.count) unknown, \(linkedInMetas.count) LinkedIn, \(facebookMetas.count) Facebook, \(goHighLevelMetas.count) GoHighLevel")
 
             // 6. Fetch bodies only for known senders
             // Hybrid strategy: try .emlx files first (instant, no Mail impact),
@@ -472,7 +487,7 @@ final class MailImportCoordinator {
 
             // Update watermark to newest email date (from all metas, not just bodies).
             // Subtract 1 second so the strict `>` comparison doesn't skip same-second messages.
-            let allDates = knownMetas.map(\.date) + unknownMetas.map(\.date) + linkedInMetas.map(\.date) + facebookMetas.map(\.date)
+            let allDates = knownMetas.map(\.date) + unknownMetas.map(\.date) + linkedInMetas.map(\.date) + facebookMetas.map(\.date) + goHighLevelMetas.map(\.date)
             if let newest = allDates.max() {
                 let watermark = newest.addingTimeInterval(-1)
                 lastMailWatermark = watermark

@@ -73,7 +73,31 @@ final class PendingUploadService {
             }
         }
 
+        // Reset any records stuck in .awaitingAck or .uploading from a
+        // previous session that was interrupted by a crash, force-quit, or
+        // connection loss. Without this reset they are never picked up by
+        // attemptNextUpload (which only queries .pending and .failed).
+        resetOrphanedInProgressRecords()
         refreshPendingCount()
+    }
+
+    /// Resets records stuck mid-upload back to .pending so they are retried.
+    private func resetOrphanedInProgressRecords() {
+        guard let container = modelContainer else { return }
+        let context = ModelContext(container)
+        let descriptor = FetchDescriptor<PendingUpload>(
+            predicate: #Predicate {
+                $0.statusRawValue == "awaitingAck" || $0.statusRawValue == "uploading"
+            }
+        )
+        guard let orphaned = try? context.fetch(descriptor), !orphaned.isEmpty else { return }
+        for record in orphaned {
+            logger.info("Resetting orphaned \(record.statusRawValue) record \(record.id.uuidString) → pending")
+            record.status = .pending
+            record.bytesUploaded = 0
+        }
+        try? context.save()
+        logger.info("Reset \(orphaned.count) orphaned in-progress record(s) to .pending")
     }
 
     // MARK: - Enqueue
@@ -300,6 +324,13 @@ final class PendingUploadService {
 
         uploadState = .idle
         refreshPendingCount()
+
+        // Auto-chain: immediately attempt the next pending item so the
+        // whole queue drains in one connected session without needing a
+        // tab switch or reconnect to trigger each individual upload.
+        Task { [weak self] in
+            await self?.attemptNextUpload(isRecording: false)
+        }
     }
 
     private func failUpload(pending: PendingUpload, reason: String, container: ModelContainer) {
@@ -325,9 +356,45 @@ final class PendingUploadService {
 
     private func handleSessionProcessedAck(_ ack: SessionProcessedAck) {
         logger.info("Received sessionProcessed ack for \(ack.sessionID) success=\(ack.success)")
+
+        // Happy path: a continuation is waiting for exactly this ack.
         if let cont = ackContinuation {
             ackContinuation = nil
             cont.resume(returning: ack)
+            return
+        }
+
+        // Out-of-band ack: arrived before the upload flow set up its
+        // continuation (timing gap between uploadStart and uploadEnd), or
+        // after a reconnect when the old continuation was already abandoned.
+        // Apply the result directly to the SwiftData record so the session
+        // is cleaned up without requiring another round-trip.
+        guard let sessionID = UUID(uuidString: ack.sessionID),
+              let container = modelContainer else { return }
+
+        let context = ModelContext(container)
+        let descriptor = FetchDescriptor<PendingUpload>(
+            predicate: #Predicate { $0.id == sessionID }
+        )
+        guard let pending = try? context.fetch(descriptor).first else { return }
+
+        if ack.success {
+            logger.info("Out-of-band ack: deleting session \(sessionID.uuidString) directly")
+            let localURL = MeetingRecordingService.url(fromRelativePath: pending.localWAVPath)
+            try? FileManager.default.removeItem(at: localURL)
+            context.delete(pending)
+            try? context.save()
+        } else {
+            logger.error("Out-of-band ack: marking session \(sessionID.uuidString) failed — \(ack.reason ?? "unknown")")
+            pending.status = .failed
+            pending.failureReason = ack.reason ?? "Mac reported failure"
+            try? context.save()
+        }
+
+        uploadState = .idle
+        refreshPendingCount()
+        Task { [weak self] in
+            await self?.attemptNextUpload(isRecording: false)
         }
     }
 

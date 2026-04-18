@@ -518,12 +518,11 @@ The role system (`RoleDefinition`) currently supports user-defined roles with cr
 
 ### Priority 9+ — Future
 
-- iOS companion app (read-only)
 - Custom activity types
 - API integrations (WFG back-office)
 - Team collaboration
 
 ---
 
-**Document Version**: 47
-**Last Updated**: March 21, 2026 — Settings restructure (sidebar navigation), AI simplification (locked hybrid+Qwen), role system evolution notes.
+**Document Version**: 48
+**Last Updated**: April 17, 2026 — SAMField mileage tracking complete (IRS export, manual entry, Mac view); sync handshake fixes (pending ack queue, processed ledger, auto-chain); Stage 5 polish guards (skip on silence, 30s timeout).

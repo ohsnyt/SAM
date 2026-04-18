@@ -407,10 +407,18 @@ final class MeetingCaptureCoordinator {
     /// If the connection drops mid-session, local recording continues
     /// uninterrupted and the session gets queued for later upload.
     ///
-    /// Callable from `.connected` (fresh connection), `.completed` (after a
-    /// previous recording), or `.idle` (local-only mode after the user chose
-    /// to record without the Mac).
+    /// Callable from `.connected`, `.completed`, `.idle`, or `.connecting`
+    /// (user tapped Record before Mac was found — cancels the search, goes local).
     func startRecording() {
+        // User tapped Record while still searching — cancel browse and go local.
+        if captureState == .connecting {
+            connectionTimeoutTask?.cancel()
+            connectionTimeoutTask = nil
+            showConnectionTimeoutPrompt = false
+            streamingService.disconnect()
+            captureState = .idle
+        }
+
         guard captureState == .connected || captureState == .completed || captureState == .idle else {
             logger.warning("Cannot start recording in state: \(String(describing: self.captureState))")
             return

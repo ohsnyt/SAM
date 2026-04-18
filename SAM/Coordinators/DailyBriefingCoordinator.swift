@@ -123,6 +123,7 @@ final class DailyBriefingCoordinator {
     private var eveningTimer: Timer?
     private var postponeTimer: Timer?
     private var activityCheckTimer: Timer?
+    private var hourlyRefreshTimer: Timer?
 
     /// Evidence IDs of calls we've already prompted a post-call note for (session-scoped).
     private var promptedCallIDs: Set<UUID> = []
@@ -187,6 +188,9 @@ final class DailyBriefingCoordinator {
 
         // Schedule evening timer
         scheduleEveningCheck()
+
+        // Refresh briefing and push to CloudKit at the top of each hour (6am–10pm)
+        scheduleHourlyRefresh()
     }
 
     // MARK: - First Open Check
@@ -391,10 +395,18 @@ final class DailyBriefingCoordinator {
             Task(priority: .utility) {
                 let encoder = JSONEncoder()
                 encoder.dateEncodingStrategy = .iso8601
+                let greetingHour = Calendar.current.component(.hour, from: briefing.generatedAt)
+                let sectionHeading: String
+                switch greetingHour {
+                case ..<12:   sectionHeading = "Good morning"
+                case 12..<17: sectionHeading = "Good afternoon"
+                default:      sectionHeading = "Good evening"
+                }
                 var dict: [String: String] = [
                     "date": ISO8601DateFormatter().string(from: briefing.generatedAt),
                     "meetingCount": String(briefing.meetingCount),
-                    "narrativeSummary": briefing.narrativeSummary ?? ""
+                    "narrativeSummary": briefing.narrativeSummary ?? "",
+                    "sectionHeading": sectionHeading
                 ]
                 if let d = try? encoder.encode(briefing.calendarItems) { dict["calendarItems"] = String(data: d, encoding: .utf8) }
                 if let d = try? encoder.encode(briefing.priorityActions) { dict["priorityActions"] = String(data: d, encoding: .utf8) }
@@ -702,6 +714,38 @@ final class DailyBriefingCoordinator {
     }
 
     // MARK: - Evening Timer Scheduling
+
+    private func scheduleHourlyRefresh() {
+        hourlyRefreshTimer?.invalidate()
+
+        // Fire at the top of the next hour, then repeat every 3600s.
+        let now = Date()
+        var components = Calendar.current.dateComponents([.year, .month, .day, .hour], from: now)
+        components.hour = (components.hour ?? 0) + 1
+        components.minute = 0
+        components.second = 0
+
+        guard let nextHour = Calendar.current.date(from: components) else { return }
+        let delay = nextHour.timeIntervalSince(now)
+
+        Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor [self] in
+                self.fireHourlyRefresh()
+                // Now repeat every hour on the dot.
+                self.hourlyRefreshTimer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { [weak self] _ in
+                    guard let self else { return }
+                    Task { @MainActor [self] in self.fireHourlyRefresh() }
+                }
+            }
+        }
+    }
+
+    private func fireHourlyRefresh() {
+        let hour = Calendar.current.component(.hour, from: Date())
+        guard hour >= 6 && hour < 22 else { return }
+        Task(priority: .utility) { await self.generateMorningBriefing() }
+    }
 
     private func scheduleEveningCheck() {
         eveningTimer?.invalidate()

@@ -14,8 +14,11 @@ struct MeetingCaptureView: View {
     private let coordinator = MeetingCaptureCoordinator.shared
 
     @State private var showDeleteConfirmation = false
+    @State private var showPendingUploadsManagement = false
     @State private var speakerCount: Int = 2
     @State private var speakerNames: [String] = ["You (Agent)", "Client"]
+    /// Parallel array to speakerNames — CNContact thumbnail data (nil = use default icon).
+    @State private var speakerThumbnails: [Data?] = [nil, nil]
     @State private var upcomingMeetingTitle: String? = nil
     @State private var hasCheckedCalendar = false
     @State private var showEditParticipants = false
@@ -24,35 +27,46 @@ struct MeetingCaptureView: View {
         ScrollView {
             VStack(spacing: 16) {
                 switch coordinator.captureState {
-                case .idle, .connecting:
-                    // Not connected — show connection status + connect button
-                    Spacer(minLength: 60)
-                    connectionStatusView
-                    Spacer(minLength: 20)
-                    controlsView
+                case .idle, .connecting, .connected:
+                    Spacer(minLength: 16)
 
-                case .connected, .recording, .paused:
-                    Spacer(minLength: 20)
+                    // Subtle background connection status — never blocks recording
+                    connectionStatusPill
 
-                    // Participant list — always visible
+                    // Upcoming meeting from calendar
+                    if let title = upcomingMeetingTitle {
+                        HStack(spacing: 8) {
+                            Image(systemName: "calendar")
+                                .foregroundStyle(.blue)
+                            Text(title)
+                                .font(.subheadline.bold())
+                            Spacer()
+                        }
+                        .padding(.horizontal)
+                    }
+
+                    participantListView
+                    addParticipantButton
+
+                    Spacer(minLength: 8)
+                    recordButton
+
+                    if let warning = coordinator.connectionLossWarning {
+                        connectionLossBanner(warning)
+                    }
+
+                case .recording, .paused:
+                    Spacer(minLength: 20)
                     participantListView
 
-                    // Add participant (only before and during pause)
-                    if coordinator.captureState != .recording {
+                    if coordinator.captureState == .paused {
                         addParticipantButton
                     }
 
                     Spacer(minLength: 8)
-
-                    // Record / timer button
                     recordButton
+                    secondaryControls
 
-                    // Pause + Stop controls (during recording/paused)
-                    if coordinator.captureState == .recording || coordinator.captureState == .paused {
-                        secondaryControls
-                    }
-
-                    // Connection loss warning
                     if let warning = coordinator.connectionLossWarning {
                         connectionLossBanner(warning)
                     }
@@ -79,7 +93,7 @@ struct MeetingCaptureView: View {
                     }
                 }
 
-                // Pending upload status (idle/connecting/connected only)
+                // Pending upload status
                 if coordinator.captureState == .idle
                     || coordinator.captureState == .connected
                     || coordinator.captureState == .connecting {
@@ -121,26 +135,31 @@ struct MeetingCaptureView: View {
                     if !names.isEmpty {
                         speakerNames = names
                         speakerCount = names.count
+                        speakerThumbnails = Array(repeating: nil, count: names.count)
+                        // Enrich with contact thumbnails in the background
+                        Task {
+                            let enriched = await FieldCalendarService.shared.enrichWithThumbnails(meeting)
+                            speakerThumbnails = enriched.attendees.map(\.thumbnailData)
+                        }
                     }
                 }
             }
         }
         .onChange(of: coordinator.captureState) { _, newState in
-            // Reset participant list when returning to connected after a session
-            if newState == .connected {
-                hasCheckedCalendar = false
-                upcomingMeetingTitle = nil
-                speakerCount = 2
-                speakerNames = ["You (Agent)", "Client"]
-                showEditParticipants = false
-
-                // Re-check calendar for the next meeting
+            // When Mac connects and we haven't yet loaded calendar data, check now.
+            // Skip if calendar was already populated (don't overwrite user edits).
+            if newState == .connected && !hasCheckedCalendar {
                 if let meeting = FieldCalendarService.shared.upcomingMeeting() {
                     upcomingMeetingTitle = meeting.title
                     let names = meeting.attendeeNames
                     if !names.isEmpty {
                         speakerNames = names
                         speakerCount = names.count
+                        speakerThumbnails = Array(repeating: nil, count: names.count)
+                        Task {
+                            let enriched = await FieldCalendarService.shared.enrichWithThumbnails(meeting)
+                            speakerThumbnails = enriched.attendees.map(\.thumbnailData)
+                        }
                     }
                 }
                 hasCheckedCalendar = true
@@ -166,6 +185,9 @@ struct MeetingCaptureView: View {
             }
         } message: {
             Text("SAM couldn't find your Mac on the local network. Make sure SAM is open on your Mac and both devices are on the same WiFi, or record locally and SAM will sync this meeting later.")
+        }
+        .sheet(isPresented: $showPendingUploadsManagement) {
+            PendingUploadsManagementView()
         }
         .alert("Delete this recording?", isPresented: $showDeleteConfirmation) {
             Button("Delete", role: .destructive) {
@@ -242,14 +264,22 @@ struct MeetingCaptureView: View {
 
         case .idle:
             if pendingCount > 0 {
-                HStack(spacing: 8) {
-                    Image(systemName: "clock.arrow.circlepath")
-                        .foregroundStyle(.secondary)
-                    Text("\(pendingCount) meeting\(pendingCount == 1 ? "" : "s") waiting to sync")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
+                Button {
+                    showPendingUploadsManagement = true
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "clock.arrow.circlepath")
+                            .foregroundStyle(.secondary)
+                        Text("\(pendingCount) recording\(pendingCount == 1 ? "" : "s") waiting to sync")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Image(systemName: "info.circle")
+                            .foregroundStyle(.secondary)
+                            .font(.caption)
+                    }
                 }
+                .buttonStyle(.plain)
                 .padding(.horizontal)
             }
         }
@@ -334,6 +364,30 @@ struct MeetingCaptureView: View {
 
     private var isConnecting: Bool {
         coordinator.captureState == .connecting
+    }
+
+    // MARK: - Connection Status Pill
+
+    /// Subtle ambient indicator shown above participant list when Mac is not yet connected.
+    /// Empty view when connected — success is the default expectation.
+    @ViewBuilder
+    private var connectionStatusPill: some View {
+        switch coordinator.captureState {
+        case .connecting:
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.mini)
+                Text("Searching for Mac…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 5)
+            .background(.secondary.opacity(0.1), in: Capsule())
+        case .idle:
+            EmptyView()
+        default:
+            EmptyView()
+        }
     }
 
     // MARK: - Time Display
@@ -575,15 +629,12 @@ struct MeetingCaptureView: View {
     /// Participant list with contact thumbnails (or person icon fallback).
     /// Tight spacing, no heading. Editable when not recording.
     private var participantListView: some View {
-        // Use a List for native swipe-to-delete support
         List {
             ForEach(Array(speakerNames.enumerated()), id: \.offset) { i, name in
                 HStack(spacing: 12) {
-                    Image(systemName: "person.crop.circle.fill")
-                        .font(.system(size: 36))
-                        .foregroundStyle(speakerDotColor(i).opacity(0.7))
+                    participantAvatar(index: i)
 
-                    if coordinator.captureState == .connected || coordinator.captureState == .paused {
+                    if coordinator.captureState != .recording {
                         TextField("Participant", text: $speakerNames[i])
                             .font(.body)
                     } else {
@@ -599,12 +650,30 @@ struct MeetingCaptureView: View {
             .onDelete { indices in
                 guard speakerNames.count > 1 else { return }
                 speakerNames.remove(atOffsets: indices)
+                speakerThumbnails.remove(atOffsets: indices)
                 speakerCount = speakerNames.count
             }
         }
         .listStyle(.plain)
         .frame(height: CGFloat(speakerNames.count) * 52)
         .scrollDisabled(true)
+    }
+
+    /// Contact thumbnail if available, colored person icon otherwise.
+    @ViewBuilder
+    private func participantAvatar(index: Int) -> some View {
+        let thumbnail = index < speakerThumbnails.count ? speakerThumbnails[index] : nil
+        if let data = thumbnail, let uiImage = UIImage(data: data) {
+            Image(uiImage: uiImage)
+                .resizable()
+                .scaledToFill()
+                .frame(width: 36, height: 36)
+                .clipShape(Circle())
+        } else {
+            Image(systemName: "person.crop.circle.fill")
+                .font(.system(size: 36))
+                .foregroundStyle(speakerDotColor(index).opacity(0.7))
+        }
     }
 
     /// Add participant row — appears below the list
@@ -645,8 +714,11 @@ struct MeetingCaptureView: View {
                     .animation(.easeOut(duration: 0.1), value: coordinator.audioLevel)
             }
 
-            if coordinator.captureState == .connected {
-                // Start recording button
+            let canStartRecording = coordinator.captureState == .idle
+                || coordinator.captureState == .connecting
+                || coordinator.captureState == .connected
+            if canStartRecording {
+                // Start recording button — works regardless of Mac connection
                 Button {
                     coordinator.expectedSpeakerCount = speakerCount
                     coordinator.expectedSpeakerNames = speakerNames
@@ -802,15 +874,17 @@ struct MeetingCaptureView: View {
         .background(RoundedRectangle(cornerRadius: 10).fill(Color.secondary.opacity(0.08)))
     }
 
-    /// Keep speakerNames array in sync with speakerCount.
+    /// Keep speakerNames and speakerThumbnails arrays in sync with speakerCount.
     private func syncSpeakerNames() {
         let defaults = ["You (Agent)", "Client", "Spouse", "Speaker 4", "Speaker 5", "Speaker 6", "Speaker 7", "Speaker 8"]
         while speakerNames.count < speakerCount {
             let idx = speakerNames.count
             speakerNames.append(idx < defaults.count ? defaults[idx] : "Speaker \(idx + 1)")
+            speakerThumbnails.append(nil)
         }
         while speakerNames.count > speakerCount {
             speakerNames.removeLast()
+            if !speakerThumbnails.isEmpty { speakerThumbnails.removeLast() }
         }
     }
 

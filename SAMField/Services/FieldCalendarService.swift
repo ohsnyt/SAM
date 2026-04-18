@@ -147,16 +147,16 @@ final class FieldCalendarService {
     }
 
     private func makeCalendarEvent(from event: EKEvent) -> CalendarEvent {
-        let attendeeNames = (event.attendees ?? [])
+        let attendees: [EventAttendee] = (event.attendees ?? [])
             .filter { $0.participantRole != .nonParticipant }
-            .compactMap { attendee -> String? in
-                // Prefer display name, fall back to URL-derived name
+            .compactMap { attendee -> EventAttendee? in
+                let emailRaw = attendee.url.absoluteString.replacingOccurrences(of: "mailto:", with: "")
+                let email = emailRaw.isEmpty ? nil : emailRaw
                 if let name = attendee.name, !name.isEmpty {
-                    return name
+                    return EventAttendee(name: name, email: email, thumbnailData: nil)
                 }
-                let email = attendee.url.absoluteString.replacingOccurrences(of: "mailto:", with: "")
-                if !email.isEmpty {
-                    return email
+                if let email {
+                    return EventAttendee(name: email, email: email, thumbnailData: nil)
                 }
                 return nil
             }
@@ -171,8 +171,27 @@ final class FieldCalendarService {
             isAllDay: event.isAllDay,
             calendarName: event.calendar.title,
             calendarColor: event.calendar.cgColor,
-            attendeeNames: attendeeNames
+            attendees: attendees
         )
+    }
+
+    /// Asynchronously enriches a CalendarEvent's attendees with CNContact thumbnails.
+    /// Returns a new CalendarEvent with thumbnailData populated where matches are found.
+    func enrichWithThumbnails(_ event: CalendarEvent) async -> CalendarEvent {
+        let lookupInputs = event.attendees.map { (name: $0.name, email: $0.email) }
+        let thumbnails = await FieldContactLookupService.shared.thumbnails(for: lookupInputs)
+        var enriched = event
+        for i in enriched.attendees.indices {
+            enriched.attendees[i].thumbnailData = i < thumbnails.count ? thumbnails[i] : nil
+        }
+        return enriched
+    }
+
+    struct EventAttendee: Sendable {
+        let name: String
+        let email: String?
+        /// CNContact thumbnail image data, populated asynchronously after initial fetch.
+        var thumbnailData: Data?
     }
 
     struct CalendarEvent: Identifiable, Sendable {
@@ -185,16 +204,19 @@ final class FieldCalendarService {
         let isAllDay: Bool
         let calendarName: String
         let calendarColor: CGColor?
-        let attendeeNames: [String]
+        var attendees: [EventAttendee]
+
+        /// Convenience accessor for backward-compatible name-only access.
+        var attendeeNames: [String] { attendees.map(\.name) }
 
         init(id: String, title: String, startDate: Date, endDate: Date,
              location: String?, notes: String?, isAllDay: Bool,
              calendarName: String, calendarColor: CGColor?,
-             attendeeNames: [String] = []) {
+             attendees: [EventAttendee] = []) {
             self.id = id; self.title = title; self.startDate = startDate
             self.endDate = endDate; self.location = location; self.notes = notes
             self.isAllDay = isAllDay; self.calendarName = calendarName
-            self.calendarColor = calendarColor; self.attendeeNames = attendeeNames
+            self.calendarColor = calendarColor; self.attendees = attendees
         }
 
         var minutesUntilStart: Int {
