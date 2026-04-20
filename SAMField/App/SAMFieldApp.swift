@@ -6,8 +6,8 @@
 //  Phase F1: iOS Companion App Foundation
 //
 //  SAM Field — the iOS companion app for SAM.
-//  Captures voice notes, tracks mileage, surfaces nearby contacts,
-//  and delivers pre-meeting briefings while in the field.
+//  Captures voice notes, tracks mileage, and delivers pre-meeting
+//  briefings while in the field.
 //
 
 import SwiftUI

@@ -82,37 +82,115 @@ final class AudioReceivingService {
 
     // MARK: - Pending Ack Queue
 
-    /// Acks that couldn't be sent because the iPhone wasn't connected when
-    /// reprocess finished. Drained the next time the phone connects.
+    /// Acks for processed sessions. We keep every ack here until either a
+    /// TTL expires or the phone reconnects — `NWConnection.send`'s
+    /// completion fires when bytes enter the kernel buffer, *not* when the
+    /// peer receives them, so a half-dead TCP connection can silently
+    /// swallow an ack and strand the phone on "Mac is processing".
+    ///
+    /// Replaying on every reconnect is safe: the phone's ack handler is
+    /// idempotent — if the PendingUpload row is already gone, the duplicate
+    /// ack is a no-op.
     private struct PendingAck {
         let sessionID: UUID
         let success: Bool
         let reason: String?
+        let queuedAt: Date
     }
     private var pendingAcks: [PendingAck] = []
 
-    // MARK: - Processed Session Ledger
+    /// Acks older than this are pruned on reconnect drain. Two hours covers
+    /// a worst-case reprocess + a long phone-side sleep without unbounded
+    /// growth.
+    private let pendingAckTTL: TimeInterval = 2 * 60 * 60
 
-    /// Session IDs the Mac has already successfully reprocessed. Persisted
-    /// to UserDefaults so we survive app restarts. If the iPhone re-uploads
-    /// a session we already processed (ack was lost), we immediately ack
-    /// success without reprocessing again.
-    private static let processedLedgerKey = "sam.processedUploadSessions"
-    private static let processedLedgerMax = 500
+    // MARK: - Processed Session Lookup
 
-    private var processedSessionIDs: Set<String> = {
-        let stored = UserDefaults.standard.stringArray(forKey: processedLedgerKey) ?? []
-        return Set(stored)
-    }()
+    /// Result of looking up an incoming session against the Mac's
+    /// SwiftData store. Replaces an earlier UserDefaults-backed shadow
+    /// ledger that could diverge from the store after a reinstall or
+    /// failed write — the session record itself is now authoritative.
+    enum UploadSessionState: Sendable {
+        /// No TranscriptSession exists for this sessionID. Accept the upload.
+        case notFound
+        /// Session exists but no model container is wired up yet. Accept the
+        /// upload so we don't lose data; shouldn't happen post-configure.
+        case containerUnavailable
+        /// Session exists but `meetingSummaryJSON` is empty — prior
+        /// reprocess or summary pass didn't finish. Accept the upload.
+        case existsWithoutSummary(status: String, segmentCount: Int)
+        /// Session exists and has a cached summary. Dedup: push the summary
+        /// back and ack so the phone deletes its local WAV.
+        case existsWithSummary(MeetingSummary)
+        /// Session was processed and intentionally deleted on the Mac. Ack
+        /// success immediately so the phone drops its local WAV — otherwise
+        /// SAMField keeps re-uploading the same audio every launch.
+        case tombstoned(deletedAt: Date)
 
-    private func markSessionProcessed(_ sessionID: UUID) {
-        processedSessionIDs.insert(sessionID.uuidString)
-        var list = Array(processedSessionIDs)
-        if list.count > Self.processedLedgerMax {
-            list = Array(list.suffix(Self.processedLedgerMax))
-            processedSessionIDs = Set(list)
+        var shouldDedup: Bool {
+            switch self {
+            case .existsWithSummary, .tombstoned: return true
+            default: return false
+            }
         }
-        UserDefaults.standard.set(list, forKey: Self.processedLedgerKey)
+
+        var logDescription: String {
+            switch self {
+            case .notFound:
+                return "not found (new session)"
+            case .containerUnavailable:
+                return "modelContainer nil — cannot dedup"
+            case .existsWithoutSummary(let status, let segmentCount):
+                return "exists without summary (status=\(status), segments=\(segmentCount))"
+            case .existsWithSummary:
+                return "exists with summary — will dedup"
+            case .tombstoned(let deletedAt):
+                return "tombstoned (deleted \(deletedAt.formatted(date: .abbreviated, time: .shortened))) — will ack immediately"
+            }
+        }
+    }
+
+    /// Classify an incoming session against the local SwiftData store.
+    /// The return value is loggable so uploadStart can surface the decision
+    /// in one line when diagnosing unexpected re-uploads.
+    private func classifyUploadSession(_ sessionIDString: String) -> UploadSessionState {
+        guard let sessionID = UUID(uuidString: sessionIDString) else {
+            return .notFound
+        }
+        guard let container = modelContainer else {
+            return .containerUnavailable
+        }
+        let context = ModelContext(container)
+
+        // Tombstone check comes first. If the user deleted this session on
+        // the Mac, we don't want a new TranscriptSession to spring into
+        // existence just because SAMField re-sent the same audio.
+        let tombstoneDescriptor = FetchDescriptor<ProcessedSessionTombstone>(
+            predicate: #Predicate { $0.sessionID == sessionID }
+        )
+        if let tombstone = try? context.fetch(tombstoneDescriptor).first {
+            return .tombstoned(deletedAt: tombstone.deletedAt)
+        }
+
+        let descriptor = FetchDescriptor<TranscriptSession>(
+            predicate: #Predicate { $0.id == sessionID }
+        )
+        guard let session = try? context.fetch(descriptor).first else {
+            return .notFound
+        }
+        let json = session.meetingSummaryJSON ?? ""
+        if json.isEmpty {
+            let statusString = String(describing: session.status)
+            let segCount = session.segments?.count ?? 0
+            return .existsWithoutSummary(status: statusString, segmentCount: segCount)
+        }
+        guard let summary = MeetingSummary.from(jsonString: json) else {
+            // Summary JSON exists but failed to decode — treat as missing
+            // so the phone's re-upload reprocesses it cleanly.
+            logger.warning("Cached summaryJSON for \(sessionID.uuidString) failed to decode — treating as not-yet-processed")
+            return .existsWithoutSummary(status: String(describing: session.status), segmentCount: session.segments?.count ?? 0)
+        }
+        return .existsWithSummary(summary)
     }
 
     /// Callback fired when the iPhone sends sessionDone for a session.
@@ -309,6 +387,7 @@ final class AudioReceivingService {
 
             // Idle or unhealthy — replace freely.
             logger.info("Replacing existing connection (state=\(String(describing: existingState)), sessionActive=\(self.currentSessionID != nil))")
+            existing.stateUpdateHandler = nil
             existing.cancel()
         }
 
@@ -320,6 +399,14 @@ final class AudioReceivingService {
         connection.stateUpdateHandler = { [weak self] state in
             guard let self else { return }
             Task { @MainActor [self] in
+                // If this connection has already been superseded (replaced by
+                // a newer reconnect from the phone), silently ignore its
+                // state updates. Otherwise the old .cancelled callback fires
+                // after the replacement and clobbers the live connection's
+                // state — which the connection watcher then misreads as a
+                // mid-session disconnect and auto-finalizes the recording
+                // with 0 chunks received.
+                guard self.activeConnection === connection else { return }
                 switch state {
                 case .ready:
                     self.logger.info("iPhone connected: \(connection.endpoint.debugDescription)")
@@ -330,14 +417,21 @@ final class AudioReceivingService {
                         self.logger.info("Flushing pending summary to newly connected iPhone")
                         self.sendMeetingSummary(pending)
                     }
-                    // Drain any queued sessionProcessed acks whose sends were
-                    // skipped because the phone disconnected before reprocess
-                    // finished. This is the primary fix for the "Mac is
-                    // processing" spinner that never resolves.
+                    // Replay every queued ack on reconnect. `sendSessionProcessed`
+                    // is idempotent (it replaces any same-sessionID entry with
+                    // a fresh `queuedAt`), and the phone's handler no-ops on
+                    // duplicates. Prune entries older than the TTL first so
+                    // the queue doesn't grow unbounded.
+                    let now = Date()
+                    let ttl = self.pendingAckTTL
+                    let before = self.pendingAcks.count
+                    self.pendingAcks.removeAll { now.timeIntervalSince($0.queuedAt) > ttl }
+                    if before != self.pendingAcks.count {
+                        self.logger.info("Pruned \(before - self.pendingAcks.count) expired ack(s) older than \(Int(ttl))s")
+                    }
                     if !self.pendingAcks.isEmpty {
                         let acks = self.pendingAcks
-                        self.pendingAcks = []
-                        self.logger.info("Draining \(acks.count) pending ack(s) to reconnected iPhone")
+                        self.logger.info("Replaying \(acks.count) queued ack(s) to reconnected iPhone")
                         for ack in acks {
                             self.sendSessionProcessed(
                                 sessionID: ack.sessionID,
@@ -496,6 +590,9 @@ final class AudioReceivingService {
             if let idString = String(data: payload, encoding: .utf8),
                let sessionID = UUID(uuidString: idString) {
                 logger.info("sessionDone received for \(sessionID.uuidString)")
+                // Phone acknowledges it owns this session — it no longer
+                // needs us to resend the processed ack.
+                pendingAcks.removeAll { $0.sessionID == sessionID }
                 onSessionDone?(sessionID)
             } else {
                 logger.warning("sessionDone: invalid payload")
@@ -505,6 +602,7 @@ final class AudioReceivingService {
             if let idString = String(data: payload, encoding: .utf8),
                let sessionID = UUID(uuidString: idString) {
                 logger.info("sessionDeleted received for \(sessionID.uuidString)")
+                pendingAcks.removeAll { $0.sessionID == sessionID }
                 onSessionDeleted?(sessionID)
             } else {
                 logger.warning("sessionDeleted: invalid payload")
@@ -529,15 +627,26 @@ final class AudioReceivingService {
             return
         }
 
-        // If we've already processed this session (ack was sent but lost),
-        // send an immediate ack at uploadStart time so the phone doesn't
-        // waste bandwidth re-uploading all the bytes.
-        if processedSessionIDs.contains(metadata.sessionID) {
-            logger.info("uploadStart: \(metadata.sessionID) already in processed ledger — acking immediately, ignoring chunks")
+        // If we've already processed this session (ack was sent but lost,
+        // or the phone's local record was never cleared), short-circuit
+        // before the phone wastes bandwidth re-sending hundreds of MB.
+        // Push the cached summary back alongside the ack so the phone has
+        // something to show — it may have lost its in-memory copy.
+        let state = classifyUploadSession(metadata.sessionID)
+        logger.info("uploadStart classify: \(metadata.sessionID) — \(state.logDescription)")
+        if case .existsWithSummary(let summary) = state,
+           let sessionID = UUID(uuidString: metadata.sessionID) {
+            logger.info("uploadStart: \(metadata.sessionID) dedup — pushing cached summary + immediate ack")
             ignoringUploadSessionID = metadata.sessionID
-            if let sessionID = UUID(uuidString: metadata.sessionID) {
-                sendSessionProcessed(sessionID: sessionID, success: true, reason: nil)
-            }
+            sendMeetingSummary(summary)
+            sendSessionProcessed(sessionID: sessionID, success: true, reason: nil)
+            return
+        }
+        if case .tombstoned = state,
+           let sessionID = UUID(uuidString: metadata.sessionID) {
+            logger.info("uploadStart: \(metadata.sessionID) tombstoned — acking success to drop phone's local copy")
+            ignoringUploadSessionID = metadata.sessionID
+            sendSessionProcessed(sessionID: sessionID, success: true, reason: nil)
             return
         }
         ignoringUploadSessionID = nil
@@ -605,28 +714,66 @@ final class AudioReceivingService {
         pendingUploadBytesReceived = 0
 
         // If we already processed this session (ack was sent but lost), ack
-        // immediately without reprocessing — prevents duplicate TranscriptSessions.
-        if let sessionID = UUID(uuidString: capturedMetadata.sessionID),
-           processedSessionIDs.contains(sessionID.uuidString) {
-            logger.info("uploadEnd: session \(sessionID.uuidString) already in processed ledger — sending immediate ack, skipping reprocess")
+        // immediately without reprocessing — prevents duplicate
+        // TranscriptSessions. Push the cached summary back alongside the
+        // ack so a phone that lost its in-memory copy still gets one.
+        let endState = classifyUploadSession(capturedMetadata.sessionID)
+        logger.info("uploadEnd classify: \(capturedMetadata.sessionID) — \(endState.logDescription)")
+        if case .existsWithSummary(let summary) = endState,
+           let sessionID = UUID(uuidString: capturedMetadata.sessionID) {
+            logger.info("uploadEnd: \(sessionID.uuidString) dedup — pushing cached summary + immediate ack, skipping reprocess")
+            try? FileManager.default.removeItem(at: capturedURL)
+            sendMeetingSummary(summary)
+            sendSessionProcessed(sessionID: sessionID, success: true, reason: nil)
+            return
+        }
+        if case .tombstoned = endState,
+           let sessionID = UUID(uuidString: capturedMetadata.sessionID) {
+            logger.info("uploadEnd: \(sessionID.uuidString) tombstoned — acking success and discarding bytes")
             try? FileManager.default.removeItem(at: capturedURL)
             sendSessionProcessed(sessionID: sessionID, success: true, reason: nil)
             return
         }
 
+        // Parse the sessionID up front. Without a valid UUID we cannot ack
+        // the phone at all, so bail now. Every other exit path below MUST
+        // send an ack so the phone's "Mac is processing" spinner resolves.
+        guard let sessionID = UUID(uuidString: capturedMetadata.sessionID) else {
+            logger.error("uploadEnd: invalid sessionID '\(capturedMetadata.sessionID)' — cannot ack phone")
+            try? FileManager.default.removeItem(at: capturedURL)
+            return
+        }
+
         // Fire the reprocess asynchronously.
         Task { [weak self] in
-            guard let self, let container = self.modelContainer else {
-                self?.logger.error("No model container configured for reprocess")
+            guard let self else { return }
+
+            var ackSuccess = false
+            var ackReason: String? = "Unknown failure"
+
+            defer {
+                // Guarantees the phone always hears back, no matter which
+                // early return or failure happens inside the Task.
+                self.sendSessionProcessed(
+                    sessionID: sessionID,
+                    success: ackSuccess,
+                    reason: ackReason
+                )
+                self.onPendingReprocessComplete?(sessionID, ackSuccess, ackReason)
+            }
+
+            guard let container = self.modelContainer else {
+                self.logger.error("No model container configured for reprocess")
+                try? FileManager.default.removeItem(at: capturedURL)
+                ackReason = "Mac has no model container configured"
                 return
             }
+
             let result = await PendingReprocessService.shared.reprocess(
                 wavURL: capturedURL,
                 metadata: capturedMetadata,
                 modelContainer: container
             )
-
-            guard let sessionID = UUID(uuidString: capturedMetadata.sessionID) else { return }
 
             // Move the temp WAV to the permanent audio directory so it's
             // still available for playback from the review view.
@@ -646,19 +793,17 @@ final class AudioReceivingService {
                 } catch {
                     logger.warning("Could not move upload to audio dir: \(error.localizedDescription)")
                 }
-                // Record in the processed ledger before sending the ack so
-                // that even if the ack send fails, we won't reprocess again.
-                self.markSessionProcessed(sessionID)
+                // The session's `meetingSummaryJSON` is the authoritative
+                // "already processed" marker going forward — set by the
+                // summary-generation pass in TranscriptionSessionCoordinator.
+                // If the ack fails to send, a re-upload will still dedup
+                // via lookupProcessedSession once the summary lands.
             } else {
                 try? FileManager.default.removeItem(at: capturedURL)
             }
 
-            self.sendSessionProcessed(
-                sessionID: sessionID,
-                success: result.success,
-                reason: result.reason
-            )
-            self.onPendingReprocessComplete?(sessionID, result.success, result.reason)
+            ackSuccess = result.success
+            ackReason = result.reason
         }
     }
 
@@ -671,12 +816,30 @@ final class AudioReceivingService {
     }
 
     /// Send a `sessionProcessed` ack to the iPhone so it can delete the
-    /// local WAV after a successful reprocess. If the iPhone is not currently
-    /// connected, the ack is queued and sent the next time the phone connects.
+    /// local WAV after a successful reprocess.
+    ///
+    /// The ack is ALWAYS enqueued (dedup'd by sessionID) and replayed on
+    /// every reconnect until its TTL expires. `NWConnection.send`'s
+    /// completion fires when bytes are accepted into the kernel send
+    /// buffer, not when the peer receives them — a half-dead TCP
+    /// connection can silently swallow a send and strand the phone on
+    /// "Mac is processing". By keeping the ack queued, any fresh
+    /// reconnect will replay it; the phone's handler is idempotent.
     func sendSessionProcessed(sessionID: UUID, success: Bool, reason: String?) {
+        // 1. Always queue (or refresh) the ack first. Replace any prior
+        //    entry for the same session so the latest state wins.
+        pendingAcks.removeAll { $0.sessionID == sessionID }
+        pendingAcks.append(PendingAck(
+            sessionID: sessionID,
+            success: success,
+            reason: reason,
+            queuedAt: .now
+        ))
+
+        // 2. Best-effort immediate send. A success here doesn't prove
+        //    delivery, so we don't dequeue.
         guard let connection = activeConnection else {
-            logger.info("sendSessionProcessed: no active connection — queuing ack for \(sessionID.uuidString)")
-            pendingAcks.append(PendingAck(sessionID: sessionID, success: success, reason: reason))
+            logger.info("sendSessionProcessed: no active connection — ack queued for \(sessionID.uuidString)")
             return
         }
 
@@ -701,9 +864,9 @@ final class AudioReceivingService {
 
         connection.send(content: packet, completion: .contentProcessed { [logger] error in
             if let error {
-                logger.error("sendSessionProcessed failed: \(error.localizedDescription)")
+                logger.error("sendSessionProcessed transport error: \(error.localizedDescription) — ack remains queued for replay")
             } else {
-                logger.info("sessionProcessed ack sent for \(sessionID.uuidString) success=\(success)")
+                logger.info("sessionProcessed ack handed to TCP for \(sessionID.uuidString) success=\(success) (queued pending reconnect replay)")
             }
         })
     }

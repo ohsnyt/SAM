@@ -5,7 +5,7 @@
 //  Created by Assistant on 4/8/26.
 //  Phase F3: Trip Tracking
 //
-//  Shared CoreLocation provider for trip tracking and nearby contacts.
+//  Shared CoreLocation provider for trip tracking.
 //
 
 import Foundation

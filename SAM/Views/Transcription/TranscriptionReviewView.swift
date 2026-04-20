@@ -69,8 +69,24 @@ struct TranscriptionReviewView: View {
     private var header: some View {
         HStack(spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Review Transcript")
-                    .font(.title2.bold())
+                // Editable title — auto-filled by summary generation, user can
+                // rename to whatever they like. Empty placeholder falls back to
+                // "Review Transcript" visual so the header isn't blank before
+                // a summary runs.
+                TextField(
+                    "Review Transcript",
+                    text: Binding(
+                        get: { session.title ?? "" },
+                        set: { newValue in
+                            session.title = newValue.isEmpty ? nil : newValue
+                            try? modelContext.save()
+                        }
+                    )
+                )
+                .textFieldStyle(.plain)
+                .font(.title2.bold())
+                .lineLimit(1)
+
                 HStack(spacing: 8) {
                     Text(session.recordedAt.formatted(date: .abbreviated, time: .shortened))
                     Text("·")
@@ -164,6 +180,17 @@ struct TranscriptionReviewView: View {
                 modelContext.delete(evidence)
             }
             modelContext.delete(note)
+        }
+
+        // Remember this sessionID so SAMField can't resurrect the session
+        // by re-uploading the same WAV on its next launch. Upsert: if a
+        // tombstone already exists (shouldn't, but be safe), keep it.
+        let sessionID = session.id
+        let tombstoneDescriptor = FetchDescriptor<ProcessedSessionTombstone>(
+            predicate: #Predicate { $0.sessionID == sessionID }
+        )
+        if (try? modelContext.fetch(tombstoneDescriptor).first) == nil {
+            modelContext.insert(ProcessedSessionTombstone(sessionID: sessionID))
         }
 
         // Delete the session itself. TranscriptSegments cascade automatically.
@@ -303,8 +330,48 @@ struct TranscriptionReviewView: View {
            let summary = MeetingSummary.from(jsonString: json),
            summary.hasContent {
 
+            // Regenerate + Print buttons — always available once a summary
+            // exists. Print uses NSPrintOperation so users can print directly
+            // or Save as PDF / email from the print preview.
+            HStack {
+                Spacer()
+                Button {
+                    MeetingSummaryPrinter.presentPrintPanel(for: session)
+                } label: {
+                    Label("Print…", systemImage: "printer")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+                if !isGeneratingSummary && (session.polishedText != nil || !session.sortedSegments.isEmpty) {
+                    Button {
+                        generateSummaryFromTranscript()
+                    } label: {
+                        Label("Regenerate Summary", systemImage: "arrow.clockwise")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+            }
+            .padding(.bottom, 4)
+
             VStack(alignment: .leading, spacing: 12) {
-                // TLDR
+                // Review Notes — prose study narrative, shown first for lectures.
+                // Replaces the TLDR as the opening for training/lecture context;
+                // for other contexts reviewNotes is empty and this block skips.
+                if let reviewNotes = summary.reviewNotes, !reviewNotes.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label("Review Notes", systemImage: "note.text")
+                            .font(.caption.bold())
+                            .foregroundStyle(.secondary)
+                        Text(reviewNotes)
+                            .font(.callout)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                // TLDR — opening summary for non-lecture contexts. Lecture summaries
+                // clear this field in favour of Review Notes.
                 if !summary.tldr.isEmpty {
                     Text("Summary: \(summary.tldr)")
                         .font(.body)
@@ -442,42 +509,7 @@ struct TranscriptionReviewView: View {
                     }
                 }
 
-                // Open questions
-                if !summary.openQuestions.isEmpty {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Label("Open Questions", systemImage: "questionmark.circle")
-                            .font(.caption.bold())
-                            .foregroundStyle(.secondary)
-                        ForEach(summary.openQuestions, id: \.self) { question in
-                            HStack(alignment: .top, spacing: 6) {
-                                Image(systemName: "questionmark.circle")
-                                    .font(.caption2)
-                                    .foregroundStyle(.purple)
-                                Text(question)
-                                    .font(.callout)
-                            }
-                        }
-                    }
-                }
-
-                // --- Training / Lecture fields ---
-                if !summary.keyPoints.isEmpty {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Label("Key Points", systemImage: "lightbulb")
-                            .font(.caption.bold())
-                            .foregroundStyle(.secondary)
-                        ForEach(Array(summary.keyPoints.enumerated()), id: \.offset) { _, point in
-                            HStack(alignment: .top, spacing: 6) {
-                                Image(systemName: "lightbulb")
-                                    .font(.caption2)
-                                    .foregroundStyle(.yellow)
-                                Text(point)
-                                    .font(.callout)
-                            }
-                        }
-                    }
-                }
-
+                // --- Training / Lecture fields (before Open Questions) ---
                 if !summary.learningObjectives.isEmpty {
                     VStack(alignment: .leading, spacing: 6) {
                         Label("Learning Objectives", systemImage: "graduationcap")
@@ -496,13 +528,38 @@ struct TranscriptionReviewView: View {
                     }
                 }
 
-                if let reviewNotes = summary.reviewNotes, !reviewNotes.isEmpty {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Label("Review Notes", systemImage: "note.text")
+                if !summary.keyPoints.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Label("Key Points", systemImage: "lightbulb")
                             .font(.caption.bold())
                             .foregroundStyle(.secondary)
-                        Text(reviewNotes)
-                            .font(.callout)
+                        ForEach(Array(summary.keyPoints.enumerated()), id: \.offset) { _, point in
+                            HStack(alignment: .top, spacing: 6) {
+                                Image(systemName: "lightbulb")
+                                    .font(.caption2)
+                                    .foregroundStyle(.yellow)
+                                Text(point)
+                                    .font(.callout)
+                            }
+                        }
+                    }
+                }
+
+                // Open questions — after Key Points so lecture flow reads naturally.
+                if !summary.openQuestions.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label("Open Questions", systemImage: "questionmark.circle")
+                            .font(.caption.bold())
+                            .foregroundStyle(.secondary)
+                        ForEach(summary.openQuestions, id: \.self) { question in
+                            HStack(alignment: .top, spacing: 6) {
+                                Image(systemName: "questionmark.circle")
+                                    .font(.caption2)
+                                    .foregroundStyle(.purple)
+                                Text(question)
+                                    .font(.callout)
+                            }
+                        }
                     }
                 }
 
@@ -843,6 +900,11 @@ struct TranscriptionReviewView: View {
                 if let session = try context.fetch(descriptor).first {
                     session.meetingSummaryJSON = summary.toJSONString()
                     session.summaryGeneratedAt = .now
+                    // Only fill in a title if the user hasn't already set one,
+                    // so regenerate doesn't stomp an edited title.
+                    if (session.title ?? "").isEmpty, !summary.title.isEmpty {
+                        session.title = summary.title
+                    }
                     try context.save()
                 }
             } catch {
@@ -904,6 +966,11 @@ struct TranscriptionReviewView: View {
                 if let session = try context.fetch(descriptor).first {
                     session.meetingSummaryJSON = summary.toJSONString()
                     session.summaryGeneratedAt = .now
+                    // Only fill in a title if the user hasn't already set one,
+                    // so regenerate doesn't stomp an edited title.
+                    if (session.title ?? "").isEmpty, !summary.title.isEmpty {
+                        session.title = summary.title
+                    }
                     try context.save()
                 }
             } catch {

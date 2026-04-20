@@ -208,6 +208,18 @@ struct TranscriptionSessionView: View {
             if let summary = coordinator.lastMeetingSummary, summary.hasContent {
                 GroupBox("Meeting Summary") {
                     VStack(alignment: .leading, spacing: 8) {
+                        // Review Notes — prose narrative, shown first for lectures.
+                        // Replaces the TLDR as the opening for training/lecture.
+                        if let notes = summary.reviewNotes, !notes.isEmpty {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Label("Review Notes", systemImage: "doc.text")
+                                    .font(.caption2.bold())
+                                    .foregroundStyle(.secondary)
+                                Text(notes).font(.caption)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+
                         if !summary.tldr.isEmpty {
                             Text("Summary: \(summary.tldr)")
                                 .font(.caption)
@@ -305,18 +317,8 @@ struct TranscriptionSessionView: View {
                             }
                         }
 
-                        // Training/Lecture fields
-                        if !summary.keyPoints.isEmpty {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Label("Key Points", systemImage: "lightbulb")
-                                    .font(.caption2.bold())
-                                    .foregroundStyle(.secondary)
-                                ForEach(summary.keyPoints, id: \.self) { pt in
-                                    Text("• \(pt)").font(.caption)
-                                }
-                            }
-                        }
-
+                        // Training/Lecture fields — Learning Objectives then Key Points.
+                        // Review Notes is rendered up top; no duplicate here.
                         if !summary.learningObjectives.isEmpty {
                             VStack(alignment: .leading, spacing: 3) {
                                 Label("Learning Objectives", systemImage: "target")
@@ -328,13 +330,14 @@ struct TranscriptionSessionView: View {
                             }
                         }
 
-                        if let notes = summary.reviewNotes, !notes.isEmpty {
+                        if !summary.keyPoints.isEmpty {
                             VStack(alignment: .leading, spacing: 3) {
-                                Label("Review Notes", systemImage: "doc.text")
+                                Label("Key Points", systemImage: "lightbulb")
                                     .font(.caption2.bold())
                                     .foregroundStyle(.secondary)
-                                Text(notes).font(.caption)
-                                    .fixedSize(horizontal: false, vertical: true)
+                                ForEach(summary.keyPoints, id: \.self) { pt in
+                                    Text("• \(pt)").font(.caption)
+                                }
                             }
                         }
 
@@ -666,7 +669,15 @@ struct TranscriptionSessionView: View {
                 .foregroundStyle(.secondary)
             }
 
-            Spacer()
+            // Title column — between date and context. Shown even when empty
+            // (placeholder dash) so the column alignment stays consistent.
+            Text((session.title?.isEmpty == false) ? session.title! : "—")
+                .font(.body)
+                .foregroundStyle((session.title?.isEmpty == false) ? .primary : .tertiary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.leading, 12)
 
             // Context badge — only shown for non-default contexts
             if session.recordingContext != .clientMeeting {

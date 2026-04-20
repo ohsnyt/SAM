@@ -74,6 +74,7 @@ enum SAMSchema {
         TranscriptSegment.self,                        // Speaker-attributed transcript segments
         SpeakerProfile.self,                           // Enrolled voice embeddings
         PendingUpload.self,                            // Phase B: iPhone-side pending upload queue
+        ProcessedSessionTombstone.self,                // Prevents SAMField re-uploading sessions the user deleted on the Mac
     ]
 }
 

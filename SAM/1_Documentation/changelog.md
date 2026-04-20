@@ -4,6 +4,35 @@
 
 ---
 
+## Lecture Summary Pipeline + Backfill (April 20, 2026)
+
+**What**: Ported the map-then-synthesize pipeline from `tools/summary-bench` into the main app and added a backfill path for sessions without a cached summary.
+
+**Why**: Training-lecture summaries were chunk-summarizing into one shape (`MeetingSummary`) and then passing merged `reviewNotes` through a second refine call. That pipeline lost the speaker's explicit outline — "Six Pillars," the Road to Emmaus scaffold — because the refine call saw only an abstracted prose blob, not the structure that the extracts had captured. The bench harness replaced it with a five-stage pipeline (extract → deterministic scaffold → reasoner → core → details) plus Swift-side enforcement that keeps the speaker's ordered points visible against LLM paraphrase drift. Median anchor score stabilized at 88% on the Aspects-of-Exhaustion and Military-Transition transcripts.
+
+### Pipeline Port (`SAM/Services/LectureSummaryPipeline.swift`)
+- New actor `LectureSummaryPipeline` replacing `refineLectureSummary()` for `.trainingLecture` recordings.
+- Stages:
+  1. **Chunk** — 2,800-char ceiling keeps each extract prompt well under the 4,096-token budget.
+  2. **Extract** — per-chunk `@Generable` DTO capturing thesis, entities, structure markers, anecdotes, data points, claims, questions, citations. Overflow recovery recursively halves chunks up to depth 3.
+  3. **Deterministic scaffold** — Swift-side aggregation: recurring entities (2+ chunks), primary anecdote, ordered theses, repeated-thesis-stem detection, outline-cue sentences scanned from the raw chunks.
+  4. **Reasoner pass** — LLM sees the scaffold + outline cues and emits `narrativeFrame`, `centralThesis`, `orderedPoints`, `primaryIllustration`.
+  5. **Ordered-point enforcement** — For each outline cue, if its distinctive stems are absent from the reasoner's orderedPoints, append the cue phrase so synthesis has an anchor. Frame-stem detection excludes subject-name stems (e.g. "jesu" across every point in a Jesus-themed sermon) from the coverage check so a speaker's outline still drives augmentation.
+  6. **Core synthesis (LLM)** — title, opening, reviewNotes grounded in scaffold + extracts. HARD LIMIT on reviewNotes (<1200 chars) to keep the prompt for pass 6 bounded.
+  7. **Details synthesis (LLM)** — topics, learningObjectives, keyPoints, openQuestions. Surfaces a KEY CLAIMS section so named assertions (e.g. "Transamerica pays 125%") anchor keyPoints. Entity variant resolution prefers the clean alphabetic form ("Aegon" over "A-Gon").
+  8. **Post-synthesis keyPoint enforcement** — same frame-stem-aware coverage check, appends any ordered point missing from keyPoints + reviewNotes.
+- Integrated at the top of `MeetingSummaryService.summarize()`: training-lecture recordings run through the new pipeline; failures fall through to the legacy path so the user still gets a summary.
+
+### Backfill (`TranscriptionSessionCoordinator.regenerateMissingSummaries()`)
+- Fetches every `TranscriptSession` where `meetingSummaryJSON` is nil or empty and segments exist, then runs them sequentially through `generateMeetingSummary(for:)` at `.utility` priority.
+- Progress surfaced via `backfillProgress: (done: Int, total: Int)?`.
+- UI: **Settings → Prompt Lab → Transcript Maintenance → Regenerate missing summaries** (new section with a single "Run now" button and a progress line). Because the backfill routes through the normal generate path, training-lecture sessions automatically pick up the new pipeline without a dedicated migration.
+
+### Result
+`.trainingLecture` sessions now produce outputs that reliably name the speaker's organizing frame, preserve numeric data points (distances, percentages, dates) verbatim, and cover every explicit outline point. Existing sessions that never finished summarizing can be backfilled from Settings.
+
+---
+
 ## Swift 6 Concurrency + iOS 26 API Cleanup (April 18, 2026)
 
 **What**: Swept both SAM and SAMField to zero build warnings under Swift 6 strict concurrency and the iOS 26 SDK. Also addressed a runtime priority-inversion warning in `ContactsService`.

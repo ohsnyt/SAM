@@ -8,7 +8,7 @@
 		<string>audio</string>
 	</array>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>SAM Field uses your location to track business mileage for IRS documentation and to find nearby contacts.</string>
+	<string>SAM Field uses your location to track business mileage for IRS documentation.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>SAM Field uses background location to accurately track business mileage during trips.</string>
 	<key>NSContactsUsageDescription</key>

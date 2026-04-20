@@ -36,9 +36,16 @@ final class TranscriptionSessionCoordinator {
 
     private(set) var sessionState: SessionState = .idle
 
-    /// True when a recording session is actively receiving audio.
-    /// Background tasks should defer heavy work while this is true.
-    var isSessionActive: Bool { sessionState == .receiving }
+    /// True when any heavy transcription work is in progress — either a
+    /// live session receiving audio, OR a pending-upload reprocess
+    /// crunching through Whisper / diarization / polish / summary.
+    /// Background importers (Mail, Communications, PostImportOrchestrator)
+    /// gate on this to avoid competing with single-core transcription work.
+    var isSessionActive: Bool {
+        if sessionState == .receiving { return true }
+        if PendingReprocessService.shared.state != .idle { return true }
+        return false
+    }
 
     /// Chunks received in the current session.
     var chunksReceived: Int { receivingService.chunksReceived }
@@ -81,6 +88,27 @@ final class TranscriptionSessionCoordinator {
     private let pipelineService = TranscriptionPipelineService()
     private var modelContainer: ModelContainer?
     private var segmentIndexCounter: Int = 0
+
+    /// Partial summaries produced incrementally while the recording is
+    /// still running. The session-end summary folds these into the final
+    /// result instead of re-summarizing the entire transcript, collapsing
+    /// the perceived wait from "N chunks × summary time" to "tail chunk
+    /// only". Only the final merged summary is pushed to the phone.
+    private var partialSummaries: [MeetingSummary] = []
+
+    /// First segment index not yet included in a partial summary. Segments
+    /// at or after this index form the tail that the final pass summarizes.
+    private var lastSummarizedSegmentIndex: Int = 0
+
+    /// Rough running count of transcript characters since the last partial
+    /// summary was kicked off. Triggers an incremental summary task once
+    /// it crosses `TranscriptPolishService.maxChunkChars`.
+    private var charsSinceLastSummary: Int = 0
+
+    /// True while a background partial-summary task is mid-inference.
+    /// Prevents overlapping inference calls from piling up on the same
+    /// FoundationModels pipeline.
+    private var incrementalSummaryInFlight: Bool = false
 
     /// True while a new session's pipeline reset is in progress. Any audio
     /// chunks that arrive in this window are buffered in `pendingChunks`
@@ -160,6 +188,14 @@ final class TranscriptionSessionCoordinator {
             // Also detects mid-session disconnects and auto-finalizes orphaned sessions.
             connectionWatchTask?.cancel()
             connectionWatchTask = Task { [weak self] in
+                // Require the watcher to see a disconnect for several
+                // consecutive ticks before auto-finalizing. Brief flaps
+                // during a connection replacement (see AudioReceivingService
+                // handleNewConnection) or during phone-side network
+                // hand-offs are normal and should not tear down an active
+                // recording. At 500ms per tick, 6 ticks = 3 seconds.
+                var disconnectTicks = 0
+                let disconnectThreshold = 6
                 while !Task.isCancelled {
                     try? await Task.sleep(for: .milliseconds(500))
                     guard let self else { return }
@@ -182,8 +218,14 @@ final class TranscriptionSessionCoordinator {
                     if listenerState != .connected,
                        self.sessionState == .receiving,
                        self.currentSessionID != nil {
-                        logger.warning("Connection dropped during active session — auto-finalizing")
-                        self.handleSessionEnd()
+                        disconnectTicks += 1
+                        if disconnectTicks >= disconnectThreshold {
+                            logger.warning("Connection dropped during active session — auto-finalizing (observed for \(disconnectTicks * 500)ms)")
+                            disconnectTicks = 0
+                            self.handleSessionEnd()
+                        }
+                    } else {
+                        disconnectTicks = 0
                     }
                 }
             }
@@ -230,6 +272,10 @@ final class TranscriptionSessionCoordinator {
 
             self.currentSessionID = sessionID
             self.segmentIndexCounter = 0
+            self.partialSummaries.removeAll()
+            self.lastSummarizedSegmentIndex = 0
+            self.charsSinceLastSummary = 0
+            self.incrementalSummaryInFlight = false
 
             // Reset pipeline for the new session (model stays loaded).
             self.pipelineService.reset()
@@ -352,6 +398,159 @@ final class TranscriptionSessionCoordinator {
         } catch {
             logger.error("Failed to save transcript segments: \(error.localizedDescription)")
         }
+
+        // Track the running char count for the incremental-summary trigger.
+        // Add a tiny overhead per segment to cover the "Speaker: " prefix +
+        // newlines that buildSpeakerTurns will add to the final text.
+        for seg in segments {
+            charsSinceLastSummary += seg.text.count + 12
+        }
+
+        maybeTriggerIncrementalSummary(sessionID: sessionID)
+    }
+
+    /// If enough new transcript has accumulated since the last partial
+    /// summary, snapshot the window of segments produced since then and
+    /// kick off a background summarization. The result is appended to
+    /// `partialSummaries` and the final session-end pass merges them in
+    /// instead of re-summarizing the whole transcript.
+    private func maybeTriggerIncrementalSummary(sessionID: UUID) {
+        guard !incrementalSummaryInFlight else { return }
+        guard charsSinceLastSummary >= TranscriptPolishService.maxChunkChars else { return }
+        // Defensive: need at least one segment's worth of new material.
+        guard segmentIndexCounter > lastSummarizedSegmentIndex else { return }
+
+        let windowStart = lastSummarizedSegmentIndex
+        let windowEnd = segmentIndexCounter  // exclusive
+        incrementalSummaryInFlight = true
+        lastSummarizedSegmentIndex = windowEnd
+        charsSinceLastSummary = 0
+
+        logger.info("Kicking off incremental summary for segments [\(windowStart), \(windowEnd))")
+
+        Task(priority: .background) { [weak self] in
+            await self?.runIncrementalSummary(
+                sessionID: sessionID,
+                fromIndex: windowStart,
+                toIndex: windowEnd
+            )
+        }
+    }
+
+    /// Builds transcript text for the given segment window and runs a
+    /// summary pass against it. On success, appends the result to
+    /// `partialSummaries`. On failure, resets `lastSummarizedSegmentIndex`
+    /// so the failed window is re-tried at session end (it folds into the
+    /// tail summary there).
+    private func runIncrementalSummary(
+        sessionID: UUID,
+        fromIndex: Int,
+        toIndex: Int
+    ) async {
+        defer {
+            incrementalSummaryInFlight = false
+        }
+
+        guard let container = modelContainer else {
+            lastSummarizedSegmentIndex = fromIndex
+            return
+        }
+
+        let context = ModelContext(container)
+        let (text, metadata) = buildSummaryWindow(
+            sessionID: sessionID,
+            fromIndex: fromIndex,
+            toIndex: toIndex,
+            context: context
+        )
+
+        guard let text, !text.isEmpty else {
+            // Window produced no text (e.g. silent window). Nothing to
+            // summarize, but we've already advanced the cursor — that's
+            // fine, those segments aren't worth a pass.
+            return
+        }
+
+        do {
+            let summary = try await MeetingSummaryService.shared.summarize(
+                transcript: text,
+                metadata: metadata
+            )
+            partialSummaries.append(summary)
+            logger.info("Incremental summary produced (partials now: \(self.partialSummaries.count))")
+        } catch {
+            logger.warning("Incremental summary failed: \(error.localizedDescription) — reverting cursor so tail pass picks up these segments")
+            lastSummarizedSegmentIndex = fromIndex
+            // charsSinceLastSummary stays at 0; the next segment batch
+            // will begin accumulating again and may retrigger if the
+            // recording keeps going.
+        }
+    }
+
+    /// Build a tail transcript — segments from `lastSummarizedSegmentIndex`
+    /// onward — for the final-summary incremental path. Returns the text
+    /// plus the char count the timeout helper should base its budget on.
+    /// The char count is the tail length when a tail exists, or a minimal
+    /// floor when nothing remains (the synthesis call is cheap).
+    private func buildTailSummaryInput(
+        sessionID: UUID,
+        context: ModelContext,
+        metadata: MeetingSummaryService.Metadata
+    ) -> (String?, Int) {
+        let descriptor = FetchDescriptor<TranscriptSession>(
+            predicate: #Predicate { $0.id == sessionID }
+        )
+        guard let session = try? context.fetch(descriptor).first else {
+            return (nil, 0)
+        }
+        let tailStart = lastSummarizedSegmentIndex
+        let tailSegments = session.sortedSegments.filter { $0.segmentIndex >= tailStart }
+        guard !tailSegments.isEmpty else { return (nil, 1000) }
+        let turns = Self.buildSpeakerTurns(from: tailSegments)
+        guard !turns.isEmpty else { return (nil, 1000) }
+        let text = turns.joined(separator: "\n\n")
+        return (text, text.count)
+    }
+
+    /// Fetch segments in the index range `[fromIndex, toIndex)` and build
+    /// a speaker-attributed transcript string the summary service can
+    /// consume. Returns `(nil, metadata)` if the window is empty.
+    private func buildSummaryWindow(
+        sessionID: UUID,
+        fromIndex: Int,
+        toIndex: Int,
+        context: ModelContext
+    ) -> (String?, MeetingSummaryService.Metadata) {
+        let descriptor = FetchDescriptor<TranscriptSession>(
+            predicate: #Predicate { $0.id == sessionID }
+        )
+        do {
+            guard let session = try context.fetch(descriptor).first else {
+                return (nil, MeetingSummaryService.Metadata())
+            }
+
+            let windowed = session.sortedSegments.filter { seg in
+                seg.segmentIndex >= fromIndex && seg.segmentIndex < toIndex
+            }
+            guard !windowed.isEmpty else { return (nil, MeetingSummaryService.Metadata()) }
+
+            let turns = Self.buildSpeakerTurns(from: windowed)
+            guard !turns.isEmpty else { return (nil, MeetingSummaryService.Metadata()) }
+
+            let windowDuration = (windowed.last?.endTime ?? 0) - (windowed.first?.startTime ?? 0)
+            let metadata = MeetingSummaryService.Metadata(
+                durationSeconds: windowDuration,
+                speakerCount: session.speakerCount,
+                detectedLanguage: session.detectedLanguage,
+                recordedAt: session.recordedAt,
+                recordingContext: session.recordingContext
+            )
+
+            return (turns.joined(separator: "\n\n"), metadata)
+        } catch {
+            logger.error("buildSummaryWindow fetch failed: \(error.localizedDescription)")
+            return (nil, MeetingSummaryService.Metadata())
+        }
     }
 
     /// Load the enrolled agent's speaker embedding from the current SwiftData state.
@@ -402,9 +601,16 @@ final class TranscriptionSessionCoordinator {
 
         sessionState = .completed
 
+        // Capture chunk count synchronously — the receiving service resets
+        // `chunksReceived` to 0 on any new sessionStart or stopAdvertising,
+        // and `finishSession()` below can await for many seconds flushing
+        // the final Whisper window. Reading the counter after the await
+        // raced with reconnects produced 0-duration saves.
+        let capturedChunkCount = receivingService.chunksReceived
+
         // Flush final window, auto-save as SamNote + trigger analysis,
         // then transition back to listening for the next session.
-        Task { [weak self, sessionID] in
+        Task { [weak self, sessionID, capturedChunkCount] in
             guard let self else { return }
             await self.pipelineService.finishSession()
 
@@ -428,7 +634,9 @@ final class TranscriptionSessionCoordinator {
                 }
 
                 session.status = .completed
-                session.durationSeconds = Double(self.receivingService.chunksReceived) * AudioStreamingConstants.chunkDurationSeconds
+                let chunkDuration = Double(capturedChunkCount) * AudioStreamingConstants.chunkDurationSeconds
+                let segmentDuration = (session.segments ?? []).map(\.endTime).max() ?? 0
+                session.durationSeconds = max(chunkDuration, segmentDuration)
                 session.speakerCount = max(1, self.pipelineService.detectedSpeakerCount)
                 self.lastSessionDuration = session.durationSeconds
                 self.lastSessionAudioPath = session.audioFilePath
@@ -554,7 +762,19 @@ final class TranscriptionSessionCoordinator {
     /// service can occasionally hang on cold-start Apple Intelligence. After
     /// this timeout the UI surfaces a "Try again" button so the user isn't
     /// stuck staring at a spinner.
+    /// Per-chunk watchdog for a single `AIService.generate` call. The overall
+    /// timeout scales linearly with chunk count (see `summaryTimeout(for:)`).
     private static let summaryGenerationTimeout: TimeInterval = 30
+
+    /// Scale the summary watchdog by the number of chunks the transcript will
+    /// be split into. Long recordings (e.g. a 50-minute lecture → ~10 chunks)
+    /// need far more than 30s wall-clock, but each individual chunk still
+    /// gets the same per-call budget so a truly stuck FoundationModels call
+    /// is still caught.
+    private static func summaryTimeout(forTranscriptLength length: Int) -> TimeInterval {
+        let chunkCount = max(1, Int((Double(length) / Double(TranscriptPolishService.maxChunkChars)).rounded(.up)))
+        return summaryGenerationTimeout * Double(chunkCount)
+    }
 
     /// Generate a `MeetingSummary` for the given session ID, persist it to
     /// the `TranscriptSession.meetingSummaryJSON` field, and (in Phase 4)
@@ -569,6 +789,18 @@ final class TranscriptionSessionCoordinator {
 
         summaryState = .generating
 
+        // If an incremental summary is still running, wait briefly so we
+        // don't double-summarize the same window or miss a partial that's
+        // about to land.
+        var waited: TimeInterval = 0
+        while incrementalSummaryInFlight, waited < 60 {
+            try? await Task.sleep(for: .milliseconds(250))
+            waited += 0.25
+        }
+        if incrementalSummaryInFlight {
+            logger.warning("Proceeding with final summary while incremental task still in flight after 60s")
+        }
+
         // Fetch the session + build the transcript on the main actor.
         let context = ModelContext(container)
         let (transcriptText, metadata) = buildSummaryInput(
@@ -582,12 +814,38 @@ final class TranscriptionSessionCoordinator {
             return
         }
 
+        // If we produced partial summaries during recording, only summarize
+        // the tail (segments past the last summarized boundary) and merge
+        // instead of re-summarizing the whole transcript. This collapses
+        // the stop-to-summary wait from "N chunks" to "1 chunk".
+        let useIncrementalPath = !partialSummaries.isEmpty
+        let (summarizeText, summarizeTimeoutLen) = useIncrementalPath
+            ? buildTailSummaryInput(sessionID: sessionID, context: context, metadata: metadata)
+            : (transcriptText, transcriptText.count)
+
+        let timeout = Self.summaryTimeout(forTranscriptLength: summarizeTimeoutLen)
         do {
-            let summary = try await Self.withTimeout(seconds: Self.summaryGenerationTimeout) {
-                try await MeetingSummaryService.shared.summarize(
-                    transcript: transcriptText,
-                    metadata: metadata
-                )
+            let summary = try await Self.withTimeout(seconds: timeout) { [partialSummaries] in
+                if useIncrementalPath {
+                    // Summarize the tail (if any) and fold into the partials.
+                    var allPartials = partialSummaries
+                    if let tail = summarizeText, !tail.isEmpty {
+                        let tailSummary = try await MeetingSummaryService.shared.summarize(
+                            transcript: tail,
+                            metadata: metadata
+                        )
+                        allPartials.append(tailSummary)
+                    }
+                    return try await MeetingSummaryService.shared.synthesize(
+                        from: allPartials,
+                        metadata: metadata
+                    )
+                } else {
+                    return try await MeetingSummaryService.shared.summarize(
+                        transcript: transcriptText,
+                        metadata: metadata
+                    )
+                }
             }
 
             // Persist to the session
@@ -597,6 +855,9 @@ final class TranscriptionSessionCoordinator {
             if let session = try context.fetch(descriptor).first {
                 session.meetingSummaryJSON = summary.toJSONString()
                 session.summaryGeneratedAt = .now
+                if (session.title ?? "").isEmpty, !summary.title.isEmpty {
+                    session.title = summary.title
+                }
                 try context.save()
             }
 
@@ -607,8 +868,8 @@ final class TranscriptionSessionCoordinator {
             // Phase 4: push summary back to iPhone over the same TCP connection.
             receivingService.sendMeetingSummary(summary)
         } catch is SummaryTimeoutError {
-            logger.warning("Meeting summary timed out after \(Self.summaryGenerationTimeout)s — surfacing retry to user")
-            summaryState = .failed("Summary timed out after \(Int(Self.summaryGenerationTimeout))s. Apple Intelligence may not be ready yet — try again in a moment.")
+            logger.warning("Meeting summary timed out after \(timeout)s — surfacing retry to user")
+            summaryState = .failed("Summary timed out after \(Int(timeout))s. Apple Intelligence may not be ready yet — try again in a moment.")
         } catch {
             logger.error("Meeting summary failed: \(error.localizedDescription)")
             summaryState = .failed(error.localizedDescription)
@@ -742,6 +1003,52 @@ final class TranscriptionSessionCoordinator {
         }
     }
 
+    /// Progress of the backfill pass. `nil` when idle.
+    private(set) var backfillProgress: (done: Int, total: Int)?
+
+    /// Backfill summaries for every session that has segments but no
+    /// `meetingSummaryJSON`. Runs sequentially at `.utility` priority so the
+    /// Mac's AI backend isn't saturated while the user is doing other work.
+    /// Safe to call multiple times — in-flight calls short-circuit.
+    func regenerateMissingSummaries() {
+        guard backfillProgress == nil else { return }
+        guard let container = modelContainer else { return }
+
+        Task(priority: .utility) { [weak self, container] in
+            guard let self else { return }
+            let context = ModelContext(container)
+            let ids: [UUID]
+            do {
+                let descriptor = FetchDescriptor<TranscriptSession>(
+                    predicate: #Predicate { session in
+                        session.meetingSummaryJSON == nil
+                            || session.meetingSummaryJSON == ""
+                    },
+                    sortBy: [SortDescriptor(\.recordedAt, order: .reverse)]
+                )
+                ids = try context.fetch(descriptor)
+                    .filter { ($0.segments?.count ?? 0) > 0 }
+                    .map(\.id)
+            } catch {
+                logger.error("Backfill fetch failed: \(error.localizedDescription)")
+                return
+            }
+            guard !ids.isEmpty else {
+                logger.info("Backfill: no sessions need summaries")
+                return
+            }
+
+            logger.info("Backfill: regenerating summaries for \(ids.count) session(s)")
+            await MainActor.run { self.backfillProgress = (0, ids.count) }
+            for (i, id) in ids.enumerated() {
+                await self.generateMeetingSummary(for: id)
+                await MainActor.run { self.backfillProgress = (i + 1, ids.count) }
+            }
+            await MainActor.run { self.backfillProgress = nil }
+            logger.info("Backfill: done")
+        }
+    }
+
     /// The most recent session ID, even after `currentSessionID` has been cleared.
     /// Used for the regenerate-summary flow.
     private var lastFinalizedSessionID: UUID?
@@ -848,6 +1155,15 @@ final class TranscriptionSessionCoordinator {
                 context.delete(evidence)
             }
             context.delete(note)
+        }
+
+        // Mirror the Mac-side performDelete: write a tombstone so a retry
+        // upload from SAMField doesn't resurrect this session.
+        let tombstoneDescriptor = FetchDescriptor<ProcessedSessionTombstone>(
+            predicate: #Predicate { $0.sessionID == sessionID }
+        )
+        if (try? context.fetch(tombstoneDescriptor).first) == nil {
+            context.insert(ProcessedSessionTombstone(sessionID: sessionID))
         }
 
         // 3. Delete the session (segments cascade automatically)

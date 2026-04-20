@@ -6,7 +6,7 @@
 //  Phase F1: iOS Companion App Foundation
 //
 //  Root tab navigation for SAM Field.
-//  Four tabs: Today, Record, Trips, Nearby.
+//  Three tabs: Today, Record, Trips.
 //
 
 import SwiftUI
@@ -40,12 +40,6 @@ struct FieldTabView: View {
                 }
             }
             .badge(coordinator.unconfirmedCount > 0 ? coordinator.unconfirmedCount : 0)
-
-            Tab("Nearby", systemImage: "map", value: .nearby) {
-                NavigationStack {
-                    NearbyView()
-                }
-            }
         }
         .task {
             coordinator.configure(container: modelContext.container)
@@ -57,7 +51,6 @@ enum FieldTab: String, Hashable {
     case today
     case record
     case trips
-    case nearby
 }
 
 #Preview("SAM Field") {

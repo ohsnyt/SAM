@@ -110,7 +110,7 @@ Extract structured meeting intelligence: action items with owners/due dates, dec
 
 ### System Instruction
 ```
-You summarize meeting transcripts for a financial advisor. Output ONLY a JSON
+You summarize meeting trfanscripts for a financial advisor. Output ONLY a JSON
 object matching the exact schema below. Every value you emit must come from the
 transcript -- NEVER invent people, tasks, topics, dates, or any other content.
 

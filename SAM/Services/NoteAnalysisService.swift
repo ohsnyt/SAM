@@ -61,18 +61,124 @@ actor NoteAnalysisService {
             throw AnalysisError.modelUnavailable
         }
 
-        // Build system instructions and prompt
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Short notes: single-pass.
+        if trimmed.count <= TranscriptPolishService.maxChunkChars {
+            return try await analyzeSingleChunk(content: trimmed, roleContext: roleContext)
+        }
+
+        // Long notes (e.g. auto-saved meeting transcripts): chunk, analyze
+        // each, merge. Apple FoundationModels has a 4096-token context
+        // window — a full hour-long lecture transcript blows past it and
+        // fails silently. Same pattern as MeetingSummaryService.
+        let chunks = TranscriptPolishService.chunkTranscript(trimmed, maxChars: TranscriptPolishService.maxChunkChars)
+        logger.info("Analyzing long note in \(chunks.count) chunks (\(trimmed.count) total chars)")
+
+        var perChunk: [NoteAnalysisDTO] = []
+        for (i, chunk) in chunks.enumerated() {
+            logger.info("Analyzing chunk \(i + 1)/\(chunks.count) (\(chunk.count) chars)")
+            let analysis = try await analyzeSingleChunk(content: chunk, roleContext: roleContext)
+            perChunk.append(analysis)
+        }
+
+        let merged = Self.mergeAnalyses(perChunk)
+        logger.info("Merged \(chunks.count) chunks: \(merged.people.count) people, \(merged.actionItems.count) actions, \(merged.topics.count) topics")
+        return merged
+    }
+
+    /// Single-pass analysis for content that fits in the model's context window.
+    private func analyzeSingleChunk(content: String, roleContext: RoleContext?) async throws -> NoteAnalysisDTO {
         let instructions = await buildSystemInstructions()
         let prompt = buildPrompt(content: content, roleContext: roleContext)
-
-        // Generate response via AIService
         let responseText = try await AIService.shared.generate(prompt: prompt, systemInstruction: instructions)
-
-        // Parse JSON response
         let analysis = try parseResponse(responseText)
-
-        logger.debug("Analyzed note: \(analysis.people.count) people, \(analysis.actionItems.count) actions")
+        logger.debug("Analyzed chunk: \(analysis.people.count) people, \(analysis.actionItems.count) actions")
         return analysis
+    }
+
+    /// Merge per-chunk analyses, deduplicating people/topics/relationships/
+    /// life events on identity fields. Action items accumulate (each one
+    /// is its own suggestion), but duplicate descriptions are collapsed.
+    static func mergeAnalyses(_ analyses: [NoteAnalysisDTO]) -> NoteAnalysisDTO {
+        guard !analyses.isEmpty else {
+            return NoteAnalysisDTO(
+                summary: nil,
+                people: [],
+                topics: [],
+                actionItems: [],
+                analysisVersion: NoteAnalysisService.currentAnalysisVersion
+            )
+        }
+        if analyses.count == 1 { return analyses[0] }
+
+        // Summary: join non-empty per-chunk summaries with a space.
+        let summary: String? = {
+            let parts = analyses.compactMap { $0.summary?.trimmingCharacters(in: .whitespacesAndNewlines) }
+                                .filter { !$0.isEmpty }
+            return parts.isEmpty ? nil : parts.joined(separator: " ")
+        }()
+
+        // People: dedupe on lowercase name; keep highest-confidence entry.
+        var peopleByName: [String: PersonMentionDTO] = [:]
+        for a in analyses {
+            for p in a.people {
+                let key = p.name.lowercased()
+                if let existing = peopleByName[key], existing.confidence >= p.confidence { continue }
+                peopleByName[key] = p
+            }
+        }
+
+        // Topics: case-insensitive dedupe, preserve first-seen casing.
+        var topicsSeen = Set<String>()
+        var topics: [String] = []
+        for a in analyses {
+            for t in a.topics {
+                let key = t.lowercased()
+                if topicsSeen.insert(key).inserted { topics.append(t) }
+            }
+        }
+
+        // Action items: dedupe on (type + normalized description).
+        var actionsSeen = Set<String>()
+        var actionItems: [ActionItemDTO] = []
+        for a in analyses {
+            for item in a.actionItems {
+                let key = "\(item.type.lowercased())|\(item.description.lowercased().trimmingCharacters(in: .whitespacesAndNewlines))"
+                if actionsSeen.insert(key).inserted { actionItems.append(item) }
+            }
+        }
+
+        // Discovered relationships: dedupe on (personName + relatedTo + type).
+        var relSeen = Set<String>()
+        var discoveredRelationships: [DiscoveredRelationshipDTO] = []
+        for a in analyses {
+            for r in a.discoveredRelationships {
+                let key = "\(r.personName.lowercased())|\(r.relatedTo.lowercased())|\(r.relationshipType.lowercased())"
+                if relSeen.insert(key).inserted { discoveredRelationships.append(r) }
+            }
+        }
+
+        // Life events: dedupe on (personName + eventType).
+        var eventsSeen = Set<String>()
+        var lifeEvents: [LifeEventDTO] = []
+        for a in analyses {
+            for e in a.lifeEvents {
+                let key = "\(e.personName.lowercased())|\(e.eventType.lowercased())"
+                if eventsSeen.insert(key).inserted { lifeEvents.append(e) }
+            }
+        }
+
+        return NoteAnalysisDTO(
+            summary: summary,
+            people: Array(peopleByName.values),
+            topics: topics,
+            actionItems: actionItems,
+            discoveredRelationships: discoveredRelationships,
+            lifeEvents: lifeEvents,
+            analyzedAt: analyses.last?.analyzedAt ?? .now,
+            analysisVersion: analyses.last?.analysisVersion ?? NoteAnalysisService.currentAnalysisVersion
+        )
     }
     
     // MARK: - Dictation Polish

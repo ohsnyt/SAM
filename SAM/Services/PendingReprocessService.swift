@@ -24,7 +24,7 @@
 //
 
 import Foundation
-import AVFoundation
+@preconcurrency import AVFoundation
 import SwiftData
 import os.log
 
@@ -123,47 +123,73 @@ final class PendingReprocessService {
         }
         logger.notice("✅ Stage 1 (model load): \(String(format: "%.1f", Date().timeIntervalSince(stage1Start)))s")
 
-        // MARK: 1b. Preprocess audio (noise gate + AGC + high-pass filter)
+        // MARK: 1b. Downsample to 16 kHz (+ optionally preprocess)
         //
-        // Load the WAV into a float buffer, run the preprocessing pipeline,
-        // write the cleaned audio back to a temp file for Whisper to read.
-        // Runs off main actor to avoid beachball on large files (165MB+).
+        // Always resample to 16 kHz mono up front — Whisper, SpeakerKit, and
+        // MFCC diarization all operate at 16 kHz internally, so 48 kHz input
+        // just pays an extra resample per stage. Downsampling once here also
+        // shrinks the sample buffer ~3× (165 MB → 55 MB on a 50-min recording)
+        // which dramatically cuts the allocation churn through the STFT
+        // pipeline below.
+        //
+        // For trainingLecture recordings we skip the noise-gate / AGC /
+        // high-pass preprocess entirely. Lecture audio is typically captured
+        // at a lecturer's podium mic or held-up phone — the preprocessor's
+        // spectralNoiseGate is dominated by per-frame `[Float]` allocations
+        // across ~280k frames on a 50-min file, and for a lecture where a
+        // single dominant speaker voice carries the signal the quality win
+        // isn't worth the 20+ minutes of single-core CPU it costs.
         let preprocessStart = Date()
         let capturedWavURL = wavURL
         let capturedSampleRate = metadata.sampleRate
         let capturedChannels = metadata.channels
         let capturedSessionID = sessionID
+        let isLecture = (metadata.recordingContext ?? .clientMeeting) == .trainingLecture
+        let effectiveSampleRate: UInt32 = 16_000
 
-        let preprocessResult: (samples: [Float]?, wavURL: URL) = await Task.detached(priority: .userInitiated) {
-            let rawSamples = self.loadMonoFloatSamples(
+        let preprocessResult: (samples: [Float]?, wavURL: URL, didPreprocess: Bool) = await Task.detached(priority: .userInitiated) {
+            let resampled = self.loadAndResampleTo16k(
                 from: capturedWavURL,
                 expectedSampleRate: Double(capturedSampleRate),
                 expectedChannels: Int(capturedChannels)
             )
 
-            guard let raw = rawSamples, !raw.isEmpty else {
-                return (nil, capturedWavURL)
+            guard let samples16k = resampled, !samples16k.isEmpty else {
+                return (nil, capturedWavURL, false)
             }
-
-            let cleaned = AudioPreprocessingService.preprocess(
-                samples: raw,
-                sampleRate: Float(capturedSampleRate)
-            )
 
             let tempDir = FileManager.default.temporaryDirectory
-            let tempURL = tempDir.appendingPathComponent("preprocessed-\(capturedSessionID.uuidString).wav")
-            if self.writeWAV(samples: cleaned, sampleRate: capturedSampleRate, to: tempURL) {
-                return (cleaned, tempURL)
+
+            if isLecture {
+                // Lecture path — write 16 kHz raw WAV for Whisper, hand
+                // samples straight to diarization without preprocess.
+                let tempURL = tempDir.appendingPathComponent("resampled-\(capturedSessionID.uuidString).wav")
+                if self.writeWAV(samples: samples16k, sampleRate: 16_000, to: tempURL) {
+                    return (samples16k, tempURL, false)
+                }
+                return (samples16k, capturedWavURL, false)
             }
-            return (cleaned, capturedWavURL)
+
+            // Meeting / board path — run the usual noise-gate + AGC + HPF.
+            let cleaned = AudioPreprocessingService.preprocess(
+                samples: samples16k,
+                sampleRate: 16_000
+            )
+
+            let tempURL = tempDir.appendingPathComponent("preprocessed-\(capturedSessionID.uuidString).wav")
+            if self.writeWAV(samples: cleaned, sampleRate: 16_000, to: tempURL) {
+                return (cleaned, tempURL, true)
+            }
+            return (cleaned, capturedWavURL, true)
         }.value
 
         let preprocessedSamples = preprocessResult.samples
         let preprocessedWavURL = preprocessResult.wavURL
-        if preprocessedSamples != nil {
-            logger.notice("✅ Stage 1b (preprocess): \(String(format: "%.1f", Date().timeIntervalSince(preprocessStart)))s — \(preprocessedSamples!.count) samples cleaned")
+        if let preprocessedSamples {
+            let mode = preprocessResult.didPreprocess ? "resample+preprocess" : "resample only (lecture bypass)"
+            logger.notice("✅ Stage 1b (\(mode)): \(String(format: "%.1f", Date().timeIntervalSince(preprocessStart)))s — \(preprocessedSamples.count) samples @ 16 kHz")
         } else {
-            logger.warning("Stage 1b: could not load raw samples for preprocessing")
+            logger.warning("Stage 1b: could not load/resample raw samples")
         }
 
         // MARK: 2. Transcribe the full WAV (Whisper handles its own windowing)
@@ -223,21 +249,21 @@ final class PendingReprocessService {
         state = .diarizing
         let stage3Start = Date()
         logger.notice("⏳ Stage 3 (diarization) starting...")
-        // Use preprocessed samples if available (already loaded off main actor).
-        // Falls back to loading raw from the original WAV off main actor.
+        // Use the 16 kHz samples from Stage 1b (already loaded off main actor).
+        // Falls back to resampling the original WAV off main actor.
         let monoSamples: [Float]?
         if let preprocessedSamples {
             monoSamples = preprocessedSamples
         } else {
             monoSamples = await Task.detached(priority: .userInitiated) {
-                self.loadMonoFloatSamples(
+                self.loadAndResampleTo16k(
                     from: capturedWavURL,
                     expectedSampleRate: Double(capturedSampleRate),
                     expectedChannels: Int(capturedChannels)
                 )
             }.value
         }
-        logger.notice("Diarization: loaded \(monoSamples?.count ?? 0) mono float samples (preprocessed=\(preprocessedSamples != nil))")
+        logger.notice("Diarization: loaded \(monoSamples?.count ?? 0) mono float samples @ 16 kHz (preprocessed=\(preprocessedSamples != nil && preprocessResult.didPreprocess))")
 
         let enrolledEmbedding = loadEnrolledAgentEmbedding(container: modelContainer)
 
@@ -257,8 +283,9 @@ final class PendingReprocessService {
                 "diarization",
                 StageCache.Version.diarization,
                 wavHash,
-                "sr=\(metadata.sampleRate)",
-                "ch=\(metadata.channels)",
+                "sr=\(effectiveSampleRate)",
+                "ch=1",
+                "preproc=\(preprocessResult.didPreprocess)",
                 "merge=\(svc.clusterMergeThreshold)",
                 "agent=\(svc.agentMatchThreshold)",
                 "vad=\(svc.vadEnergyThreshold)",
@@ -287,7 +314,7 @@ final class PendingReprocessService {
                 do {
                     diarization = try await DiarizationService.shared.diarizeWithSpeakerKit(
                         samples: monoSamples,
-                        sampleRate: Double(metadata.sampleRate),
+                        sampleRate: Double(effectiveSampleRate),
                         startOffset: 0,
                         enrolledAgentEmbedding: enrolledEmbedding
                     )
@@ -296,7 +323,7 @@ final class PendingReprocessService {
                     logger.warning("SpeakerKit diarization failed (\(error.localizedDescription)), falling back to MFCC")
                     diarization = DiarizationService.shared.diarize(
                         samples: monoSamples,
-                        sampleRate: Double(metadata.sampleRate),
+                        sampleRate: Double(effectiveSampleRate),
                         startOffset: 0,
                         enrolledAgentEmbedding: enrolledEmbedding
                     )
@@ -329,7 +356,7 @@ final class PendingReprocessService {
                 do {
                     diarization = try await DiarizationService.shared.diarizeWithSpeakerKit(
                         samples: monoSamples,
-                        sampleRate: Double(metadata.sampleRate),
+                        sampleRate: Double(effectiveSampleRate),
                         startOffset: 0,
                         enrolledAgentEmbedding: enrolledEmbedding
                     )
@@ -337,7 +364,7 @@ final class PendingReprocessService {
                     logger.warning("SpeakerKit failed, falling back to MFCC: \(error.localizedDescription)")
                     diarization = DiarizationService.shared.diarize(
                         samples: monoSamples,
-                        sampleRate: Double(metadata.sampleRate),
+                        sampleRate: Double(effectiveSampleRate),
                         startOffset: 0,
                         enrolledAgentEmbedding: enrolledEmbedding
                     )
@@ -533,6 +560,125 @@ final class PendingReprocessService {
             guard let profile = try context.fetch(descriptor).first else { return nil }
             return SpeakerEmbeddingService.decode(profile.embeddingData)
         } catch {
+            return nil
+        }
+    }
+
+    /// Decode a WAV file to mono 16 kHz Float samples in a single pass.
+    /// Uses AVAudioConverter to handle channel downmix + sample-rate
+    /// conversion off the main actor. Whisper, SpeakerKit, and MFCC
+    /// diarization all operate at 16 kHz internally, so doing this once
+    /// upfront avoids three separate resamples downstream and shrinks
+    /// the in-memory sample buffer ~3× vs. the 48 kHz original.
+    private nonisolated func loadAndResampleTo16k(
+        from url: URL,
+        expectedSampleRate: Double,
+        expectedChannels: Int
+    ) -> [Float]? {
+        do {
+            let file = try AVAudioFile(forReading: url)
+            let inputFormat = file.processingFormat
+
+            guard let outputFormat = AVAudioFormat(
+                commonFormat: .pcmFormatFloat32,
+                sampleRate: 16_000,
+                channels: 1,
+                interleaved: false
+            ) else {
+                return nil
+            }
+
+            // Fast path — already mono 16 kHz Float, just copy.
+            if inputFormat.sampleRate == 16_000,
+               inputFormat.channelCount == 1,
+               inputFormat.commonFormat == .pcmFormatFloat32 {
+                let frames = AVAudioFrameCount(file.length)
+                guard let buffer = AVAudioPCMBuffer(pcmFormat: inputFormat, frameCapacity: frames) else {
+                    return nil
+                }
+                try file.read(into: buffer, frameCount: frames)
+                guard let channelData = buffer.floatChannelData else { return nil }
+                let count = Int(buffer.frameLength)
+                return Array(UnsafeBufferPointer(start: channelData[0], count: count))
+            }
+
+            guard let converter = AVAudioConverter(from: inputFormat, to: outputFormat) else {
+                logger.error("loadAndResampleTo16k: failed to construct AVAudioConverter")
+                return nil
+            }
+
+            // Read in reasonably large chunks to amortize converter overhead
+            // without ballooning peak memory. 2 seconds of input at the
+            // source rate is a good middle ground (~384 KB per chunk at
+            // 48 kHz mono Float32).
+            let inputChunkFrames: AVAudioFrameCount = AVAudioFrameCount(max(1_024, Int(inputFormat.sampleRate * 2)))
+            guard let inputBuffer = AVAudioPCMBuffer(pcmFormat: inputFormat, frameCapacity: inputChunkFrames) else {
+                return nil
+            }
+
+            // Output buffer capacity must cover the ratio after conversion
+            // plus a little slack for the converter's internal state.
+            let ratio = outputFormat.sampleRate / inputFormat.sampleRate
+            let outputChunkFrames = AVAudioFrameCount(Double(inputChunkFrames) * ratio + 1_024)
+            guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: outputChunkFrames) else {
+                return nil
+            }
+
+            // Pre-size the result to the expected count so we don't reallocate
+            // mid-stream on long recordings (~55 MB for a 60-min file).
+            let expectedOutputCount = Int(Double(file.length) * ratio) + 1_024
+            var samples = [Float]()
+            samples.reserveCapacity(expectedOutputCount)
+
+            var inputExhausted = false
+
+            while true {
+                outputBuffer.frameLength = 0
+
+                var inputError: NSError?
+                let status = converter.convert(to: outputBuffer, error: &inputError) { _, outStatus in
+                    if inputExhausted {
+                        outStatus.pointee = .endOfStream
+                        return nil
+                    }
+                    do {
+                        inputBuffer.frameLength = 0
+                        try file.read(into: inputBuffer, frameCount: inputChunkFrames)
+                        if inputBuffer.frameLength == 0 {
+                            inputExhausted = true
+                            outStatus.pointee = .endOfStream
+                            return nil
+                        }
+                        outStatus.pointee = .haveData
+                        return inputBuffer
+                    } catch {
+                        inputExhausted = true
+                        outStatus.pointee = .endOfStream
+                        return nil
+                    }
+                }
+
+                if let inputError {
+                    logger.error("loadAndResampleTo16k: converter input error: \(inputError.localizedDescription)")
+                    return nil
+                }
+
+                let frames = Int(outputBuffer.frameLength)
+                if frames > 0, let channelData = outputBuffer.floatChannelData {
+                    samples.append(contentsOf: UnsafeBufferPointer(start: channelData[0], count: frames))
+                }
+
+                if status == .endOfStream || status == .error {
+                    break
+                }
+                if frames == 0 && inputExhausted {
+                    break
+                }
+            }
+
+            return samples
+        } catch {
+            logger.error("loadAndResampleTo16k failed: \(error.localizedDescription)")
             return nil
         }
     }
@@ -855,6 +1001,9 @@ final class PendingReprocessService {
             if let fresh = try? context.fetch(descriptor).first {
                 fresh.meetingSummaryJSON = cached.toJSONString()
                 fresh.summaryGeneratedAt = .now
+                if (fresh.title ?? "").isEmpty, !cached.title.isEmpty {
+                    fresh.title = cached.title
+                }
                 try? context.save()
                 logger.notice("✅ Summary: CACHE HIT — \(cached.actionItems.count) action items restored")
             }
@@ -888,6 +1037,9 @@ final class PendingReprocessService {
             if let fresh = try context.fetch(descriptor).first {
                 fresh.meetingSummaryJSON = summary.toJSONString()
                 fresh.summaryGeneratedAt = .now
+                if (fresh.title ?? "").isEmpty, !summary.title.isEmpty {
+                    fresh.title = summary.title
+                }
                 try context.save()
                 logger.info("Reprocess summary: saved (\(summary.actionItems.count) action items)")
             }

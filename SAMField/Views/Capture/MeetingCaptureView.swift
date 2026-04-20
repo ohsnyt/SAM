@@ -1028,6 +1028,12 @@ struct MeetingCaptureView: View {
     @ViewBuilder
     private func summaryCard(_ summary: MeetingSummary) -> some View {
         VStack(alignment: .leading, spacing: 16) {
+            if !summary.title.isEmpty {
+                Text(summary.title)
+                    .font(.title3.bold())
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             // TL;DR
             if !summary.tldr.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {

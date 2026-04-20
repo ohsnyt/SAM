@@ -16,6 +16,7 @@ struct TodayView: View {
     @State private var coordinator = FieldDayCoordinator.shared
     @State private var tripCoordinator = TripCoordinator.shared
     @State private var briefingJSON: String? = nil
+    @State private var showingSettings = false
 
     var body: some View {
         List {
@@ -64,6 +65,21 @@ struct TodayView: View {
             statsSection
         }
         .navigationTitle("Today")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showingSettings = true
+                } label: {
+                    Image(systemName: "gearshape")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .accessibilityLabel("Settings")
+            }
+        }
+        .sheet(isPresented: $showingSettings) {
+            SettingsView()
+        }
         .refreshable {
             coordinator.refresh()
             tripCoordinator.refreshStats()

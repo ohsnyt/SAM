@@ -516,6 +516,8 @@ private struct BriefingsSettingsPane: View {
 
 private struct PromptLabSettingsPane: View {
     @Environment(\.openWindow) private var openWindow
+    @State private var mlxStatus: MLXModelManager.SelectedModelStatus?
+    @State private var mlxError: String?
 
     var body: some View {
         Form {
@@ -540,8 +542,117 @@ private struct PromptLabSettingsPane: View {
                 }
                 .padding()
             }
+
+            Section("Narrative Model") {
+                VStack(alignment: .leading, spacing: 12) {
+                    mlxStatusRow
+
+                    if let error = mlxError {
+                        Text(error)
+                            .samFont(.caption)
+                            .foregroundStyle(.red)
+                    }
+
+                    Text("SAM uses this local MLX model for narrative generation (coaching, briefings, analysis). Structured output always runs on Apple FoundationModels.")
+                        .samFont(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 4)
+            }
+
+            Section("Transcript Maintenance") {
+                BackfillMissingSummariesRow()
+                    .padding(.vertical, 4)
+            }
         }
         .formStyle(.grouped)
+        .task {
+            await refreshMlxStatus()
+            // Poll while a download is in flight so the progress line updates.
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                await refreshMlxStatus()
+                if let status = mlxStatus, !status.isDownloading {
+                    // Idle — slow down to once every few seconds.
+                    try? await Task.sleep(for: .seconds(3))
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var mlxStatusRow: some View {
+        if let status = mlxStatus {
+            HStack(alignment: .center, spacing: 12) {
+                Image(systemName: mlxStatusIcon(for: status))
+                    .foregroundStyle(mlxStatusColor(for: status))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(status.displayName)
+                        .samFont(.body)
+                    Text(mlxStatusText(for: status))
+                        .samFont(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if !status.isDownloaded && !status.isDownloading {
+                    Button("Download") {
+                        startDownload(id: status.id)
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+        } else {
+            HStack(spacing: 12) {
+                Image(systemName: "questionmark.circle")
+                    .foregroundStyle(.secondary)
+                Text("No narrative model configured")
+                    .samFont(.body)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func mlxStatusIcon(for status: MLXModelManager.SelectedModelStatus) -> String {
+        if status.isDownloaded { return "checkmark.circle.fill" }
+        if status.isDownloading { return "arrow.down.circle" }
+        return "exclamationmark.triangle.fill"
+    }
+
+    private func mlxStatusColor(for status: MLXModelManager.SelectedModelStatus) -> Color {
+        if status.isDownloaded { return .green }
+        if status.isDownloading { return .blue }
+        return .orange
+    }
+
+    private func mlxStatusText(for status: MLXModelManager.SelectedModelStatus) -> String {
+        if status.isDownloaded {
+            return "Downloaded — \(String(format: "%.1f", status.sizeGB)) GB"
+        }
+        if status.isDownloading {
+            if let progress = status.downloadProgress {
+                return "Downloading… \(Int(progress * 100))%"
+            }
+            return "Downloading…"
+        }
+        return "Not downloaded — narrative generation falls back to Apple FoundationModels"
+    }
+
+    private func refreshMlxStatus() async {
+        mlxStatus = await MLXModelManager.shared.selectedModelStatus()
+    }
+
+    private func startDownload(id: String) {
+        mlxError = nil
+        Task {
+            do {
+                try await MLXModelManager.shared.downloadModel(id: id)
+                await refreshMlxStatus()
+            } catch {
+                await MainActor.run {
+                    mlxError = "Download failed: \(error.localizedDescription)"
+                }
+            }
+        }
     }
 }
 
@@ -1524,6 +1635,43 @@ struct SecuritySettingsContent: View {
                 .samFont(.caption)
                 .foregroundStyle(.secondary)
         }
+    }
+}
+
+// MARK: - Backfill Missing Summaries
+
+private struct BackfillMissingSummariesRow: View {
+    @State private var coordinator = TranscriptionSessionCoordinator.shared
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Regenerate missing summaries")
+                    .samFont(.body)
+                Text(statusText)
+                    .samFont(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button {
+                coordinator.regenerateMissingSummaries()
+            } label: {
+                if coordinator.backfillProgress != nil {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Text("Run now")
+                }
+            }
+            .buttonStyle(.bordered)
+            .disabled(coordinator.backfillProgress != nil)
+        }
+    }
+
+    private var statusText: String {
+        if let p = coordinator.backfillProgress {
+            return "Regenerating \(p.done) of \(p.total)…"
+        }
+        return "Scans saved recordings and regenerates any meeting summary that failed or was never produced. Runs in the background."
     }
 }
 

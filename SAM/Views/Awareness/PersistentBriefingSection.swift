@@ -97,8 +97,7 @@ struct PersistentBriefingSection: View {
                 Image(systemName: "arrow.clockwise")
                     .samFont(.body)
                     .foregroundStyle(.secondary)
-                    .rotationEffect(.degrees(isGenerating ? 360 : 0))
-                    .animation(isGenerating ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: isGenerating)
+                    .symbolEffect(.rotate, options: .repeat(.continuous).speed(1), isActive: isGenerating)
             }
             .buttonStyle(.plain)
             .disabled(isGenerating)

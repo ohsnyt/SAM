@@ -12,10 +12,31 @@
 //
 
 import Foundation
+import FoundationModels
 import os.log
 
 // `MeetingSummary` is defined in SAMModels-Transcription.swift so both the
 // Mac and iPhone targets can share the wire format.
+
+// MARK: - LectureSynthesis
+
+/// Secondary synthesis produced from a merged lecture's Review Notes.
+/// Keeps topics / key points / learning objectives at human-digestible counts
+/// regardless of how many chunks the transcript was split into.
+@Generable
+struct LectureSynthesis: Sendable {
+    @Guide(description: "A concise 2-5 word title capturing the central subject of the lecture. Title case, no trailing punctuation.")
+    var title: String
+
+    @Guide(description: "6 to 8 short topic tags (1-4 words each) describing the main subjects of the lecture. No duplicates.")
+    var topics: [String]
+
+    @Guide(description: "5 to 8 single sentences stating what the lecture was designed to teach. Skip minor points.")
+    var learningObjectives: [String]
+
+    @Guide(description: "8 to 12 single-sentence takeaways capturing the core insights. Skip story details — prefer ideas over anecdotes.")
+    var keyPoints: [String]
+}
 
 // MARK: - Service
 
@@ -26,6 +47,19 @@ actor MeetingSummaryService {
     private init() {}
 
     nonisolated let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "MeetingSummaryService")
+
+    /// Summary has a much heavier system instruction than polish — the
+    /// financial-compliance section alone (with its worked example) is
+    /// ~1600 tokens, and the structured output fans out across many fields
+    /// that can each contain long strings. Reserve more of the 4096-token
+    /// budget for prompt + output by feeding smaller chunks than polish.
+    /// `TranscriptPolishService.maxChunkChars` (6000) was overflowing on
+    /// content-dense chunks. 3500 chars (~1150 tokens) leaves a wide margin.
+    static let maxSummaryChunkChars = 3_500
+
+    /// Maximum recursive split depth when recovering from a context-window
+    /// overflow. Each level halves the chunk, so depth 3 = 1/8 of original.
+    private static let maxOverflowRecoveryDepth = 3
 
     // MARK: - Availability
 
@@ -56,8 +90,20 @@ actor MeetingSummaryService {
             throw SummaryError.emptyTranscript
         }
 
+        // Training lectures use the dedicated map-then-synthesize pipeline.
+        // Anchor-eval harness measured this at ~88% median vs. the legacy
+        // chunk+merge+refine path. On pipeline failure, fall through to the
+        // legacy path so the user still gets a summary.
+        if metadata.recordingContext == .trainingLecture {
+            do {
+                return try await LectureSummaryPipeline.shared.generate(transcript: trimmed)
+            } catch {
+                logger.warning("Lecture pipeline failed, falling back to legacy path: \(error.localizedDescription)")
+            }
+        }
+
         // Short transcripts: single-pass (original path).
-        if trimmed.count <= TranscriptPolishService.maxChunkChars {
+        if trimmed.count <= Self.maxSummaryChunkChars {
             return try await summarizeSingleChunk(trimmed, metadata: metadata)
         }
 
@@ -65,76 +111,236 @@ actor MeetingSummaryService {
         // merge all the per-chunk summaries into one combined result.
         // Action items, decisions, follow-ups accumulate across chunks;
         // the TLDR is re-synthesized from the merged findings.
-        let chunks = TranscriptPolishService.chunkTranscript(trimmed, maxChars: TranscriptPolishService.maxChunkChars)
+        let chunks = TranscriptPolishService.chunkTranscript(trimmed, maxChars: Self.maxSummaryChunkChars)
         logger.info("Summarizing long transcript in \(chunks.count) chunks (\(trimmed.count) total chars)")
 
         var allSummaries: [MeetingSummary] = []
+        var failedChunks: [(index: Int, charCount: Int, error: String)] = []
         for (i, chunk) in chunks.enumerated() {
             logger.info("Summarizing chunk \(i + 1)/\(chunks.count) (\(chunk.count) chars)")
-            let chunkSummary = try await summarizeSingleChunk(chunk, metadata: metadata)
-            allSummaries.append(chunkSummary)
+            do {
+                let chunkSummary = try await summarizeSingleChunk(chunk, metadata: metadata)
+                allSummaries.append(chunkSummary)
+            } catch {
+                // Fail-open: skip this chunk and keep going. Losing one chunk
+                // of summary is preferable to losing the entire summary.
+                let preview = Self.previewSnippet(chunk)
+                failedChunks.append((i + 1, chunk.count, error.localizedDescription))
+                logger.error("""
+                ❌ SKIPPING summary chunk \(i + 1)/\(chunks.count) after retries — continuing. \
+                chars=\(chunk.count, privacy: .public) \
+                context=\(metadata.recordingContext.rawValue, privacy: .public) \
+                error=\(error.localizedDescription, privacy: .public) \
+                preview=\(preview, privacy: .public)
+                """)
+            }
+        }
+
+        guard !allSummaries.isEmpty else {
+            logger.error("🛑 Summary FAILED completely — all \(chunks.count) chunks threw. Raising.")
+            throw SummaryError.invalidResponse
+        }
+
+        if !failedChunks.isEmpty {
+            let details = failedChunks
+                .map { "chunk \($0.index) (\($0.charCount) chars): \($0.error)" }
+                .joined(separator: "; ")
+            logger.error("""
+            ⚠️ Summary completed with \(failedChunks.count)/\(chunks.count) chunk(s) dropped. \
+            This SHOULD NOT happen — treat as a bug, reproduce, and tighten chunking. \
+            details=\(details, privacy: .public)
+            """)
         }
 
         let merged = Self.mergeSummaries(allSummaries)
-        logger.info("Merged \(chunks.count) chunk summaries: \(merged.actionItems.count) action items, \(merged.decisions.count) decisions")
+        logger.info("Merged \(allSummaries.count)/\(chunks.count) chunk summaries: \(merged.actionItems.count) action items, \(merged.decisions.count) decisions")
+
+        // For training lectures, per-chunk accumulation over-produces topics,
+        // key points, and learning objectives (dozens of each). Re-derive them
+        // from the merged Review Notes in a single synthesis pass so they
+        // reflect the whole lecture, not the sum of its chunks. Fields that
+        // don't apply to lectures (action items, decisions, follow-ups, life
+        // events, attendees, tldr) are cleared — Review Notes becomes the
+        // opening summary.
+        if metadata.recordingContext == .trainingLecture {
+            return try await refineLectureSummary(merged)
+        }
+
         return merged
     }
 
+    /// Combine partial summaries produced incrementally during a recording
+    /// into one cohesive result. Mirrors the merge+refine tail of
+    /// `summarize()` — but skips the per-chunk summarization step because
+    /// those partials were produced while the recording was still running.
+    func synthesize(
+        from partials: [MeetingSummary],
+        metadata: Metadata = .init()
+    ) async throws -> MeetingSummary {
+        guard !partials.isEmpty else {
+            throw SummaryError.emptyTranscript
+        }
+        let merged = Self.mergeSummaries(partials)
+        logger.info("Synthesizing from \(partials.count) partial summaries: \(merged.actionItems.count) action items, \(merged.decisions.count) decisions")
+        if metadata.recordingContext == .trainingLecture {
+            return try await refineLectureSummary(merged)
+        }
+        return merged
+    }
+
+    /// Re-derives topics, key points, and learning objectives for a training
+    /// lecture summary by synthesizing them from the merged Review Notes.
+    /// Clears fields that are irrelevant to lectures.
+    private func refineLectureSummary(_ merged: MeetingSummary) async throws -> MeetingSummary {
+        var refined = merged
+        refined.tldr = ""
+        refined.actionItems = []
+        refined.decisions = []
+        refined.followUps = []
+        refined.lifeEvents = []
+        refined.attendees = []
+
+        guard let reviewNotes = merged.reviewNotes, !reviewNotes.isEmpty else {
+            logger.info("Skipping lecture synthesis — no merged Review Notes")
+            return refined
+        }
+
+        let instruction = """
+        You extract a focused study outline from a lecture's prose study notes. \
+        Produce concise, crux-level content — not story details or anecdotes.
+
+        - title: A 2-5 word title capturing the central subject of the lecture, \
+          in title case, with no trailing punctuation.
+        - topics: 6 to 8 short tags (1-4 words each) describing the main subjects. \
+          No duplicates.
+        - learningObjectives: 5 to 8 single sentences stating what the lecture \
+          was designed to teach. Skip minor points.
+        - keyPoints: 8 to 12 single-sentence takeaways capturing the core \
+          insights. Skip story details. Prefer ideas the listener should \
+          remember over anecdotes used to illustrate them.
+
+        Ground every item in the provided notes. Do not invent content. Use only \
+        ASCII characters.
+        """
+
+        let prompt = "REVIEW NOTES:\n\(reviewNotes)\n\nProduce the focused study outline."
+
+        do {
+            let synthesis = try await AIService.shared.generateStructured(
+                LectureSynthesis.self,
+                prompt: prompt,
+                systemInstruction: instruction,
+                timeout: 45
+            )
+            refined.topics = synthesis.topics
+            refined.learningObjectives = synthesis.learningObjectives
+            refined.keyPoints = synthesis.keyPoints
+            // Prefer the synthesis title — it was derived from the merged notes,
+            // so it reflects the whole lecture instead of just the first chunk.
+            if !synthesis.title.isEmpty {
+                refined.title = synthesis.title
+            }
+            logger.info("Lecture synthesis: \(synthesis.topics.count) topics, \(synthesis.learningObjectives.count) objectives, \(synthesis.keyPoints.count) key points")
+        } catch {
+            logger.warning("Lecture synthesis pass failed, keeping merged fields: \(error.localizedDescription)")
+        }
+
+        return refined
+    }
+
     /// Summarize a single chunk that fits within the context window.
+    ///
+    /// Uses Apple FoundationModels' constrained decoding via `@Generable` on
+    /// `MeetingSummary` — the framework guarantees the returned value conforms
+    /// to the schema, so there is no free-form JSON parsing step to fail.
+    ///
+    /// On context-window overflow, splits the chunk at a paragraph boundary
+    /// and retries each half, merging the results. Recursion depth is capped
+    /// by `maxOverflowRecoveryDepth`.
     private func summarizeSingleChunk(
         _ transcript: String,
-        metadata: Metadata
+        metadata: Metadata,
+        depth: Int = 0
     ) async throws -> MeetingSummary {
         let systemInstruction = Self.systemInstruction(for: metadata.recordingContext)
         let prompt = Self.buildPrompt(transcript: transcript, metadata: metadata)
 
-        let responseText = try await AIService.shared.generate(
-            prompt: prompt,
-            systemInstruction: systemInstruction,
-            maxTokens: 1500
-        )
-
-        // Extract and parse JSON using the shared utility (handles <think> blocks,
-        // markdown fences, unicode normalization).
-        let cleaned = JSONExtraction.extractJSON(from: responseText)
-        guard let data = cleaned.data(using: .utf8) else {
-            throw SummaryError.invalidResponse
-        }
-
         do {
-            let decoded = try JSONDecoder().decode(MeetingSummary.self, from: data)
-            return decoded
+            return try await AIService.shared.generateStructured(
+                MeetingSummary.self,
+                prompt: prompt,
+                systemInstruction: systemInstruction,
+                timeout: 60
+            )
         } catch {
-            logger.warning("Meeting summary JSON decode failed; using plain-text fallback: \(error.localizedDescription)")
+            let overflow = Self.isContextWindowOverflow(error)
+            let preview = Self.previewSnippet(transcript)
 
-            // Try to salvage the tldr field from the cleaned JSON even if
-            // the full struct decode failed (e.g. a nested field has a
-            // wrong type). This avoids showing raw JSON to the user.
-            if let jsonObj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let tldr = jsonObj["tldr"] as? String, !tldr.isEmpty {
-                var fallback = MeetingSummary.empty
-                fallback.tldr = tldr
-                // Also salvage simple string arrays if present
-                if let topics = jsonObj["topics"] as? [String] { fallback.topics = topics }
-                if let decisions = jsonObj["decisions"] as? [String] { fallback.decisions = decisions }
-                if let questions = jsonObj["openQuestions"] as? [String] { fallback.openQuestions = questions }
-                if let sentiment = jsonObj["sentiment"] as? String { fallback.sentiment = sentiment }
-                return fallback
+            // Loud failure log — level .error (severity 3). Captures everything
+            // we need to reproduce and tune chunking.
+            logger.error("""
+            ❌ Summary chunk generation FAILED \
+            depth=\(depth, privacy: .public) \
+            overflow=\(overflow, privacy: .public) \
+            chars=\(transcript.count, privacy: .public) \
+            context=\(metadata.recordingContext.rawValue, privacy: .public) \
+            error=\(error.localizedDescription, privacy: .public) \
+            preview=\(preview, privacy: .public)
+            """)
+
+            // Recover from context-window overflow by halving and retrying.
+            // Don't recurse forever and don't split sub-1k chunks — at that
+            // point the prompt itself is probably the problem, not the input.
+            if overflow,
+               depth < Self.maxOverflowRecoveryDepth,
+               transcript.count > 1_000,
+               let (firstHalf, secondHalf) = Self.splitForRecovery(transcript) {
+                logger.error("""
+                🔁 Overflow recovery: splitting \(transcript.count) chars → \
+                \(firstHalf.count) + \(secondHalf.count) (depth \(depth + 1))
+                """)
+                let first = try await summarizeSingleChunk(firstHalf, metadata: metadata, depth: depth + 1)
+                let second = try await summarizeSingleChunk(secondHalf, metadata: metadata, depth: depth + 1)
+                return Self.mergeSummaries([first, second])
             }
 
-            // Last resort: strip JSON/markdown artifacts and use as plain summary
-            let plainText = cleaned
-                .replacingOccurrences(of: "```json", with: "")
-                .replacingOccurrences(of: "```", with: "")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            if !plainText.isEmpty, !plainText.hasPrefix("{") {
-                var fallback = MeetingSummary.empty
-                fallback.tldr = String(plainText.prefix(500))
-                return fallback
-            }
-
-            throw SummaryError.invalidResponse
+            throw error
         }
+    }
+
+    /// Identify FoundationModels context-window overflow errors by message.
+    /// We match the error description (not a typed case) so this survives
+    /// enum shape changes across iOS / macOS releases.
+    private static func isContextWindowOverflow(_ error: any Error) -> Bool {
+        let desc = error.localizedDescription.lowercased()
+        return desc.contains("context window")
+            || desc.contains("exceeded model context")
+            || desc.contains("context size")
+    }
+
+    /// Split a chunk near its midpoint for overflow recovery. Prefers a
+    /// paragraph boundary ("\n\n") so speaker turns stay intact; falls back
+    /// to a raw character split only if no boundary exists.
+    private static func splitForRecovery(_ text: String) -> (String, String)? {
+        guard text.count > 1 else { return nil }
+        let target = text.count / 2
+        let targetIndex = text.index(text.startIndex, offsetBy: target)
+
+        if let range = text.range(of: "\n\n", options: .backwards, range: text.startIndex..<targetIndex) {
+            return (String(text[..<range.lowerBound]), String(text[range.upperBound...]))
+        }
+        if let range = text.range(of: "\n\n", range: targetIndex..<text.endIndex) {
+            return (String(text[..<range.lowerBound]), String(text[range.upperBound...]))
+        }
+        // No paragraph boundary — raw split. Acceptable for recovery.
+        return (String(text[..<targetIndex]), String(text[targetIndex...]))
+    }
+
+    /// Short redacted-friendly preview of a chunk for error logs. Strips
+    /// newlines so the log line stays single-line-ish.
+    private static func previewSnippet(_ text: String, limit: Int = 200) -> String {
+        let flat = text.replacingOccurrences(of: "\n", with: " ")
+        return flat.count <= limit ? flat : String(flat.prefix(limit)) + "…"
     }
 
     /// Merge multiple per-chunk summaries into one combined summary.
@@ -151,6 +357,13 @@ actor MeetingSummaryService {
             .map(\.tldr)
             .filter { !$0.isEmpty }
             .joined(separator: " ")
+
+        // First non-empty title wins — chunk 1 has the most context on the
+        // lecture's central subject. Lecture refinement will later overwrite
+        // this with a title derived from the merged review notes.
+        let mergedTitle = summaries
+            .map(\.title)
+            .first(where: { !$0.isEmpty }) ?? ""
 
         // Accumulate structured fields across all chunks.
         var allActionItems: [MeetingSummary.ActionItem] = []
@@ -203,6 +416,7 @@ actor MeetingSummaryService {
         let mergedReviewNotes = allReviewNotes.isEmpty ? nil : allReviewNotes.joined(separator: "\n\n")
 
         return MeetingSummary(
+            title: mergedTitle,
             tldr: combinedTldr,
             decisions: dedup(allDecisions),
             actionItems: allActionItems,        // keep all — deduping tasks is risky
@@ -319,6 +533,10 @@ actor MeetingSummaryService {
 
         FIELD DEFINITIONS
 
+        - title: 2-5 word title capturing the central subject of the meeting \
+          (e.g. "Retirement Planning Review", "Policy Application Signing"). \
+          Title case. No trailing punctuation.
+
         - tldr: 1-3 plain-language sentences summarizing what was actually \
           said. If two or more named individuals appear in the transcript \
           (other than the agent), mention them by name in the tldr. Always \
@@ -360,6 +578,7 @@ actor MeetingSummaryService {
 
         JSON SCHEMA (structure only)
         {
+          "title": "<string>",
           "tldr": "<string>",
           "decisions": ["<string>", ...],
           "actionItems": [{"task": "<string>", "owner": "<string or null>", "dueDate": "<string or null>"}, ...],
@@ -395,6 +614,10 @@ actor MeetingSummaryService {
 
         FIELD DEFINITIONS
 
+        - title: 2-5 word title capturing the central subject of the lecture \
+          (e.g. "Intro to IUL", "Client Objection Handling"). Title case. \
+          No trailing punctuation.
+
         - tldr: 2-3 sentences summarizing what this training or lecture covered \
           and the central lesson or skill it aimed to develop.
 
@@ -421,6 +644,7 @@ actor MeetingSummaryService {
 
         JSON SCHEMA (structure only)
         {
+          "title": "<string>",
           "tldr": "<string>",
           "keyPoints": ["<string>", ...],
           "learningObjectives": ["<string>", ...],
@@ -456,6 +680,10 @@ actor MeetingSummaryService {
         - When in doubt, leave fields empty.
 
         FIELD DEFINITIONS
+
+        - title: 2-5 word title for the meeting, typically the organization and \
+          meeting type (e.g. "Q1 Board Meeting", "Audit Committee Session"). \
+          Title case. No trailing punctuation.
 
         - tldr: 2-3 sentences summarizing the meeting: who attended, the \
           main business conducted, and any significant decisions made.
@@ -499,6 +727,7 @@ actor MeetingSummaryService {
 
         JSON SCHEMA (structure only)
         {
+          "title": "<string>",
           "tldr": "<string>",
           "attendees": ["<string>", ...],
           "agendaItems": [

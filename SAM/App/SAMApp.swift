@@ -447,6 +447,26 @@ struct SAMApp: App {
                         await RetentionService.shared.runOnce(container: SAMModelContainer.shared)
                     }
 
+                    // If the selected MLX model isn't on disk (e.g. user
+                    // onboarded before Qwen became the default, or skipped
+                    // the onboarding download), pull it down quietly in the
+                    // background so narrative generation stops silently
+                    // falling back to FoundationModels on every call.
+                    Task(priority: .utility) {
+                        let mgr = MLXModelManager.shared
+                        let ready = await mgr.isSelectedModelReady()
+                        let downloading = await mgr.isDownloading
+                        guard !ready, !downloading,
+                              let id = await mgr.selectedModelID else { return }
+                        do {
+                            try await mgr.downloadModel(id: id)
+                        } catch {
+                            // Non-fatal — narrative paths will keep falling
+                            // back to FoundationModels. Settings surfaces
+                            // the state so the user can retry.
+                        }
+                    }
+
                     #if DEBUG
                     // Start the test inbox watcher so the dev cycle can drive
                     // pipeline tests via Bash without needing the iPhone or
@@ -591,8 +611,6 @@ struct SAMApp: App {
         .commands {
             CommandGroup(replacing: .appInfo) {
                 Button("About SAM") {
-                    let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
-                    let build = Bundle.main.infoDictionary?[kCFBundleVersionKey as String] as? String ?? "?"
                     let buildDateString: String = {
                         guard let execURL = Bundle.main.executableURL,
                               let attrs = try? FileManager.default.attributesOfItem(atPath: execURL.path),
@@ -612,7 +630,6 @@ struct SAMApp: App {
                         ]
                     )
                     NSApplication.shared.orderFrontStandardAboutPanel(options: [
-                        .applicationVersion: "Version \(version) (\(build))",
                         .credits: credits
                     ])
                 }

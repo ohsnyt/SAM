@@ -91,6 +91,15 @@ final class StrategicCoordinator {
         }
         guard generationStatus != .generating else { return }
 
+        // Yield to active transcription work. BI specialists are LOW
+        // priority per CLAUDE.md — firing them while a reprocess has the
+        // CPU pinned just burns 5× 30s FoundationModels timeouts instead
+        // of producing useful output.
+        if TranscriptionSessionCoordinator.shared.isSessionActive {
+            logger.info("Strategic digest deferred — transcription session active")
+            return
+        }
+
         generationStatus = .generating
         let modelLabel = "hybrid/Qwen3-8B"
         logger.debug("⏱ Strategic digest starting — backend: \(modelLabel)")

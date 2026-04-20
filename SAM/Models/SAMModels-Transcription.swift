@@ -10,6 +10,7 @@
 
 import SwiftData
 import Foundation
+import FoundationModels
 
 // MARK: - TranscriptSessionStatus
 
@@ -90,6 +91,11 @@ public final class TranscriptSession {
     /// Populated automatically when a session ends; nil until the summary
     /// finishes generating.
     public var meetingSummaryJSON: String?
+
+    /// A short (2-5 word) editable title for the session, auto-generated as
+    /// part of the meeting summary and user-editable from the review UI.
+    /// nil on legacy sessions until a summary is (re)generated.
+    public var title: String?
 
     /// When the meeting summary was generated.
     public var summaryGeneratedAt: Date?
@@ -196,6 +202,7 @@ public final class TranscriptSession {
         whisperModelID: String? = nil,
         detectedLanguage: String? = nil,
         meetingSummaryJSON: String? = nil,
+        title: String? = nil,
         summaryGeneratedAt: Date? = nil,
         polishedText: String? = nil,
         polishedAt: Date? = nil,
@@ -213,6 +220,7 @@ public final class TranscriptSession {
         self.whisperModelID = whisperModelID
         self.detectedLanguage = detectedLanguage
         self.meetingSummaryJSON = meetingSummaryJSON
+        self.title = title
         self.summaryGeneratedAt = summaryGeneratedAt
         self.polishedText = polishedText
         self.polishedAt = polishedAt
@@ -299,64 +307,74 @@ public final class TranscriptSegment {
 /// pushed back to the phone over the TCP transcription connection.
 ///
 /// Persisted as a JSON string on `TranscriptSession.meetingSummaryJSON`.
+///
+/// Conforms to `Generable` so Apple FoundationModels can produce this type
+/// directly via constrained decoding — eliminating free-form JSON parse errors.
+@Generable
 public nonisolated struct MeetingSummary: Codable, Sendable, Equatable {
-    /// 2-3 sentence high-level summary of what the meeting was about.
+    @Guide(description: "A concise 2-5 word title capturing the central subject of the meeting or lecture. Title case, no trailing punctuation.")
+    public var title: String
+
+    @Guide(description: "Two or three sentence high-level summary of what the meeting was about.")
     public var tldr: String
 
     // MARK: - Client/Team Meeting fields
 
-    /// Key decisions that were made during the meeting.
+    @Guide(description: "Key decisions that were made during the meeting. Empty if none.")
     public var decisions: [String]
 
-    /// Action items with owner and optional due date.
+    @Guide(description: "Action items with owner and optional due date. Empty if none.")
     public var actionItems: [ActionItem]
 
-    /// Open questions / things that still need answering.
+    @Guide(description: "Open questions or things that still need answering. Empty if none.")
     public var openQuestions: [String]
 
-    /// Follow-ups needed per person (relationship touches, not tasks).
+    @Guide(description: "Follow-ups needed per person (relationship touches, not tasks). Empty if none.")
     public var followUps: [FollowUp]
 
-    /// Life events mentioned (births, deaths, marriages, job changes, etc.).
+    @Guide(description: "Life events mentioned (births, deaths, marriages, job changes, etc.). Empty if none.")
     public var lifeEvents: [String]
 
-    /// Topics the meeting covered, for tagging / search.
+    @Guide(description: "Topics the meeting covered, for tagging and search. Empty if none.")
     public var topics: [String]
 
-    /// Compliance flags (return claims, guarantees, comparative statements).
-    /// Always empty for non-client meeting contexts.
+    @Guide(description: "Compliance flags (return claims, guarantees, comparative statements). Always empty for non-client meetings.")
     public var complianceFlags: [String]
 
-    /// Overall sentiment / affect of the meeting.
+    @Guide(description: "Overall sentiment or affect of the meeting. Nil if not applicable.")
     public var sentiment: String?
 
     // MARK: - Training/Lecture fields
 
-    /// Major takeaways from the lecture or training session.
+    @Guide(description: "Major takeaways from the lecture or training session. Empty unless this is a training or lecture.")
     public var keyPoints: [String]
 
-    /// What the lecture or training session was designed to teach.
+    @Guide(description: "What the lecture or training session was designed to teach. Empty unless this is a training or lecture.")
     public var learningObjectives: [String]
 
-    /// Prose study guide paragraph summarizing key concepts for review.
+    @Guide(description: "Prose study guide paragraph summarizing key concepts for review. Nil unless this is a training or lecture.")
     public var reviewNotes: String?
 
     // MARK: - Board Meeting fields
 
-    /// Names of attendees present at the board meeting.
+    @Guide(description: "Names of attendees present at the board meeting. Empty unless this is a board meeting.")
     public var attendees: [String]
 
-    /// Formal agenda items discussed with outcomes.
+    @Guide(description: "Formal agenda items discussed with outcomes. Empty unless this is a board meeting.")
     public var agendaItems: [AgendaItem]
 
-    /// Formal votes taken during the meeting.
+    @Guide(description: "Formal votes taken during the meeting. Empty unless this is a board meeting.")
     public var votes: [VoteRecord]
 
     // MARK: - Nested types
 
+    @Generable
     public struct ActionItem: Codable, Sendable, Equatable {
+        @Guide(description: "What needs to be done.")
         public var task: String
+        @Guide(description: "Name of the person responsible. Nil if unassigned.")
         public var owner: String?
+        @Guide(description: "Due date or timeframe as a short string (e.g. 'Friday', 'end of month'). Nil if none.")
         public var dueDate: String?
 
         public init(task: String, owner: String? = nil, dueDate: String? = nil) {
@@ -366,8 +384,11 @@ public nonisolated struct MeetingSummary: Codable, Sendable, Equatable {
         }
     }
 
+    @Generable
     public struct FollowUp: Codable, Sendable, Equatable {
+        @Guide(description: "Name of the person to follow up with.")
         public var person: String
+        @Guide(description: "Short reason for the follow-up.")
         public var reason: String
 
         public init(person: String, reason: String) {
@@ -376,12 +397,15 @@ public nonisolated struct MeetingSummary: Codable, Sendable, Equatable {
         }
     }
 
+    @Generable
     public struct AgendaItem: Codable, Sendable, Equatable {
+        @Guide(description: "Short title of the agenda item.")
         public var title: String
-        /// 1-2 sentence description of what was discussed under this agenda item.
+        @Guide(description: "One or two sentence description of what was discussed under this agenda item. Nil if not applicable.")
         public var summary: String?
-        /// e.g. "Approved", "Tabled", "Discussed", "Deferred"
+        @Guide(description: "Outcome, e.g. 'Approved', 'Tabled', 'Discussed', 'Deferred'. Nil if not applicable.")
         public var outcome: String?
+        @Guide(description: "Additional notes about this agenda item. Nil if none.")
         public var notes: String?
 
         public init(title: String, summary: String? = nil, outcome: String? = nil, notes: String? = nil) {
@@ -392,12 +416,17 @@ public nonisolated struct MeetingSummary: Codable, Sendable, Equatable {
         }
     }
 
+    @Generable
     public struct VoteRecord: Codable, Sendable, Equatable {
+        @Guide(description: "The motion that was voted on.")
         public var motion: String
+        @Guide(description: "Name of the person who moved the motion. Nil if unknown.")
         public var movedBy: String?
+        @Guide(description: "Name of the person who seconded the motion. Nil if unknown.")
         public var secondedBy: String?
-        /// e.g. "Passed", "Failed", "Tabled", "No vote taken"
+        @Guide(description: "Result, e.g. 'Passed', 'Failed', 'Tabled', 'No vote taken'.")
         public var result: String
+        @Guide(description: "Additional notes about the vote. Nil if none.")
         public var notes: String?
 
         public init(motion: String, movedBy: String? = nil, secondedBy: String? = nil, result: String, notes: String? = nil) {
@@ -412,6 +441,7 @@ public nonisolated struct MeetingSummary: Codable, Sendable, Equatable {
     // MARK: - Init
 
     public nonisolated init(
+        title: String = "",
         tldr: String,
         decisions: [String] = [],
         actionItems: [ActionItem] = [],
@@ -428,6 +458,7 @@ public nonisolated struct MeetingSummary: Codable, Sendable, Equatable {
         agendaItems: [AgendaItem] = [],
         votes: [VoteRecord] = []
     ) {
+        self.title = title
         self.tldr = tldr
         self.decisions = decisions
         self.actionItems = actionItems
@@ -448,7 +479,7 @@ public nonisolated struct MeetingSummary: Codable, Sendable, Equatable {
     // MARK: - Codable (custom decoder for backward compatibility)
 
     private enum CodingKeys: String, CodingKey {
-        case tldr, decisions, actionItems, openQuestions, followUps
+        case title, tldr, decisions, actionItems, openQuestions, followUps
         case lifeEvents, topics, complianceFlags, sentiment
         case keyPoints, learningObjectives, reviewNotes
         case attendees, agendaItems, votes
@@ -456,6 +487,7 @@ public nonisolated struct MeetingSummary: Codable, Sendable, Equatable {
 
     public nonisolated init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        title              = try c.decodeIfPresent(String.self,       forKey: .title)              ?? ""
         tldr               = try c.decodeIfPresent(String.self,       forKey: .tldr)               ?? ""
         decisions          = try c.decodeIfPresent([String].self,      forKey: .decisions)          ?? []
         actionItems        = try c.decodeIfPresent([ActionItem].self,  forKey: .actionItems)        ?? []

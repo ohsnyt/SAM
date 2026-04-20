@@ -332,6 +332,47 @@ actor AIService {
         }
     }
 
+    /// Generate a `@Generable` structured value using Apple FoundationModels'
+    /// constrained decoding. Returns `T` directly — the framework enforces
+    /// schema conformance, so there is no JSON parse step to fail.
+    ///
+    /// - Parameters:
+    ///   - type: The Generable type to produce.
+    ///   - prompt: The user prompt.
+    ///   - systemInstruction: Optional system instructions for the session.
+    ///   - timeout: Hard timeout in seconds. Defaults to 30s.
+    func generateStructured<T: Generable>(
+        _ type: T.Type,
+        prompt: String,
+        systemInstruction: String? = nil,
+        timeout: TimeInterval = 30
+    ) async throws -> T {
+        guard case .available = foundationModelsAvailability() else {
+            throw AIError.modelUnavailable("FoundationModels not available")
+        }
+
+        let session: LanguageModelSession
+        if let instruction = systemInstruction {
+            session = LanguageModelSession(instructions: instruction)
+        } else {
+            session = LanguageModelSession()
+        }
+
+        return try await withThrowingTaskGroup(of: T.self) { group in
+            group.addTask {
+                let response = try await session.respond(to: prompt, generating: T.self)
+                return response.content
+            }
+            group.addTask {
+                try await Task.sleep(for: .seconds(timeout))
+                throw AIError.timeout("FoundationModels structured generation did not respond within \(Int(timeout))s")
+            }
+            let result = try await group.next()!
+            group.cancelAll()
+            return result
+        }
+    }
+
     // MARK: - MLX Backend
 
     /// Cached MLX model container for inference.

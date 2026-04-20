@@ -114,6 +114,33 @@ actor MLXModelManager {
         return isModelReady(id: id)
     }
 
+    /// Display-friendly snapshot of the selected model and its download state.
+    /// Settings UI polls this to show "Qwen 3 8B — Downloaded / Downloading 45% / Not Downloaded".
+    struct SelectedModelStatus: Sendable {
+        let id: String
+        let displayName: String
+        let sizeGB: Double
+        let isDownloaded: Bool
+        let isDownloading: Bool
+        /// 0–1 while downloading, nil otherwise.
+        let downloadProgress: Double?
+    }
+
+    func selectedModelStatus() -> SelectedModelStatus? {
+        guard let id = selectedModelID,
+              let info = availableModels.first(where: { $0.id == id }) else {
+            return nil
+        }
+        return SelectedModelStatus(
+            id: info.id,
+            displayName: info.displayName,
+            sizeGB: info.sizeGB,
+            isDownloaded: info.isDownloaded,
+            isDownloading: isDownloading,
+            downloadProgress: downloadProgress
+        )
+    }
+
     /// Whether a specific model is downloaded and ready.
     func isModelReady(id: String) -> Bool {
         availableModels.first(where: { $0.id == id })?.isDownloaded ?? false

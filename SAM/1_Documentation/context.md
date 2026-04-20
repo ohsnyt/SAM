@@ -378,6 +378,9 @@ Use `@ObservationIgnored` with manual UserDefaults for settings. Stored properti
 ### LLM Prompts
 Never use pipe-separated options as JSON example values — LLMs echo them literally. Use concrete examples with a separate reference section.
 
+### Lecture Summaries (Map-Then-Synthesize)
+`.trainingLecture` recordings bypass the standard client-meeting summary path and run through `LectureSummaryPipeline` (chunk → extract → deterministic scaffold → reasoner → core → details, with Swift-side enforcement wrapping both the reasoner's ordered points and the final keyPoints). Validated against anchor rubrics in `tools/summary-bench` — median 88% on the reference transcripts. Pipeline failures fall through to the legacy `refineLectureSummary` path so the user always gets a summary. Sessions that never finished summarizing can be backfilled from **Settings → Prompt Lab → Transcript Maintenance**.
+
 ### Security-Scoped Bookmarks
 Bookmark the **directory** (not file) for SQLite to cover WAL/SHM companions. `.fileImporter` URLs require `startAccessingSecurityScopedResource()` / `stopAccessingSecurityScopedResource()`.
 
