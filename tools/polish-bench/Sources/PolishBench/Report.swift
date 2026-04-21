@@ -42,12 +42,12 @@ struct BenchReport: Codable, Sendable {
     /// scan. Excludes rows with errors from the averages — errored rows are
     /// reported separately as a failure count.
     private func overallTable() -> String {
-        var lines: [String] = []
-        lines.append("## Overall (averaged across fixtures)")
-        lines.append("")
-        lines.append("| Model | Nouns | Jargon | Numbers | Len ratio | Spkr Δ | Think leak | Hedges | Avg ms | Errors |")
-        lines.append("|-------|------:|-------:|--------:|----------:|-------:|-----------:|-------:|-------:|-------:|")
+        let header = ["Model", "Nouns", "Jargon", "Numbers", "Len ratio",
+                      "Spkr Δ", "Think leak", "Hedges", "Avg ms", "Errors"]
+        let align: [Align] = [.left, .right, .right, .right, .right,
+                              .right, .right, .right, .right, .right]
 
+        var rows: [[String]] = []
         for modelID in modelIDs {
             let good = fixtures.compactMap { row(modelID: modelID, fixtureName: $0) }
                 .filter { $0.error == nil }
@@ -55,7 +55,7 @@ struct BenchReport: Codable, Sendable {
                 .filter { $0.error != nil }.count
 
             if good.isEmpty {
-                lines.append("| \(abbrev(modelID)) | — | — | — | — | — | — | — | — | **\(errors)** |")
+                rows.append([abbrev(modelID), "—", "—", "—", "—", "—", "—", "—", "—", "**\(errors)**"])
                 continue
             }
 
@@ -68,51 +68,115 @@ struct BenchReport: Codable, Sendable {
             let hedges = good.map(\.addedHedgeCount).reduce(0, +)
             let ms     = mean(good.map { Double($0.latencyMs) })
 
-            lines.append(
-                "| \(abbrev(modelID)) | " +
-                "\(pct(nouns)) | \(pct(jargon)) | \(pct(nums)) | " +
-                String(format: "%.2fx", ratio) + " | " +
-                String(format: "%.2f", spkr) + " | " +
-                "\(think) | \(hedges) | " +
-                String(format: "%.0f", ms) + " | " +
-                "\(errors) |"
-            )
+            rows.append([
+                abbrev(modelID),
+                pct(nouns), pct(jargon), pct(nums),
+                String(format: "%.2fx", ratio),
+                String(format: "%.2f", spkr),
+                "\(think)", "\(hedges)",
+                String(format: "%.0f", ms),
+                "\(errors)",
+            ])
         }
-        return lines.joined(separator: "\n") + "\n"
+
+        return "## Overall (averaged across fixtures)\n\n" +
+            formatTable(header: header, rows: rows, align: align) + "\n"
     }
 
     /// Per-fixture rows so the user can see outlier behavior — e.g. a
     /// model that averages 92% noun retention but drops to 40% on the
     /// "jargon-and-names" fixture is hiding a real regression.
     private func perFixtureTables() -> String {
-        var lines: [String] = []
-        lines.append("## Per-fixture breakdown")
-        lines.append("")
+        let header = ["Model", "Nouns", "Jargon", "Numbers", "Len ratio",
+                      "Spkr Δ", "Think", "Hedges", "ms", "Error"]
+        let align: [Align] = [.left, .right, .right, .right, .right,
+                              .right, .right, .right, .right, .left]
 
+        var out = "## Per-fixture breakdown\n\n"
         for fixture in fixtures {
-            lines.append("### \(fixture)")
-            lines.append("")
-            lines.append("| Model | Nouns | Jargon | Numbers | Len ratio | Spkr Δ | Think | Hedges | ms | Error |")
-            lines.append("|-------|------:|-------:|--------:|----------:|-------:|------:|-------:|---:|-------|")
+            var rows: [[String]] = []
             for modelID in modelIDs {
                 guard let r = row(modelID: modelID, fixtureName: fixture) else {
-                    lines.append("| \(abbrev(modelID)) | — | — | — | — | — | — | — | — | missing |")
+                    rows.append([abbrev(modelID), "—", "—", "—", "—", "—", "—", "—", "—", "missing"])
                     continue
                 }
                 if let err = r.error {
-                    lines.append("| \(abbrev(modelID)) | — | — | — | — | — | — | — | \(r.latencyMs) | \(err) |")
+                    rows.append([abbrev(modelID), "—", "—", "—", "—", "—", "—", "—", "\(r.latencyMs)", err])
                     continue
                 }
-                lines.append(
-                    "| \(abbrev(modelID)) | " +
-                    "\(pct(r.properNounRetention)) | \(pct(r.jargonRetention)) | \(pct(r.numberRetention)) | " +
-                    String(format: "%.2fx", r.lengthRatio) + " | " +
-                    "\(r.speakerLabelDelta) | \(r.thinkLeakChars) | \(r.addedHedgeCount) | \(r.latencyMs) |  |"
-                )
+                rows.append([
+                    abbrev(modelID),
+                    pct(r.properNounRetention),
+                    pct(r.jargonRetention),
+                    pct(r.numberRetention),
+                    String(format: "%.2fx", r.lengthRatio),
+                    "\(r.speakerLabelDelta)",
+                    "\(r.thinkLeakChars)",
+                    "\(r.addedHedgeCount)",
+                    "\(r.latencyMs)",
+                    "",
+                ])
             }
-            lines.append("")
+            out += "### \(fixture)\n\n"
+            out += formatTable(header: header, rows: rows, align: align)
+            out += "\n"
         }
-        return lines.joined(separator: "\n")
+        return out
+    }
+
+    // MARK: - Table formatting
+
+    private enum Align { case left, right }
+
+    /// Pads every cell so the raw markdown also reads as a column-aligned
+    /// plain-text table. Picks width per column from the widest cell,
+    /// pads with spaces, keeps the `---:` alignment hint in the separator
+    /// so markdown renderers still right-align numeric columns.
+    private func formatTable(header: [String], rows: [[String]], align: [Align]) -> String {
+        let all = [header] + rows
+        var widths = header.map(\.count)
+        for r in all {
+            for (i, cell) in r.enumerated() where i < widths.count {
+                widths[i] = max(widths[i], cell.count)
+            }
+        }
+
+        func render(_ cells: [String]) -> String {
+            var s = "|"
+            for (i, cell) in cells.enumerated() {
+                let w = widths[i]
+                let padded: String
+                switch align[i] {
+                case .left:  padded = cell.padding(toLength: w, withPad: " ", startingAt: 0)
+                case .right: padded = String(repeating: " ", count: w - cell.count) + cell
+                }
+                s += " \(padded) |"
+            }
+            return s
+        }
+
+        func separator() -> String {
+            var s = "|"
+            for (i, w) in widths.enumerated() {
+                let dashes = String(repeating: "-", count: w)
+                switch align[i] {
+                case .left:  s += " \(dashes) |"
+                case .right: s += " \(String(dashes.dropLast()))" + ": |"
+                }
+            }
+            return s
+        }
+
+        var lines: [String] = []
+        lines.append(render(header))
+        lines.append(separator())
+        for r in rows {
+            // Pad short rows so render() doesn't index out of range.
+            var padded = r
+            while padded.count < header.count { padded.append("") }
+            lines.append(render(padded))
+        }
+        return lines.joined(separator: "\n") + "\n"
     }
 
     // MARK: - Formatting helpers

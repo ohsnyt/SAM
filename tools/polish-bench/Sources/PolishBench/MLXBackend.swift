@@ -10,10 +10,12 @@
 //
 
 import Foundation
-import Hub
+import HuggingFace
 import MLX
+import MLXHuggingFace
 import MLXLLM
 import MLXLMCommon
+import Tokenizers
 
 actor MLXBackend {
     private let modelID: String
@@ -29,7 +31,11 @@ actor MLXBackend {
     static func load(modelID: String) async throws -> MLXBackend {
         let backend = MLXBackend(modelID: modelID)
         let cfg = ModelConfiguration(id: modelID)
-        let container = try await LLMModelFactory.shared.loadContainer(configuration: cfg)
+        let container = try await LLMModelFactory.shared.loadContainer(
+            from: #hubDownloader(),
+            using: #huggingFaceTokenizerLoader(),
+            configuration: cfg
+        )
         await backend.setContainer(container)
         return backend
     }

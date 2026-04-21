@@ -10,24 +10,27 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 echo "==> xcodebuild (Release)…"
+# -skipMacroValidation auto-approves MLXHuggingFaceMacros (needed for the
+# #hubDownloader() / #huggingFaceTokenizerLoader() call in MLXBackend).
 xcodebuild \
     -scheme PolishBench \
     -configuration Release \
     -destination 'platform=macOS' \
+    -skipMacroValidation \
     -quiet \
     build
 
-BUILT=$(xcodebuild \
-    -scheme PolishBench \
-    -configuration Release \
-    -destination 'platform=macOS' \
-    -showBuildSettings 2>/dev/null \
-    | awk -F' = ' '/ BUILT_PRODUCTS_DIR /{print $2; exit}')
+DERIVED_ROOT="$HOME/Library/Developer/Xcode/DerivedData"
+BIN=$(find "$DERIVED_ROOT" -path "*polish-bench-*/Build/Products/Release/polish-bench" -type f 2>/dev/null \
+    | xargs -I{} stat -f "%m %N" {} \
+    | sort -rn | head -1 | cut -d' ' -f2-)
 
-if [[ -z "$BUILT" || ! -d "$BUILT" ]]; then
-    echo "error: could not locate BUILT_PRODUCTS_DIR" >&2
+if [[ -z "$BIN" || ! -f "$BIN" ]]; then
+    echo "error: could not locate built polish-bench binary" >&2
     exit 1
 fi
+
+BUILT=$(dirname "$BIN")
 
 echo "==> copying artifacts to ./build/…"
 mkdir -p build
