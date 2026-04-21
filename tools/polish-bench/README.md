@@ -43,8 +43,8 @@ command line:
 
 ```bash
 # Example — populate the cache for Qwen 3 8B and Qwen 3.5 9B
-huggingface-cli download mlx-community/Qwen3-8B-4bit
-huggingface-cli download mlx-community/Qwen3.5-9B-Instruct-4bit
+hf download mlx-community/Qwen3-8B-4bit
+hf download mlx-community/Qwen3.5-9B-Instruct-4bit
 ```
 
 ## Usage
