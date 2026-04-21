@@ -1,0 +1,11 @@
+# Industry jargon polish-bench expects to survive intact. One per line.
+IUL
+SEP-IRA
+K-1
+S&P 500
+indexed universal life
+basis points
+fiduciary
+subaccounts
+surrender period
+cap rate

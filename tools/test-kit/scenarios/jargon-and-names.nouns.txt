@@ -1,0 +1,6 @@
+# Proper nouns polish-bench expects to survive the polish pass intact.
+# One entry per line; blank lines and `#` comments are ignored.
+Alex
+Saoirse
+Karen
+Wojciechowski
