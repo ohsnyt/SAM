@@ -241,6 +241,15 @@ struct OutcomeQueueView: View {
     // MARK: - Actions
 
     private func actClosure(for outcome: SamOutcome) -> (() -> Void)? {
+        // Consolidated "Review N meetings" outcome — route into the queue walker instead of
+        // the standard outcome action lanes. The walker opens one capture sheet at a time and
+        // advances as Sarah saves or skips each meeting.
+        if outcome.sourceInsightSummary == DailyBriefingCoordinator.pendingReviewsSourceInsightKey {
+            return {
+                DailyBriefingCoordinator.shared.startPendingReviewWalker()
+            }
+        }
+
         // Content creation outcomes always open the draft sheet
         if outcome.outcomeKind == .contentCreation {
             return {

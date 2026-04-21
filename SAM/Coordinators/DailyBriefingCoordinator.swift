@@ -129,7 +129,19 @@ final class DailyBriefingCoordinator {
     private var promptedCallIDs: Set<UUID> = []
 
     /// Tracks the last time we checked for recently ended meetings, so we never miss a window.
-    private var lastMeetingCheckTime: Date = Date.now
+    /// Persisted across launches so meetings that ended while SAM was closed still get surfaced.
+    private static let lastMeetingCheckTimeKey = "sam.briefing.lastMeetingCheckTime"
+    private var lastMeetingCheckTime: Date {
+        get {
+            if let stored = UserDefaults.standard.object(forKey: Self.lastMeetingCheckTimeKey) as? Date {
+                return stored
+            }
+            // First launch — look back 24h so newly-installed SAM doesn't flood the queue with old meetings,
+            // but still catches anything that ended since yesterday.
+            return Date.now.addingTimeInterval(-86_400)
+        }
+        set { UserDefaults.standard.set(newValue, forKey: Self.lastMeetingCheckTimeKey) }
+    }
 
     // Dependencies
     private let evidenceRepo = EvidenceRepository.shared
@@ -930,29 +942,184 @@ final class DailyBriefingCoordinator {
             unknownAttendeeNames: unknownAttendeeNames
         )
 
+        // Mark the evidence as pending review so velocity/history consumers can skip it
+        // until Sarah confirms it actually happened (or explicitly marks it cancelled/no-show).
+        event.reviewStatus = .pending
+        try? context?.save()
+
         NotificationCenter.default.post(
             name: .samOpenPostMeetingCapture,
             object: nil,
             userInfo: ["payload": payload]
         )
 
-        // Create a follow-up outcome so it appears in the Action Queue
-        do {
-            let outcome = SamOutcome(
-                title: "Complete meeting notes for \(event.title)",
-                rationale: "Meeting ended — capture discussion points and action items.",
-                outcomeKind: .followUp,
-                deadlineDate: Calendar.current.date(byAdding: .hour, value: 24, to: .now),
-                sourceInsightSummary: "Post-meeting capture prompt",
-                suggestedNextStep: "Fill in the meeting notes capture sheet",
-                linkedPerson: knownAttendees.first  // nil if all attendees are unknown
-            )
-            try outcomeRepo.upsert(outcome: outcome)
-        } catch {
-            logger.error("Failed to create follow-up outcome: \(error.localizedDescription)")
-        }
+        // Roll up into a single consolidated "Meetings awaiting your review" outcome instead of
+        // one-per-meeting. Prevents action-item proliferation when Sarah has back-to-back meetings
+        // or is away from her laptop and can't answer the capture sheet immediately.
+        refreshPendingReviewsOutcome()
 
         logger.info("Posted post-meeting capture for '\(event.title)' with \(knownAttendees.count) known + \(unknownAttendeeNames.count) unknown attendees")
+    }
+
+    // MARK: - Consolidated Pending Reviews
+
+    /// Sentinel key used to locate (and upsert) the single "Meetings awaiting your review" outcome.
+    private static let pendingReviewsInsightKey = "sam.pendingMeetingReviews"
+
+    /// Recompute the consolidated "Meetings awaiting your review" outcome based on current evidence.
+    /// - Creates the outcome when there is ≥1 pending review.
+    /// - Updates the title/rationale in place as new reviews arrive and old ones resolve.
+    /// - Marks the outcome completed and hides it when the queue is empty.
+    /// Call after any change to `SamEvidenceItem.reviewStatus` for calendar evidence.
+    func refreshPendingReviewsOutcome() {
+        guard let context else { return }
+        do {
+            let pending = try pendingMeetingReviews()
+            let existing = try outcomeRepo.fetchBySourceInsightSummary(Self.pendingReviewsInsightKey)
+
+            guard !pending.isEmpty else {
+                // Queue drained — retire the consolidated outcome if one exists.
+                if let existing {
+                    existing.status = .completed
+                    existing.completedAt = Date.now
+                    try context.save()
+                }
+                return
+            }
+
+            let count = pending.count
+            let title = count == 1
+                ? "Review 1 meeting"
+                : "Review \(count) meetings"
+            let titlesPreview = pending
+                .prefix(5)
+                .map { "• \($0.title)" }
+                .joined(separator: "\n")
+            let remainder = count > 5 ? "\n• … and \(count - 5) more" : ""
+            let rationale = "Calendar events that ended and need your confirmation. Tap to review the oldest first, or skip ahead from the list.\n\n\(titlesPreview)\(remainder)"
+            let nextStep = "Confirm what happened for each meeting so SAM can update your pipeline."
+
+            // Link to a person from the most recent pending review (if any known attendee) so person-level views pick it up.
+            let linkedPerson = pending
+                .first(where: { $0.linkedPeople.contains(where: { !$0.isDeleted && !$0.isMe }) })?
+                .linkedPeople
+                .first(where: { !$0.isDeleted && !$0.isMe })
+
+            if let existing {
+                existing.title = title
+                existing.rationale = rationale
+                existing.suggestedNextStep = nextStep
+                existing.deadlineDate = Calendar.current.date(byAdding: .hour, value: 24, to: .now)
+                existing.linkedPerson = linkedPerson
+                try context.save()
+            } else {
+                let outcome = SamOutcome(
+                    title: title,
+                    rationale: rationale,
+                    outcomeKind: .followUp,
+                    deadlineDate: Calendar.current.date(byAdding: .hour, value: 24, to: .now),
+                    sourceInsightSummary: Self.pendingReviewsInsightKey,
+                    suggestedNextStep: nextStep,
+                    linkedPerson: linkedPerson
+                )
+                try outcomeRepo.upsert(outcome: outcome)
+            }
+        } catch {
+            logger.error("refreshPendingReviewsOutcome failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// All calendar evidence items that have been surfaced for review but not yet resolved.
+    /// Sorted oldest-first so the capture sheet can walk through them chronologically.
+    func pendingMeetingReviews() throws -> [SamEvidenceItem] {
+        let all = try evidenceRepo.fetchAll()
+        return all
+            .filter { $0.source == .calendar && $0.reviewStatus == .pending }
+            .sorted { $0.occurredAt < $1.occurredAt }
+    }
+
+    /// Sentinel key exposed so the outcome queue can match the consolidated review outcome
+    /// and route its primary action into the walker instead of the normal outcome handlers.
+    static var pendingReviewsSourceInsightKey: String { pendingReviewsInsightKey }
+
+    /// Evidence IDs already surfaced in the current walker session. Populated by "Skip for now"
+    /// so the walker doesn't loop back to an item the user chose to defer. Cleared whenever the
+    /// walker starts fresh or naturally drains.
+    private var walkerVisitedEvidenceIDs: Set<UUID> = []
+
+    /// Entry point for the consolidated "Review N meetings" outcome. Resets any prior session
+    /// state, finds the oldest unreviewed calendar evidence, and posts the capture sheet with
+    /// walker metadata attached.
+    func startPendingReviewWalker() {
+        walkerVisitedEvidenceIDs = []
+        openNextPendingReview()
+    }
+
+    /// Move the walker forward after a save or skip. Pass the skipped evidence's ID so it's
+    /// not re-surfaced in the same session. For normal saves (which mark evidence as resolved),
+    /// pass `nil` — the evidence drops out of `pendingMeetingReviews()` on its own.
+    func advancePendingReviewWalker(skipping evidenceID: UUID?) {
+        if let evidenceID {
+            walkerVisitedEvidenceIDs.insert(evidenceID)
+        }
+        openNextPendingReview()
+    }
+
+    /// Internal: find the next unvisited pending review and post a walker-flagged capture sheet.
+    /// No-op (and resets session state) when the queue is drained.
+    private func openNextPendingReview() {
+        do {
+            let pending = try pendingMeetingReviews()
+            guard let next = pending.first(where: { !walkerVisitedEvidenceIDs.contains($0.id) }) else {
+                walkerVisitedEvidenceIDs = []
+                refreshPendingReviewsOutcome()
+                return
+            }
+
+            let knownAttendees = next.linkedPeople.filter { !$0.isDeleted && !$0.isMe }
+            let unknownNames: [String] = next.participantHints.compactMap { hint in
+                if hint.isVerified { return nil }
+                return hint.displayName
+            }
+
+            let matchingBriefing = MeetingPrepCoordinator.shared.briefings.first { briefing in
+                briefing.title == next.title
+                    && Calendar.current.isDate(briefing.startsAt, inSameDayAs: next.occurredAt)
+            }
+
+            let attendeeInfos: [CaptureAttendeeInfo] = knownAttendees.map { person in
+                let profile = matchingBriefing?.attendees.first(where: { $0.personID == person.id })
+                return CaptureAttendeeInfo(
+                    personID: person.id,
+                    displayName: person.displayNameCache ?? person.displayName,
+                    roleBadges: person.roleBadges,
+                    pendingActionItems: profile?.pendingActionItems ?? [],
+                    recentLifeEvents: profile?.recentLifeEvents ?? []
+                )
+            }
+
+            let payload = CapturePayload(
+                captureKind: .meeting,
+                eventTitle: next.title,
+                eventDate: next.occurredAt,
+                attendees: attendeeInfos,
+                talkingPoints: matchingBriefing?.talkingPoints ?? [],
+                openActionItems: matchingBriefing?.openActionItems.map(\.description) ?? [],
+                evidenceID: next.id,
+                unknownAttendeeNames: unknownNames,
+                isQueueWalk: true
+            )
+
+            NotificationCenter.default.post(
+                name: .samOpenPostMeetingCapture,
+                object: nil,
+                userInfo: ["payload": payload]
+            )
+
+            logger.info("Walker: opened pending review for '\(next.title)' (remaining: \(pending.count))")
+        } catch {
+            logger.error("openNextPendingReview failed: \(error.localizedDescription)")
+        }
     }
 
     // MARK: - Multi-Step Sequence Trigger Evaluation

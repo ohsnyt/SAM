@@ -91,6 +91,15 @@ final class EvidenceRepository {
         return allItems.first { $0.id == id }
     }
 
+    /// Update the occurrence status for an evidence item (did this calendar event actually happen?).
+    /// Used by PostMeetingCaptureView when the user resolves a pending review.
+    func updateReviewStatus(id: UUID, status: EvidenceReviewStatus) throws {
+        guard let context = context else { throw RepositoryError.notConfigured }
+        guard let item = try fetch(id: id) else { return }
+        item.reviewStatus = status
+        try context.save()
+    }
+
     /// Cached sourceUID → SamEvidenceItem lookup, built on first use per import cycle.
     private var sourceUIDCache: [String: SamEvidenceItem]?
 

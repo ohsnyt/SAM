@@ -112,7 +112,8 @@ final class PendingUploadService {
         durationSeconds: TimeInterval,
         sampleRate: Double,
         channelCount: UInt32,
-        recordingContext: RecordingContext = .clientMeeting
+        recordingContext: RecordingContext = .clientMeeting,
+        calendarEventID: String? = nil
     ) {
         guard let container = modelContainer else {
             logger.error("enqueue: no container configured")
@@ -130,6 +131,9 @@ final class PendingUploadService {
         if let existing = try? context.fetch(descriptor).first {
             logger.info("enqueue: session \(sessionID.uuidString) already in queue, updating file size")
             existing.byteSize = byteSize
+            if existing.calendarEventID == nil, let eventID = calendarEventID {
+                existing.calendarEventID = eventID
+            }
             try? context.save()
             refreshPendingCount()
             return
@@ -145,7 +149,8 @@ final class PendingUploadService {
             localWAVPath: relativePath,
             createdAt: .now,
             status: .pending,
-            recordingContext: recordingContext
+            recordingContext: recordingContext,
+            calendarEventID: calendarEventID
         )
         context.insert(pending)
         do {
@@ -220,7 +225,8 @@ final class PendingUploadService {
             sampleRate: pending.sampleRate,
             channels: pending.channels,
             byteSize: pending.byteSize,
-            recordingContext: pending.recordingContext
+            recordingContext: pending.recordingContext,
+            calendarEventID: pending.calendarEventID
         )
         guard streaming.sendUploadStart(metadata: metadata) else {
             failUpload(pending: pending, reason: "Could not send uploadStart", container: container)

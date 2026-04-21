@@ -304,17 +304,26 @@ final class TranscriptionSessionCoordinator {
             if let container = self.modelContainer {
                 let context = ModelContext(container)
                 let recordingContext = self.receivingService.lastSessionMetadata?.recordingContext ?? .clientMeeting
+                // Phone passes through EKEvent.eventIdentifier when Sarah started the recording
+                // from an upcoming-meeting row. Persisting it here lets downstream consumers
+                // (post-meeting capture, evidence timeline) join the recording to its calendar event.
+                let calendarEventID = self.receivingService.lastSessionMetadata?.calendarEventID
                 let session = TranscriptSession(
                     id: sessionID,
                     status: .recording,
                     recordingContext: recordingContext,
                     audioFilePath: self.receivingService.relativeAudioPath(for: sessionID),
-                    whisperModelID: WhisperTranscriptionService.defaultModelID
+                    whisperModelID: WhisperTranscriptionService.defaultModelID,
+                    calendarEventID: calendarEventID
                 )
                 context.insert(session)
                 do {
                     try context.save()
-                    logger.info("TranscriptSession created: \(sessionID.uuidString) (format: \(sampleRate)Hz \(channels)ch)")
+                    if let eventID = calendarEventID {
+                        logger.info("TranscriptSession created: \(sessionID.uuidString) linked to event \(eventID) (format: \(sampleRate)Hz \(channels)ch)")
+                    } else {
+                        logger.info("TranscriptSession created: \(sessionID.uuidString) (impromptu, format: \(sampleRate)Hz \(channels)ch)")
+                    }
                 } catch {
                     logger.error("Failed to save TranscriptSession: \(error.localizedDescription)")
                 }
@@ -859,6 +868,43 @@ final class TranscriptionSessionCoordinator {
                     session.title = summary.title
                 }
                 try context.save()
+
+                // Block 3: extract commitments into durable SamCommitment rows
+                // so follow-through can be coached even after the summary JSON
+                // is updated. Skipped silently if the session wasn't a
+                // client meeting or had no actionable items.
+                if session.recordingContext == .clientMeeting || session.recordingContext == .boardMeeting {
+                    let sarah = try? PeopleRepository.shared.fetchMe()
+                    CommitmentExtractionService.extract(
+                        from: summary,
+                        session: session,
+                        context: context,
+                        sarah: sarah,
+                        recordedAt: session.recordedAt
+                    )
+                }
+
+                // Block 4: if the recording wasn't tied to a calendar event,
+                // ask Sarah for a quick attribution before we let it age into
+                // the library. Posts a notification the shell listens for; the
+                // sheet fetches the session by id so this payload stays cheap.
+                if session.isImpromptu && session.impromptuReviewShownAt == nil {
+                    let payload = ImpromptuReviewPayload(
+                        sessionID: session.id,
+                        summaryTLDR: summary.tldr.isEmpty ? nil : summary.tldr,
+                        suggestedTitle: summary.title.isEmpty ? nil : summary.title,
+                        recordedAt: session.recordedAt,
+                        durationSeconds: session.durationSeconds
+                    )
+                    session.impromptuReviewShownAt = .now
+                    session.impromptuReviewOutcome = .pending
+                    try? context.save()
+                    NotificationCenter.default.post(
+                        name: .samOpenImpromptuReview,
+                        object: nil,
+                        userInfo: ["payload": payload]
+                    )
+                }
             }
 
             lastMeetingSummary = summary

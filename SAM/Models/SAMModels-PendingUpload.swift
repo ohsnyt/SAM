@@ -83,6 +83,12 @@ public final class PendingUpload {
     /// Raw storage for RecordingContext. nil on legacy records → defaults to .clientMeeting.
     public var recordingContextRawValue: String?
 
+    /// EventKit `eventIdentifier` for the calendar event this recording was made for.
+    /// Populated when Sarah started the recording from an upcoming-meeting row. Carried
+    /// in the eventual PendingUploadMetadata so the Mac can link the transcript back to
+    /// the source SamEvidenceItem even if the live session-start handshake never landed.
+    public var calendarEventID: String?
+
     // MARK: - Computed
 
     @Transient
@@ -118,7 +124,8 @@ public final class PendingUpload {
         lastAttemptAt: Date? = nil,
         attemptCount: Int = 0,
         failureReason: String? = nil,
-        bytesUploaded: Int64 = 0
+        bytesUploaded: Int64 = 0,
+        calendarEventID: String? = nil
     ) {
         self.id = id
         self.recordedAt = recordedAt
@@ -134,5 +141,6 @@ public final class PendingUpload {
         self.attemptCount = attemptCount
         self.failureReason = failureReason
         self.bytesUploaded = bytesUploaded
+        self.calendarEventID = calendarEventID
     }
 }

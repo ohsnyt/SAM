@@ -695,11 +695,23 @@ public final class SamEvidenceItem {
     /// SwiftData schema validation issues with RawRepresentable enums.
     /// The computed property provides type-safe enum access.
     public var stateRawValue: String
-    
+
     @Transient
     public var state: EvidenceTriageState {
         get { EvidenceTriageState(rawValue: stateRawValue) ?? .needsReview }
         set { stateRawValue = newValue.rawValue }
+    }
+
+    /// Whether a scheduled event (primarily calendar) actually occurred.
+    /// Defaults to `.confirmed` so legacy evidence and non-calendar sources behave exactly as before.
+    /// Calendar events picked up by `DailyBriefingCoordinator.checkRecentlyEndedMeetings()` are flipped
+    /// to `.pending` and resolved by the post-meeting capture sheet.
+    public var reviewStatusRawValue: String = EvidenceReviewStatus.confirmed.rawValue
+
+    @Transient
+    public var reviewStatus: EvidenceReviewStatus {
+        get { EvidenceReviewStatus(rawValue: reviewStatusRawValue) ?? .confirmed }
+        set { reviewStatusRawValue = newValue.rawValue }
     }
 
     // ── Core facts ──────────────────────────────────────────────────
@@ -1248,6 +1260,12 @@ extension Notification.Name {
     /// Posted when a meeting ends to open the structured post-meeting capture sheet.
     /// userInfo: ["eventTitle": String, "eventDate": Date, "attendeeIDs": [UUID]]
     static let samOpenPostMeetingCapture = Notification.Name("samOpenPostMeetingCapture")
+
+    /// Block 4: posted when an impromptu recording (one started without a
+    /// calendar event) has finished summarizing and needs a lightweight
+    /// review — who it was with, what kind of conversation, approve/discard.
+    /// userInfo: ["payload": ImpromptuReviewPayload]
+    static let samOpenImpromptuReview = Notification.Name("samOpenImpromptuReview")
 
     /// Posted to navigate to the Relationship Graph view with optional focus mode.
     /// userInfo: ["focusMode": String] (optional)

@@ -1251,6 +1251,12 @@ struct TranscriptionReviewView: View {
                 speakerPeople[segment.speakerClusterID] = person
             }
         }
+
+        // Block 4 usage signal: track how often summaries get opened. Fed
+        // into record-usage learning so SAM can offer to stop prompting on
+        // recordings from contexts that are repeatedly ignored.
+        session.summaryOpenedCount += 1
+        try? modelContext.save()
     }
 
     // MARK: - "Looks Good" — save + sign off in one action
@@ -1334,6 +1340,7 @@ struct TranscriptionReviewView: View {
                     mergedSessionPeople.append(person)
                 }
                 session.linkedPeople = mergedSessionPeople
+                session.producedNote = true
 
                 try modelContext.save()
                 savedAsNote = true
@@ -1366,6 +1373,7 @@ struct TranscriptionReviewView: View {
             note.linkedEvidence = [evidence]
             session.linkedNote = note
             session.linkedPeople = linkedPeople
+            session.producedNote = true
 
             try modelContext.save()
             savedAsNote = true

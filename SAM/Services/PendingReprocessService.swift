@@ -530,6 +530,11 @@ final class PendingReprocessService {
             predicate: #Predicate { $0.id == sessionID }
         )
         if let existing = try context.fetch(descriptor).first {
+            // Backfill the calendar event ID if the offline upload carries one but the
+            // existing session (created from the live session-start handshake) lost it.
+            if existing.calendarEventID == nil, let eventID = metadata.calendarEventID {
+                existing.calendarEventID = eventID
+            }
             logger.info("Reprocess: reusing existing TranscriptSession \(sessionID.uuidString)")
             return existing
         }
@@ -542,7 +547,8 @@ final class PendingReprocessService {
             recordingContext: metadata.recordingContext ?? .clientMeeting,
             audioFilePath: nil,
             whisperModelID: WhisperTranscriptionService.defaultModelID,
-            detectedLanguage: nil
+            detectedLanguage: nil,
+            calendarEventID: metadata.calendarEventID
         )
         context.insert(session)
         try context.save()

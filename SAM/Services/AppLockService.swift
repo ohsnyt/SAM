@@ -59,6 +59,7 @@ final class AppLockService {
     @ObservationIgnored private var lastActiveTime: Date?
     @ObservationIgnored private var currentAuthContext: LAContext?
     @ObservationIgnored private var keyEventMonitor: Any?
+    @ObservationIgnored private var screenLockObservers: [NSObjectProtocol] = []
 
     // MARK: - Initializer
 
@@ -109,6 +110,7 @@ final class AppLockService {
                     lastActiveTime = Date()
                     authError = nil
                     removeKeyEventMonitor()
+                    restoreWindowSharing()
                     logger.info("Authentication successful — app unlocked")
                 }
             } catch {
@@ -156,7 +158,27 @@ final class AppLockService {
         closeAuxiliaryWindows()
         dismissOpenSheets()
         installKeyEventMonitor()
+        applyWindowSharingRestriction()
         logger.info("App locked")
+    }
+
+    /// Set `sharingType = .none` on every app window so screen recording
+    /// tools that respect the flag capture a black rectangle instead of
+    /// window contents. Modern `ScreenCaptureKit`-based recorders ignore
+    /// this on macOS 15+, but legacy `CGWindowList`-based callers still
+    /// honor it, and it's free defense in depth.
+    private func applyWindowSharingRestriction() {
+        for window in NSApplication.shared.windows {
+            window.sharingType = .none
+        }
+    }
+
+    /// Restore the default sharing type after unlock so legitimate screen
+    /// capture (Loom, QuickTime, Zoom share) works normally.
+    fileprivate func restoreWindowSharing() {
+        for window in NSApplication.shared.windows {
+            window.sharingType = .readOnly
+        }
     }
 
     /// Called when the app resigns active (user switches away).
@@ -193,12 +215,61 @@ final class AppLockService {
         if UserDefaults.standard.bool(forKey: "sam.debug.skipAppLock") {
             isLocked = false
             logger.notice("🔓 sam.debug.skipAppLock=true — launching unlocked (DEBUG only)")
+            installScreenLockObservers()
             return
         }
         #endif
         isLocked = true
         installKeyEventMonitor()
+        installScreenLockObservers()
         logger.debug("App launch — awaiting authentication")
+    }
+
+    /// Subscribe to the system events that mean "someone might walk away
+    /// with the screen visible" — screen lock, screensaver start, and
+    /// display sleep. Any of these should engage SAM's lock so the user
+    /// has to re-authenticate on return.
+    ///
+    /// We don't also observe unlock: on unlock the user is already looking
+    /// at the lock overlay, and they tap or Touch ID to proceed. Auto-
+    /// unlocking on screen unlock would defeat the whole point.
+    private func installScreenLockObservers() {
+        guard screenLockObservers.isEmpty else { return }
+
+        let dc = DistributedNotificationCenter.default()
+        let ws = NSWorkspace.shared.notificationCenter
+
+        screenLockObservers.append(dc.addObserver(
+            forName: .init("com.apple.screenIsLocked"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.handleScreenEvent(source: "screenIsLocked") }
+        })
+
+        screenLockObservers.append(dc.addObserver(
+            forName: .init("com.apple.screensaver.didstart"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.handleScreenEvent(source: "screensaver.didstart") }
+        })
+
+        screenLockObservers.append(ws.addObserver(
+            forName: NSWorkspace.willSleepNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.handleScreenEvent(source: "workspace.willSleep") }
+        })
+
+        logger.debug("Screen-lock observers installed")
+    }
+
+    private func handleScreenEvent(source: String) {
+        guard !isLocked else { return }
+        logger.info("App lock engaged — trigger: \(source, privacy: .public)")
+        lock()
     }
 
     // MARK: - Private Helpers

@@ -25,6 +25,7 @@ struct MeetingQualitySection: View {
                 item.source == .calendar
                 && item.occurredAt >= fourteenDaysAgo
                 && (item.endedAt ?? item.occurredAt) <= now
+                && item.reviewStatus.countsAsOccurred
             }
             .map { scoreMeeting($0) }
             .sorted { $0.score < $1.score } // Lowest scores first

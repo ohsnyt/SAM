@@ -16,7 +16,7 @@ struct CalendarPatternsSection: View {
     @Query private var allEvidence: [SamEvidenceItem]
 
     private var calendarEvents: [SamEvidenceItem] {
-        allEvidence.filter { $0.source == .calendar }
+        allEvidence.filter { $0.source == .calendar && $0.reviewStatus.countsAsOccurred }
     }
 
     private var insights: [CalendarInsight] {

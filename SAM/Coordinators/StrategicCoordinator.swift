@@ -451,10 +451,14 @@ final class StrategicCoordinator {
             lines.append("  Total notes: \(totalNotes)")
             lines.append("  Notes with action items: \(notesWithActions.count) (\(String(format: "%.0f", actionRate))%)")
 
-            // People with no recent interaction (30 days)
+            // People with no recent interaction (30 days). Only count evidence that actually
+            // occurred — a cancelled meeting 2 days ago doesn't mean the person is "warm".
             let thirtyDaysAgo = Calendar.current.date(byAdding: .day, value: -30, to: .now) ?? .now
             let coldPeople = active.filter { person in
-                let lastInteraction = person.linkedEvidence.map(\.occurredAt).max()
+                let lastInteraction = person.linkedEvidence
+                    .filter { $0.reviewStatus.countsAsOccurred }
+                    .map(\.occurredAt)
+                    .max()
                 return lastInteraction == nil || lastInteraction! < thirtyDaysAgo
             }
             lines.append("")

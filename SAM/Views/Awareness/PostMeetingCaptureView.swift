@@ -38,6 +38,9 @@ struct CapturePayload: Identifiable, Sendable {
     /// Names of attendees not yet in SAM's contacts. Pre-populates the
     /// "extra attendees" field so the user can confirm or edit them.
     var unknownAttendeeNames: [String] = []
+    /// True when the sheet is part of a "review all pending meetings" walker.
+    /// Enables the remaining-count badge and "Skip for now" button.
+    var isQueueWalk: Bool = false
 
     enum CaptureKind: Sendable {
         case meeting
@@ -82,6 +85,46 @@ struct PostMeetingCaptureView: View {
     @State private var attendancePresent: Set<UUID> = []
     @State private var extraAttendeeNames: [String] = []
     @State private var callAnswered: Bool = true
+    @State private var occurrenceDecision: OccurrenceDecision = .happened
+
+    /// Whether this meeting actually took place. Defaults to "happened" (current behavior).
+    /// Non-"happened" choices short-circuit the capture flow — we record the status on the
+    /// linked evidence and close the sheet without creating a note.
+    enum OccurrenceDecision: String, CaseIterable, Identifiable, Hashable {
+        case happened
+        case rescheduled
+        case cancelled
+        case didNotHappen
+
+        var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .happened:     return "Yes, it happened"
+            case .rescheduled:  return "Rescheduled"
+            case .cancelled:    return "Cancelled"
+            case .didNotHappen: return "Didn't happen"
+            }
+        }
+
+        var evidenceStatus: EvidenceReviewStatus {
+            switch self {
+            case .happened:     return .confirmed
+            case .rescheduled:  return .rescheduled
+            case .cancelled:    return .cancelled
+            case .didNotHappen: return .didNotHappen
+            }
+        }
+
+        var primaryButtonLabel: String {
+            switch self {
+            case .happened:     return "Save"
+            case .rescheduled:  return "Mark rescheduled"
+            case .cancelled:    return "Mark cancelled"
+            case .didNotHappen: return "Mark no-show"
+            }
+        }
+    }
     @State private var mainOutcomeText = ""
     @State private var talkingPointResponses: [String: String] = [:]  // point → response
     @State private var actionItemResponses: [String: String] = [:]    // action → response
@@ -236,9 +279,19 @@ struct PostMeetingCaptureView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(payload.captureKind.isMeeting ? "Meeting Notes" : "\(payload.captureKind.sourceLabel) Notes")
-                        .samFont(.title2)
-                        .fontWeight(.semibold)
+                    HStack(spacing: 8) {
+                        Text(payload.captureKind.isMeeting ? "Meeting Notes" : "\(payload.captureKind.sourceLabel) Notes")
+                            .samFont(.title2)
+                            .fontWeight(.semibold)
+                        if payload.isQueueWalk, remainingReviewCount > 0 {
+                            Text("\(remainingReviewCount) remaining")
+                                .samFont(.caption)
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 2)
+                                .background(Color.secondary.opacity(0.15), in: Capsule())
+                        }
+                    }
 
                     HStack(spacing: 8) {
                         Text(payload.eventTitle)
@@ -352,8 +405,65 @@ struct PostMeetingCaptureView: View {
             stepHeader("person.2.circle", title: payload.captureKind.isMeeting ? "Who attended?" : "Did they answer?")
 
             if payload.captureKind.isMeeting {
-                // Checklist of attendees
-                ForEach(payload.attendees) { attendee in
+                occurrenceDecisionPicker
+
+                if occurrenceDecision != .happened {
+                    occurrenceExplanation
+                } else {
+                    attendanceChecklist
+                }
+            } else {
+                callAnsweredPicker
+            }
+        }
+    }
+
+    /// "Did this meeting happen?" selector. Non-"happened" choices short-circuit
+    /// the rest of the capture flow.
+    private var occurrenceDecisionPicker: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Did this meeting happen?")
+                .samFont(.subheadline)
+                .foregroundStyle(.secondary)
+            Picker("Occurrence", selection: $occurrenceDecision) {
+                ForEach(OccurrenceDecision.allCases) { decision in
+                    Text(decision.label).tag(decision)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+        }
+    }
+
+    /// Short explanation shown when the user picks cancelled / rescheduled / didn't happen.
+    /// The footer's primary button switches to the appropriate "Mark…" action in these cases.
+    private var occurrenceExplanation: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            let message: String = {
+                switch occurrenceDecision {
+                case .rescheduled:
+                    return "Got it. SAM won't count this as a completed meeting. If the new time is on your calendar, SAM will prompt you again after it ends."
+                case .cancelled:
+                    return "Thanks — SAM will mark this as cancelled and drop it from your pipeline history."
+                case .didNotHappen:
+                    return "Noted. SAM will record this as a no-show. Repeated no-shows with the same person will surface as a coaching signal."
+                case .happened:
+                    return ""
+                }
+            }()
+            Text(message)
+                .samFont(.body)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.top, 4)
+    }
+
+    /// The original attendance checklist, shown only when the meeting actually happened.
+    @ViewBuilder
+    private var attendanceChecklist: some View {
+        // Checklist of attendees
+        ForEach(payload.attendees) { attendee in
                     Button {
                         if attendancePresent.contains(attendee.personID) {
                             attendancePresent.remove(attendee.personID)
@@ -414,21 +524,21 @@ struct PostMeetingCaptureView: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
-            } else {
-                // Call: did they answer?
-                HStack(spacing: 16) {
-                    if let primary = payload.attendees.first {
-                        Text(primary.displayName)
-                            .samFont(.body)
-                    }
-                    Picker("", selection: $callAnswered) {
-                        Text("Answered").tag(true)
-                        Text("No answer").tag(false)
-                    }
-                    .pickerStyle(.segmented)
-                    .frame(width: 200)
-                }
+    }
+
+    /// Call flow: did the other side answer?
+    private var callAnsweredPicker: some View {
+        HStack(spacing: 16) {
+            if let primary = payload.attendees.first {
+                Text(primary.displayName)
+                    .samFont(.body)
             }
+            Picker("", selection: $callAnswered) {
+                Text("Answered").tag(true)
+                Text("No answer").tag(false)
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 200)
         }
     }
 
@@ -820,17 +930,61 @@ struct PostMeetingCaptureView: View {
             .buttonStyle(.bordered)
             .keyboardShortcut(.escape, modifiers: [])
 
-            Button("Save") {
+            if payload.isQueueWalk {
+                Button("Skip for now") {
+                    skipAndAdvance()
+                }
+                .buttonStyle(.bordered)
+                .disabled(isSaving || isPolishing)
+                .help("Leave this meeting on the review queue and move to the next one.")
+            }
+
+            Button(primaryActionLabel) {
                 save()
             }
             .buttonStyle(.borderedProminent)
             .keyboardShortcut("s", modifiers: .command)
-            .disabled(isSaving || isPolishing || !hasContent)
+            .disabled(isSaving || isPolishing || !canSave)
         }
         .padding()
     }
 
+    /// Live count of pending reviews remaining. Drives the header badge during a queue walk.
+    /// Recomputes on every render so the number drops as Sarah walks through the queue.
+    private var remainingReviewCount: Int {
+        (try? DailyBriefingCoordinator.shared.pendingMeetingReviews().count) ?? 0
+    }
+
+    /// "Skip for now" handler: keep the current evidence in .pending state and advance to the
+    /// next unreviewed item. The coordinator tracks which IDs have already been shown this
+    /// session so we don't loop back to this one.
+    private func skipAndAdvance() {
+        stopDictation()
+        let currentID = payload.evidenceID
+        onSave()
+        dismiss()
+        Task { @MainActor in
+            DailyBriefingCoordinator.shared.advancePendingReviewWalker(skipping: currentID)
+        }
+    }
+
     // MARK: - Computed
+
+    /// Primary button label. Switches to "Mark cancelled" / "Mark rescheduled" / "Mark no-show"
+    /// when the user has declared the meeting didn't happen normally.
+    private var primaryActionLabel: String {
+        guard payload.captureKind.isMeeting else { return "Save" }
+        return occurrenceDecision.primaryButtonLabel
+    }
+
+    /// Whether the primary action is available. A non-happened occurrence decision is itself
+    /// enough to save — we don't need any note content.
+    private var canSave: Bool {
+        if payload.captureKind.isMeeting && occurrenceDecision != .happened {
+            return true
+        }
+        return hasContent
+    }
 
     private var hasContent: Bool {
         if mode == .guided {
@@ -909,6 +1063,19 @@ struct PostMeetingCaptureView: View {
         isSaving = true
         errorMessage = nil
 
+        // Short-circuit: user declared the meeting didn't occur normally.
+        // Mark the evidence so velocity/history consumers skip it, refresh the consolidated
+        // review outcome, and close the sheet without creating a note.
+        if payload.captureKind.isMeeting && occurrenceDecision != .happened {
+            markEvidenceReviewStatus(occurrenceDecision.evidenceStatus)
+            DailyBriefingCoordinator.shared.refreshPendingReviewsOutcome()
+            isSaving = false
+            onSave()
+            dismiss()
+            advanceWalkerIfNeeded()
+            return
+        }
+
         let content: String
         if mode == .guided {
             content = composeGuidedContent()
@@ -941,13 +1108,41 @@ struct PostMeetingCaptureView: View {
                 await NoteAnalysisCoordinator.shared.analyzeNote(note)
             }
 
+            // Normal "happened" path — confirm the evidence occurred and drop it from the review queue.
+            if payload.captureKind.isMeeting {
+                markEvidenceReviewStatus(.confirmed)
+                DailyBriefingCoordinator.shared.refreshPendingReviewsOutcome()
+            }
+
             isSaving = false
             onSave()
             dismiss()
+            advanceWalkerIfNeeded()
         } catch {
             errorMessage = "Failed to save: \(error.localizedDescription)"
             isSaving = false
             logger.error("Capture note save failed: \(error)")
+        }
+    }
+
+    /// Advances to the next pending review when this sheet is part of a queue walk.
+    /// Saves of any kind (confirmed, cancelled, no-show, rescheduled) resolve this item, so we
+    /// don't need to mark it visited — it won't show up again in `pendingMeetingReviews()`.
+    private func advanceWalkerIfNeeded() {
+        guard payload.isQueueWalk else { return }
+        Task { @MainActor in
+            DailyBriefingCoordinator.shared.advancePendingReviewWalker(skipping: nil)
+        }
+    }
+
+    /// Updates the linked evidence item's `reviewStatus` in place. No-op if the payload
+    /// carries no evidenceID (e.g., capture was triggered without a calendar event).
+    private func markEvidenceReviewStatus(_ status: EvidenceReviewStatus) {
+        guard let evidenceID = payload.evidenceID else { return }
+        do {
+            try EvidenceRepository.shared.updateReviewStatus(id: evidenceID, status: status)
+        } catch {
+            logger.error("Failed to update evidence review status: \(error.localizedDescription)")
         }
     }
 

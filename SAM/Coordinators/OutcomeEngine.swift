@@ -159,6 +159,9 @@ final class OutcomeEngine {
             // 17. Role recruiting discovery & cultivation
             newOutcomes.append(contentsOf: scanRoleRecruiting())
 
+            // 18. Sarah's open commitments due soon (Block 3)
+            newOutcomes.append(contentsOf: scanOpenCommitments())
+
             // Classify action lanes and suggest channels
             for outcome in newOutcomes {
                 classifyActionLane(for: outcome)
@@ -1109,8 +1112,12 @@ final class OutcomeEngine {
             // Skip people with pipeline-relevant roles
             if !Set(person.roleBadges).isDisjoint(with: pipelineRoles) { continue }
 
-            // Check for any evidence in the last 12 months
-            let hasRecent = person.linkedEvidence.contains { $0.occurredAt > cutoff }
+            // Check for any evidence in the last 12 months. Cancelled / no-show meetings
+            // don't count — if they only "interacted" via events that never happened, they
+            // really are stale.
+            let hasRecent = person.linkedEvidence.contains {
+                $0.occurredAt > cutoff && $0.reviewStatus.countsAsOccurred
+            }
             if hasRecent { continue }
 
             let personName = person.displayNameCache ?? person.displayName
@@ -1613,6 +1620,8 @@ final class OutcomeEngine {
             outcome.actionLane = .communicate
         case .userTask:
             outcome.actionLane = .record
+        case .commitment:
+            outcome.actionLane = .communicate
         }
     }
 
@@ -2274,5 +2283,86 @@ final class OutcomeEngine {
         }
 
         return outcomes
+    }
+
+    // MARK: - Commitment scans (Block 3)
+
+    /// Surface Sarah's open commitments due within the coaching window (default
+    /// 48h). Aggregates per-person so the kind+person dedup doesn't collapse
+    /// multiple commitments to the same person. The outcome's title names the
+    /// next-due item; the rationale enumerates the rest.
+    private func scanOpenCommitments() -> [SamOutcome] {
+        // Sweep overdue pending commitments first so what we surface is current.
+        _ = try? CommitmentRepository.shared.sweepMissed()
+
+        guard let open = try? CommitmentRepository.shared.fetchOpenFromSarah(dueWithin: 3),
+              !open.isEmpty else {
+            return []
+        }
+
+        // Group by counterparty. Commitments without a linked person still
+        // surface but are grouped under a synthetic "unassigned" bucket.
+        let grouped = Dictionary(grouping: open) { $0.linkedPerson?.id ?? UUID() }
+
+        var outcomes: [SamOutcome] = []
+        for (_, bucket) in grouped {
+            let sorted = bucket.sorted {
+                switch ($0.dueDate, $1.dueDate) {
+                case let (a?, b?): return a < b
+                case (_?, nil):    return true
+                case (nil, _?):    return false
+                default:           return $0.createdAt < $1.createdAt
+                }
+            }
+            guard let lead = sorted.first else { continue }
+
+            let person = lead.linkedPerson
+            let name = person.map { $0.displayNameCache ?? $0.displayName } ?? "someone"
+
+            let title: String
+            let rationale: String
+            if sorted.count == 1 {
+                title = "You committed to \(name): \(lead.text)"
+                let due = formatDue(lead)
+                rationale = due.map { "Due \($0). Mark it done once you deliver." }
+                    ?? "You haven't resolved this yet. Close it out or dismiss when it's handled."
+            } else {
+                title = "\(sorted.count) open commitments to \(name)"
+                let bullets = sorted.prefix(3).map { "• \($0.text)\(formatDue($0).map { " — \($0)" } ?? "")" }.joined(separator: "\n")
+                rationale = "You have \(sorted.count) open commitments to \(name):\n\(bullets)"
+            }
+
+            let priority: Double = {
+                if let due = lead.dueDate {
+                    let hours = due.timeIntervalSinceNow / 3600
+                    if hours < 0 { return 0.95 }        // overdue
+                    if hours < 24 { return 0.85 }       // due today
+                    if hours < 72 { return 0.7 }        // due in 3 days
+                    return 0.55
+                }
+                return 0.45
+            }()
+
+            outcomes.append(SamOutcome(
+                title: title,
+                rationale: rationale,
+                outcomeKind: .commitment,
+                priorityScore: priority,
+                deadlineDate: lead.dueDate,
+                sourceInsightSummary: "Open commitment from Sarah (\(lead.id.uuidString))",
+                linkedPerson: person
+            ))
+        }
+
+        return outcomes
+    }
+
+    private func formatDue(_ commitment: SamCommitment) -> String? {
+        if let due = commitment.dueDate {
+            let formatter = RelativeDateTimeFormatter()
+            formatter.unitsStyle = .full
+            return formatter.localizedString(for: due, relativeTo: .now)
+        }
+        return commitment.dueHint
     }
 }

@@ -307,6 +307,32 @@ public enum EvidenceTriageState: String, Codable, Sendable {
     case done = "done"
 }
 
+/// Whether a scheduled event actually occurred. Applies primarily to calendar evidence.
+/// `.confirmed` is the default/legacy state — legacy evidence behaves as it did before this field existed.
+/// `.pending` is set when `DailyBriefingCoordinator.checkRecentlyEndedMeetings()` surfaces an event for review.
+/// The post-meeting capture sheet writes the final state when the user answers "Did this happen?"
+public enum EvidenceReviewStatus: String, Codable, Sendable {
+    /// User has been asked (or will be asked) whether this event actually occurred.
+    case pending
+    /// Event occurred (default; set explicitly when the user confirms attendance).
+    case confirmed
+    /// Event was cancelled before it was supposed to happen.
+    case cancelled
+    /// Event was scheduled but no one showed / didn't occur.
+    case didNotHappen
+    /// Event was rescheduled to a different time. The reschedule should show up as an updated occurredAt
+    /// on the same evidence item (same sourceUID); this status is for the original-time slot if retained.
+    case rescheduled
+
+    /// True when this status represents a real occurrence that should count toward velocity/history.
+    public var countsAsOccurred: Bool {
+        switch self {
+        case .confirmed, .pending: return true  // pending defaults to "assume occurred" until proven otherwise
+        case .cancelled, .didNotHappen, .rescheduled: return false
+        }
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // MARK: - Product Types
 // ─────────────────────────────────────────────────────────────────────
@@ -1087,6 +1113,7 @@ public enum OutcomeKind: String, Codable, Sendable, CaseIterable {
     case setup             // Platform notification setup guidance (Phase 6)
     case roleFilling       // Role recruiting discovery & cultivation
     case userTask          // User-created manual task or follow-up
+    case commitment        // Block 3: Sarah's open commitment to someone, due soon
 }
 
 public enum OutcomeStatus: String, Codable, Sendable {
@@ -1114,13 +1141,14 @@ extension OutcomeKind {
         case .growth, .contentCreation:   return .social
         case .roleFilling:                return .quick
         case .userTask:                   return .quick
+        case .commitment:                 return .quick
         }
     }
 
     var defaultAction: OutcomeAction {
         switch self {
         case .followUp, .preparation: return .captureNote
-        case .proposal, .outreach, .growth, .training, .compliance, .contentCreation, .setup, .roleFilling, .userTask: return .openPerson
+        case .proposal, .outreach, .growth, .training, .compliance, .contentCreation, .setup, .roleFilling, .userTask, .commitment: return .openPerson
         }
     }
 
@@ -1131,6 +1159,7 @@ extension OutcomeKind {
         case .setup: return "Open Settings"
         case .roleFilling: return "View"
         case .userTask: return "View"
+        case .commitment: return "Resolve"
         case .proposal, .outreach, .growth, .training, .compliance: return "View"
         }
     }
@@ -1142,6 +1171,7 @@ extension OutcomeKind {
         case .setup: return "safari"
         case .roleFilling: return "person.badge.key"
         case .userTask: return "checklist"
+        case .commitment: return "hand.raised"
         case .proposal, .outreach, .growth, .training, .compliance: return "arrow.right.circle"
         }
     }

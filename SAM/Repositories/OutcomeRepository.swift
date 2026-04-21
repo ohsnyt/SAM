@@ -104,6 +104,16 @@ final class OutcomeRepository {
         return all.first { $0.id == id }
     }
 
+    /// Fetch the first non-completed outcome whose `sourceInsightSummary` matches the given key.
+    /// Used for "consolidated" outcomes that upsert against a stable sentinel string instead of a UUID
+    /// (e.g., the "Meetings awaiting review" row that rolls up every pending post-meeting capture).
+    func fetchBySourceInsightSummary(_ key: String) throws -> SamOutcome? {
+        guard let context else { throw RepositoryError.notConfigured }
+        let descriptor = FetchDescriptor<SamOutcome>()
+        let all = try context.fetch(descriptor)
+        return all.first { $0.sourceInsightSummary == key && $0.status != .completed && $0.status != .dismissed }
+    }
+
     // MARK: - Search
 
     /// Search outcomes by title, rationale, and suggestedNextStep (case-insensitive).

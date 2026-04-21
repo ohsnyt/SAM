@@ -168,6 +168,38 @@ struct AttendeeProfile: Identifiable, Sendable {
     let recentLifeEvents: [String]
     let pipelineStage: String?
     let productHoldings: [String]
+    /// Block 3: attendee's follow-through on their own commitments to Sarah.
+    /// Nil until there are enough resolved commitments to be meaningful.
+    let followThrough: FollowThroughSummary?
+}
+
+/// Lightweight DTO of the attendee's commitment follow-through, safe to hand
+/// to any view. Wraps `CommitmentRepository.FollowThroughRate` with display-
+/// ready strings so UI doesn't reach back into the repository.
+struct FollowThroughSummary: Sendable {
+    let fulfilled: Int
+    let missed: Int
+    /// 0.0 ... 1.0
+    let rate: Double
+    let tier: CommitmentRepository.FollowThroughRate.Tier
+
+    /// "4 of 5 kept" — the headline stat.
+    var headline: String {
+        let total = fulfilled + missed
+        return "\(fulfilled) of \(total) kept"
+    }
+
+    /// Short coaching hint. Concrete, not vague — per AI quality standard.
+    var coachingHint: String {
+        switch tier {
+        case .reliable:
+            return "Reliable: commitments here usually land. Move at their pace."
+        case .mixed:
+            return "Mixed track record. Confirm next step in writing before you leave."
+        case .flaky:
+            return "Has missed commitments before. Set a concrete, short deadline and follow up the same day."
+        }
+    }
 }
 
 /// Compact interaction record for display in briefings.
@@ -274,9 +306,11 @@ final class MeetingPrepCoordinator {
         let sixtyDaysAgo = Calendar.current.date(byAdding: .day, value: -60, to: now)!
         let ninetyDaysAgo = Calendar.current.date(byAdding: .day, value: -90, to: now)!
 
-        // Use person.linkedEvidence (direct relationship) filtered to real interactions
+        // Use person.linkedEvidence (direct relationship) filtered to real interactions.
+        // Skip calendar events the user marked cancelled / no-show / rescheduled — those didn't
+        // actually happen, so counting them as contact would inflate velocity and hide genuine staleness.
         let evidence = person.linkedEvidence
-            .filter { $0.source.isInteraction }
+            .filter { $0.source.isInteraction && $0.reviewStatus.countsAsOccurred }
             .sorted { $0.occurredAt < $1.occurredAt }
 
         // --- Days since last interaction ---
@@ -775,6 +809,16 @@ final class MeetingPrepCoordinator {
             productHoldings = []
         }
 
+        let followThrough = (try? CommitmentRepository.shared.followThroughRate(forPerson: person.id))
+            .flatMap { rate -> FollowThroughSummary? in
+                FollowThroughSummary(
+                    fulfilled: rate.fulfilled,
+                    missed: rate.missed,
+                    rate: rate.rate,
+                    tier: rate.tier
+                )
+            }
+
         return AttendeeProfile(
             personID: person.id,
             displayName: person.displayNameCache ?? person.displayName,
@@ -786,7 +830,8 @@ final class MeetingPrepCoordinator {
             pendingActionItems: pendingActions,
             recentLifeEvents: lifeEvents,
             pipelineStage: pipelineStage,
-            productHoldings: productHoldings
+            productHoldings: productHoldings,
+            followThrough: followThrough
         )
     }
 

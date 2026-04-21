@@ -273,17 +273,25 @@ public struct SessionStartMetadata: Codable, Sendable {
     /// Recording context selected by the user before starting.
     /// nil on legacy clients → defaults to .clientMeeting on the Mac.
     public var recordingContext: RecordingContext?
+    /// EventKit `eventIdentifier` for the calendar event this recording is for.
+    /// Populated when Sarah taps "Record this meeting" from the upcoming-events list.
+    /// The Mac uses this to link the finished TranscriptSession to the matching
+    /// SamEvidenceItem so the post-meeting capture flow can offer the transcript
+    /// summary instead of asking her to type notes. nil for impromptu recordings.
+    public var calendarEventID: String?
 
     public init(
         sessionID: String,
         expectedSpeakerCount: Int? = nil,
         speakerNames: [String] = [],
-        recordingContext: RecordingContext? = nil
+        recordingContext: RecordingContext? = nil,
+        calendarEventID: String? = nil
     ) {
         self.sessionID = sessionID
         self.expectedSpeakerCount = expectedSpeakerCount
         self.speakerNames = speakerNames
         self.recordingContext = recordingContext
+        self.calendarEventID = calendarEventID
     }
 
     public func toWireData() -> Data? {
@@ -318,6 +326,10 @@ public struct PendingUploadMetadata: Codable, Sendable {
     public var byteSize: Int64
     /// Recording context selected before the session. nil on legacy uploads → .clientMeeting.
     public var recordingContext: RecordingContext?
+    /// EventKit `eventIdentifier` for the calendar event this recording covers.
+    /// Mirrors `SessionStartMetadata.calendarEventID` for offline uploads where
+    /// the session-start handshake may not have landed (e.g., recording done off-network).
+    public var calendarEventID: String?
 
     public init(
         sessionID: String,
@@ -326,7 +338,8 @@ public struct PendingUploadMetadata: Codable, Sendable {
         sampleRate: UInt32,
         channels: UInt16,
         byteSize: Int64,
-        recordingContext: RecordingContext? = nil
+        recordingContext: RecordingContext? = nil,
+        calendarEventID: String? = nil
     ) {
         self.sessionID = sessionID
         self.recordedAt = recordedAt
@@ -335,6 +348,7 @@ public struct PendingUploadMetadata: Codable, Sendable {
         self.channels = channels
         self.byteSize = byteSize
         self.recordingContext = recordingContext
+        self.calendarEventID = calendarEventID
     }
 
     public func toWireData() -> Data? {

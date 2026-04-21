@@ -4,6 +4,39 @@
 
 ---
 
+## Commitments, Meeting-Occurrence Review, Impromptu Capture, Lock Hardening (April 21, 2026)
+
+**What**: Four tightly-coupled blocks landed together: commitment tracking with per-person follow-through (Block 3), meeting-occurrence review after an event ends (consolidated queue + "did this happen?" decision), lightweight review sheet for calendar-less recordings (Block 4), and app-lock hardening that now engages on screen lock / screensaver / sleep with an artistic glass-block overlay (Block 5).
+
+### Block 3 — Commitment Tracking
+- **`SamCommitment` model** (`SAMModels-Commitment.swift`): direction (`fromUser` / `toUser`), status (`pending` / `fulfilled` / `missed` / `dismissed`), `dueDate`, linkedPerson, linkedSession.
+- **`CommitmentRepository`**: CRUD + `sweepMissed()` (grace period past due → `.missed`) + `fetchOpenFromSarah(dueWithin:)` + per-person `followThroughRate` (tiered: reliable / mixed / flaky).
+- **`CommitmentExtractionService`**: converts `MeetingSummary.actionItems` into durable commitments at summary time, so follow-through survives transcript cleanup. Sarah-owned items → `.fromUser` + best non-self attendee; attendee-owned → `.toUser` + matched attendee; unassigned items skipped.
+- **`OutcomeEngine.scanOpenCommitments()`** (new `OutcomeKind.commitment`): aggregates Sarah's overdue/due-soon commitments per counterparty into a single actionable outcome per person.
+- **`MeetingPrepCoordinator.AttendeeProfile.followThrough`**: attaches a `FollowThroughSummary` DTO with display-ready headline and coaching hint ("4 of 5 kept — Reliable: commitments here usually land. Move at their pace.") so pre-briefs name the person's track record before the meeting.
+
+### Block 4 — Impromptu Recording Review
+- `TranscriptSession` gained `calendarEventID`, `impromptuReviewShownAt/OutcomeRawValue/ReviewedAt`, usage signals (`summaryOpenedCount`, `producedNote`), and computed `isImpromptu` / `needsImpromptuReview`.
+- `ImpromptuReviewPayload` (Sendable/Identifiable, UUID id = sessionID) is posted on `.samOpenImpromptuReview` right after Block 3 commitment extraction.
+- `ImpromptuRecordingReviewView`: compact sheet with TLDR, `RecordingContext` segmented picker (clientMeeting/trainingLecture/boardMeeting), person picker, Approve/Skip/Discard row. Approve sets context + links person + calls `RetentionService.signOff`. Discard mirrors `TranscriptionReviewView.performDelete` (audio file + note + evidence + tombstone + session).
+- `TranscriptionReviewView` now bumps `summaryOpenedCount` on load and flips `producedNote = true` when a note is saved.
+
+### Meeting-Occurrence Review
+- New `EvidenceReviewStatus` on `SamEvidenceItem`: `pending` (surfaced for review) / `confirmed` / `cancelled` / `didNotHappen` / `rescheduled`. `countsAsOccurred` is false for the last three — `OutcomeEngine` stale-contact scan and `MeetingPrepCoordinator` interaction counts now skip non-occurrences so a calendar full of no-shows doesn't mask a truly stale relationship.
+- `DailyBriefingCoordinator.lastMeetingCheckTime` is now UserDefaults-persisted (first-launch seed = 24h back) so meetings that ended while SAM was closed still get surfaced. Surfaced events are marked `.pending`; multiple pending reviews roll up into a **single** consolidated "Meetings awaiting your review" outcome (sentinel key `sam.pendingMeetingReviews`) that updates in place and auto-completes when the queue drains.
+- `PostMeetingCaptureView` gained an **OccurrenceDecision** (happened / rescheduled / cancelled / didNotHappen) as the first question. Non-"happened" choices short-circuit the capture flow — evidence gets the status, sheet closes, no note created. Primary button label changes to match ("Save" / "Mark rescheduled" / "Mark cancelled" / "Mark no-show"). Supports a queue-walk mode with a "N remaining" badge.
+
+### Block 5 — App Lock Hardening
+- `AppLockService` now installs screen-lock observers in `configureOnLaunch()`: `com.apple.screenIsLocked` (distributed), `com.apple.screensaver.didstart` (distributed), `NSWorkspace.willSleepNotification`. Any of these triggers `lock()` if not already locked, closing auxiliary windows, dismissing sheets, and installing the key-event monitor.
+- On lock, `applyWindowSharingRestriction()` sets `NSWindow.sharingType = .none` on every app window — legacy `CGWindowList`-based recorders capture black instead of content. Restored to `.readOnly` on successful auth.
+- `LockGuardModifier` rewritten: the old `.ultraThinMaterial` blur was visually indistinct, so it's now a **glass-block wall** — a 96pt grid of independently-materialized `.regularMaterial` tiles with 2pt "grout" seams, SAM-logo palette (iceBlue `rgb(.88,.94,1)` / skyBlue `rgb(.62,.78,.96)`), deterministic per-tile pseudo-random tints, and gradient stroke borders (white → black) that read as glass edges. Because each tile samples its own patch of the content behind it, text crossing a seam refracts differently in each tile — unreadable but alive, like looking at SAM through a glass-block shower wall. Center card: app icon + "SAM is Locked" + "Click to unlock" on a `.thinMaterial` rounded card.
+- `PrivacyCurtainCoordinator` (briefly prototyped as a `.screenSaver`-level NSPanel curtain) was removed after testing — it added a second mechanism for no incremental value; folding the screen-lock observers directly into `AppLockService` covers the gap more simply.
+
+### Schema
+- `SAMSchema.models` now includes `SamCommitment.self`. `CommitmentRepository.shared.configure(container:)` is wired up in `SAMApp.task`. No migration required (purely additive — new model + new optional fields on existing models).
+
+---
+
 ## Lecture Summary Pipeline + Backfill (April 20, 2026)
 
 **What**: Ported the map-then-synthesize pipeline from `tools/summary-bench` into the main app and added a backfill path for sessions without a cached summary.

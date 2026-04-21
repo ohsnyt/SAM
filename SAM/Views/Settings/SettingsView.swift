@@ -1631,7 +1631,7 @@ struct SecuritySettingsContent: View {
                     .foregroundStyle(.secondary)
             }
 
-            Text("SAM always requires authentication on launch and after the idle timeout expires. All backups are encrypted with a passphrase.")
+            Text("SAM always requires authentication on launch, after the idle timeout expires, and whenever your Mac locks or the screensaver starts. All backups are encrypted with a passphrase.")
                 .samFont(.caption)
                 .foregroundStyle(.secondary)
         }

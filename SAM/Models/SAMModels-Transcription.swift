@@ -59,6 +59,25 @@ public nonisolated enum RecordingContext: String, Codable, Sendable, CaseIterabl
     public nonisolated var supportsPersonLinking: Bool { self != .trainingLecture }
 }
 
+// MARK: - ImpromptuReviewOutcome
+
+/// Resolution state for the lightweight review shown when an impromptu
+/// recording finishes summarization. Drives downstream retention and
+/// usage-signal aggregation.
+public enum ImpromptuReviewOutcome: String, Codable, Sendable, CaseIterable {
+    /// User has seen the prompt but not decided yet.
+    case pending
+    /// User confirmed the recording belongs in the record. Person linkage
+    /// and context were set; `RetentionService.signOff` was called.
+    case approved
+    /// User rejected the recording. Audio, segments, and session were deleted.
+    /// (The TranscriptSession row itself is usually gone at this point; a
+    /// tombstone carries the outcome forward for coaching.)
+    case discarded
+    /// User deferred a decision. Surface again on next app foreground.
+    case skipped
+}
+
 // MARK: - TranscriptSession
 
 /// A complete recording + transcription session, linked to events and people.
@@ -149,6 +168,40 @@ public final class TranscriptSession {
     /// Raw storage for RecordingContext enum. nil on legacy sessions → defaults to .clientMeeting.
     public var recordingContextRawValue: String?
 
+    /// EventKit `eventIdentifier` for the calendar event this recording covers.
+    /// Populated when Sarah started the recording from an upcoming-meeting row on the phone.
+    /// Lets the post-meeting capture flow surface "you already recorded this" and pre-fill
+    /// the summary instead of prompting her to type notes. nil for impromptu recordings.
+    public var calendarEventID: String?
+
+    // MARK: - Block 4: Impromptu review + usage signals
+    //
+    // When a recording finishes WITHOUT a calendar linkage we can't assume
+    // who it was with or what kind of conversation it was. These fields
+    // track the lightweight review the user does to resolve that, and
+    // whether the recording subsequently produced coachable follow-through.
+
+    /// When the impromptu review sheet was first surfaced. nil on
+    /// calendar-linked sessions and on impromptu sessions that never
+    /// reached the summary stage.
+    public var impromptuReviewShownAt: Date?
+
+    /// Raw storage for `ImpromptuReviewOutcome`. nil until the user
+    /// resolves the review.
+    public var impromptuReviewOutcomeRawValue: String?
+
+    /// When the user resolved the impromptu review (approved / discarded / skipped).
+    public var impromptuReviewedAt: Date?
+
+    /// Running count of times the session's summary view was opened.
+    /// Used as a usage signal — sessions Sarah never reopens are low-value
+    /// and can deprioritize future coaching nudges.
+    public var summaryOpenedCount: Int = 0
+
+    /// True once a `SamNote` has been linked to this session. Flipped by
+    /// the note-creation path so we don't need to fetch relations at read time.
+    public var producedNote: Bool = false
+
     // MARK: - Relationships
 
     @Relationship(deleteRule: .cascade, inverse: \TranscriptSegment.session)
@@ -175,6 +228,28 @@ public final class TranscriptSession {
     public var recordingContext: RecordingContext {
         get { RecordingContext(rawValue: recordingContextRawValue ?? "") ?? .clientMeeting }
         set { recordingContextRawValue = newValue.rawValue }
+    }
+
+    /// Typed accessor for the impromptu review outcome.
+    @Transient
+    public var impromptuReviewOutcome: ImpromptuReviewOutcome? {
+        get { impromptuReviewOutcomeRawValue.flatMap { ImpromptuReviewOutcome(rawValue: $0) } }
+        set { impromptuReviewOutcomeRawValue = newValue?.rawValue }
+    }
+
+    /// True when the session has no calendar linkage — Sarah started this
+    /// ad-hoc and needs to tell SAM who/what it was about.
+    @Transient
+    public var isImpromptu: Bool {
+        (calendarEventID?.isEmpty ?? true) && linkedEvent == nil
+    }
+
+    /// True when an impromptu review is still pending resolution.
+    @Transient
+    public var needsImpromptuReview: Bool {
+        isImpromptu
+        && (impromptuReviewOutcome == nil || impromptuReviewOutcome == .pending)
+        && summaryGeneratedAt != nil
     }
 
     /// Sorted segments by start time.
@@ -208,7 +283,8 @@ public final class TranscriptSession {
         polishedAt: Date? = nil,
         signedOffAt: Date? = nil,
         audioPurgedAt: Date? = nil,
-        pinAudioRetention: Bool = false
+        pinAudioRetention: Bool = false,
+        calendarEventID: String? = nil
     ) {
         self.id = id
         self.recordedAt = recordedAt
@@ -227,6 +303,7 @@ public final class TranscriptSession {
         self.signedOffAt = signedOffAt
         self.audioPurgedAt = audioPurgedAt
         self.pinAudioRetention = pinAudioRetention
+        self.calendarEventID = calendarEventID
     }
 }
 

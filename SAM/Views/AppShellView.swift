@@ -23,6 +23,7 @@ struct AppShellView: View {
     @State private var selectedPersonID: UUID?
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var capturePayload: CapturePayload?
+    @State private var impromptuReviewPayload: ImpromptuReviewPayload?
     @State private var showCommandPalette = false
     @State private var introCoordinator = IntroSequenceCoordinator.shared
     @State private var noteAnalysisCoordinator = NoteAnalysisCoordinator.shared
@@ -69,6 +70,7 @@ struct AppShellView: View {
             sidebarSelection: $sidebarSelection,
             selectedPersonID: $selectedPersonID,
             capturePayload: $capturePayload,
+            impromptuReviewPayload: $impromptuReviewPayload,
             peopleMode: $peopleMode,
             openWindow: openWindow
         ))
@@ -77,6 +79,9 @@ struct AppShellView: View {
                 payload: payload,
                 onSave: {}
             )
+        }
+        .sheet(item: $impromptuReviewPayload) { payload in
+            ImpromptuRecordingReviewView(payload: payload)
         }
         .sheet(isPresented: $showCommandPalette) {
             CommandPaletteView(
@@ -332,6 +337,7 @@ private struct AppShellNotificationHandlers: ViewModifier {
     @Binding var sidebarSelection: String
     @Binding var selectedPersonID: UUID?
     @Binding var capturePayload: CapturePayload?
+    @Binding var impromptuReviewPayload: ImpromptuReviewPayload?
     @Binding var peopleMode: AppShellView.PeopleMode
     let openWindow: OpenWindowAction
 
@@ -352,6 +358,11 @@ private struct AppShellNotificationHandlers: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: .samOpenPostMeetingCapture)) { notification in
                 if let payload = notification.userInfo?["payload"] as? CapturePayload {
                     capturePayload = payload
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .samOpenImpromptuReview)) { notification in
+                if let payload = notification.userInfo?["payload"] as? ImpromptuReviewPayload {
+                    impromptuReviewPayload = payload
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .samNavigateToGraph)) { notification in

@@ -148,6 +148,12 @@ final class MeetingCaptureCoordinator {
     /// Calendar-matched meetings always use .clientMeeting.
     var expectedRecordingContext: RecordingContext = .clientMeeting
 
+    /// EventKit `eventIdentifier` for the calendar event being recorded. Populated when
+    /// Sarah starts the recording from an upcoming-meeting row. Threaded through the
+    /// session-start metadata and the pending-upload metadata so the Mac can link the
+    /// resulting TranscriptSession back to the right SamEvidenceItem. nil for impromptu.
+    var expectedCalendarEventID: String? = nil
+
     /// Model container — needed to create PendingUpload records and so
     /// PendingUploadService can enumerate + upload them.
     private var modelContainer: ModelContainer?
@@ -471,7 +477,8 @@ final class MeetingCaptureCoordinator {
                     channels: UInt16(recordingService.channelCount),
                     expectedSpeakerCount: expectedSpeakerCount,
                     speakerNames: expectedSpeakerNames,
-                    recordingContext: expectedRecordingContext
+                    recordingContext: expectedRecordingContext,
+                    calendarEventID: expectedCalendarEventID
                 )
             }
 
@@ -594,7 +601,8 @@ final class MeetingCaptureCoordinator {
             durationSeconds: recordingService.elapsedTime,
             sampleRate: recordingService.sampleRate,
             channelCount: recordingService.channelCount,
-            recordingContext: expectedRecordingContext
+            recordingContext: expectedRecordingContext,
+            calendarEventID: expectedCalendarEventID
         )
         logger.info("Enqueued session \(sessionID.uuidString) for upload (\(String(format: "%.1f", self.recordingService.elapsedTime))s local)")
     }

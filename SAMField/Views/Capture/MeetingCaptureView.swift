@@ -20,6 +20,10 @@ struct MeetingCaptureView: View {
     /// Parallel array to speakerNames — CNContact thumbnail data (nil = use default icon).
     @State private var speakerThumbnails: [Data?] = [nil, nil]
     @State private var upcomingMeetingTitle: String? = nil
+    /// EventKit `eventIdentifier` for the matched upcoming meeting. Threaded into the
+    /// recording's session-start metadata so the Mac can link the transcript back to
+    /// the right SamEvidenceItem. Cleared alongside `upcomingMeetingTitle`.
+    @State private var upcomingMeetingEventID: String? = nil
     @State private var hasCheckedCalendar = false
     @State private var showEditParticipants = false
     /// Recording context chosen by the user. Hidden for calendar-matched meetings (always .clientMeeting).
@@ -140,6 +144,7 @@ struct MeetingCaptureView: View {
                 hasCheckedCalendar = true
                 if let meeting = FieldCalendarService.shared.upcomingMeeting() {
                     upcomingMeetingTitle = meeting.title
+                    upcomingMeetingEventID = meeting.id
                     // Use attendee names directly from the calendar event.
                     // The user (organizer) is already in the attendee list
                     // so we don't add "You (Agent)" separately.
@@ -163,6 +168,7 @@ struct MeetingCaptureView: View {
             if newState == .connected && !hasCheckedCalendar {
                 if let meeting = FieldCalendarService.shared.upcomingMeeting() {
                     upcomingMeetingTitle = meeting.title
+                    upcomingMeetingEventID = meeting.id
                     let names = meeting.attendeeNames
                     if !names.isEmpty {
                         speakerNames = names
@@ -658,6 +664,7 @@ struct MeetingCaptureView: View {
                 coordinator.expectedSpeakerCount = selectedContext == .trainingLecture ? 1 : speakerCount
                 coordinator.expectedSpeakerNames = selectedContext == .trainingLecture ? [] : speakerNames
                 coordinator.expectedRecordingContext = upcomingMeetingTitle != nil ? .clientMeeting : selectedContext
+                coordinator.expectedCalendarEventID = upcomingMeetingEventID
                 coordinator.startRecording()
             } label: {
                 Label("Start Recording", systemImage: "record.circle")
@@ -771,6 +778,7 @@ struct MeetingCaptureView: View {
                     coordinator.expectedSpeakerCount = selectedContext == .trainingLecture ? 1 : speakerCount
                     coordinator.expectedSpeakerNames = selectedContext == .trainingLecture ? [] : speakerNames
                     coordinator.expectedRecordingContext = upcomingMeetingTitle != nil ? .clientMeeting : selectedContext
+                    coordinator.expectedCalendarEventID = upcomingMeetingEventID
                     coordinator.startRecording()
                 } label: {
                     ZStack {
