@@ -44,7 +44,10 @@ command line:
 ```bash
 # Example — populate the cache for Qwen 3 8B and Qwen 3.5 9B
 hf download mlx-community/Qwen3-8B-4bit
-hf download mlx-community/Qwen3.5-9B-Instruct-4bit
+hf download mlx-community/Qwen3.5-9B-MLX-4bit
+# Optional: OptiQ mixed-precision variant — same 4-bit budget, spends
+# extra bits on the layers that matter most for precise recall.
+hf download mlx-community/Qwen3.5-9B-OptiQ-4bit
 ```
 
 ## Usage
@@ -56,7 +59,7 @@ swift build -c release
 # Two-model comparison (recommended — also writes unified diffs between
 # the two polished outputs for each fixture)
 ./.build/release/polish-bench \
-  --models mlx-community/Qwen3-8B-4bit,mlx-community/Qwen3.5-9B-Instruct-4bit
+  --models mlx-community/Qwen3-8B-4bit,mlx-community/Qwen3.5-9B-MLX-4bit
 
 # Single-model baseline (no diffs, just metrics)
 ./.build/release/polish-bench \
