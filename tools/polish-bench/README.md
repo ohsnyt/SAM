@@ -52,25 +52,35 @@ hf download mlx-community/Qwen3.5-9B-OptiQ-4bit
 
 ## Usage
 
+Build via `xcodebuild`, **not** `swift build` — MLX's Metal shaders only
+compile through the Xcode build system (per the mlx-swift README). The
+`build.sh` wrapper does this and drops the binary + `mlx-swift_Cmlx.bundle`
+(which contains `default.metallib`) into `./build/`:
+
 ```bash
 cd tools/polish-bench
-swift build -c release
+./build.sh
 
 # Two-model comparison (recommended — also writes unified diffs between
 # the two polished outputs for each fixture)
-./.build/release/polish-bench \
+./build/polish-bench \
   --models mlx-community/Qwen3-8B-4bit,mlx-community/Qwen3.5-9B-MLX-4bit
 
 # Single-model baseline (no diffs, just metrics)
-./.build/release/polish-bench \
+./build/polish-bench \
   --models mlx-community/Qwen3-8B-4bit
 
 # Custom fixtures or output dir
-./.build/release/polish-bench \
+./build/polish-bench \
   --models mlx-community/Qwen3-8B-4bit \
   --fixtures ~/my-transcripts \
   --output  ~/Desktop/polish-run
 ```
+
+> If you see `MLX error: Failed to load the default metallib`, you built
+> with `swift build` instead of `./build.sh`. The executable needs the
+> sibling `mlx-swift_Cmlx.bundle` next to it — that's why the wrapper
+> copies both into `./build/`.
 
 ## Output layout
 
