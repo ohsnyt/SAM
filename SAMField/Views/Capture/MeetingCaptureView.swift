@@ -997,7 +997,7 @@ struct MeetingCaptureView: View {
                     selectedContext = .clientMeeting
                     coordinator.recordAgain()
                 } label: {
-                    Label(selectedContext == .trainingLecture ? "Record Another Training" : selectedContext == .boardMeeting ? "Record Another Board Meeting" : "Record Another Meeting", systemImage: "record.circle")
+                    Label("Record Another \(selectedContext.displayName)", systemImage: "record.circle")
                         .font(.title3)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 4)

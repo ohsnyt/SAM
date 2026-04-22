@@ -126,7 +126,7 @@ struct ImpromptuRecordingReviewView: View {
                     Label(ctx.displayName, systemImage: ctx.systemIcon).tag(ctx)
                 }
             }
-            .pickerStyle(.segmented)
+            .pickerStyle(.menu)
             .labelsHidden()
         }
     }
