@@ -57,9 +57,12 @@ enum MeetingSummaryPrinter {
     private static func printJobTitle(for session: TranscriptSession) -> String {
         let prefix: String
         switch session.recordingContext {
-        case .trainingLecture: prefix = "Lecture Summary"
-        case .boardMeeting:    prefix = "Board Minutes"
-        case .clientMeeting:   prefix = "Meeting Summary"
+        case .trainingLecture:     prefix = "Lecture Summary"
+        case .boardMeeting:        prefix = "Board Minutes"
+        case .prospectingCall:     prefix = "Prospecting Call"
+        case .recruitingInterview: prefix = "Recruiting Interview"
+        case .annualReview:        prefix = "Annual Review"
+        case .clientMeeting:       prefix = "Meeting Summary"
         }
         let dateFormatter = DateFormatter()
         dateFormatter.dateStyle = .medium
@@ -132,6 +135,30 @@ enum MeetingSummaryPrinter {
             output.append(sectionHeader("Compliance Review"))
             for flag in summary.complianceFlags {
                 output.append(bullet(flag))
+            }
+        }
+
+        // Compliance strengths (counterweight to flags)
+        if !summary.complianceStrengths.isEmpty {
+            output.append(sectionHeader("Compliance Strengths"))
+            for item in summary.complianceStrengths {
+                output.append(bullet(item))
+            }
+        }
+
+        // Retention signals (client retention risk)
+        if !summary.retentionSignals.isEmpty {
+            output.append(sectionHeader("Retention Signals"))
+            for signal in summary.retentionSignals {
+                output.append(bullet(signal))
+            }
+        }
+
+        // Numerical reframing (auditable original → revised figure pairs)
+        if !summary.numericalReframing.isEmpty {
+            output.append(sectionHeader("Numerical Reframing"))
+            for reframe in summary.numericalReframing {
+                output.append(bullet(reframe))
             }
         }
 

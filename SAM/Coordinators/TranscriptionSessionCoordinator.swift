@@ -1299,9 +1299,12 @@ final class TranscriptionSessionCoordinator {
             let titleDate = session.recordedAt.formatted(date: .abbreviated, time: .shortened)
             let evidenceTitle: String
             switch session.recordingContext {
-            case .clientMeeting:   evidenceTitle = "Meeting transcript — \(titleDate)"
-            case .trainingLecture: evidenceTitle = "Training recording — \(titleDate)"
-            case .boardMeeting:    evidenceTitle = "Board meeting recording — \(titleDate)"
+            case .clientMeeting:       evidenceTitle = "Meeting transcript — \(titleDate)"
+            case .prospectingCall:     evidenceTitle = "Prospecting call — \(titleDate)"
+            case .recruitingInterview: evidenceTitle = "Recruiting interview — \(titleDate)"
+            case .annualReview:        evidenceTitle = "Annual review — \(titleDate)"
+            case .trainingLecture:     evidenceTitle = "Training recording — \(titleDate)"
+            case .boardMeeting:        evidenceTitle = "Board meeting recording — \(titleDate)"
             }
 
             // Create SamEvidenceItem with meetingTranscript source

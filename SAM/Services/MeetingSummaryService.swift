@@ -476,8 +476,19 @@ actor MeetingSummaryService {
         switch context {
         case .clientMeeting:
             return clientMeetingInstruction()
+        case .prospectingCall:
+            let custom = UserDefaults.standard.string(forKey: "sam.ai.prospectingSummaryPrompt") ?? ""
+            if !custom.isEmpty { return custom }
+            return prospectingCallInstruction()
+        case .recruitingInterview:
+            let custom = UserDefaults.standard.string(forKey: "sam.ai.recruitingSummaryPrompt") ?? ""
+            if !custom.isEmpty { return custom }
+            return recruitingInterviewInstruction()
+        case .annualReview:
+            let custom = UserDefaults.standard.string(forKey: "sam.ai.annualReviewSummaryPrompt") ?? ""
+            if !custom.isEmpty { return custom }
+            return annualReviewInstruction()
         case .trainingLecture:
-            // Allow user override via Settings
             let custom = UserDefaults.standard.string(forKey: "sam.ai.trainingSummaryPrompt") ?? ""
             if !custom.isEmpty { return custom }
             return trainingLectureInstruction()
@@ -573,6 +584,28 @@ actor MeetingSummaryService {
 
         \(complianceSection)
 
+        - retentionSignals: Verbatim client quotes signaling retention risk — \
+          considering another advisor, consulting outside the relationship, \
+          surrendering a policy out of dissatisfaction, or "stewing". Preserve \
+          specific days ("Saturday"), other advisor/firm names, and phrases \
+          like "stewing" or "talked to someone else". Business-critical — the \
+          advisor needs these anchors to act on retention risk. Empty array \
+          if none.
+
+        - numericalReframing: When the advisor revises a prior figure (return, \
+          premium, timeline, amount), preserve BOTH the original number AND \
+          the revised number verbatim in the same entry. Do not soften to \
+          "the advisor clarified". Worked example: if the advisor said her \
+          2022 messaging suggested 8-10% but a realistic long-term average is \
+          5-6%, emit one entry containing both figures exactly as stated. \
+          Empty array if none.
+
+        - complianceStrengths: Compliance-positive behaviors as a counterweight \
+          to complianceFlags — explicit commission disclosure, refusals to \
+          guarantee returns, hedging that corrects inflated expectations, \
+          no-pressure framing, explicit acknowledgment of prior messaging \
+          errors. Empty array if none.
+
         - sentiment: Optional brief phrase describing the tone (e.g. "warm \
           and trusting", "cautious", "grieving").
 
@@ -587,8 +620,188 @@ actor MeetingSummaryService {
           "lifeEvents": ["<string>", ...],
           "topics": ["<string>", ...],
           "complianceFlags": ["<string>", ...],
+          "retentionSignals": ["<string>", ...],
+          "numericalReframing": ["<string>", ...],
+          "complianceStrengths": ["<string>", ...],
           "sentiment": "<string or null>"
         }
+        """
+    }
+
+    // MARK: - Prospecting Call Instruction
+
+    private static func prospectingCallInstruction() -> String {
+        """
+        Summarize this prospecting call between a financial advisor and a prospective \
+        client. The advisor will use this to remember who the prospect is, where they \
+        came from, what they need, and what was committed to next. Every value must \
+        come from the transcript -- never invent names, employers, dates, or content.
+
+        FIELDS
+        - title: 2-5 words, Title Case (e.g. "Warm Prospecting Call").
+        - tldr: 1-3 sentences. Name the prospect and the referral source. State the \
+          next meeting scheduled and the purpose of the call. Do not be generic.
+        - decisions: commitments reached (next meeting scheduled, follow-up session \
+          scheduled, no-obligation framing). Include the next session's date and time \
+          using the wording the parties used ("Saturday the 7th at 9:30").
+        - actionItems: {task, owner, dueDate}. Include EVERY artifact the advisor \
+          promised to send (invite, intake form, follow-up email) and every commitment \
+          the prospect made (complete form, bring spouse, return by deadline).
+        - openQuestions: things the prospect raised that were not resolved.
+        - followUps: {person, reason}. Use this for the referral chain — the person \
+          who referred the prospect goes here with their relationship to the prospect.
+        - lifeEvents: births, deaths, marriages, job changes, home purchases, moves, \
+          new schooling — these often underlie why the prospect picked up the phone. \
+          Include verbatim if mentioned.
+        - topics: 2-6 short tags. Include the prospect's employer(s), existing plans \
+          (401k, SEP, group benefits), and household composition as topics so this \
+          profile isn't lost.
+        - complianceFlags: any promises about returns, guarantees, definitive claims \
+          about other advisors or products, or product-pitching on a first call. \
+          Quote the offending phrase. Empty if none.
+        - sentiment: brief tone phrase or null.
+
+        ADDITIONAL FIELDS
+
+        - retentionSignals: empty for a first-time prospecting call.
+        - numericalReframing: only if the advisor revised a prior figure for the \
+          prospect; usually empty.
+        - complianceStrengths: compliance-positive behaviors — explicit commission \
+          disclosure ("commissions will be shown"), no-obligation / no-pressure \
+          framing, refusals to pitch product on a first call, hedging statements \
+          like "I'd rather not sell you something wrong than sell you anything at \
+          all". On a prospecting call the advisor's disclosure posture IS the \
+          compliance record — capture it.
+
+        GROUNDING
+        Every name, employer, plan, and figure must literally appear in the \
+        transcript. Preserve specific days-of-week, times, dollar amounts, and \
+        employer names verbatim. Never synthesize a calendar date the transcript \
+        does not state. Attribute concerns to the prospect and commitments to the \
+        correct party.
+        """
+    }
+
+    // MARK: - Recruiting Interview Instruction
+
+    private static func recruitingInterviewInstruction() -> String {
+        """
+        Summarize this recruiting conversation between a financial advisor and a \
+        prospective agent. The advisor will use this to recall the candidate's \
+        situation, objections, and the next steps. Every value must come from the \
+        transcript -- never invent names, income figures, or commitments.
+
+        FIELDS
+        - title: 2-5 words, Title Case (e.g. "Recruiting Conversation").
+        - tldr: 1-3 sentences. Name the candidate and the referral source. State \
+          the candidate's current situation briefly and the next step scheduled.
+        - decisions: commitments reached (next meeting / BPM scheduled, candidate \
+          bringing spouse, any topic explicitly deferred). Use the wording the \
+          parties used for dates and times.
+        - actionItems: {task, owner, dueDate}. Include EVERY artifact the advisor \
+          promised (onboarding outline, compensation overview, BPM invite) and \
+          every commitment the candidate made (bring spouse, contact coworker, \
+          complete a step by a deadline). Every warm-market referral the \
+          candidate offered is an action item for that introduction.
+        - openQuestions: unresolved items, especially ones requiring a spouse or \
+          family decision.
+        - followUps: {person, reason}. Use this for the referral source who sent \
+          the candidate and for any warm-market leads the candidate offered.
+        - lifeEvents: births, deaths, diagnoses, marriages, job changes, moves, \
+          new schooling. Candidates' motivations often trace to a recent life \
+          event — include if mentioned.
+        - topics: 2-6 short tags. Include the candidate's current employer/role, \
+          licensing requirements discussed, compensation structure, onboarding \
+          timeline, and specific objections raised (e.g. "MLM concern", "time \
+          commitment", "year-one income"). These tags carry the recruiting \
+          content that would otherwise be lost.
+        - complianceFlags: any definitive income promises, guarantees of outcome, \
+          or unhedged claims about how much the candidate will earn. Quote the \
+          offending phrase. Empty if the advisor hedged appropriately.
+        - sentiment: brief tone phrase or null.
+
+        ADDITIONAL FIELDS
+
+        - retentionSignals: empty for a recruiting interview.
+        - numericalReframing: only if the advisor revised a prior figure \
+          (compensation estimate, timeline). Preserve both numbers verbatim.
+        - complianceStrengths: compliance-positive behaviors — explicit income \
+          hedging ("most people earn nothing in year one", "this is not \
+          guaranteed"), disclosure of licensing costs and time commitment, \
+          acknowledgment of risk or failure rates, refusals to promise outcomes. \
+          The advisor's hedging posture IS the compliance record for a \
+          recruiting conversation — capture it.
+
+        GROUNDING
+        Every name, employer, dollar figure, and date must literally appear in \
+        the transcript. Preserve specific days-of-week, times, and licensing \
+        costs verbatim. Never synthesize a calendar date the transcript does \
+        not state. Attribute concerns to the candidate and responses to the \
+        advisor.
+        """
+    }
+
+    // MARK: - Annual Review Instruction
+
+    private static func annualReviewInstruction() -> String {
+        """
+        Summarize this annual review meeting between a financial advisor and a \
+        client. An annual review is a client meeting with a wider lens — prior \
+        year's policies and decisions, updated life circumstances, progress \
+        against stated goals, revised projections, and plans for the coming \
+        year. Every value must come from the transcript -- never invent content.
+
+        FIELDS
+        - title: 2-5 words, Title Case (e.g. "Annual Review, 2026").
+        - tldr: 1-3 sentences. Name the client and the most consequential \
+          change year-over-year — a goal met or missed, a new policy added, \
+          a life event that reshapes the plan, or a revised projection.
+        - decisions: commitments reached — policy changes approved, beneficiary \
+          updates, contribution changes, decisions to defer or continue. Use \
+          verbatim language for dates and dollar amounts.
+        - actionItems: {task, owner, dueDate}. Every task either party \
+          committed to before the next review. Include illustrations, quotes, \
+          applications, medical exam scheduling, beneficiary-update forms, \
+          client document-gathering tasks.
+        - openQuestions: items the client raised that need more information or \
+          a partner/spouse decision.
+        - followUps: {person, reason}. Relationship check-ins or referrals \
+          from the client worth noting here.
+        - lifeEvents: changes since the last review — births, deaths, \
+          marriages, divorces, job changes, retirements, moves, health events, \
+          college transitions. These drive much of the review's agenda.
+        - topics: 3-8 short tags covering what was reviewed (e.g. "term life", \
+          "college savings", "retirement projection", "estate beneficiaries").
+        - complianceFlags: any guarantees, comparative-performance claims, or \
+          definitive projections made by the advisor. Annual reviews often \
+          revisit past projections — flag any that the advisor now states as \
+          certainties. Quote the phrase. Empty if none.
+        - sentiment: brief tone phrase or null.
+
+        ADDITIONAL FIELDS
+
+        - retentionSignals: verbatim client quotes about consulting another \
+          advisor, considering surrendering a policy, "stewing" on a prior \
+          recommendation, or shopping the relationship. Annual reviews are \
+          prime retention-risk moments — capture these even if the client \
+          ultimately committed to continue.
+        - numericalReframing: when the advisor revises a prior-year figure \
+          (last year's return expectation, a quoted premium, a timeline, a \
+          projected account balance), preserve BOTH the original number AND \
+          the revised number verbatim in one entry. Year-over-year reviews \
+          produce these often — do not soften to "the advisor updated the \
+          projection".
+        - complianceStrengths: compliance-positive behaviors — explicit \
+          commission disclosure on any new product discussed, refusals to \
+          guarantee returns, hedging that corrects an inflated prior \
+          expectation, acknowledgment that a previous year's messaging was \
+          too optimistic, no-pressure framing around changes.
+
+        GROUNDING
+        Every name, dollar amount, carrier name, and date must literally \
+        appear in the transcript. Preserve year-over-year figures exactly. \
+        Never synthesize a calendar date. Attribute retention concerns to the \
+        client and reframes to the advisor.
         """
     }
 
@@ -596,62 +809,61 @@ actor MeetingSummaryService {
 
     private static func trainingLectureInstruction() -> String {
         """
-        You extract learning content from training session or lecture transcripts. \
-        Output ONLY a JSON object matching the exact schema below. Every value you \
-        emit must come from the transcript -- NEVER invent content.
+        Summarize this training session, lecture, or teaching transcript for a \
+        financial advisor who attended. The advisor will use this summary to \
+        review what was taught and act on the takeaways. Every value must come \
+        from the transcript -- never invent content.
 
-        CRITICAL OUTPUT RULES
-        - Respond with ONLY a raw JSON object starting with { and ending with }.
-        - Do NOT wrap the JSON in markdown code blocks or prose.
-        - Use ONLY ASCII characters (no smart quotes, no em-dashes).
-        - If the transcript does not contain something for a field, use an \
-          empty string or empty array. NEVER fill fields with invented content.
+        FIELDS
+        - title: 2-5 words, Title Case (e.g. "Needs-Based Selling Training").
+        - tldr: 1-3 sentences. Name the instructor if stated and the session's \
+          central thesis. State the single most important takeaway.
+        - decisions: commitments the attendee(s) made during the session \
+          (e.g. "commit to running two needs-based interviews this week"). \
+          Empty if the session was purely informational.
+        - actionItems: {task, owner, dueDate}. Any practice exercises, homework, \
+          study assignments, or follow-up reading the instructor assigned, \
+          including deadlines where stated.
+        - openQuestions: questions raised by attendees that were not resolved.
+        - followUps: {person, reason}. Mentors, coaches, or peers the instructor \
+          suggested the attendee connect with. Empty if none.
+        - lifeEvents: usually empty for training content.
+        - topics: 3-8 short tags covering the session's core subjects (e.g. \
+          "needs-based selling", "objection handling", "referral scripting"). \
+          This should be one of the richest fields for a training session.
+        - complianceFlags: any content that would be compliance-inappropriate to \
+          repeat with a client (guaranteed-return claims, comparative performance \
+          language, rebating suggestions). Quote the offending phrase. Empty if \
+          the training was compliant.
+        - sentiment: brief tone phrase or null.
 
-        GROUNDING RULES
-        - Every point, objective, topic, and quote must be explicitly \
-          present in the transcript. Do not paraphrase in ways that add information.
-        - When in doubt, leave fields empty.
+        ADDITIONAL FIELDS
 
-        FIELD DEFINITIONS
-
-        - title: 2-5 word title capturing the central subject of the lecture \
-          (e.g. "Intro to IUL", "Client Objection Handling"). Title case. \
-          No trailing punctuation.
-
-        - tldr: 2-3 sentences summarizing what this training or lecture covered \
-          and the central lesson or skill it aimed to develop.
-
-        - keyPoints: The most important takeaways from the session. Each entry \
-          is one complete sentence capturing a single insight, concept, or fact \
-          the listener should remember. Aim for 4-8 entries for a full session.
-
-        - learningObjectives: What this training or lecture explicitly aimed to \
-          teach. If the presenter stated goals or outcomes, use those. Otherwise \
-          infer from the content. Each entry is one sentence.
-
+        - keyPoints: 5-10 verbatim or near-verbatim claims the instructor made. \
+          This is the heart of the training summary. Every substantive idea the \
+          instructor asserted (a technique, a rule, a statistic, a script \
+          snippet) should appear here. Preserve specific numbers and named \
+          techniques verbatim.
+        - learningObjectives: 3-6 short sentences describing what attendees are \
+          expected to be able to DO after the session — outcomes, not topics. \
+          (e.g. "Run a needs-based interview without leading with product", "Use \
+          the three-question referral ask at the close of a meeting".)
         - reviewNotes: A single prose paragraph (3-6 sentences) that a learner \
           could read to quickly review the core concepts covered. Write it as a \
           study aid, not a transcript summary. Connect the key ideas and explain \
           why they matter.
+        - retentionSignals: empty for a training session.
+        - numericalReframing: if the instructor corrected an earlier number \
+          (e.g. a historical average or typical outcome), preserve both figures.
+        - complianceStrengths: compliance-positive content the instructor \
+          modeled — hedged income claims, proper disclosure framing, refusals \
+          to promise outcomes. These are teaching moments; capture them.
 
-        - topics: Short topic tags (1-4 words each) describing subjects covered. \
-          Include 2-8 tags for a full session.
-
-        - actionItems: Follow-up study or practice tasks the presenter assigned \
-          or that naturally follow from the content. Each has { task, owner, dueDate }. \
-          owner is null (self-directed). dueDate is free text if mentioned. \
-          If no tasks were assigned, return an empty array.
-
-        JSON SCHEMA (structure only)
-        {
-          "title": "<string>",
-          "tldr": "<string>",
-          "keyPoints": ["<string>", ...],
-          "learningObjectives": ["<string>", ...],
-          "reviewNotes": "<string>",
-          "topics": ["<string>", ...],
-          "actionItems": [{"task": "<string>", "owner": null, "dueDate": "<string or null>"}, ...]
-        }
+        GROUNDING
+        Every name, figure, technique, and statistic must literally appear in \
+        the transcript. Preserve specific percentages, dollar amounts, and \
+        named frameworks verbatim. Attribute statements to the instructor unless \
+        the transcript clearly marks them as an attendee question or remark.
         """
     }
 
@@ -659,99 +871,67 @@ actor MeetingSummaryService {
 
     private static func boardMeetingInstruction() -> String {
         """
-        You extract structured governance records from board meeting transcripts. \
-        Output ONLY a JSON object matching the exact schema below. Every value you \
-        emit must come from the transcript -- NEVER invent people, motions, \
-        outcomes, or any other content.
+        Summarize this board meeting or governance meeting transcript. The \
+        output is a formal record -- verbatim motion language, named attendees, \
+        agenda items with outcomes, votes with movers and seconders. Every \
+        value must come from the transcript -- never invent content, names, or \
+        motions.
 
-        CRITICAL OUTPUT RULES
-        - Respond with ONLY a raw JSON object starting with { and ending with }.
-        - Do NOT wrap the JSON in markdown code blocks or prose.
-        - Use ONLY ASCII characters (no smart quotes, no em-dashes).
-        - If the transcript does not contain something for a field, use an \
-          empty string or empty array. NEVER fill fields with invented content.
-        - Use names exactly as they appear in the transcript.
+        FIELDS
+        - title: 2-5 words, Title Case, ideally naming the body (e.g. "Board \
+          Meeting, April 2026", "Finance Committee").
+        - tldr: 1-3 sentences. Name the chairperson if stated and the most \
+          consequential decision or motion passed. State whether the meeting \
+          concluded with quorum intact.
+        - decisions: commitments and resolutions reached — name the motion if \
+          tied to a vote, and any non-vote decisions (e.g. "deferred the budget \
+          discussion to next session"). Empty only if the meeting adjourned \
+          without any.
+        - actionItems: {task, owner, dueDate}. Every assignment given to a \
+          member or committee. Name the owner explicitly (use the person's \
+          name, not "Board"). Include due dates and report-back deadlines.
+        - openQuestions: matters tabled, deferred, or unresolved at adjournment.
+        - followUps: {person, reason}. Members the chair asked to take \
+          something offline, meet with a subcommittee, or connect with another \
+          member. Empty if none.
+        - lifeEvents: usually empty unless a member announced a life change \
+          (retirement from the board, illness, death of a member).
+        - topics: 3-8 short tags covering the agenda subjects discussed.
+        - complianceFlags: governance issues — conflicts of interest not \
+          disclosed, improper executive session usage, voting irregularities, \
+          unauthorized commitments. Quote the phrase. Empty if the meeting \
+          was procedurally clean.
+        - sentiment: brief tone phrase or null.
 
-        GROUNDING RULES
-        - Every name, motion, decision, vote result, and date must be \
-          explicitly present in the transcript.
-        - Do not infer votes not stated. If a vote outcome is unclear, use \
-          result: "Unclear" and add a note.
-        - When in doubt, leave fields empty.
+        ADDITIONAL FIELDS
 
-        FIELD DEFINITIONS
+        - attendees: every named board member, officer, or staff member \
+          recorded as present. Preserve first + last names exactly as spoken. \
+          The chair and secretary should appear here.
+        - agendaItems: {title, summary, outcome, notes}. One entry per agenda \
+          item discussed. title is 2-4 words (e.g. "Q1 Budget Review"). \
+          summary is 1-2 sentences on what was discussed. outcome is the \
+          resolution ("approved", "tabled", "referred to committee", "no \
+          action"). notes is optional discussion color. Include EVERY agenda \
+          item the transcript addresses.
+        - votes: {motion, movedBy, secondedBy, result, notes}. One entry per \
+          formal motion voted on. motion is verbatim or near-verbatim motion \
+          language ("Motion to approve the 2026 operating budget as \
+          presented"). movedBy and secondedBy are the member names. result \
+          is "passed", "failed", "tabled", or "withdrawn". notes captures \
+          vote tallies ("7 in favor, 1 opposed, 1 abstained") if stated.
+        - retentionSignals: empty for a board meeting.
+        - numericalReframing: empty unless a budget or projection was revised \
+          in-session — preserve both figures if so.
+        - complianceStrengths: procedurally correct behavior worth noting — \
+          explicit conflict-of-interest disclosures, proper recusal, call for \
+          executive session handled by the bylaws.
 
-        - title: 2-5 word title for the meeting, typically the organization and \
-          meeting type (e.g. "Q1 Board Meeting", "Audit Committee Session"). \
-          Title case. No trailing punctuation.
-
-        - tldr: 2-3 sentences summarizing the meeting: who attended, the \
-          main business conducted, and any significant decisions made.
-
-        - attendees: Names of all people identified as present. Use names \
-          exactly as they appear. If a quorum call or roll call is present, \
-          use those names.
-
-        - agendaItems: Each formal topic brought before the board. Each has:
-            title: The agenda item name or topic heading (1-8 words).
-            summary: 1-2 sentences describing what was discussed under \
-              this item and any key points raised.
-            outcome: "Approved", "Rejected", "Tabled", "Deferred", \
-              "Discussed" (no formal action), or null if not stated.
-            notes: Optional additional context (motion text, conditions, \
-              dissenting views). null if none.
-
-        - votes: Each formal vote taken, even if already captured in \
-          agendaItems. Each has:
-            motion: The exact text of the motion or a close paraphrase \
-              from the transcript.
-            movedBy: Name of who moved the motion. null if not stated.
-            secondedBy: Name of who seconded. null if not stated.
-            result: "Passed", "Failed", "Tabled", "Withdrawn", \
-              "No vote taken", or "Unclear".
-            notes: Optional (e.g. vote count, conditions). null if none.
-
-        - decisions: Formal decisions or resolutions adopted, as short \
-          declarative statements. Draws from approved agenda items and \
-          passed votes. May overlap with agendaItems -- include both.
-
-        - actionItems: Tasks assigned during the meeting. Each has \
-          { task, owner, dueDate }. owner is the name from the transcript \
-          or null. dueDate is free text or null.
-
-        - openQuestions: Items raised but not resolved or deferred for \
-          future meetings.
-
-        - topics: Short topic tags (1-4 words) for search and filing. \
-          Include 2-8 tags.
-
-        JSON SCHEMA (structure only)
-        {
-          "title": "<string>",
-          "tldr": "<string>",
-          "attendees": ["<string>", ...],
-          "agendaItems": [
-            {
-              "title": "<string>",
-              "summary": "<string or null>",
-              "outcome": "<string or null>",
-              "notes": "<string or null>"
-            }, ...
-          ],
-          "votes": [
-            {
-              "motion": "<string>",
-              "movedBy": "<string or null>",
-              "secondedBy": "<string or null>",
-              "result": "<string>",
-              "notes": "<string or null>"
-            }, ...
-          ],
-          "decisions": ["<string>", ...],
-          "actionItems": [{"task": "<string>", "owner": "<string or null>", "dueDate": "<string or null>"}, ...],
-          "openQuestions": ["<string>", ...],
-          "topics": ["<string>", ...]
-        }
+        GROUNDING
+        Every attendee, motion, mover, and seconder must literally appear in \
+        the transcript. Do not infer movers from context. Preserve motion \
+        language verbatim or very nearly so. If a vote tally was not stated, \
+        leave notes empty — do not fabricate counts.
         """
     }
 

@@ -28,32 +28,56 @@ public enum TranscriptSessionStatus: String, Codable, Sendable {
 public nonisolated enum RecordingContext: String, Codable, Sendable, CaseIterable {
     /// Standard client or team meeting — full pipeline including compliance scanning
     /// and person-linking. Default for calendar-matched meetings.
-    case clientMeeting   = "ClientMeeting"
+    case clientMeeting       = "ClientMeeting"
+    /// First-meeting prospecting call — captures referral chain, prospect profile,
+    /// intake/next-meeting commitments, disclosure-posture compliance.
+    case prospectingCall     = "ProspectingCall"
+    /// Recruiting conversation with a prospective agent — candidate profile,
+    /// objections-with-responses, licensing content, income-hedge compliance.
+    case recruitingInterview = "RecruitingInterview"
+    /// Annual review with an existing client — year-over-year changes, reframes,
+    /// retention signals, anchor-project planning.
+    case annualReview        = "AnnualReview"
     /// Training session, lecture, or professional development — key points and
     /// learning objectives only; no compliance scan, no person-linking.
-    case trainingLecture = "TrainingLecture"
+    case trainingLecture     = "TrainingLecture"
     /// Board or governance meeting — agenda items, votes, and minutes;
     /// no compliance scan; attendee list but no CRM person-linking.
-    case boardMeeting    = "BoardMeeting"
+    case boardMeeting        = "BoardMeeting"
 
     public nonisolated var displayName: String {
         switch self {
-        case .clientMeeting:   return "Client / Team Meeting"
-        case .trainingLecture: return "Training / Lecture"
-        case .boardMeeting:    return "Board Meeting"
+        case .clientMeeting:       return "Client / Team Meeting"
+        case .prospectingCall:     return "Prospecting Call"
+        case .recruitingInterview: return "Recruiting Interview"
+        case .annualReview:        return "Annual Review"
+        case .trainingLecture:     return "Training / Lecture"
+        case .boardMeeting:        return "Board Meeting"
         }
     }
 
     public nonisolated var systemIcon: String {
         switch self {
-        case .clientMeeting:   return "person.2"
-        case .trainingLecture: return "graduationcap"
-        case .boardMeeting:    return "building.columns"
+        case .clientMeeting:       return "person.2"
+        case .prospectingCall:     return "phone.arrow.up.right"
+        case .recruitingInterview: return "person.badge.plus"
+        case .annualReview:        return "calendar.badge.clock"
+        case .trainingLecture:     return "graduationcap"
+        case .boardMeeting:        return "building.columns"
         }
     }
 
-    /// Whether this context requires compliance flag extraction.
-    public nonisolated var requiresCompliance: Bool { self == .clientMeeting }
+    /// Whether this context requires compliance flag extraction. Client-facing
+    /// conversations and recruiting (income claims) all scan; training and
+    /// board meetings do not.
+    public nonisolated var requiresCompliance: Bool {
+        switch self {
+        case .clientMeeting, .prospectingCall, .recruitingInterview, .annualReview:
+            return true
+        case .trainingLecture, .boardMeeting:
+            return false
+        }
+    }
 
     /// Whether participants should be linked to SamPerson CRM records.
     public nonisolated var supportsPersonLinking: Bool { self != .trainingLecture }
@@ -421,6 +445,15 @@ public nonisolated struct MeetingSummary: Codable, Sendable, Equatable {
     @Guide(description: "Overall sentiment or affect of the meeting. Nil if not applicable.")
     public var sentiment: String?
 
+    @Guide(description: "Verbatim client quotes signaling retention risk — considering another advisor, surrendering a policy, 'stewing'. Preserve names and days-of-week verbatim. Empty if none.")
+    public var retentionSignals: [String]
+
+    @Guide(description: "When the advisor revised a prior figure (return, premium, timeline, amount), preserve BOTH the original number AND the revised number verbatim in the same entry. Empty if none.")
+    public var numericalReframing: [String]
+
+    @Guide(description: "Compliance-positive behaviors — explicit commission disclosure, refusals to guarantee returns, hedging that corrects inflated expectations, no-pressure framing, acknowledgment of prior messaging errors. Empty if none.")
+    public var complianceStrengths: [String]
+
     // MARK: - Training/Lecture fields
 
     @Guide(description: "Major takeaways from the lecture or training session. Empty unless this is a training or lecture.")
@@ -533,7 +566,10 @@ public nonisolated struct MeetingSummary: Codable, Sendable, Equatable {
         reviewNotes: String? = nil,
         attendees: [String] = [],
         agendaItems: [AgendaItem] = [],
-        votes: [VoteRecord] = []
+        votes: [VoteRecord] = [],
+        retentionSignals: [String] = [],
+        numericalReframing: [String] = [],
+        complianceStrengths: [String] = []
     ) {
         self.title = title
         self.tldr = tldr
@@ -551,6 +587,9 @@ public nonisolated struct MeetingSummary: Codable, Sendable, Equatable {
         self.attendees = attendees
         self.agendaItems = agendaItems
         self.votes = votes
+        self.retentionSignals = retentionSignals
+        self.numericalReframing = numericalReframing
+        self.complianceStrengths = complianceStrengths
     }
 
     // MARK: - Codable (custom decoder for backward compatibility)
@@ -560,26 +599,30 @@ public nonisolated struct MeetingSummary: Codable, Sendable, Equatable {
         case lifeEvents, topics, complianceFlags, sentiment
         case keyPoints, learningObjectives, reviewNotes
         case attendees, agendaItems, votes
+        case retentionSignals, numericalReframing, complianceStrengths
     }
 
     public nonisolated init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        title              = try c.decodeIfPresent(String.self,       forKey: .title)              ?? ""
-        tldr               = try c.decodeIfPresent(String.self,       forKey: .tldr)               ?? ""
-        decisions          = try c.decodeIfPresent([String].self,      forKey: .decisions)          ?? []
-        actionItems        = try c.decodeIfPresent([ActionItem].self,  forKey: .actionItems)        ?? []
-        openQuestions      = try c.decodeIfPresent([String].self,      forKey: .openQuestions)      ?? []
-        followUps          = try c.decodeIfPresent([FollowUp].self,    forKey: .followUps)          ?? []
-        lifeEvents         = try c.decodeIfPresent([String].self,      forKey: .lifeEvents)         ?? []
-        topics             = try c.decodeIfPresent([String].self,      forKey: .topics)             ?? []
-        complianceFlags    = try c.decodeIfPresent([String].self,      forKey: .complianceFlags)    ?? []
-        sentiment          = try c.decodeIfPresent(String.self,        forKey: .sentiment)
-        keyPoints          = try c.decodeIfPresent([String].self,      forKey: .keyPoints)          ?? []
-        learningObjectives = try c.decodeIfPresent([String].self,      forKey: .learningObjectives) ?? []
-        reviewNotes        = try c.decodeIfPresent(String.self,        forKey: .reviewNotes)
-        attendees          = try c.decodeIfPresent([String].self,      forKey: .attendees)          ?? []
-        agendaItems        = try c.decodeIfPresent([AgendaItem].self,  forKey: .agendaItems)        ?? []
-        votes              = try c.decodeIfPresent([VoteRecord].self,  forKey: .votes)              ?? []
+        title               = try c.decodeIfPresent(String.self,       forKey: .title)               ?? ""
+        tldr                = try c.decodeIfPresent(String.self,       forKey: .tldr)                ?? ""
+        decisions           = try c.decodeIfPresent([String].self,      forKey: .decisions)           ?? []
+        actionItems         = try c.decodeIfPresent([ActionItem].self,  forKey: .actionItems)         ?? []
+        openQuestions       = try c.decodeIfPresent([String].self,      forKey: .openQuestions)       ?? []
+        followUps           = try c.decodeIfPresent([FollowUp].self,    forKey: .followUps)           ?? []
+        lifeEvents          = try c.decodeIfPresent([String].self,      forKey: .lifeEvents)          ?? []
+        topics              = try c.decodeIfPresent([String].self,      forKey: .topics)              ?? []
+        complianceFlags     = try c.decodeIfPresent([String].self,      forKey: .complianceFlags)     ?? []
+        sentiment           = try c.decodeIfPresent(String.self,        forKey: .sentiment)
+        keyPoints           = try c.decodeIfPresent([String].self,      forKey: .keyPoints)           ?? []
+        learningObjectives  = try c.decodeIfPresent([String].self,      forKey: .learningObjectives)  ?? []
+        reviewNotes         = try c.decodeIfPresent(String.self,        forKey: .reviewNotes)
+        attendees           = try c.decodeIfPresent([String].self,      forKey: .attendees)           ?? []
+        agendaItems         = try c.decodeIfPresent([AgendaItem].self,  forKey: .agendaItems)         ?? []
+        votes               = try c.decodeIfPresent([VoteRecord].self,  forKey: .votes)               ?? []
+        retentionSignals    = try c.decodeIfPresent([String].self,      forKey: .retentionSignals)    ?? []
+        numericalReframing  = try c.decodeIfPresent([String].self,      forKey: .numericalReframing)  ?? []
+        complianceStrengths = try c.decodeIfPresent([String].self,      forKey: .complianceStrengths) ?? []
     }
 
     public nonisolated static let empty = MeetingSummary(tldr: "")
@@ -630,6 +673,9 @@ public extension MeetingSummary {
         || !attendees.isEmpty
         || !agendaItems.isEmpty
         || !votes.isEmpty
+        || !retentionSignals.isEmpty
+        || !numericalReframing.isEmpty
+        || !complianceStrengths.isEmpty
     }
 }
 

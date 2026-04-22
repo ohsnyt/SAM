@@ -4,6 +4,33 @@
 
 ---
 
+## Summary Prompt Port + Context Expansion (April 22, 2026)
+
+**What**: Three new `RecordingContext` cases (`prospectingCall`, `recruitingInterview`, `annualReview`) plus three new auditable `MeetingSummary` fields (`retentionSignals`, `numericalReframing`, `complianceStrengths`), all validated against the `sam-bench` keyword-recall rubric before porting.
+
+### New Recording Contexts
+- `RecordingContext` expanded from 3 → 6 cases. `.prospectingCall` and `.recruitingInterview` get compliance tracking (sales conversations); `.annualReview` is a client meeting with a year-over-year lens; `.trainingLecture` and `.boardMeeting` remain non-compliance. `supportsPersonLinking` unchanged — trainingLecture still the lone exception.
+- `MeetingSummaryService.systemInstruction(for:)` now dispatches to six specialized prompt methods, each with a UserDefaults override hook: `sam.ai.prospectingSummaryPrompt`, `sam.ai.recruitingSummaryPrompt`, `sam.ai.annualReviewSummaryPrompt` (plus existing meeting / training / board).
+- Prospecting/recruiting prompts push the model to capture referral chain, household/employer profile, objections-with-responses, licensing content, and income hedging — bench showed +32.9pp recall on prospecting and +20.0pp on recruiting vs. the generic client-meeting prompt.
+- `MeetingSummaryPrinter` and `TranscriptionSessionCoordinator` updated with appropriate titles for the new contexts ("Prospecting Call", "Recruiting Interview", "Annual Review").
+
+### Auditable MeetingSummary Fields
+- `retentionSignals`, `numericalReframing`, `complianceStrengths` added to `MeetingSummary` as `@Guide`-annotated `[String]` fields with empty-array defaults. Backward-compatible: existing JSON decodes fine; `hasContent` updated to include them; printer renders dedicated sections for each.
+- `clientMeetingInstruction()` prompt extended with field guidance for all three plus the worked reframe example ("if the advisor said 2022 messaging suggested 8-10% but realistic long-term is 5-6%, emit one entry containing both figures exactly as stated"). Bench validated this restoration as the fix for v6's reframe regression (25% → 100% on cm-007).
+
+### Why
+SAM's summary prompt had been stable since the initial phases but lacked the sales-specific context types (prospecting, recruiting, annual review) that Sarah uses alongside regular client meetings. The bench revealed two problems: (1) the generic client-meeting prompt was losing referral chains, prospect profiles, and candidate objections when those were the whole point of the call; (2) three auditable dimensions (retention risk, numerical reframes, compliance-positive posture) weren't being captured at all. The bench authored scenarios, scored the gaps, iterated prompts (v1 → v8), and this release ships the validated v7/v8-equivalent prompts to SAM.
+
+### Schema
+No migration required — all three new `MeetingSummary` fields decode as `[]` when absent from historical JSON. `RecordingContext` is string-backed with forward-compat defaults (`.clientMeeting` fallback on unknown raw values).
+
+### Deferred
+- `v8` prompt tuning for prospecting/recruiting profile fields (11% / 33% miss rate on planted facts).
+- Annual-review year_review dimension regression (specialized prompt over-steers toward decisions/reframes; needs explicit year-in-review guidance).
+- Board-meeting financial-figures capture (MeetingSummary lacks a dedicated financial field; prompt needs to route dollar amounts into topics/decisions).
+
+---
+
 ## Commitments, Meeting-Occurrence Review, Impromptu Capture, Lock Hardening (April 21, 2026)
 
 **What**: Four tightly-coupled blocks landed together: commitment tracking with per-person follow-through (Block 3), meeting-occurrence review after an event ends (consolidated queue + "did this happen?" decision), lightweight review sheet for calendar-less recordings (Block 4), and app-lock hardening that now engages on screen lock / screensaver / sleep with an artistic glass-block overlay (Block 5).
