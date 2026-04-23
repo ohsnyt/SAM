@@ -4,6 +4,22 @@
 
 ---
 
+## Summary Prompt v9 Fixes (April 22, 2026)
+
+**What**: Four targeted directive blocks appended to SAM's specialized prompts, each closing a specific recall gap the bench flagged after the v8 rollout.
+
+- **Prospecting — HOUSEHOLD PROFILE**: forces spouse name + profession, children names + ages, and employer + plan type into tldr and topics verbatim. Bench `prospect_profile` recall 8% → 44%.
+- **Recruiting — CANDIDATE PROFILE**: forces current employer + title + tenure into tldr and topics verbatim; optional compensation + spouse situation as topic tags. Bench `candidate_profile` recall 33% → 100%; `financial_risk` lifted 33% → 100% as an incidental bonus.
+- **Annual review — YEAR-IN-REVIEW RECAP**: requires every prior-year position as a topic tag, every specific change as its own decisions/openQuestions entry, and tldr to name the single most consequential year-over-year change. Bench `year_review` recall 22% → 67%, reversing the v8 regression.
+- **Board — FINANCIAL FIGURES**: routes treasurer-report numbers into `agendaItems.notes` verbatim, budget line-items into their agenda-item notes, and top-line quarter figures into topics as short tags. Bench `financial` recall 0% → 67%.
+
+Each scenario's `_overall` moved up ~5pp with zero regressions on preserved dimensions. Temporal hallucination stayed at 0.0 across all 12 v9 bench runs. See `sam-bench/FINDINGS.md` for the full v8-vs-v9 table.
+
+### Why
+The April 22 context expansion landed the v8 specialized prompts. Bench runs after that exposed three specific misses — board financial capture, annual year-review recap, prospect/candidate profile detail — and this entry ships the narrowly-scoped fixes for each, validated end-to-end in the bench before porting to SAM.
+
+---
+
 ## Summary Prompt Port + Context Expansion (April 22, 2026)
 
 **What**: Three new `RecordingContext` cases (`prospectingCall`, `recruitingInterview`, `annualReview`) plus three new auditable `MeetingSummary` fields (`retentionSignals`, `numericalReframing`, `complianceStrengths`), all validated against the `sam-bench` keyword-recall rubric before porting.

@@ -679,6 +679,23 @@ actor MeetingSummaryService {
         employer names verbatim. Never synthesize a calendar date the transcript \
         does not state. Attribute concerns to the prospect and commitments to the \
         correct party.
+
+        HOUSEHOLD PROFILE (critical)
+        Prospecting calls establish who the prospect is — their household, their \
+        partner's situation, their existing plans — and this profile must survive \
+        into the summary so a future conversation can pick up without re-asking. \
+        Capture these specific elements:
+        - Spouse or partner name + profession/employer (verbatim): include in \
+          tldr and as a topic tag. Example: "Teo (self-employed pediatric \
+          dentist)" appears in both the tldr and topics.
+        - Children's names and ages (verbatim): include as a topic tag. \
+          Example: "Mia (6) and Kai (3)" is one tag, or "2 kids: Mia 6, Kai 3".
+        - Prospect's employer + plan type (verbatim): include as a topic tag. \
+          Example: "Genentech 401k".
+        Do not paraphrase ages to "young children" or employers to "tech \
+        company" — the names and specifics are the whole point of the profile. \
+        If the transcript does not state one of these, omit it rather than \
+        inventing.
         """
     }
 
@@ -738,6 +755,22 @@ actor MeetingSummaryService {
         costs verbatim. Never synthesize a calendar date the transcript does \
         not state. Attribute concerns to the candidate and responses to the \
         advisor.
+
+        CANDIDATE PROFILE (critical)
+        Recruiting conversations establish the candidate's current baseline — \
+        where they work, what they do, how long, and what they earn (if stated). \
+        This profile must survive into the summary so the follow-up conversation \
+        can start from the same footing. Capture:
+        - Current employer + job title + tenure (verbatim): name these in the \
+          tldr AND as a topic tag. Example: tldr says "Marcus, a nine-year \
+          operations manager at Fremont Logistics"; topics include "operations \
+          manager at Fremont Logistics" and "9 years".
+        - Current compensation if stated (verbatim): include in topics as a tag. \
+          Example: "$90k base + bonus".
+        - Partner/spouse situation if raised (e.g., spouse's job, joint \
+          decision-making): include as a topic tag.
+        Do not paraphrase job titles to "manager" or tenure to "several years" — \
+        the specifics are the baseline we need to build against.
         """
     }
 
@@ -802,6 +835,31 @@ actor MeetingSummaryService {
         appear in the transcript. Preserve year-over-year figures exactly. \
         Never synthesize a calendar date. Attribute retention concerns to the \
         client and reframes to the advisor.
+
+        YEAR-IN-REVIEW RECAP (critical)
+        An annual review is a structured walk through each position the client \
+        held a year ago and what has changed since. This historical recap is \
+        the backbone of the meeting and must be captured in the summary — do \
+        not let it get crowded out by decisions/reframes.
+        - Every product, policy, or account in force at the prior review → \
+          include it in topics as a short tag (e.g. "IUL", "term life", \
+          "HELOC", "529 education", "Roth IRA"). This should be one of the \
+          richest fields in an annual review.
+        - Specific year-over-year changes per position → include each change \
+          as its own entry in decisions (if action was taken this year) or \
+          openQuestions (if deferred). Preserve the specific change verbatim: \
+          "IUL credited 6% in year five", "HELOC paid off in August", "Maria's \
+          education account distributed and closing in December as she \
+          graduated", "premium adjusted from $X to $Y". Do not soften to \
+          "various accounts reviewed" — each position gets its own entry.
+        - tldr must name the single most consequential year-over-year change \
+          (not just "annual review conducted"). "The Alvarez IUL hit its \
+          fifth-year crediting at 6% and the HELOC cleared in August" is \
+          correct; "The advisor reviewed the client's accounts" is not.
+        Historical recap content (positions held + changes since) takes \
+        priority over next-year planning when space is constrained. The \
+        advisor needs to remember where things stood and how they moved \
+        before talking about what comes next.
         """
     }
 
@@ -932,6 +990,27 @@ actor MeetingSummaryService {
         the transcript. Do not infer movers from context. Preserve motion \
         language verbatim or very nearly so. If a vote tally was not stated, \
         leave notes empty — do not fabricate counts.
+
+        FINANCIAL FIGURES (critical)
+        Board meetings routinely include treasurer reports and budget \
+        discussions that contain specific dollar amounts (quarterly revenue, \
+        expenses, bank balance, budget line items, membership counts). These \
+        figures are load-bearing governance content and MUST appear in the \
+        summary. Route them as follows:
+        - Treasurer-report numbers (Q1/Q2 revenue, expenses, net position, \
+          bank balance) → agendaItems.notes for the treasurer item, verbatim. \
+          Example: "Q1 revenue $48,200 vs budget $46,000; expenses $41,800 \
+          vs budget $44,000; net favorable $4,400; bank balance $78,600 as \
+          of April 1".
+        - Budget line items tied to a vote → agendaItems.notes for that item, \
+          verbatim. Example: "$42,500 total: venue $14,000, marketing $9,500, \
+          admin/insurance $12,000, contingency $7,000".
+        - Top-line quarter or meeting figures (total budget approved, bank \
+          balance, membership count) → topics as short tags carrying the \
+          number. Example: "Q2 budget $42,500", "bank balance $78,600".
+        Preserve dollar amounts exactly as spoken — do not round, do not \
+        paraphrase to "approximately", do not drop to a narrative like "the \
+        treasurer reported favorable results". The numbers are the record.
         """
     }
 
