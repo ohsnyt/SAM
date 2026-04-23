@@ -84,7 +84,7 @@ final class TranscriptionSessionCoordinator {
 
     // MARK: - Private
 
-    private let receivingService = AudioReceivingService()
+    private let receivingService = AudioReceivingService.shared
     private let pipelineService = TranscriptionPipelineService()
     private var modelContainer: ModelContainer?
     private var segmentIndexCounter: Int = 0

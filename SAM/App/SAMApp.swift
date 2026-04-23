@@ -432,6 +432,10 @@ struct SAMApp: App {
                         SAMShortcutsProvider.updateAppShortcutParameters()
                     }
 
+                    // Load pairing state (macDeviceID + token from Keychain, whitelist
+                    // from UserDefaults) before the listener starts accepting connections.
+                    await DevicePairingService.shared.bootstrap()
+
                     // Start the always-on transcription listener so the iPhone can
                     // connect and record without needing the user to click Start on Mac.
                     // Safe to call even if this runs before onboarding completes —

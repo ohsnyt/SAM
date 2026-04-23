@@ -4,6 +4,62 @@
 
 ---
 
+## PIN Pairing Between Mac and iPhone (April 23, 2026)
+
+**What**: Replaced the previous (non-functional) "oort cloud" pairing experiment with a simple 6-digit PIN handshake for the iPhone ↔ Mac audio streaming link. The Mac displays a PIN, the phone enters it, and the two devices exchange a 32-byte HMAC token that keys every subsequent authentication.
+
+### Architecture
+
+- **New services**: `SAM/Services/DevicePairingService.swift` (Mac) and `SAMField/Services/DevicePairingService.swift` (iPhone). Each holds its own identity (`macDeviceID` / `phoneDeviceID`) and the shared pairing token(s). Mac can accept many phones; phone can be paired with multiple Macs. Tokens live in Keychain with `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`.
+- **New wire messages** in `SAMModels-AudioStreaming.swift`: `pinPairingRequest` (phone → Mac, carries PIN + phone identity), `pinPairingResult` (Mac → phone, carries token + Mac identity on success).
+- **Bonjour TXT record** (`_samtranscript._tcp`) now carries `devid` and `name` keys so paired phones can recognize which Mac is theirs on the reconnect path.
+- **Handshake**: every new TCP connection from a phone triggers an `authChallenge`. A paired phone answers with an HMAC-SHA256 `authResponse` (message = `SAM-AUTH-v1|phoneDeviceID|challengeB64`, key = pairing token). An unpaired phone that's in PIN-entry mode answers the same `authChallenge` with a `pinPairingRequest` — the Mac verifies the PIN, replies with `pinPairingResult` carrying the token, and the same TCP connection transitions to authenticated without a reconnect.
+- **Mac pairing UI**: `SAM/Views/Settings/CompanionPhoneSettingsPane.swift` — dedicated "Companion Phone" section in Settings. Shows a PIN card (90 s countdown), paired-iPhone list with per-device unpair, and a "Reset Pairing Token" destructive action that evicts every paired phone.
+- **iPhone pairing UI**: `SAMField/Views/Settings/PinEntryView.swift` — 6-digit keypad sheet with live status banner driven by `AudioStreamingService.pinPairingState`.
+
+### TXT-record fallback (the bug that shipped and was fixed)
+
+The first runtime test revealed the phone's `NWBrowser` discovering the Mac but not receiving the TXT record (`"Skipping browse result with no SAM TXT record: ..."`). iOS's Bonjour browser doesn't always resolve the TXT on the first browse event, and the original implementation bailed out silently when `metadata` was `.none`, leaving the UI stuck in "searching" until a 30 s discovery timeout fired.
+
+Fix: in PIN-entry mode the phone no longer requires a TXT record — it connects to the first `_samtranscript._tcp` endpoint it sees, sends the PIN, and picks up the Mac's real `macDeviceID` / `macDisplayName` from `PinPairingResult`. The TXT record is still read on the normal post-pairing reconnect path to route HMAC responses to the correct stored token. Helper `endpointName(_:)` decodes `\032` → space so endpoint names render cleanly when used as a provisional label.
+
+### Safety rails
+
+- **Discovery timeout**: `pairWithPIN` arms a 30-second task that flips `pinPairingState` to a user-visible failure (with a concrete hint about Local Network permission / Wi-Fi) if no SAM Mac appears.
+- **Auth handshake timeout**: 15 seconds from TCP-ready to authenticated, otherwise the connection is torn down.
+- **Pre-auth packet gate**: the Mac drops every message except `authResponse` and `pinPairingRequest` until the connection is authenticated.
+- **Browser state logging**: `.waiting(error)` is now logged so permission / network-path issues surface in Console instead of silently stalling.
+- **Tokens never leave Keychain** except inside a successful `pinPairingResult` (gated by the PIN itself).
+
+### Files added
+
+- `SAM/Services/DevicePairingService.swift` — Mac-side pairing service (PIN generation + verification, token management, paired-device list, HMAC verification).
+- `SAM/Views/Settings/CompanionPhoneSettingsPane.swift` — Mac settings pane with PIN display sheet.
+- `SAMField/Services/DevicePairingService.swift` — iPhone-side trust store (multi-Mac).
+- `SAMField/Services/KeychainService.swift` — thin iOS Keychain wrapper.
+- `SAMField/Views/Settings/PinEntryView.swift` — iPhone PIN entry sheet.
+
+### Files modified
+
+- `SAM/App/SAMApp.swift`, `SAMField/App/SAMFieldApp.swift` — await `DevicePairingService.bootstrap()` before anything touches the network.
+- `SAM/Models/SAMModels-AudioStreaming.swift` — `PinPairingRequest`, `PinPairingResult`, `AuthChallenge`, `AuthResponse`, `AuthResult`, TXT-record keys, new `MessageType` cases.
+- `SAM/Services/AudioReceivingService.swift` — pre-auth gate, `handlePinPairingRequest`, TXT record on the listener, idempotent `startAdvertising`.
+- `SAM/Coordinators/TranscriptionSessionCoordinator.swift`, `SAMField/Coordinators/MeetingCaptureCoordinator.swift` — reuse the new shared `AudioReceivingService.shared` / `AudioStreamingService.shared` singletons.
+- `SAMField/Services/AudioStreamingService.swift` — `pairWithPIN`, PIN-mode browse branch, `pinDiscoveryTimeoutTask`, TXT fallback, surfaced `.waiting` / `.failed` browser states.
+- `SAMField/Views/Settings/SettingsView.swift` — Mac Connection section with pair list + PIN entry sheet.
+- `SAM/Views/Settings/SettingsView.swift` — new "Companion Phone" settings section in the General group.
+- `SAMField/Info.plist` — `NSLocalNetworkUsageDescription` + `NSBonjourServices`.
+
+### Why this replaces QR / "oort cloud"
+
+The prior QR-based flow required camera access and perfect scan conditions; the oort-cloud variant added a multi-step ack/confirm handshake that never reliably closed. PIN is one screen on each device, no camera, no extra round-trips — and the same HMAC token ends up persisted, so the steady-state reconnect path is unchanged from what audio streaming already expected.
+
+### Known follow-up
+
+The iOS TXT-record delivery issue is worked around, not root-caused. Normal post-pairing reconnects still depend on the TXT being present to route HMAC against the right stored token. Worth a closer look if users report reconnect failures with multiple paired Macs.
+
+---
+
 ## Morning Briefing Prompt v3 — Pronoun Discipline (April 22, 2026)
 
 **What**: Replaced the morning-briefing prompt in `DailyBriefingService.generateMorningNarrative` and `PromptLabCoordinator.defaultMorningBriefingPrompt` with a third-generation variant that enforces pronoun discipline, date fidelity, and required-section coverage. The previous prompt ("150 words or less", 3-part structure) had been in production since the briefing system shipped.

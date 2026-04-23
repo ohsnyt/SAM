@@ -16,6 +16,11 @@ import os.log
 @Observable
 final class AudioReceivingService {
 
+    // MARK: - Singleton
+
+    /// Shared instance used by TranscriptionSessionCoordinator and the pairing UI.
+    static let shared = AudioReceivingService()
+
     // MARK: - State
 
     nonisolated let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "AudioReceivingService")
@@ -65,6 +70,25 @@ final class AudioReceivingService {
     private var totalAudioBytesWritten: UInt32 = 0
     private var sessionSampleRate: UInt32 = 0
     private var sessionChannels: UInt16 = 0
+
+    // MARK: - Authentication
+
+    /// Per-connection authentication state. All non-auth packets are dropped
+    /// until the active connection reaches `.authenticated`. A failed or
+    /// missing response causes us to close the connection without ever
+    /// delivering any audio.
+    private enum AuthState {
+        case awaitingResponse(challengeB64: String)
+        case authenticated(phoneDeviceID: UUID, phoneDisplayName: String)
+        case failed
+    }
+    private var authState: AuthState = .failed
+
+    /// Time the Mac waits for an `authResponse` after sending `authChallenge`.
+    /// Long enough that a phone on a flaky link can still answer; short
+    /// enough that a silent / wrong-token phone is evicted promptly.
+    private let authTimeoutSeconds: TimeInterval = 15
+    private var authTimeoutTask: Task<Void, Never>?
 
     // MARK: - Pending Upload (Phase B)
 
@@ -279,6 +303,202 @@ final class AudioReceivingService {
         })
     }
 
+    // MARK: - Auth Messages
+
+    /// Send an `authChallenge` packet as the very first thing on a new
+    /// connection. The phone MUST reply with `authResponse` carrying an HMAC
+    /// over this challenge within `authTimeoutSeconds` or we drop it.
+    private func sendAuthChallenge(on connection: NWConnection, challengeB64: String) {
+        let challenge = AuthChallenge(challengeB64: challengeB64)
+        guard let payload = challenge.toWireData() else {
+            logger.error("sendAuthChallenge: failed to encode payload")
+            return
+        }
+        let header = AudioPacketHeader(
+            version: AudioPacketHeader.currentVersion,
+            messageType: .authChallenge,
+            sequenceNumber: 0,
+            timestamp: 0,
+            sampleRate: 0,
+            channels: 0,
+            payloadLength: UInt32(payload.count)
+        )
+        var packet = header.serialize()
+        packet.append(payload)
+
+        connection.send(content: packet, completion: .contentProcessed { [logger] error in
+            if let error {
+                logger.error("sendAuthChallenge failed: \(error.localizedDescription)")
+            } else {
+                logger.debug("authChallenge sent")
+            }
+        })
+    }
+
+    private func handleAuthResponse(payload: Data) {
+        guard case .awaitingResponse(let challengeB64) = authState else {
+            logger.warning("authResponse arrived in wrong state — ignoring")
+            return
+        }
+        guard let response = AuthResponse.from(wireData: payload) else {
+            logger.error("authResponse: failed to decode payload")
+            authState = .failed
+            sendAuthResult(success: false, reason: "Malformed auth response")
+            activeConnection?.cancel()
+            return
+        }
+
+        let result = DevicePairingService.shared.authenticate(
+            phoneDeviceID: response.phoneDeviceID,
+            phoneDisplayName: response.phoneDisplayName,
+            challengeB64: challengeB64,
+            responseHMACB64: response.hmacB64
+        )
+
+        if result.success {
+            authTimeoutTask?.cancel()
+            authTimeoutTask = nil
+            authState = .authenticated(
+                phoneDeviceID: response.phoneDeviceID,
+                phoneDisplayName: response.phoneDisplayName
+            )
+            connectedDeviceName = response.phoneDisplayName
+            sendAuthResult(success: true, reason: nil)
+            logger.info("Phone \(response.phoneDeviceID) authenticated — audio stream enabled")
+            flushPostAuthQueues()
+        } else {
+            authState = .failed
+            sendAuthResult(success: false, reason: result.reason)
+            logger.warning("Auth rejected: \(result.reason ?? "unknown")")
+            // Give the send a moment to hit the wire before we tear down.
+            let connection = activeConnection
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(200))
+                connection?.cancel()
+            }
+        }
+    }
+
+    private func sendAuthResult(success: Bool, reason: String?) {
+        guard let connection = activeConnection else { return }
+        let result = AuthResult(
+            success: success,
+            reason: reason,
+            macDisplayName: DevicePairingService.shared.macDisplayName
+        )
+        guard let payload = result.toWireData() else { return }
+        let header = AudioPacketHeader(
+            version: AudioPacketHeader.currentVersion,
+            messageType: .authResult,
+            sequenceNumber: 0,
+            timestamp: 0,
+            sampleRate: 0,
+            channels: 0,
+            payloadLength: UInt32(payload.count)
+        )
+        var packet = header.serialize()
+        packet.append(payload)
+        connection.send(content: packet, completion: .contentProcessed { [logger] error in
+            if let error {
+                logger.error("sendAuthResult failed: \(error.localizedDescription)")
+            }
+        })
+    }
+
+    // MARK: - PIN Pairing
+
+    /// Handle a `pinPairingRequest` from an unauthenticated phone. If the PIN
+    /// matches an active pairing window on the Mac, register the phone, reply
+    /// with the HMAC token, and transition this connection to authenticated
+    /// without any reconnect.
+    private func handlePinPairingRequest(payload: Data) {
+        guard let request = PinPairingRequest.from(wireData: payload) else {
+            logger.error("pinPairingRequest: failed to decode payload")
+            activeConnection?.cancel()
+            return
+        }
+        guard let connection = activeConnection else { return }
+
+        let result = DevicePairingService.shared.verifyPIN(
+            request.pin,
+            phoneDeviceID: request.phoneDeviceID,
+            phoneDisplayName: request.phoneDisplayName
+        )
+
+        sendPinPairingResult(result, on: connection)
+
+        if result.success {
+            authTimeoutTask?.cancel()
+            authTimeoutTask = nil
+            authState = .authenticated(
+                phoneDeviceID: request.phoneDeviceID,
+                phoneDisplayName: request.phoneDisplayName
+            )
+            connectedDeviceName = request.phoneDisplayName
+            logger.info("PIN pairing success for \(request.phoneDeviceID) — audio stream enabled")
+            flushPostAuthQueues()
+        } else {
+            authState = .failed
+            logger.warning("PIN pairing rejected: \(result.reason ?? "unknown")")
+            // Give the failure packet a moment to hit the wire before tearing down.
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(200))
+                connection.cancel()
+            }
+        }
+    }
+
+    private func sendPinPairingResult(_ result: PinPairingResult, on connection: NWConnection) {
+        guard let payload = try? JSONEncoder().encode(result) else {
+            logger.error("sendPinPairingResult: failed to encode payload")
+            return
+        }
+        let header = AudioPacketHeader(
+            version: AudioPacketHeader.currentVersion,
+            messageType: .pinPairingResult,
+            sequenceNumber: 0, timestamp: 0, sampleRate: 0, channels: 0,
+            payloadLength: UInt32(payload.count)
+        )
+        var packet = header.serialize()
+        packet.append(payload)
+        connection.send(content: packet, completion: .contentProcessed { [logger] error in
+            if let error { logger.error("sendPinPairingResult failed: \(error.localizedDescription)") }
+            else { logger.debug("pinPairingResult sent (success=\(result.success))") }
+        })
+    }
+
+    /// Replay whatever was pending when the phone was absent. Runs after a
+    /// successful auth — previously this lived in the raw connection-ready
+    /// callback, but we must not reveal summaries or reprocess acks to an
+    /// unauthenticated peer.
+    private func flushPostAuthQueues() {
+        if let pending = pendingSummary {
+            pendingSummary = nil
+            logger.info("Flushing pending summary to newly authenticated iPhone")
+            sendMeetingSummary(pending)
+        }
+
+        let now = Date()
+        let ttl = pendingAckTTL
+        let before = pendingAcks.count
+        pendingAcks.removeAll { now.timeIntervalSince($0.queuedAt) > ttl }
+        let pruned = before - pendingAcks.count
+        if pruned > 0 {
+            logger.info("Pruned \(pruned) expired ack(s) older than \(Int(ttl))s")
+        }
+        if !pendingAcks.isEmpty {
+            let acks = pendingAcks
+            logger.info("Replaying \(acks.count) queued ack(s) to authenticated iPhone")
+            for ack in acks {
+                sendSessionProcessed(
+                    sessionID: ack.sessionID,
+                    success: ack.success,
+                    reason: ack.reason
+                )
+            }
+        }
+    }
+
     /// Directory for received meeting audio files.
     private var audioDirectory: URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -289,22 +509,26 @@ final class AudioReceivingService {
 
     // MARK: - Advertising
 
-    /// Start advertising the transcription service via Bonjour and listen for connections.
-    func startAdvertising() throws {
-        guard listenerState == .idle else { return }
-
+    /// Build and start a new NWListener advertising the Mac via Bonjour.
+    /// Idempotent caller guard is on the caller (`startAdvertising`).
+    private func createAndStartListener() throws {
         let params = NWParameters.tcp
         params.includePeerToPeer = true
 
-        let listener = try NWListener(using: params)
+        let newListener = try NWListener(using: params)
 
-        // Advertise via Bonjour
-        listener.service = NWListener.Service(
+        let pairing = DevicePairingService.shared
+        var txtRecord = NWTXTRecord()
+        txtRecord[SAMMacDeviceIDTXTKey] = pairing.macDeviceID.uuidString
+        txtRecord[SAMMacDisplayNameTXTKey] = pairing.macDisplayName
+
+        newListener.service = NWListener.Service(
             type: AudioStreamingConstants.bonjourServiceType,
-            domain: AudioStreamingConstants.bonjourDomain
+            domain: AudioStreamingConstants.bonjourDomain,
+            txtRecord: txtRecord
         )
 
-        listener.stateUpdateHandler = { [weak self] state in
+        newListener.stateUpdateHandler = { [weak self] state in
             guard let self else { return }
             Task { @MainActor [self] in
                 switch state {
@@ -322,21 +546,29 @@ final class AudioReceivingService {
             }
         }
 
-        listener.newConnectionHandler = { [weak self] connection in
+        newListener.newConnectionHandler = { [weak self] connection in
             guard let self else { return }
             Task { @MainActor [self] in
                 self.handleNewConnection(connection)
             }
         }
 
-        listener.start(queue: networkQueue)
-        self.listener = listener
+        newListener.start(queue: networkQueue)
+        self.listener = newListener
+    }
 
+    /// Start advertising the transcription service via Bonjour and listen for connections.
+    func startAdvertising() throws {
+        guard listenerState == .idle else { return }
+        try createAndStartListener()
         logger.info("Started advertising transcription service")
     }
 
     /// Stop advertising and disconnect.
     func stopAdvertising() {
+        authTimeoutTask?.cancel()
+        authTimeoutTask = nil
+        authState = .failed
         listener?.cancel()
         listener = nil
         activeConnection?.cancel()
@@ -396,6 +628,26 @@ final class AudioReceivingService {
         receiveBuffer = Data()
         listenerState = .connected
 
+        // Always send an authChallenge on every new connection. A paired
+        // phone responds with `authResponse` (HMAC); an unpaired phone in
+        // PIN-entry mode will instead send a `pinPairingRequest` in the same
+        // pre-auth window. Either message closes the challenge.
+        let challenge = DevicePairingService.shared.makeChallenge()
+        authState = .awaitingResponse(challengeB64: challenge.b64)
+        authTimeoutTask?.cancel()
+        authTimeoutTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(self?.authTimeoutSeconds ?? 15))
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard let self else { return }
+                if case .awaitingResponse = self.authState, self.activeConnection === connection {
+                    self.logger.warning("Auth timeout — closing unauthenticated connection")
+                    self.authState = .failed
+                    connection.cancel()
+                }
+            }
+        }
+
         connection.stateUpdateHandler = { [weak self] state in
             guard let self else { return }
             Task { @MainActor [self] in
@@ -410,42 +662,21 @@ final class AudioReceivingService {
                 switch state {
                 case .ready:
                     self.logger.info("iPhone connected: \(connection.endpoint.debugDescription)")
-                    // Flush any pending summary that couldn't be pushed because
-                    // the phone wasn't connected when the Mac finished generating.
-                    if let pending = self.pendingSummary {
-                        self.pendingSummary = nil
-                        self.logger.info("Flushing pending summary to newly connected iPhone")
-                        self.sendMeetingSummary(pending)
-                    }
-                    // Replay every queued ack on reconnect. `sendSessionProcessed`
-                    // is idempotent (it replaces any same-sessionID entry with
-                    // a fresh `queuedAt`), and the phone's handler no-ops on
-                    // duplicates. Prune entries older than the TTL first so
-                    // the queue doesn't grow unbounded.
-                    let now = Date()
-                    let ttl = self.pendingAckTTL
-                    let before = self.pendingAcks.count
-                    self.pendingAcks.removeAll { now.timeIntervalSince($0.queuedAt) > ttl }
-                    if before != self.pendingAcks.count {
-                        self.logger.info("Pruned \(before - self.pendingAcks.count) expired ack(s) older than \(Int(ttl))s")
-                    }
-                    if !self.pendingAcks.isEmpty {
-                        let acks = self.pendingAcks
-                        self.logger.info("Replaying \(acks.count) queued ack(s) to reconnected iPhone")
-                        for ack in acks {
-                            self.sendSessionProcessed(
-                                sessionID: ack.sessionID,
-                                success: ack.success,
-                                reason: ack.reason
-                            )
-                        }
+                    if case .awaitingResponse(let chal) = self.authState {
+                        self.sendAuthChallenge(on: connection, challengeB64: chal)
                     }
                 case .failed(let error):
                     self.logger.error("Connection failed: \(error.localizedDescription)")
+                    self.authTimeoutTask?.cancel()
+                    self.authTimeoutTask = nil
+                    self.authState = .failed
                     self.activeConnection = nil
                     self.connectedDeviceName = nil
                     self.listenerState = .advertising
                 case .cancelled:
+                    self.authTimeoutTask?.cancel()
+                    self.authTimeoutTask = nil
+                    self.authState = .failed
                     self.activeConnection = nil
                     self.connectedDeviceName = nil
                     if self.listener != nil {
@@ -547,7 +778,33 @@ final class AudioReceivingService {
     // MARK: - Message Handling
 
     private func handleMessage(header: AudioPacketHeader, payload: Data) {
+        // Auth gate: until the connection is authenticated, the ONLY packets
+        // we accept are `authResponse` (paired phone answering the challenge)
+        // and `pinPairingRequest` (new phone joining via PIN). Everything
+        // else is dropped and the connection closed.
+        if case .authenticated = authState {
+            // Pass-through below.
+        } else {
+            if header.messageType == .authResponse {
+                handleAuthResponse(payload: payload)
+                return
+            }
+            if header.messageType == .pinPairingRequest {
+                handlePinPairingRequest(payload: payload)
+                return
+            }
+            logger.warning("Dropping \(String(describing: header.messageType)) from unauthenticated peer")
+            if case .failed = authState {
+                activeConnection?.cancel()
+            }
+            return
+        }
+
         switch header.messageType {
+        case .authChallenge, .authResponse, .authResult:
+            // Unexpected after auth completes. Ignore.
+            break
+
         case .sessionStart:
             handleSessionStart(header: header, payload: payload)
 
@@ -610,6 +867,14 @@ final class AudioReceivingService {
 
         case .settingsSync:
             // Mac doesn't receive settings sync — it sends them. Ignore.
+            break
+
+        case .pinPairingRequest:
+            // Handled before the auth gate. Ignore here.
+            break
+
+        case .pinPairingResult:
+            // Mac-outbound only. Ignore if the phone echoes it.
             break
         }
     }

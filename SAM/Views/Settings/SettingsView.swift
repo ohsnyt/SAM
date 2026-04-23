@@ -26,6 +26,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     case personalization = "Personalization"
     case appearance = "Appearance"
     case security = "Security"
+    case companionPhone = "Companion Phone"
     // Data
     case contacts = "Contacts"
     case calendar = "Calendar"
@@ -50,6 +51,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .personalization: return "person.crop.circle"
         case .appearance: return "paintbrush"
         case .security: return "lock.shield"
+        case .companionPhone: return "iphone.and.arrow.forward"
         case .contacts: return "person.crop.circle.fill"
         case .calendar: return "calendar"
         case .mail: return "envelope"
@@ -68,7 +70,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
     var group: String {
         switch self {
-        case .personalization, .appearance, .security: return "General"
+        case .personalization, .appearance, .security, .companionPhone: return "General"
         case .contacts, .calendar, .mail, .communications, .clipboardCapture: return "Data"
         case .coaching, .briefings, .dictationVoice, .promptLab: return "AI"
         case .businessType, .compliance, .roles, .tripsAndMileage: return "Business"
@@ -120,6 +122,8 @@ struct SettingsView: View {
             AppearanceSettingsPane()
         case .security:
             SecuritySettingsPane()
+        case .companionPhone:
+            CompanionPhoneSettingsPane()
         case .contacts:
             ContactsSettingsPane()
         case .calendar:

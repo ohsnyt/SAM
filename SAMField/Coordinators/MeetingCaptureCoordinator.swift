@@ -131,7 +131,7 @@ final class MeetingCaptureCoordinator {
     // MARK: - Services
 
     private let recordingService = MeetingRecordingService()
-    private let streamingService = AudioStreamingService()
+    private let streamingService = AudioStreamingService.shared
     private var sessionID: UUID?
 
     // MARK: - Speaker Prep
@@ -287,6 +287,15 @@ final class MeetingCaptureCoordinator {
     }
 
     // MARK: - Lifecycle
+
+    /// Tear down any in-flight browse/connection and start fresh. Called
+    /// right after a successful QR pair so the phone discovers the newly-
+    /// paired Mac immediately and runs the auth handshake — which is what
+    /// tells the Mac to close its QR sheet and add this iPhone to its
+    /// paired list.
+    func restartBrowsingAfterPairing() {
+        streamingService.restartBrowsing()
+    }
 
     /// Start browsing for the Mac transcription service.
     func connectToMac() {

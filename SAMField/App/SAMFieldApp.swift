@@ -27,6 +27,12 @@ struct SAMFieldApp: App {
             FieldTabView()
                 .modelContainer(container)
                 .task {
+                    // Bootstrap the pairing trust store before the audio
+                    // streaming service browses — without this, a reconnect
+                    // after launch would race the keychain load and drop
+                    // known-good Macs as "not paired".
+                    await DevicePairingService.shared.bootstrap()
+
                     // Configure the meeting capture coordinator with the
                     // shared container. This also wires up the pending
                     // upload service and runs crash recovery on any

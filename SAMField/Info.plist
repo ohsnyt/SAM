@@ -13,6 +13,8 @@
 	<string>SAM Field uses background location to accurately track business mileage during trips.</string>
 	<key>NSContactsUsageDescription</key>
 	<string>SAM Field uses your contacts to show profile photos in the participant list when starting a recording.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>SAM Field uses the camera only to scan the pairing QR code displayed on your Mac.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>SAM Field streams meeting audio to your Mac running SAM for on-device transcription. All audio stays on your local network and is never sent to external servers.</string>
 	<key>NSBonjourServices</key>

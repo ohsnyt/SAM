@@ -82,6 +82,40 @@ struct AudioPacketHeader: Sendable {
         /// groups to use. Sent once on connection. Payload: JSON
         /// `WorkspaceSettings`.
         case settingsSync   = 0x0C
+
+        // MARK: - Phase E: Device pairing / auth (both directions)
+
+        /// Mac → iPhone: challenge nonce (16 random bytes, base64 in JSON
+        /// `AuthChallenge`). Sent immediately on TCP accept when the Mac is
+        /// NOT in pairing mode. Phone must respond with `authResponse` or
+        /// the connection is dropped.
+        case authChallenge  = 0x0D
+
+        /// iPhone → Mac: HMAC-SHA256 response keyed with the shared pairing
+        /// token, carrying the phone's persistent device ID and display name
+        /// so the Mac can update / whitelist it. Payload: JSON `AuthResponse`.
+        case authResponse   = 0x0E
+
+        /// Mac → iPhone: terminal auth result. On success, normal traffic
+        /// resumes (settings sync, session messages). On failure the Mac
+        /// closes the connection. Payload: JSON `AuthResult`.
+        case authResult     = 0x0F
+
+        // MARK: - Phase E2: PIN-based pairing
+
+        /// iPhone → Mac: the user typed the 6-digit PIN shown on the Mac's
+        /// pairing sheet and tapped Pair. Carries the PIN plus the phone's
+        /// persistent identity. Replaces `authResponse` on a fresh (unpaired)
+        /// connection — the Mac verifies the PIN, registers the phone in its
+        /// trust list, and returns the HMAC token via `pinPairingResult`.
+        /// Payload: JSON `PinPairingRequest`.
+        case pinPairingRequest = 0x10
+
+        /// Mac → iPhone: outcome of a PIN pairing attempt. On success,
+        /// carries the 32-byte HMAC token (base64) so the phone can answer
+        /// future `authChallenge`s. On failure the connection is closed.
+        /// Payload: JSON `PinPairingResult`.
+        case pinPairingResult  = 0x11
     }
 
     /// Serialize to 32 bytes for transmission.
@@ -385,5 +419,125 @@ public struct SessionProcessedAck: Codable, Sendable {
 
     public static func from(wireData: Data) -> SessionProcessedAck? {
         try? JSONDecoder().decode(SessionProcessedAck.self, from: wireData)
+    }
+}
+
+// MARK: - Device Pairing
+
+/// Bonjour TXT record key under which the Mac advertises its persistent device UUID.
+/// The iPhone uses this to filter discovered services to the Mac it was paired with.
+public let SAMMacDeviceIDTXTKey = "devid"
+
+/// Bonjour TXT record key for the Mac's human-readable display name (optional).
+public let SAMMacDisplayNameTXTKey = "name"
+
+// MARK: - PIN Pairing Messages
+
+/// iPhone → Mac: the user typed the 6-digit PIN shown on the Mac's pairing
+/// sheet and tapped Pair. Mac verifies the PIN, registers the phone, and
+/// returns the HMAC token via `PinPairingResult`.
+public struct PinPairingRequest: Codable, Sendable {
+    public var pin: String
+    public var phoneDeviceID: UUID
+    public var phoneDisplayName: String
+
+    public init(pin: String, phoneDeviceID: UUID, phoneDisplayName: String) {
+        self.pin = pin
+        self.phoneDeviceID = phoneDeviceID
+        self.phoneDisplayName = phoneDisplayName
+    }
+
+    public func toWireData() -> Data? { try? JSONEncoder().encode(self) }
+    public static func from(wireData: Data) -> PinPairingRequest? {
+        try? JSONDecoder().decode(PinPairingRequest.self, from: wireData)
+    }
+}
+
+/// Mac → iPhone: outcome of a PIN pairing attempt. On success, `tokenB64`,
+/// `macDeviceID` and `macDisplayName` are populated and the phone persists
+/// them as a trusted Mac. On failure `reason` explains why.
+public struct PinPairingResult: Codable, Sendable {
+    public var success: Bool
+    public var reason: String?
+    public var tokenB64: String?
+    public var macDeviceID: UUID?
+    public var macDisplayName: String?
+
+    public init(
+        success: Bool,
+        reason: String? = nil,
+        tokenB64: String? = nil,
+        macDeviceID: UUID? = nil,
+        macDisplayName: String? = nil
+    ) {
+        self.success = success
+        self.reason = reason
+        self.tokenB64 = tokenB64
+        self.macDeviceID = macDeviceID
+        self.macDisplayName = macDisplayName
+    }
+
+    public func toWireData() -> Data? { try? JSONEncoder().encode(self) }
+    public static func from(wireData: Data) -> PinPairingResult? {
+        try? JSONDecoder().decode(PinPairingResult.self, from: wireData)
+    }
+}
+
+// MARK: - Auth Messages
+
+/// Auth protocol — sent as the payload of the corresponding `MessageType`.
+///
+/// Challenge-response flow:
+/// 1. TCP `.ready` → Mac sends `authChallenge` (16 bytes of fresh random base64).
+/// 2. Phone computes `HMAC-SHA256(pairingToken, "SAM-AUTH-v1|" + phoneDeviceID + "|" + challengeB64)`
+///    and sends `authResponse`.
+/// 3. Mac verifies; sends `authResult`. On failure the connection is closed.
+public struct AuthChallenge: Codable, Sendable {
+    public static let hmacContext = "SAM-AUTH-v1"
+
+    public var challengeB64: String
+
+    public init(challengeB64: String) {
+        self.challengeB64 = challengeB64
+    }
+
+    public func toWireData() -> Data? { try? JSONEncoder().encode(self) }
+    public static func from(wireData: Data) -> AuthChallenge? {
+        try? JSONDecoder().decode(AuthChallenge.self, from: wireData)
+    }
+}
+
+public struct AuthResponse: Codable, Sendable {
+    public var phoneDeviceID: UUID
+    public var phoneDisplayName: String
+    public var hmacB64: String
+
+    public init(phoneDeviceID: UUID, phoneDisplayName: String, hmacB64: String) {
+        self.phoneDeviceID = phoneDeviceID
+        self.phoneDisplayName = phoneDisplayName
+        self.hmacB64 = hmacB64
+    }
+
+    public func toWireData() -> Data? { try? JSONEncoder().encode(self) }
+    public static func from(wireData: Data) -> AuthResponse? {
+        try? JSONDecoder().decode(AuthResponse.self, from: wireData)
+    }
+}
+
+public struct AuthResult: Codable, Sendable {
+    public var success: Bool
+    public var reason: String?
+    /// Optional human-readable Mac name passed back so the phone can show it in UI.
+    public var macDisplayName: String?
+
+    public init(success: Bool, reason: String? = nil, macDisplayName: String? = nil) {
+        self.success = success
+        self.reason = reason
+        self.macDisplayName = macDisplayName
+    }
+
+    public func toWireData() -> Data? { try? JSONEncoder().encode(self) }
+    public static func from(wireData: Data) -> AuthResult? {
+        try? JSONDecoder().decode(AuthResult.self, from: wireData)
     }
 }
