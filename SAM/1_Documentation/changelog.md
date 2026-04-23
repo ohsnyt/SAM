@@ -4,6 +4,29 @@
 
 ---
 
+## Summary Prompt v10 — Recruiting Date Discipline (April 22, 2026)
+
+**What**: Appended a DATE DISCIPLINE directive block to the recruiting-interview prompt only. All other contexts fall through to v9 unchanged.
+
+- Rule 1: if the transcript did not state a date or relative phrase for a task, OMIT `dueDate` entirely. Empty is correct; inventing one is a bug.
+- Rule 2: NEVER infer a month from a day-of-month reference. "Thursday the twelfth" stays as-is — do not silently attach "October" or "December."
+- Rule 3: WRONG/RIGHT pairs bundled into the prompt to make the failure mode concrete for the model (e.g., `WRONG dueDate: "10/15"   RIGHT: (omit) or "by Monday"`).
+
+### Why
+v9 recruiting runs emitted isolated date fabrications — absolute `MM/DD` dueDates the transcript never stated, plus "december" inferred from "Thursday the twelfth." Recruiting transcripts are unusually date-dense (licensing deadlines, BPM invites, "by Monday"), steering the model toward emitting dates for every `actionItem` even when the transcript never dated them. Other contexts never surfaced the pattern.
+
+### Bench validation (n=10 recruiting runs, v9 vs v10)
+- Total hallucinations: 11 → 3
+- Max in a single run: 7 → 1
+- Mean per run: 1.1 → 0.3
+- Overall recall: 87% → 89%
+- Preserved dimensions held or improved (`skepticism` 80 → 97, `life_event` 40 → 60)
+
+### Deferred
+- Residual "december" false-positives (3/10 runs, 1 hallucination each) — baseline scoring artifact going back to v4. Likely needs a stronger negative example in the prompt or a scorer-side allowance when the transcript contains a lone day-of-month reference.
+
+---
+
 ## Summary Prompt v9 Fixes (April 22, 2026)
 
 **What**: Four targeted directive blocks appended to SAM's specialized prompts, each closing a specific recall gap the bench flagged after the v8 rollout.

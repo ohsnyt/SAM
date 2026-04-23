@@ -771,6 +771,30 @@ actor MeetingSummaryService {
           decision-making): include as a topic tag.
         Do not paraphrase job titles to "manager" or tenure to "several years" — \
         the specifics are the baseline we need to build against.
+
+        DATE DISCIPLINE (critical)
+        Recruiting transcripts tend to be date-dense (licensing deadlines, BPM \
+        invites, "by Monday", "next week"), which can steer the model toward \
+        inventing dates for actionItems that never had one. Rules:
+        - If the transcript did not state a date or relative phrase for a task, \
+          OMIT dueDate entirely. Empty is correct; inventing one is a bug.
+        - Preserve the exact phrasing the speakers used ("by Monday", "this \
+          week", "Thursday the 12th at 7", "end of the month"). Do not convert \
+          to MM/DD or MM/DD/YYYY format.
+        - NEVER infer a month from a day-of-month reference. If the transcript \
+          says "Thursday the twelfth" with no month, keep it as "Thursday the \
+          12th" — do not fill in "December 12th" or "October 12th" or any \
+          calendar year.
+        - Apply this to decisions too: if a meeting is scheduled for "Thursday \
+          the twelfth at seven", the decision text uses those exact words, not \
+          an invented "December 12th, 2025 at 7:00 PM".
+        WRONG vs RIGHT examples:
+        - WRONG dueDate: "10/15"   RIGHT: (omit) or "by Monday"
+        - WRONG dueDate: "2/14/2025"   RIGHT: (omit) or "before our next meeting"
+        - WRONG decision: "BPM on Thursday, December 12th at 7:00 PM"
+          RIGHT decision: "BPM scheduled for Thursday the 12th at 7"
+        - WRONG: "Complete coursework by 6/21/2025"
+          RIGHT: "Complete coursework in six to eight weeks" (verbatim)
         """
     }
 
