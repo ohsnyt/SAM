@@ -4,6 +4,39 @@
 
 ---
 
+## Morning Briefing Prompt v3 — Pronoun Discipline (April 22, 2026)
+
+**What**: Replaced the morning-briefing prompt in `DailyBriefingService.generateMorningNarrative` and `PromptLabCoordinator.defaultMorningBriefingPrompt` with a third-generation variant that enforces pronoun discipline, date fidelity, and required-section coverage. The previous prompt ("150 words or less", 3-part structure) had been in production since the briefing system shipped.
+
+- **Pronoun discipline**: the advisor is "you" / "your" throughout. "I" / "my" is reserved for SAM (the assistant). "we" is banned entirely — the advisor is not attending their own meetings with SAM.
+- **Meeting-attendee rewrite pattern**: "You meet with Jane Martinez" instead of "Jane Martinez and I". Prevents a specific failure mode where the model would fill the "I" slot with a duplicate of the other attendee's name ("Jane Martinez and Jane Martinez").
+- **Date fidelity**: explicit instruction that if the data says a birthday is today, it is today — do not shift it to yesterday or tomorrow.
+- **Required-section checklist**: today's schedule, priority actions, follow-ups, life events, business goals, tomorrow preview. Prior prompt let the model silently skip sections.
+- **Word-count floor**: 110–160 words (was "150 words or less"). Shorter than 110 means sections got skipped.
+- **Voice softening**: command-voice openers ("Please ensure", "Prioritize sending") discouraged; "Worth a quick note to [name]", "The day opens with…", "Looking ahead…" preferred.
+
+### Why
+Original prompt allowed outputs like "Jane Martinez and I will meet to review life insurance coverage" — SAM was speaking as Sarah rather than to her. The briefing is a coaching artifact, not a diary entry; the pronoun register matters for how the user experiences the surface.
+
+### Bench validation (sam-bench narrative track, briefing-morning-001, n=5)
+Measured on FoundationModels backend, full bake-off documented in `sam-bench/FINDINGS.md`.
+
+| Metric | v2 (prior default) | v3 (new default) | Δ |
+|--------|-------------------|------------------|---|
+| First-person-for-advisor errors | ~every run | 0 / 10 runs | eliminated |
+| Subject accuracy (judge) | 4.67 | 5.00 | +0.33 (perfect) |
+| Repetition (higher = less) | 1.67 | 3.20 | +1.53 |
+| Structure (judge) | 4.00 | 4.20 | +0.20 |
+| Tone (judge) | 3.67 | 3.80 | +0.13 |
+| Overall usefulness (judge) | 4.67 | 4.60 | ≈ |
+| Deterministic groundedness | 0.90 | 0.99 | +0.09 |
+| Length in-range (target 80–180) | 1.00 | 0.80 | −0.20 (one run just under floor) |
+
+### Compatibility
+Users with a custom prompt deployed via Prompt Lab (`UserDefaults` key `sam.promptLab.morningBriefing`) keep their deployed version. The v3 prompt is only applied when no Prompt Lab override is active.
+
+---
+
 ## Summary Prompt v10 — Recruiting Date Discipline (April 22, 2026)
 
 **What**: Appended a DATE DISCIPLINE directive block to the recruiting-interview prompt only. All other contexts fall through to v9 unchanged.
