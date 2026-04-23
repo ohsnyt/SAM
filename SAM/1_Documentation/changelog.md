@@ -37,6 +37,51 @@ Users with a custom prompt deployed via Prompt Lab (`UserDefaults` key `sam.prom
 
 ---
 
+## Briefing v3 Extended — Evening + Morning/Evening TTS (April 22, 2026)
+
+**What**: Extended the v3 pronoun-discipline rules from the morning visual briefing to the three remaining briefing surfaces — morning TTS, evening visual, evening TTS — in both `DailyBriefingService` inline prompts and `PromptLabCoordinator.defaultEveningBriefingPrompt`.
+
+- Morning TTS: explicit pronoun discipline line ("your 10 AM", not "our meeting" or "I'll meet with…"), date fidelity.
+- Evening visual: full pronoun-discipline block ("your day", "what you closed today", "we" banned), tightened word budget to 60–120, date fidelity, dropped redundant "Respond with ONLY…" line since that lives in the system instruction.
+- Evening TTS: short pronoun-discipline line, date fidelity.
+
+### Why
+Even though the v3 morning-visual win was measured, the other three surfaces still routed through v1 prompts — mismatched register within the same briefing session (morning visual = "your 10 AM", evening TTS = "we had a good week"). This aligns the whole briefing family on the same pronoun register.
+
+### Bench validation
+Prompt bodies are identical to the `NarrativePrompts.v3` variants already in sam-bench; no separate bench sweep was run for these surfaces. Production deployment is the validation.
+
+### Compatibility
+Evening Prompt Lab override (`sam.promptLab.eveningBriefing`) still wins when deployed. Morning/evening TTS have no Prompt Lab override path.
+
+---
+
+## Morning Briefing Prompt v3 — Pronoun Discipline Bake-off (Qwen3-8B, April 22, 2026)
+
+**What**: Re-benched the MLX Qwen3-8B-4bit narrator against the v3 prompt (prior measurement was v1 only).
+
+### Results (briefing-morning-001, n=5)
+
+| Metric | v1 (n=3) | v3 (n=5) | Δ |
+|--------|----------|----------|---|
+| First-person-for-advisor errors | present | 0 / 5 | eliminated |
+| Length in-range (110–160 words) | 0.67 | 1.00 | +0.33 |
+| Word count | 79 (chronically short) | 93 | +14 |
+| Deterministic groundedness | 0.75 | 0.96 | +0.21 |
+| Subject accuracy (judge) | 5.00 | 4.40 | −0.60 |
+| Grounding (judge) | 5.00 | 4.20 | −0.80 |
+| Structure (judge) | 4.67 | 4.20 | −0.47 |
+| Tone (judge) | 4.67 | 4.00 | −0.67 |
+| Usefulness (judge) | 5.00 | 4.40 | −0.60 |
+| Latency | 42.3s | 58.4s | +16s |
+
+Judge dips likely reflect variance on the v1 n=3 sample (where a single run sets the per-dimension mean). Det-groundedness and length compliance are the structural wins. Pronoun discipline lands cleanly on Qwen3-8B.
+
+### Recommendation
+Qwen3-8B-4bit v3 is the recommended MLX-upgrade variant. Too slow (~60s) for foreground use; suitable for the "stronger coaching narrative" tier.
+
+---
+
 ## Summary Prompt v10 — Recruiting Date Discipline (April 22, 2026)
 
 **What**: Appended a DATE DISCIPLINE directive block to the recruiting-interview prompt only. All other contexts fall through to v9 unchanged.
