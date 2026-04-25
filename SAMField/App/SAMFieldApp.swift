@@ -38,6 +38,10 @@ struct SAMFieldApp: App {
                     // upload service and runs crash recovery on any
                     // orphaned WAV files from force-quits / crashes.
                     MeetingCaptureCoordinator.shared.configure(container: container)
+
+                    // Configure the saved-address service so trip autocomplete,
+                    // Home chips, and the Trip Settings screen can read/write.
+                    SavedAddressService.shared.configure(container: container)
                 }
         }
     }

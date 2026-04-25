@@ -60,6 +60,7 @@ private let allFieldModels: [any PersistentModel.Type] = [
     EventEvaluation.self,
     SamTrip.self,
     SamTripStop.self,
+    SamSavedAddress.self,
     TranscriptSession.self,
     TranscriptSegment.self,
     SpeakerProfile.self,

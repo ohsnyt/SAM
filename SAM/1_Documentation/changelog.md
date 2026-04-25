@@ -4,6 +4,47 @@
 
 ---
 
+## Trips: address autocomplete, map / contact pickers, round-trip close, Year/All views (April 24, 2026)
+
+**What**: Sarah-driven feature pass on the SAM Field manual-trip and active-trip flows. Eight related improvements ship together because they share the same data plumbing (Saved Addresses + autocomplete model).
+
+### Capabilities
+
+- **Saved Addresses** — new `SamSavedAddress` SwiftData model with three kinds (`home`, `favorite`, `recent`). Home is unique; favorites are user-labeled; recents auto-populate as addresses are used and prune to 15 entries. Schema stays at `SAM_v34` (additive). Registered in both `SAMModelContainer` and `SAMFieldModelContainer`.
+- **Address autocomplete** — `AddressSuggestField` wraps `MKLocalSearchCompleter` with a `MKLocalSearch`-resolving picker. The dropdown surfaces Home → Favorites → Recents (when no live results) → live suggestions. Replaced every plain address `TextField` in `ManualTripEntryView`. Picks call `SavedAddressService.recordUse` so frequent destinations float to the top.
+- **Map pin picker** — `AddressPickerMapView`: long-press to drop a pin, continue holding and drag to refine. Reverse-geocoded via iOS 26 `MKReverseGeocodingRequest` (replacing deprecated `CLGeocoder`). Wired into both the trip-start and per-stop rows.
+- **Contact picker** — `ContactAddressPickerView`: ranks SAM contacts by today's calendar attendees → nearby (configurable radius, default 75 mi) → alphabetical, with `.searchable` override. Pulls postal addresses via `CNContactStore.unifiedContact` and forward-geocodes via `MKGeocodingRequest`.
+- **Round-trip / Return-to-Home** — two convenience buttons in the manual-stops section: "Return to Start (Round Trip)" appends a final stop at the start coordinate; "Return to Home" appends a final stop at the saved Home address. Active trips also get a "Close at Home" button on the live-tracking panel that calls `TripCoordinator.closeAtHome` and ends the trip with a Home stop even if GPS dwell hasn't fired.
+- **Year + All filters** — `TripsView` extends `TripPeriod` with `.year` (calendar year) and `.all`. Both group rows by month for readable scrolling.
+- **Configurable contact radius** — `TripSettingsKeys.contactRadiusMiles` (`@AppStorage`, default 75, range 5–150). Lives in a new "Trips" Settings section that also exposes Home, Favorites (add/swipe-delete), and recent-history clearing.
+- **Delete-reappear bug fix** — swipe-deleting a 0-mile trip no longer briefly reappears. `TripCoordinator.deleteTrip` now removes the row optimistically and reuses the deletion `ModelContext` for `refreshStats`, avoiding a stale fetch from a fresh context.
+
+### Files added
+
+- `SAM/Models/SAMModels-Trip.swift` — `SamSavedAddress` model + `SavedAddressKind` enum (additive).
+- `SAMField/Services/SavedAddressService.swift` — `@MainActor @Observable` singleton: `home/favorites/recents` reads, `setHome/clearHome/addFavorite/promoteToFavorite/delete/clearRecents/recordUse`. Coordinate-proximity match (~30 m / 0.0003 deg) prevents recent duplicates.
+- `SAMField/Views/Trips/AddressSuggestField.swift` — autocomplete field + `AddressCompleterModel` wrapping `MKLocalSearchCompleter`. Defines the shared `PickedAddress` struct.
+- `SAMField/Views/Trips/AddressPickerMapView.swift` — long-press + drag map picker.
+- `SAMField/Views/Trips/ContactAddressPickerView.swift` — ranked contact-address fill.
+- `SAMField/Views/Settings/TripSettingsView.swift` — Trips settings section.
+
+### Files modified
+
+- `SAMField/Coordinators/TripCoordinator.swift` — delete-reappear fix; `hasHomeAddress`, `closeAtHome`.
+- `SAMField/Views/Trips/ManualTripEntryView.swift` — autocomplete in start + stop rows; Current Location / Map / Contact buttons; Return-to-Start / Return-to-Home; `MKReverseGeocodingRequest` migration.
+- `SAMField/Views/Trips/TripsView.swift` — `.year` / `.all` filters with month grouping; "Close at Home" on the active-trip panel.
+- `SAMField/App/SAMFieldApp.swift` — bootstraps `SavedAddressService.configure(container:)`.
+- `SAMField/App/SAMFieldModelContainer.swift`, `SAM/App/SAMModelContainer.swift` — register `SamSavedAddress`.
+- `SAMField/Views/Settings/SettingsView.swift` — Trips Settings entry.
+
+### Notes
+
+- The `#Predicate { $0.id == address.id }` form crashes the Swift macro expander; bound `targetID = address.id` to a local before the predicate to keep the comparison `KeyPath<Variable<SamSavedAddress>, UUID> == UUID` rather than two keypath operands.
+- Default contact radius is 75 mi for rural users (Sarah's territory). Larger urban-agent practices can dial it down in Settings.
+- All long-form coaching/business reasoning still runs in Swift; this pass is pure data-entry plumbing — no LLM in the picker paths.
+
+---
+
 ## PIN Pairing Between Mac and iPhone (April 23, 2026)
 
 **What**: Replaced the previous (non-functional) "oort cloud" pairing experiment with a simple 6-digit PIN handshake for the iPhone ↔ Mac audio streaming link. The Mac displays a PIN, the phone enters it, and the two devices exchange a 32-byte HMAC token that keys every subsequent authentication.

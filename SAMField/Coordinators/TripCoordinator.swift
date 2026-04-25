@@ -81,6 +81,23 @@ final class TripCoordinator {
     func pauseTrip() { tracker.pauseTracking() }
     func resumeTrip() { tracker.resumeTracking() }
 
+    /// Whether the user has a Home address configured in Saved Addresses.
+    var hasHomeAddress: Bool { SavedAddressService.shared.home() != nil }
+
+    /// Append a final stop at the Home address and stop the trip. Used by the
+    /// "Close at Home" shortcut so the trip ends with Home as its last stop
+    /// even if GPS dwell detection hasn't fired yet.
+    func closeAtHome() async {
+        guard let home = SavedAddressService.shared.home() else { return }
+        do {
+            let loc = CLLocation(latitude: home.latitude, longitude: home.longitude)
+            try await tracker.addStop(at: loc, purpose: .personal, locationName: "Home", notes: nil)
+        } catch {
+            logger.error("closeAtHome: addStop failed: \(error)")
+        }
+        stopTrip()
+    }
+
     // MARK: - Stops
 
     func addStop(
@@ -111,17 +128,19 @@ final class TripCoordinator {
     // MARK: - Delete
 
     func deleteTrip(_ trip: SamTrip, context: ModelContext) {
+        let deletedID = trip.id
         context.delete(trip)
         try? context.save()
-        refreshStats()
+        recentTrips.removeAll { $0.id == deletedID }
+        refreshStats(using: context)
     }
 
     // MARK: - Stats
 
-    func refreshStats() {
+    func refreshStats(using context: ModelContext? = nil) {
         guard let container else { return }
 
-        let context = ModelContext(container)
+        let context = context ?? ModelContext(container)
         let calendar = Calendar.current
         let now = Date()
         let year = calendar.component(.year, from: now)

@@ -63,6 +63,18 @@ struct SettingsView: View {
                     Text("SAM Field connects only with Macs you've explicitly paired. Open SAM on your Mac, tap Pair New iPhone to get a 6-digit code, then enter it here.")
                 }
 
+                Section {
+                    NavigationLink {
+                        TripSettingsView()
+                    } label: {
+                        Label("Trip Settings", systemImage: "car.fill")
+                    }
+                } header: {
+                    Text("Trips")
+                } footer: {
+                    Text("Home address, favorite addresses, and nearby-contact radius used during trip entry.")
+                }
+
                 Section("About") {
                     LabeledContent("Version", value: Self.versionString)
                     LabeledContent("Built", value: Self.buildDateString)

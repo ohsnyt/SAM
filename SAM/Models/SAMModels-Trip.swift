@@ -332,3 +332,70 @@ public enum VisitOutcome: String, Codable, Sendable, CaseIterable {
         }
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────
+// MARK: - Saved Address
+// ─────────────────────────────────────────────────────────────────────
+
+/// Classification of a saved address.
+public enum SavedAddressKind: String, Codable, Sendable, CaseIterable {
+    /// The user's home address. Anchors commute detection and appears as a one-tap chip.
+    /// Invariant: only one row should carry this kind.
+    case home = "Home"
+    /// User-saved favorite (named).
+    case favorite = "Favorite"
+    /// Auto-captured from a successful address pick; pruned by use/recency.
+    case recent = "Recent"
+}
+
+/// A reusable address — home, user-saved favorite, or auto-captured recent.
+///
+/// Used by the Trip address autocomplete to surface Home, favorites, and
+/// recently-used addresses above live Apple Maps suggestions.
+@Model
+public final class SamSavedAddress {
+    @Attribute(.unique) public var id: UUID
+
+    /// Display label — "Home", "Gym", "Plano Office", etc.
+    public var label: String
+
+    /// Human-readable address used for display and TextField population.
+    public var formattedAddress: String
+
+    public var latitude: Double
+    public var longitude: Double
+
+    public var kindRawValue: String = "Recent"
+
+    @Transient
+    public var kind: SavedAddressKind {
+        get { SavedAddressKind(rawValue: kindRawValue) ?? .recent }
+        set { kindRawValue = newValue.rawValue }
+    }
+
+    public var createdAt: Date
+    public var lastUsedAt: Date
+    public var useCount: Int = 0
+
+    public init(
+        id: UUID = UUID(),
+        label: String,
+        formattedAddress: String,
+        latitude: Double,
+        longitude: Double,
+        kind: SavedAddressKind = .recent,
+        createdAt: Date = .now,
+        lastUsedAt: Date = .now,
+        useCount: Int = 0
+    ) {
+        self.id = id
+        self.label = label
+        self.formattedAddress = formattedAddress
+        self.latitude = latitude
+        self.longitude = longitude
+        self.kindRawValue = kind.rawValue
+        self.createdAt = createdAt
+        self.lastUsedAt = lastUsedAt
+        self.useCount = useCount
+    }
+}

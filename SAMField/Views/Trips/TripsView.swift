@@ -12,9 +12,11 @@ import MapKit
 // MARK: - Period Filter
 
 private enum TripPeriod: String, CaseIterable {
-    case today = "Today"
+    case today = "Day"
     case week = "Week"
     case month = "Month"
+    case year = "Year"
+    case all = "All"
 
     func includes(_ date: Date) -> Bool {
         let cal = Calendar.current
@@ -23,7 +25,14 @@ private enum TripPeriod: String, CaseIterable {
         case .today: return cal.isDateInToday(date)
         case .week:  return cal.isDate(date, equalTo: now, toGranularity: .weekOfYear)
         case .month: return cal.isDate(date, equalTo: now, toGranularity: .month)
+        case .year:  return cal.isDate(date, equalTo: now, toGranularity: .year)
+        case .all:   return true
         }
+    }
+
+    /// Whether this period should group trips into month sections.
+    var groupsByMonth: Bool {
+        self == .year || self == .all
     }
 }
 
@@ -176,6 +185,17 @@ struct TripsView: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.regular)
+
+                if coordinator.hasHomeAddress {
+                    Button {
+                        Task { await coordinator.closeAtHome() }
+                    } label: {
+                        Label("Close at Home", systemImage: "house.fill")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.regular)
+                }
             }
             .padding()
             .background(.ultraThinMaterial)
@@ -231,20 +251,66 @@ struct TripsView: View {
             }
 
             if !filteredTrips.isEmpty {
-                Section {
-                    ForEach(filteredTrips, id: \.id) { trip in
-                        TripHistoryRow(trip: trip)
-                            .contentShape(Rectangle())
-                            .onTapGesture { selectedTrip = trip }
+                if selectedPeriod.groupsByMonth {
+                    ForEach(monthGroupedTrips, id: \.key) { group in
+                        Section(group.title) {
+                            ForEach(group.trips, id: \.id) { trip in
+                                TripHistoryRow(trip: trip)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture { selectedTrip = trip }
+                            }
+                            .onDelete { offsets in
+                                for index in offsets {
+                                    coordinator.deleteTrip(group.trips[index], context: modelContext)
+                                }
+                            }
+                        }
                     }
-                    .onDelete { offsets in
-                        for index in offsets {
-                            coordinator.deleteTrip(filteredTrips[index], context: modelContext)
+                } else {
+                    Section {
+                        ForEach(filteredTrips, id: \.id) { trip in
+                            TripHistoryRow(trip: trip)
+                                .contentShape(Rectangle())
+                                .onTapGesture { selectedTrip = trip }
+                        }
+                        .onDelete { offsets in
+                            for index in offsets {
+                                coordinator.deleteTrip(filteredTrips[index], context: modelContext)
+                            }
                         }
                     }
                 }
             }
         }
+    }
+
+    // MARK: - Month Grouping
+
+    private struct MonthGroup {
+        let key: Date      // first-of-month, for stable ordering
+        let title: String  // "April 2026", or "April" if within current year
+        let trips: [SamTrip]
+    }
+
+    private var monthGroupedTrips: [MonthGroup] {
+        let cal = Calendar.current
+        let currentYear = cal.component(.year, from: Date())
+        let grouped = Dictionary(grouping: filteredTrips) { trip -> Date in
+            let comps = cal.dateComponents([.year, .month], from: trip.date)
+            return cal.date(from: comps) ?? trip.date
+        }
+        let formatter = DateFormatter()
+        return grouped
+            .map { (key, trips) -> MonthGroup in
+                let year = cal.component(.year, from: key)
+                formatter.dateFormat = year == currentYear ? "LLLL" : "LLLL yyyy"
+                return MonthGroup(
+                    key: key,
+                    title: formatter.string(from: key),
+                    trips: trips.sorted { $0.date > $1.date }
+                )
+            }
+            .sorted { $0.key > $1.key }
     }
 
     // MARK: - Add Stop Sheet
