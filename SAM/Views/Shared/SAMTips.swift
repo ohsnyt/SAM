@@ -321,7 +321,7 @@ struct DictationTip: Tip {
 struct BusinessDashboardTip: Tip {
     var title: Text { Text("Business Intelligence") }
     var message: Text? {
-        Text("This dashboard shows your practice at a glance: pipeline health, production metrics, strategic insights, and goals. Use the tabs to explore each area.")
+        Text("This dashboard shows your practice at a glance: pipeline health, production metrics, strategic insights, goals, and mileage. Use the tabs to explore each area.")
     }
     var image: Image? { Image(systemName: "chart.bar.horizontal.page") }
     var actions: [Action] {

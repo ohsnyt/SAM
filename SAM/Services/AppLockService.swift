@@ -244,7 +244,7 @@ final class AppLockService {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in self?.handleScreenEvent(source: "screenIsLocked") }
+            Task { @MainActor [weak self] in self?.handleScreenEvent(source: "screenIsLocked") }
         })
 
         screenLockObservers.append(dc.addObserver(
@@ -252,7 +252,7 @@ final class AppLockService {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in self?.handleScreenEvent(source: "screensaver.didstart") }
+            Task { @MainActor [weak self] in self?.handleScreenEvent(source: "screensaver.didstart") }
         })
 
         screenLockObservers.append(ws.addObserver(
@@ -260,7 +260,7 @@ final class AppLockService {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in self?.handleScreenEvent(source: "workspace.willSleep") }
+            Task { @MainActor [weak self] in self?.handleScreenEvent(source: "workspace.willSleep") }
         })
 
         logger.debug("Screen-lock observers installed")

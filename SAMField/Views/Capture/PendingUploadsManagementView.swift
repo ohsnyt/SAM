@@ -8,8 +8,12 @@
 
 import SwiftUI
 import SwiftData
+import TipKit
 
 struct PendingUploadsManagementView: View {
+    @State private var pendingUploadsTip = RecordPendingUploadsTip()
+    @State private var swipeDeleteTip = RecordSwipeDeleteTip()
+
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
 
@@ -31,6 +35,18 @@ struct PendingUploadsManagementView: View {
                     )
                 } else {
                     List {
+                        if FieldTipState.guidanceEnabled {
+                            Section {
+                                TipView(pendingUploadsTip)
+                                    .tipViewStyle(FieldTipViewStyle())
+                                    .listRowBackground(Color.clear)
+                                    .listRowInsets(EdgeInsets())
+                                TipView(swipeDeleteTip)
+                                    .tipViewStyle(FieldTipViewStyle())
+                                    .listRowBackground(Color.clear)
+                                    .listRowInsets(EdgeInsets())
+                            }
+                        }
                         Section {
                             ForEach(items) { item in
                                 PendingUploadRow(item: item)
@@ -41,6 +57,11 @@ struct PendingUploadsManagementView: View {
                                 .font(.caption)
                         }
                     }
+                }
+            }
+            .task {
+                if !items.isEmpty {
+                    await FieldTipEvents.firstPendingUpload.donate()
                 }
             }
             .navigationTitle("Pending Recordings")

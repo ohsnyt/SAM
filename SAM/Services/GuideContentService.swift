@@ -112,9 +112,17 @@ final class GuideContentService: @unchecked Sendable {
         do {
             let data = try Data(contentsOf: url)
             let manifest = try JSONDecoder().decode(GuideManifest.self, from: data)
-            sections = manifest.sections.sorted { $0.sortOrder < $1.sortOrder }
-            articles = manifest.articles.sorted { $0.sortOrder < $1.sortOrder }
-            logger.debug("Loaded guide manifest: \(manifest.sections.count) sections, \(manifest.articles.count) articles")
+            // The macOS reader hides iOS-only articles; iOS-only sections that
+            // lose all their articles are also hidden so the sidebar stays clean.
+            let visibleArticles = manifest.articles
+                .filter { $0.isVisibleOnMac }
+                .sorted { $0.sortOrder < $1.sortOrder }
+            let visibleSectionIDs = Set(visibleArticles.map { $0.sectionID })
+            sections = manifest.sections
+                .filter { visibleSectionIDs.contains($0.id) }
+                .sorted { $0.sortOrder < $1.sortOrder }
+            articles = visibleArticles
+            logger.debug("Loaded guide manifest: \(self.sections.count) sections, \(self.articles.count) articles (filtered for macOS)")
         } catch {
             logger.error("Failed to decode GuideManifest: \(error)")
         }

@@ -13,7 +13,7 @@ At the top of the dashboard, four metric cards show your practice at a glance:
 | **Recruiting** | Total people in your recruiting pipeline |
 | **This Month** | Premium volume for the current month |
 
-## Four Tabs
+## Tabs
 
 The dashboard is organized into tabs. Use the segmented picker to switch between them:
 
@@ -23,7 +23,9 @@ The dashboard is organized into tabs. Use the segmented picker to switch between
 | **Pipeline** | Client funnel (Lead > Applicant > Client) and Recruiting funnel (7 stages) | Client Pipeline, Recruiting Pipeline |
 | **Production** | Policies, products, premiums, and status tracking | Production |
 | **Goals** | Business targets with pacing and progress tracking | Goals |
-| **Roles** | Candidate discovery and pipeline for custom roles (appears when you create a role) | Role Recruiting |
+| **Mileage** | Business mileage rolled up from SAM Field trips, with IRS-ready totals and export | Mileage Tracking on iPhone |
+
+For practices configured as non-financial, the Production tab is hidden (it's specific to insurance/financial product tracking).
 
 ## Refreshing Data
 

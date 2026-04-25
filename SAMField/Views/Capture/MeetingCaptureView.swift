@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import TipKit
 
 struct MeetingCaptureView: View {
     /// Use the app-wide singleton so state survives tab switches and
@@ -32,15 +33,29 @@ struct MeetingCaptureView: View {
     /// Recording context chosen by the user. Hidden for calendar-matched meetings (always .clientMeeting).
     @State private var selectedContext: RecordingContext = .clientMeeting
 
+    @State private var tapToStartTip = RecordTapToStartTip()
+    @State private var modeIndicatorTip = RecordModeIndicatorTip()
+    @State private var participantsTip = RecordParticipantsTip()
+    @State private var reclassifyTip = RecordReclassifyTip()
+    @State private var looksGoodTip = RecordLooksGoodTip()
+
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
+                if FieldTipState.guidanceEnabled,
+                   coordinator.captureState == .idle || coordinator.captureState == .connected || coordinator.captureState == .connecting {
+                    TipView(tapToStartTip)
+                        .tipViewStyle(FieldTipViewStyle())
+                        .padding(.horizontal)
+                }
+
                 switch coordinator.captureState {
                 case .idle, .connecting, .connected:
                     Spacer(minLength: 16)
 
                     // Subtle background connection status — never blocks recording
                     connectionStatusPill
+                        .popoverTip(modeIndicatorTip)
 
                     // Upcoming meeting from calendar
                     if let title = upcomingMeetingTitle {
@@ -62,6 +77,7 @@ struct MeetingCaptureView: View {
                     // Participant list — hidden for solo training recordings
                     if selectedContext != .trainingLecture {
                         participantListView
+                            .popoverTip(participantsTip)
                         addParticipantButton
                     } else {
                         soloRecordingLabel
@@ -141,6 +157,7 @@ struct MeetingCaptureView: View {
             coordinator.autoConnectIfNeeded()
             PendingUploadService.shared.refreshPendingCount()
             coordinator.maybeProcessPendingQueue()
+            Task { await FieldTipEvents.openedRecordTab.donate() }
 
             // Auto-populate participants from upcoming calendar event
             if !hasCheckedCalendar {
@@ -166,6 +183,12 @@ struct MeetingCaptureView: View {
             }
         }
         .onChange(of: coordinator.captureState) { _, newState in
+            // Donate the "first recording completed" event so reclassify /
+            // looks-good / swipe-delete / pending-uploads tips become eligible.
+            if newState == .completed {
+                Task { await FieldTipEvents.firstRecordingCompleted.donate() }
+            }
+
             // When Mac connects and we haven't yet loaded calendar data, check now.
             // Skip if calendar was already populated (don't overwrite user edits).
             if newState == .connected && !hasCheckedCalendar {
@@ -979,6 +1002,14 @@ struct MeetingCaptureView: View {
                 // local sessionID clears and this menu disappears.
                 if canReclassifyRecording {
                     reclassifyMenu
+                        .popoverTip(reclassifyTip)
+                }
+
+                if FieldTipState.guidanceEnabled,
+                   coordinator.captureState == .completed,
+                   !coordinator.isAwaitingSummary {
+                    TipView(looksGoodTip)
+                        .tipViewStyle(FieldTipViewStyle())
                 }
 
                 // Session lifecycle actions — Delete is always available,

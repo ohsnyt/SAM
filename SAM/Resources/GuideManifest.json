@@ -6,7 +6,8 @@
     { "id": "business", "title": "Business Dashboard", "icon": "chart.bar", "sortOrder": 3 },
     { "id": "grow", "title": "Grow & Content", "icon": "leaf", "sortOrder": 4 },
     { "id": "events", "title": "Events & Presentations", "icon": "calendar.badge.clock", "sortOrder": 5 },
-    { "id": "search", "title": "Search", "icon": "magnifyingglass", "sortOrder": 6 }
+    { "id": "search", "title": "Search", "icon": "magnifyingglass", "sortOrder": 6 },
+    { "id": "ios-companion", "title": "iOS Companion", "icon": "iphone", "sortOrder": 7 }
   ],
   "articles": [
     {
@@ -17,7 +18,8 @@
       "markdownFileName": "01-Welcome.md",
       "searchKeywords": ["intro", "overview", "start", "first time"],
       "relatedTipID": null,
-      "relatedFeatureID": null
+      "relatedFeatureID": null,
+      "platform": "macOS"
     },
     {
       "id": "getting-started.keyboard-shortcuts",
@@ -27,7 +29,8 @@
       "markdownFileName": "02-Keyboard-Shortcuts.md",
       "searchKeywords": ["keys", "hotkey", "shortcut", "command", "navigate"],
       "relatedTipID": null,
-      "relatedFeatureID": null
+      "relatedFeatureID": null,
+      "platform": "macOS"
     },
     {
       "id": "getting-started.dictation",
@@ -37,7 +40,8 @@
       "markdownFileName": "03-Dictation.md",
       "searchKeywords": ["voice", "microphone", "transcribe", "speech", "dictate"],
       "relatedTipID": "DictationTip",
-      "relatedFeatureID": "dictation"
+      "relatedFeatureID": "dictation",
+      "platform": "macOS"
     },
     {
       "id": "getting-started.clipboard-capture",
@@ -47,7 +51,8 @@
       "markdownFileName": "04-Clipboard-Capture.md",
       "searchKeywords": ["clipboard", "paste", "copy", "conversation", "capture"],
       "relatedTipID": null,
-      "relatedFeatureID": "clipboardCapture"
+      "relatedFeatureID": "clipboardCapture",
+      "platform": "macOS"
     },
     {
       "id": "getting-started.settings",
@@ -57,7 +62,8 @@
       "markdownFileName": "05-Settings-and-Permissions.md",
       "searchKeywords": ["settings", "permissions", "contacts", "calendar", "mail", "privacy", "configure", "data sources"],
       "relatedTipID": null,
-      "relatedFeatureID": null
+      "relatedFeatureID": null,
+      "platform": "macOS"
     },
     {
       "id": "getting-started.privacy",
@@ -67,7 +73,8 @@
       "markdownFileName": "06-Privacy-and-Security.md",
       "searchKeywords": ["privacy", "security", "on-device", "local", "data", "ai", "foundation models"],
       "relatedTipID": null,
-      "relatedFeatureID": null
+      "relatedFeatureID": null,
+      "platform": "both"
     },
     {
       "id": "getting-started.text-size",
@@ -77,7 +84,8 @@
       "markdownFileName": "07-Text-Size.md",
       "searchKeywords": ["text size", "font size", "display", "accessibility", "scale", "large text", "small text"],
       "relatedTipID": null,
-      "relatedFeatureID": null
+      "relatedFeatureID": null,
+      "platform": "macOS"
     },
     {
       "id": "today.daily-briefing",
@@ -87,7 +95,8 @@
       "markdownFileName": "01-Daily-Briefing.md",
       "searchKeywords": ["morning", "briefing", "schedule", "priorities", "today"],
       "relatedTipID": "BriefingButtonTip",
-      "relatedFeatureID": null
+      "relatedFeatureID": null,
+      "platform": "both"
     },
     {
       "id": "today.outcome-queue",
@@ -97,7 +106,8 @@
       "markdownFileName": "02-Outcome-Queue.md",
       "searchKeywords": ["outcomes", "actions", "coaching", "queue", "done", "skip"],
       "relatedTipID": "OutcomeQueueTip",
-      "relatedFeatureID": null
+      "relatedFeatureID": null,
+      "platform": "macOS"
     },
     {
       "id": "today.coaching",
@@ -107,7 +117,8 @@
       "markdownFileName": "03-How-Coaching-Works.md",
       "searchKeywords": ["coaching", "calibration", "learning", "adapt", "preferences", "mute", "rating", "encouragement"],
       "relatedTipID": null,
-      "relatedFeatureID": null
+      "relatedFeatureID": null,
+      "platform": "macOS"
     },
     {
       "id": "today.life-events",
@@ -117,7 +128,8 @@
       "markdownFileName": "04-Life-Event-Intelligence.md",
       "searchKeywords": ["life event", "birthday", "graduation", "promotion", "wedding", "loss", "outreach", "milestone"],
       "relatedTipID": null,
-      "relatedFeatureID": null
+      "relatedFeatureID": null,
+      "platform": "macOS"
     },
     {
       "id": "today.deep-work",
@@ -127,7 +139,8 @@
       "markdownFileName": "05-Deep-Work-Scheduling.md",
       "searchKeywords": ["deep work", "focus", "schedule", "time block", "calendar", "concentration"],
       "relatedTipID": null,
-      "relatedFeatureID": "deepWorkSchedule"
+      "relatedFeatureID": "deepWorkSchedule",
+      "platform": "macOS"
     },
     {
       "id": "people.contact-list",
@@ -137,7 +150,8 @@
       "markdownFileName": "01-Contact-List.md",
       "searchKeywords": ["contacts", "list", "people", "filter", "roles"],
       "relatedTipID": "PeopleListTip",
-      "relatedFeatureID": null
+      "relatedFeatureID": null,
+      "platform": "macOS"
     },
     {
       "id": "people.person-detail",
@@ -147,7 +161,8 @@
       "markdownFileName": "02-Person-Detail.md",
       "searchKeywords": ["detail", "profile", "coaching", "person", "summary"],
       "relatedTipID": "PersonCoachingTip",
-      "relatedFeatureID": null
+      "relatedFeatureID": null,
+      "platform": "macOS"
     },
     {
       "id": "people.adding-notes",
@@ -157,7 +172,8 @@
       "markdownFileName": "03-Adding-Notes.md",
       "searchKeywords": ["notes", "capture", "meeting", "action items"],
       "relatedTipID": "AddNoteTip",
-      "relatedFeatureID": "postMeetingCapture"
+      "relatedFeatureID": "postMeetingCapture",
+      "platform": "macOS"
     },
     {
       "id": "people.relationship-graph",
@@ -167,7 +183,8 @@
       "markdownFileName": "04-Relationship-Graph.md",
       "searchKeywords": ["graph", "network", "connections", "visualization", "map"],
       "relatedTipID": "RelationshipGraphTip",
-      "relatedFeatureID": "relationshipGraph"
+      "relatedFeatureID": "relationshipGraph",
+      "platform": "macOS"
     },
     {
       "id": "business.overview",
@@ -177,7 +194,8 @@
       "markdownFileName": "01-Dashboard-Overview.md",
       "searchKeywords": ["dashboard", "business", "overview", "tabs"],
       "relatedTipID": "BusinessDashboardTip",
-      "relatedFeatureID": "businessDashboard"
+      "relatedFeatureID": "businessDashboard",
+      "platform": "macOS"
     },
     {
       "id": "business.goals",
@@ -187,7 +205,8 @@
       "markdownFileName": "02-Goals.md",
       "searchKeywords": ["goals", "targets", "pacing", "progress", "tracking"],
       "relatedTipID": "GoalsTip",
-      "relatedFeatureID": "goalSetting"
+      "relatedFeatureID": "goalSetting",
+      "platform": "macOS"
     },
     {
       "id": "business.client-pipeline",
@@ -197,7 +216,8 @@
       "markdownFileName": "03-Client-Pipeline.md",
       "searchKeywords": ["pipeline", "funnel", "lead", "applicant", "client", "conversion"],
       "relatedTipID": "ClientPipelineTip",
-      "relatedFeatureID": null
+      "relatedFeatureID": null,
+      "platform": "macOS"
     },
     {
       "id": "business.recruiting-pipeline",
@@ -207,7 +227,8 @@
       "markdownFileName": "04-Recruiting-Pipeline.md",
       "searchKeywords": ["recruiting", "agents", "licensing", "mentoring"],
       "relatedTipID": "RecruitingPipelineTip",
-      "relatedFeatureID": null
+      "relatedFeatureID": null,
+      "platform": "macOS"
     },
     {
       "id": "business.production",
@@ -217,7 +238,8 @@
       "markdownFileName": "05-Production.md",
       "searchKeywords": ["production", "policies", "products", "carrier", "premium"],
       "relatedTipID": "ProductionTip",
-      "relatedFeatureID": null
+      "relatedFeatureID": null,
+      "platform": "macOS"
     },
     {
       "id": "business.strategic-insights",
@@ -227,7 +249,8 @@
       "markdownFileName": "06-Strategic-Insights.md",
       "searchKeywords": ["strategy", "insights", "projections", "patterns", "time"],
       "relatedTipID": "StrategicInsightsTip",
-      "relatedFeatureID": null
+      "relatedFeatureID": null,
+      "platform": "macOS"
     },
     {
       "id": "business.role-recruiting",
@@ -237,7 +260,8 @@
       "markdownFileName": "07-Role-Recruiting.md",
       "searchKeywords": ["role", "recruiting", "candidates", "scoring", "board", "referral", "discover", "scan"],
       "relatedTipID": "RoleRecruitingTip",
-      "relatedFeatureID": "roleRecruiting"
+      "relatedFeatureID": "roleRecruiting",
+      "platform": "macOS"
     },
     {
       "id": "business.goal-check-ins",
@@ -247,7 +271,8 @@
       "markdownFileName": "08-Goal-Check-Ins.md",
       "searchKeywords": ["check-in", "journal", "goal review", "reflection", "coaching session", "barriers", "commitments"],
       "relatedTipID": null,
-      "relatedFeatureID": null
+      "relatedFeatureID": null,
+      "platform": "macOS"
     },
     {
       "id": "grow.lead-acquisition",
@@ -257,7 +282,8 @@
       "markdownFileName": "01-Lead-Acquisition.md",
       "searchKeywords": ["leads", "acquisition", "profiles", "social", "import"],
       "relatedTipID": null,
-      "relatedFeatureID": null
+      "relatedFeatureID": null,
+      "platform": "macOS"
     },
     {
       "id": "grow.content-drafts",
@@ -267,7 +293,8 @@
       "markdownFileName": "02-Content-Drafts.md",
       "searchKeywords": ["content", "drafts", "social media", "posts", "writing"],
       "relatedTipID": null,
-      "relatedFeatureID": "contentDraft"
+      "relatedFeatureID": "contentDraft",
+      "platform": "macOS"
     },
     {
       "id": "grow.social-imports",
@@ -277,7 +304,8 @@
       "markdownFileName": "03-Social-Imports.md",
       "searchKeywords": ["linkedin", "facebook", "substack", "import", "connections"],
       "relatedTipID": null,
-      "relatedFeatureID": "substackImport"
+      "relatedFeatureID": "substackImport",
+      "platform": "macOS"
     },
     {
       "id": "events.overview",
@@ -287,7 +315,8 @@
       "markdownFileName": "00-Overview.md",
       "searchKeywords": ["events", "overview", "presentations", "invitations"],
       "relatedTipID": null,
-      "relatedFeatureID": null
+      "relatedFeatureID": null,
+      "platform": "macOS"
     },
     {
       "id": "events.creating",
@@ -297,7 +326,8 @@
       "markdownFileName": "01-Creating-an-Event.md",
       "searchKeywords": ["create", "new event", "setup"],
       "relatedTipID": null,
-      "relatedFeatureID": null
+      "relatedFeatureID": null,
+      "platform": "macOS"
     },
     {
       "id": "events.participants",
@@ -307,7 +337,8 @@
       "markdownFileName": "02-Adding-Participants.md",
       "searchKeywords": ["participants", "attendees", "guests", "add people"],
       "relatedTipID": null,
-      "relatedFeatureID": null
+      "relatedFeatureID": null,
+      "platform": "macOS"
     },
     {
       "id": "events.invitations",
@@ -317,7 +348,8 @@
       "markdownFileName": "03-Sending-Invitations.md",
       "searchKeywords": ["invitations", "email", "send", "invite"],
       "relatedTipID": null,
-      "relatedFeatureID": null
+      "relatedFeatureID": null,
+      "platform": "macOS"
     },
     {
       "id": "events.rsvp",
@@ -327,7 +359,8 @@
       "markdownFileName": "04-RSVP-Tracking.md",
       "searchKeywords": ["rsvp", "responses", "tracking", "attendance"],
       "relatedTipID": null,
-      "relatedFeatureID": null
+      "relatedFeatureID": null,
+      "platform": "macOS"
     },
     {
       "id": "events.social-promotion",
@@ -337,7 +370,8 @@
       "markdownFileName": "05-Social-Promotion.md",
       "searchKeywords": ["social", "promotion", "sharing", "marketing"],
       "relatedTipID": null,
-      "relatedFeatureID": null
+      "relatedFeatureID": null,
+      "platform": "macOS"
     },
     {
       "id": "events.presentation-library",
@@ -347,7 +381,8 @@
       "markdownFileName": "06-Presentation-Library.md",
       "searchKeywords": ["presentation", "library", "slides", "pdf"],
       "relatedTipID": null,
-      "relatedFeatureID": null
+      "relatedFeatureID": null,
+      "platform": "macOS"
     },
     {
       "id": "events.linking-presentations",
@@ -357,7 +392,8 @@
       "markdownFileName": "07-Linking-Presentations-to-Events.md",
       "searchKeywords": ["link", "presentation", "event", "associate"],
       "relatedTipID": null,
-      "relatedFeatureID": null
+      "relatedFeatureID": null,
+      "platform": "macOS"
     },
     {
       "id": "events.identity",
@@ -367,7 +403,8 @@
       "markdownFileName": "08-Your-Identity-and-Signature.md",
       "searchKeywords": ["identity", "signature", "sender", "profile"],
       "relatedTipID": null,
-      "relatedFeatureID": null
+      "relatedFeatureID": null,
+      "platform": "macOS"
     },
     {
       "id": "events.undo",
@@ -377,7 +414,8 @@
       "markdownFileName": "09-Undoing-Mistakes.md",
       "searchKeywords": ["undo", "redo", "mistakes", "revert"],
       "relatedTipID": null,
-      "relatedFeatureID": null
+      "relatedFeatureID": null,
+      "platform": "macOS"
     },
     {
       "id": "events.workflow",
@@ -387,7 +425,8 @@
       "markdownFileName": "10-Putting-It-All-Together.md",
       "searchKeywords": ["workflow", "complete", "end to end", "summary"],
       "relatedTipID": null,
-      "relatedFeatureID": null
+      "relatedFeatureID": null,
+      "platform": "macOS"
     },
     {
       "id": "search.overview",
@@ -397,7 +436,8 @@
       "markdownFileName": "01-Universal-Search.md",
       "searchKeywords": ["search", "find", "query", "command palette"],
       "relatedTipID": "SearchTip",
-      "relatedFeatureID": "search"
+      "relatedFeatureID": "search",
+      "platform": "macOS"
     },
     {
       "id": "search.command-palette",
@@ -407,7 +447,151 @@
       "markdownFileName": "02-Command-Palette.md",
       "searchKeywords": ["command palette", "launcher", "quick nav", "command k", "spotlight", "fuzzy search"],
       "relatedTipID": "CommandPaletteTip",
-      "relatedFeatureID": null
+      "relatedFeatureID": null,
+      "platform": "macOS"
+    },
+    {
+      "id": "ios.today-overview",
+      "title": "Today on iPhone",
+      "sectionID": "ios-companion",
+      "sortOrder": 0,
+      "markdownFileName": "01-Today-Overview.md",
+      "searchKeywords": ["today", "iphone", "field", "schedule", "follow-ups", "stats"],
+      "relatedTipID": "TodayQuickStatsTip",
+      "relatedFeatureID": null,
+      "platform": "iOS"
+    },
+    {
+      "id": "ios.today-briefing-sync",
+      "title": "Briefing Sync to iPhone",
+      "sectionID": "ios-companion",
+      "sortOrder": 1,
+      "markdownFileName": "02-Briefing-Sync.md",
+      "searchKeywords": ["briefing", "sync", "icloud", "cloudkit", "morning", "iphone"],
+      "relatedTipID": "TodayBriefingSyncTip",
+      "relatedFeatureID": null,
+      "platform": "iOS"
+    },
+    {
+      "id": "ios.recording-overview",
+      "title": "Recording Meetings on iPhone",
+      "sectionID": "ios-companion",
+      "sortOrder": 2,
+      "markdownFileName": "03-Recording-Overview.md",
+      "searchKeywords": ["record", "recording", "meeting", "audio", "iphone", "field"],
+      "relatedTipID": "RecordTapToStartTip",
+      "relatedFeatureID": null,
+      "platform": "iOS"
+    },
+    {
+      "id": "ios.recording-modes",
+      "title": "Live vs Offline Recording",
+      "sectionID": "ios-companion",
+      "sortOrder": 3,
+      "markdownFileName": "04-Recording-Modes.md",
+      "searchKeywords": ["live", "offline", "streaming", "local", "wifi", "connection"],
+      "relatedTipID": "RecordModeIndicatorTip",
+      "relatedFeatureID": null,
+      "platform": "iOS"
+    },
+    {
+      "id": "ios.recording-participants",
+      "title": "Setting Participants Before Recording",
+      "sectionID": "ios-companion",
+      "sortOrder": 4,
+      "markdownFileName": "05-Recording-Participants.md",
+      "searchKeywords": ["participants", "speakers", "diarization", "names", "attendees"],
+      "relatedTipID": "RecordParticipantsTip",
+      "relatedFeatureID": null,
+      "platform": "iOS"
+    },
+    {
+      "id": "ios.recording-reclassify",
+      "title": "Reclassifying a Recording",
+      "sectionID": "ios-companion",
+      "sortOrder": 5,
+      "markdownFileName": "06-Recording-Reclassify.md",
+      "searchKeywords": ["reclassify", "context", "client meeting", "training", "board meeting", "resummarize"],
+      "relatedTipID": "RecordReclassifyTip",
+      "relatedFeatureID": null,
+      "platform": "iOS"
+    },
+    {
+      "id": "ios.recording-approve",
+      "title": "Approving Summaries on iPhone",
+      "sectionID": "ios-companion",
+      "sortOrder": 6,
+      "markdownFileName": "07-Recording-Approve.md",
+      "searchKeywords": ["approve", "looks good", "done", "delete", "sign off", "summary"],
+      "relatedTipID": "RecordLooksGoodTip",
+      "relatedFeatureID": null,
+      "platform": "iOS"
+    },
+    {
+      "id": "ios.pending-uploads",
+      "title": "Pending Uploads & Sync",
+      "sectionID": "ios-companion",
+      "sortOrder": 7,
+      "markdownFileName": "08-Pending-Uploads.md",
+      "searchKeywords": ["pending", "upload", "sync", "queue", "offline", "waiting"],
+      "relatedTipID": "RecordPendingUploadsTip",
+      "relatedFeatureID": null,
+      "platform": "iOS"
+    },
+    {
+      "id": "ios.trips-overview",
+      "title": "Mileage Tracking on iPhone",
+      "sectionID": "ios-companion",
+      "sortOrder": 8,
+      "markdownFileName": "09-Trips-Overview.md",
+      "searchKeywords": ["trips", "mileage", "tracking", "irs", "drive", "vehicle"],
+      "relatedTipID": "TripStartTip",
+      "relatedFeatureID": null,
+      "platform": "iOS"
+    },
+    {
+      "id": "ios.trips-stops",
+      "title": "Automatic Stop Detection",
+      "sectionID": "ios-companion",
+      "sortOrder": 9,
+      "markdownFileName": "10-Trips-Stops.md",
+      "searchKeywords": ["stops", "detection", "automatic", "park", "visit", "purpose"],
+      "relatedTipID": "TripStopDetectionTip",
+      "relatedFeatureID": null,
+      "platform": "iOS"
+    },
+    {
+      "id": "ios.trips-close-at-home",
+      "title": "Closing a Trip at Home",
+      "sectionID": "ios-companion",
+      "sortOrder": 10,
+      "markdownFileName": "11-Trips-Close-At-Home.md",
+      "searchKeywords": ["close at home", "end trip", "home address", "wrap up"],
+      "relatedTipID": "TripCloseAtHomeTip",
+      "relatedFeatureID": null,
+      "platform": "iOS"
+    },
+    {
+      "id": "ios.mileage-export",
+      "title": "Exporting Mileage for Taxes",
+      "sectionID": "ios-companion",
+      "sortOrder": 11,
+      "markdownFileName": "12-Mileage-Export.md",
+      "searchKeywords": ["export", "csv", "pdf", "taxes", "irs", "deduction", "mileage"],
+      "relatedTipID": "TripExportTip",
+      "relatedFeatureID": null,
+      "platform": "iOS"
+    },
+    {
+      "id": "ios.pairing",
+      "title": "Pairing Your Mac via iCloud",
+      "sectionID": "ios-companion",
+      "sortOrder": 12,
+      "markdownFileName": "13-Pairing.md",
+      "searchKeywords": ["pair", "pairing", "mac", "icloud", "trust", "device"],
+      "relatedTipID": "SettingsPairingTip",
+      "relatedFeatureID": null,
+      "platform": "iOS"
     }
   ]
 }

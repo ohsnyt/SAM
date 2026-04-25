@@ -8,6 +8,7 @@
 import SwiftUI
 import SwiftData
 import MapKit
+import TipKit
 
 // MARK: - Period Filter
 
@@ -50,6 +51,13 @@ struct TripsView: View {
     @State private var stopName = ""
     @State private var stopNotes = ""
 
+    @State private var startTip = TripStartTip()
+    @State private var stopDetectionTip = TripStopDetectionTip()
+    @State private var closeAtHomeTip = TripCloseAtHomeTip()
+    @State private var swipeDeleteTip = TripSwipeDeleteTip()
+    @State private var exportTip = TripExportTip()
+    @State private var periodFilterTip = TripPeriodFilterTip()
+
     private var filteredTrips: [SamTrip] {
         coordinator.recentTrips.filter { selectedPeriod.includes($0.date) }
     }
@@ -77,6 +85,7 @@ struct TripsView: View {
                     Button { showExport = true } label: {
                         Image(systemName: "square.and.arrow.up")
                     }
+                    .popoverTip(exportTip)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showManualEntry = true } label: {
@@ -87,6 +96,7 @@ struct TripsView: View {
         }
         .onAppear {
             coordinator.configure(container: modelContext.container)
+            Task { await FieldTipEvents.openedTripsTab.donate() }
         }
         .sheet(isPresented: $showExport) {
             MileageExportView()
@@ -100,6 +110,11 @@ struct TripsView: View {
         .sheet(isPresented: $coordinator.showTripSummary) {
             if let trip = coordinator.completedTrip {
                 TripSummaryView(trip: trip)
+            }
+        }
+        .onChange(of: coordinator.showTripSummary) { _, isPresented in
+            if isPresented {
+                Task { await FieldTipEvents.firstTripCompleted.donate() }
             }
         }
         .sheet(item: $selectedTrip) { trip in
@@ -154,6 +169,7 @@ struct TripsView: View {
                             }
                         }
                     }
+                    .popoverTip(stopDetectionTip)
                 }
 
                 HStack(spacing: 12) {
@@ -195,6 +211,7 @@ struct TripsView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.regular)
+                    .popoverTip(closeAtHomeTip)
                 }
             }
             .padding()
@@ -206,6 +223,15 @@ struct TripsView: View {
 
     private var idleTrips: some View {
         List {
+            if FieldTipState.guidanceEnabled {
+                Section {
+                    TipView(startTip)
+                        .tipViewStyle(FieldTipViewStyle())
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets())
+                }
+            }
+
             Section {
                 Button {
                     coordinator.startTrip()
@@ -236,6 +262,7 @@ struct TripsView: View {
                 .pickerStyle(.segmented)
                 .listRowBackground(Color.clear)
                 .listRowInsets(.init())
+                .popoverTip(periodFilterTip)
             } footer: {
                 if filteredTrips.isEmpty {
                     Text("No trips recorded.")
@@ -247,6 +274,15 @@ struct TripsView: View {
                             Text(String(format: "%.1f mi business", periodBusinessMiles))
                         }
                     }
+                }
+            }
+
+            if !filteredTrips.isEmpty, FieldTipState.guidanceEnabled {
+                Section {
+                    TipView(swipeDeleteTip)
+                        .tipViewStyle(FieldTipViewStyle())
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets())
                 }
             }
 

@@ -10,6 +10,7 @@
 
 import SwiftUI
 import SwiftData
+import TipKit
 
 struct TodayView: View {
     @Environment(\.modelContext) private var modelContext
@@ -17,9 +18,21 @@ struct TodayView: View {
     @State private var tripCoordinator = TripCoordinator.shared
     @State private var briefingJSON: String? = nil
     @State private var showingSettings = false
+    @State private var briefingSyncTip = TodayBriefingSyncTip()
+    @State private var quickStatsTip = TodayQuickStatsTip()
 
     var body: some View {
         List {
+            // Pull-to-refresh discovery tip
+            if FieldTipState.guidanceEnabled {
+                Section {
+                    TipView(briefingSyncTip)
+                        .tipViewStyle(FieldTipViewStyle())
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets())
+                }
+            }
+
             // Morning briefing from Mac via CloudKit
             if let json = briefingJSON {
                 briefingSection(json)
@@ -63,6 +76,15 @@ struct TodayView: View {
 
             // Quick stats
             statsSection
+
+            if FieldTipState.guidanceEnabled {
+                Section {
+                    TipView(quickStatsTip)
+                        .tipViewStyle(FieldTipViewStyle())
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets())
+                }
+            }
         }
         .navigationTitle("Today")
         .toolbar {
@@ -91,6 +113,7 @@ struct TodayView: View {
         .onAppear {
             coordinator.configure(container: modelContext.container)
             tripCoordinator.configure(container: modelContext.container)
+            Task { await FieldTipEvents.openedTodayTab.donate() }
             Task {
                 // Fetch workspace settings and briefing from CloudKit
                 if WorkspaceSettings.loadCached() == nil {

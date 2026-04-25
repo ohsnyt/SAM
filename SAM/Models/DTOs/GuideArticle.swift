@@ -24,6 +24,14 @@ struct GuideArticle: Identifiable, Codable, Sendable {
     let relatedTipID: String?
     /// Maps to a FeatureAdoptionTracker.Feature for cross-referencing
     let relatedFeatureID: String?
+    /// "macOS", "iOS", or "both" — defaults to "macOS" when absent.
+    let platform: String?
+
+    /// Whether this article should appear in the macOS guide reader.
+    var isVisibleOnMac: Bool {
+        let p = platform ?? "macOS"
+        return p == "macOS" || p == "both"
+    }
 }
 
 // MARK: - Guide Section

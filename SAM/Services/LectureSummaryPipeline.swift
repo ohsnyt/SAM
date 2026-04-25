@@ -102,7 +102,7 @@ struct LectureScaffold {
     let repeatedThesisPrefix: String?
 }
 
-enum LectureScaffoldDetector {
+nonisolated enum LectureScaffoldDetector {
     static func detect(from extracts: [LectureChunkExtraction]) -> LectureScaffold {
         var entityChunkCounts: [String: Int] = [:]
         for extract in extracts {
@@ -336,7 +336,7 @@ enum LectureScaffoldDetector {
 
 /// Split a transcript into chunks of at most `maxChars`, preferring
 /// paragraph then sentence boundaries.
-enum LectureChunker {
+nonisolated enum LectureChunker {
     static func chunk(_ text: String, maxChars: Int) -> [String] {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count > maxChars else { return [trimmed] }

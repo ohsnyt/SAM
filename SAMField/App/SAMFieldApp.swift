@@ -27,6 +27,9 @@ struct SAMFieldApp: App {
             FieldTabView()
                 .modelContainer(container)
                 .task {
+                    // TipKit must be configured before any TipView appears.
+                    FieldTipState.configure()
+
                     // Bootstrap the pairing trust store before the audio
                     // streaming service browses — without this, a reconnect
                     // after launch would race the keychain load and drop

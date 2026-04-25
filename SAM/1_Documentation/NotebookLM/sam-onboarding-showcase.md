@@ -8,19 +8,20 @@ SAM believes your first experience should feel guided, not overwhelming. Rather 
 
 ## First Launch Experience
 
-When you open SAM for the first time, a focused onboarding sheet guides you through eleven steps at your own pace. It begins with a welcome screen, then moves into permissions and configuration:
+When you open SAM for the first time, a focused onboarding sheet guides you through twelve steps at your own pace. It begins with a welcome screen, then moves into permissions and configuration:
 
-1. **Contacts permission** -- SAM asks to access Apple Contacts, explaining that it reads but never replaces your address book.
-2. **Contact group selection** -- You choose which Contacts group SAM manages. Your personal contacts stay untouched.
-3. **Calendar permission** -- SAM requests calendar access to observe your meetings and schedule.
-4. **Calendar selection** -- You pick your work calendar so SAM only sees professional events.
-5. **Mail permission** -- SAM asks to read your Mail database for interaction history. You select which email addresses belong to work accounts.
-6. **Mail address selection** -- You confirm the specific mail accounts SAM should analyze.
-7. **Communications permission** -- Covers iMessage, Phone, and FaceTime history via a security-scoped bookmark. SAM analyzes message text on-device and stores only summaries.
-8. **Microphone permission** -- Enables on-device voice dictation so you can capture notes hands-free.
-9. **Notifications permission** -- Lets SAM send timely alerts for meeting prep and time-sensitive coaching.
-10. **AI setup** -- SAM identifies your "Me" contact and configures on-device intelligence.
-11. **Complete** -- You are ready to go.
+1. **Welcome** -- A brief introduction to what SAM does and how the rest of onboarding works.
+2. **Contacts permission** -- SAM asks to access Apple Contacts, explaining that it reads but never replaces your address book.
+3. **Contact group selection** -- You choose which Contacts group SAM manages. Your personal contacts stay untouched.
+4. **Calendar permission** -- SAM requests calendar access to observe your meetings and schedule.
+5. **Calendar selection** -- You pick your work calendar so SAM only sees professional events.
+6. **Mail permission** -- SAM asks to read your Mail database for interaction history.
+7. **Mail address selection** -- You confirm the specific mail accounts SAM should analyze.
+8. **Communications permission** -- Covers iMessage, Phone, and FaceTime history via a security-scoped bookmark. SAM analyzes message text on-device and stores only summaries.
+9. **Microphone permission** -- Enables on-device voice dictation so you can capture notes hands-free.
+10. **Notifications permission** -- Lets SAM send timely alerts for meeting prep and time-sensitive coaching.
+11. **AI setup** -- SAM identifies your "Me" contact and configures on-device intelligence (Foundation Models plus an optional MLX model download).
+12. **Complete** -- You are ready to go.
 
 Every permission is explained in plain language. Skip any step now and enable it later from Settings.
 
@@ -32,14 +33,19 @@ Before you see any data, SAM requires authentication. On launch, a lock screen a
 
 *Suggested screenshot: getting-started/images/TouchID prompt.png (Lock screen with Touch ID authentication)*
 
+## Sidebar Layout
+
+After unlocking, SAM lands you in a three-column NavigationSplitView. The sidebar holds seven sections: **Today** (briefing and outcome queue), **People** (contacts, person detail, and the relationship graph), **Business** (dashboard, goals, pipelines, production, strategic insights), **Grow** (lead acquisition and content drafts), **Events** (event manager and presentation library), **Transcription** (live recording and meeting capture sessions), and **Search** (universal search across everything). Glass material on the sidebar and toolbar follows the macOS 26 Tahoe design language.
+
 ## Tooltip System
 
-As you explore SAM for the first time, contextual tips appear right where they are relevant. Each tip is styled with an amber glass card that stands out without interrupting your workflow. A few examples:
+As you explore SAM for the first time, contextual tips appear right where they are relevant. Each tip is styled with a Liquid Glass card tinted amber so it stands out without interrupting your workflow. SAM ships twenty-seven tips covering Today, People, Business, Grow, Events, Search, and cross-cutting features. A few examples:
 
 - **"Your Top Priority"** -- Introduces the hero coaching card on the Today view and explains how to act on, complete, or skip recommendations.
 - **"Your Action Queue"** -- Describes the outcome queue where SAM's coaching suggestions accumulate throughout the day.
 - **"Capture Notes"** -- Appears near the note editor and encourages you to add notes after meetings, with a nudge to try voice dictation.
 - **"Clipboard Capture"** -- Teaches you the Control-Shift-V shortcut to capture copied conversations from any app.
+- **"Quick Commands"** -- Introduces the Command-K command palette for keyboard-first navigation.
 
 Every tip includes a "Learn more" button that opens the matching article in SAM's built-in guide. Tips appear once, then get out of your way. You can re-enable all tips or toggle them off entirely from Settings.
 
@@ -47,17 +53,18 @@ Every tip includes a "Learn more" button that opens the matching article in SAM'
 
 ## Built-in Guide
 
-SAM includes a fully searchable guide window with seven sections and over thirty articles. The sections are:
+SAM includes a fully searchable guide window with eight sections and over fifty articles. The sections are:
 
-1. **Getting Started** -- Welcome, keyboard shortcuts, voice dictation, clipboard capture, settings, and privacy.
-2. **Today & Coaching** -- Daily briefing, outcome queue, and how coaching works.
+1. **Getting Started** -- Welcome, keyboard shortcuts, voice dictation, clipboard capture, settings, privacy, and text size.
+2. **Today & Coaching** -- Daily briefing, outcome queue, how coaching works, life event intelligence, and deep work scheduling.
 3. **People & Relationships** -- Contact list, person detail, adding notes, and the relationship graph.
-4. **Business Dashboard** -- Dashboard overview, goals, client pipeline, recruiting pipeline, production, strategic insights, and role recruiting.
+4. **Business Dashboard** -- Dashboard overview, goals, client pipeline, recruiting pipeline, production, strategic insights, role recruiting, and goal check-in sessions.
 5. **Grow & Content** -- Lead acquisition, content drafts, and social imports.
-6. **Events & Presentations** -- Eleven articles covering event creation, participants, invitations, RSVP tracking, social promotion, presentations, and workflows.
-7. **Search** -- Universal search across people, notes, evidence, and outcomes.
+6. **Events & Presentations** -- Eleven articles covering event creation, participants, invitations, RSVP tracking, social promotion, presentations, identity, and full workflows.
+7. **Search** -- Universal search and the command palette.
+8. **iOS Companion** -- Thirteen articles dedicated to SAM Field on iPhone (Today, recording, trips, pairing, and mileage export).
 
-Type a keyword and results filter instantly. Every tooltip's "Learn more" link opens the corresponding article, so guidance flows naturally from tip to deeper reading.
+Each article is tagged in the manifest as `macOS`, `iOS`, or `both`, so the same companion library serves both apps. Type a keyword and results filter instantly. Every tooltip's "Learn more" link opens the corresponding article, so guidance flows naturally from tip to deeper reading.
 
 *Suggested screenshot: getting-started/images/gs-02.png (Guide window showing section list)*
 

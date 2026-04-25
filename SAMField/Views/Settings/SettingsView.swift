@@ -10,16 +10,27 @@
 //
 
 import SwiftUI
+import TipKit
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var pairing = DevicePairingService.shared
     @State private var pairingToRemove: TrustedMacRecord?
     @State private var isRefreshing = false
+    @State private var pairingTip = SettingsPairingTip()
 
     var body: some View {
         NavigationStack {
             Form {
+                if FieldTipState.guidanceEnabled {
+                    Section {
+                        TipView(pairingTip)
+                            .tipViewStyle(FieldTipViewStyle())
+                            .listRowBackground(Color.clear)
+                            .listRowInsets(EdgeInsets())
+                    }
+                }
+
                 Section {
                     if pairing.trustedMacs.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
@@ -112,6 +123,9 @@ struct SettingsView: View {
                 Button("Cancel", role: .cancel) {}
             } message: { _ in
                 Text("This Mac will be removed from the list, but it will reappear automatically on the next iCloud refresh because the pairing token still gives it access. Use Reset Pairing Token on the Mac to lock it out completely.")
+            }
+            .task {
+                await FieldTipEvents.openedSettings.donate()
             }
         }
     }
