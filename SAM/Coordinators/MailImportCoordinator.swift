@@ -7,6 +7,7 @@
 //  Orchestrates email fetch → analyze → upsert pipeline via Mail.app.
 //
 
+import AppKit
 import Foundation
 import Observation
 import os.log
@@ -56,6 +57,12 @@ final class MailImportCoordinator {
     private(set) var lastMailWatermark: Date?
     private(set) var lastSentMailWatermark: Date?
 
+    /// Populated after the one-time sent-mail backfill runs. When non-nil, the Mail Settings
+    /// view shows a "Send Backfill Report" button so the user can email diagnostics.
+    private(set) var sentBackfillReport: String?
+
+    private static let sentBackfillReportKey = "sam.mail.sentBackfillReport"
+
     /// Reset watermarks so the next import re-scans from the lookback date.
     func resetWatermark() {
         lastMailWatermark = nil
@@ -100,6 +107,9 @@ final class MailImportCoordinator {
         }
         if let ts = UserDefaults.standard.object(forKey: "mailLastSentWatermark") as? Double {
             lastSentMailWatermark = Date(timeIntervalSinceReferenceDate: ts)
+        }
+        if let stored = UserDefaults.standard.string(forKey: Self.sentBackfillReportKey) {
+            sentBackfillReport = stored
         }
 
         // One-time migration: reset sent watermark to recover emails skipped by the
@@ -163,6 +173,48 @@ final class MailImportCoordinator {
         if let data = try? JSONEncoder().encode(value) {
             UserDefaults.standard.set(data, forKey: "mailFilterRules")
         }
+    }
+
+    // MARK: - Backfill Report
+
+    /// Compose an email to sam@stillwaiting.org with the stored backfill report.
+    /// Mirrors CrashReportService.sendReport — opens Mail compose pre-filled, falls back
+    /// to a mailto: URL if NSSharingService isn't available. Clears the stored report
+    /// after the compose window opens so the UI affordance hides itself.
+    func sendBackfillReport() {
+        guard let text = sentBackfillReport else { return }
+
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let dateString = formatter.string(from: .now)
+        let subject = "[MAIL BACKFILL] \(dateString) — SAM Backfill Report"
+        let recipient = "sam@stillwaiting.org"
+
+        if let service = NSSharingService(named: .composeEmail) {
+            service.recipients = [recipient]
+            service.subject = subject
+            service.perform(withItems: [text])
+            logger.info("Backfill report email composed via NSSharingService")
+        } else {
+            var components = URLComponents()
+            components.scheme = "mailto"
+            components.path = recipient
+            components.queryItems = [
+                URLQueryItem(name: "subject", value: subject),
+                URLQueryItem(name: "body", value: text),
+            ]
+            if let url = components.url {
+                NSWorkspace.shared.open(url)
+                logger.info("Backfill report email composed via mailto URL")
+            }
+        }
+        clearBackfillReport()
+    }
+
+    /// Dismiss the backfill report without sending.
+    func clearBackfillReport() {
+        sentBackfillReport = nil
+        UserDefaults.standard.removeObject(forKey: Self.sentBackfillReportKey)
     }
 
     // MARK: - Cancellation
@@ -329,6 +381,10 @@ final class MailImportCoordinator {
             let allMetas: [MessageMeta]
             let fetchWarnings: String?
 
+            // Compute once per cycle — used for both sent detection and inbox exclusion.
+            let userAddresses = userSenderAddresses()
+            let userAddressList = Array(userAddresses)
+
             if let envURL = envelopeURL {
                 // Direct database access — zero AppleScript, Mail never touched
                 logger.debug("Using direct database access for metadata sweep")
@@ -336,7 +392,9 @@ final class MailImportCoordinator {
                     dbURL: envURL,
                     since: since,
                     accountEmails: selectedAccountIDs,
-                    maxResults: 200
+                    maxResults: 200,
+                    mailbox: .inbox,
+                    excludeSenderAddresses: userAddressList
                 )
                 fetchWarnings = nil
             } else {
@@ -494,21 +552,56 @@ final class MailImportCoordinator {
                 UserDefaults.standard.set(watermark.timeIntervalSinceReferenceDate, forKey: "mailLastWatermark")
             }
 
+            // ── One-time Sent-Mail Backfill (Gmail fix) ─────────────────────
+            // Before the 2026-04 fix, the sent pipeline matched `mb.url LIKE '%Sent%'`, which
+            // missed Gmail entirely (sent mail lives in `[Gmail]/All Mail` with an IMAP `\Sent`
+            // flag, not a Sent folder). Affected users have zero sent mail in Evidence and a
+            // queue of their own address accumulating as an "unknown sender". Run a one-time
+            // paginated ASC backfill over the full lookback window, then purge the noise.
+            if !UserDefaults.standard.bool(forKey: "sentMailSenderMatchBackfillApplied"),
+               let envURL = envelopeURL,
+               !userAddressList.isEmpty {
+                let report = await performSentBackfill(
+                    envelopeURL: envURL,
+                    versionDirURL: versionDirURL,
+                    mailDirURL: mailDirURL,
+                    userAddresses: userAddressList,
+                    lookbackDate: lookbackDate
+                )
+                // Purge the user's own address from the Unknown Senders triage queue and mark
+                // it neverInclude so it doesn't re-accumulate.
+                for addr in userAddressList {
+                    try? UnknownSenderRepository.shared.markNeverInclude(identifier: addr, source: .mail)
+                }
+                UserDefaults.standard.set(true, forKey: "sentMailSenderMatchBackfillApplied")
+                sentBackfillReport = report
+                UserDefaults.standard.set(report, forKey: Self.sentBackfillReportKey)
+                logger.info("[sent-backfill] Migration complete — flag set, report ready to send")
+            }
+
             // ── Sent Mail Pipeline ──────────────────────────────────────────
-            // Scan the Sent mailbox for outbound emails to known contacts.
-            // This fills the direction gap: SAM can now see both sides of email communication.
+            // Detect outbound mail by sender-address match (provider-agnostic: handles Gmail's
+            // `[Gmail]/All Mail` layout, iCloud `Sent Messages`, Exchange `Sent Items`, and
+            // localized folder names). Folder-name heuristics were removed — they broke Gmail
+            // entirely because Gmail's IMAP `\Sent` flag lives on a message in All Mail.
             let sentSince = lastSentMailWatermark ?? lookbackDate
 
             let sentMetas: [MessageMeta]
             let sentWarnings: String?
-            if let envURL = envelopeURL {
+            if let envURL = envelopeURL, !userAddressList.isEmpty {
                 sentMetas = try await mailDBService.fetchMetadata(
                     dbURL: envURL,
                     since: sentSince,
                     accountEmails: selectedAccountIDs,
                     maxResults: 50,
-                    mailbox: .sent
+                    mailbox: .sent,
+                    senderAddresses: userAddressList
                 )
+                sentWarnings = nil
+            } else if envelopeURL != nil {
+                // DB access but no known user addresses — nothing to match, skip sent pipeline.
+                logger.warning("[sent-mail] No user addresses available; skipping sent pipeline")
+                sentMetas = []
                 sentWarnings = nil
             } else {
                 try? await Task.sleep(for: .seconds(3))
@@ -854,6 +947,187 @@ final class MailImportCoordinator {
     /// body-fetch work and avoids hammering Mail.app. Emails beyond this cap
     /// will be picked up in subsequent import cycles via the sent watermark.
     private let maxSentBodyFetches = 50
+
+    /// All email addresses that represent the user.
+    /// Union of configured mail accounts and the Me contact's email aliases.
+    /// Lowercased and with `+tag` stripped so `sarah+alerts@foo.com` canonicalizes to `sarah@foo.com`.
+    /// Used to detect outbound mail by sender match (provider-agnostic) and to keep the user's
+    /// own address from being triaged as an unknown sender inside unified Gmail `All Mail`.
+    private func userSenderAddresses() -> Set<String> {
+        var set = Set<String>()
+        for id in selectedAccountIDs {
+            if let c = canonicalizeSenderAddress(id) { set.insert(c) }
+        }
+        if let me = try? PeopleRepository.shared.fetchMe() {
+            if let primary = canonicalizeSenderAddress(me.emailCache) { set.insert(primary) }
+            for alias in me.emailAliases {
+                if let c = canonicalizeSenderAddress(alias) { set.insert(c) }
+            }
+        }
+        return set
+    }
+
+    /// One-time paginated backfill of sent mail. Runs when the provider-agnostic sender-match
+    /// fix is first enabled (migration flag `sentMailSenderMatchBackfillApplied`).
+    ///
+    /// Uses ASC ordering over date_sent so the steady-state watermark can advance forward
+    /// through the batches without stranding older messages (the normal DESC+advance-to-max
+    /// pattern would leave everything older than the first batch un-ingested).
+    ///
+    /// `bulkUpsertEmails` is idempotent on `mail:<Message-ID>`, so re-runs are safe — already
+    /// ingested rows update in place rather than duplicate.
+    private func performSentBackfill(
+        envelopeURL: URL,
+        versionDirURL: URL?,
+        mailDirURL: URL?,
+        userAddresses: [String],
+        lookbackDate: Date
+    ) async -> String {
+        var log: [String] = []
+        let started = Date()
+        let iso = ISO8601DateFormatter()
+
+        func line(_ s: String) {
+            log.append(s)
+            logger.debug("[sent-backfill] \(s, privacy: .public)")
+        }
+
+        line("Started: \(iso.string(from: started))")
+        line("Lookback date: \(iso.string(from: lookbackDate))")
+        line("User addresses (\(userAddresses.count)): \(userAddresses.joined(separator: ", "))")
+        line("Selected accounts: \(selectedAccountIDs.joined(separator: ", "))")
+        line(".emlx access: \(versionDirURL != nil && mailDirURL != nil ? "yes" : "no (DB-only fallback)")")
+
+        let batchSize = 200
+        var cursor = lookbackDate
+        var totalIngested = 0
+        var batchCount = 0
+
+        while !Task.isCancelled {
+            batchCount += 1
+            let metas: [MessageMeta]
+            do {
+                metas = try await mailDBService.fetchMetadata(
+                    dbURL: envelopeURL,
+                    since: cursor,
+                    accountEmails: selectedAccountIDs,
+                    maxResults: batchSize,
+                    mailbox: .sent,
+                    senderAddresses: userAddresses,
+                    orderAscending: true
+                )
+            } catch {
+                line("ERROR batch \(batchCount) fetch failed: \(error.localizedDescription)")
+                break
+            }
+
+            guard !metas.isEmpty else {
+                line("batch \(batchCount): 0 metas (end of stream)")
+                break
+            }
+
+            let interesting = metas.filter { !$0.isLikelyMarketing }
+
+            var emails: [EmailDTO] = []
+            if !interesting.isEmpty, let vDir = versionDirURL, let mDir = mailDirURL {
+                let direct = await mailDBService.fetchBodies(
+                    mailRootURL: mDir,
+                    versionDir: vDir,
+                    metas: interesting,
+                    filterRules: [],
+                    mailbox: .sent
+                )
+                emails.append(contentsOf: direct)
+                let foundIDs = Set(direct.map { $0.id })
+                let missing = interesting.filter { !foundIDs.contains(String($0.mailID)) }
+                if !missing.isEmpty {
+                    if let dbOnly = try? await mailDBService.fetchMetadataOnly(
+                        dbURL: envelopeURL, metas: missing, mailbox: .sent
+                    ) {
+                        emails.append(contentsOf: dbOnly)
+                    }
+                }
+            } else if !interesting.isEmpty {
+                // No .emlx access — fall back to DB-only recipient fetch.
+                if let dbOnly = try? await mailDBService.fetchMetadataOnly(
+                    dbURL: envelopeURL, metas: interesting, mailbox: .sent
+                ) {
+                    emails.append(contentsOf: dbOnly)
+                }
+            }
+
+            if !emails.isEmpty {
+                let upsertData: [(EmailDTO, EmailAnalysisDTO?)] = emails.map { ($0, nil) }
+                do {
+                    try evidenceRepository.bulkUpsertEmails(upsertData, direction: .outbound)
+                    totalIngested += emails.count
+                } catch {
+                    line("ERROR batch \(batchCount) upsert failed: \(error.localizedDescription)")
+                }
+            }
+
+            // Advance cursor to the newest date in this batch. ASC ordering guarantees this is
+            // the last row; subtract 1 second so `> cursor` in the next query re-includes any
+            // same-second messages exactly once (idempotent upsert handles dedup either way).
+            guard let newest = metas.last?.date else { break }
+            cursor = newest
+
+            // Advance steady-state watermark so subsequent regular imports continue from here.
+            lastSentMailWatermark = newest
+            UserDefaults.standard.set(newest.timeIntervalSinceReferenceDate, forKey: "mailLastSentWatermark")
+
+            line("batch \(batchCount): \(metas.count) metas, \(interesting.count) interesting, \(emails.count) upserted, cursor=\(iso.string(from: newest))")
+
+            // Yield so the UI stays responsive during a multi-thousand-message backfill.
+            await Task.yield()
+
+            if metas.count < batchSize { break }
+        }
+
+        let elapsed = Date().timeIntervalSince(started)
+        line("Complete: \(totalIngested) sent emails ingested across \(batchCount) batch(es) in \(String(format: "%.1f", elapsed))s")
+
+        return buildBackfillReport(logLines: log)
+    }
+
+    /// Wrap backfill log lines with app/OS/hardware context, mirroring the crash report format.
+    private func buildBackfillReport(logLines: [String]) -> String {
+        let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+        let buildNumber = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
+        let osVersion = ProcessInfo.processInfo.operatingSystemVersionString
+
+        var size = 0
+        sysctlbyname("hw.model", nil, &size, nil, 0)
+        var model = [CChar](repeating: 0, count: size)
+        sysctlbyname("hw.model", &model, &size, nil, 0)
+        let macModel = String(cString: model)
+
+        return """
+        SAM Mail Backfill Report
+        ========================
+        App Version:    \(appVersion) (\(buildNumber))
+        macOS:          \(osVersion)
+        Hardware:       \(macModel)
+        Generated:      \(ISO8601DateFormatter().string(from: .now))
+
+        --- Backfill Log ---
+
+        \(logLines.joined(separator: "\n"))
+        """
+    }
+
+    /// Canonicalize an address for sender matching: trim, lowercase, strip `+tag` from local-part.
+    private func canonicalizeSenderAddress(_ email: String?) -> String? {
+        guard let raw = email?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+              !raw.isEmpty else { return nil }
+        guard let atIndex = raw.firstIndex(of: "@") else { return raw }
+        let local = raw[..<atIndex]
+        let domain = raw[atIndex...]
+        if let plusIndex = local.firstIndex(of: "+") {
+            return String(local[..<plusIndex]) + String(domain)
+        }
+        return raw
+    }
 
     /// Partition sent-mail metas by whether any **recipient** is a known contact.
     /// For sent mail the user is the sender, so we match on recipients instead.

@@ -37,9 +37,11 @@ struct EmailDTO: Sendable, Identifiable {
         [senderEmail] + recipientEmails + ccEmails + bccEmails
     }
 
-    /// True when this email came from a Sent/outbound mailbox.
+    /// True when the ingestion path tagged this email as outbound.
+    /// Hint only — authoritative truth lives on `SamEvidenceItem.direction`. The ingestion
+    /// pipeline sets `folderName` to `"Sent"` exactly when it determined the message is
+    /// outbound (by sender-address match, not folder-name heuristic), so we match strictly.
     var isOutbound: Bool {
-        let lower = folderName.lowercased()
-        return lower.contains("sent")
+        folderName.caseInsensitiveCompare("Sent") == .orderedSame
     }
 }

@@ -238,6 +238,28 @@ struct MailSettingsContent: View {
                     .disabled(coordinator.importStatus == .importing)
                 }
             }
+
+            if coordinator.sentBackfillReport != nil {
+                Divider()
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Backfill Report")
+                        .samFont(.headline)
+
+                    Text("SAM ran a one-time sent-mail backfill. You can email the diagnostic log so we can confirm it imported the right messages.")
+                        .samFont(.caption)
+                        .foregroundStyle(.secondary)
+
+                    HStack {
+                        Button("Send Backfill Report") {
+                            coordinator.sendBackfillReport()
+                        }
+                        Button("Dismiss") {
+                            coordinator.clearBackfillReport()
+                        }
+                    }
+                }
+            }
         }
         .task {
             loadMeContact()

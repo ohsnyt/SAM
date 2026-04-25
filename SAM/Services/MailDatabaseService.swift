@@ -83,13 +83,23 @@ actor MailDatabaseService {
     ///   - accountEmails: Email addresses of accounts to scan (filters by mailbox ownership)
     ///   - maxResults: Maximum number of results to return
     ///   - mailbox: Which mailbox type to scan
+    ///   - senderAddresses: When non-nil/non-empty, only messages whose sender matches are returned.
+    ///     Used by the sent pipeline to detect outbound mail by user address instead of folder name
+    ///     (required for Gmail, which stores sent mail in `[Gmail]/All Mail` rather than a Sent folder).
+    ///   - excludeSenderAddresses: When non-nil/non-empty, exclude messages whose sender matches.
+    ///     Used by the inbox pipeline so sent-by-user messages stored in unified folders (like
+    ///     `[Gmail]/All Mail`) don't pollute inbound processing.
+    ///   - orderAscending: When true, order by date ASC (for paginated backfill). Default DESC (newest first).
     /// - Returns: Array of MessageMeta DTOs
     func fetchMetadata(
         dbURL: URL,
         since: Date,
         accountEmails: [String],
         maxResults: Int = 200,
-        mailbox: MailboxTarget = .inbox
+        mailbox: MailboxTarget = .inbox,
+        senderAddresses: [String]? = nil,
+        excludeSenderAddresses: [String]? = nil,
+        orderAscending: Bool = false
     ) throws -> [MessageMeta] {
         let db = try openDatabase(at: dbURL)
         defer { sqlite3_close(db) }
@@ -106,7 +116,13 @@ actor MailDatabaseService {
 
         let dateColumn = mailbox == .inbox ? "date_received" : "date_sent"
 
-        // Build mailbox filter: inbox = not in sent/trash/junk; sent = in sent folders
+        // Build mailbox filter.
+        // - inbox: exclude trash/junk/drafts/archive/deleted AND sent-style folders. Sent-by-user
+        //   messages in unified folders (Gmail All Mail) are filtered separately via
+        //   excludeSenderAddresses so they don't leak into inbound processing.
+        // - sent: no folder filter — sender-address match is the authoritative signal. Gmail puts
+        //   sent mail in `[Gmail]/All Mail`; iCloud/Exchange use `Sent Messages`/`Sent Items`.
+        //   All of these have the user's address in `sender`, so folder name is unreliable.
         let mailboxFilter: String
         switch mailbox {
         case .inbox:
@@ -119,8 +135,31 @@ actor MailDatabaseService {
                 AND mb.url NOT LIKE '%Archive%'
                 """
         case .sent:
-            mailboxFilter = "AND mb.url LIKE '%Sent%'"
+            mailboxFilter = ""
         }
+
+        // Build sender-address IN / NOT IN clauses for the query.
+        // SQLite has no array-bind, so we inline the placeholders and bind them individually.
+        let senderIncludeList = (senderAddresses ?? []).map { $0.lowercased() }
+        let senderExcludeList = (excludeSenderAddresses ?? []).map { $0.lowercased() }
+
+        let senderIncludeFilter: String
+        if senderIncludeList.isEmpty {
+            senderIncludeFilter = ""
+        } else {
+            let placeholders = Array(repeating: "?", count: senderIncludeList.count).joined(separator: ",")
+            senderIncludeFilter = "AND LOWER(a.address) IN (\(placeholders))"
+        }
+
+        let senderExcludeFilter: String
+        if senderExcludeList.isEmpty {
+            senderExcludeFilter = ""
+        } else {
+            let placeholders = Array(repeating: "?", count: senderExcludeList.count).joined(separator: ",")
+            senderExcludeFilter = "AND (a.address IS NULL OR LOWER(a.address) NOT IN (\(placeholders)))"
+        }
+
+        let orderDirection = orderAscending ? "ASC" : "DESC"
 
         let query = """
             SELECT
@@ -137,7 +176,9 @@ actor MailDatabaseService {
             LEFT JOIN mailboxes mb ON m.mailbox = mb.ROWID
             WHERE m.\(dateColumn) > ?1
             \(mailboxFilter)
-            ORDER BY m.\(dateColumn) DESC
+            \(senderIncludeFilter)
+            \(senderExcludeFilter)
+            ORDER BY m.\(dateColumn) \(orderDirection)
             LIMIT ?2
             """
 
@@ -151,6 +192,19 @@ actor MailDatabaseService {
 
         sqlite3_bind_double(stmt, 1, sinceTimestamp)
         sqlite3_bind_int(stmt, 2, Int32(maxResults))
+
+        // SQLITE_TRANSIENT = -1 — SQLite copies the string so it survives past return.
+        let SQLITE_TRANSIENT = unsafeBitCast(OpaquePointer(bitPattern: -1), to: sqlite3_destructor_type.self)
+
+        var bindIndex: Int32 = 3
+        for addr in senderIncludeList {
+            sqlite3_bind_text(stmt, bindIndex, addr, -1, SQLITE_TRANSIENT)
+            bindIndex += 1
+        }
+        for addr in senderExcludeList {
+            sqlite3_bind_text(stmt, bindIndex, addr, -1, SQLITE_TRANSIENT)
+            bindIndex += 1
+        }
 
         var metas: [MessageMeta] = []
 
