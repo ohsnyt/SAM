@@ -4,6 +4,92 @@
 
 ---
 
+## Recording Reclassification (April 25, 2026)
+
+**What**: Sarah can now reclassify a recording's `RecordingContext` (e.g., from `clientMeeting` to `trainingLecture`) on either the Mac or SAM Field. Reclassifying triggers a full resummarize against the new context-specific prompt and pushes the regenerated summary to whichever device didn't initiate the change.
+
+### Why
+
+It is easy to forget to set the right type before hitting record — especially impromptu captures that turn out to be a training session, or vice versa. Without reclassification the summary produced by the wrong prompt was permanent and a lot of useful structure (lecture review notes, board minutes, prospecting next-step compliance, etc.) was lost.
+
+### Gating
+
+Reclassification is only offered while the audio + verbatim transcript still exist on the Mac, because regenerating the summary requires re-running `MeetingSummaryService.summarize` against the original transcript:
+
+- **Mac** (`TranscriptionReviewView`): visible while `session.signedOffAt == nil && session.audioFilePath != nil && session.audioPurgedAt == nil`. Once Sarah taps "Looks Good" or `RetentionService` purges the audio, the menu disappears.
+- **Phone** (`MeetingCaptureView` completedView): visible while `coordinator.sessionID != nil && coordinator.lastSummary != nil && coordinator.isMacConnected`. Once Done or Delete is tapped the local sessionID clears and the menu disappears.
+
+Confirmation dialog on both sides — resummarizing is destructive (the prior summary is gone) and takes 10–30 seconds.
+
+### Wire protocol
+
+- `MessageType.recordingContextChanged = 0x10` (frees the old `pinPairingRequest` slot).
+- `RecordingContextChangedDTO { sessionID: UUID, recordingContextRaw: String }` JSON payload, bidirectional.
+- Phone-initiated: phone sends → Mac updates session, runs `TranscriptionSessionCoordinator.reclassifyAndResummarize`, pushes new summary via existing `summaryPush`.
+- Mac-initiated: Mac runs the same coordinator path, then sends `recordingContextChanged` so the phone clears its stale summary card and shows a "regenerating" state until the new `summaryPush` lands.
+
+### Files touched
+
+- `SAM/Models/SAMModels-AudioStreaming.swift`: new `MessageType.recordingContextChanged` case + `RecordingContextChangedDTO`.
+- `SAM/Services/AudioReceivingService.swift`: `onRecordingContextChanged` callback, inbound handler, `sendRecordingContextChanged` outbound sender.
+- `SAM/Coordinators/TranscriptionSessionCoordinator.swift`: wires the callback to the new public `reclassifyAndResummarize(sessionID:to:)`, which gates on retention, updates the model, and reuses `generateMeetingSummary` for the resummarize + phone push.
+- `SAM/Views/Transcription/TranscriptionReviewView.swift`: header menu "Change Recording Type", confirmation dialog, `canReclassifyRecording` gate; existing `generateSummaryFromTranscript()` regenerate path now also pushes the regenerated summary to the phone (previously a missing hook).
+- `SAMField/Services/AudioStreamingService.swift`: `onRecordingContextChanged` callback, inbound handler, `sendRecordingContextChanged` outbound sender.
+- `SAMField/Coordinators/MeetingCaptureCoordinator.swift`: tracks `currentRecordingContext` and `isReclassifying`; new `reclassifyCurrentRecording(to:)`; `onMeetingSummary` clears `isReclassifying` when the regenerated summary lands; `onRecordingContextChanged` mirrors a Mac-initiated change locally and shows the regenerating state.
+- `SAMField/Views/Capture/MeetingCaptureView.swift`: completedView "Change Recording Type" menu, confirmation dialog, `canReclassifyRecording` gate.
+
+### Side effects on existing flows
+
+`CommitmentExtractionService.extract` already de-duplicates by session + normalized text, so resummarizing an already-extracted session creates only the *new* commitments produced by the new prompt — old commitments stay attached.
+
+---
+
+## CloudKit-Distributed Pairing (April 24, 2026)
+
+**What**: Replaced the 6-digit PIN pairing handshake (which itself replaced QR and the "oort cloud" experiment) with implicit pairing via CloudKit private DB. Every SAM device belongs to the same iCloud account, so the private DB is itself the trust boundary — a Mac writes its 32-byte HMAC token to its private CloudKit zone on first launch, and any phone signed into the same iCloud account fetches it automatically. No PIN, no QR, no sheet. The TCP/Bonjour audio stream and the existing `SAM-AUTH-v1|phoneDeviceID|challengeB64` HMAC handshake stay exactly as they were — only the *source of the shared secret* changed.
+
+### Why
+
+The PIN approach worked but was wasted effort: the trust boundary it manually re-created (does this iPhone belong to the same user as this Mac?) was already enforced for free by CloudKit's per-account access control. Phones from different iCloud accounts can't read the token, so HMAC fails for them automatically. Removing the entire pairing UX is a meaningful UX win — first-launch on the phone now Just Works.
+
+### Architecture
+
+- **CloudKit record type** `SAMPairingToken` in the existing `iCloud.sam.SAM` private DB. One record per Mac, recordID `pairingToken-{macDeviceID}`. Fields: `macDeviceID` (String), `macDisplayName` (String), `tokenB64` (String, 32 raw bytes base64), `updatedAt` (Date).
+- **Mac on bootstrap** (`SAM/Services/DevicePairingService.swift`): generates token + macDeviceID into Keychain on first launch (unchanged), then calls `CloudSyncService.pushPairingToken(...)` to publish. Idempotent — subsequent launches re-push the same token.
+- **Phone on bootstrap** (`SAMField/Services/DevicePairingService.swift`): hydrates `trustedMacs` from Keychain first (so we work offline), then calls `CloudSyncService.fetchPairingTokens()` and merges any new/updated tokens. New entries are persisted to Keychain (`kSecAttrAccessibleWhenUnlockedThisDeviceOnly`) so we don't re-hit CloudKit on every cold start. The new `refreshFromCloudKit()` is also exposed for pull-to-refresh in Settings and is called automatically when the Bonjour browser sees an unrecognized SAM Mac.
+- **Auth path on the Mac** (`SAM/Services/AudioReceivingService.swift`): unknown phones with valid HMACs are now auto-trusted (added to `pairedDevices`). The CloudKit boundary already vouched for them — only the iCloud user could have read the token to produce a valid HMAC.
+- **Reset Pairing Token** (Mac Settings): regenerates the token, evicts every paired phone, and republishes to CloudKit. Phones pick up the new token on their next launch / refresh.
+
+### Files removed
+
+- `SAMField/Views/Settings/PinEntryView.swift` — entire 6-digit keypad sheet.
+- `SAMModels-AudioStreaming.swift`: `pinPairingRequest = 0x10`, `pinPairingResult = 0x11`, `PinPairingRequest`, `PinPairingResult`.
+- `SAM/Services/DevicePairingService.swift`: `currentPIN`, `currentPINExpiresAt`, `isPINActive`, `pinExpiryTask`, `startPINPairing`, `stopPINPairing`, `verifyPIN`, `generatePIN`.
+- `SAM/Services/AudioReceivingService.swift`: `handlePinPairingRequest`, `sendPinPairingResult`, the `.pinPairingRequest`/`.pinPairingResult` switch cases, and the PIN exception in the pre-auth gate.
+- `SAMField/Services/AudioStreamingService.swift`: `PinPairingState`, `pinPairingState`, `pendingPin`, `pinDiscoveryTimeoutSeconds`, `pinDiscoveryTimeoutTask`, `armPinDiscoveryTimeout`, `pairWithPIN`, `sendPinPairingRequest`, `handlePinPairingResult`, `.sendingPinRequest` from `PhoneAuthState`, the PIN branch in `handleAuthChallenge`, and the PIN-mode connect-to-anything branch in the browse handler.
+- `SAMField/Services/DevicePairingService.swift`: `acceptPinPairingResult`.
+- `SAM/Views/Settings/CompanionPhoneSettingsPane.swift`: `PairingExperienceSheet` (PIN-display sheet with countdown), the "Pair New iPhone" button, and `showingPairingSheet`.
+- `SAMField/Views/Settings/SettingsView.swift`: `showingPINEntry`, the "Pair with Mac" button, the PinEntryView sheet.
+- `SAMField/Coordinators/MeetingCaptureCoordinator.swift`: `restartBrowsingAfterPairing` (only PinEntryView called it).
+
+### Files added / modified
+
+- `SAM/Services/CloudSyncService.swift` — added `pairingTokenRecordType`, `pushPairingToken(macDeviceID:macDisplayName:tokenData:)`, `deletePairingToken(macDeviceID:)`, `fetchPairingTokens() -> [(UUID, String, Data)]` following the same `database.save(record)` / `serverRecordChanged`-fallback pattern used for briefings and workspace settings.
+- `SAM/Views/Settings/CompanionPhoneSettingsPane.swift` — explanatory copy ("Any iPhone signed into the same iCloud account picks up this Mac's pairing token automatically — no PIN required."); paired-iPhones list and Reset Pairing Token kept.
+- `SAMField/Views/Settings/SettingsView.swift` — replaced the "Pair with Mac" button with a "Refresh from iCloud" action that calls `DevicePairingService.refreshFromCloudKit()`. Updated copy explains the iCloud-account boundary.
+
+### Migration
+
+Existing PIN-paired devices are preserved: the Mac keeps its previously generated token in Keychain and just publishes it to CloudKit on the next launch. Already-paired phones keep their cached tokens in Keychain and continue to authenticate normally. No forced re-pairing.
+
+### Notes
+
+- The lesson — when two devices belong to the same iCloud account, prefer CloudKit-distributed trust over inventing custom pairing UX — is captured in `feedback_cloudkit_for_trust.md`.
+- Real-time TCP/Bonjour audio streaming is retained; CloudKit is *only* the secret-distribution channel, not the live transport.
+- `iCloud.sam.SAM` was already enabled in both target entitlements and the `CloudSyncService` shared via Xcode 16 synchronized folders, so no project-file changes were needed to ship this.
+
+---
+
 ## Trips: address autocomplete, map / contact pickers, round-trip close, Year/All views (April 24, 2026)
 
 **What**: Sarah-driven feature pass on the SAM Field manual-trip and active-trip flows. Eight related improvements ship together because they share the same data plumbing (Saved Addresses + autocomplete model).

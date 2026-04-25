@@ -15,6 +15,9 @@ struct MeetingCaptureView: View {
 
     @State private var showDeleteConfirmation = false
     @State private var showPendingUploadsManagement = false
+    /// Pending reclassification target — non-nil while the confirmation
+    /// dialog is up.
+    @State private var pendingReclassification: RecordingContext?
     @State private var speakerCount: Int = 2
     @State private var speakerNames: [String] = ["You (Agent)", "Client"]
     /// Parallel array to speakerNames — CNContact thumbnail data (nil = use default icon).
@@ -214,6 +217,25 @@ struct MeetingCaptureView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This will permanently delete the recording, transcript, and summary from your Mac.")
+        }
+        .confirmationDialog(
+            pendingReclassification.map { "Change to \($0.displayName)?" } ?? "Change Recording Type?",
+            isPresented: Binding(
+                get: { pendingReclassification != nil },
+                set: { if !$0 { pendingReclassification = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: pendingReclassification
+        ) { newContext in
+            Button("Resummarize") {
+                coordinator.reclassifyCurrentRecording(to: newContext)
+                pendingReclassification = nil
+            }
+            Button("Cancel", role: .cancel) {
+                pendingReclassification = nil
+            }
+        } message: { newContext in
+            Text("SAM will discard the current summary and regenerate it on your Mac using the \(newContext.displayName) prompt. This takes 10–30 seconds and can't be undone.")
         }
     }
 
@@ -951,6 +973,14 @@ struct MeetingCaptureView: View {
                         .foregroundStyle(.secondary)
                 }
 
+                // Change Recording Type — visible only while the audio +
+                // verbatim transcript are still on the Mac (i.e., before
+                // the user signs off via "Done"). Once Done is tapped the
+                // local sessionID clears and this menu disappears.
+                if canReclassifyRecording {
+                    reclassifyMenu
+                }
+
                 // Session lifecycle actions — Delete is always available,
                 // Done waits until the summary has arrived (or timed out).
                 if coordinator.captureState == .completed {
@@ -1009,6 +1039,52 @@ struct MeetingCaptureView: View {
             }
             .padding(.horizontal)
         }
+    }
+
+    /// True while the recording is still owned by both devices — the phone
+    /// hasn't tapped Done/Delete yet, the Mac is reachable, and a sessionID
+    /// is in flight. Once any of those flip, reclassification is no longer
+    /// possible (the Mac may have purged the audio + verbatim transcript)
+    /// and the menu hides.
+    private var canReclassifyRecording: Bool {
+        coordinator.sessionID != nil
+            && coordinator.lastSummary != nil
+            && coordinator.isMacConnected
+            && !coordinator.isReclassifying
+    }
+
+    private var reclassifyMenu: some View {
+        Menu {
+            ForEach(RecordingContext.allCases, id: \.self) { ctx in
+                Button {
+                    if ctx != coordinator.currentRecordingContext {
+                        pendingReclassification = ctx
+                    }
+                } label: {
+                    if ctx == coordinator.currentRecordingContext {
+                        Label(ctx.displayName, systemImage: "checkmark")
+                    } else {
+                        Label(ctx.displayName, systemImage: ctx.systemIcon)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: (coordinator.currentRecordingContext ?? .clientMeeting).systemIcon)
+                Text("Change Recording Type")
+                    .font(.subheadline)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(
+                Capsule().fill(Color.secondary.opacity(0.12))
+            )
+        }
+        .menuStyle(.borderlessButton)
+        .padding(.top, 4)
     }
 
     private var awaitingSummaryCard: some View {

@@ -33,14 +33,6 @@ final class AudioStreamingService {
         case reconnecting(attempt: Int)
     }
 
-    enum PinPairingState: Sendable, Equatable {
-        case idle
-        case searching
-        case sending
-        case success(macName: String)
-        case failure(reason: String)
-    }
-
     private(set) var connectionState: ConnectionState = .disconnected
 
     /// Name of the connected Mac (from Bonjour).
@@ -55,10 +47,6 @@ final class AudioStreamingService {
     /// gate (e.g., "This iPhone isn't paired with this Mac"). Displayed in
     /// Settings so the user knows to try pairing again.
     private(set) var lastAuthError: String?
-
-    /// UI-facing state of an in-progress PIN pairing attempt. Idle unless
-    /// the user has opened the PIN entry sheet and tapped Pair.
-    private(set) var pinPairingState: PinPairingState = .idle
 
     /// Chunks queued but not yet sent (during reconnection).
     private(set) var bufferedChunkCount: Int = 0
@@ -75,6 +63,12 @@ final class AudioStreamingService {
     /// Fired when the Mac pushes workspace settings (calendar/contact config).
     var onWorkspaceSettingsReceived: (@Sendable () -> Void)?
 
+    /// Fired when the Mac tells the phone that a recording was reclassified
+    /// (e.g., user changed it from clientMeeting to trainingLecture on the
+    /// Mac). MeetingCaptureCoordinator uses this to clear the displayed
+    /// summary while waiting for the regenerated `summaryPush`.
+    var onRecordingContextChanged: (@Sendable (UUID, RecordingContext) -> Void)?
+
     // MARK: - Private
 
     private var browser: NWBrowser?
@@ -85,12 +79,6 @@ final class AudioStreamingService {
     private let maxBufferedChunks = 240 // ~120s at 0.5s chunks
     private var sessionID: UUID?
     private var receiveBuffer = Data()
-
-    /// PIN waiting to be sent. Non-nil between `pairWithPIN(_:)` and the
-    /// arrival of a `pinPairingResult` (success or failure). Drives both
-    /// the connect-to-unpaired-Mac branch in the browse handler and the
-    /// send-pinPairingRequest branch in `handleAuthChallenge`.
-    private var pendingPin: String?
 
     /// NWPathMonitor watches for WiFi restored / network interface changes
     /// so we can re-kick the Bonjour browse when the user walks back into
@@ -107,8 +95,6 @@ final class AudioStreamingService {
         case none
         /// Connection is up; waiting for the Mac to send authChallenge.
         case awaitingChallenge
-        /// We sent a pinPairingRequest; waiting for the Mac's pinPairingResult.
-        case sendingPinRequest(pin: String)
         /// We answered authChallenge; waiting for the Mac's authResult.
         case awaitingResult
         case authenticated
@@ -117,12 +103,6 @@ final class AudioStreamingService {
 
     private let authHandshakeTimeoutSeconds: TimeInterval = 15
     private var authTimeoutTask: Task<Void, Never>?
-
-    /// Discovery timeout for PIN pairing. If the Bonjour browser can't find
-    /// a SAM Mac within this window, we surface a helpful failure in the UI
-    /// instead of spinning forever.
-    private let pinDiscoveryTimeoutSeconds: TimeInterval = 30
-    private var pinDiscoveryTimeoutTask: Task<Void, Never>?
 
     // MARK: - Browse & Connect
 
@@ -150,20 +130,11 @@ final class AudioStreamingService {
                     self.logger.info("Bonjour browser ready")
                 case .waiting(let error):
                     // .waiting usually means iOS hasn't resolved Local Network
-                    // permission yet or there's no network path. Log it so the
-                    // user can see what's happening; don't fail immediately —
-                    // the discovery timeout in pairWithPIN will clean up.
+                    // permission yet or there's no network path. Log only —
+                    // path monitor + reconnection will recover.
                     self.logger.warning("Bonjour browser waiting: \(error.localizedDescription)")
                 case .failed(let error):
                     self.logger.error("Bonjour browser failed: \(error.localizedDescription)")
-                    if self.pendingPin != nil {
-                        self.pendingPin = nil
-                        self.pinDiscoveryTimeoutTask?.cancel()
-                        self.pinDiscoveryTimeoutTask = nil
-                        self.pinPairingState = .failure(
-                            reason: "Couldn't browse the local network (\(error.localizedDescription))."
-                        )
-                    }
                     self.connectionState = .disconnected
                 case .cancelled:
                     self.logger.debug("Bonjour browser cancelled")
@@ -193,31 +164,8 @@ final class AudioStreamingService {
 
                 self.logger.debug("Browse results changed: \(results.count) endpoint(s)")
 
-                // If a PIN is pending (user just tapped Pair), connect to
-                // the first SAM Mac we see — the PIN is the gate, not
-                // pre-existing trust. The TXT record may not be resolved
-                // yet in the first browse event, and we don't need it here
-                // anyway: the Mac's real identity (deviceID + displayName)
-                // arrives in the PinPairingResult after we send the PIN.
-                if self.pendingPin != nil {
-                    for result in results {
-                        let (macID, macName) = Self.extractMacIdentity(from: result)
-                            ?? (UUID(), Self.endpointName(result.endpoint))
-                        self.logger.info("PIN pairing: connecting to Mac \(macName) (provisional id \(macID))")
-                        self.lastAuthError = nil
-                        self.pinDiscoveryTimeoutTask?.cancel()
-                        self.pinDiscoveryTimeoutTask = nil
-                        self.browser?.cancel()
-                        self.browser = nil
-                        self.connectToEndpoint(result.endpoint, macDeviceID: macID, macDisplayName: macName)
-                        return
-                    }
-                    // No SAM Macs among the results yet — keep browsing,
-                    // the discovery timeout will fire if nothing ever shows up.
-                    return
-                }
-
-                // Normal path: only connect to Macs we've already paired with.
+                // Connect only to Macs whose pairing token we already have.
+                // Tokens arrive automatically via CloudKit — no PIN, no QR.
                 for result in results {
                     guard let (macID, macName) = Self.extractMacIdentity(from: result) else { continue }
                     if pairing.isPaired(with: macID) {
@@ -231,9 +179,11 @@ final class AudioStreamingService {
                 }
 
                 if pairing.trustedMacs.isEmpty {
-                    self.lastAuthError = "Open SAM on your Mac and tap Pair New iPhone to get a PIN."
+                    self.lastAuthError = "Waiting for this Mac's pairing token from iCloud. Make sure both devices are signed into the same iCloud account."
+                    Task { @MainActor in await pairing.refreshFromCloudKit() }
                 } else {
-                    self.lastAuthError = "A SAM Mac is nearby but this iPhone isn't paired with it."
+                    self.lastAuthError = "A SAM Mac is nearby but this iPhone hasn't picked up its pairing token from iCloud yet."
+                    Task { @MainActor in await pairing.refreshFromCloudKit() }
                 }
             }
         }
@@ -246,9 +196,8 @@ final class AudioStreamingService {
     }
 
     /// Tear down any in-flight browse/connection and kick a fresh browse.
-    /// Used when the pairing list changes (e.g., immediately after a PIN
-    /// pairing succeeds) so the new trust state takes effect without the
-    /// user having to toggle anything.
+    /// Used when the pairing list changes (e.g., after a fresh CloudKit
+    /// token fetch) so the new trust state takes effect immediately.
     func restartBrowsing() {
         logger.info("Restarting browse after pairing change")
         browser?.cancel()
@@ -278,8 +227,6 @@ final class AudioStreamingService {
         heartbeatTimer = nil
         authTimeoutTask?.cancel()
         authTimeoutTask = nil
-        pinDiscoveryTimeoutTask?.cancel()
-        pinDiscoveryTimeoutTask = nil
         authState = .none
         sendQueue.removeAll()
         bufferedChunkCount = 0
@@ -287,71 +234,10 @@ final class AudioStreamingService {
         connectedMacDeviceID = nil
         reconnectionAttempt = 0
         connectionState = .disconnected
-        pendingPin = nil
-        pinPairingState = .idle
         pathMonitor?.cancel()
         pathMonitor = nil
 
         logger.info("Disconnected from Mac")
-    }
-
-    // MARK: - PIN Pairing
-
-    /// Kick off a PIN pairing attempt. Tears down any existing connection,
-    /// then browses for a SAM Mac and sends a `pinPairingRequest` carrying
-    /// the PIN on the next `authChallenge`. On success the Mac replies with
-    /// a `pinPairingResult` containing the 32-byte HMAC token plus its
-    /// identity, and this connection becomes authenticated immediately.
-    func pairWithPIN(_ pin: String) {
-        let trimmed = pin.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.count == 6, trimmed.allSatisfy({ $0.isNumber }) else {
-            pinPairingState = .failure(reason: "PIN must be 6 digits.")
-            return
-        }
-
-        logger.info("pairWithPIN: tearing down existing connection to try a fresh pair")
-        browser?.cancel()
-        browser = nil
-        connection?.cancel()
-        connection = nil
-        heartbeatTimer?.invalidate()
-        heartbeatTimer = nil
-        authTimeoutTask?.cancel()
-        authTimeoutTask = nil
-        pinDiscoveryTimeoutTask?.cancel()
-        pinDiscoveryTimeoutTask = nil
-        authState = .none
-        connectedMacDeviceID = nil
-        connectedMacName = nil
-        reconnectionAttempt = 0
-        lastAuthError = nil
-        connectionState = .disconnected
-
-        pendingPin = trimmed
-        pinPairingState = .searching
-        startBrowsing()
-        armPinDiscoveryTimeout()
-    }
-
-    private func armPinDiscoveryTimeout() {
-        pinDiscoveryTimeoutTask?.cancel()
-        pinDiscoveryTimeoutTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(self?.pinDiscoveryTimeoutSeconds ?? 30))
-            guard !Task.isCancelled else { return }
-            guard let self else { return }
-            guard self.pendingPin != nil else { return }
-            // Still browsing with no Mac found — time to give up.
-            guard case .browsing = self.connectionState else { return }
-
-            self.logger.warning("PIN pairing: no SAM Mac found within \(self.pinDiscoveryTimeoutSeconds)s — giving up")
-            self.browser?.cancel()
-            self.browser = nil
-            self.pendingPin = nil
-            self.connectionState = .disconnected
-            self.pinPairingState = .failure(
-                reason: "Couldn't find your Mac. Make sure SAM is running on your Mac, both devices are on the same Wi-Fi, and Local Network is allowed in Settings → SAM Field."
-            )
-        }
     }
 
     // MARK: - Network Path Monitoring
@@ -565,6 +451,34 @@ final class AudioStreamingService {
         return true
     }
 
+    /// Tell the Mac the user has reclassified a recording (e.g., from
+    /// clientMeeting to trainingLecture). The Mac updates the session,
+    /// regenerates the meeting summary against the new context-specific
+    /// prompt, and pushes the new summary back via `summaryPush`.
+    @discardableResult
+    func sendRecordingContextChanged(sessionID: UUID, newContext: RecordingContext) -> Bool {
+        guard connectionState == .connected, connection != nil else { return false }
+        let dto = RecordingContextChangedDTO(
+            sessionID: sessionID,
+            recordingContextRaw: newContext.rawValue
+        )
+        guard let payload = dto.toWireData() else {
+            logger.error("sendRecordingContextChanged: failed to encode payload")
+            return false
+        }
+        let header = AudioPacketHeader(
+            version: AudioPacketHeader.currentVersion,
+            messageType: .recordingContextChanged,
+            sequenceNumber: 0,
+            timestamp: 0,
+            sampleRate: 0,
+            channels: 0,
+            payloadLength: UInt32(payload.count)
+        )
+        sendPacket(header: header, payload: payload)
+        return true
+    }
+
     // MARK: - Private: Connection
 
     private func connectToEndpoint(
@@ -611,13 +525,7 @@ final class AudioStreamingService {
                     self.authState = .none
                     self.authTimeoutTask?.cancel()
                     self.authTimeoutTask = nil
-                    if self.pendingPin != nil {
-                        self.pendingPin = nil
-                        self.pinPairingState = .failure(reason: "Couldn't reach the Mac.")
-                        self.connectionState = .disconnected
-                    } else {
-                        self.attemptReconnection(to: endpoint, macDeviceID: macDeviceID, macDisplayName: macDisplayName)
-                    }
+                    self.attemptReconnection(to: endpoint, macDeviceID: macDeviceID, macDisplayName: macDisplayName)
 
                 case .waiting(let error):
                     self.logger.warning("Connection waiting: \(error.localizedDescription)")
@@ -642,12 +550,7 @@ final class AudioStreamingService {
                 guard self.connection === connection else { return }
                 if self.authState != .authenticated {
                     self.logger.warning("Auth handshake timed out — disconnecting")
-                    if self.pendingPin != nil {
-                        self.pendingPin = nil
-                        self.pinPairingState = .failure(reason: "Mac didn't answer in time.")
-                    } else {
-                        self.lastAuthError = "Mac didn't answer the pairing handshake in time."
-                    }
+                    self.lastAuthError = "Mac didn't answer the pairing handshake in time."
                     self.authState = .none
                     connection.cancel()
                     self.connection = nil
@@ -792,16 +695,13 @@ final class AudioStreamingService {
     }
 
     private func handleInbound(header: AudioPacketHeader, payload: Data) {
-        // Auth and PIN-pairing messages are always processed first.
+        // Auth messages are always processed first.
         switch header.messageType {
         case .authChallenge:
             handleAuthChallenge(payload: payload)
             return
         case .authResult:
             handleAuthResult(payload: payload)
-            return
-        case .pinPairingResult:
-            handlePinPairingResult(payload: payload)
             return
         default:
             break
@@ -812,8 +712,7 @@ final class AudioStreamingService {
         }
 
         switch header.messageType {
-        case .authChallenge, .authResponse, .authResult,
-             .pinPairingRequest, .pinPairingResult:
+        case .authChallenge, .authResponse, .authResult:
             break  // handled above / outbound-only
 
         case .summaryPush:
@@ -844,6 +743,18 @@ final class AudioStreamingService {
         case .heartbeat:
             break // Mac acknowledging liveness
 
+        case .recordingContextChanged:
+            guard let dto = RecordingContextChangedDTO.from(wireData: payload) else {
+                logger.warning("Failed to decode recordingContextChanged (\(payload.count) bytes)")
+                return
+            }
+            guard let newContext = RecordingContext(rawValue: dto.recordingContextRaw) else {
+                logger.warning("recordingContextChanged: unknown context \(dto.recordingContextRaw)")
+                return
+            }
+            logger.info("Received recordingContextChanged: \(dto.sessionID) → \(dto.recordingContextRaw)")
+            onRecordingContextChanged?(dto.sessionID, newContext)
+
         default:
             // iPhone doesn't expect to receive audio/session packets — ignore.
             break
@@ -869,17 +780,9 @@ final class AudioStreamingService {
         }
         let pairing = DevicePairingService.shared
 
-        // Two paths: the user just entered a PIN (no stored token yet) → send
-        // pinPairingRequest. Otherwise we must already have a token → compute
-        // HMAC and send authResponse.
-        if let pin = pendingPin {
-            sendPinPairingRequest(pin: pin, pairing: pairing)
-            return
-        }
-
         guard let hmac = pairing.computeHMACResponse(for: macDeviceID, challengeB64: challenge.challengeB64) else {
             logger.error("No pairing token for Mac \(macDeviceID) — cannot respond")
-            lastAuthError = "This iPhone isn't paired with that Mac anymore."
+            lastAuthError = "This iPhone hasn't picked up that Mac's pairing token from iCloud yet."
             connection?.cancel()
             return
         }
@@ -944,101 +847,12 @@ final class AudioStreamingService {
         }
     }
 
-    // MARK: - PIN Pairing Handlers
-
-    private func sendPinPairingRequest(pin: String, pairing: DevicePairingService) {
-        let request = PinPairingRequest(
-            pin: pin,
-            phoneDeviceID: pairing.phoneDeviceID,
-            phoneDisplayName: Self.phoneDisplayName()
-        )
-        guard let body = request.toWireData() else {
-            logger.error("pinPairingRequest: failed to encode")
-            pendingPin = nil
-            pinPairingState = .failure(reason: "Couldn't encode PIN request.")
-            connection?.cancel()
-            return
-        }
-        let header = AudioPacketHeader(
-            version: AudioPacketHeader.currentVersion,
-            messageType: .pinPairingRequest,
-            sequenceNumber: 0,
-            timestamp: 0,
-            sampleRate: 0,
-            channels: 0,
-            payloadLength: UInt32(body.count)
-        )
-        var packet = header.serialize()
-        packet.append(body)
-        authState = .sendingPinRequest(pin: pin)
-        pinPairingState = .sending
-        connection?.send(content: packet, completion: .contentProcessed { [logger] error in
-            if let error {
-                logger.error("pinPairingRequest send failed: \(error.localizedDescription)")
-            } else {
-                logger.info("pinPairingRequest sent — awaiting result")
-            }
-        })
-    }
-
-    private func handlePinPairingResult(payload: Data) {
-        guard case .sendingPinRequest = authState else {
-            logger.warning("pinPairingResult arrived in state \(String(describing: self.authState)) — ignoring")
-            return
-        }
-        guard let result = try? JSONDecoder().decode(PinPairingResult.self, from: payload) else {
-            logger.error("pinPairingResult: failed to decode payload")
-            pendingPin = nil
-            pinPairingState = .failure(reason: "Mac sent a malformed pairing result.")
-            connection?.cancel()
-            return
-        }
-
-        if result.success {
-            let macName = result.macDisplayName ?? "Mac"
-            Task { @MainActor in
-                let record = await DevicePairingService.shared.acceptPinPairingResult(result)
-                guard record != nil else {
-                    self.logger.error("acceptPinPairingResult failed — aborting")
-                    self.pendingPin = nil
-                    self.pinPairingState = .failure(reason: "Couldn't save pairing credentials.")
-                    self.connection?.cancel()
-                    return
-                }
-                // Token is persisted — mark this connection authenticated.
-                self.pendingPin = nil
-                self.authTimeoutTask?.cancel()
-                self.authTimeoutTask = nil
-                self.authState = .authenticated
-                self.connectionState = .connected
-                self.connectedMacName = macName
-                self.reconnectionAttempt = 0
-                self.lastAuthError = nil
-                self.pinPairingState = .success(macName: macName)
-                self.logger.info("PIN pairing succeeded — stream is live")
-                self.startHeartbeat()
-                self.flushBufferedChunks()
-            }
-        } else {
-            logger.warning("PIN pairing rejected: \(result.reason ?? "unknown")")
-            pendingPin = nil
-            pinPairingState = .failure(reason: result.reason ?? "Mac rejected the PIN.")
-            authState = .none
-            connection?.cancel()
-            connection = nil
-            connectionState = .disconnected
-            connectedMacDeviceID = nil
-            connectedMacName = nil
-        }
-    }
-
     // MARK: - TXT / Identity Helpers
 
     /// Pull the Mac's device ID + display name out of a Bonjour browse
     /// result's TXT record. Returns nil when the TXT record is missing or
-    /// malformed — the TXT may not be resolved on the first browse event,
-    /// so callers in PIN-pairing mode should fall back to the endpoint name
-    /// and let the PinPairingResult carry the real identity.
+    /// malformed (e.g., a non-SAM `_samtranscript._tcp` advertisement, or
+    /// the TXT hasn't been resolved yet on the first browse event).
     private static func extractMacIdentity(from result: NWBrowser.Result) -> (UUID, String)? {
         guard case .bonjour(let txt) = result.metadata else { return nil }
         guard let idString = txt[SAMMacDeviceIDTXTKey], let macID = UUID(uuidString: idString) else {
@@ -1046,17 +860,6 @@ final class AudioStreamingService {
         }
         let name = txt[SAMMacDisplayNameTXTKey] ?? "Mac"
         return (macID, name)
-    }
-
-    /// Best-effort human name for a Bonjour endpoint when no TXT record
-    /// has been resolved. Strips the service-type suffix so we show
-    /// "David's MacBook Pro" rather than the raw mDNS string.
-    private static func endpointName(_ endpoint: NWEndpoint) -> String {
-        if case .service(let name, _, _, _) = endpoint {
-            let decoded = name.replacingOccurrences(of: "\\032", with: " ")
-            return decoded.isEmpty ? "Mac" : decoded
-        }
-        return "Mac"
     }
 
     /// User-visible name the Mac will show in its Paired iPhones list.

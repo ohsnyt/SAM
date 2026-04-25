@@ -171,6 +171,11 @@ final class TranscriptionSessionCoordinator {
             receivingService.onSessionDeleted = { [weak self] sessionID in
                 self?.handleSessionDeleted(sessionID: sessionID)
             }
+            receivingService.onRecordingContextChanged = { [weak self] sessionID, newContext in
+                Task { [weak self] in
+                    await self?.reclassifyAndResummarize(sessionID: sessionID, to: newContext)
+                }
+            }
             isWired = true
         }
 
@@ -1046,6 +1051,68 @@ final class TranscriptionSessionCoordinator {
         guard let sessionID = lastFinalizedSessionID else { return }
         Task(priority: .utility) { [weak self, sessionID] in
             await self?.generateMeetingSummary(for: sessionID)
+        }
+    }
+
+    /// Reclassify a recording's context (e.g., clientMeeting → trainingLecture)
+    /// and immediately regenerate its summary against the new context-specific
+    /// prompt. Pushes the new summary to the iPhone if connected.
+    ///
+    /// Gated on retention state — the audio + verbatim transcript must still
+    /// be on disk. Once `RetentionService` purges them, the user is expected
+    /// to live with the original summary; the UI hides the reclassify action
+    /// in that state.
+    ///
+    /// Returns `true` on a successful resummarize, `false` if the session is
+    /// missing, already purged, or the summary call failed.
+    @discardableResult
+    func reclassifyAndResummarize(sessionID: UUID, to newContext: RecordingContext) async -> Bool {
+        guard let container = modelContainer else {
+            logger.warning("reclassifyAndResummarize: no model container configured")
+            return false
+        }
+        let context = ModelContext(container)
+        let descriptor = FetchDescriptor<TranscriptSession>(
+            predicate: #Predicate { $0.id == sessionID }
+        )
+        guard let session = (try? context.fetch(descriptor))?.first else {
+            logger.warning("reclassifyAndResummarize: session \(sessionID.uuidString) not found")
+            return false
+        }
+        guard session.audioFilePath != nil, session.audioPurgedAt == nil else {
+            logger.warning("reclassifyAndResummarize: session \(sessionID.uuidString) audio purged — refusing")
+            return false
+        }
+        if session.recordingContext == newContext {
+            logger.info("reclassifyAndResummarize: session already \(newContext.rawValue) — no-op")
+            return true
+        }
+        session.recordingContextRawValue = newContext.rawValue
+        do {
+            try context.save()
+        } catch {
+            logger.error("reclassifyAndResummarize: save failed: \(error.localizedDescription)")
+            return false
+        }
+
+        // Generate the summary against the new context. The existing path
+        // persists `meetingSummaryJSON` and pushes the result back to the
+        // iPhone, which is exactly what we want.
+        let stateBefore = summaryState
+        await generateMeetingSummary(for: sessionID)
+        switch summaryState {
+        case .ready:
+            return true
+        case .failed, .idle:
+            // Restore the prior state hint (idle vs ready) so the live
+            // recording UI doesn't appear to regress. The reclassify caller
+            // surfaces its own error to the user.
+            if case .failed = stateBefore { /* leave as-is */ }
+            return false
+        case .generating:
+            // Still going — treat as success-pending. Caller can observe
+            // summaryState if it needs to react further.
+            return true
         }
     }
 

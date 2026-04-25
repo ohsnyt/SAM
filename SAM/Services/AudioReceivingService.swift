@@ -52,6 +52,11 @@ final class AudioReceivingService {
     /// Callback invoked when a session ends.
     var onSessionEnd: (() -> Void)?
 
+    /// Callback invoked when the iPhone reclassifies a recording (e.g.,
+    /// from clientMeeting to trainingLecture). The coordinator handles
+    /// updating the session's recordingContext and resummarizing.
+    var onRecordingContextChanged: ((UUID, RecordingContext) -> Void)?
+
     // MARK: - Private
 
     private var listener: NWListener?
@@ -268,6 +273,44 @@ final class AudioReceivingService {
         })
     }
 
+    /// Notify the iPhone that a recording's context has been reclassified
+    /// (e.g., from clientMeeting to trainingLecture). The phone updates its
+    /// in-memory state and clears the displayed summary while waiting for
+    /// the regenerated `summaryPush` that follows.
+    func sendRecordingContextChanged(sessionID: UUID, newContext: RecordingContext) {
+        guard let connection = activeConnection else {
+            logger.info("sendRecordingContextChanged: no active connection — skipping")
+            return
+        }
+        let dto = RecordingContextChangedDTO(
+            sessionID: sessionID,
+            recordingContextRaw: newContext.rawValue
+        )
+        guard let payload = dto.toWireData() else {
+            logger.error("sendRecordingContextChanged: failed to encode payload")
+            return
+        }
+        let header = AudioPacketHeader(
+            version: AudioPacketHeader.currentVersion,
+            messageType: .recordingContextChanged,
+            sequenceNumber: 0,
+            timestamp: 0,
+            sampleRate: 0,
+            channels: 0,
+            payloadLength: UInt32(payload.count)
+        )
+        var packet = header.serialize()
+        packet.append(payload)
+
+        connection.send(content: packet, completion: .contentProcessed { [logger] error in
+            if let error {
+                logger.error("sendRecordingContextChanged failed: \(error.localizedDescription)")
+            } else {
+                logger.info("recordingContextChanged sent (\(payload.count) bytes)")
+            }
+        })
+    }
+
     func sendMeetingSummary(_ summary: MeetingSummary) {
         guard let connection = activeConnection, let payload = summary.toWireData() else {
             pendingSummary = summary
@@ -402,68 +445,6 @@ final class AudioReceivingService {
             if let error {
                 logger.error("sendAuthResult failed: \(error.localizedDescription)")
             }
-        })
-    }
-
-    // MARK: - PIN Pairing
-
-    /// Handle a `pinPairingRequest` from an unauthenticated phone. If the PIN
-    /// matches an active pairing window on the Mac, register the phone, reply
-    /// with the HMAC token, and transition this connection to authenticated
-    /// without any reconnect.
-    private func handlePinPairingRequest(payload: Data) {
-        guard let request = PinPairingRequest.from(wireData: payload) else {
-            logger.error("pinPairingRequest: failed to decode payload")
-            activeConnection?.cancel()
-            return
-        }
-        guard let connection = activeConnection else { return }
-
-        let result = DevicePairingService.shared.verifyPIN(
-            request.pin,
-            phoneDeviceID: request.phoneDeviceID,
-            phoneDisplayName: request.phoneDisplayName
-        )
-
-        sendPinPairingResult(result, on: connection)
-
-        if result.success {
-            authTimeoutTask?.cancel()
-            authTimeoutTask = nil
-            authState = .authenticated(
-                phoneDeviceID: request.phoneDeviceID,
-                phoneDisplayName: request.phoneDisplayName
-            )
-            connectedDeviceName = request.phoneDisplayName
-            logger.info("PIN pairing success for \(request.phoneDeviceID) — audio stream enabled")
-            flushPostAuthQueues()
-        } else {
-            authState = .failed
-            logger.warning("PIN pairing rejected: \(result.reason ?? "unknown")")
-            // Give the failure packet a moment to hit the wire before tearing down.
-            Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(200))
-                connection.cancel()
-            }
-        }
-    }
-
-    private func sendPinPairingResult(_ result: PinPairingResult, on connection: NWConnection) {
-        guard let payload = try? JSONEncoder().encode(result) else {
-            logger.error("sendPinPairingResult: failed to encode payload")
-            return
-        }
-        let header = AudioPacketHeader(
-            version: AudioPacketHeader.currentVersion,
-            messageType: .pinPairingResult,
-            sequenceNumber: 0, timestamp: 0, sampleRate: 0, channels: 0,
-            payloadLength: UInt32(payload.count)
-        )
-        var packet = header.serialize()
-        packet.append(payload)
-        connection.send(content: packet, completion: .contentProcessed { [logger] error in
-            if let error { logger.error("sendPinPairingResult failed: \(error.localizedDescription)") }
-            else { logger.debug("pinPairingResult sent (success=\(result.success))") }
         })
     }
 
@@ -628,10 +609,9 @@ final class AudioReceivingService {
         receiveBuffer = Data()
         listenerState = .connected
 
-        // Always send an authChallenge on every new connection. A paired
-        // phone responds with `authResponse` (HMAC); an unpaired phone in
-        // PIN-entry mode will instead send a `pinPairingRequest` in the same
-        // pre-auth window. Either message closes the challenge.
+        // Always send an authChallenge on every new connection. The phone
+        // responds with `authResponse` (HMAC keyed by the iCloud-distributed
+        // pairing token). Anything else closes the connection.
         let challenge = DevicePairingService.shared.makeChallenge()
         authState = .awaitingResponse(challengeB64: challenge.b64)
         authTimeoutTask?.cancel()
@@ -778,19 +758,14 @@ final class AudioReceivingService {
     // MARK: - Message Handling
 
     private func handleMessage(header: AudioPacketHeader, payload: Data) {
-        // Auth gate: until the connection is authenticated, the ONLY packets
-        // we accept are `authResponse` (paired phone answering the challenge)
-        // and `pinPairingRequest` (new phone joining via PIN). Everything
-        // else is dropped and the connection closed.
+        // Auth gate: until the connection is authenticated, the ONLY packet
+        // we accept is `authResponse` (paired phone answering the challenge).
+        // Everything else is dropped and the connection closed.
         if case .authenticated = authState {
             // Pass-through below.
         } else {
             if header.messageType == .authResponse {
                 handleAuthResponse(payload: payload)
-                return
-            }
-            if header.messageType == .pinPairingRequest {
-                handlePinPairingRequest(payload: payload)
                 return
             }
             logger.warning("Dropping \(String(describing: header.messageType)) from unauthenticated peer")
@@ -869,14 +844,23 @@ final class AudioReceivingService {
             // Mac doesn't receive settings sync — it sends them. Ignore.
             break
 
-        case .pinPairingRequest:
-            // Handled before the auth gate. Ignore here.
-            break
+        case .recordingContextChanged:
+            handleRecordingContextChanged(payload: payload)
 
-        case .pinPairingResult:
-            // Mac-outbound only. Ignore if the phone echoes it.
-            break
         }
+    }
+
+    private func handleRecordingContextChanged(payload: Data) {
+        guard let dto = RecordingContextChangedDTO.from(wireData: payload) else {
+            logger.error("recordingContextChanged: failed to decode payload")
+            return
+        }
+        guard let newContext = RecordingContext(rawValue: dto.recordingContextRaw) else {
+            logger.warning("recordingContextChanged: unknown context \(dto.recordingContextRaw)")
+            return
+        }
+        logger.info("recordingContextChanged received: \(dto.sessionID.uuidString) → \(dto.recordingContextRaw)")
+        onRecordingContextChanged?(dto.sessionID, newContext)
     }
 
     // MARK: - Pending Upload Handlers (Phase B)

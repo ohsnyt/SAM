@@ -28,6 +28,13 @@ struct TranscriptionReviewView: View {
     @State private var savedAsNote: Bool = false
     @State private var confirmDelete: Bool = false
 
+    /// Pending reclassification target — non-nil while the confirmation
+    /// dialog is up. Nil otherwise.
+    @State private var pendingReclassification: RecordingContext?
+    /// True while a reclassification round-trip is in flight (resummarize +
+    /// push to phone). Used to show a spinner and disable the menu.
+    @State private var isReclassifying: Bool = false
+
     @Query(sort: \SamPerson.displayName) private var allPeople: [SamPerson]
 
     var body: some View {
@@ -104,6 +111,41 @@ struct TranscriptionReviewView: View {
 
             Spacer()
 
+            // Change Recording Type — only while the audio + verbatim
+            // transcript still exist on disk AND the user hasn't yet
+            // signed off. Once Sarah taps "Looks Good" or RetentionService
+            // purges the audio, resummarizing against a different prompt
+            // is no longer possible, so the menu disappears.
+            if canReclassifyRecording {
+                Menu {
+                    ForEach(RecordingContext.allCases, id: \.self) { ctx in
+                        Button {
+                            if ctx != session.recordingContext {
+                                pendingReclassification = ctx
+                            }
+                        } label: {
+                            if ctx == session.recordingContext {
+                                Label(ctx.displayName, systemImage: "checkmark")
+                            } else {
+                                Label(ctx.displayName, systemImage: ctx.systemIcon)
+                            }
+                        }
+                    }
+                } label: {
+                    if isReclassifying {
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.small)
+                            Text("Reclassifying…")
+                        }
+                    } else {
+                        Label("Change Recording Type", systemImage: session.recordingContext.systemIcon)
+                    }
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .disabled(isReclassifying)
+            }
+
             Button(role: .destructive) {
                 confirmDelete = true
             } label: {
@@ -160,6 +202,50 @@ struct TranscriptionReviewView: View {
             }
         } message: {
             Text("This permanently removes the transcript, summary, and all related notes. Linked contacts are not affected.")
+        }
+        .confirmationDialog(
+            pendingReclassification.map { "Change to \($0.displayName)?" } ?? "Change Recording Type?",
+            isPresented: Binding(
+                get: { pendingReclassification != nil },
+                set: { if !$0 { pendingReclassification = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: pendingReclassification
+        ) { newContext in
+            Button("Resummarize") {
+                performReclassification(to: newContext)
+            }
+            Button("Cancel", role: .cancel) {
+                pendingReclassification = nil
+            }
+        } message: { newContext in
+            Text("SAM will discard the current summary and regenerate it using the \(newContext.displayName) prompt. This takes 10–30 seconds and can't be undone.")
+        }
+    }
+
+    /// True when the audio + verbatim transcript are still on disk AND the
+    /// user hasn't approved the existing summary. The retention policy
+    /// purges audio shortly after sign-off, so once either condition flips
+    /// reclassification is no longer offered.
+    private var canReclassifyRecording: Bool {
+        session.signedOffAt == nil
+            && session.audioFilePath != nil
+            && session.audioPurgedAt == nil
+    }
+
+    private func performReclassification(to newContext: RecordingContext) {
+        pendingReclassification = nil
+        let sessionID = session.id
+        isReclassifying = true
+        Task {
+            let success = await TranscriptionSessionCoordinator.shared
+                .reclassifyAndResummarize(sessionID: sessionID, to: newContext)
+            await MainActor.run {
+                isReclassifying = false
+                if !success {
+                    saveError = "Couldn't regenerate the summary against the new context. Try again in a moment."
+                }
+            }
         }
     }
 
@@ -972,6 +1058,12 @@ struct TranscriptionReviewView: View {
                         session.title = summary.title
                     }
                     try context.save()
+                }
+                // Push the regenerated summary back to the phone if it's
+                // connected — Sarah may be reviewing the same recording on
+                // SAM Field and would otherwise see a stale summary.
+                await MainActor.run {
+                    AudioReceivingService.shared.sendMeetingSummary(summary)
                 }
             } catch {
                 // Non-fatal — button stays visible for retry

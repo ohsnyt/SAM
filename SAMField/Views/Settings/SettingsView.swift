@@ -14,8 +14,8 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var pairing = DevicePairingService.shared
-    @State private var showingPINEntry = false
     @State private var pairingToRemove: TrustedMacRecord?
+    @State private var isRefreshing = false
 
     var body: some View {
         NavigationStack {
@@ -23,8 +23,8 @@ struct SettingsView: View {
                 Section {
                     if pairing.trustedMacs.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("No Mac paired")
-                            Text("Tap \"Pair with Mac\" here, then open SAM on your Mac and tap Pair New iPhone.")
+                            Text("No Mac found yet")
+                            Text("SAM Field pairs automatically with any Mac running SAM under the same iCloud account. Open SAM on your Mac at least once, then pull down to refresh.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -53,14 +53,24 @@ struct SettingsView: View {
                     }
 
                     Button {
-                        showingPINEntry = true
+                        Task {
+                            isRefreshing = true
+                            await pairing.refreshFromCloudKit()
+                            AudioStreamingService.shared.restartBrowsing()
+                            isRefreshing = false
+                        }
                     } label: {
-                        Label("Pair with Mac", systemImage: "iphone.radiowaves.left.and.right")
+                        if isRefreshing {
+                            HStack { ProgressView(); Text("Checking iCloud…") }
+                        } else {
+                            Label("Refresh from iCloud", systemImage: "arrow.clockwise.icloud")
+                        }
                     }
+                    .disabled(isRefreshing)
                 } header: {
                     Text("Mac Connection")
                 } footer: {
-                    Text("SAM Field connects only with Macs you've explicitly paired. Open SAM on your Mac, tap Pair New iPhone to get a 6-digit code, then enter it here.")
+                    Text("Pairing tokens are distributed via your iCloud private database, so SAM Field trusts every Mac running SAM under the same iCloud account automatically. Different iCloud accounts can't read the token.")
                 }
 
                 Section {
@@ -87,9 +97,6 @@ struct SettingsView: View {
                     Button("Done") { dismiss() }
                 }
             }
-            .sheet(isPresented: $showingPINEntry) {
-                PinEntryView()
-            }
             .confirmationDialog(
                 pairingToRemove.map { "Unpair from \($0.macDisplayName)?" } ?? "Unpair",
                 isPresented: Binding(
@@ -104,7 +111,7 @@ struct SettingsView: View {
                 }
                 Button("Cancel", role: .cancel) {}
             } message: { _ in
-                Text("You'll need to pair with this Mac again using SAM on your Mac.")
+                Text("This Mac will be removed from the list, but it will reappear automatically on the next iCloud refresh because the pairing token still gives it access. Use Reset Pairing Token on the Mac to lock it out completely.")
             }
         }
     }

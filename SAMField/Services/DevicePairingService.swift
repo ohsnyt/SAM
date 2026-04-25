@@ -4,15 +4,15 @@
 //
 //  iPhone half of the pairing handshake. Stores the user's `phoneDeviceID`
 //  (generated once) and a list of Macs this phone has been paired with —
-//  each entry carries the Mac's pairing token (32 bytes) so we can
-//  answer the Mac's authChallenge without ever sending the token over
-//  the network.
+//  each entry carries the Mac's pairing token (32 bytes) so we can answer
+//  the Mac's authChallenge without ever sending the token over the network.
 //
-//  Pairing tokens are stored in Keychain (device-only), never in
-//  UserDefaults or iCloud. Entering a valid PIN on the Mac is the ONLY
-//  way to add a trust entry — the Mac replies with a `pinPairingResult`
-//  carrying the token, which this service accepts via
-//  `acceptPinPairingResult`.
+//  Trust source: CloudKit private DB. Every SAM device belongs to the same
+//  iCloud account, so on bootstrap we read all `SAMPairingToken` records
+//  the user has and adopt them silently — no PIN entry, no QR scan.
+//  Tokens are cached in Keychain (`kSecAttrAccessibleWhenUnlockedThisDevice
+//  Only`) so we don't re-hit CloudKit on every cold start, and so we still
+//  work with no network as long as we've fetched once before.
 //
 
 import CryptoKit
@@ -32,8 +32,9 @@ final class DevicePairingService {
     /// This phone's stable identifier. Generated once per install.
     private(set) var phoneDeviceID: UUID = UUID()
 
-    /// Trusted Macs. `macDeviceID` → on-disk record (Keychain + UserDefaults
-    /// index). Populated by scanning a Mac's pairing QR.
+    /// Trusted Macs. Hydrated from Keychain on bootstrap, then refreshed from
+    /// CloudKit so newly-added Macs on the same iCloud account appear without
+    /// any user action.
     private(set) var trustedMacs: [TrustedMacRecord] = []
 
     private var isBootstrapped = false
@@ -47,8 +48,8 @@ final class DevicePairingService {
     // MARK: - Bootstrap
 
     /// Idempotent. Loads persisted identity + every trusted Mac's pairing
-    /// token from Keychain. MUST be awaited before AudioStreamingService
-    /// tries to authenticate to a Mac.
+    /// token from Keychain, then fetches new/updated tokens from CloudKit.
+    /// MUST be awaited before AudioStreamingService tries to authenticate.
     func bootstrap() async {
         guard !isBootstrapped else { return }
 
@@ -62,9 +63,7 @@ final class DevicePairingService {
             logger.info("Generated new phoneDeviceID")
         }
 
-        // Load the trusted-Mac index from UserDefaults and hydrate each
-        // entry's pairing token from Keychain. The index stores only
-        // non-secret metadata (Mac ID, display name, pairing timestamp).
+        // Hydrate trusted Macs from Keychain first so we work offline.
         if let data = UserDefaults.standard.data(forKey: Self.trustedMacsIndexKey),
            let indexEntries = try? JSONDecoder().decode([TrustedMacIndexEntry].self, from: data) {
             var hydrated: [TrustedMacRecord] = []
@@ -87,46 +86,54 @@ final class DevicePairingService {
         }
 
         isBootstrapped = true
-        logger.debug("Bootstrap complete: phoneID=\(self.phoneDeviceID), trusted Macs=\(self.trustedMacs.count)")
+        logger.debug("Bootstrap (local) complete: phoneID=\(self.phoneDeviceID), trusted Macs=\(self.trustedMacs.count)")
+
+        // Refresh from CloudKit in the background. New Macs on the same
+        // iCloud account get adopted without UX. Updated tokens (e.g., after
+        // a Reset on the Mac) overwrite the stale keychain entry.
+        await refreshFromCloudKit()
+    }
+
+    /// Pull all `SAMPairingToken` records the iCloud user has and merge them
+    /// into `trustedMacs`. Safe to call any time — call sites typically just
+    /// rely on the implicit refresh during `bootstrap()`.
+    func refreshFromCloudKit() async {
+        let tokens = await CloudSyncService.shared.fetchPairingTokens()
+        guard !tokens.isEmpty else {
+            logger.debug("CloudKit returned no pairing tokens (yet)")
+            return
+        }
+        for (macID, name, tokenData) in tokens {
+            guard tokenData.count == 32 else {
+                logger.warning("Skipping CloudKit token for \(macID): wrong length \(tokenData.count)")
+                continue
+            }
+            let existing = trustedMacs.firstIndex { $0.macDeviceID == macID }
+            if let i = existing {
+                if trustedMacs[i].pairingToken != tokenData {
+                    try? await KeychainService.shared.storeData(tokenData, forKey: Self.tokenKey(for: macID))
+                    trustedMacs[i].pairingToken = tokenData
+                    trustedMacs[i].macDisplayName = name
+                    logger.info("Refreshed pairing token for Mac \(macID)")
+                } else if trustedMacs[i].macDisplayName != name {
+                    trustedMacs[i].macDisplayName = name
+                }
+            } else {
+                try? await KeychainService.shared.storeData(tokenData, forKey: Self.tokenKey(for: macID))
+                let record = TrustedMacRecord(
+                    macDeviceID: macID,
+                    macDisplayName: name,
+                    pairedAt: Date(),
+                    pairingToken: tokenData
+                )
+                trustedMacs.append(record)
+                logger.info("Adopted new Mac \(macID) (\(name, privacy: .private)) from CloudKit")
+            }
+        }
+        persistIndex()
     }
 
     // MARK: - Pairing
-
-    /// Accept a successful `pinPairingResult` from the Mac. Unpacks the
-    /// 32-byte HMAC token, persists it to Keychain, and registers the Mac
-    /// in `trustedMacs`. Returns the new record on success, or nil if the
-    /// payload is malformed / failed.
-    @discardableResult
-    func acceptPinPairingResult(_ result: PinPairingResult) async -> TrustedMacRecord? {
-        guard result.success,
-              let tokenB64 = result.tokenB64,
-              let macDeviceID = result.macDeviceID,
-              let macDisplayName = result.macDisplayName else {
-            logger.warning("acceptPinPairingResult: incomplete success payload")
-            return nil
-        }
-        guard let tokenData = Data(base64Encoded: tokenB64), tokenData.count == 32 else {
-            logger.warning("acceptPinPairingResult: malformed token (expected 32 bytes)")
-            return nil
-        }
-        do {
-            try await KeychainService.shared.storeData(tokenData, forKey: Self.tokenKey(for: macDeviceID))
-        } catch {
-            logger.error("Failed to persist pairing token: \(error.localizedDescription)")
-            return nil
-        }
-        let record = TrustedMacRecord(
-            macDeviceID: macDeviceID,
-            macDisplayName: macDisplayName,
-            pairedAt: Date(),
-            pairingToken: tokenData
-        )
-        trustedMacs.removeAll { $0.macDeviceID == macDeviceID }
-        trustedMacs.append(record)
-        persistIndex()
-        logger.info("Paired with Mac \(macDeviceID) (\(macDisplayName, privacy: .private)) via PIN")
-        return record
-    }
 
     func isPaired(with macDeviceID: UUID) -> Bool {
         trustedMacs.contains { $0.macDeviceID == macDeviceID }
@@ -157,7 +164,7 @@ final class DevicePairingService {
 
     /// Compute the phone's response to a Mac's `authChallenge`. Returns a
     /// base64-encoded HMAC-SHA256, or nil if we have no token for this Mac
-    /// (i.e., the phone scanned a different Mac's QR).
+    /// (i.e., a stranger's Mac somehow advertised on the network).
     func computeHMACResponse(for macDeviceID: UUID, challengeB64: String) -> String? {
         guard let token = pairingToken(for: macDeviceID) else { return nil }
         let message = "\(AuthChallenge.hmacContext)|\(phoneDeviceID.uuidString)|\(challengeB64)"

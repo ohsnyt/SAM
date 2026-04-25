@@ -9,8 +9,10 @@
 //  Synced record types:
 //    - SAMBriefing: daily briefing content
 //    - SAMWorkspaceSettings: calendar/contact group configuration
+//    - SAMPairingToken: per-Mac HMAC pairing secret for the audio stream
 //
-//  Mac writes, phone reads. Both devices share the same iCloud account.
+//  Mac writes, phone reads. Both devices share the same iCloud account,
+//  so the private DB is itself the trust boundary — no PIN/QR/handshake UX.
 //
 
 import Foundation
@@ -37,6 +39,7 @@ final class CloudSyncService {
 
     static let briefingRecordType = "SAMBriefing"
     static let settingsRecordType = "SAMWorkspaceSettings"
+    static let pairingTokenRecordType = "SAMPairingToken"
 
     // Use a fixed record ID so we always overwrite the same record
     // (there's only one briefing and one settings record per user).
@@ -132,6 +135,95 @@ final class CloudSyncService {
             logger.debug("No briefing in CloudKit (or fetch failed): \(error.localizedDescription)")
             return nil
         }
+    }
+
+    // MARK: - Push Pairing Token (Mac → iCloud)
+
+    /// Write this Mac's HMAC pairing token to CloudKit so any phone on the
+    /// same iCloud account can pick it up automatically. One record per Mac,
+    /// keyed by macDeviceID.
+    func pushPairingToken(macDeviceID: UUID, macDisplayName: String, tokenData: Data) async {
+        let recordID = Self.pairingTokenRecordID(for: macDeviceID)
+        let record = CKRecord(recordType: Self.pairingTokenRecordType, recordID: recordID)
+        record["macDeviceID"] = macDeviceID.uuidString as CKRecordValue
+        record["macDisplayName"] = macDisplayName as CKRecordValue
+        record["tokenB64"] = tokenData.base64EncodedString() as CKRecordValue
+        record["updatedAt"] = Date() as CKRecordValue
+
+        do {
+            _ = try await database.save(record)
+            lastSyncDate = Date()
+            syncError = nil
+            logger.info("Pairing token pushed to CloudKit (\(macDeviceID.uuidString))")
+        } catch let error as CKError where error.code == .serverRecordChanged {
+            do {
+                let existing = try await database.record(for: recordID)
+                existing["macDeviceID"] = macDeviceID.uuidString as CKRecordValue
+                existing["macDisplayName"] = macDisplayName as CKRecordValue
+                existing["tokenB64"] = tokenData.base64EncodedString() as CKRecordValue
+                existing["updatedAt"] = Date() as CKRecordValue
+                try await database.save(existing)
+                lastSyncDate = Date()
+                syncError = nil
+                logger.info("Pairing token updated in CloudKit (\(macDeviceID.uuidString))")
+            } catch {
+                syncError = error.localizedDescription
+                logger.error("Pairing token CloudKit update failed: \(error.localizedDescription)")
+            }
+        } catch {
+            syncError = error.localizedDescription
+            logger.error("Pairing token CloudKit push failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Delete this Mac's pairing token from CloudKit. Phones will lose access
+    /// on next fetch until a new token is pushed.
+    func deletePairingToken(macDeviceID: UUID) async {
+        let recordID = Self.pairingTokenRecordID(for: macDeviceID)
+        do {
+            _ = try await database.deleteRecord(withID: recordID)
+            logger.info("Pairing token deleted from CloudKit (\(macDeviceID.uuidString))")
+        } catch {
+            logger.error("Pairing token CloudKit delete failed: \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - Fetch Pairing Tokens (Phone ← iCloud)
+
+    /// Fetch all pairing-token records the signed-in iCloud user has. The phone
+    /// uses this on launch to learn which Macs it can talk to without any
+    /// pairing UX.
+    func fetchPairingTokens() async -> [(macDeviceID: UUID, macDisplayName: String, tokenData: Data)] {
+        let query = CKQuery(recordType: Self.pairingTokenRecordType, predicate: NSPredicate(value: true))
+        do {
+            let (matchResults, _) = try await database.records(matching: query)
+            var results: [(UUID, String, Data)] = []
+            for (_, result) in matchResults {
+                switch result {
+                case .success(let record):
+                    guard let idString = record["macDeviceID"] as? String,
+                          let id = UUID(uuidString: idString),
+                          let name = record["macDisplayName"] as? String,
+                          let tokenB64 = record["tokenB64"] as? String,
+                          let tokenData = Data(base64Encoded: tokenB64) else {
+                        continue
+                    }
+                    results.append((id, name, tokenData))
+                case .failure(let error):
+                    logger.error("Pairing token record decode failed: \(error.localizedDescription)")
+                }
+            }
+            lastSyncDate = Date()
+            logger.info("Fetched \(results.count) pairing token(s) from CloudKit")
+            return results
+        } catch {
+            logger.debug("No pairing tokens in CloudKit (or fetch failed): \(error.localizedDescription)")
+            return []
+        }
+    }
+
+    private static func pairingTokenRecordID(for macDeviceID: UUID) -> CKRecord.ID {
+        CKRecord.ID(recordName: "pairingToken-\(macDeviceID.uuidString)", zoneID: .default)
     }
 
     // MARK: - Fetch Workspace Settings (Phone ← iCloud)

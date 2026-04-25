@@ -101,21 +101,15 @@ struct AudioPacketHeader: Sendable {
         /// closes the connection. Payload: JSON `AuthResult`.
         case authResult     = 0x0F
 
-        // MARK: - Phase E2: PIN-based pairing
+        // MARK: - Phase F: Recording context reclassification (both directions)
 
-        /// iPhone → Mac: the user typed the 6-digit PIN shown on the Mac's
-        /// pairing sheet and tapped Pair. Carries the PIN plus the phone's
-        /// persistent identity. Replaces `authResponse` on a fresh (unpaired)
-        /// connection — the Mac verifies the PIN, registers the phone in its
-        /// trust list, and returns the HMAC token via `pinPairingResult`.
-        /// Payload: JSON `PinPairingRequest`.
-        case pinPairingRequest = 0x10
-
-        /// Mac → iPhone: outcome of a PIN pairing attempt. On success,
-        /// carries the 32-byte HMAC token (base64) so the phone can answer
-        /// future `authChallenge`s. On failure the connection is closed.
-        /// Payload: JSON `PinPairingResult`.
-        case pinPairingResult  = 0x11
+        /// Either direction: the user reclassified a recording (e.g., from
+        /// clientMeeting to trainingLecture). The Mac is the authoritative
+        /// owner of audio + transcript, so on receipt the Mac updates the
+        /// session's recordingContext, regenerates the meeting summary, and
+        /// pushes the new summary back to the phone via `summaryPush`.
+        /// Payload: JSON `RecordingContextChangedDTO`.
+        case recordingContextChanged = 0x10
     }
 
     /// Serialize to 32 bytes for transmission.
@@ -431,58 +425,6 @@ public let SAMMacDeviceIDTXTKey = "devid"
 /// Bonjour TXT record key for the Mac's human-readable display name (optional).
 public let SAMMacDisplayNameTXTKey = "name"
 
-// MARK: - PIN Pairing Messages
-
-/// iPhone → Mac: the user typed the 6-digit PIN shown on the Mac's pairing
-/// sheet and tapped Pair. Mac verifies the PIN, registers the phone, and
-/// returns the HMAC token via `PinPairingResult`.
-public struct PinPairingRequest: Codable, Sendable {
-    public var pin: String
-    public var phoneDeviceID: UUID
-    public var phoneDisplayName: String
-
-    public init(pin: String, phoneDeviceID: UUID, phoneDisplayName: String) {
-        self.pin = pin
-        self.phoneDeviceID = phoneDeviceID
-        self.phoneDisplayName = phoneDisplayName
-    }
-
-    public func toWireData() -> Data? { try? JSONEncoder().encode(self) }
-    public static func from(wireData: Data) -> PinPairingRequest? {
-        try? JSONDecoder().decode(PinPairingRequest.self, from: wireData)
-    }
-}
-
-/// Mac → iPhone: outcome of a PIN pairing attempt. On success, `tokenB64`,
-/// `macDeviceID` and `macDisplayName` are populated and the phone persists
-/// them as a trusted Mac. On failure `reason` explains why.
-public struct PinPairingResult: Codable, Sendable {
-    public var success: Bool
-    public var reason: String?
-    public var tokenB64: String?
-    public var macDeviceID: UUID?
-    public var macDisplayName: String?
-
-    public init(
-        success: Bool,
-        reason: String? = nil,
-        tokenB64: String? = nil,
-        macDeviceID: UUID? = nil,
-        macDisplayName: String? = nil
-    ) {
-        self.success = success
-        self.reason = reason
-        self.tokenB64 = tokenB64
-        self.macDeviceID = macDeviceID
-        self.macDisplayName = macDisplayName
-    }
-
-    public func toWireData() -> Data? { try? JSONEncoder().encode(self) }
-    public static func from(wireData: Data) -> PinPairingResult? {
-        try? JSONDecoder().decode(PinPairingResult.self, from: wireData)
-    }
-}
-
 // MARK: - Auth Messages
 
 /// Auth protocol — sent as the payload of the corresponding `MessageType`.
@@ -539,5 +481,27 @@ public struct AuthResult: Codable, Sendable {
     public func toWireData() -> Data? { try? JSONEncoder().encode(self) }
     public static func from(wireData: Data) -> AuthResult? {
         try? JSONDecoder().decode(AuthResult.self, from: wireData)
+    }
+}
+
+// MARK: - Recording Context Reclassification
+
+/// Sent in either direction when the user reclassifies a recording's
+/// `RecordingContext` (e.g., from `clientMeeting` to `trainingLecture`).
+/// Only valid while the Mac still has the audio + verbatim transcript on
+/// disk — once retention purges those, reclassification is no longer
+/// offered in the UI.
+public struct RecordingContextChangedDTO: Codable, Sendable {
+    public var sessionID: UUID
+    public var recordingContextRaw: String
+
+    public init(sessionID: UUID, recordingContextRaw: String) {
+        self.sessionID = sessionID
+        self.recordingContextRaw = recordingContextRaw
+    }
+
+    public func toWireData() -> Data? { try? JSONEncoder().encode(self) }
+    public static func from(wireData: Data) -> RecordingContextChangedDTO? {
+        try? JSONDecoder().decode(RecordingContextChangedDTO.self, from: wireData)
     }
 }

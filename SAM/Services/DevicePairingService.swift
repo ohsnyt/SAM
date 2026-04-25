@@ -2,22 +2,26 @@
 //  DevicePairingService.swift
 //  SAM
 //
-//  PIN-based pairing + HMAC auth for the iPhone ↔ Mac audio streaming link.
+//  HMAC pairing token + auth for the iPhone ↔ Mac audio streaming link.
 //
-//  Flow (simple PIN):
-//    1. User clicks "Pair New iPhone" on the Mac → `startPINPairing()` generates
-//       a random 6-digit PIN, displayed on screen for up to 90 seconds.
-//    2. User opens SAM Field on the iPhone, types the PIN, taps Pair.
-//    3. Phone sends `PinPairingRequest{pin, phoneDeviceID, phoneDisplayName}`.
-//    4. Mac checks the PIN via `verifyPIN`. On match: registers the phone,
-//       returns the HMAC token in `PinPairingResult`, and stops pairing mode.
-//    5. Thereafter every connection from that phone uses the standard
-//       HMAC-SHA256 challenge-response keyed by the pairing token.
+//  Trust model: every SAM device belongs to the same iCloud account, so the
+//  CloudKit private DB is itself the trust boundary. There is no PIN/QR/
+//  handshake UX — the Mac writes its 32-byte HMAC token to its private
+//  CloudKit zone on first launch, and any phone signed into the same iCloud
+//  account can read it. Phones from different iCloud accounts can't, and the
+//  HMAC challenge fails for them automatically.
 //
-//  The 32-byte pairing token is generated once at first launch and never
-//  transmitted over the network except inside a successful PinPairingResult
-//  (gated by the PIN). The phone stores it in Keychain; the Mac stores it in
-//  Keychain under `sam.pairing.pairingToken`.
+//  Wire flow:
+//    1. Phone connects, learns macDeviceID from Bonjour TXT.
+//    2. Mac sends `AuthChallenge`.
+//    3. Phone HMACs `SAM-AUTH-v1|phoneDeviceID|challengeB64` with the token
+//       and replies with `AuthResponse`.
+//    4. Mac verifies. Unknown but valid phones are auto-trusted (their HMAC
+//       proves they share the iCloud-distributed token).
+//
+//  The 32-byte token never leaves the Keychain on either device after the
+//  initial CloudKit fetch. Resetting the token (Settings) regenerates it,
+//  evicts all paired phones, and re-publishes to CloudKit.
 //
 
 import CryptoKit
@@ -36,25 +40,11 @@ final class DevicePairingService {
 
     private(set) var macDeviceID: UUID = UUID()
     private(set) var macDisplayName: String = "Mac"
-    /// Raw 32-byte HMAC key. Sent to the phone only inside a successful
-    /// PinPairingResult; never leaves the Keychain otherwise.
+    /// Raw 32-byte HMAC key. Distributed via CloudKit private DB; never sent
+    /// over the local TCP stream.
     private var pairingTokenData: Data = Data()
     private(set) var pairedDevices: [PairedDeviceRecord] = []
 
-    // MARK: - Transient pairing-mode state
-
-    /// Current 6-digit PIN while a pairing window is open. Nil otherwise.
-    private(set) var currentPIN: String?
-
-    /// When the current PIN expires.
-    private(set) var currentPINExpiresAt: Date?
-
-    var isPINActive: Bool {
-        guard let currentPIN, !currentPIN.isEmpty, let expires = currentPINExpiresAt else { return false }
-        return expires > Date()
-    }
-
-    private var pinExpiryTask: Task<Void, Never>?
     private var isBootstrapped = false
 
     // MARK: - Storage keys
@@ -65,8 +55,9 @@ final class DevicePairingService {
 
     // MARK: - Bootstrap
 
-    /// Load persistent state from Keychain + UserDefaults. Idempotent. Call once at
-    /// app launch before anyone can access `macDeviceID` / `pairingTokenData`.
+    /// Load persistent state from Keychain + UserDefaults, then publish the
+    /// pairing token to CloudKit so phones on the same iCloud account can
+    /// pick it up. Idempotent.
     func bootstrap() async {
         guard !isBootstrapped else { return }
 
@@ -98,96 +89,20 @@ final class DevicePairingService {
         macDisplayName = Self.defaultMacDisplayName()
         isBootstrapped = true
         logger.debug("Bootstrap complete: \(self.pairedDevices.count) paired device(s)")
-    }
 
-    // MARK: - Pairing mode
-
-    /// Open a pairing window. Returns the 6-digit PIN to display on screen.
-    /// While this window is open, an iPhone may connect and send a
-    /// `PinPairingRequest` carrying this PIN to be registered as trusted.
-    @discardableResult
-    func startPINPairing(duration: TimeInterval = 90) -> String {
-        pinExpiryTask?.cancel()
-
-        let pin = Self.generatePIN()
-        let expires = Date().addingTimeInterval(duration)
-        currentPIN = pin
-        currentPINExpiresAt = expires
-
-        pinExpiryTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(duration))
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                self?.stopPINPairing()
-            }
-        }
-
-        logger.info("PIN pairing started (expires \(expires, privacy: .public))")
-        return pin
-    }
-
-    /// Close the pairing window early (user cancelled, or a phone just paired).
-    func stopPINPairing() {
-        pinExpiryTask?.cancel()
-        pinExpiryTask = nil
-        if currentPIN != nil {
-            logger.info("PIN pairing ended")
-        }
-        currentPIN = nil
-        currentPINExpiresAt = nil
-    }
-
-    /// Verify a PIN sent by the phone. On success, register the phone and
-    /// return a success result containing the HMAC token so the Mac can
-    /// transmit it back.
-    func verifyPIN(
-        _ pin: String,
-        phoneDeviceID: UUID,
-        phoneDisplayName: String
-    ) -> PinPairingResult {
-        guard isBootstrapped else {
-            return PinPairingResult(success: false, reason: "Mac not ready")
-        }
-        guard isPINActive, let active = currentPIN else {
-            return PinPairingResult(success: false, reason: "This Mac isn't accepting pairs right now.")
-        }
-        guard pin == active else {
-            logger.warning("PIN mismatch from phone \(phoneDeviceID)")
-            return PinPairingResult(success: false, reason: "Incorrect PIN.")
-        }
-
-        // Register / refresh the paired-device record.
-        let record = PairedDeviceRecord(
-            id: phoneDeviceID,
-            displayName: phoneDisplayName,
-            pairedAt: Date(),
-            lastSeenAt: Date()
-        )
-        pairedDevices.removeAll { $0.id == phoneDeviceID }
-        pairedDevices.append(record)
-        persistPairedDevices()
-
-        // One-shot: successful PIN closes the window immediately.
-        stopPINPairing()
-
-        logger.info("Paired new phone \(phoneDeviceID) (\(phoneDisplayName, privacy: .private)) via PIN")
-        return PinPairingResult(
-            success: true,
-            tokenB64: pairingTokenData.base64EncodedString(),
+        await CloudSyncService.shared.pushPairingToken(
             macDeviceID: macDeviceID,
-            macDisplayName: macDisplayName
+            macDisplayName: macDisplayName,
+            tokenData: pairingTokenData
         )
-    }
-
-    private static func generatePIN() -> String {
-        String(format: "%06d", Int.random(in: 0...999999))
     }
 
     // MARK: - Authentication
 
     /// Verify an `AuthResponse` carrying an HMAC of the challenge the Mac just sent.
-    /// Valid HMAC + known phoneDeviceID → success. Unknown phones must go through
-    /// `verifyPIN` first — they cannot join via `authenticate`.
+    /// A valid HMAC is sufficient proof — only phones with the iCloud-distributed
+    /// token can produce one. Unknown phones with valid HMACs are auto-added to
+    /// `pairedDevices` (the CloudKit trust boundary already vouched for them).
     func authenticate(
         phoneDeviceID: UUID,
         phoneDisplayName: String,
@@ -204,19 +119,22 @@ final class DevicePairingService {
             return AuthResult(success: false, reason: "Invalid credentials", macDisplayName: macDisplayName)
         }
 
-        guard let existingIndex = pairedDevices.firstIndex(where: { $0.id == phoneDeviceID }) else {
-            logger.warning("Auth rejected: unknown phone \(phoneDeviceID)")
-            return AuthResult(
-                success: false,
-                reason: "This iPhone isn't paired with this Mac. Open Settings on the Mac to start pairing.",
-                macDisplayName: macDisplayName
+        if let existingIndex = pairedDevices.firstIndex(where: { $0.id == phoneDeviceID }) {
+            pairedDevices[existingIndex].lastSeenAt = Date()
+            pairedDevices[existingIndex].displayName = phoneDisplayName
+            persistPairedDevices()
+            logger.info("Auth success for known phone \(phoneDeviceID)")
+        } else {
+            let record = PairedDeviceRecord(
+                id: phoneDeviceID,
+                displayName: phoneDisplayName,
+                pairedAt: Date(),
+                lastSeenAt: Date()
             )
+            pairedDevices.append(record)
+            persistPairedDevices()
+            logger.info("Auto-trusted new phone \(phoneDeviceID) (\(phoneDisplayName, privacy: .private)) via CloudKit token")
         }
-
-        pairedDevices[existingIndex].lastSeenAt = Date()
-        pairedDevices[existingIndex].displayName = phoneDisplayName
-        persistPairedDevices()
-        logger.info("Auth success for known phone \(phoneDeviceID)")
         return AuthResult(success: true, macDisplayName: macDisplayName)
     }
 
@@ -241,13 +159,19 @@ final class DevicePairingService {
     }
 
     /// Wipes the current token and generates a new one. Every paired phone is
-    /// evicted because their old HMACs won't verify any more. User-invoked only.
+    /// evicted because their old HMACs won't verify any more. The new token is
+    /// republished to CloudKit so phones can re-fetch silently. User-invoked.
     func resetPairingToken() async {
         let fresh = Self.randomBytes(32)
         try? await KeychainService.shared.storeData(fresh, forKey: Self.pairingTokenKey)
         pairingTokenData = fresh
         unpairAll()
-        logger.info("Pairing token reset")
+        await CloudSyncService.shared.pushPairingToken(
+            macDeviceID: macDeviceID,
+            macDisplayName: macDisplayName,
+            tokenData: pairingTokenData
+        )
+        logger.info("Pairing token reset and republished to CloudKit")
     }
 
     // MARK: - Private

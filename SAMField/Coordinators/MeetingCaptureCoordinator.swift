@@ -132,7 +132,22 @@ final class MeetingCaptureCoordinator {
 
     private let recordingService = MeetingRecordingService()
     private let streamingService = AudioStreamingService.shared
-    private var sessionID: UUID?
+    private(set) var sessionID: UUID?
+
+    /// The recording context currently associated with `lastSummary` /
+    /// `sessionID`. Initialized from `expectedRecordingContext` when a
+    /// session starts, then updated locally when the user reclassifies on
+    /// the phone or when the Mac pushes a `recordingContextChanged`.
+    /// Exposed so the UI can pre-select the right value in the reclassify
+    /// picker and hide the action when the context already matches.
+    private(set) var currentRecordingContext: RecordingContext?
+
+    /// True while a reclassification is in flight — the phone has sent
+    /// `recordingContextChanged` to the Mac and is waiting for the Mac to
+    /// resummarize and push the new summary back. The UI shows a spinner
+    /// during this window. Cleared by the next `summaryPush` or by the
+    /// summary watchdog timeout.
+    private(set) var isReclassifying: Bool = false
 
     // MARK: - Speaker Prep
 
@@ -193,6 +208,7 @@ final class MeetingCaptureCoordinator {
                 self?.summaryWatchdog = nil
                 self?.lastSummary = summary
                 self?.isAwaitingSummary = false
+                self?.isReclassifying = false
             }
         }
 
@@ -200,6 +216,21 @@ final class MeetingCaptureCoordinator {
         streamingService.onWorkspaceSettingsReceived = {
             Task { @MainActor in
                 FieldCalendarService.shared.refreshToday()
+            }
+        }
+
+        // The Mac may reclassify a recording on its end (e.g., user
+        // changed the type from the TranscriptionReviewView). When that
+        // happens the Mac kicks off a resummarize and will push the
+        // new summary back; until then, mirror the new context locally
+        // and show the regenerating state.
+        streamingService.onRecordingContextChanged = { [weak self] sessionID, newContext in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                guard self.sessionID == sessionID else { return }
+                self.currentRecordingContext = newContext
+                self.isReclassifying = true
+                self.isAwaitingSummary = true
             }
         }
 
@@ -287,15 +318,6 @@ final class MeetingCaptureCoordinator {
     }
 
     // MARK: - Lifecycle
-
-    /// Tear down any in-flight browse/connection and start fresh. Called
-    /// right after a successful QR pair so the phone discovers the newly-
-    /// paired Mac immediately and runs the auth handshake — which is what
-    /// tells the Mac to close its QR sheet and add this iPhone to its
-    /// paired list.
-    func restartBrowsingAfterPairing() {
-        streamingService.restartBrowsing()
-    }
 
     /// Start browsing for the Mac transcription service.
     func connectToMac() {
@@ -447,10 +469,12 @@ final class MeetingCaptureCoordinator {
         // Clear state from any previous session
         lastSummary = nil
         isAwaitingSummary = false
+        isReclassifying = false
         connectionLossWarning = nil
 
         let id = UUID()
         self.sessionID = id
+        self.currentRecordingContext = expectedRecordingContext
 
         // Determine initial mode based on connection state
         let startingStreaming = streamingService.connectionState == .connected
@@ -713,6 +737,8 @@ final class MeetingCaptureCoordinator {
         endBackgroundTask()
         stopConnectionWatch()
         sessionID = nil
+        currentRecordingContext = nil
+        isReclassifying = false
         currentSessionLocalURL = nil
         connectionLossWarning = nil
         captureState = .idle
@@ -722,6 +748,8 @@ final class MeetingCaptureCoordinator {
     func reset() {
         streamingService.disconnect()
         sessionID = nil
+        currentRecordingContext = nil
+        isReclassifying = false
         lastSummary = nil
         isAwaitingSummary = false
         summaryWatchdog?.cancel()
@@ -765,6 +793,8 @@ final class MeetingCaptureCoordinator {
                 showDoneConfirmation = false
                 // Clear session state → view returns to ready-to-record
                 sessionID = nil
+                currentRecordingContext = nil
+                isReclassifying = false
                 lastSummary = nil
                 isAwaitingSummary = false
                 summaryWatchdog?.cancel()
@@ -785,6 +815,8 @@ final class MeetingCaptureCoordinator {
 
         // Clean up local state
         sessionID = nil
+        currentRecordingContext = nil
+        isReclassifying = false
         lastSummary = nil
         isAwaitingSummary = false
         summaryWatchdog?.cancel()
@@ -794,6 +826,59 @@ final class MeetingCaptureCoordinator {
             ? .connected : .idle
 
         logger.info("sessionDeleted sent=\(sent) for \(id.uuidString)")
+    }
+
+    /// Reclassify the current recording (e.g., from clientMeeting to
+    /// trainingLecture). Sends the reclassify message to the Mac, which
+    /// updates the session, regenerates the summary against the new
+    /// context-specific prompt, and pushes the new summary back via
+    /// `summaryPush`.
+    ///
+    /// Only valid while `lastSummary != nil && sessionID != nil` — once
+    /// the user taps Done or Delete, the local summary is gone and the
+    /// audio + verbatim transcript on the Mac may have been retention-
+    /// purged. The UI hides the action in those states.
+    @discardableResult
+    func reclassifyCurrentRecording(to newContext: RecordingContext) -> Bool {
+        guard let id = sessionID else {
+            logger.warning("reclassifyCurrentRecording: no active sessionID")
+            return false
+        }
+        guard streamingService.connectionState == .connected else {
+            logger.warning("reclassifyCurrentRecording: not connected to Mac")
+            return false
+        }
+        if currentRecordingContext == newContext {
+            return true
+        }
+        let sent = streamingService.sendRecordingContextChanged(
+            sessionID: id,
+            newContext: newContext
+        )
+        if !sent {
+            logger.warning("reclassifyCurrentRecording: send failed")
+            return false
+        }
+        currentRecordingContext = newContext
+        // Hold the previous summary on screen but mark it stale so the UI
+        // can render a "regenerating" overlay. The next `summaryPush` from
+        // the Mac will replace it via `onMeetingSummary`.
+        isReclassifying = true
+        isAwaitingSummary = true
+        // Re-arm the watchdog so we don't get stuck spinning if the Mac
+        // never replies.
+        summaryWatchdog?.cancel()
+        summaryWatchdog = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(60))
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard let self else { return }
+                self.isReclassifying = false
+                self.isAwaitingSummary = false
+            }
+        }
+        logger.info("reclassifyCurrentRecording: sent for \(id.uuidString) → \(newContext.rawValue)")
+        return true
     }
 
     // MARK: - Summary Watchdog
