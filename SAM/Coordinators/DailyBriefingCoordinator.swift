@@ -972,7 +972,6 @@ final class DailyBriefingCoordinator {
     /// - Marks the outcome completed and hides it when the queue is empty.
     /// Call after any change to `SamEvidenceItem.reviewStatus` for calendar evidence.
     func refreshPendingReviewsOutcome() {
-        guard let context else { return }
         do {
             let pending = try pendingMeetingReviews()
             let existing = try outcomeRepo.fetchBySourceInsightSummary(Self.pendingReviewsInsightKey)
@@ -982,7 +981,7 @@ final class DailyBriefingCoordinator {
                 if let existing {
                     existing.status = .completed
                     existing.completedAt = Date.now
-                    try context.save()
+                    try outcomeRepo.save()
                 }
                 return
             }
@@ -1000,10 +999,14 @@ final class DailyBriefingCoordinator {
             let nextStep = "Confirm what happened for each meeting so SAM can update your pipeline."
 
             // Link to a person from the most recent pending review (if any known attendee) so person-level views pick it up.
-            let linkedPerson = pending
+            // Re-fetch in the outcome repo's context — `pending` lives in EvidenceRepository's context,
+            // and assigning a cross-context SamPerson to existing.linkedPerson traps inside SwiftData's
+            // withMutation. (Same reason upsert() does this for the insert path.)
+            let evidencePerson = pending
                 .first(where: { $0.linkedPeople.contains(where: { !$0.isDeleted && !$0.isMe }) })?
                 .linkedPeople
                 .first(where: { !$0.isDeleted && !$0.isMe })
+            let linkedPerson = try outcomeRepo.resolveInContext(evidencePerson)
 
             if let existing {
                 existing.title = title
@@ -1011,7 +1014,7 @@ final class DailyBriefingCoordinator {
                 existing.suggestedNextStep = nextStep
                 existing.deadlineDate = Calendar.current.date(byAdding: .hour, value: 24, to: .now)
                 existing.linkedPerson = linkedPerson
-                try context.save()
+                try outcomeRepo.save()
             } else {
                 let outcome = SamOutcome(
                     title: title,

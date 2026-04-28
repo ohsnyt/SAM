@@ -4,6 +4,31 @@
 
 ---
 
+## Crash fix: cross-context relationship write in pending-reviews refresh (April 27, 2026)
+
+**What**: 1.0(1) crashed with `EXC_BREAKPOINT` (SwiftData `_assertionFailure` from `ObservationRegistrar.withMutation`) when the 5-minute briefing timer fired and a pending meeting review was waiting. Crash signature: `SamOutcome.linkedPerson.setter` ← `DailyBriefingCoordinator.refreshPendingReviewsOutcome()` ← `createMeetingNoteTemplate(...)` (line 961) ← `checkRecentlyEndedMeetings()` ← timer closure inside `configure(container:)` (line 169).
+
+### Why
+
+`DailyBriefingCoordinator`, `OutcomeRepository.shared`, and `EvidenceRepository.shared` each create their own `ModelContext`. `refreshPendingReviewsOutcome` was assigning a `SamPerson` from the evidence repo's context to `existing.linkedPerson` on a `SamOutcome` from the outcome repo's context. SwiftData traps inside `withMutation` on cross-context relationship writes. The same path also called `try context.save()` (the briefing coordinator's context) on mutations that lived in the outcome repo's context — so `existing.status = .completed` was never persisted when the queue drained.
+
+`OutcomeRepository.upsert(...)` already handled this for the insert path via a private `resolveInContext(_:)`, but the in-place update branch in `refreshPendingReviewsOutcome` bypassed it and wrote directly.
+
+### Fix
+
+- `SAM/Repositories/OutcomeRepository.swift`: `resolveInContext(_ person: SamPerson?)` flipped from `private` to internal so other `@MainActor` callers can re-fetch a `SamPerson` into the outcome repo's context before assigning it to a `SamOutcome` relationship.
+- `SAM/Coordinators/DailyBriefingCoordinator.swift` `refreshPendingReviewsOutcome()`: route the candidate `linkedPerson` through `outcomeRepo.resolveInContext(...)` before the assignment, and replace both `try context.save()` calls with `try outcomeRepo.save()` so saves land in the context that owns `existing`. Drop the now-unused `guard let context` at the top of the method.
+
+### Diagnosis trail
+
+Symbolicated 1.0(1) (UUID `A8DE1ECA-9B54-3F39-B092-B0543613C1AA`, archive `SAM 4-23-26, 3.02 PM.xcarchive`) with `atos`. Stack named the property setter and the calling coordinator method directly, which made the cross-context source obvious by inspection (three different repos, three different contexts, one shared `SamPerson`).
+
+### Risk
+
+Any user with an outstanding pending-review outcome and a still-pending calendar event would have hit the trap within 5 minutes of launch. Warrants a 1.0(2) rebuild.
+
+---
+
 ## Recording Reclassification (April 25, 2026)
 
 **What**: Sarah can now reclassify a recording's `RecordingContext` (e.g., from `clientMeeting` to `trainingLecture`) on either the Mac or SAM Field. Reclassifying triggers a full resummarize against the new context-specific prompt and pushes the regenerated summary to whichever device didn't initiate the change.

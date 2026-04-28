@@ -236,7 +236,7 @@ final class OutcomeRepository {
     }
 
     /// Re-fetch a SamPerson from this repository's context to avoid cross-context errors.
-    private func resolveInContext(_ person: SamPerson?) throws -> SamPerson? {
+    func resolveInContext(_ person: SamPerson?) throws -> SamPerson? {
         guard let person, let context else { return nil }
         let personID = person.id
         let descriptor = FetchDescriptor<SamPerson>(predicate: #Predicate { $0.id == personID })
