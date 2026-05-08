@@ -31,7 +31,11 @@ Only then do we decide *which* architectural changes are worth the cost.
 
 ---
 
-## Phase 0 — Dataset Audit (1–2 days, one-shot)
+## Phase 0 — Dataset Audit + Trip Durability (one session)
+
+Phase 0 ships two related deliverables in one build cycle. Both target Sarah's Mac and (for trips) her phone.
+
+### 0a. Dataset Audit (Mac)
 
 **Goal**: produce a quantitative model of Sarah's data growth that distinguishes the initial-import burst from steady-state ongoing usage. Use that model to project 1y / 3y / 5y per model.
 
@@ -52,6 +56,41 @@ Only then do we decide *which* architectural changes are worth the cost.
 **Exit criteria**: a single chart showing import-burst (first ~7 days post-onboarding) vs. trailing weekly steady-state, broken down by model. From that we extrapolate 1y / 3y / 5y per model and sum total expected DB size.
 
 **Risk**: low. One-shot diagnostic, no production impact.
+
+### 0b. Trip Durability (Mac + Phone)
+
+**Goal**: stop trip data from being a single-device commodity stored only on the phone. Make the Mac a durable copy so a SAMField reinstall doesn't lose history. The Mac already has the schema (`SamTrip`/`SamTripStop`/`SamSavedAddress`), the repository (`TripRepository`), and the UI (`MacTripsView` under Business). The gap is the wire.
+
+**Deliverables**:
+
+1. **Wire protocol additions** in `SAMModels-AudioStreaming.swift`. Next free slot is `0x11`:
+   - `tripUpsert = 0x11` — phone → Mac. Full trip + ordered stops + referenced saved addresses, idempotent on UUID. Sent on trip close, edit, or confirm.
+   - `tripDelete = 0x12` — phone → Mac. Trip UUID, tombstone-style.
+   - `tripSyncRequest = 0x13` — phone → Mac. "Send me everything you have." Sent on first connect after a fresh install (detected via local trip count = 0 plus a flag persisted in `UserDefaults`).
+   - `tripSyncBundle = 0x14` — Mac → phone. Full bundle response to a `tripSyncRequest`.
+
+2. **DTOs** — `TripUpsertDTO`, `TripDeleteDTO`, `TripSyncRequestDTO`, `TripSyncBundleDTO`. All `Sendable`, JSON over the existing length-prefixed framing.
+
+3. **Mac side** (`AudioReceivingService.swift` + a new `TripIngestCoordinator`):
+   - Inbound handlers for the four new message types.
+   - `TripIngestCoordinator` upserts via `TripRepository` (resolve by UUID; insert or update).
+   - Outbound `tripSyncBundle` gathers everything from `TripRepository.fetchAll()` plus the saved-addresses table.
+
+4. **Phone side** (`SAMField/Coordinators/TripCoordinator.swift` + `TripTrackingService.swift`):
+   - On trip close / edit / confirm / delete, push to Mac via the existing TCP service. If offline, append to a small outbox table (mirror the `PendingUpload` pattern used for recordings) and drain on reconnect.
+   - First-launch detection: if local trip count is 0 and `tripsRestoreAttempted` is false, send `tripSyncRequest` after Mac handshake completes; ingest the response into the local store.
+
+5. **Backup payload** (`BackupCoordinator.swift` + `BackupDocument.swift`):
+   - Add `SamTrip`, `SamTripStop`, `SamSavedAddress` to the encode/decode set so a Mac→Mac restore preserves trips.
+
+**Out of scope tonight**:
+- Conflict resolution beyond last-write-wins on UUID. Sarah is the only writer; concurrent edit conflicts are not realistic.
+- Mac-originated trip writes pushing back to the phone. The phone is the system of record for new trips; the Mac is the durable mirror.
+- Sarah's *historical* lost trips. Those are gone. The fix prevents future loss.
+
+**Exit criteria**: closing a trip on the phone shows up in `MacTripsView` within seconds. Reinstalling SAMField, then opening it while paired, restores all trips from the Mac. Mac→Mac backup restore preserves trips.
+
+**Risk**: medium. New wire protocol surface area, new ingest coordinator, schema-level changes to backup format. Need to verify the existing TCP framing handles bundle-sized payloads (a year of trips is small but `tripSyncBundle` is the largest single message we'd send).
 
 ---
 
@@ -164,4 +203,3 @@ But the data may surprise us. We won't pretend to know until we see the reports.
 1. **Webhook vs. SMTP** for Phase 1d auto-delivery. Recommended: small webhook on `stillwaiting.org` (more reliable, easier to triage). Confirm with David before building.
 2. **`createdAt` schema patch** — which models lack it? Phase 0 starts with an audit of timestamps available; if too many models lack `createdAt`, the patch becomes a Phase 0 prerequisite rather than an aside.
 3. **Build-flag plumbing** for `INTERNAL_TELEMETRY=1`. Confirm where to add the flag (xcconfig vs. scheme env var) so debug builds get auto-send and release builds don't.
-4. **Trip data backup gap** (separate but related) — trips are not in the backup payload and not CloudKit-synced, so they're lost on reinstall. Out of scope for the scaling roadmap, but worth tracking as a related data-durability item.
