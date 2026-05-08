@@ -73,7 +73,8 @@ final class TripCoordinator {
         completedTrip = tracker.currentTrip
         tracker.stopTrip()
         refreshStats()
-        if completedTrip != nil {
+        if let completed = completedTrip {
+            TripPushService.shared.enqueueUpsert(tripID: completed.id)
             showTripSummary = true
         }
     }
@@ -120,6 +121,9 @@ final class TripCoordinator {
             let context = ModelContext(container)
             try? context.save()
         }
+        if let tripID = stop.trip?.id {
+            TripPushService.shared.enqueueUpsert(tripID: tripID)
+        }
     }
 
     /// Current location from the location service.
@@ -133,6 +137,7 @@ final class TripCoordinator {
         try? context.save()
         recentTrips.removeAll { $0.id == deletedID }
         refreshStats(using: context)
+        TripPushService.shared.enqueueDelete(tripID: deletedID)
     }
 
     // MARK: - Stats

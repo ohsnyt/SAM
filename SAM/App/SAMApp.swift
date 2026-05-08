@@ -1092,6 +1092,8 @@ struct SAMApp: App {
         RoleRecruitingRepository.shared.configure(container: c)
         GoalJournalRepository.shared.configure(container: c)
         CommitmentRepository.shared.configure(container: c)
+        TripRepository.shared.configure(container: c)
+        TripIngestCoordinator.shared.configure(container: c)
 
         // One-time migration: isArchived → lifecycleStatusRawValue (v31→v32)
         SAMModelContainer.runMigrationV32IfNeeded()

@@ -176,6 +176,17 @@ final class TranscriptionSessionCoordinator {
                     await self?.reclassifyAndResummarize(sessionID: sessionID, to: newContext)
                 }
             }
+            receivingService.onTripUpsert = { dto in
+                TripIngestCoordinator.shared.handleUpsert(dto)
+            }
+            receivingService.onTripDelete = { dto in
+                TripIngestCoordinator.shared.handleDelete(dto)
+            }
+            receivingService.onTripSyncRequest = { [weak self] _ in
+                guard let self else { return }
+                let bundle = TripIngestCoordinator.shared.gatherSyncBundle()
+                self.receivingService.sendTripSyncBundle(bundle)
+            }
             isWired = true
         }
 

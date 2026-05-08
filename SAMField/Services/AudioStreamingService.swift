@@ -69,6 +69,17 @@ final class AudioStreamingService {
     /// summary while waiting for the regenerated `summaryPush`.
     var onRecordingContextChanged: (@Sendable (UUID, RecordingContext) -> Void)?
 
+    /// Fired when the Mac responds to a `tripSyncRequest` with its full set
+    /// of trips. The phone applies these to its empty SwiftData store after
+    /// a fresh install. Subsequent edits flow back as individual upserts.
+    var onTripSyncBundle: (@Sendable (TripSyncBundleDTO) -> Void)?
+
+    /// Fired immediately after a successful auth handshake — the connection
+    /// is ready for application-level traffic. TripPushService uses this to
+    /// drain its outbox; the first-launch handshake hooks here to ask for a
+    /// trip sync bundle.
+    var onAuthenticated: (@Sendable () -> Void)?
+
     // MARK: - Private
 
     private var browser: NWBrowser?
@@ -479,6 +490,71 @@ final class AudioStreamingService {
         return true
     }
 
+    // MARK: - Trip Sync (Phase 0b)
+
+    /// Push a single trip (and its stops) to the Mac. Returns false if the
+    /// connection is unavailable; callers should queue the trip in a
+    /// durable outbox and retry on reconnect.
+    @discardableResult
+    func sendTripUpsert(_ dto: TripUpsertDTO) -> Bool {
+        guard connectionState == .connected, connection != nil else { return false }
+        guard let payload = dto.toWireData() else {
+            logger.error("sendTripUpsert: failed to encode payload")
+            return false
+        }
+        let header = AudioPacketHeader(
+            version: AudioPacketHeader.currentVersion,
+            messageType: .tripUpsert,
+            sequenceNumber: 0,
+            timestamp: 0,
+            sampleRate: 0,
+            channels: 0,
+            payloadLength: UInt32(payload.count)
+        )
+        sendPacket(header: header, payload: payload)
+        return true
+    }
+
+    /// Tombstone a trip the user deleted on the phone.
+    @discardableResult
+    func sendTripDelete(_ dto: TripDeleteDTO) -> Bool {
+        guard connectionState == .connected, connection != nil else { return false }
+        guard let payload = dto.toWireData() else {
+            logger.error("sendTripDelete: failed to encode payload")
+            return false
+        }
+        let header = AudioPacketHeader(
+            version: AudioPacketHeader.currentVersion,
+            messageType: .tripDelete,
+            sequenceNumber: 0,
+            timestamp: 0,
+            sampleRate: 0,
+            channels: 0,
+            payloadLength: UInt32(payload.count)
+        )
+        sendPacket(header: header, payload: payload)
+        return true
+    }
+
+    /// First-launch handshake: ask the Mac for everything it has.
+    @discardableResult
+    func sendTripSyncRequest(phoneDeviceID: UUID? = nil) -> Bool {
+        guard connectionState == .connected, connection != nil else { return false }
+        let dto = TripSyncRequestDTO(phoneDeviceID: phoneDeviceID)
+        guard let payload = dto.toWireData() else { return false }
+        let header = AudioPacketHeader(
+            version: AudioPacketHeader.currentVersion,
+            messageType: .tripSyncRequest,
+            sequenceNumber: 0,
+            timestamp: 0,
+            sampleRate: 0,
+            channels: 0,
+            payloadLength: UInt32(payload.count)
+        )
+        sendPacket(header: header, payload: payload)
+        return true
+    }
+
     // MARK: - Private: Connection
 
     private func connectToEndpoint(
@@ -755,6 +831,14 @@ final class AudioStreamingService {
             logger.info("Received recordingContextChanged: \(dto.sessionID) → \(dto.recordingContextRaw)")
             onRecordingContextChanged?(dto.sessionID, newContext)
 
+        case .tripSyncBundle:
+            guard let bundle = TripSyncBundleDTO.from(wireData: payload) else {
+                logger.warning("Failed to decode tripSyncBundle (\(payload.count) bytes)")
+                return
+            }
+            logger.info("Received tripSyncBundle: \(bundle.trips.count) trips")
+            onTripSyncBundle?(bundle)
+
         default:
             // iPhone doesn't expect to receive audio/session packets — ignore.
             break
@@ -835,6 +919,7 @@ final class AudioStreamingService {
             logger.info("Auth succeeded — stream is live")
             startHeartbeat()
             flushBufferedChunks()
+            onAuthenticated?()
         } else {
             authState = .none
             lastAuthError = result.reason ?? "Mac rejected this iPhone."

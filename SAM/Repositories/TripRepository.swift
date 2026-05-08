@@ -174,6 +174,159 @@ final class TripRepository {
         return try context.fetch(descriptor)
     }
 
+    // MARK: - Sync (Phone ↔ Mac)
+
+    /// Idempotent upsert of a trip and its stops, keyed by UUID. Used by the Mac
+    /// to ingest trip records pushed from the phone, and by the phone to apply
+    /// a sync bundle from the Mac on first launch.
+    ///
+    /// Strategy:
+    /// - Match the trip by `id`. If absent, insert a new SamTrip.
+    /// - Copy scalar fields from the DTO onto the trip (last-write-wins).
+    /// - Match each incoming stop by `id` against the trip's existing stops.
+    ///   - Existing match: copy scalar fields; preserve Mac-side relationship
+    ///     enrichment (`linkedPerson`, `linkedEvidence`, `trip`).
+    ///   - No match: insert a new SamTripStop attached to the trip.
+    /// - Stops present on the trip but not in the DTO are removed (the phone
+    ///   is authoritative on stop list membership for trips it owns).
+    @discardableResult
+    func upsert(dto: SamTripDTO) throws -> SamTrip {
+        guard let context else { throw RepositoryError.notConfigured }
+
+        let tripID = dto.id
+        let descriptor = FetchDescriptor<SamTrip>(
+            predicate: #Predicate { $0.id == tripID }
+        )
+        let existing = try context.fetch(descriptor).first
+
+        let trip: SamTrip
+        if let existing {
+            trip = existing
+        } else {
+            trip = SamTrip(id: dto.id, date: dto.date)
+            context.insert(trip)
+        }
+
+        // Copy scalar fields
+        trip.date = dto.date
+        trip.totalDistanceMiles = dto.totalDistanceMiles
+        trip.businessDistanceMiles = dto.businessDistanceMiles
+        trip.personalDistanceMiles = dto.personalDistanceMiles
+        trip.startOdometer = dto.startOdometer
+        trip.endOdometer = dto.endOdometer
+        trip.statusRawValue = dto.statusRawValue
+        trip.notes = dto.notes
+        trip.startedAt = dto.startedAt
+        trip.endedAt = dto.endedAt
+        trip.startAddress = dto.startAddress
+        trip.vehicle = dto.vehicle
+        trip.tripPurposeRawValue = dto.tripPurposeRawValue
+        trip.confirmedAt = dto.confirmedAt
+        trip.isCommuting = dto.isCommuting
+
+        // Reconcile stops by UUID
+        let incomingByID = Dictionary(uniqueKeysWithValues: dto.stops.map { ($0.id, $0) })
+        let existingByID = Dictionary(uniqueKeysWithValues: trip.stops.map { ($0.id, $0) })
+
+        // Update existing or insert new
+        for stopDTO in dto.stops {
+            if let existingStop = existingByID[stopDTO.id] {
+                existingStop.latitude = stopDTO.latitude
+                existingStop.longitude = stopDTO.longitude
+                existingStop.address = stopDTO.address
+                existingStop.locationName = stopDTO.locationName
+                existingStop.arrivedAt = stopDTO.arrivedAt
+                existingStop.departedAt = stopDTO.departedAt
+                existingStop.distanceFromPreviousMiles = stopDTO.distanceFromPreviousMiles
+                existingStop.purposeRawValue = stopDTO.purposeRawValue
+                existingStop.outcomeRawValue = stopDTO.outcomeRawValue
+                existingStop.notes = stopDTO.notes
+                existingStop.sortOrder = stopDTO.sortOrder
+            } else {
+                let newStop = SamTripStop(
+                    id: stopDTO.id,
+                    latitude: stopDTO.latitude,
+                    longitude: stopDTO.longitude,
+                    address: stopDTO.address,
+                    locationName: stopDTO.locationName,
+                    arrivedAt: stopDTO.arrivedAt,
+                    departedAt: stopDTO.departedAt,
+                    distanceFromPreviousMiles: stopDTO.distanceFromPreviousMiles,
+                    purpose: StopPurpose(rawValue: stopDTO.purposeRawValue) ?? .prospecting,
+                    outcome: stopDTO.outcomeRawValue.flatMap { VisitOutcome(rawValue: $0) },
+                    notes: stopDTO.notes,
+                    sortOrder: stopDTO.sortOrder
+                )
+                newStop.trip = trip
+                context.insert(newStop)
+            }
+        }
+
+        // Delete stops the phone no longer has
+        for existingStop in trip.stops where incomingByID[existingStop.id] == nil {
+            context.delete(existingStop)
+        }
+
+        try context.save()
+        logger.info("Upserted trip \(trip.id) with \(dto.stops.count) stops")
+        return trip
+    }
+
+    /// Delete a trip by UUID. Cascades to stops. No-op if missing.
+    func delete(tripID: UUID) throws {
+        guard let context else { throw RepositoryError.notConfigured }
+
+        let descriptor = FetchDescriptor<SamTrip>(
+            predicate: #Predicate { $0.id == tripID }
+        )
+        guard let trip = try context.fetch(descriptor).first else { return }
+        context.delete(trip)
+        try context.save()
+        logger.info("Deleted trip \(tripID) via sync")
+    }
+
+    /// Build a `SamTripDTO` from a persistent SamTrip. Used to assemble
+    /// `TripSyncBundleDTO` responses to phone restore handshakes.
+    static func dto(from trip: SamTrip) -> SamTripDTO {
+        let stopDTOs = trip.stops
+            .sorted { $0.sortOrder < $1.sortOrder }
+            .map { stop in
+                TripStopDTO(
+                    id: stop.id,
+                    latitude: stop.latitude,
+                    longitude: stop.longitude,
+                    address: stop.address,
+                    locationName: stop.locationName,
+                    arrivedAt: stop.arrivedAt,
+                    departedAt: stop.departedAt,
+                    distanceFromPreviousMiles: stop.distanceFromPreviousMiles,
+                    purposeRawValue: stop.purposeRawValue,
+                    outcomeRawValue: stop.outcomeRawValue,
+                    notes: stop.notes,
+                    sortOrder: stop.sortOrder
+                )
+            }
+        return SamTripDTO(
+            id: trip.id,
+            date: trip.date,
+            totalDistanceMiles: trip.totalDistanceMiles,
+            businessDistanceMiles: trip.businessDistanceMiles,
+            personalDistanceMiles: trip.personalDistanceMiles,
+            startOdometer: trip.startOdometer,
+            endOdometer: trip.endOdometer,
+            statusRawValue: trip.statusRawValue,
+            notes: trip.notes,
+            startedAt: trip.startedAt,
+            endedAt: trip.endedAt,
+            startAddress: trip.startAddress,
+            vehicle: trip.vehicle,
+            tripPurposeRawValue: trip.tripPurposeRawValue,
+            confirmedAt: trip.confirmedAt,
+            isCommuting: trip.isCommuting,
+            stops: stopDTOs
+        )
+    }
+
     // MARK: - Mileage Summaries
 
     /// Total business miles for a given month.

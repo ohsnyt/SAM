@@ -634,6 +634,7 @@ struct TripSummaryView: View {
                     isCommuting = v
                     trip.isCommuting = v
                     try? modelContext.save()
+                    TripPushService.shared.enqueueUpsert(tripID: trip.id)
                 }
             )) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -762,6 +763,7 @@ struct TripSummaryView: View {
         try? modelContext.save()
         isConfirmed = true
         confirmedAt = trip.confirmedAt
+        TripPushService.shared.enqueueUpsert(tripID: trip.id)
     }
 }
 

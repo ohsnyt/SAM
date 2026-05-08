@@ -110,6 +110,29 @@ struct AudioPacketHeader: Sendable {
         /// pushes the new summary back to the phone via `summaryPush`.
         /// Payload: JSON `RecordingContextChangedDTO`.
         case recordingContextChanged = 0x10
+
+        // MARK: - Phase G: Trip durability (Mac becomes the durable copy)
+
+        /// iPhone → Mac: a trip was created, edited, confirmed, or its stops
+        /// changed. The Mac upserts by trip UUID and matches stops by UUID
+        /// (preserving Mac-side enrichment like `linkedPerson`/`linkedEvidence`
+        /// on stops that already exist). Idempotent. Payload: JSON `TripUpsertDTO`.
+        case tripUpsert      = 0x11
+
+        /// iPhone → Mac: the user deleted a trip on the phone. The Mac
+        /// removes the trip and (via cascade) its stops. Payload: JSON
+        /// `TripDeleteDTO`.
+        case tripDelete      = 0x12
+
+        /// iPhone → Mac: "send me everything you have." Sent on first connect
+        /// after a fresh install, when the phone's local trip count is 0 and
+        /// the `sam.tripsRestoreAttempted` UserDefault is false. Payload:
+        /// JSON `TripSyncRequestDTO`.
+        case tripSyncRequest = 0x13
+
+        /// Mac → iPhone: the full set of trips + stops the Mac has, in
+        /// response to a `tripSyncRequest`. Payload: JSON `TripSyncBundleDTO`.
+        case tripSyncBundle  = 0x14
     }
 
     /// Serialize to 32 bytes for transmission.
@@ -503,5 +526,181 @@ public struct RecordingContextChangedDTO: Codable, Sendable {
     public func toWireData() -> Data? { try? JSONEncoder().encode(self) }
     public static func from(wireData: Data) -> RecordingContextChangedDTO? {
         try? JSONDecoder().decode(RecordingContextChangedDTO.self, from: wireData)
+    }
+}
+
+// MARK: - Trip Sync DTOs (Phone ↔ Mac)
+
+/// One stop within a trip. Mirrors the persistent `SamTripStop` model but
+/// omits Mac-side relationship enrichment (`linkedPerson`, `linkedEvidence`)
+/// — those are computed/curated on the Mac and must be preserved across
+/// upserts. Stops are matched by `id` during ingest.
+public struct TripStopDTO: Codable, Sendable {
+    public var id: UUID
+    public var latitude: Double
+    public var longitude: Double
+    public var address: String?
+    public var locationName: String?
+    public var arrivedAt: Date
+    public var departedAt: Date?
+    public var distanceFromPreviousMiles: Double?
+    public var purposeRawValue: String
+    public var outcomeRawValue: String?
+    public var notes: String?
+    public var sortOrder: Int
+
+    public init(
+        id: UUID,
+        latitude: Double,
+        longitude: Double,
+        address: String? = nil,
+        locationName: String? = nil,
+        arrivedAt: Date,
+        departedAt: Date? = nil,
+        distanceFromPreviousMiles: Double? = nil,
+        purposeRawValue: String,
+        outcomeRawValue: String? = nil,
+        notes: String? = nil,
+        sortOrder: Int
+    ) {
+        self.id = id
+        self.latitude = latitude
+        self.longitude = longitude
+        self.address = address
+        self.locationName = locationName
+        self.arrivedAt = arrivedAt
+        self.departedAt = departedAt
+        self.distanceFromPreviousMiles = distanceFromPreviousMiles
+        self.purposeRawValue = purposeRawValue
+        self.outcomeRawValue = outcomeRawValue
+        self.notes = notes
+        self.sortOrder = sortOrder
+    }
+}
+
+/// A trip plus its ordered stops. Mirrors the persistent `SamTrip` model.
+public struct SamTripDTO: Codable, Sendable {
+    public var id: UUID
+    public var date: Date
+    public var totalDistanceMiles: Double
+    public var businessDistanceMiles: Double
+    public var personalDistanceMiles: Double
+    public var startOdometer: Double?
+    public var endOdometer: Double?
+    public var statusRawValue: String
+    public var notes: String?
+    public var startedAt: Date?
+    public var endedAt: Date?
+    public var startAddress: String?
+    public var vehicle: String
+    public var tripPurposeRawValue: String?
+    public var confirmedAt: Date?
+    public var isCommuting: Bool
+    public var stops: [TripStopDTO]
+
+    public init(
+        id: UUID,
+        date: Date,
+        totalDistanceMiles: Double,
+        businessDistanceMiles: Double,
+        personalDistanceMiles: Double,
+        startOdometer: Double? = nil,
+        endOdometer: Double? = nil,
+        statusRawValue: String,
+        notes: String? = nil,
+        startedAt: Date? = nil,
+        endedAt: Date? = nil,
+        startAddress: String? = nil,
+        vehicle: String,
+        tripPurposeRawValue: String? = nil,
+        confirmedAt: Date? = nil,
+        isCommuting: Bool,
+        stops: [TripStopDTO]
+    ) {
+        self.id = id
+        self.date = date
+        self.totalDistanceMiles = totalDistanceMiles
+        self.businessDistanceMiles = businessDistanceMiles
+        self.personalDistanceMiles = personalDistanceMiles
+        self.startOdometer = startOdometer
+        self.endOdometer = endOdometer
+        self.statusRawValue = statusRawValue
+        self.notes = notes
+        self.startedAt = startedAt
+        self.endedAt = endedAt
+        self.startAddress = startAddress
+        self.vehicle = vehicle
+        self.tripPurposeRawValue = tripPurposeRawValue
+        self.confirmedAt = confirmedAt
+        self.isCommuting = isCommuting
+        self.stops = stops
+    }
+}
+
+/// Phone → Mac: idempotent upsert of a single trip and its stops.
+public struct TripUpsertDTO: Codable, Sendable {
+    public var trip: SamTripDTO
+
+    public init(trip: SamTripDTO) {
+        self.trip = trip
+    }
+
+    public func toWireData() -> Data? {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        return try? encoder.encode(self)
+    }
+    public static func from(wireData: Data) -> TripUpsertDTO? {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try? decoder.decode(TripUpsertDTO.self, from: wireData)
+    }
+}
+
+/// Phone → Mac: tombstone for a trip the user deleted on the phone.
+public struct TripDeleteDTO: Codable, Sendable {
+    public var tripID: UUID
+
+    public init(tripID: UUID) { self.tripID = tripID }
+
+    public func toWireData() -> Data? { try? JSONEncoder().encode(self) }
+    public static func from(wireData: Data) -> TripDeleteDTO? {
+        try? JSONDecoder().decode(TripDeleteDTO.self, from: wireData)
+    }
+}
+
+/// Phone → Mac: "send me everything you have." `phoneDeviceID` is for
+/// logging only; auth has already happened by this point.
+public struct TripSyncRequestDTO: Codable, Sendable {
+    public var phoneDeviceID: UUID?
+
+    public init(phoneDeviceID: UUID? = nil) {
+        self.phoneDeviceID = phoneDeviceID
+    }
+
+    public func toWireData() -> Data? { try? JSONEncoder().encode(self) }
+    public static func from(wireData: Data) -> TripSyncRequestDTO? {
+        try? JSONDecoder().decode(TripSyncRequestDTO.self, from: wireData)
+    }
+}
+
+/// Mac → Phone: the full set of trips the Mac has on file. Sent in
+/// response to a `tripSyncRequest`.
+public struct TripSyncBundleDTO: Codable, Sendable {
+    public var trips: [SamTripDTO]
+
+    public init(trips: [SamTripDTO]) {
+        self.trips = trips
+    }
+
+    public func toWireData() -> Data? {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        return try? encoder.encode(self)
+    }
+    public static func from(wireData: Data) -> TripSyncBundleDTO? {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try? decoder.decode(TripSyncBundleDTO.self, from: wireData)
     }
 }

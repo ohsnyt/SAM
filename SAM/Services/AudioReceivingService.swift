@@ -57,6 +57,17 @@ final class AudioReceivingService {
     /// updating the session's recordingContext and resummarizing.
     var onRecordingContextChanged: ((UUID, RecordingContext) -> Void)?
 
+    /// Callback invoked when the phone pushes a trip upsert. The coordinator
+    /// hands this to TripIngestCoordinator for SwiftData reconciliation.
+    var onTripUpsert: ((TripUpsertDTO) -> Void)?
+
+    /// Callback invoked when the phone tombstones a trip.
+    var onTripDelete: ((TripDeleteDTO) -> Void)?
+
+    /// Callback invoked when a freshly-installed phone asks for the Mac's
+    /// full trip set. The coordinator responds via `sendTripSyncBundle(_:)`.
+    var onTripSyncRequest: ((TripSyncRequestDTO) -> Void)?
+
     // MARK: - Private
 
     private var listener: NWListener?
@@ -847,6 +858,19 @@ final class AudioReceivingService {
         case .recordingContextChanged:
             handleRecordingContextChanged(payload: payload)
 
+        case .tripUpsert:
+            handleTripUpsert(payload: payload)
+
+        case .tripDelete:
+            handleTripDelete(payload: payload)
+
+        case .tripSyncRequest:
+            handleTripSyncRequest(payload: payload)
+
+        case .tripSyncBundle:
+            // Mac doesn't receive sync bundles — it sends them. Ignore.
+            break
+
         }
     }
 
@@ -861,6 +885,72 @@ final class AudioReceivingService {
         }
         logger.info("recordingContextChanged received: \(dto.sessionID.uuidString) → \(dto.recordingContextRaw)")
         onRecordingContextChanged?(dto.sessionID, newContext)
+    }
+
+    // MARK: - Trip Sync (Phase 0b)
+
+    private func handleTripUpsert(payload: Data) {
+        guard let dto = TripUpsertDTO.from(wireData: payload) else {
+            logger.error("tripUpsert: failed to decode payload")
+            return
+        }
+        logger.info("tripUpsert received: \(dto.trip.id.uuidString) (\(dto.trip.stops.count) stops)")
+        onTripUpsert?(dto)
+    }
+
+    private func handleTripDelete(payload: Data) {
+        guard let dto = TripDeleteDTO.from(wireData: payload) else {
+            logger.error("tripDelete: failed to decode payload")
+            return
+        }
+        logger.info("tripDelete received: \(dto.tripID.uuidString)")
+        onTripDelete?(dto)
+    }
+
+    private func handleTripSyncRequest(payload: Data) {
+        guard let dto = TripSyncRequestDTO.from(wireData: payload) else {
+            logger.error("tripSyncRequest: failed to decode payload")
+            return
+        }
+        logger.info("tripSyncRequest received from \(dto.phoneDeviceID?.uuidString ?? "unknown")")
+        onTripSyncRequest?(dto)
+    }
+
+    /// Send the Mac's full trip set to the phone in response to a
+    /// `tripSyncRequest`. Splits payloads that exceed `maxPayloadSize` would be
+    /// non-trivial; for v1 we cap at the wire limit and log if it's exceeded.
+    func sendTripSyncBundle(_ bundle: TripSyncBundleDTO) {
+        guard let connection = activeConnection else {
+            logger.info("sendTripSyncBundle: no active connection — skipping")
+            return
+        }
+        guard let payload = bundle.toWireData() else {
+            logger.error("sendTripSyncBundle: failed to encode payload")
+            return
+        }
+        guard UInt32(payload.count) <= AudioStreamingConstants.maxPayloadSize else {
+            logger.warning("sendTripSyncBundle: payload too large (\(payload.count) bytes), dropping. Trip set will need pagination.")
+            return
+        }
+        let header = AudioPacketHeader(
+            version: AudioPacketHeader.currentVersion,
+            messageType: .tripSyncBundle,
+            sequenceNumber: 0,
+            timestamp: 0,
+            sampleRate: 0,
+            channels: 0,
+            payloadLength: UInt32(payload.count)
+        )
+        var packet = header.serialize()
+        packet.append(payload)
+
+        connection.send(content: packet, completion: .contentProcessed { [logger, count = bundle.trips.count] error in
+            if let error {
+                logger.error("sendTripSyncBundle failed: \(error.localizedDescription)")
+            } else {
+                logger.info("tripSyncBundle sent (\(count) trips, \(payload.count) bytes)")
+            }
+        })
     }
 
     // MARK: - Pending Upload Handlers (Phase B)

@@ -41,6 +41,9 @@ struct BackupDocument: Codable {
     var deducedRelations: [DeducedRelationBackup]
     var substackImports: [SubstackImportBackup]?  // v33+, backward-compatible
     var goalJournalEntries: [GoalJournalEntryBackup]?  // Goal check-in journal, backward-compatible
+    var trips: [TripBackup]?                     // Phase 0b: trip durability, backward-compatible
+    var tripStops: [TripStopBackup]?             // Phase 0b: trip durability, backward-compatible
+    var savedAddresses: [SavedAddressBackup]?    // Phase 0b: trip durability, backward-compatible
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -543,4 +546,68 @@ struct GoalJournalEntryBackup: Codable {
     var progressAtCheckIn: Double
     var conversationTurnCount: Int
     var createdAt: Date
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// MARK: - 24. TripBackup (Phase 0b)
+// ─────────────────────────────────────────────────────────────────────
+
+struct TripBackup: Codable {
+    var id: UUID
+    var date: Date
+    var totalDistanceMiles: Double
+    var businessDistanceMiles: Double
+    var personalDistanceMiles: Double
+    var startOdometer: Double?
+    var endOdometer: Double?
+    var statusRawValue: String
+    var notes: String?
+    var startedAt: Date?
+    var endedAt: Date?
+    var startAddress: String?
+    var vehicle: String
+    var tripPurposeRawValue: String?
+    var confirmedAt: Date?
+    var isCommuting: Bool
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// MARK: - 25. TripStopBackup (Phase 0b)
+// ─────────────────────────────────────────────────────────────────────
+
+struct TripStopBackup: Codable {
+    var id: UUID
+    /// Parent trip ID — relationship expressed by reference, not nesting.
+    var tripID: UUID
+    var latitude: Double
+    var longitude: Double
+    var address: String?
+    var locationName: String?
+    var arrivedAt: Date
+    var departedAt: Date?
+    var distanceFromPreviousMiles: Double?
+    var purposeRawValue: String
+    var outcomeRawValue: String?
+    var notes: String?
+    var sortOrder: Int
+    /// Linked person UUID, if the stop has been associated with a SamPerson.
+    var linkedPersonID: UUID?
+    /// Linked evidence UUID, if a SamEvidenceItem was auto-created for this stop.
+    var linkedEvidenceID: UUID?
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// MARK: - 26. SavedAddressBackup (Phase 0b)
+// ─────────────────────────────────────────────────────────────────────
+
+struct SavedAddressBackup: Codable {
+    var id: UUID
+    var label: String
+    var formattedAddress: String
+    var latitude: Double
+    var longitude: Double
+    var kindRawValue: String
+    var createdAt: Date
+    var lastUsedAt: Date
+    var useCount: Int
 }

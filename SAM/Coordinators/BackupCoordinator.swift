@@ -163,6 +163,11 @@ final class BackupCoordinator {
             progress = "Reading goal journal entries..."
             let journalEntries = try context.fetch(FetchDescriptor<GoalJournalEntry>())
 
+            progress = "Reading trips..."
+            let trips = try context.fetch(FetchDescriptor<SamTrip>())
+            let tripStops = try context.fetch(FetchDescriptor<SamTripStop>())
+            let savedAddresses = try context.fetch(FetchDescriptor<SamSavedAddress>())
+
             // Map to DTOs
             progress = "Building backup document..."
 
@@ -524,6 +529,62 @@ final class BackupCoordinator {
                 )
             }
 
+            let tripDTOs = trips.map { t in
+                TripBackup(
+                    id: t.id,
+                    date: t.date,
+                    totalDistanceMiles: t.totalDistanceMiles,
+                    businessDistanceMiles: t.businessDistanceMiles,
+                    personalDistanceMiles: t.personalDistanceMiles,
+                    startOdometer: t.startOdometer,
+                    endOdometer: t.endOdometer,
+                    statusRawValue: t.statusRawValue,
+                    notes: t.notes,
+                    startedAt: t.startedAt,
+                    endedAt: t.endedAt,
+                    startAddress: t.startAddress,
+                    vehicle: t.vehicle,
+                    tripPurposeRawValue: t.tripPurposeRawValue,
+                    confirmedAt: t.confirmedAt,
+                    isCommuting: t.isCommuting
+                )
+            }
+
+            let tripStopDTOs = tripStops.compactMap { s -> TripStopBackup? in
+                guard let tripID = s.trip?.id else { return nil }
+                return TripStopBackup(
+                    id: s.id,
+                    tripID: tripID,
+                    latitude: s.latitude,
+                    longitude: s.longitude,
+                    address: s.address,
+                    locationName: s.locationName,
+                    arrivedAt: s.arrivedAt,
+                    departedAt: s.departedAt,
+                    distanceFromPreviousMiles: s.distanceFromPreviousMiles,
+                    purposeRawValue: s.purposeRawValue,
+                    outcomeRawValue: s.outcomeRawValue,
+                    notes: s.notes,
+                    sortOrder: s.sortOrder,
+                    linkedPersonID: s.linkedPerson?.id,
+                    linkedEvidenceID: s.linkedEvidence?.id
+                )
+            }
+
+            let savedAddressDTOs = savedAddresses.map { a in
+                SavedAddressBackup(
+                    id: a.id,
+                    label: a.label,
+                    formattedAddress: a.formattedAddress,
+                    latitude: a.latitude,
+                    longitude: a.longitude,
+                    kindRawValue: a.kindRawValue,
+                    createdAt: a.createdAt,
+                    lastUsedAt: a.lastUsedAt,
+                    useCount: a.useCount
+                )
+            }
+
             // Gather preferences
             progress = "Gathering preferences..."
             var prefs: [String: AnyCodableValue] = [:]
@@ -573,7 +634,10 @@ final class BackupCoordinator {
                 complianceAuditEntries: auditDTOs,
                 deducedRelations: deducedRelationDTOs,
                 substackImports: substackImportDTOs,
-                goalJournalEntries: journalEntryDTOs
+                goalJournalEntries: journalEntryDTOs,
+                trips: tripDTOs,
+                tripStops: tripStopDTOs,
+                savedAddresses: savedAddressDTOs
             )
 
             // Encode
@@ -910,6 +974,70 @@ final class BackupCoordinator {
                 context.insert(record)
             }
 
+            // Phase 0b: trips, stops, saved addresses (backward-compatible).
+            // Trips first so stops can resolve their parent by UUID.
+            var tripByID: [UUID: SamTrip] = [:]
+            for dto in doc.trips ?? [] {
+                let trip = SamTrip(
+                    id: dto.id,
+                    date: dto.date,
+                    totalDistanceMiles: dto.totalDistanceMiles,
+                    businessDistanceMiles: dto.businessDistanceMiles,
+                    personalDistanceMiles: dto.personalDistanceMiles,
+                    status: TripStatus(rawValue: dto.statusRawValue) ?? .recorded,
+                    notes: dto.notes,
+                    startedAt: dto.startedAt,
+                    endedAt: dto.endedAt,
+                    startAddress: dto.startAddress,
+                    vehicle: dto.vehicle,
+                    tripPurpose: dto.tripPurposeRawValue.flatMap { StopPurpose(rawValue: $0) },
+                    confirmedAt: dto.confirmedAt,
+                    isCommuting: dto.isCommuting
+                )
+                trip.startOdometer = dto.startOdometer
+                trip.endOdometer = dto.endOdometer
+                context.insert(trip)
+                tripByID[dto.id] = trip
+            }
+
+            for dto in doc.tripStops ?? [] {
+                guard let parentTrip = tripByID[dto.tripID] else { continue }
+                let stop = SamTripStop(
+                    id: dto.id,
+                    latitude: dto.latitude,
+                    longitude: dto.longitude,
+                    address: dto.address,
+                    locationName: dto.locationName,
+                    arrivedAt: dto.arrivedAt,
+                    departedAt: dto.departedAt,
+                    distanceFromPreviousMiles: dto.distanceFromPreviousMiles,
+                    purpose: StopPurpose(rawValue: dto.purposeRawValue) ?? .prospecting,
+                    outcome: dto.outcomeRawValue.flatMap { VisitOutcome(rawValue: $0) },
+                    notes: dto.notes,
+                    sortOrder: dto.sortOrder
+                )
+                stop.trip = parentTrip
+                if let pid = dto.linkedPersonID {
+                    stop.linkedPerson = personByID[pid]
+                }
+                context.insert(stop)
+            }
+
+            for dto in doc.savedAddresses ?? [] {
+                let addr = SamSavedAddress(
+                    id: dto.id,
+                    label: dto.label,
+                    formattedAddress: dto.formattedAddress,
+                    latitude: dto.latitude,
+                    longitude: dto.longitude,
+                    kind: SavedAddressKind(rawValue: dto.kindRawValue) ?? .recent,
+                    createdAt: dto.createdAt,
+                    lastUsedAt: dto.lastUsedAt,
+                    useCount: dto.useCount
+                )
+                context.insert(addr)
+            }
+
             try context.save()
             logger.debug("Pass 1 complete: \(doc.people.count) people, \(doc.contexts.count) contexts")
 
@@ -1238,6 +1366,9 @@ final class BackupCoordinator {
             let deducedRelations = try context.fetch(FetchDescriptor<DeducedRelation>())
             let substackImports = try context.fetch(FetchDescriptor<SubstackImport>())
             let journalEntries = try context.fetch(FetchDescriptor<GoalJournalEntry>())
+            let trips = try context.fetch(FetchDescriptor<SamTrip>())
+            let tripStops = try context.fetch(FetchDescriptor<SamTripStop>())
+            let savedAddresses = try context.fetch(FetchDescriptor<SamSavedAddress>())
 
             let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
             let buildNumber = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
@@ -1489,6 +1620,45 @@ final class BackupCoordinator {
                         paceAtCheckInRawValue: e.paceAtCheckInRawValue,
                         progressAtCheckIn: e.progressAtCheckIn,
                         conversationTurnCount: e.conversationTurnCount, createdAt: e.createdAt
+                    )
+                },
+                trips: trips.map { t in
+                    TripBackup(
+                        id: t.id, date: t.date,
+                        totalDistanceMiles: t.totalDistanceMiles,
+                        businessDistanceMiles: t.businessDistanceMiles,
+                        personalDistanceMiles: t.personalDistanceMiles,
+                        startOdometer: t.startOdometer, endOdometer: t.endOdometer,
+                        statusRawValue: t.statusRawValue, notes: t.notes,
+                        startedAt: t.startedAt, endedAt: t.endedAt,
+                        startAddress: t.startAddress, vehicle: t.vehicle,
+                        tripPurposeRawValue: t.tripPurposeRawValue,
+                        confirmedAt: t.confirmedAt, isCommuting: t.isCommuting
+                    )
+                },
+                tripStops: tripStops.compactMap { s -> TripStopBackup? in
+                    guard let tripID = s.trip?.id else { return nil }
+                    return TripStopBackup(
+                        id: s.id, tripID: tripID,
+                        latitude: s.latitude, longitude: s.longitude,
+                        address: s.address, locationName: s.locationName,
+                        arrivedAt: s.arrivedAt, departedAt: s.departedAt,
+                        distanceFromPreviousMiles: s.distanceFromPreviousMiles,
+                        purposeRawValue: s.purposeRawValue,
+                        outcomeRawValue: s.outcomeRawValue, notes: s.notes,
+                        sortOrder: s.sortOrder,
+                        linkedPersonID: s.linkedPerson?.id,
+                        linkedEvidenceID: s.linkedEvidence?.id
+                    )
+                },
+                savedAddresses: savedAddresses.map { a in
+                    SavedAddressBackup(
+                        id: a.id, label: a.label,
+                        formattedAddress: a.formattedAddress,
+                        latitude: a.latitude, longitude: a.longitude,
+                        kindRawValue: a.kindRawValue,
+                        createdAt: a.createdAt, lastUsedAt: a.lastUsedAt,
+                        useCount: a.useCount
                     )
                 }
             )

@@ -45,6 +45,34 @@ struct SAMFieldApp: App {
                     // Configure the saved-address service so trip autocomplete,
                     // Home chips, and the Trip Settings screen can read/write.
                     SavedAddressService.shared.configure(container: container)
+
+                    // Configure trip push (outbox) and wire it to the
+                    // streaming service so trips drain on every reconnect.
+                    TripPushService.shared.configure(
+                        container: container,
+                        streaming: AudioStreamingService.shared
+                    )
+                    AudioStreamingService.shared.onAuthenticated = {
+                        Task { @MainActor in
+                            // Drain any queued upserts/deletes that piled up
+                            // while the link was down.
+                            TripPushService.shared.attemptDrain()
+                            // First-launch handshake: if the local store has
+                            // no trips yet, ask the Mac for everything.
+                            await TripRestoreService.shared.requestSyncIfNeeded(
+                                container: container,
+                                streaming: AudioStreamingService.shared
+                            )
+                        }
+                    }
+                    AudioStreamingService.shared.onTripSyncBundle = { bundle in
+                        Task { @MainActor in
+                            TripRestoreService.shared.applySyncBundle(
+                                bundle,
+                                container: container
+                            )
+                        }
+                    }
                 }
         }
     }
