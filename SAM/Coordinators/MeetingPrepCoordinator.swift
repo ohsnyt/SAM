@@ -624,8 +624,13 @@ final class MeetingPrepCoordinator {
     private func buildBriefings() async throws -> [MeetingBriefing] {
         let now = Date()
         let fortyEightHoursFromNow = Calendar.current.date(byAdding: .hour, value: 48, to: now)!
+        let thirtyDaysAgo = Calendar.current.date(byAdding: .day, value: -30, to: now)!
 
-        let allEvidence = try evidenceRepository.fetchAll()
+        // The helpers (fetchRecentHistory, aggregateTopics, aggregateSignals)
+        // all cap their lookback at 30 days, so a single windowed fetch from
+        // -30d through +48h covers every consumer here. Avoids hydrating the
+        // entire evidence table just to look at the most recent month.
+        let allEvidence = try evidenceRepository.fetchOccurringBetween(thirtyDaysAgo, fortyEightHoursFromNow)
 
         // Upcoming calendar events with linked people
         let upcomingEvents = allEvidence.filter { item in
@@ -702,11 +707,14 @@ final class MeetingPrepCoordinator {
     private func buildFollowUpPrompts() throws -> [FollowUpPrompt] {
         let now = Date()
         let fortyEightHoursAgo = Calendar.current.date(byAdding: .hour, value: -48, to: now)!
+        // Pull a slightly wider window so events whose endedAt falls inside
+        // the cutoff but whose occurredAt started a bit earlier still surface.
+        let lookbackStart = Calendar.current.date(byAdding: .hour, value: -56, to: now)!
 
-        let allEvidence = try evidenceRepository.fetchAll()
+        let candidates = try evidenceRepository.fetchOccurringBetween(lookbackStart, now)
 
         // Past calendar events in the 48h window
-        let pastEvents = allEvidence.filter { item in
+        let pastEvents = candidates.filter { item in
             item.source == .calendar
             && !item.linkedPeople.isEmpty
             && (item.endedAt ?? Calendar.current.date(byAdding: .hour, value: 1, to: item.occurredAt)!) <= now
