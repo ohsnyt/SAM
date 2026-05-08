@@ -43,6 +43,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     case compliance = "Compliance"
     case roles = "Roles"
     case tripsAndMileage = "Trips & Mileage"
+    // Advanced
+    case diagnostics = "Diagnostics"
 
     var id: String { rawValue }
 
@@ -65,6 +67,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .compliance: return "checkmark.shield"
         case .roles: return "person.badge.key"
         case .tripsAndMileage: return "car.fill"
+        case .diagnostics: return "stethoscope"
         }
     }
 
@@ -74,11 +77,12 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .contacts, .calendar, .mail, .communications, .clipboardCapture: return "Data"
         case .coaching, .briefings, .dictationVoice, .promptLab: return "AI"
         case .businessType, .compliance, .roles, .tripsAndMileage: return "Business"
+        case .diagnostics: return "Advanced"
         }
     }
 
     static var grouped: [(header: String, sections: [SettingsSection])] {
-        let order = ["General", "Data", "AI", "Business"]
+        let order = ["General", "Data", "AI", "Business", "Advanced"]
         let dict = Dictionary(grouping: allCases, by: \.group)
         return order.compactMap { key in
             guard let sections = dict[key] else { return nil }
@@ -150,6 +154,8 @@ struct SettingsView: View {
             RolesSettingsPane()
         case .tripsAndMileage:
             TripsAndMileageSettingsPane()
+        case .diagnostics:
+            DiagnosticsSettingsPane()
         }
     }
 }
