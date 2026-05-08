@@ -4,6 +4,39 @@
 
 ---
 
+## Launch-time performance pass: O(P × E) hotspots and main-actor yields (May 7, 2026)
+
+**What**: At Sarah's scale (~1.4K people, ~13.7K evidence rows) the app was monopolizing the MainActor for several minutes after launch. The post-meeting capture sheet appeared but couldn't accept keystrokes; lock screen presentation lagged; multiple multi-second beachballs sat between log lines during the import sequence. This pass eliminates the worst hot spots with a mix of date-windowed predicate fetches, single-pass dictionary builds replacing nested filters, and deferring non-critical pruning past first paint.
+
+### Why
+
+Several launch-path coordinators were calling `EvidenceRepository.fetchAll()` and then filtering in memory — fine at hundreds of rows, pathological at tens of thousands. Worse, several callers had an inner per-person loop over the full evidence set, producing O(people × evidence) comparisons synchronously on the main actor (~19M comparisons in Sarah's case). Pruning was also running inline before the first paint completed.
+
+### Changes
+
+- **`SAMApp.scheduleDeferredLaunchWork`** (`cc48a7e`, `044d1e9`) — `OutcomeEngine.startGeneration`, pipeline backfill, `DailyBriefingCoordinator.checkFirstOpenOfDay`, and the `OutcomeRepository`/`UndoRepository` pruners now all run from a `Task(priority: .utility)` behind a 3s sleep so first paint completes before they touch the store. Yesterday's expired outcomes do not need to be marked the instant the window opens.
+- **`OutcomeEngine.generateOutcomes`** (`cc48a7e`) — `await Task.yield()` between fetches and after each of the 18 scanners so the MainActor releases for UI work during the scan pass.
+- **`OutcomeEngine` scanners** (`0dc00ec`) — `scanUpcomingMeetings`, `scanPastMeetingsWithoutNotes`, and `shouldAutoResolve` switched from global `fetchAll` to `EvidenceRepository.fetchOccurringBetween(start, end)` (new helper) so SwiftData pushes the date predicate into the query.
+- **`InsightGenerator.generateRelationshipInsights`** (`0dc00ec`) — replaced the per-person `allEvidence.filter { evidence.linkedPeople.contains(...) }` with a single upfront pass that builds `[UUID: Date]` of most-recent evidence per person, then per-person becomes O(1). At Sarah's scale this drops ~19M comparisons to ~14K. Yields every 500 evidence rows during the build and every 50 people during the predictive-decay loop.
+- **`DailyBriefingCoordinator.gatherCalendarItems` / `gatherTomorrowPreview`** (`197f0b4`) — replaced fetchAll-then-filter with `fetchOccurringBetween` over the day window and the tomorrow window respectively.
+- **`DailyBriefingCoordinator.gatherFollowUps`** (`197f0b4`) — converted to async and yields every 50 people so the 1.4K-person sweep through `computeHealth` no longer monopolizes the main actor before the morning briefing call into MLX.
+- **`EvidenceRepository.refreshParticipantResolution`** (`04e4ca4`) — built a `[canonicalEmail: SamPerson]` dictionary in one upfront pass instead of filtering all people once per evidence row. This was the visible pause between the WhatsApp JID enumeration and the `Deduced N relationship(s) from contact relations` log line during contact import. Total work is now O(people + evidence) instead of O(people × evidence).
+- **`MeetingPrepCoordinator.buildBriefings` / `buildFollowUpPrompts`** (`5f31155`) — replaced `fetchAll()` with `fetchOccurringBetween` over a 30-day window (matching the helpers' lookback) and a 56-hour window respectively.
+
+### New repository surface
+
+`EvidenceRepository.fetchOccurringBetween(_ start: Date, _ end: Date)` — date-bounded predicate fetch. Push this into the database whenever a caller only needs evidence inside a known window; reserve `fetchAll()` for true full-table operations (compaction, full re-index, etc.).
+
+### Verified
+
+Importing Sarah's 13,666-evidence DB, the meeting-capture sheet now accepts keystrokes within ~1s of appearing instead of hanging. The previously-reported beachballs (pre-MLX-load, pre-contacts-import, between WhatsApp JID enumeration and contact-relation deduction) are all gone.
+
+### Phase 2 candidates (deferred)
+
+Not all `fetchAll()` callers got the windowed-fetch treatment in this pass. Lower-priority sites still in `DailyBriefingCoordinator` and `EvidenceRepository.findRecentMeeting`/`hasRecentCommunication` are O(E) but only fire once per launch or per user action — fine for now. Architectural follow-ups under consideration: indexed predicates on hot columns, per-person rollup tables for "most recent evidence per person", and paged backfill for the initial migration of an existing database. Pause for a design conversation before implementing.
+
+---
+
 ## Crash fix: cross-context relationship write in pending-reviews refresh (April 27, 2026)
 
 **What**: 1.0(1) crashed with `EXC_BREAKPOINT` (SwiftData `_assertionFailure` from `ObservationRegistrar.withMutation`) when the 5-minute briefing timer fired and a pending meeting review was waiting. Crash signature: `SamOutcome.linkedPerson.setter` ← `DailyBriefingCoordinator.refreshPendingReviewsOutcome()` ← `createMeetingNoteTemplate(...)` (line 961) ← `checkRecentlyEndedMeetings()` ← timer closure inside `configure(container:)` (line 169).
