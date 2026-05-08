@@ -716,6 +716,23 @@ final class EvidenceRepository {
         let allPeople = try PeopleRepository.shared.fetchAll()
         let meEmails = meEmailSet()
 
+        // Build [canonicalEmail -> SamPerson] in one pass so the per-evidence
+        // resolve becomes O(emails on the evidence) instead of O(allPeople).
+        // Without this, a 14K evidence × 1.4K people sweep was 19M+ filter
+        // comparisons synchronously on the main actor.
+        var personByEmail: [String: SamPerson] = [:]
+        for person in allPeople {
+            if let primary = canonicalizeEmail(person.emailCache) {
+                personByEmail[primary] = person
+            }
+            for alias in person.emailAliases {
+                let lower = alias.lowercased()
+                if !lower.isEmpty, personByEmail[lower] == nil {
+                    personByEmail[lower] = person
+                }
+            }
+        }
+
         let all = try fetchAll()
         var updated = 0
 
@@ -731,13 +748,14 @@ final class EvidenceRepository {
             }
             guard !emails.isEmpty else { continue }
 
-            // Resolve people using PeopleRepository's authoritative data
-            let emailSet = Set(emails)
-            let resolved = allPeople.filter { person in
-                let primary = canonicalizeEmail(person.emailCache)
-                if let primary, emailSet.contains(primary) { return true }
-                let aliases = person.emailAliases.map { $0.lowercased() }
-                return !Set(aliases).isDisjoint(with: emailSet)
+            // Resolve people via the prebuilt email index. Dedup with a Set
+            // since the same person can match multiple participant hints.
+            var resolvedIDs: Set<UUID> = []
+            var resolved: [SamPerson] = []
+            for email in emails {
+                if let person = personByEmail[email], resolvedIDs.insert(person.id).inserted {
+                    resolved.append(person)
+                }
             }
 
             // Refresh isVerified on each participant hint
@@ -756,8 +774,7 @@ final class EvidenceRepository {
 
             // Update linkedPeople if the resolved set changed
             let oldIDs = Set(item.linkedPeople.map(\.id))
-            let newIDs = Set(resolved.map(\.id))
-            let peopleChanged = oldIDs != newIDs
+            let peopleChanged = oldIDs != resolvedIDs
 
             if hintsChanged || peopleChanged {
                 item.participantHints = newHints
