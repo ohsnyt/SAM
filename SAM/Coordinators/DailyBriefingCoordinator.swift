@@ -279,7 +279,7 @@ final class DailyBriefingCoordinator {
             let priorityActions = gatherPriorityActions()
             generationStageLabel = "Checking follow-ups..."
             await Task.yield()
-            let followUps = gatherFollowUps()
+            let followUps = await gatherFollowUps()
             generationStageLabel = "Scanning life events..."
             await Task.yield()
             let lifeEvents = gatherLifeEvents()
@@ -1337,11 +1337,11 @@ final class DailyBriefingCoordinator {
         let now = Date()
         let endOfDay = Calendar.current.date(bySettingHour: 23, minute: 59, second: 59, of: now)!
 
-        guard let allEvidence = try? evidenceRepo.fetchAll() else { return [] }
+        guard let windowed = try? evidenceRepo.fetchOccurringBetween(now, endOfDay) else { return [] }
 
-        let todayEvents = allEvidence.filter {
-            $0.source == .calendar && $0.occurredAt >= now && $0.occurredAt <= endOfDay
-        }.sorted { $0.occurredAt < $1.occurredAt }
+        let todayEvents = windowed
+            .filter { $0.source == .calendar }
+            .sorted { $0.occurredAt < $1.occurredAt }
 
         return todayEvents.map { event in
             let attendees = event.linkedPeople.filter { !$0.isDeleted && !$0.isMe }
@@ -1393,14 +1393,18 @@ final class DailyBriefingCoordinator {
         return actions
     }
 
-    private func gatherFollowUps() -> [BriefingFollowUp] {
+    private func gatherFollowUps() async -> [BriefingFollowUp] {
         guard let people = try? peopleRepo.fetchAll() else { return [] }
 
         let activePeople = people.filter { !$0.isMe && !$0.isArchived }
         var followUps: [BriefingFollowUp] = []
         var staticPersonIDs: Set<UUID> = []
+        var processed = 0
 
         for person in activePeople {
+            processed += 1
+            if processed % 50 == 0 { await Task.yield() }
+
             let health = meetingPrep.computeHealth(for: person)
             guard let days = health.daysSinceLastInteraction else { continue }
 
@@ -1478,11 +1482,11 @@ final class DailyBriefingCoordinator {
         let startOfTomorrow = Calendar.current.startOfDay(for: tomorrow)
         let endOfTomorrow = Calendar.current.date(bySettingHour: 23, minute: 59, second: 59, of: tomorrow)!
 
-        guard let allEvidence = try? evidenceRepo.fetchAll() else { return [] }
+        guard let windowed = try? evidenceRepo.fetchOccurringBetween(startOfTomorrow, endOfTomorrow) else { return [] }
 
-        let tomorrowEvents = allEvidence.filter {
-            $0.source == .calendar && $0.occurredAt >= startOfTomorrow && $0.occurredAt <= endOfTomorrow
-        }.sorted { $0.occurredAt < $1.occurredAt }
+        let tomorrowEvents = windowed
+            .filter { $0.source == .calendar }
+            .sorted { $0.occurredAt < $1.occurredAt }
 
         return tomorrowEvents.prefix(5).map { event in
             let names = event.linkedPeople.filter { !$0.isDeleted && !$0.isMe }.map { $0.displayNameCache ?? $0.displayName }
