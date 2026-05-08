@@ -99,68 +99,93 @@ final class OutcomeEngine {
                 }
             }
 
+            // Yield between heavy fetches so the @MainActor releases for UI work.
+            // Each fetchAll on a large store is hundreds of ms; without yielding
+            // between them the run loop can't service input until the entire scan
+            // finishes.
             let allEvidence = try evidenceRepo.fetchAll()
+            await Task.yield()
             let allPeople = try peopleRepo.fetchAll().filter { !$0.isMe && !$0.isArchived }
+            await Task.yield()
             let allNotes = try notesRepo.fetchAll()
+            await Task.yield()
 
             var newOutcomes: [SamOutcome] = []
 
             // 1. Upcoming meetings → preparation outcomes
             newOutcomes.append(contentsOf: try scanUpcomingMeetings(allEvidence: allEvidence))
+            await Task.yield()
 
             // 2. Past meetings without notes → followUp outcomes
             newOutcomes.append(contentsOf: try scanPastMeetingsWithoutNotes(allEvidence: allEvidence, allNotes: allNotes))
+            await Task.yield()
 
             // 3. Pending action items → proposal / followUp outcomes
             newOutcomes.append(contentsOf: try scanPendingActionItems(allNotes: allNotes))
+            await Task.yield()
 
             // 4. Relationship health → outreach outcomes
             newOutcomes.append(contentsOf: try scanRelationshipHealth(people: allPeople))
+            await Task.yield()
 
             // 5. Growth opportunities (when few active outcomes)
             let activeCount = (try? outcomeRepo.fetchActive().count) ?? 0
             if activeCount + newOutcomes.count < 3 {
                 newOutcomes.append(contentsOf: try scanGrowthOpportunities(people: allPeople))
             }
+            await Task.yield()
 
             // 6. Coverage gap cross-sell (Phase S)
             newOutcomes.append(contentsOf: try scanCoverageGaps(people: allPeople))
+            await Task.yield()
 
             // 7. Content suggestions (Phase W)
             newOutcomes.append(contentsOf: await scanContentSuggestions())
+            await Task.yield()
 
             // 8. Content cadence nudges (Phase W)
             newOutcomes.append(contentsOf: try scanContentCadence())
+            await Task.yield()
 
             // 9. Goal pacing coaching (Phase X)
             newOutcomes.append(contentsOf: scanGoalPacing())
+            await Task.yield()
 
             // 10. Deduced relationships review
             newOutcomes.append(contentsOf: scanDeducedRelationships())
+            await Task.yield()
 
             // 11. LinkedIn notification setup guidance (Phase 6)
             newOutcomes.append(contentsOf: try scanNotificationSetupGuidance())
+            await Task.yield()
 
             // 12. Role suggestions review
             newOutcomes.append(contentsOf: scanRoleSuggestions())
+            await Task.yield()
 
             // 13. Stale contacts → archive suggestions
             newOutcomes.append(contentsOf: try scanStaleContacts(people: allPeople))
+            await Task.yield()
 
             // 14. Progressive feature adoption coaching
             newOutcomes.append(contentsOf: scanFeatureAdoption())
+            await Task.yield()
 
             // 15. Substack auto-detection
             newOutcomes.append(contentsOf: try scanSubstackAutoDetection())
+            await Task.yield()
 
             // 16. WhatsApp auto-detection
             newOutcomes.append(contentsOf: scanWhatsAppAutoDetection())
+            await Task.yield()
 
             // 17. Role recruiting discovery & cultivation
             newOutcomes.append(contentsOf: scanRoleRecruiting())
+            await Task.yield()
 
             // 18. Sarah's open commitments due soon (Block 3)
             newOutcomes.append(contentsOf: scanOpenCommitments())
+            await Task.yield()
 
             // Classify action lanes and suggest channels
             for outcome in newOutcomes {

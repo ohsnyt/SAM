@@ -1220,18 +1220,16 @@ struct SAMApp: App {
         if UserDefaults.standard.isTestDataLoaded || UserDefaults.standard.isTestDataActive {
             logger.notice("triggerImportsForEnabledSources: skipping imports — test data is active")
 
-            // Prune + generate outcomes and briefing even with test data
+            // Prune + generate outcomes and briefing even with test data.
+            // Heavy generation work is deferred so first paint completes
+            // before the engine starts iterating the entire dataset.
             try? OutcomeRepository.shared.pruneExpired()
             try? OutcomeRepository.shared.purgeOld()
 
             let autoGenerateOutcomes = UserDefaults.standard.object(forKey: "outcomeAutoGenerate") == nil
                 ? true
                 : UserDefaults.standard.bool(forKey: "outcomeAutoGenerate")
-            if autoGenerateOutcomes {
-                OutcomeEngine.shared.startGeneration()
-            }
-
-            await DailyBriefingCoordinator.shared.checkFirstOpenOfDay()
+            scheduleDeferredLaunchWork(autoGenerateOutcomes: autoGenerateOutcomes, runPipelineBackfill: false)
             return
         }
         #endif
@@ -1279,9 +1277,6 @@ struct SAMApp: App {
         let autoGenerateOutcomes = UserDefaults.standard.object(forKey: "outcomeAutoGenerate") == nil
             ? true
             : UserDefaults.standard.bool(forKey: "outcomeAutoGenerate")
-        if autoGenerateOutcomes {
-            OutcomeEngine.shared.startGeneration()
-        }
 
         // Role deduction — run after imports settle
         Task(priority: .utility) {
@@ -1310,20 +1305,40 @@ struct SAMApp: App {
             }
         }
 
-        // Pipeline backfill — one-time creation of initial transitions from existing role badges
-        if !UserDefaults.standard.bool(forKey: "pipelineBackfillComplete") {
-            do {
-                let allPeople = try PeopleRepository.shared.fetchAll()
-                let count = try PipelineRepository.shared.backfillInitialTransitions(allPeople: allPeople)
-                UserDefaults.standard.set(true, forKey: "pipelineBackfillComplete")
-                logger.debug("Pipeline backfill complete: \(count) transitions created")
-            } catch {
-                logger.error("Pipeline backfill failed: \(error)")
-            }
-        }
+        // Defer outcome engine, briefing, and pipeline backfill until after first
+        // paint. Each one walks the entire SwiftData store on @MainActor; running
+        // them inline at launch was burning the main thread for minutes on a
+        // 14 MB store and causing the app to appear hung. The display side reads
+        // outcomeRepo.fetchActive() and the persisted SamDailyBriefing directly,
+        // so the UI shows real (if slightly stale) state while these refresh.
+        scheduleDeferredLaunchWork(autoGenerateOutcomes: autoGenerateOutcomes, runPipelineBackfill: true)
+    }
 
-        // Daily briefing — check first open after imports complete
-        await DailyBriefingCoordinator.shared.checkFirstOpenOfDay()
+    /// Run the launch-time generation passes after the UI has had a chance to render.
+    /// Held at `.utility` priority and behind a short sleep so first paint completes
+    /// before any of these touch the SwiftData store. Each step is a no-op when the
+    /// caller's gate (settings, completion flag) says so.
+    private func scheduleDeferredLaunchWork(autoGenerateOutcomes: Bool, runPipelineBackfill: Bool) {
+        Task(priority: .utility) {
+            try? await Task.sleep(for: .seconds(3))
+
+            if autoGenerateOutcomes {
+                OutcomeEngine.shared.startGeneration()
+            }
+
+            if runPipelineBackfill, !UserDefaults.standard.bool(forKey: "pipelineBackfillComplete") {
+                do {
+                    let allPeople = try PeopleRepository.shared.fetchAll()
+                    let count = try PipelineRepository.shared.backfillInitialTransitions(allPeople: allPeople)
+                    UserDefaults.standard.set(true, forKey: "pipelineBackfillComplete")
+                    logger.debug("Pipeline backfill complete: \(count) transitions created")
+                } catch {
+                    logger.error("Pipeline backfill failed: \(error)")
+                }
+            }
+
+            await DailyBriefingCoordinator.shared.checkFirstOpenOfDay()
+        }
     }
 }
 
