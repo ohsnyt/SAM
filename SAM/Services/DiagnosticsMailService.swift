@@ -34,10 +34,25 @@ final class DiagnosticsMailService {
     private let enabledKey = "sam.diagnostics.autoSendEnabled"
     private let lastSentAtKey = "sam.diagnostics.lastSentAt"
     private let lastErrorKey = "sam.diagnostics.lastError"
+    private let senderAddressKey = "sam.diagnostics.senderAddress"
 
     var isEnabled: Bool {
         get { UserDefaults.standard.bool(forKey: enabledKey) }
         set { UserDefaults.standard.set(newValue, forKey: enabledKey) }
+    }
+
+    /// From-address Mail.app should send as. Must match a configured Mail account.
+    /// Empty → Mail.app uses its default account.
+    var senderAddress: String {
+        get { UserDefaults.standard.string(forKey: senderAddressKey) ?? "" }
+        set {
+            let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty {
+                UserDefaults.standard.removeObject(forKey: senderAddressKey)
+            } else {
+                UserDefaults.standard.set(trimmed, forKey: senderAddressKey)
+            }
+        }
     }
 
     var lastSentAt: Date? {
@@ -144,10 +159,20 @@ final class DiagnosticsMailService {
         let escapedSubject = escape(subject)
         let escapedBody = escape(body)
         let recipient = Self.recipient
+        let sender = senderAddress
+
+        var props: [String] = [
+            "subject:\"\(escapedSubject)\"",
+            "content:\"\(escapedBody)\"",
+            "visible:false"
+        ]
+        if !sender.isEmpty {
+            props.append("sender:\"\(escape(sender))\"")
+        }
 
         var lines: [String] = [
             "tell application \"Mail\"",
-            "    set newMessage to make new outgoing message with properties {subject:\"\(escapedSubject)\", content:\"\(escapedBody)\", visible:false}",
+            "    set newMessage to make new outgoing message with properties {\(props.joined(separator: ", "))}",
             "    tell newMessage",
             "        make new to recipient at end of to recipients with properties {address:\"\(recipient)\"}"
         ]

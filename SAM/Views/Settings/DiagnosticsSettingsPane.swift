@@ -134,6 +134,24 @@ struct DiagnosticsSettingsPane: View {
                 }
             }
 
+            HStack(spacing: 8) {
+                Text("Send from:")
+                    .foregroundStyle(.secondary)
+                    .frame(width: 80, alignment: .trailing)
+                TextField("(Mail's default account)", text: Binding(
+                    get: { mail.senderAddress },
+                    set: { mail.senderAddress = $0 }
+                ))
+                .textFieldStyle(.roundedBorder)
+                .disableAutocorrection(true)
+            }
+            .samFont(.caption)
+
+            Text("Leave blank to use Mail's default account. If sends fail, enter the email address of a working account configured in Mail.app.")
+                .samFont(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.leading, 88)
+
             HStack(spacing: 12) {
                 Button("Send test email") {
                     sendTestEmail()
