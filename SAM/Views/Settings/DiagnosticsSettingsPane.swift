@@ -20,12 +20,20 @@ struct DiagnosticsSettingsPane: View {
     @State private var errorMessage: String?
     @State private var showSavePanel = false
     @State private var pendingJSON: Data?
+    @State private var mail = DiagnosticsMailService.shared
+    @State private var autoSendEnabled: Bool = DiagnosticsMailService.shared.isEnabled
+    @State private var isSendingTest = false
+    @State private var lastSendStatus: String?
 
     var body: some View {
         Form {
             Section {
                 VStack(alignment: .leading, spacing: 20) {
                     header
+
+                    Divider()
+
+                    autoSendBlock
 
                     Divider()
 
@@ -100,6 +108,60 @@ struct DiagnosticsSettingsPane: View {
                 }
                 .buttonStyle(.bordered)
                 .disabled(report == nil)
+            }
+        }
+    }
+
+    // MARK: Auto-send
+
+    private var autoSendBlock: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Toggle(isOn: Binding(
+                get: { autoSendEnabled },
+                set: { newValue in
+                    autoSendEnabled = newValue
+                    mail.isEnabled = newValue
+                    if newValue {
+                        sendTestEmail()
+                    }
+                }
+            )) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Automatically email diagnostic reports")
+                    Text("Sends to \(DiagnosticsMailService.recipient) via Mail.app. macOS will ask once for permission to control Mail.")
+                        .samFont(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            HStack(spacing: 12) {
+                Button("Send test email") {
+                    sendTestEmail()
+                }
+                .buttonStyle(.bordered)
+                .disabled(isSendingTest)
+
+                if isSendingTest {
+                    ProgressView().scaleEffect(0.7)
+                }
+
+                Spacer()
+
+                if let lastSent = mail.lastSentAt {
+                    Text("Last sent \(lastSent.formatted(date: .abbreviated, time: .shortened))")
+                        .samFont(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if let lastSendStatus {
+                Text(lastSendStatus)
+                    .samFont(.caption)
+                    .foregroundStyle(lastSendStatus.hasPrefix("Sent") ? .green : .red)
+            } else if let mailError = mail.lastError {
+                Text("Last error: \(mailError)")
+                    .samFont(.caption)
+                    .foregroundStyle(.red)
             }
         }
     }
@@ -204,10 +266,27 @@ struct DiagnosticsSettingsPane: View {
             do {
                 let result = try DatasetAuditService.shared.generateReport()
                 self.report = result
+                if mail.isEnabled,
+                   let json = try? DatasetAuditService.shared.reportJSON() {
+                    let ok = await mail.sendDatasetAudit(json)
+                    lastSendStatus = ok ? "Sent audit to \(DiagnosticsMailService.recipient)"
+                                        : "Mail.app did not accept the send — see error below"
+                }
             } catch {
                 self.errorMessage = "Audit failed: \(error.localizedDescription)"
             }
             self.isRunning = false
+        }
+    }
+
+    private func sendTestEmail() {
+        isSendingTest = true
+        lastSendStatus = nil
+        Task { @MainActor in
+            let ok = await mail.sendTestEmail()
+            lastSendStatus = ok ? "Sent test to \(DiagnosticsMailService.recipient)"
+                                : "Mail.app did not accept the send — see error below"
+            isSendingTest = false
         }
     }
 
