@@ -5,6 +5,7 @@
 **Related Docs**:
 - `CLAUDE.md` (repo root) — Product philosophy, AI behavior rules, code standards
 - `changelog.md` — Completed phase history (Phases A–Z + post-phase features through March 2026)
+- `scaling-roadmap.md` — Phase 0–4 plan for data-growth observability and architectural scaling (May 2026)
 - `SAM-LinkedIn-Integration-Spec.md` / `SAM-Facebook-Integration-Spec.md` — Platform-specific specs
 
 ---
