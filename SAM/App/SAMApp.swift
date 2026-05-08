@@ -1269,10 +1269,10 @@ struct SAMApp: App {
             CommunicationsImportCoordinator.shared.startImport()
         }
 
-        // Prune expired outcomes and undo entries (fast, synchronous)
-        try? OutcomeRepository.shared.pruneExpired()
-        try? OutcomeRepository.shared.purgeOld()
-        try? UndoRepository.shared.pruneExpired()
+        // Outcome / undo pruning is deferred along with the rest of the
+        // launch-time generation work — they each fetch every row of their
+        // table on the main actor, and the user does not need yesterday's
+        // expired outcomes marked the instant the app opens.
 
         let autoGenerateOutcomes = UserDefaults.standard.object(forKey: "outcomeAutoGenerate") == nil
             ? true
@@ -1321,6 +1321,14 @@ struct SAMApp: App {
     private func scheduleDeferredLaunchWork(autoGenerateOutcomes: Bool, runPipelineBackfill: Bool) {
         Task(priority: .utility) {
             try? await Task.sleep(for: .seconds(3))
+
+            // Pruning and purging used to run inline during launch on the
+            // main actor; they fetch every row of their respective tables
+            // and were a small but noticeable beachball just before contact
+            // import logged "Starting import from group ID..."
+            try? OutcomeRepository.shared.pruneExpired()
+            try? OutcomeRepository.shared.purgeOld()
+            try? UndoRepository.shared.pruneExpired()
 
             if autoGenerateOutcomes {
                 OutcomeEngine.shared.startGeneration()
