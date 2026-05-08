@@ -1,9 +1,9 @@
 # SAM — Scaling Roadmap
 
 **Created**: 2026-05-07
-**Status**: Phase 0 not yet started
+**Status**: Phase 0 shipped (2026-05-07) — see `changelog.md`. Phase 1 next.
 **Owner**: David
-**Related**: `context.md` §2 (Architecture), `changelog.md` (May 7, 2026 launch performance pass)
+**Related**: `context.md` §2 (Architecture), `changelog.md` (May 7, 2026 launch performance pass; Phase 0 ship)
 
 ---
 
@@ -31,9 +31,11 @@ Only then do we decide *which* architectural changes are worth the cost.
 
 ---
 
-## Phase 0 — Dataset Audit + Trip Durability (one session)
+## Phase 0 — Dataset Audit + Trip Durability (one session) — **Shipped 2026-05-07**
 
 Phase 0 ships two related deliverables in one build cycle. Both target Sarah's Mac and (for trips) her phone.
+
+**Commits**: `43baefe` (trip durability), `377a0dc` (dataset audit menu item), `33c2d2f` (pre-approved auto-send via Mail.app). Auto-send is private-beta only — see memory `project_diagnostics_auto_send.md` for the gating reminder before public release. Full ship notes in `changelog.md` (May 7, 2026 — Phase 0 entry).
 
 ### 0a. Dataset Audit (Mac)
 

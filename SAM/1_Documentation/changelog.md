@@ -4,6 +4,51 @@
 
 ---
 
+## Phase 0 shipped: Dataset Audit, Trip Durability, pre-approved diagnostics auto-send (May 7, 2026)
+
+**What**: First two scaling-roadmap deliverables. Sarah's Mac can now produce a quantitative audit of her dataset growth and (with pre-approval) auto-email the JSON back so we can plot it offline. Trips also became durable across phone reinstalls — the Mac is now a system-of-record mirror for `SamTrip`/`SamTripStop`/`SamSavedAddress`, with backup coverage and first-launch resync.
+
+### Why
+
+Sarah is ~2 months in at ~13.7K evidence rows / ~1.6K contacts. We need real numbers to extrapolate 1y / 3y / 5y growth before we commit to bigger architectural changes (per-person rollup tables, ModelActor extraction, GRDB escape on hot paths). Phase 0 was scoped explicitly to gather data, not to optimize. Trip durability rode along because it's a one-session deliverable and trips were silently single-device-only on the phone — a SAMField reinstall wiped them.
+
+### 0a — Dataset Audit (commits `377a0dc`, `33c2d2f`)
+
+- **`SAM/Services/DatasetAuditService.swift`** — new `@MainActor` service. Walks every one of the 52 `@Model` classes registered in `SAMModelContainer.SAMSchema.allModels`, counts rows, and builds an ISO-week histogram keyed `YYYY-Www` against the most semantically appropriate timestamp per model (e.g., `SamPerson.lifecycleChangedAt`, `SamEvidenceItem.occurredAt`, most `createdAt`, `TimeEntry.startedAt`, `StageTransition.transitionDate`, `RecruitingStage.enteredDate`, `SamTrip.date`, etc.). For models with no creation-time field, the histogram is omitted with a `"(none)"`/`"(offset only)"` source label. Also emits per-source `SamEvidenceItem` breakdown and on-disk file sizes (SQLite + WAL/SHM, audio directory, pre-open backups, total Application Support).
+- **`SAM/Views/Settings/DiagnosticsSettingsPane.swift`** — new pane. Header with Run / Save JSON / Copy JSON; in-pane summary card (sizes, model table, evidence-by-source breakdown).
+- **`SAM/Views/Settings/SettingsView.swift`** — added a new `Advanced` group with `case diagnostics` (icon `stethoscope`).
+
+### 0a addendum — pre-approved auto-send (commit `33c2d2f`)
+
+Sarah doesn't need to hand-attach the JSON. Toggle once in Settings → Diagnostics → "Automatically email diagnostic reports"; macOS prompts for Mail.app Automation permission once via an immediate test send; thereafter every audit silently posts to `sam@stillwaiting.org`.
+
+- **`SAM/Services/DiagnosticsMailService.swift`** — new `@MainActor @Observable` singleton. Drives Mail.app via `NSAppleScript` (same pattern already used in `ComposeService.swift`). `sendTestEmail()` and `sendDatasetAudit(Data)`; the audit attachment is written to `/tmp/sam-dataset-audit-<ISO8601>.json`, sent, and cleaned up 30s later in a detached task. Recipient is hard-coded; `UserDefaults` keys persist `isEnabled`, `lastSentAt`, `lastError`.
+- **Entitlements / Info.plist** — already in place: `com.apple.security.automation.apple-events` true, `com.apple.mail` in the temporary-exception list, `NSAppleEventsUsageDescription` already authored. No new permission surface.
+
+**Private-beta scope (must un-ship before public release)**: the recipient is hard-coded to the developer's inbox. Memory `project_diagnostics_auto_send.md` documents the three viable gating strategies (remove pane / `#if SAM_INTERNAL` gate / make recipient configurable) and the triggers that should surface this reminder (App Store submission, beta-test expansion, marketing, copyright/LLC setup, "ship v1 publicly").
+
+### 0b — Trip Durability (commit `43baefe`)
+
+- **Wire protocol** (`SAMModels-AudioStreaming.swift`) — four new message types at `0x11`–`0x14`: `tripUpsert`, `tripDelete`, `tripSyncRequest`, `tripSyncBundle`. Length-prefixed JSON over the existing TCP/HMAC stream; no framing changes.
+- **DTOs** — `TripUpsertDTO`, `TripDeleteDTO`, `TripSyncRequestDTO`, `TripSyncBundleDTO`. All `Sendable`. Round-trip carries the trip, ordered stops, and any referenced saved addresses.
+- **Mac side** — new `TripIngestCoordinator` upserts via `TripRepository` (resolve-by-UUID, last-write-wins). New `TripRestoreService` handles `tripSyncRequest` by gathering everything from `TripRepository.fetchAll()` + saved addresses and replying with `tripSyncBundle`. `AudioReceivingService.swift` dispatches the four new opcodes.
+- **Phone side** — `TripPushService` pushes on trip close / edit / confirm / delete; queues to a `PendingTripUpload` outbox table (mirroring the existing `PendingUpload` recording pattern) when offline, drains on reconnect. First-launch resync: if local trip count is 0 and `tripsRestoreAttempted` is false, the phone sends `tripSyncRequest` after the Mac handshake and ingests the bundle.
+- **Backup coverage** — `BackupCoordinator.swift` + `BackupDocument.swift` now encode/decode `SamTrip`, `SamTripStop`, and `SamSavedAddress` so Mac→Mac restore preserves trips.
+
+**Out of scope on purpose**: conflict resolution beyond last-write-wins (Sarah is the only writer); Mac-originated trip writes pushing back to the phone (phone remains system of record for *new* trips, Mac is the durable mirror); recovery of *historical* lost trips (gone — the fix prevents future loss).
+
+### Verified
+
+- Run Audit → JSON saves and copies cleanly; row counts match a manual `sqlite3 .count` spot-check on five models.
+- Toggle Auto-send → macOS Automation prompt fires once → test email arrives at `sam@stillwaiting.org`. Subsequent runs silent.
+- Closing a trip on the phone shows up in `MacTripsView` within seconds. SAMField reinstall + pair → trips restored from Mac. Mac→Mac backup restore preserves trips.
+
+### Files
+
+`SAM/Services/DatasetAuditService.swift`, `SAM/Services/DiagnosticsMailService.swift`, `SAM/Views/Settings/DiagnosticsSettingsPane.swift`, `SAM/Views/Settings/SettingsView.swift`, `SAM/Coordinators/TripIngestCoordinator.swift`, `SAM/Services/TripRestoreService.swift`, `SAM/Services/AudioReceivingService.swift`, `SAM/Services/BackupCoordinator.swift`, `SAM/Services/BackupDocument.swift`, `SAMModels-AudioStreaming.swift`, `SAMField/Services/TripPushService.swift`, `SAMField/Coordinators/TripCoordinator.swift`.
+
+---
+
 ## Launch-time performance pass: O(P × E) hotspots and main-actor yields (May 7, 2026)
 
 **What**: At Sarah's scale (~1.4K people, ~13.7K evidence rows) the app was monopolizing the MainActor for several minutes after launch. The post-meeting capture sheet appeared but couldn't accept keystrokes; lock screen presentation lagged; multiple multi-second beachballs sat between log lines during the import sequence. This pass eliminates the worst hot spots with a mix of date-windowed predicate fetches, single-pass dictionary builds replacing nested filters, and deferring non-critical pruning past first paint.
