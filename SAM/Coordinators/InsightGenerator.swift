@@ -231,6 +231,24 @@ final class InsightGenerator {
         let allEvidence = try evidenceRepository.fetchAll()
         let meetingPrep = MeetingPrepCoordinator.shared
 
+        // Single-pass build of [personID: mostRecentOccurredAt]. Replaces the
+        // O(people × evidence) inner filter — at 1.4K people / 14K evidence
+        // that was 19M+ comparisons synchronously on the main actor.
+        var mostRecentByPerson: [UUID: Date] = [:]
+        var scanned = 0
+        for evidence in allEvidence {
+            for linked in evidence.linkedPeople {
+                let id = linked.id
+                if let prior = mostRecentByPerson[id] {
+                    if evidence.occurredAt > prior { mostRecentByPerson[id] = evidence.occurredAt }
+                } else {
+                    mostRecentByPerson[id] = evidence.occurredAt
+                }
+            }
+            scanned += 1
+            if scanned % 500 == 0 { await Task.yield() }
+        }
+
         for person in allPeople {
             guard !person.isArchived, !person.isMe else { continue }
 
@@ -247,14 +265,10 @@ final class InsightGenerator {
 
             let cutoffDate = Calendar.current.date(byAdding: .day, value: -effectiveDays, to: .now)!
 
-            // Find most recent evidence for this person
-            let personEvidence = allEvidence.filter { evidence in
-                evidence.linkedPeople.contains(where: { $0.id == person.id })
-            }
-            let mostRecent = personEvidence.max(by: { $0.occurredAt < $1.occurredAt })
+            let mostRecentDate = mostRecentByPerson[person.id]
 
             // 1. Static threshold: existing behavior
-            if let lastContact = mostRecent?.occurredAt, lastContact < cutoffDate {
+            if let lastContact = mostRecentDate, lastContact < cutoffDate {
                 let daysSince = Calendar.current.dateComponents([.day], from: lastContact, to: .now).day ?? 0
 
                 let roleLabel = role ?? "Contact"
@@ -280,9 +294,13 @@ final class InsightGenerator {
         }
 
         // 2. Predictive decay insights (skip if static insight already exists for same person)
+        var processed = 0
         for person in allPeople {
             guard !person.isArchived, !person.isMe else { continue }
             guard !staticInsightPersonIDs.contains(person.id) else { continue }
+
+            processed += 1
+            if processed % 50 == 0 { await Task.yield() }
 
             let health = meetingPrep.computeHealth(for: person)
 

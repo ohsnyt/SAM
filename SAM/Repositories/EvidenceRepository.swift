@@ -80,6 +80,30 @@ final class EvidenceRepository {
         return try context.fetch(descriptor)
     }
 
+    /// Fetch evidence whose `occurredAt` falls in `(start, end]`. If `end` is nil,
+    /// returns everything after `start`. Pushes the date predicate into SwiftData
+    /// so callers don't have to load the full table just to filter it.
+    func fetchOccurringBetween(_ start: Date, _ end: Date?) throws -> [SamEvidenceItem] {
+        guard let context = context else {
+            throw RepositoryError.notConfigured
+        }
+
+        let descriptor: FetchDescriptor<SamEvidenceItem>
+        if let end {
+            descriptor = FetchDescriptor<SamEvidenceItem>(
+                predicate: #Predicate { $0.occurredAt > start && $0.occurredAt <= end },
+                sortBy: [SortDescriptor(\.occurredAt)]
+            )
+        } else {
+            descriptor = FetchDescriptor<SamEvidenceItem>(
+                predicate: #Predicate { $0.occurredAt > start },
+                sortBy: [SortDescriptor(\.occurredAt)]
+            )
+        }
+
+        return try context.fetch(descriptor)
+    }
+
     /// Fetch a single evidence item by ID.
     func fetch(id: UUID) throws -> SamEvidenceItem? {
         guard let context = context else {

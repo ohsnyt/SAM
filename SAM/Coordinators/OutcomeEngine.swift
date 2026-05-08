@@ -100,11 +100,8 @@ final class OutcomeEngine {
             }
 
             // Yield between heavy fetches so the @MainActor releases for UI work.
-            // Each fetchAll on a large store is hundreds of ms; without yielding
-            // between them the run loop can't service input until the entire scan
-            // finishes.
-            let allEvidence = try evidenceRepo.fetchAll()
-            await Task.yield()
+            // Evidence is no longer loaded wholesale — each scanner that needs it
+            // does its own date-bounded fetch (see scanUpcomingMeetings et al.).
             let allPeople = try peopleRepo.fetchAll().filter { !$0.isMe && !$0.isArchived }
             await Task.yield()
             let allNotes = try notesRepo.fetchAll()
@@ -113,11 +110,11 @@ final class OutcomeEngine {
             var newOutcomes: [SamOutcome] = []
 
             // 1. Upcoming meetings → preparation outcomes
-            newOutcomes.append(contentsOf: try scanUpcomingMeetings(allEvidence: allEvidence))
+            newOutcomes.append(contentsOf: try scanUpcomingMeetings())
             await Task.yield()
 
             // 2. Past meetings without notes → followUp outcomes
-            newOutcomes.append(contentsOf: try scanPastMeetingsWithoutNotes(allEvidence: allEvidence, allNotes: allNotes))
+            newOutcomes.append(contentsOf: try scanPastMeetingsWithoutNotes(allNotes: allNotes))
             await Task.yield()
 
             // 3. Pending action items → proposal / followUp outcomes
@@ -331,12 +328,11 @@ final class OutcomeEngine {
         // Check for outbound evidence to the linked person since snooze
         if let person = outcome.linkedPerson {
             let outboundSources: Set<EvidenceSource> = [.mail, .iMessage, .whatsApp]
-            let recentEvidence = (try? evidenceRepo.fetchAll()) ?? []
+            let recentEvidence = (try? evidenceRepo.fetchOccurringBetween(snoozedAt, nil)) ?? []
             let hasOutbound = recentEvidence.contains { ev in
                 ev.isFromMe
                 && outboundSources.contains(ev.source)
                 && ev.linkedPeople.contains(where: { $0.id == person.id })
-                && ev.occurredAt > snoozedAt
             }
             if hasOutbound && (outcome.outcomeKind == .followUp || outcome.outcomeKind == .outreach) {
                 return true
@@ -357,14 +353,13 @@ final class OutcomeEngine {
     // MARK: - Scanners
 
     /// Scan upcoming meetings (next 48h) → preparation outcomes.
-    private func scanUpcomingMeetings(allEvidence: [SamEvidenceItem]) throws -> [SamOutcome] {
+    private func scanUpcomingMeetings() throws -> [SamOutcome] {
         let now = Date()
         let cutoff = Calendar.current.date(byAdding: .hour, value: 48, to: now)!
 
-        let upcoming = allEvidence.filter {
+        let candidates = try evidenceRepo.fetchOccurringBetween(now, cutoff)
+        let upcoming = candidates.filter {
             $0.source == .calendar
-            && $0.occurredAt > now
-            && $0.occurredAt <= cutoff
             && $0.linkedPeople.contains(where: { !$0.isDeleted })
         }
 
@@ -387,11 +382,15 @@ final class OutcomeEngine {
     }
 
     /// Scan past meetings (last 48h) without linked notes → followUp outcomes.
-    private func scanPastMeetingsWithoutNotes(allEvidence: [SamEvidenceItem], allNotes: [SamNote]) throws -> [SamOutcome] {
+    private func scanPastMeetingsWithoutNotes(allNotes: [SamNote]) throws -> [SamOutcome] {
         let now = Date()
         let cutoff = Calendar.current.date(byAdding: .hour, value: -48, to: now)!
+        // Pull from a slightly wider window so events whose `endedAt` falls inside
+        // the cutoff but whose `occurredAt` started a bit earlier still surface.
+        let lookbackStart = Calendar.current.date(byAdding: .hour, value: -56, to: now)!
 
-        let pastEvents = allEvidence.filter { item in
+        let candidates = try evidenceRepo.fetchOccurringBetween(lookbackStart, now)
+        let pastEvents = candidates.filter { item in
             item.source == .calendar
             && item.linkedPeople.contains(where: { !$0.isDeleted })
             && (item.endedAt ?? Calendar.current.date(byAdding: .hour, value: 1, to: item.occurredAt)!) <= now
