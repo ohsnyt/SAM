@@ -48,8 +48,13 @@ final class LockOverlayCoordinator {
         registrations.append(Registration(window: window))
         logger.debug("Registered window: \(window.identifier?.rawValue ?? "<no id>", privacy: .public)")
 
-        if AppLockService.shared.isLocked, window.isVisible {
-            attachOverlay(toWindowAt: registrations.count - 1)
+        if AppLockService.shared.isLocked {
+            // Seal first regardless of visibility — orderOut'd windows
+            // can still leak via backing-store capture APIs.
+            window.sharingType = .none
+            if window.isVisible {
+                attachOverlay(toWindowAt: registrations.count - 1)
+            }
         }
     }
 
@@ -69,9 +74,34 @@ final class LockOverlayCoordinator {
     /// timing is tight against the state transition.
     func handleLockStateChange(isLocked: Bool) {
         if isLocked {
+            sealAllWindowsFromCapture()
             attachAllOverlays()
         } else {
             detachAllOverlays()
+            restoreAllWindowSharing()
+        }
+    }
+
+    // MARK: - Screen-Capture Hardening
+    //
+    // The lock overlay sets `sharingType = .none` on itself, which means
+    // screen-capture APIs (`CGWindowListCreateImage`, ScreenCaptureKit, the
+    // ⇧⌘5 screenshot tool) treat the overlay as invisible. But screen-capture
+    // reads each window's backing store independently of on-screen z-order
+    // — so without sealing the parent windows too, a capture tool sees right
+    // through the overlay to the underlying SAM content. Setting parents to
+    // `.none` while locked, and back to `.readOnly` (the macOS default) on
+    // unlock, closes that hole.
+
+    private func sealAllWindowsFromCapture() {
+        for index in registrations.indices {
+            registrations[index].window?.sharingType = .none
+        }
+    }
+
+    private func restoreAllWindowSharing() {
+        for index in registrations.indices {
+            registrations[index].window?.sharingType = .readOnly
         }
     }
 
