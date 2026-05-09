@@ -95,28 +95,47 @@ actor DailyBriefingService {
             visualSystem = deployedSystemPrompt
         } else {
             let persona = await BusinessProfileService.shared.personaFragment()
+            // Advisor identity — the addressee, never an attendee. When set, the
+            // model is told explicitly not to treat this name as someone the
+            // advisor is meeting with. Avoids hallucinated "your call with
+            // <advisor first name>" lines when calendar data is sparse.
+            let advisorFullName = AIService.userFullName
+            let advisorFirstName = AIService.userFirstName
+            let advisorIdentityRule: String = {
+                guard !advisorFullName.isEmpty || !advisorFirstName.isEmpty else { return "" }
+                let names = [advisorFullName, advisorFirstName]
+                    .filter { !$0.isEmpty }
+                    .joined(separator: "\" or \"")
+                return "\n- The advisor's own name is \"\(names)\". They are the person you are addressing. Never list them as a meeting attendee, follow-up subject, or life-event subject."
+            }()
+
             visualPrompt = """
                 You are a warm, professional executive assistant for \(persona).
                 Write a morning briefing of 110 to 160 words based ONLY on the data below.
                 Shorter than 110 words means you skipped information the advisor needs.
 
-                CRITICAL: Only reference people, meetings, times, dates, and goals that appear in the data.
-                Never invent names, events, or details. Use dates exactly as given — if the data says a birthday is today, it is today; do not shift it to yesterday or tomorrow.
+                CRITICAL — anti-hallucination rules:
+                - Only reference people, meetings, times, dates, and goals that appear in the data block below.
+                - Never invent names, events, or details. If a section says "(none)" or is absent, do not write about it.
+                - Treat any names that appear in these instructions as illustrative grammar examples, NOT as real schedule data. Never copy a name from the rules into the narrative.
+                - Use dates exactly as given — if the data says a birthday is today, it is today; do not shift it to yesterday or tomorrow.
 
                 PRONOUN DISCIPLINE — this is non-negotiable:
                 - Address the advisor directly as "you" / "your" throughout. Their meetings are "your 10 AM", their goals are "your Q2 target", their calendar is "your day".
-                - Do not refer to the advisor in the third person ("the advisor", "Sarah") or the first person ("I", "we", "my"). "we" is banned entirely — the advisor is not attending their own meetings with you.
+                - Do not refer to the advisor in the third person or the first person ("I", "we", "my"). "we" is banned entirely — the advisor is not attending their own meetings with you.
                 - "I" / "my" / "me" is reserved for moments when YOU, the assistant, are doing something for the advisor ("I've pulled up…", "my read is…").
-                - For meetings with one other person, write "You meet with Jane Martinez" — never "Jane Martinez and I" and never repeat the other person's name to fill the "I" slot.
-                - Tasks the advisor owes belong in passive or subject-first voice, not shared-voice: "Mike Chen is still owed the illustration" or "The illustration for Mike Chen is still owed", not "We need to send Mike Chen the illustration".
+                - For meetings with one other person, write "You meet with <attendee>" — never "<attendee> and I" and never repeat the other person's name to fill the "I" slot.
+                - Tasks the advisor owes belong in passive or subject-first voice, not shared-voice: "<person> is still owed the illustration" or "The illustration for <person> is still owed", not "We need to send <person> the illustration".\(advisorIdentityRule)
 
-                Cover every section present in the data. Do not skip any of these if they appear:
+                Cover every section present in the data. Skip any section marked "(none)" or absent — do not invent content to fill it. Sections that may appear:
                 - TODAY'S SCHEDULE (exact times, full names)
                 - PRIORITY ACTIONS (who, what, why it matters now)
                 - FOLLOW-UPS NEEDED (person and the reason)
                 - LIFE EVENTS (birthdays, new babies, moves — these are relationship moments)
                 - BUSINESS GOALS (one sentence on the most relevant one, with current progress)
                 - TOMORROW PREVIEW (one short phrase)
+
+                If TODAY'S SCHEDULE is "(none)", open by saying the calendar is clear today and pivot directly to follow-ups, life events, and goals. Do not fabricate meetings.
 
                 Structure:
                 1. Open with 1-2 sentences framing the day — what shape it has, what anchors your calendar.
@@ -125,7 +144,7 @@ actor DailyBriefingService {
                 4. One sentence on tomorrow if TOMORROW PREVIEW is present.
 
                 Voice: confident, forward-looking, collegial. Write to a peer, not as a taskmaster.
-                Avoid command-voice openers like "Please ensure" or "Prioritize sending". Good openers: "The day opens with…", "Worth a quick note to Jane…" (always followed by a person's name), "Looking ahead…".
+                Avoid command-voice openers like "Please ensure" or "Prioritize sending". Good openers: "The day opens with…", "Worth a quick note to <person>…" (always followed by a name from the data), "Looking ahead…".
                 No greetings, no sign-offs, no bullets, no headers.
 
                 \(dataBlock)
@@ -256,7 +275,12 @@ actor DailyBriefingService {
             return item.startsAt > now
         }
 
-        if !upcomingItems.isEmpty {
+        // Always emit TODAY'S SCHEDULE — when empty, an explicit "(none)" tells
+        // the model "the calendar is genuinely clear today" rather than letting
+        // it pattern-match attendee names from elsewhere into a missing slot.
+        if upcomingItems.isEmpty {
+            parts.append("TODAY'S SCHEDULE: (none)")
+        } else {
             let items = upcomingItems.map { item in
                 let start = item.startsAt.formatted(date: .omitted, time: .shortened)
                 let end = item.endsAt.map { $0.formatted(date: .omitted, time: .shortened) } ?? ""
@@ -267,7 +291,9 @@ actor DailyBriefingService {
             parts.append("TODAY'S SCHEDULE (\(upcomingItems.count) upcoming events):\n\(items)")
         }
 
-        if !priorityActions.isEmpty {
+        if priorityActions.isEmpty {
+            parts.append("PRIORITY ACTIONS: (none)")
+        } else {
             let items = priorityActions.prefix(5).map { action in
                 let person = action.personName.map { " (\($0))" } ?? ""
                 return "- [\(action.urgency)] \(action.title)\(person)"
@@ -275,14 +301,18 @@ actor DailyBriefingService {
             parts.append("PRIORITY ACTIONS:\n\(items)")
         }
 
-        if !followUps.isEmpty {
+        if followUps.isEmpty {
+            parts.append("FOLLOW-UPS NEEDED: (none)")
+        } else {
             let items = followUps.prefix(3).map {
                 "- \($0.personName): \($0.reason) (\($0.daysSinceInteraction) days)"
             }.joined(separator: "\n")
             parts.append("FOLLOW-UPS NEEDED:\n\(items)")
         }
 
-        if !lifeEvents.isEmpty {
+        if lifeEvents.isEmpty {
+            parts.append("LIFE EVENTS: (none)")
+        } else {
             let items = lifeEvents.map { "- \($0.personName): \($0.eventDescription)" }.joined(separator: "\n")
             parts.append("LIFE EVENTS:\n\(items)")
         }

@@ -4,6 +4,28 @@
 
 ---
 
+## Briefing narrative: stop hallucinating meetings on empty calendars (May 9, 2026)
+
+**What**: Three fixes to `DailyBriefingService.generateMorningNarrative` after a real-world hallucination where the briefing invented a 10 AM meeting with "Jane Martinez", a 2 PM with "Sarah" (the advisor's own first name), and a 7 PM with "Mike" — even though the calendar was empty.
+
+1. **Removed example names from the prompt.** The pronoun-discipline rules previously used "Jane Martinez" and "Mike Chen" as illustrative attendees inside the system prompt. With an empty calendar, the model treated those names as schedule data and fabricated time slots around them. Replaced with generic `<attendee>` / `<person>` placeholders and added an explicit rule: "Treat any names that appear in these instructions as illustrative grammar examples, NOT as real schedule data."
+2. **Explicit `(none)` markers for empty sections.** `buildMorningDataBlock` previously *omitted* empty sections entirely — `TODAY'S SCHEDULE`, `PRIORITY ACTIONS`, `FOLLOW-UPS NEEDED`, `LIFE EVENTS`. The model had no signal that the calendar was genuinely clear vs. that the data simply hadn't been included, so it filled the gap. Now each section emits `SECTION: (none)` when empty, and the prompt tells the model "Skip any section marked '(none)' or absent — do not invent content to fill it."
+3. **Advisor identity rule.** The prompt now reads `AIService.userFullName` / `userFirstName` and tells the model: "The advisor's own name is "Sarah Snyder" or "Sarah". They are the person you are addressing. Never list them as a meeting attendee, follow-up subject, or life-event subject." Closes the third hallucination axis where "Sarah" appeared as an attendee.
+
+### Why
+
+Real-world report: morning briefing read "The day opens with your 10 AM meeting with Jane Martinez, followed by your 2 PM session with Sarah and your 7 PM call with Mike" — none of those people existed in the data. The user's calendar was empty, follow-ups + life events + goals were populated, so the sufficiency guard (line 49: `sectionCount >= 2 || totalItems >= 3`) correctly let the narrative through. The leak was the prompt itself: it contained literal example names, and the data block silently dropped the empty schedule section.
+
+The guard is doing its job — the briefing should still cover follow-ups, life events, and goals when the calendar is clear. The fix is to let the model know the calendar is genuinely empty and to stop seeding it with names that don't belong in the data.
+
+### Verified
+
+- `xcodebuild -scheme SAM -destination 'platform=macOS' build` — `BUILD SUCCEEDED`.
+- `AIService.userFullName` / `userFirstName` are `nonisolated` static computed properties reading directly from UserDefaults, so the advisor identity rule has zero async cost in the briefing critical path.
+- Behavior unchanged when the calendar has data: the empty-section markers only fire when a section is genuinely empty.
+
+---
+
 ## Graceful quit + swap-not-overlay for blocking activity (May 9, 2026)
 
 **What**: Two related fixes:
