@@ -77,33 +77,18 @@ final class BackupCoordinator {
         let deadline = Date().addingTimeInterval(timeout)
         var loggedWaiting = false
         while Date() < deadline {
-            let comms = CommunicationsImportCoordinator.shared.importStatus == .importing
-            let mail = MailImportCoordinator.shared.importStatus == .importing
-            let cal = CalendarImportCoordinator.shared.importStatus == .importing
-            let contacts = ContactsImportCoordinator.isImportingContacts
-            let outcome = OutcomeEngine.shared.generationStatus == .generating
-            let strategic = StrategicCoordinator.shared.generationStatus == .generating
-            let role = RoleDeductionEngine.shared.deductionStatus == .running
-            let busy = comms || mail || cal || contacts || outcome || strategic || role
-            if !busy {
+            let blockers = BackgroundWorkProbe.currentBlockers()
+            if blockers.isEmpty {
                 blockedBy = []
                 if loggedWaiting {
                     logger.info("In-flight work settled — proceeding with restore")
                 }
                 return
             }
-            var blockers: [String] = []
-            if comms    { blockers.append("communications import") }
-            if mail     { blockers.append("mail import") }
-            if cal      { blockers.append("calendar import") }
-            if contacts { blockers.append("contacts import") }
-            if outcome  { blockers.append("outcome generation") }
-            if strategic { blockers.append("strategic digest") }
-            if role     { blockers.append("role deduction") }
             blockedBy = blockers
             if !loggedWaiting {
                 progress = "Waiting for background work to finish..."
-                logger.info("Restore waiting for in-flight work — comms=\(comms) mail=\(mail) cal=\(cal) contacts=\(contacts) outcome=\(outcome) strategic=\(strategic) role=\(role)")
+                logger.info("Restore waiting for in-flight work — blockers: \(blockers.joined(separator: ", "))")
                 loggedWaiting = true
             }
             try? await Task.sleep(for: .milliseconds(250))

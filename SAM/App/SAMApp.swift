@@ -87,7 +87,32 @@ final class SAMAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidatio
         // In Safe Mode the data layer was never initialized — just terminate.
         guard periodicSaveTimer != nil else { return .terminateNow }
 
-        log.info("App termination requested — cancelling background tasks")
+        // If background AI work is in flight (outcome generation, strategic
+        // digest, role deduction, or any active import), block quit and
+        // surface the BlockingActivityOverlay until they settle. Forcing
+        // teardown while these are mid-call has previously crashed on
+        // dropped MLX containers and partially-saved SwiftData.
+        if BackgroundWorkProbe.isAnyBusy {
+            log.info("App termination requested but background work is busy — entering graceful-quit wait")
+            ShutdownCoordinator.shared.isShuttingDown = true
+            Task { @MainActor in
+                _ = await ShutdownCoordinator.shared.settle(timeout: 15)
+                self.performShutdownTeardown()
+                sender.reply(toApplicationShouldTerminate: true)
+            }
+            return .terminateLater
+        }
+
+        performShutdownTeardown()
+        return .terminateNow
+    }
+
+    /// Cancel timers, stop coordinators, flush SwiftData, and tear down the
+    /// MLX runtime. Shared between the immediate quit path and the deferred
+    /// `.terminateLater` path so both routes drain through identical cleanup.
+    @MainActor
+    private func performShutdownTeardown() {
+        log.info("App termination — running shutdown teardown")
         CrashReportService.shared.markCleanShutdown()
         HangWatchdog.shared.stop()
         periodicSaveTimer?.invalidate()
@@ -109,7 +134,6 @@ final class SAMAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidatio
         // Open the MLX circuit breaker and drop the model container so any
         // in-flight generation stream exhausts before the process exits.
         Task { await AIService.shared.prepareForTermination() }
-        return .terminateNow
     }
 }
 
@@ -130,6 +154,7 @@ struct SAMApp: App {
 
     // Backup/restore (moved from GeneralSettingsView to File menu)
     @State private var backupCoordinator = BackupCoordinator.shared
+    @State private var shutdownCoordinator = ShutdownCoordinator.shared
     @State private var showImportFilePicker = false
     @State private var showImportConfirmation = false
     @State private var pendingImportURL: URL?
@@ -333,13 +358,21 @@ struct SAMApp: App {
     private var mainContent: some View {
         if safeModeActive {
             SafeModeView()
+        } else if isBlockingActivity {
+            // Render the overlay INSTEAD OF AppShellView so the entire view
+            // tree tears down for the duration. Otherwise @Query observers
+            // keep firing during a restore wipe and crash on deleted models.
+            BlockingActivityOverlay()
         } else {
             AppShellView()
                 .modelContainer(SAMModelContainer.shared)
-                .overlay {
-                    RestoreInProgressOverlay()
-                }
         }
+    }
+
+    private var isBlockingActivity: Bool {
+        if case .importing = backupCoordinator.status { return true }
+        if shutdownCoordinator.isShuttingDown { return true }
+        return false
     }
 
     var body: some Scene {

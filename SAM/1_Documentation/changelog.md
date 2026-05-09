@@ -4,6 +4,36 @@
 
 ---
 
+## Graceful quit + swap-not-overlay for blocking activity (May 9, 2026)
+
+**What**: Two related fixes:
+
+1. The blocking overlay shown during backup restore is now rendered **in place of** `AppShellView` (via an `if/else` in `mainContent`) rather than layered on top with `.overlay { ... }`. The shell's view tree — and every `@Query` observer inside it — fully tears down for the duration.
+2. `applicationShouldTerminate` now consults a shared `BackgroundWorkProbe`. If any AI engine or import is mid-call, it sets `ShutdownCoordinator.isShuttingDown = true` (which routes the same `BlockingActivityOverlay` into the window via the same swap), returns `.terminateLater`, awaits `ShutdownCoordinator.settle(timeout: 15)`, runs `performShutdownTeardown()`, then replies via `sender.reply(toApplicationShouldTerminate: true)`.
+
+### Why
+
+A real-world re-import crashed with `SamEvidenceItem.source.getter at _PersistedProperty (fatalError)`. The `RestoreInProgressOverlay` was `.overlay { … }`-stacked on top of `AppShellView`, so although the overlay covered the screen the underlying `@Query`-driven views were still alive — and their observers fired during the wipe pass on the (now-deleted) models that triggered the SwiftData fatalError. Swapping the shell out for the overlay deletes the observers entirely.
+
+The same kind of mid-call interruption was crashing on `Cmd+Q` while outcome generation or strategic digest was still running: macOS terminated the process, the LLM stream lost its actor context, and the next quit attempt was a forced one. The user wanted "Quit in progress, waiting for background AI agents to come back and report for duty" rather than a beachball or a force-kill.
+
+### Architecture
+
+- **`BackgroundWorkProbe`** (`Coordinators/BackgroundWorkProbe.swift`) — `@MainActor enum` that returns `[String]` blockers across the seven coordinators that touch SwiftData (comms / mail / calendar / contacts imports, outcome engine, strategic coordinator, role deduction). One source of truth — both `BackupCoordinator.waitForInFlightWorkToSettle` and `ShutdownCoordinator.settle` poll it, so adding a new coordinator means editing one file. `isAnyBusy` provides the boolean fast-path used by `applicationShouldTerminate`.
+- **`ShutdownCoordinator`** (`Coordinators/ShutdownCoordinator.swift`) — `@MainActor @Observable` singleton mirroring `BackupCoordinator`'s public surface (`isShuttingDown`, `progress`, `blockedBy`). `settle(timeout:)` polls `BackgroundWorkProbe` every 250 ms with a 15 s ceiling and returns `Bool` (`true` = settled cleanly, `false` = timeout). On timeout the AppDelegate proceeds with teardown anyway — better than a deadlocked quit.
+- **`SAMAppDelegate.performShutdownTeardown()`** — Extracted from the old inline body of `applicationShouldTerminate` so both the immediate quit path (no background work) and the deferred path (`.terminateLater` → settle → teardown) drain through identical cleanup: timer invalidation, every `cancelAll()`, scheduler stops, hotkey unregister, `mainContext.save()`, `AIService.prepareForTermination()`.
+- **`BlockingActivityOverlay`** (renamed from `RestoreInProgressOverlay`) — Single overlay observing both `BackupCoordinator` and `ShutdownCoordinator`. Computes a private `Activity` struct (`title`, `subtitle`, `progress`, `blockedBy`) — shutdown takes precedence when both are active. Title swaps between "Restoring Backup" and "Quitting SAM"; the rest of the layout is shared.
+- **`SAMApp.mainContent`** — Now an `if/else if/else` that renders `SafeModeView`, `BlockingActivityOverlay`, or `AppShellView`. The new computed `isBlockingActivity` returns `true` whenever the backup status is `.importing` OR `ShutdownCoordinator.isShuttingDown`. The shell — and all of its `@Query` observers — disappear from the view tree for the entire blocking window.
+- **`BackupCoordinator.waitForInFlightWorkToSettle`** — Refactored to use `BackgroundWorkProbe.currentBlockers()` instead of an inline duplicate of the same checks.
+
+### Verified
+
+- `xcodebuild -scheme SAM -destination 'platform=macOS' build` — `BUILD SUCCEEDED`.
+- The shutdown path inherits the same 15 s ceiling pattern as the restore settle, so a stuck coordinator can't block quit forever — the overlay shows, the timeout fires, teardown runs, the process exits.
+- AI inference (FoundationModels + MLX) doesn't expose a true cancellation handle — cooperative cancellation only happens at `Task.yield()` boundaries, which our engines already insert. The 15 s budget is sized for that worst-case checkpoint distance.
+
+---
+
 ## Backup restore: cap AI enrichment + blocking overlay (May 9, 2026)
 
 **What**: Two fixes for the post-restore window where the app appears hung for 5+ minutes:
