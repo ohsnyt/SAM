@@ -78,6 +78,29 @@ enum DecayRisk: String, Sendable, Comparable {
 
 /// Health metrics for a person's relationship.
 struct RelationshipHealth: Sendable {
+    /// Default-valued instance used when computation must be skipped (e.g.,
+    /// SwiftData store is being wiped during backup restore, or the person
+    /// has been deleted). Renders as "no data" without crashing callers.
+    static let empty = RelationshipHealth(
+        daysSinceLastInteraction: nil,
+        interactionCount30: 0,
+        interactionCount90: 0,
+        trend: .noData,
+        role: nil,
+        cadenceDays: nil,
+        effectiveCadenceDays: nil,
+        overdueRatio: nil,
+        velocityTrend: .noData,
+        qualityScore30: 0,
+        predictedOverdueDays: nil,
+        decayRisk: .none,
+        predictiveLeadDays: 0,
+        daysSinceLastOutbound: nil,
+        daysSinceLastInbound: nil,
+        outboundCount30: 0,
+        inboundCount30: 0
+    )
+
     let daysSinceLastInteraction: Int?
     let interactionCount30: Int
     let interactionCount90: Int
@@ -301,6 +324,13 @@ final class MeetingPrepCoordinator {
 
     /// Compute health for a single person (reused by PersonDetailView, EngagementVelocitySection, etc.).
     func computeHealth(for person: SamPerson) -> RelationshipHealth {
+        // Backup restore wipes SwiftData; touching `.linkedEvidence` here
+        // hits a fatalError on _PersistedProperty for already-deleted rows.
+        // Return an empty/default health so callers stay structurally valid.
+        if BackupCoordinator.isRestoring || person.isDeleted {
+            return RelationshipHealth.empty
+        }
+
         let now = Date()
         let thirtyDaysAgo = Calendar.current.date(byAdding: .day, value: -30, to: now)!
         let sixtyDaysAgo = Calendar.current.date(byAdding: .day, value: -60, to: now)!

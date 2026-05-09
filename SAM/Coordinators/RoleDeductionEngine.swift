@@ -159,6 +159,10 @@ final class RoleDeductionEngine {
 
     /// Set `force` to bypass the 10-minute throttle (e.g., after a fresh data import).
     func deduceRoles(force: Bool = false) async {
+        if BackupCoordinator.isRestoring {
+            logger.debug("Skipping role deduction — backup restore in progress")
+            return
+        }
         guard deductionStatus != .running else { return }
 
         // Throttle: skip if last run was within 10 minutes (unless forced)

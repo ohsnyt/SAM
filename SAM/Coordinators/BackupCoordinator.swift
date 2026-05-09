@@ -46,6 +46,57 @@ final class BackupCoordinator {
     private init() {}
 
     // ─────────────────────────────────────────────────────────────────
+    // MARK: - Restore Flag (cross-actor readable)
+    // ─────────────────────────────────────────────────────────────────
+
+    /// Set true the moment the user confirms a restore — before the safety
+    /// backup, well before the wipe — and cleared in `refreshAfterRestore`.
+    /// Long-running coordinators read this from background actors and bail
+    /// at safe points to avoid dereferencing SwiftData objects mid-wipe.
+    private static let _isRestoring = OSAllocatedUnfairLock<Bool>(initialState: false)
+
+    nonisolated static var isRestoring: Bool {
+        _isRestoring.withLock { $0 }
+    }
+
+    nonisolated private static func setIsRestoring(_ value: Bool) {
+        _isRestoring.withLock { $0 = value }
+    }
+
+    /// Poll the major running coordinators until they're all idle, with a
+    /// hard timeout so a stuck import can't block restore forever. Called
+    /// after `isRestoring` is set true and before the wipe; the flag itself
+    /// makes new work inert, this loop just waits for in-flight work to
+    /// finish its current iteration cleanly.
+    private func waitForInFlightWorkToSettle(timeout: TimeInterval = 30) async {
+        let deadline = Date().addingTimeInterval(timeout)
+        var loggedWaiting = false
+        while Date() < deadline {
+            let comms = CommunicationsImportCoordinator.shared.importStatus == .importing
+            let mail = MailImportCoordinator.shared.importStatus == .importing
+            let cal = CalendarImportCoordinator.shared.importStatus == .importing
+            let contacts = ContactsImportCoordinator.isImportingContacts
+            let outcome = OutcomeEngine.shared.generationStatus == .generating
+            let strategic = StrategicCoordinator.shared.generationStatus == .generating
+            let role = RoleDeductionEngine.shared.deductionStatus == .running
+            let busy = comms || mail || cal || contacts || outcome || strategic || role
+            if !busy {
+                if loggedWaiting {
+                    logger.info("In-flight work settled — proceeding with restore")
+                }
+                return
+            }
+            if !loggedWaiting {
+                progress = "Pausing background work..."
+                logger.info("Restore waiting for in-flight work — comms=\(comms) mail=\(mail) cal=\(cal) contacts=\(contacts) outcome=\(outcome) strategic=\(strategic) role=\(role)")
+                loggedWaiting = true
+            }
+            try? await Task.sleep(for: .milliseconds(250))
+        }
+        logger.warning("Restore settle timeout after \(Int(timeout))s — proceeding anyway (some work may still be in flight)")
+    }
+
+    // ─────────────────────────────────────────────────────────────────
     // MARK: - Preference Keys
     // ─────────────────────────────────────────────────────────────────
 
@@ -732,6 +783,13 @@ final class BackupCoordinator {
         status = .importing
         logger.info("Import started")
 
+        // Signal restore-in-progress immediately so any background coordinator
+        // checking the flag bails at its next safe point. The settle wait
+        // below gives in-flight work time to finish its current iteration
+        // before we start tearing down the SwiftData store.
+        Self.setIsRestoring(true)
+        defer { Self.setIsRestoring(false) }
+
         let accessing = url.startAccessingSecurityScopedResource()
         defer { if accessing { url.stopAccessingSecurityScopedResource() } }
 
@@ -742,6 +800,10 @@ final class BackupCoordinator {
                 .appendingPathComponent("SAM-pre-import-safety.sambackup")
             await exportSafetyBackup(to: safetyURL)
             logger.debug("Safety backup saved to \(safetyURL.path)")
+
+            // 1b. Wait for in-flight imports/engines to settle so the wipe
+            // pass below doesn't yank SwiftData objects out from under them.
+            await waitForInFlightWorkToSettle()
 
             // 2. Decode source
             progress = "Decoding backup..."

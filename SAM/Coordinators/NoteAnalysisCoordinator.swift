@@ -308,6 +308,10 @@ final class NoteAnalysisCoordinator {
     /// Refresh the AI-generated relationship summary for a person.
     /// Called after note analysis completes for notes linked to this person.
     func refreshRelationshipSummary(for person: SamPerson, force: Bool = false) async {
+        // Bail before reading any SwiftData properties — backup restore is
+        // wiping the store and `person`'s backing object may already be gone.
+        if BackupCoordinator.isRestoring { return }
+
         let displayName = person.displayNameCache ?? person.displayName
 
         if !force,

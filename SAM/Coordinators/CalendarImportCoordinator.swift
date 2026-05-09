@@ -211,6 +211,12 @@ final class CalendarImportCoordinator {
             }
         }
 
+        if BackupCoordinator.isRestoring {
+            logger.debug("Skipping calendar import — backup restore in progress")
+            importStatus = .idle
+            return
+        }
+
         importStatus = .importing
         lastError = nil
 

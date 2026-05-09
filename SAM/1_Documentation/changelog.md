@@ -4,6 +4,29 @@
 
 ---
 
+## Backup restore: pause in-flight work to prevent SwiftData fatalError (May 9, 2026)
+
+**What**: Restoring a backup now sets a process-wide `BackupCoordinator.isRestoring` flag for the duration of the wipe-and-reinsert pass, waits up to 30 s for in-flight imports/engines to drain before tearing down the store, and short-circuits any new background work (or in-progress yield-bounded loops) that runs while the flag is set.
+
+### Why
+
+A real-world restore crashed with `SamEvidenceItem.source.getter at _PersistedProperty (fatalError)` from `MeetingPrepCoordinator.computeHealth(for:)` ← `NoteAnalysisCoordinator.refreshRelationshipSummary` ← `CommunicationsImportCoordinator.refreshAffectedSummaries` ← `performImport`. Diagnosis: the comms import had already started its post-import refresh phase when the restore began deleting models. The wipe pass invalidates SwiftData objects the import was still iterating over, and the next property access on a deleted object trips SwiftData's `_PersistedProperty` fatalError. The previous restore flow had no coordination with running coordinators — it just called `deleteAll(SAMSchema.allModels)` and hoped nothing else was mid-flight.
+
+### Architecture
+
+- **`BackupCoordinator.isRestoring`** — `nonisolated` cross-actor flag backed by `OSAllocatedUnfairLock<Bool>`. Swift 6-friendly (no `nonisolated(unsafe)`). Set true in `performImport(from:passphrase:)` immediately after the safety backup, cleared via `defer`. Readable from any actor without `await`, so synchronous guard-checks inside `@MainActor` coordinator methods stay synchronous.
+- **`BackupCoordinator.waitForInFlightWorkToSettle(timeout:)`** — Polls the seven coordinators that touch SwiftData on every cycle (`CommunicationsImportCoordinator`, `MailImportCoordinator`, `CalendarImportCoordinator`, `ContactsImportCoordinator`, `OutcomeEngine`, `StrategicCoordinator`, `RoleDeductionEngine`). Sleeps 250 ms between checks; logs which coordinator is blocking. Returns once all idle, or after 30 s timeout (logs warning, proceeds anyway — better than blocking the user indefinitely).
+- **Re-entry guards** — Every coordinator's `performImport` / `generateOutcomes` / `generateDigest` / `deduceRoles` entry point checks `BackupCoordinator.isRestoring` and bails before claiming `importStatus = .importing`. New work scheduled during the restore window is inert.
+- **In-flight bail points** — `OutcomeEngine._generateOutcomesBody` already had 18 `await Task.yield()` checkpoints between scanner phases; each one is now followed by `if BackupCoordinator.isRestoring { generationStatus = .idle; return }`. Long-running engines that started just before the wipe drop out cleanly at the next yield instead of touching deleted objects.
+- **Defensive guards at the actual crash site** — `MeetingPrepCoordinator.computeHealth(for:)` returns a new `RelationshipHealth.empty` static if `BackupCoordinator.isRestoring || person.isDeleted`. `NoteAnalysisCoordinator.refreshRelationshipSummary` and `CommunicationsImportCoordinator.refreshAffectedSummaries` (plus inner loops) bail likewise. These cover the tight window between "wipe started" and "settle phase observed the import as idle" — if a `Task.utility` continuation reawakens during the wipe, it sees the flag and exits.
+
+### Verified
+
+- `xcodebuild -scheme SAM -destination 'platform=macOS' build` — `BUILD SUCCEEDED`.
+- Settle phase has a 30 s ceiling, so a hung coordinator can't deadlock the restore. Worst case the restore proceeds and per-method guards catch any straggler work.
+
+---
+
 ## Backup restore: full state refresh + iCloud briefing replacement + watermark handling (May 9, 2026)
 
 **What**: After restoring from a `.sambackup` file, SAM now resets stale in-memory state across the app, replaces the pre-restore briefing in CloudKit so the iPhone companion stops showing it, navigates the user to Today, re-runs the launch-time import + deferred work pipeline, and either resumes from the backup's import watermarks or — for legacy backups that pre-date this change — clears the local watermarks so the next import does a full lookback re-scan.

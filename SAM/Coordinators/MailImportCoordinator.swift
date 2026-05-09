@@ -330,6 +330,11 @@ final class MailImportCoordinator {
             return
         }
 
+        if BackupCoordinator.isRestoring {
+            logger.debug("Skipping mail import — backup restore in progress")
+            return
+        }
+
         if !force, let last = lastImportTime, Date().timeIntervalSince(last) < importIntervalSeconds {
             logger.debug("Skipping import — last import was \(Date().timeIntervalSince(last), format: .fixed(precision: 0))s ago (interval: \(self.importIntervalSeconds)s)")
             return

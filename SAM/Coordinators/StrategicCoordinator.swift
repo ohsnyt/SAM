@@ -98,6 +98,10 @@ final class StrategicCoordinator {
     // MARK: - Digest Generation
 
     func generateDigest(type: DigestType = .onDemand, onProgress: ((String) -> Void)? = nil) async {
+        if BackupCoordinator.isRestoring {
+            logger.debug("Skipping strategic digest — backup restore in progress")
+            return
+        }
         let enabled = UserDefaults.standard.object(forKey: "strategicDigestEnabled") == nil
             ? true
             : UserDefaults.standard.bool(forKey: "strategicDigestEnabled")

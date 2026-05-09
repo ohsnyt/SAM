@@ -76,12 +76,14 @@ final class OutcomeEngine {
 
     /// Fire-and-forget generation — does not block the caller.
     func startGeneration() {
+        if BackupCoordinator.isRestoring { return }
         guard generationStatus != .generating else { return }
         Task { await generateOutcomes() }
     }
 
     /// Synthesize outcomes from all evidence sources.
     func generateOutcomes() async {
+        if BackupCoordinator.isRestoring { return }
         guard generationStatus != .generating else { return }
         generationStatus = .generating
         lastError = nil
@@ -92,6 +94,10 @@ final class OutcomeEngine {
     }
 
     private func _generateOutcomesBody() async {
+        if BackupCoordinator.isRestoring {
+            generationStatus = .idle
+            return
+        }
         do {
             let perf = PerformanceMonitor.shared
 
@@ -114,26 +120,32 @@ final class OutcomeEngine {
                 try peopleRepo.fetchAll().filter { !$0.isMe && !$0.isArchived && $0.hasMeaningfulSignal }
             }
             await Task.yield()
+            if BackupCoordinator.isRestoring { generationStatus = .idle; return }
             let allNotes = try perf.measureSync("OutcomeEngine.fetchAllNotes") { try notesRepo.fetchAll() }
             await Task.yield()
+            if BackupCoordinator.isRestoring { generationStatus = .idle; return }
 
             var newOutcomes: [SamOutcome] = []
 
             // 1. Upcoming meetings → preparation outcomes
             newOutcomes.append(contentsOf: try perf.measureSync("OutcomeEngine.upcomingMeetings") { try scanUpcomingMeetings() })
             await Task.yield()
+            if BackupCoordinator.isRestoring { generationStatus = .idle; return }
 
             // 2. Past meetings without notes → followUp outcomes
             newOutcomes.append(contentsOf: try perf.measureSync("OutcomeEngine.pastMeetingsWithoutNotes") { try scanPastMeetingsWithoutNotes(allNotes: allNotes) })
             await Task.yield()
+            if BackupCoordinator.isRestoring { generationStatus = .idle; return }
 
             // 3. Pending action items → proposal / followUp outcomes
             newOutcomes.append(contentsOf: try perf.measureSync("OutcomeEngine.pendingActionItems") { try scanPendingActionItems(allNotes: allNotes) })
             await Task.yield()
+            if BackupCoordinator.isRestoring { generationStatus = .idle; return }
 
             // 4. Relationship health → outreach outcomes
             newOutcomes.append(contentsOf: try perf.measureSync("OutcomeEngine.relationshipHealth") { try scanRelationshipHealth(people: allPeople) })
             await Task.yield()
+            if BackupCoordinator.isRestoring { generationStatus = .idle; return }
 
             // 5. Growth opportunities (when few active outcomes)
             let activeCount = (try? outcomeRepo.fetchActive().count) ?? 0
@@ -141,58 +153,72 @@ final class OutcomeEngine {
                 newOutcomes.append(contentsOf: try perf.measureSync("OutcomeEngine.growthOpportunities") { try scanGrowthOpportunities(people: allPeople) })
             }
             await Task.yield()
+            if BackupCoordinator.isRestoring { generationStatus = .idle; return }
 
             // 6. Coverage gap cross-sell (Phase S)
             newOutcomes.append(contentsOf: try perf.measureSync("OutcomeEngine.coverageGaps") { try scanCoverageGaps(people: allPeople) })
             await Task.yield()
+            if BackupCoordinator.isRestoring { generationStatus = .idle; return }
 
             // 7. Content suggestions (Phase W)
             newOutcomes.append(contentsOf: await perf.measure("OutcomeEngine.contentSuggestions") { await scanContentSuggestions() })
             await Task.yield()
+            if BackupCoordinator.isRestoring { generationStatus = .idle; return }
 
             // 8. Content cadence nudges (Phase W)
             newOutcomes.append(contentsOf: try perf.measureSync("OutcomeEngine.contentCadence") { try scanContentCadence() })
             await Task.yield()
+            if BackupCoordinator.isRestoring { generationStatus = .idle; return }
 
             // 9. Goal pacing coaching (Phase X)
             newOutcomes.append(contentsOf: perf.measureSync("OutcomeEngine.goalPacing") { scanGoalPacing() })
             await Task.yield()
+            if BackupCoordinator.isRestoring { generationStatus = .idle; return }
 
             // 10. Deduced relationships review
             newOutcomes.append(contentsOf: perf.measureSync("OutcomeEngine.deducedRelationships") { scanDeducedRelationships() })
             await Task.yield()
+            if BackupCoordinator.isRestoring { generationStatus = .idle; return }
 
             // 11. LinkedIn notification setup guidance (Phase 6)
             newOutcomes.append(contentsOf: try perf.measureSync("OutcomeEngine.notificationSetupGuidance") { try scanNotificationSetupGuidance() })
             await Task.yield()
+            if BackupCoordinator.isRestoring { generationStatus = .idle; return }
 
             // 12. Role suggestions review
             newOutcomes.append(contentsOf: perf.measureSync("OutcomeEngine.roleSuggestions") { scanRoleSuggestions() })
             await Task.yield()
+            if BackupCoordinator.isRestoring { generationStatus = .idle; return }
 
             // 13. Stale contacts → archive suggestions
             newOutcomes.append(contentsOf: try perf.measureSync("OutcomeEngine.staleContacts") { try scanStaleContacts(people: allPeople) })
             await Task.yield()
+            if BackupCoordinator.isRestoring { generationStatus = .idle; return }
 
             // 14. Progressive feature adoption coaching
             newOutcomes.append(contentsOf: perf.measureSync("OutcomeEngine.featureAdoption") { scanFeatureAdoption() })
             await Task.yield()
+            if BackupCoordinator.isRestoring { generationStatus = .idle; return }
 
             // 15. Substack auto-detection
             newOutcomes.append(contentsOf: try perf.measureSync("OutcomeEngine.substackAutoDetection") { try scanSubstackAutoDetection() })
             await Task.yield()
+            if BackupCoordinator.isRestoring { generationStatus = .idle; return }
 
             // 16. WhatsApp auto-detection
             newOutcomes.append(contentsOf: perf.measureSync("OutcomeEngine.whatsAppAutoDetection") { scanWhatsAppAutoDetection() })
             await Task.yield()
+            if BackupCoordinator.isRestoring { generationStatus = .idle; return }
 
             // 17. Role recruiting discovery & cultivation
             newOutcomes.append(contentsOf: perf.measureSync("OutcomeEngine.roleRecruiting") { scanRoleRecruiting() })
             await Task.yield()
+            if BackupCoordinator.isRestoring { generationStatus = .idle; return }
 
             // 18. Sarah's open commitments due soon (Block 3)
             newOutcomes.append(contentsOf: perf.measureSync("OutcomeEngine.openCommitments") { scanOpenCommitments() })
             await Task.yield()
+            if BackupCoordinator.isRestoring { generationStatus = .idle; return }
 
             // Classify action lanes and suggest channels
             perf.measureSync("OutcomeEngine.classifyActionLanes") {

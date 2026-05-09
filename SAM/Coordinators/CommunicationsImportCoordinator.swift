@@ -363,6 +363,14 @@ final class CommunicationsImportCoordinator {
     // MARK: - Import Pipeline
 
     private func performImport() async {
+        // Bail immediately if a restore is in progress — touching SwiftData
+        // while BackupCoordinator wipes the store will hit fatalError on
+        // _PersistedProperty getters for deleted objects.
+        if BackupCoordinator.isRestoring {
+            logger.debug("Skipping comms import — backup restore in progress")
+            return
+        }
+
         importStatus = .importing
         lastError = nil
 
@@ -461,6 +469,7 @@ final class CommunicationsImportCoordinator {
                 // Analyze iMessage threads
                 for thread in deferredIMThreads {
                     guard !Task.isCancelled else { break }
+                    if BackupCoordinator.isRestoring { return }
                     do {
                         let analysis = try await self.messageAnalysisService.analyzeConversation(
                             messages: thread.messages,
@@ -477,6 +486,7 @@ final class CommunicationsImportCoordinator {
                 // Analyze WhatsApp threads
                 for thread in deferredWAThreads {
                     guard !Task.isCancelled else { break }
+                    if BackupCoordinator.isRestoring { return }
                     do {
                         let analysis = try await self.messageAnalysisService.analyzeConversation(
                             messages: thread.messages,
@@ -490,9 +500,11 @@ final class CommunicationsImportCoordinator {
                     }
                 }
 
+                if BackupCoordinator.isRestoring { return }
                 if total > 0 {
                     await self.refreshAffectedSummaries()
                 }
+                if BackupCoordinator.isRestoring { return }
 
                 PostImportOrchestrator.shared.importDidComplete(source: "communications")
             }
@@ -663,6 +675,14 @@ final class CommunicationsImportCoordinator {
 
     /// Refresh relationship summaries for people who have communications evidence.
     private func refreshAffectedSummaries() async {
+        // Bail before any SwiftData fetch if the store is being restored.
+        // The wipe pass deletes SamEvidenceItem rows, and `.source` on a
+        // deleted SwiftData object hits a fatalError in _PersistedProperty.
+        if BackupCoordinator.isRestoring {
+            logger.debug("Skipping summary refresh — backup restore in progress")
+            return
+        }
+
         let commsSources: Set<EvidenceSource> = [.iMessage, .phoneCall, .faceTime, .whatsApp, .whatsAppCall]
 
         guard let allEvidence = try? evidenceRepository.fetchAll() else { return }
@@ -670,6 +690,7 @@ final class CommunicationsImportCoordinator {
         // Find people linked to communications evidence
         var affectedPeople = Set<UUID>()
         for item in allEvidence where commsSources.contains(item.source) {
+            if BackupCoordinator.isRestoring { return }
             for person in item.linkedPeople where !person.isDeleted {
                 affectedPeople.insert(person.id)
             }
@@ -685,6 +706,10 @@ final class CommunicationsImportCoordinator {
         for person in toRefresh.prefix(10) {
             guard !Task.isCancelled else {
                 logger.debug("Summary refresh cancelled")
+                break
+            }
+            if BackupCoordinator.isRestoring {
+                logger.debug("Aborting summary refresh — backup restore in progress")
                 break
             }
             guard !person.isDeleted else { continue }

@@ -202,6 +202,10 @@ final class ContactsImportCoordinator {
             return
         }
         #endif
+        if BackupCoordinator.isRestoring {
+            logger.debug("Skipping contacts import — backup restore in progress (triggeredBy: \(reason, privacy: .public))")
+            return
+        }
         guard importStatus != .importing else {
             logger.warning("Import already in progress (triggeredBy: \(reason, privacy: .public))")
             return
