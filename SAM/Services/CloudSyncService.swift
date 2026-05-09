@@ -55,6 +55,13 @@ final class CloudSyncService {
     // MARK: - Push Briefing (Mac → iCloud)
 
     /// Save the current daily briefing to CloudKit so the phone can read it.
+    ///
+    /// Uses `.allKeys` save policy: the briefing is a single record we always
+    /// want to replace whole, so there's no value in CloudKit's default
+    /// `.ifServerRecordUnchanged` change-tag check. The earlier fetch-mutate-
+    /// save fallback was also vulnerable to "client oplock error" when the
+    /// phone or another push raced with our fetch — `.allKeys` removes the
+    /// race entirely.
     func pushBriefing(briefingJSON: String) async {
         let record = CKRecord(
             recordType: Self.briefingRecordType,
@@ -64,23 +71,22 @@ final class CloudSyncService {
         record["updatedAt"] = Date() as CKRecordValue
 
         do {
-            _ = try await database.save(record)
-            lastSyncDate = Date()
-            syncError = nil
-            logger.info("Briefing pushed to CloudKit (\(briefingJSON.count) chars)")
-        } catch let error as CKError where error.code == .serverRecordChanged {
-            // Record already exists — fetch and update
-            do {
-                let existing = try await database.record(for: Self.briefingRecordID)
-                existing["content"] = briefingJSON as CKRecordValue
-                existing["updatedAt"] = Date() as CKRecordValue
-                try await database.save(existing)
+            let (saveResults, _) = try await database.modifyRecords(
+                saving: [record],
+                deleting: [],
+                savePolicy: .allKeys,
+                atomically: true
+            )
+            switch saveResults[Self.briefingRecordID] {
+            case .success:
                 lastSyncDate = Date()
                 syncError = nil
-                logger.info("Briefing updated in CloudKit")
-            } catch {
+                logger.info("Briefing pushed to CloudKit (\(briefingJSON.count) chars)")
+            case .failure(let error):
                 syncError = error.localizedDescription
-                logger.error("Briefing CloudKit update failed: \(error.localizedDescription)")
+                logger.error("Briefing CloudKit save failed: \(error.localizedDescription)")
+            case .none:
+                logger.error("Briefing CloudKit save returned no result for record")
             }
         } catch {
             syncError = error.localizedDescription
@@ -102,21 +108,20 @@ final class CloudSyncService {
         record["updatedAt"] = Date() as CKRecordValue
 
         do {
-            try await database.save(record)
-            lastSyncDate = Date()
-            logger.info("Workspace settings pushed to CloudKit")
-        } catch let error as CKError where error.code == .serverRecordChanged {
-            do {
-                let existing = try await database.record(for: Self.settingsRecordID)
-                if let data = settings.toWireData() {
-                    existing["settingsJSON"] = String(data: data, encoding: .utf8) as? CKRecordValue
-                }
-                existing["updatedAt"] = Date() as CKRecordValue
-                try await database.save(existing)
+            let (saveResults, _) = try await database.modifyRecords(
+                saving: [record],
+                deleting: [],
+                savePolicy: .allKeys,
+                atomically: true
+            )
+            switch saveResults[Self.settingsRecordID] {
+            case .success:
                 lastSyncDate = Date()
-                logger.info("Workspace settings updated in CloudKit")
-            } catch {
-                logger.error("Settings CloudKit update failed: \(error.localizedDescription)")
+                logger.info("Workspace settings pushed to CloudKit")
+            case .failure(let error):
+                logger.error("Settings CloudKit save failed: \(error.localizedDescription)")
+            case .none:
+                logger.error("Settings CloudKit save returned no result for record")
             }
         } catch {
             logger.error("Settings CloudKit push failed: \(error.localizedDescription)")

@@ -212,16 +212,22 @@ final class DailyBriefingCoordinator {
         let morningEnabled = UserDefaults.standard.object(forKey: "briefingMorningEnabled") == nil
             ? true
             : UserDefaults.standard.bool(forKey: "briefingMorningEnabled")
-        guard morningEnabled else { return }
+        guard morningEnabled else {
+            logger.info("checkFirstOpenOfDay — morning briefing disabled in settings, skipping")
+            return
+        }
 
         let todayKey = Calendar.current.startOfDay(for: .now)
         let lastDateStr = UserDefaults.standard.string(forKey: "lastBriefingDate") ?? ""
         let lastDate = ISO8601DateFormatter().date(from: lastDateStr)
 
+        logger.info("checkFirstOpenOfDay — lastBriefingDate=\(lastDateStr, privacy: .public), today=\(todayKey, privacy: .public), morningBriefing.preLoad=\(self.morningBriefing == nil ? "nil" : "set", privacy: .public)")
+
         if let lastDate, Calendar.current.isDate(lastDate, inSameDayAs: todayKey) {
             // Already briefed today — try loading existing
             loadTodaysBriefings()
             if morningBriefing != nil {
+                logger.info("checkFirstOpenOfDay — loaded existing briefing for today, skipping regen")
                 return
             }
             // Briefing was lost (e.g. DB wiped by test data) — clear stale date and regenerate
@@ -230,6 +236,7 @@ final class DailyBriefingCoordinator {
         }
 
         // Generate new morning briefing
+        logger.info("checkFirstOpenOfDay — generating new morning briefing")
         await generateMorningBriefing()
 
         // Check for weekly digest (Monday or first open of the week)
