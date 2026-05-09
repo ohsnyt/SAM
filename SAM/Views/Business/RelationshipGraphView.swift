@@ -135,9 +135,11 @@ struct RelationshipGraphView: View {
                 }
             }
             .task {
-                if coordinator.graphStatus != .ready {
+                // Default landing: show the picker (Me-only backdrop) on first appearance.
+                // If a lens is already active (returning to the tab), keep it.
+                if coordinator.currentLens == nil {
                     let bounds = canvasSize.width > 0 ? canvasSize : CGSize(width: 1200, height: 800)
-                    await coordinator.buildGraph(bounds: bounds)
+                    coordinator.loadMeOnly(bounds: bounds)
                     fitToView()
                 }
             }
@@ -145,15 +147,20 @@ struct RelationshipGraphView: View {
                 for await notification in NotificationCenter.default.notifications(named: .samPersonDidChange) {
                     if let personID = notification.userInfo?["personID"] as? UUID {
                         coordinator.updateNode(personID: personID)
-                    } else {
-                        await coordinator.rebuildIfStale()
+                    } else if let lens = coordinator.currentLens {
+                        let bounds = canvasSize.width > 0 ? canvasSize : CGSize(width: 1200, height: 800)
+                        await coordinator.loadLens(lens, bounds: bounds)
+                        fitToView()
                     }
                 }
             }
             .task {
                 for await _ in NotificationCenter.default.notifications(named: .samUndoDidRestore) {
-                    await coordinator.rebuildIfStale()
-                    fitToView()
+                    if let lens = coordinator.currentLens {
+                        let bounds = canvasSize.width > 0 ? canvasSize : CGSize(width: 1200, height: 800)
+                        await coordinator.loadLens(lens, bounds: bounds)
+                        fitToView()
+                    }
                 }
             }
             .task {
@@ -264,6 +271,9 @@ struct RelationshipGraphView: View {
             tooltipOverlay
             edgeTooltipOverlay
             focusModeOverlay
+            lensProgressBanner
+            lensPickerOverlay
+            lensSummaryChip
 
             // Tip overlay — pinned to top
             VStack {
@@ -290,6 +300,90 @@ struct RelationshipGraphView: View {
                 .padding(12)
                 .allowsHitTesting(true)
             }
+        }
+    }
+
+    /// Shown only when no lens is active — invites the user to pick one.
+    @ViewBuilder
+    private var lensPickerOverlay: some View {
+        if coordinator.currentLens == nil {
+            LensPickerView(coordinator: coordinator, canvasSize: canvasSize) { lens in
+                let bounds = canvasSize.width > 0 ? canvasSize : CGSize(width: 1200, height: 800)
+                Task {
+                    await coordinator.loadLens(lens, bounds: bounds)
+                    fitToView()
+                }
+            }
+            .allowsHitTesting(true)
+        }
+    }
+
+    /// Compact chip pinned top-leading when a lens is active. Shows the
+    /// lens title, summary, and a "Change lens" affordance.
+    @ViewBuilder
+    private var lensSummaryChip: some View {
+        if let lens = coordinator.currentLens {
+            VStack {
+                HStack {
+                    HStack(spacing: 10) {
+                        Image(systemName: lens.systemImage)
+                            .foregroundStyle(lens.accentColor)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(lens.title)
+                                .samFont(.callout, weight: .semibold)
+                            if !coordinator.lensSummary.isEmpty {
+                                Text(coordinator.lensSummary)
+                                    .samFont(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        Divider().frame(height: 18)
+                        Button("Change lens") {
+                            coordinator.enterLensPicker()
+                            fitToView()
+                        }
+                        .buttonStyle(.plain)
+                        .samFont(.caption, weight: .medium)
+                        .foregroundStyle(.tint)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(.regularMaterial, in: Capsule())
+                    .overlay(Capsule().stroke(Color.primary.opacity(0.08), lineWidth: 0.5))
+                    .padding(.leading, 12)
+                    .padding(.top, 12)
+                    Spacer()
+                }
+                Spacer()
+            }
+            .allowsHitTesting(true)
+        }
+    }
+
+    /// Slim banner under the chip surfacing the current loading phase.
+    @ViewBuilder
+    private var lensProgressBanner: some View {
+        if coordinator.currentLens != nil,
+           coordinator.lensLoadingPhase != .complete,
+           coordinator.lensLoadingPhase != .idle {
+            VStack {
+                HStack {
+                    Spacer()
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text(coordinator.lensLoadingPhase.progressLabel)
+                            .samFont(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(.regularMaterial, in: Capsule())
+                    .padding(.trailing, 12)
+                    .padding(.top, 12)
+                }
+                Spacer()
+            }
+            .allowsHitTesting(false)
         }
     }
 
@@ -389,7 +483,14 @@ struct RelationshipGraphView: View {
            hovID != draggedNodeID,
            let node = coordinator.nodes.first(where: { $0.id == hovID }) {
             let edgeCount = coordinator.edges.filter { $0.sourceID == hovID || $0.targetID == hovID }.count
-            GraphTooltipView(node: node, edgeCount: edgeCount)
+            let annotation = coordinator.lensAnnotations[hovID]
+            let lensAccent = coordinator.currentLens?.accentColor
+            GraphTooltipView(
+                node: node,
+                edgeCount: edgeCount,
+                lensAnnotation: annotation,
+                lensAccent: lensAccent
+            )
                 .position(tooltipPosition(for: hoverScreenPosition))
                 .allowsHitTesting(false)
         }
@@ -1970,6 +2071,11 @@ struct RelationshipGraphView: View {
         // --- 4. Nodes ---
         drawNodes(context: &context, center: c, viewport: viewport)
 
+        // --- 4.5 Lens halos (highlighted nodes for the active lens) ---
+        if coordinator.currentLens != nil, !coordinator.lensHighlightedNodeIDs.isEmpty {
+            drawLensHalos(context: &context, center: c, viewport: viewport)
+        }
+
         // --- 5. Bridge indicators ---
         if scale >= 0.3 {
             drawBridgeIndicators(context: &context, center: c, viewport: viewport)
@@ -1977,6 +2083,11 @@ struct RelationshipGraphView: View {
 
         // --- 6. Labels ---
         drawLabels(context: &context, center: c, size: size, viewport: viewport)
+
+        // --- 6.5 Lens cluster labels (e.g. Missed Nudges headers) ---
+        if coordinator.currentLens != nil, !coordinator.lensClusterLabels.isEmpty {
+            drawLensClusterLabels(context: &context, center: c, viewport: viewport)
+        }
 
         // --- 7. Selection ring ---
         drawSelection(context: &context, center: c)
@@ -2690,6 +2801,93 @@ struct RelationshipGraphView: View {
             }
 
             context.draw(resolved, at: bestPos, anchor: .center)
+        }
+    }
+
+    // MARK: - Drawing: Lens Halos & Cluster Labels
+
+    /// Draws a soft, breathing halo behind nodes flagged as lens highlights
+    /// (e.g. top referrers in Referrer Productivity, gap clients in Family Gaps).
+    /// Halo color tracks the active lens accent.
+    private func drawLensHalos(context: inout GraphicsContext, center: CGPoint, viewport: CGRect) {
+        guard let lens = coordinator.currentLens else { return }
+        let accent = lens.accentColor
+
+        for node in coordinator.nodes {
+            guard coordinator.lensHighlightedNodeIDs.contains(node.id) else { continue }
+            let sp = screenPoint(node.position, center: center)
+            let scaleFactor = nodeScaleFactor(for: node)
+            let baseRadius = nodeRadius(for: node) * scale * scaleFactor
+            guard baseRadius > 1 else { continue }
+
+            // Outer soft glow.
+            let glowR = baseRadius + 14
+            let glowRect = CGRect(x: sp.x - glowR, y: sp.y - glowR, width: glowR * 2, height: glowR * 2)
+            guard isVisible(sp, radius: glowR, viewport: viewport) else { continue }
+
+            context.fill(
+                Path(ellipseIn: glowRect),
+                with: .color(accent.opacity(0.18))
+            )
+
+            // Inner halo ring close to the node edge.
+            let ringR = baseRadius + 6
+            let ringRect = CGRect(x: sp.x - ringR, y: sp.y - ringR, width: ringR * 2, height: ringR * 2)
+            context.stroke(
+                Path(ellipseIn: ringRect),
+                with: .color(accent.opacity(0.85)),
+                lineWidth: 2.0
+            )
+        }
+    }
+
+    /// Draws cluster header pills above grouped nodes (Missed Nudges).
+    /// Each label is anchored at a graph-space point and rendered with a
+    /// soft pill background so it reads cleanly over edges and nodes.
+    private func drawLensClusterLabels(context: inout GraphicsContext, center: CGPoint, viewport: CGRect) {
+        guard let lens = coordinator.currentLens else { return }
+        let accent = lens.accentColor
+
+        for cluster in coordinator.lensClusterLabels {
+            let sp = screenPoint(cluster.center, center: center)
+            guard viewport.insetBy(dx: -120, dy: -40).contains(sp) else { continue }
+
+            let title = cluster.label
+            let count = cluster.count
+            let titleText = Text(title)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.primary)
+            let countText = Text("\(count)")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(accent)
+
+            let resolvedTitle = context.resolve(titleText)
+            let resolvedCount = context.resolve(countText)
+            let titleSize = resolvedTitle.measure(in: CGSize(width: 240, height: 40))
+            let countSize = resolvedCount.measure(in: CGSize(width: 60, height: 40))
+
+            let padH: CGFloat = 10
+            let gap: CGFloat = 6
+            let pillW = titleSize.width + gap + countSize.width + padH * 2
+            let pillH = max(titleSize.height, countSize.height) + 6
+            let pillRect = CGRect(x: sp.x - pillW / 2, y: sp.y - pillH / 2, width: pillW, height: pillH)
+
+            let bgOpacity: Double = reduceTransparency ? 0.95 : 0.82
+            context.fill(
+                Path(roundedRect: pillRect, cornerRadius: pillH / 2),
+                with: .color(Color.samGraphBackground.opacity(bgOpacity))
+            )
+            context.stroke(
+                Path(roundedRect: pillRect, cornerRadius: pillH / 2),
+                with: .color(accent.opacity(0.55)),
+                lineWidth: 1.0
+            )
+
+            let titlePos = CGPoint(x: pillRect.minX + padH + titleSize.width / 2, y: sp.y)
+            context.draw(resolvedTitle, at: titlePos, anchor: .center)
+
+            let countPos = CGPoint(x: pillRect.maxX - padH - countSize.width / 2, y: sp.y)
+            context.draw(resolvedCount, at: countPos, anchor: .center)
         }
     }
 

@@ -14,6 +14,8 @@ struct GraphTooltipView: View {
 
     let node: GraphNode
     let edgeCount: Int
+    var lensAnnotation: String? = nil
+    var lensAccent: Color? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -40,6 +42,18 @@ struct GraphTooltipView: View {
                             .samFont(.caption2)
                             .foregroundStyle(style.color)
                     }
+                }
+            }
+
+            if let annotation = lensAnnotation, !annotation.isEmpty {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(lensAccent ?? .accentColor)
+                        .frame(width: 6, height: 6)
+                    Text(annotation)
+                        .samFont(.caption)
+                        .foregroundStyle(.primary)
+                        .lineLimit(2)
                 }
             }
 

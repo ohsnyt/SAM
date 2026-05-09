@@ -95,6 +95,19 @@ final class OutcomeRepository {
         }
     }
 
+    /// Fetch outcomes the user explicitly dismissed.
+    /// Most recent dismissals first. Used by the Missed Nudges lens to surface
+    /// coaching the user passed on.
+    func fetchDismissed(limit: Int = 200) throws -> [SamOutcome] {
+        guard let context else { throw RepositoryError.notConfigured }
+
+        let descriptor = FetchDescriptor<SamOutcome>(
+            sortBy: [SortDescriptor(\.dismissedAt, order: .reverse)]
+        )
+        let all = try context.fetch(descriptor)
+        return Array(all.lazy.filter { $0.statusRawValue == OutcomeStatus.dismissed.rawValue }.prefix(limit))
+    }
+
     /// Fetch a single outcome by ID.
     func fetch(id: UUID) throws -> SamOutcome? {
         guard let context else { throw RepositoryError.notConfigured }

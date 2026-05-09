@@ -4,6 +4,61 @@
 
 ---
 
+## Relationship Graph rebuilt around four lenses (May 9, 2026)
+
+**What**: The Graph entry experience is now lens-based. Opening the Graph tab anchors `Me` at center and presents a 2×2 picker of four focused questions; selecting a lens streams in only the nodes that answer that question, in deterministic radial waves with no force layout. The previous "load all 264 nodes and force-simulate" path is gone — that's what was producing the 5–10 s beachball and the visually noisy hairball.
+
+### Why
+
+At Sarah's actual book size, the global graph was unreadable: every active client and every ghost contact and every co-attendee landed on the same canvas, with no signal about which connections mattered. The lens redesign starts from "what question are you trying to answer?" and only renders the subgraph that answers it — so a screen at any moment has ~10–50 nodes, all relevant, in a reading order driven by concentric rings.
+
+### The four lenses
+
+- **Book of Business** (green) — Active clients in the middle ring, deduced family ties in the outer ring on each client's radial, referrers in the inner ring on the radial of whoever they introduced. Singletons (clients with no family, no referrer chain) get the lens halo so the gaps are visible at a glance.
+- **Referrer Productivity** (yellow) — Top referrers ranked and sized by clients introduced. Top three get a gold halo. Hovering a referrer node surfaces "N clients · $X premium" in the tooltip. Fan-out edges show every client each referrer brought in.
+- **Missed Nudges** (orange) — All dismissed `SamOutcome`s grouped by `outcomeKind`. Each cluster gets a pill header above it on the canvas (e.g. "Stalled follow-ups · 7"). Each person node carries a tooltip annotation like "47d ago · Send check-in text" — what SAM nudged about, and how long ago it was dismissed.
+- **Family Gaps** (blue) — Active clients with no `DeducedRelation` entries and no `familyReferences`. Single ring around Me, every node halo'd, so the action queue ("ask about family") reads off the screen.
+
+### Architecture
+
+- **`GraphLens` model** (`SAM/Models/GraphLens.swift`) — `enum GraphLens` with title/subtitle/description/systemImage/accentColor metadata, plus `LensLoadingPhase` (idle / anchoring / primary / secondary / tertiary / complete) for the progressive reveal banner.
+- **`RelationshipGraphCoordinator+Lens.swift`** — All lens loading lives in this extension. Public entry points: `enterLensPicker()`, `loadLens(_:bounds:)`, `loadMeOnly(bounds:)`, `cancelInFlightLensLoad()`. Each lens loader runs as a wave-based async function that commits a snapshot, sleeps 120–140 ms, then commits the next wave — so the user sees Me anchor, then clients arrive, then family ties, then referrer chains. No `OutcomeEngine`-style scoring or force-directed simulation in the lens path; placement is deterministic radial (`ringRadius(for:level:)` returns base × 0.18 / 0.32 / 0.46, `ringAngle(index:total:)` distributes evenly).
+- **Coordinator state additions** — `currentLens: GraphLens?`, `lensLoadingPhase`, `lensSummary`, `lensAnnotations: [UUID: String]`, `lensClusterLabels: [(center: CGPoint, label: String, count: Int)]`, `lensHighlightedNodeIDs: Set<UUID>`, `lensTaskBox: LensTaskBox` for cancellation. `allNodes` and `allEdges` were promoted from `private`/`private(set)` to `var` so the lens extension can write directly without going through `applyFilters`.
+- **`LensPickerView`** (`SAM/Views/Business/LensPickerView.swift`) — Floating glass overlay shown when `coordinator.currentLens == nil`. 2×2 grid of `LensCard` buttons with hover scale + accent-tinted icon. Tapping calls `loadLens(lens, bounds:)`.
+- **`RelationshipGraphView` rewiring** — Default `.task` now calls `loadMeOnly()` instead of building the full graph. Three new overlays in the main `ZStack`: `lensProgressBanner` (top-trailing, shows `lensLoadingPhase.progressLabel`), `lensPickerOverlay` (centered, shown when no lens active), and `lensSummaryChip` (top-leading, shows lens icon + title + summary, "Change lens" button calls `enterLensPicker()`).
+- **Canvas visual hooks** — Two new draw passes in `drawCanvas`:
+  - `drawLensHalos` (between nodes and bridge indicators) — soft accent-colored glow + ring around each `lensHighlightedNodeIDs` member, color-keyed to the lens.
+  - `drawLensClusterLabels` (after labels) — pill-backgrounded headers for each `lensClusterLabels` entry, anchored in graph space and rendered with the lens accent border.
+- **Tooltip integration** — `GraphTooltipView` now takes optional `lensAnnotation: String?` and `lensAccent: Color?`. The hover overlay in `RelationshipGraphView` looks up `coordinator.lensAnnotations[hoveredID]` and the active lens accent and passes both in. Annotation renders as a colored-dot + caption line above the divider, so the lens-specific signal sits prominently without disturbing the role-badge / health-circle / connection-count layout below.
+- **`OutcomeRepository.fetchDismissed(limit:)`** — New repository method backing the Missed Nudges lens. Fetches `SamOutcome`s with `statusRawValue == OutcomeStatus.dismissed.rawValue`, sorted by `dismissedAt` descending, capped at 200.
+
+### Performance
+
+The lens path does no force simulation, no centrality scoring, and touches only the slice of `SamPerson` / `SamOutcome` / `DeducedRelation` each lens needs. Opening Graph now lands on the picker instantly; selecting a lens completes the multi-wave reveal in well under a second on a 264-node store. The previous "build everything, then filter" pattern is bypassed entirely (`commitLensSnapshot` writes through `allNodes` / `allEdges` / `nodes` / `edges` directly without going through `applyFilters`).
+
+### Verified
+
+- `xcodebuild -scheme SAM -destination 'platform=macOS' build` — `BUILD SUCCEEDED`.
+- All four lenses load deterministically with progressive-reveal waves.
+- Halos render with lens accent color; tooltip annotations surface for hovered nodes; cluster pills appear above grouped outcomes in Missed Nudges.
+
+### Files
+
+**New**:
+- `SAM/Models/GraphLens.swift`
+- `SAM/Coordinators/RelationshipGraphCoordinator+Lens.swift`
+- `SAM/Views/Business/LensPickerView.swift`
+
+**Modified**:
+- `SAM/Coordinators/RelationshipGraphCoordinator.swift` — lens state additions, `LensTaskBox`, access-level changes on `allNodes` / `allEdges` / `mapHealthToLevel`.
+- `SAM/Views/Business/RelationshipGraphView.swift` — `loadMeOnly()` default, three lens overlays, `drawLensHalos`, `drawLensClusterLabels`, tooltip annotation wiring.
+- `SAM/Views/Business/GraphTooltipView.swift` — optional `lensAnnotation` / `lensAccent` parameters and rendering.
+- `SAM/Repositories/OutcomeRepository.swift` — `fetchDismissed(limit:)`.
+
+**Deferred to a future pass**: AI narration of "why this referrer is productive" (Referrer Productivity lens, design notes); per-lens coaching CTAs in the summary chip; lens-specific export to PDF for sharing with Sarah's team.
+
+---
+
 ## App Lock redesign shipped: leak-proof modals, no-click unlock, post-unlock state preservation (May 8, 2026)
 
 **What**: A 7-phase rebuild of the app lock system per `SAM-Lock-Redesign-Plan.md`. Three coupled goals: (1) zero sensitive content visible in any modal layer when locked, (2) Touch ID auto-prompts on lock-state transitions without requiring a click, (3) on unlock the user is back where they were — same windows, same sheets, same in-progress edit text.

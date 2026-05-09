@@ -35,6 +35,27 @@ final class RelationshipGraphCoordinator {
     var progress: String = ""
     var meNodeID: UUID?
 
+    // MARK: - Lens State
+
+    /// Currently active lens. `nil` = picker state (only Me visible).
+    var currentLens: GraphLens?
+
+    /// Progressive-reveal phase during a lens load.
+    var lensLoadingPhase: LensLoadingPhase = .idle
+
+    /// Subtitle displayed under the lens chip in the toolbar.
+    var lensSummary: String = ""
+
+    /// Per-person extra metadata surfaced by the active lens (e.g. referrer stats,
+    /// missed-nudge details). Keyed by person ID.
+    var lensAnnotations: [UUID: String] = [:]
+
+    /// Cluster labels for lenses that group nodes by reason (e.g. Missed Nudges).
+    var lensClusterLabels: [(center: CGPoint, label: String, count: Int)] = []
+
+    /// Person IDs the active lens visually highlights (e.g. top referrers, gap clients).
+    var lensHighlightedNodeIDs: Set<UUID> = []
+
     /// Convenience for single-selection contexts (e.g. tooltip, navigation).
     var selectedNodeID: UUID? {
         get { selectedNodeIDs.count == 1 ? selectedNodeIDs.first : selectionAnchorID }
@@ -148,9 +169,15 @@ final class RelationshipGraphCoordinator {
 
     // MARK: - Internal
 
-    private(set) var allNodes: [GraphNode] = []
-    private var allEdges: [GraphEdge] = []
+    var allNodes: [GraphNode] = []
+    var allEdges: [GraphEdge] = []
     private var buildTask: Task<Void, Never>?
+
+    /// Holder so the lens extension can cancel any in-flight load.
+    final class LensTaskBox {
+        var task: Task<Void, Never>?
+    }
+    let lensTaskBox = LensTaskBox()
 
     // Dependencies
     private let peopleRepository = PeopleRepository.shared
@@ -1286,7 +1313,7 @@ final class RelationshipGraphCoordinator {
 
     // MARK: - Health Mapping
 
-    private func mapHealthToLevel(_ health: RelationshipHealth) -> GraphNode.HealthLevel {
+    func mapHealthToLevel(_ health: RelationshipHealth) -> GraphNode.HealthLevel {
         switch health.decayRisk {
         case .none, .low:
             return .healthy
