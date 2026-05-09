@@ -158,23 +158,39 @@ private struct GlassBlockLockOverlay: View {
                 .font(.system(size: 22, weight: .semibold, design: .rounded))
                 .foregroundStyle(.primary)
 
-            // Replace the static "click to unlock" hint with a Try Again
-            // button when biometrics has been cancelled or failed. The
-            // primary prompt is automatic; this is the recovery path.
+            // Always-visible primary button. The auto-prompt (driven by
+            // system events in AppLockService) is still the happy path;
+            // this button is the discoverable fallback when the prompt
+            // didn't fire or the user dismissed it. LAContext uses
+            // `.deviceOwnerAuthentication`, so password fallback appears
+            // automatically inside the system prompt.
             if lockService.isAuthenticating {
-                Text("Unlocking…")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else if lockService.authError != nil {
-                Button("Try Again with Touch ID") {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Unlocking…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Button {
                     lockService.authenticate()
+                } label: {
+                    Label(
+                        lockService.isBiometricAvailable ? "Unlock with Touch ID" : "Unlock SAM",
+                        systemImage: lockService.isBiometricAvailable ? "touchid" : "lock.open"
+                    )
+                    .labelStyle(.titleAndIcon)
                 }
                 .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-            } else {
-                Text("Click to unlock")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                .controlSize(.large)
+
+                if let error = lockService.authError {
+                    Text(error)
+                        .font(.caption2)
+                        .foregroundStyle(.red)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 240)
+                }
             }
         }
         .padding(.horizontal, 44)
