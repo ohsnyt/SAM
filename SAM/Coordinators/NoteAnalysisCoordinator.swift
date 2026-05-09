@@ -299,10 +299,24 @@ final class NoteAnalysisCoordinator {
 
     // MARK: - Relationship Summary
 
+    /// Minimum interval between summary regenerations for the same person.
+    /// Note save + comms import can both fire within seconds for the same
+    /// person, so without this guard we burn an LLM call twice for identical
+    /// inputs. `force: true` bypasses the throttle for explicit user requests.
+    private static let summaryThrottle: TimeInterval = 300  // 5 minutes
+
     /// Refresh the AI-generated relationship summary for a person.
     /// Called after note analysis completes for notes linked to this person.
-    func refreshRelationshipSummary(for person: SamPerson) async {
+    func refreshRelationshipSummary(for person: SamPerson, force: Bool = false) async {
         let displayName = person.displayNameCache ?? person.displayName
+
+        if !force,
+           let last = person.summaryUpdatedAt,
+           Date.now.timeIntervalSince(last) < Self.summaryThrottle {
+            logger.debug("Relationship summary throttled for \(displayName, privacy: .private) — last refresh \(Int(Date.now.timeIntervalSince(last)))s ago")
+            return
+        }
+
         do {
             // Gather notes
             let notes = try notesRepository.fetchNotes(forPerson: person)

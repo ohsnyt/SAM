@@ -4,6 +4,44 @@
 
 ---
 
+## Three duplicate-work fixes from log audit: WhatsApp re-scan, summary regen, role deduction (May 9, 2026)
+
+**What**: A log review surfaced three patterns of duplicate work running every comms-import cycle: WhatsApp unknown senders being re-recorded on every pass with `Date()` overwriting `latestEmailDate`, relationship summaries regenerating back-to-back when a note save and a comms import touched the same person within seconds, and role deduction walking the full candidate set even when no person's evidence had changed since the last run.
+
+### Why
+
+- "Recorded 18 unknown WhatsApp senders for triage" appeared 5× in a single import window, with "Unknown senders: 0 new, 18 updated" trailing each one. Investigation showed `discoverWhatsAppUnknownSenders` was passing `date: Date()` for every JID and `bulkRecordUnknownSenders` was unconditionally overwriting `latestEmailDate` and bumping `emailCount`. The "known to SAM" identifier set used to filter out triaged senders only contained SamPerson identifiers — UnknownSender rows were treated as fresh on every full-DB sweep.
+- "Updated relationship summary for X" repeated for the same person within seconds. `refreshRelationshipSummary(for:)` is called from both note analysis (post-save) and comms import (post-import), neither of which checked when the last refresh happened. Two LLM calls for identical inputs.
+- "Found 46 candidates for role deduction" repeated every 10 minutes (per the existing throttle) even when no role assignments had occurred and no new evidence had arrived for any candidate. The candidate-scoring loop ran in full each time and produced identical suggestions.
+
+### Architecture
+
+- **`UnknownSenderRepository.bulkRecordUnknownSenders`** — Now skips field updates when `sender.date <= record.latestEmailDate ?? .distantPast`. Display-name backfill and marketing-flag upgrade still happen (those are signal-additive). `emailCount` and `latestSubject` only increment on a strictly newer message. The "0 new, N updated" log line will now report 0 for repeated identical scans.
+- **`UnknownSenderRepository.triagedIdentifiers()`** — New method returning every email/phone in the UnknownSender table regardless of status. Used during comms import to widen the "known to SAM" set so triaged-but-not-yet-added senders aren't re-recorded as fresh unknowns on every cycle. Pending senders are included because re-recording them inflates counters without adding signal.
+- **`CommunicationsImportCoordinator.performImport`** — Builds two sets now: `knownIdentifiers` (people + triaged) for general filtering, and `knownPhonesUnion` (phones + triaged) specifically for the WhatsApp post-scan sweep. Logs the triaged count alongside email/phone counts.
+- **`WhatsAppService.fetchAllJIDs`** — Tuple type extended to include `latestMessageDate: Date?`, computed via `MAX(m.ZMESSAGEDATE)` per-chat-session. Callers pass this through instead of `Date()`. JIDs with no messages (shouldn't happen given the JOIN, but defensively) get `.distantPast`.
+- **`NoteAnalysisCoordinator.refreshRelationshipSummary(for:force:)`** — Added a 5-minute throttle keyed on `person.summaryUpdatedAt`. Skips silently with a debug log when called within the window. New `force: Bool = false` parameter for explicit user-driven refreshes.
+- **`RoleDeductionEngine.deduceRoles(force:)`** — Added a candidate-set fingerprint check. After building the candidate list, hashes `sortedJoin(personID + ":" + linkedEvidence.count)` and compares to `lastCandidateHashKey` in UserDefaults. Match means every candidate's signals are unchanged → skip the LLM scoring loop entirely, log "candidate set unchanged," update `lastRunDateKey`, return `.complete`. Fingerprint persists alongside the date on every successful run.
+
+### Verified
+
+- `xcodebuild -scheme SAM -destination 'platform=macOS' build` — `BUILD SUCCEEDED`.
+- All four fixes are additive (new methods, new guards, new parameters with defaults). Existing call sites continue to work unchanged.
+
+### Files
+
+- `SAM/Services/WhatsAppService.swift` — `fetchAllJIDs` returns `latestMessageDate`.
+- `SAM/Coordinators/CommunicationsImportCoordinator.swift` — Triaged-identifier union, real message-date passthrough, post-scan uses `knownPhonesUnion`.
+- `SAM/Repositories/UnknownSenderRepository.swift` — `triagedIdentifiers()` method, `bulkRecordUnknownSenders` freshness guard.
+- `SAM/Coordinators/NoteAnalysisCoordinator.swift` — 5-minute summary throttle, `force` parameter.
+- `SAM/Coordinators/RoleDeductionEngine.swift` — Candidate fingerprint check, `lastCandidateHashKey` persistence.
+
+### Not addressed (yet)
+
+The "Building known identifier sets…" log appearing 5× per minute reflects 5× `performImport()` calls — file watchers + 60s legacy poll + 5-min fallback poll all firing independently. The unknown-sender fixes above eliminate most of the wasted work each pass does, so 5× imports now produces ~5× the cost of "fetch known identifiers" rather than ~5× the cost of "re-record every WhatsApp JID + regenerate every relationship summary." A consolidation pass on the trigger model is left for a future cleanup.
+
+---
+
 ## Relationship Graph rebuilt around four lenses (May 9, 2026)
 
 **What**: The Graph entry experience is now lens-based. Opening the Graph tab anchors `Me` at center and presents a 2×2 picker of four focused questions; selecting a lens streams in only the nodes that answer that question, in deterministic radial waves with no force layout. The previous "load all 264 nodes and force-simulate" path is gone — that's what was producing the 5–10 s beachball and the visually noisy hairball.

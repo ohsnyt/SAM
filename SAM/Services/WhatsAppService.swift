@@ -189,12 +189,12 @@ actor WhatsAppService {
     }
 
     /// Fetch all unique JIDs with message counts (for unknown sender discovery).
-    func fetchAllJIDs(dbURL: URL) async throws -> [(jid: String, partnerName: String?, messageCount: Int)] {
+    func fetchAllJIDs(dbURL: URL) async throws -> [(jid: String, partnerName: String?, messageCount: Int, latestMessageDate: Date?)] {
         let db = try openDatabase(at: dbURL)
         defer { sqlite3_close(db) }
 
         let query = """
-            SELECT cs.ZCONTACTJID, cs.ZPARTNERNAME, COUNT(m.Z_PK) as msg_count
+            SELECT cs.ZCONTACTJID, cs.ZPARTNERNAME, COUNT(m.Z_PK) as msg_count, MAX(m.ZMESSAGEDATE) as last_date
             FROM ZWACHATSESSION cs
             JOIN ZWAMESSAGE m ON m.ZCHATSESSION = cs.Z_PK
             WHERE cs.ZSESSIONTYPE = 0
@@ -209,13 +209,20 @@ actor WhatsAppService {
         }
         defer { sqlite3_finalize(stmt) }
 
-        var jids: [(jid: String, partnerName: String?, messageCount: Int)] = []
+        var jids: [(jid: String, partnerName: String?, messageCount: Int, latestMessageDate: Date?)] = []
 
         while sqlite3_step(stmt) == SQLITE_ROW {
             let jid = columnText(stmt, 0) ?? ""
             let partnerName = columnText(stmt, 1)
             let count = Int(sqlite3_column_int(stmt, 2))
-            jids.append((jid: jid, partnerName: partnerName, messageCount: count))
+            let latestDate: Date?
+            if sqlite3_column_type(stmt, 3) == SQLITE_NULL {
+                latestDate = nil
+            } else {
+                let dateVal = sqlite3_column_double(stmt, 3)
+                latestDate = Date(timeIntervalSinceReferenceDate: dateVal)
+            }
+            jids.append((jid: jid, partnerName: partnerName, messageCount: count, latestMessageDate: latestDate))
         }
 
         logger.debug("Found \(jids.count) unique WhatsApp JIDs")

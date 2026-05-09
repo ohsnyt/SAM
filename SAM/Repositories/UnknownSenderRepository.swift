@@ -57,6 +57,19 @@ final class UnknownSenderRepository {
         return Set(all.filter { $0.status == .neverInclude }.map(\.email))
     }
 
+    /// Returns every identifier (email or canonicalized phone) SAM has already
+    /// triaged in any status. Use this to short-circuit bulk re-scans (WhatsApp
+    /// JID sweep, sent-recipient discovery) so previously-seen senders aren't
+    /// re-recorded on every import cycle. Pending senders are included because
+    /// re-recording them inflates emailCount + latestEmailDate without adding
+    /// signal — they're already in the triage queue.
+    func triagedIdentifiers() throws -> Set<String> {
+        guard let modelContext else { throw RepositoryError.notConfigured }
+        let descriptor = FetchDescriptor<UnknownSender>()
+        let all = try modelContext.fetch(descriptor)
+        return Set(all.map(\.email))
+    }
+
     /// Fetch a single unknown sender by ID.
     func fetchByID(_ id: UUID) throws -> UnknownSender? {
         guard let modelContext else { throw RepositoryError.notConfigured }
@@ -103,7 +116,22 @@ final class UnknownSenderRepository {
 
         for (canonicalEmail, sender) in grouped {
             if let record = existingByEmail[canonicalEmail] {
-                // Update existing
+                // Only count this sender as "updated" if the inbound date is
+                // strictly newer than what we already have. Bulk re-scans
+                // (e.g. WhatsApp full-DB sweeps every comms-import cycle) used
+                // to bump emailCount + overwrite latestEmailDate every pass,
+                // which produced inflated counters and stamped every record
+                // with `Date()` regardless of whether new mail had arrived.
+                guard sender.date > (record.latestEmailDate ?? .distantPast) else {
+                    // Backfill display name if we now have one and didn't before.
+                    if let name = sender.displayName, record.displayName == nil {
+                        record.displayName = name
+                    }
+                    if sender.isLikelyMarketing {
+                        record.isLikelyMarketing = true
+                    }
+                    continue
+                }
                 record.emailCount += 1
                 record.latestSubject = sender.subject
                 record.latestEmailDate = sender.date

@@ -384,12 +384,23 @@ final class CommunicationsImportCoordinator {
         var deferredWAThreads: [DeferredWAThreadAnalysis] = []
 
         do {
-            // Build known identifier sets
+            // Build known identifier sets. "Known to SAM" is the union of:
+            //   1. Emails + phones tied to a SamPerson (canonical contacts)
+            //   2. Every identifier already in the UnknownSender triage table —
+            //      pending or otherwise. Without this, full-DB sweeps (WhatsApp
+            //      JID list, sent-recipient discovery) re-record the same
+            //      senders on every import cycle, inflating emailCount and
+            //      stamping latestEmailDate with `Date()` even when no new
+            //      mail arrived.
             logger.debug("[comms-import] Building known identifier sets…")
             let knownEmails = try peopleRepository.allKnownEmails()
             let knownPhones = try peopleRepository.allKnownPhones()
-            let knownIdentifiers = knownEmails.union(knownPhones)
-            logger.debug("[comms-import] Known: \(knownEmails.count) emails, \(knownPhones.count) phones")
+            let triaged = (try? UnknownSenderRepository.shared.triagedIdentifiers()) ?? []
+            let knownIdentifiers = knownEmails.union(knownPhones).union(triaged)
+            // The WhatsApp post-scan only filters by phone, so keep a phone-aware
+            // variant that also excludes triaged phone identifiers.
+            let knownPhonesUnion = knownPhones.union(triaged)
+            logger.debug("[comms-import] Known: \(knownEmails.count) emails, \(knownPhones.count) phones, \(triaged.count) triaged")
 
             // --- iMessage ---
             if messagesEnabled, bookmarkManager.hasMessagesAccess {
@@ -425,9 +436,11 @@ final class CommunicationsImportCoordinator {
 
             // --- WhatsApp Unknown Sender Discovery + Enrichment ---
             // Both passes iterate the same JID list, so fetch once and share.
+            // Pass the triaged-aware phone set so JIDs already in the
+            // UnknownSender table aren't re-recorded every cycle.
             if (whatsAppMessagesEnabled || whatsAppCallsEnabled), bookmarkManager.hasWhatsAppAccess {
                 logger.debug("[comms-import] Starting WhatsApp unknown sender discovery…")
-                await runWhatsAppPostScan(knownPhones: knownPhones)
+                await runWhatsAppPostScan(knownPhones: knownPhonesUnion)
                 logger.debug("[comms-import] WhatsApp discovery done")
             }
 
@@ -800,7 +813,7 @@ final class CommunicationsImportCoordinator {
         guard resolved.directory.startAccessingSecurityScopedResource() else { return }
         defer { bookmarkManager.stopAccessing(resolved.directory) }
 
-        let allJIDs: [(jid: String, partnerName: String?, messageCount: Int)]
+        let allJIDs: [(jid: String, partnerName: String?, messageCount: Int, latestMessageDate: Date?)]
         do {
             allJIDs = try await whatsAppService.fetchAllJIDs(dbURL: resolved.messagesDB)
         } catch {
@@ -813,7 +826,7 @@ final class CommunicationsImportCoordinator {
     }
 
     private func discoverWhatsAppUnknownSenders(
-        allJIDs: [(jid: String, partnerName: String?, messageCount: Int)],
+        allJIDs: [(jid: String, partnerName: String?, messageCount: Int, latestMessageDate: Date?)],
         knownPhones: Set<String>
     ) {
         var unknownSenders: [(email: String, displayName: String?, subject: String, date: Date, source: EvidenceSource, isLikelyMarketing: Bool)] = []
@@ -822,11 +835,16 @@ final class CommunicationsImportCoordinator {
             let phone = whatsAppJIDToPhone(jid.jid)
             guard !knownPhones.contains(phone) else { continue }
             let displayName = jid.partnerName ?? phone
+            // Pass the actual most-recent message date so the unknown-sender
+            // record reflects when the JID last produced traffic. Falling back
+            // to .distantPast (rather than Date()) prevents an empty-history
+            // JID from dressing itself up as freshly active.
+            let mostRecent = jid.latestMessageDate ?? .distantPast
             unknownSenders.append((
                 email: phone,
                 displayName: displayName,
                 subject: "WhatsApp (\(jid.messageCount) messages)",
-                date: Date(),
+                date: mostRecent,
                 source: .whatsApp,
                 isLikelyMarketing: false
             ))
@@ -845,7 +863,7 @@ final class CommunicationsImportCoordinator {
     /// When a WhatsApp JID matches a SamPerson by canonicalized phone, but the full
     /// international number isn't in their phoneAliases, suggest adding it.
     private func generateWhatsAppEnrichments(
-        allJIDs: [(jid: String, partnerName: String?, messageCount: Int)],
+        allJIDs: [(jid: String, partnerName: String?, messageCount: Int, latestMessageDate: Date?)],
         knownPhones: Set<String>
     ) {
         guard let people = try? peopleRepository.fetchAll() else { return }

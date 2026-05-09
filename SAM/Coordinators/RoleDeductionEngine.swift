@@ -54,6 +54,11 @@ final class RoleDeductionEngine {
 
     private static let suggestionsKey = "sam.roleDeduction.suggestions"
     private static let lastRunDateKey = "sam.roleDeduction.lastRunDate"
+    /// Fingerprint of the candidate set from the most recent successful run.
+    /// Lets the engine short-circuit when a follow-up run would walk the same
+    /// people with the same evidence — i.e., nothing changed and the LLM
+    /// scoring would produce identical output.
+    private static let lastCandidateHashKey = "sam.roleDeduction.lastCandidateHash"
 
     // MARK: - Init
 
@@ -177,6 +182,23 @@ final class RoleDeductionEngine {
                 return person.hasMeaningfulSignal
             }
 
+            // Fingerprint = sorted (personID, evidenceCount) pairs.
+            // If a follow-up run produces the same fingerprint, every
+            // candidate's signals are unchanged and the per-candidate scoring
+            // loop is guaranteed to produce identical suggestions.
+            let fingerprint = candidates
+                .map { "\($0.id.uuidString):\($0.linkedEvidence.count)" }
+                .sorted()
+                .joined(separator: "|")
+            if !force,
+               let lastHash = UserDefaults.standard.string(forKey: Self.lastCandidateHashKey),
+               lastHash == fingerprint {
+                logger.debug("Role deduction skipped — candidate set unchanged (\(candidates.count) candidates, same evidence)")
+                deductionStatus = .complete
+                UserDefaults.standard.set(Date.now, forKey: Self.lastRunDateKey)
+                return
+            }
+
             logger.debug("Found \(candidates.count) candidates for role deduction")
 
             var suggestions: [RoleSuggestion] = []
@@ -225,6 +247,7 @@ final class RoleDeductionEngine {
             rebuildBatches()
             saveSuggestions()
             UserDefaults.standard.set(Date(), forKey: Self.lastRunDateKey)
+            UserDefaults.standard.set(fingerprint, forKey: Self.lastCandidateHashKey)
 
             deductionStatus = .complete
             let pendingCount = pendingSuggestions.count
