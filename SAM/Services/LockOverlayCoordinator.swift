@@ -153,8 +153,6 @@ final class LockOverlayCoordinator {
                 self?.syncOverlayFrame(parentIndex: index)
             }
         }
-
-        logger.debug("Attached overlay to: \(parent.identifier?.rawValue ?? "<no id>", privacy: .public)")
     }
 
     private func detachOverlay(atIndex index: Int) {
