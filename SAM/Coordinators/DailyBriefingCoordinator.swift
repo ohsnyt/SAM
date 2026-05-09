@@ -402,6 +402,23 @@ final class DailyBriefingCoordinator {
 
             // Stage 5: Persist
             generationStageLabel = "Saving your briefing..."
+            // Delete any prior morning briefings for today before inserting the
+            // new one. Without this, regenerations accumulate records and an
+            // unsorted fetch on next launch returns the oldest by insertion
+            // order — surfacing a stale "Updated N hr ago" timestamp.
+            if let context {
+                var dupeDescriptor = FetchDescriptor<SamDailyBriefing>(
+                    predicate: #Predicate {
+                        $0.dateKey == todayKey && $0.briefingTypeRawValue == "morning"
+                    }
+                )
+                dupeDescriptor.fetchLimit = 50
+                if let existing = try? context.fetch(dupeDescriptor) {
+                    for old in existing {
+                        context.delete(old)
+                    }
+                }
+            }
             context?.insert(briefing)
             try context?.save()
 
@@ -1373,8 +1390,12 @@ final class DailyBriefingCoordinator {
         let todayKey = Calendar.current.startOfDay(for: .now)
 
         do {
+            // Sort by generatedAt descending so any duplicate records for today
+            // (from older builds before the delete-before-insert fix) resolve
+            // to the freshest one — `first { ... }` then picks the latest.
             var descriptor = FetchDescriptor<SamDailyBriefing>(
-                predicate: #Predicate { $0.dateKey == todayKey }
+                predicate: #Predicate { $0.dateKey == todayKey },
+                sortBy: [SortDescriptor(\.generatedAt, order: .reverse)]
             )
             descriptor.fetchLimit = 10
 
