@@ -708,7 +708,7 @@ final class EvidenceRepository {
     /// Uses PeopleRepository as the authoritative source for known emails,
     /// avoiding cross-ModelContext staleness (EvidenceRepository and
     /// PeopleRepository each have their own ModelContext).
-    func refreshParticipantResolution() throws {
+    func refreshParticipantResolution() async throws {
         guard let context = context else { throw RepositoryError.notConfigured }
 
         // Read the authoritative email set from PeopleRepository's context
@@ -735,6 +735,7 @@ final class EvidenceRepository {
 
         let all = try fetchAll()
         var updated = 0
+        var batch = 0
 
         for item in all {
             guard item.source == .calendar || item.source == .mail
@@ -781,6 +782,9 @@ final class EvidenceRepository {
                 setLinkedPeople(resolved, on: item)
                 updated += 1
             }
+
+            batch += 1
+            if batch % 500 == 0 { await Task.yield() }
         }
 
         if updated > 0 {
@@ -790,8 +794,8 @@ final class EvidenceRepository {
     }
 
     /// Legacy alias — calls `refreshParticipantResolution()`.
-    func reresolveParticipantsForUnlinkedEvidence() throws {
-        try refreshParticipantResolution()
+    func reresolveParticipantsForUnlinkedEvidence() async throws {
+        try await refreshParticipantResolution()
     }
 
     // MARK: - Recent Meeting Lookup

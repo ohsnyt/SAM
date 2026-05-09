@@ -131,6 +131,7 @@ struct OutcomeQueueView: View {
             .sheet(item: $showRatingFor) { outcome in
                 ratingSheet(for: outcome)
             }
+            .restoreOnUnlock(item: $showRatingFor)
             .sheet(isPresented: $showDeepWorkSheet) {
                 if let outcome = deepWorkOutcome {
                     DeepWorkScheduleSheet(
@@ -151,6 +152,7 @@ struct OutcomeQueueView: View {
                     )
                 }
             }
+            .restoreOnUnlock(isPresented: $showDeepWorkSheet)
             .sheet(isPresented: $showContentDraftSheet) {
                 if let outcome = contentDraftOutcome {
                     let parsed = parseContentTopic(from: outcome.sourceInsightSummary)
@@ -170,6 +172,7 @@ struct OutcomeQueueView: View {
                     )
                 }
             }
+            .restoreOnUnlock(isPresented: $showContentDraftSheet)
             .sheet(isPresented: $showSetupGuideSheet) {
                 if let outcome = setupGuideOutcome {
                     LinkedInSetupGuideSheet(
@@ -190,6 +193,7 @@ struct OutcomeQueueView: View {
                     )
                 }
             }
+            .restoreOnUnlock(isPresented: $showSetupGuideSheet)
         }
     }
 

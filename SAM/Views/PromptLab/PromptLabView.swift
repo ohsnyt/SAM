@@ -104,6 +104,7 @@ struct PromptLabView: View {
             } message: {
                 Text(importResultMessage)
             }
+            .dismissOnLock(isPresented: $showImportResult)
 
             // Clear runs
             Button {

@@ -186,6 +186,7 @@ struct RelationshipGraphView: View {
                     onCancel: { showGhostMergePicker = false }
                 )
             }
+            .restoreOnUnlock(isPresented: $showGhostMergePicker)
             .alert(
                 "Link Ghost to Contact?",
                 isPresented: $showDropMergeConfirmation
@@ -202,11 +203,11 @@ struct RelationshipGraphView: View {
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                if let targetID = pendingDropMergePersonID,
-                   let targetNode = coordinator.nodes.first(where: { $0.id == targetID }) {
-                    Text("Link all \"\(ghostMergeSourceName)\" mentions to \(targetNode.displayName)?")
+                if pendingDropMergePersonID != nil {
+                    Text("Link all ghost mentions to this contact?")
                 }
             }
+            .dismissOnLock(isPresented: $showDropMergeConfirmation)
             .alert("Merge People?", isPresented: $showPersonMergeConfirmation) {
                 Button("Merge", role: .destructive) {
                     guard let sourceID = pendingPersonMergeSourceID,
@@ -218,14 +219,9 @@ struct RelationshipGraphView: View {
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                let sourceName = pendingPersonMergeSourceID.flatMap { sid in
-                    coordinator.nodes.first(where: { $0.id == sid })?.displayName
-                } ?? "selected person"
-                let targetName = pendingPersonMergeTargetID.flatMap { tid in
-                    coordinator.nodes.first(where: { $0.id == tid })?.displayName
-                } ?? "target person"
-                Text("Merge \"\(sourceName)\" into \"\(targetName)\"? All evidence, notes, and relationships will be transferred to \(targetName). This can be undone.")
+                Text("Merge these contacts? All evidence, notes, and relationships will be transferred. This can be undone.")
             }
+            .dismissOnLock(isPresented: $showPersonMergeConfirmation)
             .alert("Confirm Relationship?", isPresented: $showEdgeConfirmAlert) {
                 Button("Confirm") {
                     if let edge = pendingEdgeConfirmation,
@@ -245,12 +241,11 @@ struct RelationshipGraphView: View {
                     pendingEdgeConfirmation = nil
                 }
             } message: {
-                if let edge = pendingEdgeConfirmation {
-                    let sourceName = coordinator.nodes.first(where: { $0.id == edge.sourceID })?.displayName ?? "?"
-                    let targetName = coordinator.nodes.first(where: { $0.id == edge.targetID })?.displayName ?? "?"
-                    Text("\(sourceName) is \(edge.label ?? "related to") \(targetName)")
+                if pendingEdgeConfirmation != nil {
+                    Text("Confirm this relationship?")
                 }
             }
+            .dismissOnLock(isPresented: $showEdgeConfirmAlert)
             .popover(isPresented: Binding(
                 get: { rolePickerNodeID != nil },
                 set: { if !$0 { rolePickerNodeID = nil } }

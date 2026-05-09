@@ -221,15 +221,18 @@ struct PersonDetailView: View {
         }) {
             EnrichmentReviewSheet(person: person, enrichments: pendingEnrichments)
         }
+        .restoreOnUnlock(isPresented: $showingEnrichmentSheet)
         .sheet(isPresented: $showingContextPicker) {
             ContextPickerSheet(person: person)
         }
+        .restoreOnUnlock(isPresented: $showingContextPicker)
         .sheet(isPresented: $showingReferrerPicker) {
             ReferrerPickerSheet(
                 person: person,
                 candidates: allPeople.filter { $0.id != person.id && !$0.isMe }
             )
         }
+        .restoreOnUnlock(isPresented: $showingReferrerPicker)
         .sheet(isPresented: $showingCorrectionSheet, onDismiss: {
             loadNotes()
         }) {
@@ -238,6 +241,7 @@ struct PersonDetailView: View {
                 currentSummary: person.relationshipSummary ?? ""
             )
         }
+        .restoreOnUnlock(isPresented: $showingCorrectionSheet)
         .sheet(isPresented: $showingProductionForm) {
             ProductionEntryForm(
                 personName: person.displayNameCache ?? person.displayName,
@@ -247,17 +251,21 @@ struct PersonDetailView: View {
                 }
             )
         }
+        .restoreOnUnlock(isPresented: $showingProductionForm)
         .sheet(isPresented: $showingManualTaskSheet) {
             ManualTaskSheet(prefilledPerson: person)
         }
+        .restoreOnUnlock(isPresented: $showingManualTaskSheet)
         .sheet(isPresented: $showingMergeSheet) {
             MergeContactSheet(sourcePerson: person)
         }
+        .restoreOnUnlock(isPresented: $showingMergeSheet)
         .alert("Error", isPresented: $showingError) {
             Button("OK") { }
         } message: {
             Text(errorMessage)
         }
+        .dismissOnLock(isPresented: $showingError)
         .alert(
             "Change Lifecycle Status",
             isPresented: $showingLifecycleConfirm,
@@ -273,15 +281,16 @@ struct PersonDetailView: View {
         } message: { status in
             switch status {
             case .archived:
-                Text("Archive \(person.displayNameCache ?? person.displayName)? They'll be hidden from active lists and won't receive suggestions. You can find them later using the Archived filter and restore them anytime.")
+                Text("Archive this contact? They'll be hidden from active lists and won't receive suggestions. You can find them later using the Archived filter and restore them anytime.")
             case .dnc:
-                Text("Mark \(person.displayNameCache ?? person.displayName) as Do Not Contact? SAM will never generate outreach suggestions for them. You can reverse this anytime from their profile.")
+                Text("Mark this contact as Do Not Contact? SAM will never generate outreach suggestions for them. You can reverse this anytime from their profile.")
             case .deceased:
-                Text("Mark \(person.displayNameCache ?? person.displayName) as deceased? Their record will be preserved for reference but excluded from all outreach and suggestions.")
+                Text("Mark this contact as deceased? Their record will be preserved for reference but excluded from all outreach and suggestions.")
             case .active:
-                Text("Reactivate \(person.displayNameCache ?? person.displayName)?")
+                Text("Reactivate this contact?")
             }
         }
+        .dismissOnLock(isPresented: $showingLifecycleConfirm)
     }
     
     private let personCoachingTip = PersonCoachingTip()
@@ -976,6 +985,7 @@ struct PersonDetailView: View {
                 }
 
             }
+            .dismissOnLock(isPresented: $showRecruitingRegressionAlert)
             .alert("Move to Earlier Stage?", isPresented: $showRecruitingRegressionAlert) {
                 Button("Cancel", role: .cancel) {
                     pendingRecruitingStage = nil
@@ -988,7 +998,7 @@ struct PersonDetailView: View {
                 }
             } message: {
                 if let pending = pendingRecruitingStage, let current = recruitingStage?.stage {
-                    Text("This will move \(person.displayNameCache ?? person.displayName) from \(current.rawValue) back to \(pending.rawValue).")
+                    Text("This will move this contact from \(current.rawValue) back to \(pending.rawValue).")
                 }
             }
         }

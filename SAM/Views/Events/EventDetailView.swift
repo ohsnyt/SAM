@@ -89,6 +89,7 @@ struct EventDetailView: View {
         } message: {
             Text("This will delete the event and all its participant data. You can undo this for up to 30 days.")
         }
+        .dismissOnLock(isPresented: $showDeleteConfirmation)
         .alert("Notify Participants?", isPresented: $showUpdateNotification) {
             Button("Send Updates") {
                 // showUpdateNotification is already dismissed; show the update sheet
@@ -98,8 +99,9 @@ struct EventDetailView: View {
                 pendingChangeSummary = nil
             }
         } message: {
-            Text("Event details changed. Would you like to notify participants who have already been invited?\n\n\(pendingChangeSummary?.changeDescription ?? "")")
+            Text("Event details changed. Would you like to notify participants who have already been invited?")
         }
+        .dismissOnLock(isPresented: $showUpdateNotification)
         .sheet(isPresented: $showUpdateSheet, onDismiss: {
             pendingChangeSummary = nil
             refreshToken = UUID()
@@ -110,6 +112,7 @@ struct EventDetailView: View {
                 }
             }
         }
+        .restoreOnUnlock(isPresented: $showUpdateSheet)
     }
 
     // MARK: - Delete
@@ -220,6 +223,7 @@ struct EventDetailView: View {
                     refreshToken = UUID()
                 }
             }
+            .restoreOnUnlock(isPresented: $showBulkReviewSheet)
 
             // Unknown sender RSVPs
             if !unknownRSVPs.isEmpty {
@@ -289,6 +293,7 @@ struct EventDetailView: View {
                 lastActionMessage = "Added to event and confirmed"
             }
         }
+        .restoreOnUnlock(item: $quickAddRSVP)
     }
 
     // MARK: - Event Header
@@ -333,6 +338,7 @@ struct EventDetailView: View {
                         }
                     })
                 }
+                .restoreOnUnlock(isPresented: $showEditEvent)
             }
 
             HStack(spacing: 16) {
@@ -445,19 +451,23 @@ struct EventDetailView: View {
         .sheet(isPresented: $showAddParticipants, onDismiss: { refreshToken = UUID() }) {
             AddParticipantsSheet(event: event)
         }
+        .restoreOnUnlock(isPresented: $showAddParticipants)
         .sheet(isPresented: $showSocialPromotion) {
             SocialPromotionSheet(event: event)
         }
+        .restoreOnUnlock(isPresented: $showSocialPromotion)
         .sheet(isPresented: $showInvitationDrafts, onDismiss: { refreshToken = UUID() }) {
             InvitationDraftSheet(event: event) {
                 refreshToken = UUID()
             }
         }
+        .restoreOnUnlock(isPresented: $showInvitationDrafts)
         .sheet(isPresented: $showEvaluationImport, onDismiss: { refreshToken = UUID() }) {
             EventEvaluationImportSheet(event: event) {
                 refreshToken = UUID()
             }
         }
+        .restoreOnUnlock(isPresented: $showEvaluationImport)
         .sheet(isPresented: Binding(
             get: { SentMailDetectionService.shared.pendingReviewResult != nil },
             set: { if !$0 { SentMailDetectionService.shared.pendingReviewResult = nil } }
@@ -469,6 +479,10 @@ struct EventDetailView: View {
                 }
             }
         }
+        .restoreOnUnlock(isPresented: Binding(
+            get: { SentMailDetectionService.shared.pendingReviewResult != nil },
+            set: { if !$0 { SentMailDetectionService.shared.pendingReviewResult = nil } }
+        ))
     }
 
     // MARK: - Participant Detail (right)
@@ -912,8 +926,9 @@ struct ParticipantDetailView: View {
             }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("This will remove \(participation.person?.displayNameCache ?? "this person") from the event and clear all invitation and RSVP data. SAM will not associate them with this event.")
+            Text("This will remove this person from the event and clear all invitation and RSVP data. SAM will not associate them with this event.")
         }
+        .dismissOnLock(isPresented: $showRemoveConfirmation)
         .sheet(isPresented: $showInvitationDraft) {
             InvitationDraftSheet(
                 event: event,
@@ -922,6 +937,7 @@ struct ParticipantDetailView: View {
                 showInvitationDraft = false
             }
         }
+        .restoreOnUnlock(isPresented: $showInvitationDraft)
     }
 
     // MARK: - Helpers

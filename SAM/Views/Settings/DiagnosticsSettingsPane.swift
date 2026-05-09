@@ -25,6 +25,9 @@ struct DiagnosticsSettingsPane: View {
     @State private var isSendingTest = false
     @State private var lastSendStatus: String?
 
+    // Performance — Phase 1a hang watchdog
+    @State private var recentHangs: [HangReport] = []
+
     var body: some View {
         Form {
             Section {
@@ -58,8 +61,14 @@ struct DiagnosticsSettingsPane: View {
                 }
                 .padding()
             }
+
+            Section {
+                performanceBlock
+                    .padding()
+            }
         }
         .formStyle(.grouped)
+        .task { reloadHangs() }
         .fileExporter(
             isPresented: $showSavePanel,
             document: JSONReportDocument(data: pendingJSON ?? Data()),
@@ -68,6 +77,7 @@ struct DiagnosticsSettingsPane: View {
         ) { _ in
             pendingJSON = nil
         }
+        .dismissOnLock(isPresented: $showSavePanel)
     }
 
     // MARK: Header / actions
@@ -273,6 +283,86 @@ struct DiagnosticsSettingsPane: View {
                 }
             }
         }
+    }
+
+    // MARK: Performance (hang watchdog)
+
+    private var performanceBlock: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Performance Watchdog", systemImage: "gauge.with.needle")
+                    .samFont(.headline)
+
+                Text("Detects when SAM's main thread freezes for 1 second or more. Each hang is written as JSON to ~/Library/Application Support/SAM/diagnostics, naming the operation that was running.")
+                    .samFont(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack(spacing: 12) {
+                Button("Refresh") { reloadHangs() }
+                    .buttonStyle(.bordered)
+
+                Button("Open Diagnostics Folder") { openDiagnosticsFolder() }
+                    .buttonStyle(.bordered)
+
+                Spacer()
+
+                Text("\(recentHangs.count) recent")
+                    .samFont(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if recentHangs.isEmpty {
+                Text("No hangs recorded yet. The watchdog runs continuously; reports appear here when the main thread stalls for over a second.")
+                    .samFont(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                hangsTable
+            }
+        }
+    }
+
+    private var hangsTable: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("When").bold()
+                Spacer()
+                Text("Operation").bold().frame(maxWidth: 240, alignment: .leading)
+                Text("Stalled").bold().frame(width: 70, alignment: .trailing)
+            }
+            .samFont(.caption)
+            .padding(.vertical, 4)
+
+            Divider()
+
+            ForEach(recentHangs, id: \.firedAt) { hang in
+                HStack(alignment: .top) {
+                    Text(hang.firedAt.formatted(date: .abbreviated, time: .standard))
+                        .monospacedDigit()
+                    Spacer()
+                    Text(hang.activeOperation ?? "—")
+                        .frame(maxWidth: 240, alignment: .leading)
+                        .foregroundStyle(hang.activeOperation == nil ? .secondary : .primary)
+                        .lineLimit(2)
+                    Text("\(hang.stalledForSeconds, specifier: "%.2f")s")
+                        .monospacedDigit()
+                        .frame(width: 70, alignment: .trailing)
+                }
+                .samFont(.caption)
+                .padding(.vertical, 3)
+
+                Divider()
+            }
+        }
+    }
+
+    private func reloadHangs() {
+        recentHangs = HangReportWriter.loadRecent(limit: 10)
+    }
+
+    private func openDiagnosticsFolder() {
+        guard let dir = PerformanceMonitor.diagnosticsDirectoryURL() else { return }
+        NSWorkspace.shared.open(dir)
     }
 
     // MARK: Actions

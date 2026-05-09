@@ -419,7 +419,10 @@ final class StrategicCoordinator {
 
         do {
             let allPeople = try peopleRepo.fetchAll()
-            let active = allPeople.filter { !$0.isArchived && !$0.isMe }
+            // Pattern analysis excludes dead-weight contacts (no-signal social
+            // imports / stale Apple Contacts). The role-distribution audit
+            // above intentionally includes everyone for full visibility.
+            let active = allPeople.filter { !$0.isArchived && !$0.isMe && $0.hasMeaningfulSignal }
 
             // Communication frequency by role
             var commsByRole: [String: (count: Int, people: Int)] = [:]

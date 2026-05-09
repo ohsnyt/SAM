@@ -89,6 +89,8 @@ struct RolesSettingsPane: View {
                 }
             )
         }
+        .restoreOnUnlock(isPresented: $showingEditor)
+        .dismissOnLock(isPresented: $showDeleteConfirmation)
         .alert("Delete Role?", isPresented: $showDeleteConfirmation) {
             Button("Cancel", role: .cancel) { }
             Button("Delete", role: .destructive) {
@@ -98,8 +100,8 @@ struct RolesSettingsPane: View {
                 }
             }
         } message: {
-            if let role = roleToDelete {
-                Text("Delete \"\(role.name)\" and all its candidate matches? This cannot be undone.")
+            if roleToDelete != nil {
+                Text("Delete this role and all its candidate matches? This cannot be undone.")
             }
         }
     }

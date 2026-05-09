@@ -51,6 +51,7 @@ struct EventManagerView: View {
                 refreshToken = UUID()
             })
         }
+        .restoreOnUnlock(isPresented: $showNewEventForm)
     }
 
     private var eventsContent: some View {

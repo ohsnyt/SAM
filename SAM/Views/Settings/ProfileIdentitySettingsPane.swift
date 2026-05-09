@@ -127,6 +127,7 @@ struct PersonalizationSettingsPane: View {
                 Text("This will permanently delete \(discovery.count) legacy store\(discovery.count == 1 ? "" : "s") (\(discovery.formattedSize)). Make sure you have migrated any data you need first.")
             }
         }
+        .dismissOnLock(isPresented: $showCleanupConfirmation)
     }
 
     // MARK: - Auto-fill

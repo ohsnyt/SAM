@@ -250,7 +250,7 @@ final class InsightGenerator {
         }
 
         for person in allPeople {
-            guard !person.isArchived, !person.isMe else { continue }
+            guard !person.isArchived, !person.isMe, person.hasMeaningfulSignal else { continue }
 
             let role = person.roleBadges.first
             let thresholds = RoleThresholds.forRole(role)
@@ -296,7 +296,7 @@ final class InsightGenerator {
         // 2. Predictive decay insights (skip if static insight already exists for same person)
         var processed = 0
         for person in allPeople {
-            guard !person.isArchived, !person.isMe else { continue }
+            guard !person.isArchived, !person.isMe, person.hasMeaningfulSignal else { continue }
             guard !staticInsightPersonIDs.contains(person.id) else { continue }
 
             processed += 1

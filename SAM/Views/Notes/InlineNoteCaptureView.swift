@@ -97,6 +97,10 @@ struct InlineNoteCaptureView: View {
         } message: { pending in
             Text("This PDF is for \"\(pending.profileName)\" but you're viewing \"\(pending.personName)\". Import anyway?")
         }
+        .dismissOnLock(isPresented: Binding(
+            get: { photoCoordinator.pendingLinkedInImport != nil },
+            set: { if !$0 { photoCoordinator.cancelPendingLinkedInImport() } }
+        ))
     }
 
     // MARK: - Collapsed Bar

@@ -110,11 +110,13 @@ struct GrowDashboardView: View {
                 onCancel: { selectedContentTopic = nil }
             )
         }
+        .restoreOnUnlock(item: $selectedContentTopic)
         .sheet(isPresented: $showCustomTopicSheet) {
             CustomTopicSheet { topic in
                 selectedContentTopic = topic
             }
         }
+        .restoreOnUnlock(isPresented: $showCustomTopicSheet)
     }
 
     // MARK: - Profile Tab

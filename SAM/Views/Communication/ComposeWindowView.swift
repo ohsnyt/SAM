@@ -42,13 +42,21 @@ struct ComposeWindowView: View {
 
     @Environment(\.dismiss) private var dismiss
 
+    // MARK: - Draft persistence
+
+    private static let draftKind = "compose-message"
+
+    private var draftID: String { payload.outcomeID.uuidString }
+
     // MARK: - Init
 
     init(payload: ComposePayload) {
         self.payload = payload
         _channel = State(initialValue: payload.channel)
-        _draftBody = State(initialValue: payload.draftBody)
-        _subject = State(initialValue: payload.subject ?? "")
+
+        let stored = DraftStore.shared.load(kind: Self.draftKind, id: payload.outcomeID.uuidString)
+        _draftBody = State(initialValue: stored?["body"] ?? payload.draftBody)
+        _subject = State(initialValue: stored?["subject"] ?? (payload.subject ?? ""))
     }
 
     // MARK: - Computed
@@ -242,6 +250,18 @@ struct ComposeWindowView: View {
         .frame(minWidth: 480, idealWidth: 540, minHeight: 340, idealHeight: 400)
         .onChange(of: draftBody) {
             complianceFlags = ComplianceScanner.scanWithSettings(draftBody)
+            DraftStore.shared.save(
+                kind: Self.draftKind,
+                id: draftID,
+                fields: ["body": draftBody, "subject": subject]
+            )
+        }
+        .onChange(of: subject) {
+            DraftStore.shared.save(
+                kind: Self.draftKind,
+                id: draftID,
+                fields: ["body": draftBody, "subject": subject]
+            )
         }
         .task {
             // Log AI-generated draft for audit trail
@@ -446,6 +466,7 @@ struct ComposeWindowView: View {
             try? ComplianceAuditRepository.shared.markSent(entryID: auditID, finalDraft: finalText)
         }
         try? outcomeRepo.markCompleted(id: payload.outcomeID)
+        DraftStore.shared.clear(kind: Self.draftKind, id: draftID)
         logger.debug("Compose completed — outcome \(payload.outcomeID) marked done")
         dismiss()
     }

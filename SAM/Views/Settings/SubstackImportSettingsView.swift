@@ -65,6 +65,7 @@ struct SubstackImportSettingsContent: View {
                 logger.error("File importer failed: \(error.localizedDescription)")
             }
         }
+        .dismissOnLock(isPresented: $showSubscriberImporter)
         .onAppear { FeatureAdoptionTracker.shared.recordUsage(.substackImport) }
     }
 

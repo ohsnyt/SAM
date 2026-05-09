@@ -62,15 +62,40 @@ final class PostImportOrchestrator {
         OutgoingEventMatcher.shared.scanRecentOutgoing()
 
         // Generate or refresh the morning briefing now that calendar
-        // events and contacts are imported. This ensures the briefing
-        // includes today's meetings (previously it ran before calendar
-        // import completed).
+        // events and contacts are imported. Wait for the launch storm
+        // (role deduction + insight generation + outcome engine) to
+        // settle before kicking off the briefing — otherwise the briefing
+        // pre-narrative wall-clock balloons from main-actor contention
+        // (saw +29s on a freshly-launched run with all of these in flight).
         if DailyBriefingCoordinator.shared.morningBriefing == nil {
             Task(priority: .utility) {
+                await Self.waitForLaunchStormToSettle()
                 await DailyBriefingCoordinator.shared.checkFirstOpenOfDay()
             }
         }
 
         logger.debug("Post-import work dispatched")
+    }
+
+    /// Polls AIService until inference has been idle for `requiredIdleSeconds`
+    /// consecutive seconds, or `maxWaitSeconds` elapses (failsafe). Used to
+    /// avoid kicking off the morning briefing while role deduction, insight
+    /// generation, and the outcome engine's initial pass are still consuming
+    /// the inference gate and main actor.
+    private static func waitForLaunchStormToSettle(
+        requiredIdleSeconds: Int = 3,
+        maxWaitSeconds: Int = 60
+    ) async {
+        var consecutiveIdle = 0
+        for _ in 0..<maxWaitSeconds {
+            try? await Task.sleep(for: .seconds(1))
+            let idle = await AIService.shared.isFullyIdle
+            if idle {
+                consecutiveIdle += 1
+                if consecutiveIdle >= requiredIdleSeconds { return }
+            } else {
+                consecutiveIdle = 0
+            }
+        }
     }
 }

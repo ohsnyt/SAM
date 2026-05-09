@@ -84,7 +84,11 @@ final class ContactsImportCoordinator {
     private var debounceTask: Task<Void, Never>?
     private var observerTask: Task<Void, Never>?
     private let minimumIntervalNormal: TimeInterval = 300      // 5 minutes for periodic triggers
-    private let minimumIntervalChanged: TimeInterval = 10      // 10 seconds for change notifications
+    private let minimumIntervalChanged: TimeInterval = 60      // 60 seconds for change notifications
+    // Iter 2: bumped from 10 s. Our own CNSaveRequest writes during an import
+    // fire CNContactStoreDidChange, which kicked a follow-up import on the +5 min
+    // mark every cycle. 60 s is short enough to pick up real external edits but
+    // long enough for our own change notifications to settle.
 
     // MARK: - Initialization
 
@@ -122,7 +126,7 @@ final class ContactsImportCoordinator {
         }
         #endif
         logger.debug("Manual import triggered")
-        await performImport()
+        await performImport(triggeredBy: "importNow")
     }
     
     /// Fetch available contact groups for selection UI
@@ -151,7 +155,7 @@ final class ContactsImportCoordinator {
         guard importEnabled else { return }
         guard !selectedGroupIdentifier.isEmpty else { return }
         guard await contactsService.authorizationStatus() == .authorized else { return }
-        await performImport()
+        await performImport(triggeredBy: "configChange:\(reason)")
     }
     
     /// Check conditions and import if needed
@@ -186,11 +190,12 @@ final class ContactsImportCoordinator {
         }
         
         // All conditions met - perform import
-        await performImport()
+        await performImport(triggeredBy: "scheduled:\(reason)")
     }
     
-    /// Perform the actual import operation
-    private func performImport() async {
+    /// Perform the actual import operation. The `triggeredBy` reason is logged
+    /// and recorded in performance signposts so we can diagnose duplicate runs.
+    private func performImport(triggeredBy reason: String) async {
         #if DEBUG
         if UserDefaults.standard.isTestDataLoaded || UserDefaults.standard.isTestDataActive {
             logger.notice("ContactsImportCoordinator.performImport: skipping — test data is active")
@@ -198,22 +203,35 @@ final class ContactsImportCoordinator {
         }
         #endif
         guard importStatus != .importing else {
-            logger.warning("Import already in progress")
+            logger.warning("Import already in progress (triggeredBy: \(reason, privacy: .public))")
             return
         }
 
         importStatus = .importing
         lastError = nil
 
+        logger.notice("ContactsImport.performImport starting (triggeredBy: \(reason, privacy: .public))")
+
+        await PerformanceMonitor.shared.measure("ContactsImport.performImport") {
+            await self._performImportBody()
+        }
+    }
+
+    private func _performImportBody() async {
+
         let startTime = Date()
         logger.debug("Starting import from group ID '\(self.selectedGroupIdentifier)'")
 
+        let perf = PerformanceMonitor.shared
+
         do {
             // Fetch contacts from ContactsService
-            let contacts = await contactsService.fetchContacts(
-                inGroupWithIdentifier: self.selectedGroupIdentifier,
-                keys: .detail  // includes emailAddresses
-            )
+            let contacts = await perf.measure("ContactsImport.fetchContacts") {
+                await contactsService.fetchContacts(
+                    inGroupWithIdentifier: self.selectedGroupIdentifier,
+                    keys: .detail  // includes emailAddresses
+                )
+            }
 
             guard !contacts.isEmpty else {
                 logger.warning("No contacts found in group ID '\(self.selectedGroupIdentifier)'")
@@ -226,46 +244,55 @@ final class ContactsImportCoordinator {
             logger.debug("Fetched \(contacts.count) contacts from ContactsService")
 
             // Upsert into PeopleRepository
-            let (created, updated) = try peopleRepo.bulkUpsert(contacts: contacts)
+            let (created, updated) = try perf.measureSync("ContactsImport.bulkUpsert") {
+                try peopleRepo.bulkUpsert(contacts: contacts)
+            }
 
             // Import the Me contact (even if not in the SAM group).
             // If the Me card's identifier already appeared in the group import, just flag it.
             // Otherwise upsertMe creates/finds the person. This prevents duplicates when the
             // "Me" card returns a different unified identifier than the group fetch.
-            if let meContact = await contactsService.fetchMeContact(keys: .detail) {
-                let groupIdentifiers = Set(contacts.map(\.identifier))
-                if groupIdentifiers.contains(meContact.identifier) {
-                    // Already imported via bulkUpsert — just set isMe flag
-                    try peopleRepo.setMeFlag(contactIdentifier: meContact.identifier)
-                } else {
-                    try peopleRepo.upsertMe(contact: meContact)
+            try await perf.measure("ContactsImport.meContact") {
+                if let meContact = await contactsService.fetchMeContact(keys: .detail) {
+                    let groupIdentifiers = Set(contacts.map(\.identifier))
+                    if groupIdentifiers.contains(meContact.identifier) {
+                        try peopleRepo.setMeFlag(contactIdentifier: meContact.identifier)
+                    } else {
+                        try peopleRepo.upsertMe(contact: meContact)
+                    }
                 }
             }
 
             // Merge any duplicate SamPerson records sharing the same contactIdentifier
-            let merged = try peopleRepo.mergeDuplicateContacts()
+            let merged = try perf.measureSync("ContactsImport.mergeDuplicates") {
+                try peopleRepo.mergeDuplicateContacts()
+            }
             if merged > 0 {
                 logger.debug("Merged \(merged) duplicate SamPerson record(s)")
             }
 
             // Detect and clear stale contactIdentifiers (deleted Apple Contacts)
-            let allPeopleWithContacts = try peopleRepo.fetchAll().compactMap { $0.contactIdentifier }
-            if !allPeopleWithContacts.isEmpty {
-                let validIDs = await contactsService.validateIdentifiers(allPeopleWithContacts)
-                let cleared = try peopleRepo.clearStaleContactIdentifiers(validIdentifiers: validIDs)
-                if cleared > 0 {
-                    logger.debug("Cleared \(cleared) stale contact identifier(s)")
+            try await perf.measure("ContactsImport.clearStaleIDs") {
+                let allPeopleWithContacts = try peopleRepo.fetchAll().compactMap { $0.contactIdentifier }
+                if !allPeopleWithContacts.isEmpty {
+                    let validIDs = await contactsService.validateIdentifiers(allPeopleWithContacts)
+                    let cleared = try peopleRepo.clearStaleContactIdentifiers(validIdentifiers: validIDs)
+                    if cleared > 0 {
+                        logger.debug("Cleared \(cleared) stale contact identifier(s)")
+                    }
                 }
             }
 
             // Reconcile: unlink SamPerson records whose contact exists but is not in the SAM group.
             // This prevents contacts imported outside the group filter from persisting indefinitely.
-            if !selectedGroupIdentifier.isEmpty {
-                let groupIDs = await contactsService.identifiersInGroup(withIdentifier: selectedGroupIdentifier)
-                if !groupIDs.isEmpty {
-                    let pruned = try peopleRepo.unlinkNonGroupContacts(groupIdentifiers: groupIDs)
-                    if pruned > 0 {
-                        logger.debug("Unlinked \(pruned) contact(s) not in SAM group")
+            try await perf.measure("ContactsImport.unlinkNonGroup") {
+                if !selectedGroupIdentifier.isEmpty {
+                    let groupIDs = await contactsService.identifiersInGroup(withIdentifier: selectedGroupIdentifier)
+                    if !groupIDs.isEmpty {
+                        let pruned = try peopleRepo.unlinkNonGroupContacts(groupIdentifiers: groupIDs)
+                        if pruned > 0 {
+                            logger.debug("Unlinked \(pruned) contact(s) not in SAM group")
+                        }
                     }
                 }
             }
@@ -277,15 +304,21 @@ final class ContactsImportCoordinator {
             lastImportedAt = Date()
             lastImportCount = created + updated
 
-            // After importing contacts, re-run participant resolution on existing evidence
-            do {
-                try EvidenceRepository.shared.reresolveParticipantsForUnlinkedEvidence()
-            } catch {
-                logger.error("Failed to re-resolve participants after contacts import: \(error.localizedDescription)")
+            // After importing contacts, re-run participant resolution on existing evidence.
+            // Iter 2: now async with periodic Task.yield so this 2 s sweep no longer
+            // blocks the watchdog mid-import.
+            await perf.measure("ContactsImport.reresolveParticipants") {
+                do {
+                    try await EvidenceRepository.shared.reresolveParticipantsForUnlinkedEvidence()
+                } catch {
+                    logger.error("Failed to re-resolve participants after contacts import: \(error.localizedDescription)")
+                }
             }
 
             // Deduce family relationships from contact relation fields
-            deduceRelationships(from: contacts)
+            perf.measureSync("ContactsImport.deduceRelationships") {
+                deduceRelationships(from: contacts)
+            }
 
             let duration = Date().timeIntervalSince(startTime)
             logger.info("Import complete: \(created) created, \(updated) updated in \(String(format: "%.2f", duration))s")

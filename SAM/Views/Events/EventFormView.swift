@@ -20,6 +20,12 @@ struct EventFormView: View {
     /// Called after saving changes. Passes the change summary if material details changed (time, venue, link, format).
     var onUpdated: ((EventCoordinator.EventChangeSummary?) -> Void)?
 
+    // MARK: - Draft persistence
+
+    private static let draftKind = "event-form"
+
+    private var draftID: String { existingEvent?.id.uuidString ?? "new" }
+
     @State private var title = ""
     @State private var description = ""
     @State private var format: EventFormat = .inPerson
@@ -190,6 +196,7 @@ struct EventFormView: View {
                                     addressValidationMessage = nil
                                     lastValidatedAddress = nil
                                 }
+                                saveDraft()
                             }
                         if !venueValid {
                             Label("Venue is required for \(format.displayName.lowercased()) events", systemImage: "exclamationmark.triangle.fill")
@@ -333,7 +340,23 @@ struct EventFormView: View {
             if let event = existingEvent {
                 populateFromEvent(event)
             }
+            // Apply any persisted draft on top of existing values
+            if let stored = DraftStore.shared.load(kind: Self.draftKind, id: draftID) {
+                if let v = stored["title"] { title = v }
+                if let v = stored["description"] { description = v }
+                if let v = stored["venue"] { venue = v }
+                if let v = stored["address"] { address = v }
+                if let v = stored["joinLink"] { joinLink = v }
+                if let v = stored["autoAckTemplate"] { autoAckTemplate = v }
+                if let v = stored["autoAckDeclineTemplate"] { autoAckDeclineTemplate = v }
+            }
         }
+        .onChange(of: title) { saveDraft() }
+        .onChange(of: description) { saveDraft() }
+        .onChange(of: venue) { saveDraft() }
+        .onChange(of: joinLink) { saveDraft() }
+        .onChange(of: autoAckTemplate) { saveDraft() }
+        .onChange(of: autoAckDeclineTemplate) { saveDraft() }
         .alert("Confirm Changes", isPresented: $showMaterialChangeConfirmation) {
             Button("Save Changes") {
                 saveChanges()
@@ -343,11 +366,13 @@ struct EventFormView: View {
                 // Dismisses alert, returns to form
             }
             Button("Discard Changes", role: .destructive) {
+                clearDraft()
                 dismiss()
             }
         } message: {
-            Text("You've changed details that \(inviteeCount) \(inviteeCount == 1 ? "person has" : "people have") already been invited with. After saving, SAM will ask if you'd like to notify them.\n\n\(materialChangeDescription)")
+            Text("Material changes detected. After saving, SAM will ask if you'd like to notify already-invited participants.")
         }
+        .dismissOnLock(isPresented: $showMaterialChangeConfirmation)
     }
 
     /// Human-readable description of pending material changes for the confirmation alert.
@@ -562,6 +587,26 @@ struct EventFormView: View {
 
     // MARK: - Actions
 
+    private func saveDraft() {
+        DraftStore.shared.save(
+            kind: Self.draftKind,
+            id: draftID,
+            fields: [
+                "title": title,
+                "description": description,
+                "venue": venue,
+                "address": address,
+                "joinLink": joinLink,
+                "autoAckTemplate": autoAckTemplate,
+                "autoAckDeclineTemplate": autoAckDeclineTemplate
+            ]
+        )
+    }
+
+    private func clearDraft() {
+        DraftStore.shared.clear(kind: Self.draftKind, id: draftID)
+    }
+
     private func selectTopic(_ topic: SuggestedEventTopic) {
         selectedTopic = topic
         selectedPresentationID = nil  // Deselect any uploaded presentation
@@ -620,6 +665,7 @@ struct EventFormView: View {
             // Learn user's preferred lead time and time-of-day
             Self.recordEventDefaults(startDate: startDate)
 
+            clearDraft()
             onCreated?(event)
             dismiss()
         } catch {
@@ -695,6 +741,7 @@ struct EventFormView: View {
 
             // Pass change summary only if there are material changes and people have been invited
             let hasInvitedParticipants = EventRepository.shared.fetchParticipations(for: event).contains { $0.inviteStatus != .notInvited }
+            clearDraft()
             onUpdated?(changes.hasChanges && hasInvitedParticipants ? changes : nil)
             dismiss()
         } catch {

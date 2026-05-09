@@ -186,6 +186,7 @@ struct EvernoteImportSettingsContent: View {
         ) { result in
             handleFileSelection(result)
         }
+        .dismissOnLock(isPresented: $showingFilePicker)
     }
 
     // MARK: - Preview Section

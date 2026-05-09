@@ -29,6 +29,17 @@ struct GoalEntryForm: View {
 
     @Environment(\.dismiss) private var dismiss
 
+    // MARK: - Draft persistence
+
+    private static let draftKind = "goal-form"
+
+    private var draftID: String {
+        switch mode {
+        case .create: return "new"
+        case .edit(let goal): return goal.id.uuidString
+        }
+    }
+
     @State private var selectedType: GoalType = .newClients
     @State private var title: String = ""
     @State private var targetValueText: String = ""
@@ -167,6 +178,7 @@ struct GoalEntryForm: View {
                 selectedRoleDefinitionID = availableRoles.last?.id
             }
         }
+        .restoreOnUnlock(isPresented: $showingRoleEditor)
         .task {
             isFinancial = await BusinessProfileService.shared.isFinancialPractice()
             availableRoles = (try? RoleRecruitingRepository.shared.fetchActiveRoles()) ?? []
@@ -187,7 +199,28 @@ struct GoalEntryForm: View {
             } else {
                 title = autoTitle
             }
+            // Apply any persisted draft on top of populated values
+            if let stored = DraftStore.shared.load(kind: Self.draftKind, id: draftID) {
+                if let v = stored["title"] { title = v; hasAutoTitle = false }
+                if let v = stored["targetValueText"] { targetValueText = v }
+                if let v = stored["notes"] { notes = v }
+            }
         }
+        .onChange(of: title) { saveDraft() }
+        .onChange(of: targetValueText) { saveDraft() }
+        .onChange(of: notes) { saveDraft() }
+    }
+
+    private func saveDraft() {
+        DraftStore.shared.save(
+            kind: Self.draftKind,
+            id: draftID,
+            fields: [
+                "title": title,
+                "targetValueText": targetValueText,
+                "notes": notes
+            ]
+        )
     }
 
     // MARK: - Helpers
@@ -234,6 +267,7 @@ struct GoalEntryForm: View {
                     goal.roleDefinitionID = selectedRoleDefinitionID
                 }
             }
+            DraftStore.shared.clear(kind: Self.draftKind, id: draftID)
             onSave()
             dismiss()
         } catch {

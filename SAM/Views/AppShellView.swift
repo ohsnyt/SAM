@@ -80,9 +80,11 @@ struct AppShellView: View {
                 onSave: {}
             )
         }
+        .restoreOnUnlock(item: $capturePayload)
         .sheet(item: $impromptuReviewPayload) { payload in
             ImpromptuRecordingReviewView(payload: payload)
         }
+        .restoreOnUnlock(item: $impromptuReviewPayload)
         .sheet(isPresented: $showCommandPalette) {
             CommandPaletteView(
                 onNavigate: { section in
@@ -97,6 +99,7 @@ struct AppShellView: View {
                 }
             )
         }
+        .dismissOnLock(isPresented: $showCommandPalette)
         .overlay(alignment: .bottom) {
             UndoToastView()
         }
@@ -116,10 +119,14 @@ struct AppShellView: View {
                 noteAnalysisCoordinator.dismissDeceasedCandidate()
             }
         } message: {
-            if let candidate = noteAnalysisCoordinator.deceasedCandidate {
-                Text("SAM detected that \(candidate.person.displayName) may have passed away: \"\(candidate.eventDescription)\"\n\nWould you like to mark them as deceased? This will stop all coaching and outreach suggestions for this person.")
+            if noteAnalysisCoordinator.deceasedCandidate != nil {
+                Text("SAM detected that this contact may have passed away. Would you like to mark them as deceased? This will stop all coaching and outreach suggestions for this person.")
             }
         }
+        .dismissOnLock(isPresented: Binding(
+            get: { noteAnalysisCoordinator.deceasedCandidate != nil },
+            set: { if !$0 { noteAnalysisCoordinator.dismissDeceasedCandidate() } }
+        ))
         .sheet(isPresented: Binding(
             get: { introCoordinator.showIntroSequence },
             set: { introCoordinator.showIntroSequence = $0 }

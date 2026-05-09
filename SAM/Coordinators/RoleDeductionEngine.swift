@@ -170,7 +170,11 @@ final class RoleDeductionEngine {
         do {
             let allPeople = try peopleRepo.fetchAll()
             let candidates = allPeople.filter { person in
-                person.roleBadges.isEmpty && !person.isMe && !person.isArchived
+                guard person.roleBadges.isEmpty, !person.isMe, !person.isArchived else { return false }
+                // Skip dead-weight contacts (raw social-graph connections,
+                // stale Apple Contacts) that carry no real signal. See
+                // `SamPerson.hasMeaningfulSignal`.
+                return person.hasMeaningfulSignal
             }
 
             logger.debug("Found \(candidates.count) candidates for role deduction")

@@ -76,6 +76,7 @@ struct RoleRecruitingDashboardView: View {
                 }
             )
         }
+        .restoreOnUnlock(isPresented: $showingEditor)
         .sheet(isPresented: $showingReviewSheet) {
             if let roleID = selectedRoleID,
                let results = coordinator.pendingResults[roleID] {
@@ -87,6 +88,7 @@ struct RoleRecruitingDashboardView: View {
                 )
             }
         }
+        .restoreOnUnlock(isPresented: $showingReviewSheet)
     }
 
     // MARK: - Empty State

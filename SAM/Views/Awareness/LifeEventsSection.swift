@@ -96,6 +96,7 @@ struct LifeEventsSection: View {
                     }
                 )
             }
+            .restoreOnUnlock(item: $activeCoachingContext)
         }
     }
 

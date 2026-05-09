@@ -42,6 +42,16 @@ actor AIService {
         case unavailable(reason: String)
     }
 
+    /// Inference priority. Interactive work (briefing narrative, draft messages,
+    /// dictation polish) jumps ahead of background work (relationship summaries,
+    /// strategic specialists, conversation analysis) in the SerialGate queue.
+    /// Default is `.background` so existing call sites stay conservative;
+    /// foreground call sites must opt in to `.interactive`.
+    enum Priority: Sendable {
+        case interactive
+        case background
+    }
+
     enum AIError: Error, LocalizedError {
         case modelUnavailable(String)
         case generationFailed(String)
@@ -82,6 +92,30 @@ actor AIService {
         while !isFullyIdle {
             try? await Task.sleep(for: .milliseconds(100))
         }
+    }
+
+    // MARK: - Serial Inference Gate
+    //
+    // AIService is already an `actor`, but Swift actors are reentrant on
+    // suspension — once a generation call awaits `session.respond(...)` or the
+    // MLX stream, another caller can grab the actor and start its own
+    // inference in parallel. On unified-memory Macs that produces beachballs
+    // (parallel FoundationModels + MLX both touching the Neural Engine and
+    // shared memory). This gate enforces FIFO one-at-a-time across both
+    // backends. Pure-compute methods (activeBackend, contextBudgetChars) stay
+    // unwrapped; only actual model invocations route through the gate.
+
+    private let inferenceGate = SerialGate()
+
+    /// Runs `body` with the inference gate held. Releases the slot whether
+    /// `body` returns or throws. The release runs in a detached Task so it
+    /// happens immediately on the gate's actor without waiting for the
+    /// caller's actor. Interactive work bypasses any pending background
+    /// callers; background work waits at the tail.
+    private func runSerialized<T>(priority: Priority = .background, _ body: () async throws -> T) async throws -> T {
+        await inferenceGate.enter(priority: priority)
+        defer { Task { await inferenceGate.leave() } }
+        return try await body()
     }
 
     // MARK: - Emoji / Icon Guidance
@@ -209,7 +243,8 @@ actor AIService {
     func generate(
         prompt: String,
         systemInstruction: String? = nil,
-        maxTokens: Int? = nil
+        maxTokens: Int? = nil,
+        priority: Priority = .background
     ) async throws -> String {
         activeGenerationCount += 1
         defer { activeGenerationCount -= 1 }
@@ -221,14 +256,14 @@ actor AIService {
 
         switch backend {
         case .foundationModels:
-            return try await generateWithFoundationModels(prompt: prompt, systemInstruction: effectiveSystem)
+            return try await generateWithFoundationModels(prompt: prompt, systemInstruction: effectiveSystem, priority: priority)
 
         case .mlx:
             // Try MLX first, fall back to FoundationModels on failure or if circuit is open
             let mlxReady = await MLXModelManager.shared.isSelectedModelReady()
             if mlxReady && !mlxCircuitOpen {
                 do {
-                    return try await generateWithMLX(prompt: prompt, systemInstruction: effectiveSystem, maxTokens: maxTokens)
+                    return try await generateWithMLX(prompt: prompt, systemInstruction: effectiveSystem, maxTokens: maxTokens, priority: priority)
                 } catch {
                     mlxCircuitOpen = true
                     logger.warning("MLX generation failed (\(error.localizedDescription)) — circuit open, falling back to FoundationModels for this session")
@@ -236,11 +271,11 @@ actor AIService {
             } else if !mlxReady {
                 logger.debug("MLX model not ready — falling back to FoundationModels")
             }
-            return try await generateWithFoundationModels(prompt: prompt, systemInstruction: effectiveSystem)
+            return try await generateWithFoundationModels(prompt: prompt, systemInstruction: effectiveSystem, priority: priority)
 
         case .hybrid:
             // Structured extraction always uses FoundationModels
-            return try await generateWithFoundationModels(prompt: prompt, systemInstruction: effectiveSystem)
+            return try await generateWithFoundationModels(prompt: prompt, systemInstruction: effectiveSystem, priority: priority)
         }
     }
 
@@ -249,7 +284,8 @@ actor AIService {
     func generateNarrative(
         prompt: String,
         systemInstruction: String? = nil,
-        maxTokens: Int? = nil
+        maxTokens: Int? = nil,
+        priority: Priority = .background
     ) async throws -> String {
         activeGenerationCount += 1
         defer { activeGenerationCount -= 1 }
@@ -261,14 +297,14 @@ actor AIService {
 
         switch backend {
         case .foundationModels:
-            return try await generateWithFoundationModels(prompt: prompt, systemInstruction: effectiveSystem)
+            return try await generateWithFoundationModels(prompt: prompt, systemInstruction: effectiveSystem, priority: priority)
 
         case .mlx, .hybrid:
             // Prefer MLX for narrative tasks; fall back to FM if circuit is open or model not ready
             let mlxReady = await MLXModelManager.shared.isSelectedModelReady()
             if mlxReady && !mlxCircuitOpen {
                 do {
-                    return try await generateWithMLX(prompt: prompt, systemInstruction: effectiveSystem, maxTokens: maxTokens)
+                    return try await generateWithMLX(prompt: prompt, systemInstruction: effectiveSystem, maxTokens: maxTokens, priority: priority)
                 } catch {
                     mlxCircuitOpen = true
                     logger.warning("MLX generation failed (\(error.localizedDescription)) — circuit open, falling back to FoundationModels for this session")
@@ -278,7 +314,7 @@ actor AIService {
             } else {
                 logger.debug("MLX model not ready — narrative falling back to FoundationModels")
             }
-            return try await generateWithFoundationModels(prompt: prompt, systemInstruction: effectiveSystem)
+            return try await generateWithFoundationModels(prompt: prompt, systemInstruction: effectiveSystem, priority: priority)
         }
     }
 
@@ -301,7 +337,7 @@ actor AIService {
 
     /// Generate using Apple Intelligence (FoundationModels) regardless of active backend setting.
     /// Used for lightweight tasks like dictation polish where speed is more important than reasoning depth.
-    func generateWithFoundationModels(prompt: String, systemInstruction: String?) async throws -> String {
+    func generateWithFoundationModels(prompt: String, systemInstruction: String?, priority: Priority = .background) async throws -> String {
         guard case .available = foundationModelsAvailability() else {
             throw AIError.modelUnavailable("FoundationModels not available")
         }
@@ -317,18 +353,22 @@ actor AIService {
         // when hitting context-window or resource issues before returning an
         // error — this ensures the polish stage never blocks the pipeline for
         // more than half a minute regardless of the model's behaviour.
-        return try await withThrowingTaskGroup(of: String.self) { group in
-            group.addTask {
-                let response = try await session.respond(to: prompt)
-                return response.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Serialised via inferenceGate so this never runs concurrently with
+        // another FM/MLX call.
+        return try await runSerialized(priority: priority) {
+            try await withThrowingTaskGroup(of: String.self) { group in
+                group.addTask {
+                    let response = try await session.respond(to: prompt)
+                    return response.content.trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+                group.addTask {
+                    try await Task.sleep(for: .seconds(30))
+                    throw AIError.timeout("FoundationModels did not respond within 30s")
+                }
+                let result = try await group.next()!
+                group.cancelAll()
+                return result
             }
-            group.addTask {
-                try await Task.sleep(for: .seconds(30))
-                throw AIError.timeout("FoundationModels did not respond within 30s")
-            }
-            let result = try await group.next()!
-            group.cancelAll()
-            return result
         }
     }
 
@@ -345,7 +385,8 @@ actor AIService {
         _ type: T.Type,
         prompt: String,
         systemInstruction: String? = nil,
-        timeout: TimeInterval = 30
+        timeout: TimeInterval = 30,
+        priority: Priority = .background
     ) async throws -> T {
         guard case .available = foundationModelsAvailability() else {
             throw AIError.modelUnavailable("FoundationModels not available")
@@ -358,18 +399,22 @@ actor AIService {
             session = LanguageModelSession()
         }
 
-        return try await withThrowingTaskGroup(of: T.self) { group in
-            group.addTask {
-                let response = try await session.respond(to: prompt, generating: T.self)
-                return response.content
+        // Serialised via inferenceGate so this never runs concurrently with
+        // another FM/MLX call.
+        return try await runSerialized(priority: priority) {
+            try await withThrowingTaskGroup(of: T.self) { group in
+                group.addTask {
+                    let response = try await session.respond(to: prompt, generating: T.self)
+                    return response.content
+                }
+                group.addTask {
+                    try await Task.sleep(for: .seconds(timeout))
+                    throw AIError.timeout("FoundationModels structured generation did not respond within \(Int(timeout))s")
+                }
+                let result = try await group.next()!
+                group.cancelAll()
+                return result
             }
-            group.addTask {
-                try await Task.sleep(for: .seconds(timeout))
-                throw AIError.timeout("FoundationModels structured generation did not respond within \(Int(timeout))s")
-            }
-            let result = try await group.next()!
-            group.cancelAll()
-            return result
         }
     }
 
@@ -443,7 +488,7 @@ actor AIService {
     }
 
     /// Generate text using the MLX backend.
-    private func generateWithMLX(prompt: String, systemInstruction: String?, maxTokens: Int?) async throws -> String {
+    private func generateWithMLX(prompt: String, systemInstruction: String?, maxTokens: Int?, priority: Priority = .background) async throws -> String {
         // Track the entire call (including C++ destructor teardown) with a single
         // increment/decrement pair.  We use a local `decremented` flag to ensure
         // exactly one decrement regardless of exit path, always paired with a
@@ -459,39 +504,42 @@ actor AIService {
         }
 
         do {
-            try await ensureMLXModelLoaded()
+            // Serialised via inferenceGate so MLX never races with FoundationModels
+            // or another MLX call. Model load + stream consumption all run inside
+            // the gate; `stream` goes out of scope at end of closure so its C++
+            // destructor runs while the slot is still held.
+            let rawOutput = try await runSerialized(priority: priority) { () -> String in
+                try await ensureMLXModelLoaded()
 
-            guard let container = mlxModelContainer else {
-                await release()
-                throw AIError.modelUnavailable("MLX model container not loaded")
-            }
-
-            var chat: [Chat.Message] = []
-            if let system = systemInstruction {
-                chat.append(.system(system))
-            }
-            chat.append(.user(prompt))
-
-            let userInput = UserInput(chat: chat)
-            let lmInput = try await container.prepare(input: userInput)
-
-            var parameters = GenerateParameters()
-            parameters.temperature = 0.6
-            parameters.maxTokens = maxTokens ?? 4096
-
-            let stream = try await container.generate(input: lmInput, parameters: parameters)
-            var output = ""
-
-            for await generation in stream {
-                if let chunk = generation.chunk {
-                    output += chunk
+                guard let container = mlxModelContainer else {
+                    throw AIError.modelUnavailable("MLX model container not loaded")
                 }
-            }
-            // `stream` goes out of scope at the end of this do-block.
-            // Its C++ destructor runs while activeMLXStreamCount is still > 0
-            // because we call release() (with yield) after this point.
 
-            var result = output.trimmingCharacters(in: .whitespacesAndNewlines)
+                var chat: [Chat.Message] = []
+                if let system = systemInstruction {
+                    chat.append(.system(system))
+                }
+                chat.append(.user(prompt))
+
+                let userInput = UserInput(chat: chat)
+                let lmInput = try await container.prepare(input: userInput)
+
+                var parameters = GenerateParameters()
+                parameters.temperature = 0.6
+                parameters.maxTokens = maxTokens ?? 4096
+
+                let stream = try await container.generate(input: lmInput, parameters: parameters)
+                var output = ""
+
+                for await generation in stream {
+                    if let chunk = generation.chunk {
+                        output += chunk
+                    }
+                }
+                return output
+            }
+
+            var result = rawOutput.trimmingCharacters(in: .whitespacesAndNewlines)
 
             // Strip Qwen3-style <think>...</think> reasoning blocks from responses
             while let thinkStart = result.range(of: "<think>", options: .caseInsensitive),
@@ -538,3 +586,44 @@ actor AIService {
 }
 
 // JSONExtraction.extractJSON(from:) is defined in JSONExtractionUtility.swift
+
+// MARK: - SerialGate
+
+/// One-slot priority gate. Used by AIService to prevent reentrant parallel
+/// inference across FoundationModels and MLX. See AIService.runSerialized.
+///
+/// Two-lane queue: interactive callers (briefing narrative, draft messages,
+/// dictation polish) jump ahead of background callers (relationship summary
+/// refresh, strategic specialists, conversation analysis). The in-flight
+/// inference is never preempted — interactive callers wait one slot at most.
+private actor SerialGate {
+    private var isBusy = false
+    private var interactiveQueue: [CheckedContinuation<Void, Never>] = []
+    private var backgroundQueue: [CheckedContinuation<Void, Never>] = []
+
+    func enter(priority: AIService.Priority) async {
+        if !isBusy {
+            isBusy = true
+            return
+        }
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            switch priority {
+            case .interactive: interactiveQueue.append(cont)
+            case .background: backgroundQueue.append(cont)
+            }
+        }
+    }
+
+    func leave() {
+        // Drain interactive lane first; only fall through to background when empty.
+        if !interactiveQueue.isEmpty {
+            let next = interactiveQueue.removeFirst()
+            next.resume()
+        } else if !backgroundQueue.isEmpty {
+            let next = backgroundQueue.removeFirst()
+            next.resume()
+        } else {
+            isBusy = false
+        }
+    }
+}

@@ -130,6 +130,7 @@ struct EventEvaluationImportSheet: View {
                 }
             }
         }
+        .dismissOnLock(isPresented: $showChatImporter)
         .fileImporter(
             isPresented: $showFeedbackImporter,
             allowedContentTypes: [.commaSeparatedText, .plainText],
@@ -141,6 +142,7 @@ struct EventEvaluationImportSheet: View {
                 }
             }
         }
+        .dismissOnLock(isPresented: $showFeedbackImporter)
         .fileImporter(
             isPresented: $showTranscriptImporter,
             allowedContentTypes: [.plainText],
@@ -148,12 +150,14 @@ struct EventEvaluationImportSheet: View {
         ) { result in
             // VTT transcript import — future enhancement
         }
+        .dismissOnLock(isPresented: $showTranscriptImporter)
         .sheet(isPresented: $coordinator.showParticipantReview) {
             ParticipantMatchReviewSheet(
                 event: event,
                 pendingReviews: $coordinator.pendingParticipantReviews
             )
         }
+        .restoreOnUnlock(isPresented: $coordinator.showParticipantReview)
         .sheet(isPresented: $coordinator.showFeedbackColumnMapping) {
             FeedbackColumnMappingSheet(
                 headers: coordinator.csvHeaders,
@@ -161,6 +165,7 @@ struct EventEvaluationImportSheet: View {
                 event: event
             )
         }
+        .restoreOnUnlock(isPresented: $coordinator.showFeedbackColumnMapping)
     }
 
     // MARK: - Import Card

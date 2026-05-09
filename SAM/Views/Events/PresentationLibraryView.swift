@@ -49,19 +49,16 @@ struct PresentationLibraryView: View {
                 refreshToken = UUID()
             }
         }
+        .restoreOnUnlock(isPresented: $showNewPresentation)
         .alert("Delete Presentation?", isPresented: $showDeleteConfirmation) {
             Button("Delete", role: .destructive) {
                 deleteSelectedPresentation()
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            if let id = selectedPresentationID,
-               let presentation = presentations.first(where: { $0.id == id }) {
-                Text("Are you sure you want to delete \"\(presentation.title)\"? This will also unlink it from any events. This cannot be undone.")
-            } else {
-                Text("Are you sure you want to delete this presentation?")
-            }
+            Text("Are you sure you want to delete this presentation? It will be unlinked from any events. This cannot be undone.")
         }
+        .dismissOnLock(isPresented: $showDeleteConfirmation)
     }
 
     // MARK: - List
@@ -382,6 +379,7 @@ struct PresentationDetailView: View {
         ) { result in
             handleFileImport(result)
         }
+        .dismissOnLock(isPresented: $isImportingFile)
     }
 
     // MARK: - Files Section
@@ -738,6 +736,7 @@ struct PresentationFormSheet: View {
                 }
             }
         }
+        .dismissOnLock(isPresented: $isImportingFile)
     }
 
     private func createPresentation() {

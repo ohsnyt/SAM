@@ -98,6 +98,7 @@ struct TripsAndMileageSettingsPane: View {
         }
         .formStyle(.grouped)
         .navigationTitle("Trips & Mileage")
+        .dismissOnLock(isPresented: $showAddVehicle)
         .alert("Add Vehicle", isPresented: $showAddVehicle) {
             TextField("e.g., 2022 Honda CR-V", text: $newVehicleName)
             Button("Add") {

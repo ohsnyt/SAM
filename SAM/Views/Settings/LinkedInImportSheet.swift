@@ -115,6 +115,7 @@ struct LinkedInImportSheet: View {
                 coordinator.sheetPhase = .failed(error.localizedDescription)
             }
         }
+        .dismissOnLock(isPresented: $showManualFilePicker)
         .sheet(isPresented: $showSyncConfirmation) {
             AppleContactsSyncConfirmationSheet(
                 candidates: syncCandidatesSnapshot,
@@ -130,6 +131,7 @@ struct LinkedInImportSheet: View {
                 }
             )
         }
+        .restoreOnUnlock(isPresented: $showSyncConfirmation)
     }
 
     // MARK: - Toolbar
@@ -286,6 +288,7 @@ struct LinkedInImportSheet: View {
         .sheet(isPresented: $showPDFReviewSheet) {
             LinkedInPDFImportReviewSheet()
         }
+        .restoreOnUnlock(isPresented: $showPDFReviewSheet)
     }
 
     @ViewBuilder

@@ -2196,7 +2196,7 @@ final class LinkedInImportCoordinator {
         }
 
         // Refresh participant resolution so any new LinkedIn messages link to new people
-        try? EvidenceRepository.shared.refreshParticipantResolution()
+        try? await EvidenceRepository.shared.refreshParticipantResolution()
         // Also trigger reprocessing for each added sender's LinkedIn messages
         for candidate in candidates {
             if let url = candidate.profileURL.isEmpty ? nil : candidate.profileURL {

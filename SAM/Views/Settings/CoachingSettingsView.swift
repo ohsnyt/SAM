@@ -428,6 +428,7 @@ struct CoachingSettingsContent: View {
             } message: {
                 Text("This clears everything SAM has learned about how you work — your preferences, your timing patterns, and which kinds of suggestions you act on. SAM will start fresh.")
             }
+            .dismissOnLock(isPresented: $showResetConfirmation)
         }
     }
 

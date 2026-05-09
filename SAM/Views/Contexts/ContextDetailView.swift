@@ -91,11 +91,13 @@ struct ContextDetailView: View {
         .sheet(isPresented: $showingEditSheet) {
             EditContextSheet(context: context, isPresented: $showingEditSheet)
         }
+        .restoreOnUnlock(isPresented: $showingEditSheet)
         .sheet(isPresented: $showingAddParticipantSheet) {
             AddParticipantSheet(context: context, isPresented: $showingAddParticipantSheet)
         }
+        .restoreOnUnlock(isPresented: $showingAddParticipantSheet)
         .confirmationDialog(
-            "Delete \(context.name)?",
+            "Delete this context?",
             isPresented: $showingDeleteConfirmation,
             titleVisibility: .visible
         ) {
@@ -106,6 +108,7 @@ struct ContextDetailView: View {
         } message: {
             Text("This action cannot be undone. All participations and related data will be removed.")
         }
+        .dismissOnLock(isPresented: $showingDeleteConfirmation)
     }
     
     // MARK: - Header

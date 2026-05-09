@@ -135,6 +135,7 @@ struct NotesJournalView: View {
                 } message: {
                     Text("You have unsaved changes to this note. Would you like to save them?")
                 }
+                .dismissOnLock(isPresented: $showUnsavedAlert)
                 .alert("Delete Note?", isPresented: $showDeleteConfirmation) {
                     Button("Delete", role: .destructive) {
                         if let note = noteToDelete {
@@ -153,6 +154,7 @@ struct NotesJournalView: View {
                 } message: {
                     Text("This note will be moved to the undo history and can be restored for 30 days.")
                 }
+                .dismissOnLock(isPresented: $showDeleteConfirmation)
             }
         }
     }

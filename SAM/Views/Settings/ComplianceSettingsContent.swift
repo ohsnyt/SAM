@@ -91,6 +91,7 @@ struct ComplianceSettingsContent: View {
         } message: {
             Text("This will permanently delete all \(auditCount) compliance audit entries. This cannot be undone.")
         }
+        .dismissOnLock(isPresented: $showClearConfirmation)
     }
 
     // MARK: - Compliance Profile Section

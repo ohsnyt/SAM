@@ -431,6 +431,11 @@ final class RelationshipGraphCoordinator {
             // Skip "Me" node unless showMeNode is enabled
             guard !person.isMe || showMeNode else { return nil }
             guard !person.isArchived else { return nil }
+            // Hide dead-weight contacts (raw social-graph imports, stale
+            // Apple Contacts) — they clutter the graph with isolated nodes
+            // and add no useful edges. Surface them via the People list's
+            // dedicated "Inactive" filter instead.
+            guard person.hasMeaningfulSignal else { return nil }
 
             let health = meetingPrepCoordinator.computeHealth(for: person)
             let healthLevel = mapHealthToLevel(health)

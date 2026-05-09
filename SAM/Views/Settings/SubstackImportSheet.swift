@@ -77,6 +77,7 @@ struct SubstackImportSheet: View {
                 logger.error("File picker failed: \(error.localizedDescription)")
             }
         }
+        .dismissOnLock(isPresented: $showManualFilePicker)
     }
 
     // MARK: - Toolbar

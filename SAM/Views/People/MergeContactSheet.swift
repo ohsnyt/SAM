@@ -211,10 +211,11 @@ struct MergeContactSheet: View {
             Button("Merge", role: .destructive) { performMerge() }
             Button("Cancel", role: .cancel) { }
         } message: {
-            if let target = targetPerson {
-                Text("Merge \(sourcePerson.displayNameCache ?? sourcePerson.displayName) into \(target.displayNameCache ?? target.displayName)? This will transfer all data and delete the source contact.")
+            if targetPerson != nil {
+                Text("Merge these contacts? This will transfer all data and delete the source contact.")
             }
         }
+        .dismissOnLock(isPresented: $showingConfirmation)
     }
 
     // MARK: - Helpers

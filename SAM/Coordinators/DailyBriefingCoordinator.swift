@@ -269,26 +269,47 @@ final class DailyBriefingCoordinator {
         generationProgress = 0
         generationStageLabel = "Gathering your schedule..."
 
+        let briefingClock = ContinuousClock()
+        let briefingStart = briefingClock.now
+
         do {
             let todayKey = Calendar.current.startOfDay(for: .now)
+            let perf = PerformanceMonitor.shared
 
-            // Stage 1: Gather data
-            let calendarItems = gatherCalendarItems()
+            // Stage 1: Gather data — log each phase at info level so the
+            // pre-narrative breakdown is visible in Console.app without Instruments.
+            var phaseStart = briefingClock.now
+            let calendarItems = perf.measureSync("Briefing.gatherCalendarItems") { gatherCalendarItems() }
+            logger.info("⏱️ gatherCalendarItems: \(self.formatElapsed(briefingClock.now - phaseStart)) (\(calendarItems.count) items)")
+
             generationStageLabel = "Reviewing priority actions..."
             await Task.yield()
-            let priorityActions = gatherPriorityActions()
+            phaseStart = briefingClock.now
+            let priorityActions = perf.measureSync("Briefing.gatherPriorityActions") { gatherPriorityActions() }
+            logger.info("⏱️ gatherPriorityActions: \(self.formatElapsed(briefingClock.now - phaseStart)) (\(priorityActions.count) items)")
+
             generationStageLabel = "Checking follow-ups..."
             await Task.yield()
-            let followUps = await gatherFollowUps()
+            phaseStart = briefingClock.now
+            let followUps = await perf.measure("Briefing.gatherFollowUps") { await gatherFollowUps() }
+            logger.info("⏱️ gatherFollowUps: \(self.formatElapsed(briefingClock.now - phaseStart)) (\(followUps.count) items)")
+
             generationStageLabel = "Scanning life events..."
             await Task.yield()
-            let lifeEvents = gatherLifeEvents()
-            let tomorrowPreview = gatherTomorrowPreview()
+            phaseStart = briefingClock.now
+            let lifeEvents = perf.measureSync("Briefing.gatherLifeEvents") { gatherLifeEvents() }
+            logger.info("⏱️ gatherLifeEvents: \(self.formatElapsed(briefingClock.now - phaseStart)) (\(lifeEvents.count) items)")
+
+            phaseStart = briefingClock.now
+            let tomorrowPreview = perf.measureSync("Briefing.gatherTomorrowPreview") { gatherTomorrowPreview() }
+            logger.info("⏱️ gatherTomorrowPreview: \(self.formatElapsed(briefingClock.now - phaseStart)) (\(tomorrowPreview.count) items)")
 
             // Stage 2: Goal progress
             generationStageLabel = "Calculating goal progress..."
             await Task.yield()
+            phaseStart = briefingClock.now
             let goalProgress = GoalProgressEngine.shared.computeAllProgress()
+            logger.info("⏱️ computeAllProgress: \(self.formatElapsed(briefingClock.now - phaseStart)) (\(goalProgress.count) goals)")
 
             // Create briefing
             let briefing = SamDailyBriefing(
@@ -302,7 +323,10 @@ final class DailyBriefingCoordinator {
             )
             briefing.meetingCount = calendarItems.count
 
-            // Stage 3+4: AI narrative and strategic analysis run in PARALLEL
+            // Stage 3: AI narrative (foreground critical path).
+            // Strategic digest runs as a background tail-task after the briefing is shown —
+            // it's Layer 2 work (5 sequential specialist FM calls through the inference gate)
+            // and must not block the briefing UI.
             let narrativeEnabled = UserDefaults.standard.object(forKey: "briefingNarrativeEnabled") == nil
                 ? true
                 : UserDefaults.standard.bool(forKey: "briefingNarrativeEnabled")
@@ -310,13 +334,14 @@ final class DailyBriefingCoordinator {
                 ? true
                 : UserDefaults.standard.bool(forKey: "strategicBriefingIntegration")
 
-            generationStageLabel = "Generating narrative and analyzing strategy..."
+            generationStageLabel = "Generating narrative..."
             await Task.yield()  // Let SwiftUI render the label
 
-            // Fire both in parallel — they're independent
-            async let narrativeTask: (visual: String, tts: String) = {
-                guard narrativeEnabled else { return ("", "") }
-                return await DailyBriefingService.shared.generateMorningNarrative(
+            let narrative: (visual: String, tts: String)
+            if narrativeEnabled {
+                let narrativeStart = briefingClock.now
+                logger.info("⏱️ Briefing narrative starting (pre-narrative elapsed: \(self.formatElapsed(briefingClock.now - briefingStart)))")
+                narrative = await DailyBriefingService.shared.generateMorningNarrative(
                     calendarItems: calendarItems,
                     priorityActions: priorityActions,
                     followUps: followUps,
@@ -324,35 +349,18 @@ final class DailyBriefingCoordinator {
                     tomorrowPreview: tomorrowPreview,
                     goalProgress: goalProgress
                 )
-            }()
-
-            // Strategic digest — run concurrently with narrative but on MainActor
-            let strategicTask = Task { @MainActor [weak self] () -> [BriefingAction] in
-                guard strategicEnabled else { return [] }
-                let strategicCoord = StrategicCoordinator.shared
-                if !strategicCoord.hasFreshDigest(maxAge: 4 * 60 * 60) {
-                    await strategicCoord.generateDigest(type: .morning) { stage in
-                        Task { @MainActor in self?.generationStageLabel = stage }
-                    }
-                }
-                return Array(strategicCoord.strategicRecommendations.prefix(3)).map { rec in
-                    BriefingAction(
-                        title: rec.title,
-                        rationale: rec.rationale,
-                        urgency: rec.priority >= 0.7 ? "immediate" : "standard",
-                        sourceKind: "strategic"
-                    )
-                }
+                logger.info("⏱️ Briefing narrative complete (narrative elapsed: \(self.formatElapsed(briefingClock.now - narrativeStart)))")
+            } else {
+                narrative = ("", "")
             }
 
-            let narrative = await narrativeTask
             briefing.narrativeSummary = narrative.visual.isEmpty ? nil : narrative.visual
             briefing.ttsNarrative = narrative.tts.isEmpty ? nil : narrative.tts
             if narrativeEnabled, narrative.visual.isEmpty {
                 logger.warning("Morning narrative returned empty — check DailyBriefingService logs for details")
             }
 
-            briefing.strategicHighlights = await strategicTask.value
+            briefing.strategicHighlights = []
 
             generationStageLabel = "Finalizing..."
             await Task.yield()
@@ -400,39 +408,85 @@ final class DailyBriefingCoordinator {
             let formatter = ISO8601DateFormatter()
             UserDefaults.standard.set(formatter.string(from: todayKey), forKey: "lastBriefingDate")
 
+            logger.info("⏱️ Morning briefing total: \(self.formatElapsed(briefingClock.now - briefingStart))")
             logger.info("Morning briefing generated: \(calendarItems.count) calendar, \(priorityActions.count) actions, \(followUps.count) follow-ups, \(briefing.strategicHighlights.count) strategic")
 
             // Push to CloudKit so the phone can access it anywhere.
-            // Encode Codable sub-structs into a JSON dictionary.
-            Task(priority: .utility) {
-                let encoder = JSONEncoder()
-                encoder.dateEncodingStrategy = .iso8601
-                let greetingHour = Calendar.current.component(.hour, from: briefing.generatedAt)
-                let sectionHeading: String
-                switch greetingHour {
-                case ..<12:   sectionHeading = "Good morning"
-                case 12..<17: sectionHeading = "Good afternoon"
-                default:      sectionHeading = "Good evening"
-                }
-                var dict: [String: String] = [
-                    "date": ISO8601DateFormatter().string(from: briefing.generatedAt),
-                    "meetingCount": String(briefing.meetingCount),
-                    "narrativeSummary": briefing.narrativeSummary ?? "",
-                    "sectionHeading": sectionHeading
-                ]
-                if let d = try? encoder.encode(briefing.calendarItems) { dict["calendarItems"] = String(data: d, encoding: .utf8) }
-                if let d = try? encoder.encode(briefing.priorityActions) { dict["priorityActions"] = String(data: d, encoding: .utf8) }
-                if let d = try? encoder.encode(briefing.followUps) { dict["followUps"] = String(data: d, encoding: .utf8) }
-                if let d = try? encoder.encode(briefing.strategicHighlights) { dict["strategicHighlights"] = String(data: d, encoding: .utf8) }
-                if let data = try? encoder.encode(dict),
-                   let json = String(data: data, encoding: .utf8) {
-                    await CloudSyncService.shared.pushBriefing(briefingJSON: json)
+            pushBriefingToCloud(briefing)
+
+            // Strategic digest runs as a background tail-task. The briefing UI is
+            // already shown; when the digest completes we prepend AI recs and re-push
+            // to CloudKit so the phone catches up too.
+            if strategicEnabled {
+                Task(priority: .utility) { @MainActor [weak self] in
+                    guard let self else { return }
+                    let strategicCoord = StrategicCoordinator.shared
+                    if !strategicCoord.hasFreshDigest(maxAge: 4 * 60 * 60) {
+                        await strategicCoord.generateDigest(type: .morning) { _ in }
+                    }
+                    let aiRecs = Array(strategicCoord.strategicRecommendations.prefix(3)).map { rec in
+                        BriefingAction(
+                            title: rec.title,
+                            rationale: rec.rationale,
+                            urgency: rec.priority >= 0.7 ? "immediate" : "standard",
+                            sourceKind: "strategic"
+                        )
+                    }
+                    guard !aiRecs.isEmpty else { return }
+                    briefing.strategicHighlights.insert(contentsOf: aiRecs, at: 0)
+                    try? self.context?.save()
+                    self.pushBriefingToCloud(briefing)
                 }
             }
 
         } catch {
             generationStatus = .failed
             logger.error("Morning briefing generation failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func formatElapsed(_ duration: Duration) -> String {
+        let seconds = Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
+        return String(format: "%.2fs", seconds)
+    }
+
+    /// Encode the briefing into a JSON dictionary and push to CloudKit so the phone
+    /// can read it. Called once after initial save and again after the strategic
+    /// tail-task completes (so the phone gets updated strategic recommendations).
+    private func pushBriefingToCloud(_ briefing: SamDailyBriefing) {
+        let greetingHour = Calendar.current.component(.hour, from: briefing.generatedAt)
+        let sectionHeading: String
+        switch greetingHour {
+        case ..<12:   sectionHeading = "Good morning"
+        case 12..<17: sectionHeading = "Good afternoon"
+        default:      sectionHeading = "Good evening"
+        }
+        // Snapshot the briefing fields on MainActor before crossing into the utility task.
+        let generatedAt = briefing.generatedAt
+        let meetingCount = briefing.meetingCount
+        let narrativeSummary = briefing.narrativeSummary ?? ""
+        let calendarItems = briefing.calendarItems
+        let priorityActions = briefing.priorityActions
+        let followUps = briefing.followUps
+        let strategicHighlights = briefing.strategicHighlights
+
+        Task(priority: .utility) {
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            var dict: [String: String] = [
+                "date": ISO8601DateFormatter().string(from: generatedAt),
+                "meetingCount": String(meetingCount),
+                "narrativeSummary": narrativeSummary,
+                "sectionHeading": sectionHeading
+            ]
+            if let d = try? encoder.encode(calendarItems) { dict["calendarItems"] = String(data: d, encoding: .utf8) }
+            if let d = try? encoder.encode(priorityActions) { dict["priorityActions"] = String(data: d, encoding: .utf8) }
+            if let d = try? encoder.encode(followUps) { dict["followUps"] = String(data: d, encoding: .utf8) }
+            if let d = try? encoder.encode(strategicHighlights) { dict["strategicHighlights"] = String(data: d, encoding: .utf8) }
+            if let data = try? encoder.encode(dict),
+               let json = String(data: data, encoding: .utf8) {
+                await CloudSyncService.shared.pushBriefing(briefingJSON: json)
+            }
         }
     }
 
@@ -730,21 +784,29 @@ final class DailyBriefingCoordinator {
     private func scheduleHourlyRefresh() {
         hourlyRefreshTimer?.invalidate()
 
-        // Fire at the top of the next hour, then repeat every 3600s.
+        // Fire at XX:58 each hour so the ~90s briefing generation completes
+        // before the new hour and the CloudKit push lands close to the top.
+        // This keeps the agent's view fresh at each hour change rather than
+        // waiting for generation to start at the top.
         let now = Date()
-        var components = Calendar.current.dateComponents([.year, .month, .day, .hour], from: now)
-        components.hour = (components.hour ?? 0) + 1
-        components.minute = 0
+        let cal = Calendar.current
+        var components = cal.dateComponents([.year, .month, .day, .hour], from: now)
+        let currentMinute = cal.component(.minute, from: now)
+        if currentMinute >= 58 {
+            // Past this hour's :58 — fire at next hour's :58.
+            components.hour = (components.hour ?? 0) + 1
+        }
+        components.minute = 58
         components.second = 0
 
-        guard let nextHour = Calendar.current.date(from: components) else { return }
-        let delay = nextHour.timeIntervalSince(now)
+        guard let nextFire = cal.date(from: components) else { return }
+        let delay = nextFire.timeIntervalSince(now)
 
         Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
             guard let self else { return }
             Task { @MainActor [self] in
                 self.fireHourlyRefresh()
-                // Now repeat every hour on the dot.
+                // Repeat every hour at :58.
                 self.hourlyRefreshTimer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { [weak self] _ in
                     guard let self else { return }
                     Task { @MainActor [self] in self.fireHourlyRefresh() }
@@ -754,8 +816,17 @@ final class DailyBriefingCoordinator {
     }
 
     private func fireHourlyRefresh() {
-        let hour = Calendar.current.component(.hour, from: Date())
-        guard hour >= 6 && hour < 22 else { return }
+        // Active hours apply to the *upcoming* hour the briefing is for,
+        // since we fire 2 minutes before the top of that hour. So 5:58
+        // generates the 6 AM briefing; 21:58 generates the 22:00 briefing.
+        let upcomingHour = Calendar.current.component(.hour, from: Date().addingTimeInterval(120))
+        guard upcomingHour >= 6 && upcomingHour < 22 else { return }
+        // Skip if a generation is already in progress to avoid stomping a
+        // user-triggered regen with the hourly refresh.
+        guard generationStatus != .generating else {
+            logger.debug("Hourly refresh skipped — generation already in progress")
+            return
+        }
         Task(priority: .utility) { await self.generateMorningBriefing() }
     }
 
@@ -1399,13 +1470,18 @@ final class DailyBriefingCoordinator {
         let activePeople = people.filter { !$0.isMe && !$0.isArchived }
         var followUps: [BriefingFollowUp] = []
         var staticPersonIDs: Set<UUID> = []
-        var processed = 0
+
+        // Iter5: reuse OutcomeEngine's per-run health cache. Outcome generation
+        // ran first in this briefing pipeline and already walked every active
+        // person. Without this we redo the same evidence-faulting work, and
+        // the per-person yield amplifies it to 25–35 s by letting queued
+        // main-actor work run between iterations. Cache hits make the loop
+        // pure dictionary lookups (~5 ms total for ~200 people), so no yields
+        // are needed.
+        let healthCache = OutcomeEngine.shared.healthCacheSnapshot
 
         for person in activePeople {
-            processed += 1
-            if processed % 50 == 0 { await Task.yield() }
-
-            let health = meetingPrep.computeHealth(for: person)
+            let health = healthCache[person.id] ?? meetingPrep.computeHealth(for: person)
             guard let days = health.daysSinceLastInteraction else { continue }
 
             // Use role-based thresholds

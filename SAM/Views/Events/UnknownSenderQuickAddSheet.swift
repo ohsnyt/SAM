@@ -95,6 +95,7 @@ struct UnknownSenderQuickAddSheet: View {
             }
             Button("Go Back", role: .cancel) {}
         }
+        .dismissOnLock(isPresented: $showCancelOptions)
     }
 
     // MARK: - Phase 1: Add Contact

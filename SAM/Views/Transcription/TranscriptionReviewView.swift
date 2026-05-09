@@ -64,11 +64,13 @@ struct TranscriptionReviewView: View {
         .sheet(isPresented: $showPersonPicker) {
             personPickerSheet
         }
+        .restoreOnUnlock(isPresented: $showPersonPicker)
         .alert("Save Failed", isPresented: Binding(get: { saveError != nil }, set: { _ in saveError = nil })) {
             Button("OK") { saveError = nil }
         } message: {
             Text(saveError ?? "")
         }
+        .dismissOnLock(isPresented: Binding(get: { saveError != nil }, set: { _ in saveError = nil }))
     }
 
     // MARK: - Header
@@ -203,6 +205,7 @@ struct TranscriptionReviewView: View {
         } message: {
             Text("This permanently removes the transcript, summary, and all related notes. Linked contacts are not affected.")
         }
+        .dismissOnLock(isPresented: $confirmDelete)
         .confirmationDialog(
             pendingReclassification.map { "Change to \($0.displayName)?" } ?? "Change Recording Type?",
             isPresented: Binding(
@@ -221,6 +224,10 @@ struct TranscriptionReviewView: View {
         } message: { newContext in
             Text("SAM will discard the current summary and regenerate it using the \(newContext.displayName) prompt. This takes 10–30 seconds and can't be undone.")
         }
+        .dismissOnLock(isPresented: Binding(
+            get: { pendingReclassification != nil },
+            set: { if !$0 { pendingReclassification = nil } }
+        ))
     }
 
     /// True when the audio + verbatim transcript are still on disk AND the
@@ -1470,7 +1477,7 @@ struct TranscriptionReviewView: View {
             try modelContext.save()
             savedAsNote = true
         } catch {
-            saveError = error.localizedDescription
+            saveError = "Couldn't save. Check disk space and try again."
         }
     }
 

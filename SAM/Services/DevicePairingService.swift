@@ -90,11 +90,20 @@ final class DevicePairingService {
         isBootstrapped = true
         logger.debug("Bootstrap complete: \(self.pairedDevices.count) paired device(s)")
 
-        await CloudSyncService.shared.pushPairingToken(
-            macDeviceID: macDeviceID,
-            macDisplayName: macDisplayName,
-            tokenData: pairingTokenData
-        )
+        // CloudKit publish does not need to block local readiness — the local
+        // TCP listener is already authoritative for paired devices we know
+        // about. Awaiting this call was producing 8 s+ launch hangs whenever
+        // CloudKit was slow. Detach so bootstrap returns immediately.
+        let mid = macDeviceID
+        let mname = macDisplayName
+        let tdata = pairingTokenData
+        Task.detached(priority: .utility) {
+            await CloudSyncService.shared.pushPairingToken(
+                macDeviceID: mid,
+                macDisplayName: mname,
+                tokenData: tdata
+            )
+        }
     }
 
     // MARK: - Authentication

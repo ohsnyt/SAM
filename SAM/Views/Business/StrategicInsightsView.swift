@@ -103,6 +103,7 @@ struct StrategicInsightsView: View {
                 }
             )
         }
+        .restoreOnUnlock(item: $selectedRecForAction)
         .sheet(item: $activeCoachingPlan) { plan in
             CoachingSessionView(
                 context: CoachingSessionContext(
@@ -118,6 +119,7 @@ struct StrategicInsightsView: View {
                 }
             )
         }
+        .restoreOnUnlock(item: $activeCoachingPlan)
         .sheet(item: $selectedContentTopic) { topic in
             ContentDraftSheet(
                 topic: topic.topic,
@@ -129,6 +131,7 @@ struct StrategicInsightsView: View {
                 onCancel: { selectedContentTopic = nil }
             )
         }
+        .restoreOnUnlock(item: $selectedContentTopic)
     }
 
     // MARK: - Status Banner

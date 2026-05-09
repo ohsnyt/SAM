@@ -104,6 +104,7 @@ struct FacebookImportSheet: View {
                 coordinator.sheetPhase = .failed(error.localizedDescription)
             }
         }
+        .dismissOnLock(isPresented: $showFilePicker)
     }
 
     // MARK: - Toolbar

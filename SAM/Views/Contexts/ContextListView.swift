@@ -75,6 +75,7 @@ struct ContextListView: View {
                 }
             }
         }
+        .restoreOnUnlock(isPresented: $showingCreateSheet)
         .task {
             await loadContexts()
         }

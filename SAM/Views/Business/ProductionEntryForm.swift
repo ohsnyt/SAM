@@ -19,6 +19,12 @@ struct ProductionEntryForm: View {
 
     @Environment(\.dismiss) private var dismiss
 
+    // MARK: - Draft persistence
+
+    private static let draftKind = "production-form"
+
+    private var draftID: String { existingRecord?.id.uuidString ?? "new" }
+
     @State private var productType: WFGProductType = .iul
     @State private var carrierName: String = ""
     @State private var annualPremium: Double = 0
@@ -87,7 +93,21 @@ struct ProductionEntryForm: View {
                 submittedDate = record.submittedDate
                 notes = record.notes ?? ""
             }
+            if let stored = DraftStore.shared.load(kind: Self.draftKind, id: draftID) {
+                if let v = stored["carrierName"] { carrierName = v }
+                if let v = stored["notes"] { notes = v }
+            }
         }
+        .onChange(of: carrierName) { saveDraft() }
+        .onChange(of: notes) { saveDraft() }
+    }
+
+    private func saveDraft() {
+        DraftStore.shared.save(
+            kind: Self.draftKind,
+            id: draftID,
+            fields: ["carrierName": carrierName, "notes": notes]
+        )
     }
 
     private func save() {
@@ -122,6 +142,7 @@ struct ProductionEntryForm: View {
             } catch {}
         }
 
+        DraftStore.shared.clear(kind: Self.draftKind, id: draftID)
         onSave()
         dismiss()
     }

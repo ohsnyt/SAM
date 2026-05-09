@@ -25,6 +25,12 @@ struct ContentDraftSheet: View {
     let onPosted: () -> Void
     let onCancel: () -> Void
 
+    // MARK: - Draft persistence
+
+    private static let draftKind = "content-draft"
+
+    private var draftID: String { sourceOutcomeID?.uuidString ?? "new" }
+
     // MARK: - State
 
     @State private var selectedPlatform: ContentPlatform = .linkedin
@@ -238,6 +244,7 @@ struct ContentDraftSheet: View {
                 Spacer()
 
                 Button("Cancel") {
+                    DraftStore.shared.clear(kind: Self.draftKind, id: draftID)
                     onCancel()
                 }
                 .buttonStyle(.bordered)
@@ -256,9 +263,21 @@ struct ContentDraftSheet: View {
         }
         .padding(20)
         .frame(width: 560)
-        .onAppear { FeatureAdoptionTracker.shared.recordUsage(.contentDraft) }
+        .onAppear {
+            FeatureAdoptionTracker.shared.recordUsage(.contentDraft)
+            if let stored = DraftStore.shared.load(kind: Self.draftKind, id: draftID),
+               let storedText = stored["body"], !storedText.isEmpty {
+                draftText = storedText
+                hasGenerated = true
+            }
+        }
         .onChange(of: draftText) {
             localComplianceFlags = ComplianceScanner.scanWithSettings(draftText)
+            DraftStore.shared.save(
+                kind: Self.draftKind,
+                id: draftID,
+                fields: ["body": draftText]
+            )
         }
     }
 
@@ -318,6 +337,7 @@ struct ContentDraftSheet: View {
                 sourceOutcomeID: sourceOutcomeID
             )
             logger.debug("Logged content post on \(selectedPlatform.rawValue): \(topic)")
+            DraftStore.shared.clear(kind: Self.draftKind, id: draftID)
             onPosted()
         } catch {
             errorMessage = "Could not log post: \(error.localizedDescription)"

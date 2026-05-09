@@ -70,16 +70,19 @@ struct GoalProgressView: View {
                 }
             )
         }
+        .restoreOnUnlock(item: $checkInContext)
         .sheet(isPresented: $showAddGoal) {
             GoalEntryForm(mode: .create) {
                 refreshProgress()
             }
         }
+        .restoreOnUnlock(isPresented: $showAddGoal)
         .sheet(item: $editingGoal) { goal in
             GoalEntryForm(mode: .edit(goal)) {
                 refreshProgress()
             }
         }
+        .restoreOnUnlock(item: $editingGoal)
     }
 
     // MARK: - Goal List

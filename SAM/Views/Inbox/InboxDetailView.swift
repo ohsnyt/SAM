@@ -108,6 +108,7 @@ struct InboxDetailView: View {
                 // Note saved
             }
         }
+        .restoreOnUnlock(item: $editingNote)
         .confirmationDialog(
             "Delete Evidence",
             isPresented: $showingDeleteConfirmation,
@@ -118,8 +119,9 @@ struct InboxDetailView: View {
             }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("Are you sure you want to delete \"\(item.title)\"? This action cannot be undone.")
+            Text("Are you sure you want to delete this item? This action cannot be undone.")
         }
+        .dismissOnLock(isPresented: $showingDeleteConfirmation)
     }
 
     // MARK: - Header Section

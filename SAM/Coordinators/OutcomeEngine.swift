@@ -86,195 +86,219 @@ final class OutcomeEngine {
         generationStatus = .generating
         lastError = nil
 
-        do {
-            // Prune expired outcomes first
-            try outcomeRepo.pruneExpired()
+        await PerformanceMonitor.shared.measure("OutcomeEngine.generateOutcomes") {
+            await self._generateOutcomesBody()
+        }
+    }
 
-            // Wake snoozed outcomes that have reached their wake date
-            let woken = try outcomeRepo.wakeExpiredSnoozes()
-            for outcome in woken {
-                if shouldAutoResolve(outcome) {
-                    try outcomeRepo.markCompleted(id: outcome.id)
-                    logger.info("Auto-resolved woken outcome: \(outcome.title)")
+    private func _generateOutcomesBody() async {
+        do {
+            let perf = PerformanceMonitor.shared
+
+            try perf.measureSync("OutcomeEngine.pruneExpired") { try outcomeRepo.pruneExpired() }
+
+            let woken = try perf.measureSync("OutcomeEngine.wakeExpiredSnoozes") { try outcomeRepo.wakeExpiredSnoozes() }
+            try perf.measureSync("OutcomeEngine.autoResolveWoken") {
+                for outcome in woken {
+                    if shouldAutoResolve(outcome) {
+                        try outcomeRepo.markCompleted(id: outcome.id)
+                        logger.info("Auto-resolved woken outcome: \(outcome.title)")
+                    }
                 }
             }
 
             // Yield between heavy fetches so the @MainActor releases for UI work.
             // Evidence is no longer loaded wholesale — each scanner that needs it
             // does its own date-bounded fetch (see scanUpcomingMeetings et al.).
-            let allPeople = try peopleRepo.fetchAll().filter { !$0.isMe && !$0.isArchived }
+            let allPeople = try perf.measureSync("OutcomeEngine.fetchAllPeople") {
+                try peopleRepo.fetchAll().filter { !$0.isMe && !$0.isArchived && $0.hasMeaningfulSignal }
+            }
             await Task.yield()
-            let allNotes = try notesRepo.fetchAll()
+            let allNotes = try perf.measureSync("OutcomeEngine.fetchAllNotes") { try notesRepo.fetchAll() }
             await Task.yield()
 
             var newOutcomes: [SamOutcome] = []
 
             // 1. Upcoming meetings → preparation outcomes
-            newOutcomes.append(contentsOf: try scanUpcomingMeetings())
+            newOutcomes.append(contentsOf: try perf.measureSync("OutcomeEngine.upcomingMeetings") { try scanUpcomingMeetings() })
             await Task.yield()
 
             // 2. Past meetings without notes → followUp outcomes
-            newOutcomes.append(contentsOf: try scanPastMeetingsWithoutNotes(allNotes: allNotes))
+            newOutcomes.append(contentsOf: try perf.measureSync("OutcomeEngine.pastMeetingsWithoutNotes") { try scanPastMeetingsWithoutNotes(allNotes: allNotes) })
             await Task.yield()
 
             // 3. Pending action items → proposal / followUp outcomes
-            newOutcomes.append(contentsOf: try scanPendingActionItems(allNotes: allNotes))
+            newOutcomes.append(contentsOf: try perf.measureSync("OutcomeEngine.pendingActionItems") { try scanPendingActionItems(allNotes: allNotes) })
             await Task.yield()
 
             // 4. Relationship health → outreach outcomes
-            newOutcomes.append(contentsOf: try scanRelationshipHealth(people: allPeople))
+            newOutcomes.append(contentsOf: try perf.measureSync("OutcomeEngine.relationshipHealth") { try scanRelationshipHealth(people: allPeople) })
             await Task.yield()
 
             // 5. Growth opportunities (when few active outcomes)
             let activeCount = (try? outcomeRepo.fetchActive().count) ?? 0
             if activeCount + newOutcomes.count < 3 {
-                newOutcomes.append(contentsOf: try scanGrowthOpportunities(people: allPeople))
+                newOutcomes.append(contentsOf: try perf.measureSync("OutcomeEngine.growthOpportunities") { try scanGrowthOpportunities(people: allPeople) })
             }
             await Task.yield()
 
             // 6. Coverage gap cross-sell (Phase S)
-            newOutcomes.append(contentsOf: try scanCoverageGaps(people: allPeople))
+            newOutcomes.append(contentsOf: try perf.measureSync("OutcomeEngine.coverageGaps") { try scanCoverageGaps(people: allPeople) })
             await Task.yield()
 
             // 7. Content suggestions (Phase W)
-            newOutcomes.append(contentsOf: await scanContentSuggestions())
+            newOutcomes.append(contentsOf: await perf.measure("OutcomeEngine.contentSuggestions") { await scanContentSuggestions() })
             await Task.yield()
 
             // 8. Content cadence nudges (Phase W)
-            newOutcomes.append(contentsOf: try scanContentCadence())
+            newOutcomes.append(contentsOf: try perf.measureSync("OutcomeEngine.contentCadence") { try scanContentCadence() })
             await Task.yield()
 
             // 9. Goal pacing coaching (Phase X)
-            newOutcomes.append(contentsOf: scanGoalPacing())
+            newOutcomes.append(contentsOf: perf.measureSync("OutcomeEngine.goalPacing") { scanGoalPacing() })
             await Task.yield()
 
             // 10. Deduced relationships review
-            newOutcomes.append(contentsOf: scanDeducedRelationships())
+            newOutcomes.append(contentsOf: perf.measureSync("OutcomeEngine.deducedRelationships") { scanDeducedRelationships() })
             await Task.yield()
 
             // 11. LinkedIn notification setup guidance (Phase 6)
-            newOutcomes.append(contentsOf: try scanNotificationSetupGuidance())
+            newOutcomes.append(contentsOf: try perf.measureSync("OutcomeEngine.notificationSetupGuidance") { try scanNotificationSetupGuidance() })
             await Task.yield()
 
             // 12. Role suggestions review
-            newOutcomes.append(contentsOf: scanRoleSuggestions())
+            newOutcomes.append(contentsOf: perf.measureSync("OutcomeEngine.roleSuggestions") { scanRoleSuggestions() })
             await Task.yield()
 
             // 13. Stale contacts → archive suggestions
-            newOutcomes.append(contentsOf: try scanStaleContacts(people: allPeople))
+            newOutcomes.append(contentsOf: try perf.measureSync("OutcomeEngine.staleContacts") { try scanStaleContacts(people: allPeople) })
             await Task.yield()
 
             // 14. Progressive feature adoption coaching
-            newOutcomes.append(contentsOf: scanFeatureAdoption())
+            newOutcomes.append(contentsOf: perf.measureSync("OutcomeEngine.featureAdoption") { scanFeatureAdoption() })
             await Task.yield()
 
             // 15. Substack auto-detection
-            newOutcomes.append(contentsOf: try scanSubstackAutoDetection())
+            newOutcomes.append(contentsOf: try perf.measureSync("OutcomeEngine.substackAutoDetection") { try scanSubstackAutoDetection() })
             await Task.yield()
 
             // 16. WhatsApp auto-detection
-            newOutcomes.append(contentsOf: scanWhatsAppAutoDetection())
+            newOutcomes.append(contentsOf: perf.measureSync("OutcomeEngine.whatsAppAutoDetection") { scanWhatsAppAutoDetection() })
             await Task.yield()
 
             // 17. Role recruiting discovery & cultivation
-            newOutcomes.append(contentsOf: scanRoleRecruiting())
+            newOutcomes.append(contentsOf: perf.measureSync("OutcomeEngine.roleRecruiting") { scanRoleRecruiting() })
             await Task.yield()
 
             // 18. Sarah's open commitments due soon (Block 3)
-            newOutcomes.append(contentsOf: scanOpenCommitments())
+            newOutcomes.append(contentsOf: perf.measureSync("OutcomeEngine.openCommitments") { scanOpenCommitments() })
             await Task.yield()
 
             // Classify action lanes and suggest channels
-            for outcome in newOutcomes {
-                classifyActionLane(for: outcome)
-                if outcome.actionLane == .communicate || outcome.actionLane == .call {
-                    outcome.suggestedChannel = suggestChannel(for: outcome)
+            perf.measureSync("OutcomeEngine.classifyActionLanes") {
+                for outcome in newOutcomes {
+                    classifyActionLane(for: outcome)
+                    if outcome.actionLane == .communicate || outcome.actionLane == .call {
+                        outcome.suggestedChannel = suggestChannel(for: outcome)
+                    }
                 }
             }
 
             // Generate multi-step sequence follow-ups for communicate/call outcomes
-            var sequenceSteps: [SamOutcome] = []
-            for outcome in newOutcomes {
-                let steps = maybeCreateSequenceSteps(for: outcome)
-                if !steps.isEmpty {
-                    let seqID = UUID()
-                    outcome.sequenceID = seqID
-                    outcome.sequenceIndex = 0
-                    for (i, step) in steps.enumerated() {
-                        step.sequenceID = seqID
-                        step.sequenceIndex = i + 1
+            let sequenceSteps = perf.measureSync("OutcomeEngine.buildSequenceSteps") { () -> [SamOutcome] in
+                var steps: [SamOutcome] = []
+                for outcome in newOutcomes {
+                    let outcomeSteps = maybeCreateSequenceSteps(for: outcome)
+                    if !outcomeSteps.isEmpty {
+                        let seqID = UUID()
+                        outcome.sequenceID = seqID
+                        outcome.sequenceIndex = 0
+                        for (i, step) in outcomeSteps.enumerated() {
+                            step.sequenceID = seqID
+                            step.sequenceIndex = i + 1
+                        }
+                        steps.append(contentsOf: outcomeSteps)
                     }
-                    sequenceSteps.append(contentsOf: steps)
                 }
+                return steps
             }
             newOutcomes.append(contentsOf: sequenceSteps)
 
             // Generate companion "heads-up" outcomes for detailed communications
-            var companions: [SamOutcome] = []
-            for outcome in newOutcomes where outcome.messageCategory == .detailed {
-                if let companion = maybeCreateCompanionOutcome(for: outcome) {
-                    companions.append(companion)
+            let companions = perf.measureSync("OutcomeEngine.buildCompanions") { () -> [SamOutcome] in
+                var result: [SamOutcome] = []
+                for outcome in newOutcomes where outcome.messageCategory == .detailed {
+                    if let companion = maybeCreateCompanionOutcome(for: outcome) {
+                        result.append(companion)
+                    }
                 }
+                return result
             }
             newOutcomes.append(contentsOf: companions)
 
-            // Score all new outcomes using calibrated weights
-            let weights = CoachingAdvisor.shared.adjustedWeights()
-            // Pre-compute health for all linked people to avoid redundant calls in the scoring loop
-            let linkedPeople = Set(newOutcomes.compactMap { outcome -> SamPerson? in
-                guard let person = outcome.linkedPerson, !person.isDeleted else { return nil }
-                return person
-            })
-            let healthCache = Dictionary(linkedPeople.compactMap { person -> (UUID, RelationshipHealth)? in
-                guard !person.isDeleted else { return nil }
-                return (person.id, meetingPrep.computeHealth(for: person))
-            }, uniquingKeysWith: { first, _ in first })
-            for outcome in newOutcomes {
-                outcome.priorityScore = computePriority(outcome: outcome, weights: weights, healthCache: healthCache)
+            // Score all new outcomes using calibrated weights.
+            // Iter 2: reuses currentRunHealthCache populated by
+            // scanRelationshipHealth — eliminates a second round of
+            // computeHealth calls (was 2.3 s on its own).
+            await perf.measure("OutcomeEngine.scorePriorities") {
+                let weights = CoachingAdvisor.shared.adjustedWeights()
+                let healthCache = currentRunHealthCache
+                for outcome in newOutcomes {
+                    outcome.priorityScore = computePriority(outcome: outcome, weights: weights, healthCache: healthCache)
+                }
             }
 
             // Filter muted kinds
-            let mutedKinds = Set(CalibrationService.cachedLedger.mutedKinds)
-            if !mutedKinds.isEmpty {
-                newOutcomes.removeAll { mutedKinds.contains($0.outcomeKindRawValue) }
+            perf.measureSync("OutcomeEngine.filterMutedKinds") {
+                let mutedKinds = Set(CalibrationService.cachedLedger.mutedKinds)
+                if !mutedKinds.isEmpty {
+                    newOutcomes.removeAll { mutedKinds.contains($0.outcomeKindRawValue) }
+                }
             }
 
             // Soft suppress: kinds with <15% act rate after 20+ interactions get 0.3x priority
-            let calibrationLedger = CalibrationService.cachedLedger
-            for outcome in newOutcomes {
-                if let kindStat = calibrationLedger.kindStats[outcome.outcomeKindRawValue],
-                   kindStat.actedOn + kindStat.dismissed >= 20,
-                   kindStat.actRate < 0.15 {
-                    outcome.priorityScore *= 0.3
+            perf.measureSync("OutcomeEngine.softSuppress") {
+                let calibrationLedger = CalibrationService.cachedLedger
+                for outcome in newOutcomes {
+                    if let kindStat = calibrationLedger.kindStats[outcome.outcomeKindRawValue],
+                       kindStat.actedOn + kindStat.dismissed >= 20,
+                       kindStat.actRate < 0.15 {
+                        outcome.priorityScore *= 0.3
+                    }
                 }
             }
 
             // Persist (deduplication: skip if an active duplicate exists OR
-            // if the user recently dismissed/completed the same suggestion)
-            var persisted = 0
-            for outcome in newOutcomes {
-                let isDuplicate = try outcomeRepo.hasSimilarOutcome(
-                    kind: outcome.outcomeKind,
-                    personID: outcome.linkedPerson?.id
-                )
-                let wasActedOn = try outcomeRepo.hasRecentlyActedOutcome(
-                    kind: outcome.outcomeKind,
-                    personID: outcome.linkedPerson?.id
-                )
-                if !isDuplicate && !wasActedOn {
-                    try outcomeRepo.upsert(outcome: outcome)
-                    persisted += 1
+            // if the user recently dismissed/completed the same suggestion).
+            // Iter 2: pre-build a single dedup index and insert without per-item
+            // save. Was 10.0 s for ~80 outcomes (160 full-table fetches + 80
+            // saves); now one full-table fetch + one save at the end.
+            let persisted = try await perf.measure("OutcomeEngine.persistOutcomes") { () -> Int in
+                let dedup = try outcomeRepo.buildDedupIndex()
+                var count = 0
+                var batch = 0
+                for outcome in newOutcomes {
+                    let kindRaw = outcome.outcomeKindRawValue
+                    let pid = outcome.linkedPerson?.id
+                    if dedup.isDuplicate(kindRaw: kindRaw, personID: pid) { continue }
+                    if dedup.wasActedOn(kindRaw: kindRaw, personID: pid) { continue }
+                    try outcomeRepo.insertWithoutSave(outcome: outcome)
+                    count += 1
+                    batch += 1
+                    if batch % 25 == 0 { await Task.yield() }
                 }
+                if count > 0 { try outcomeRepo.save() }
+                return count
             }
 
             // Detect knowledge gaps
-            activeGaps = detectKnowledgeGaps()
+            activeGaps = perf.measureSync("OutcomeEngine.detectKnowledgeGaps") { detectKnowledgeGaps() }
 
             // AI enrichment (best-effort, non-blocking)
-            await enrichWithAI()
+            await perf.measure("OutcomeEngine.enrichWithAI") { await enrichWithAI() }
 
             // Reprioritize all active outcomes
-            try reprioritize()
+            try await perf.measure("OutcomeEngine.reprioritize") { try await reprioritize() }
 
             generationStatus = .success
             lastGeneratedAt = .now
@@ -288,33 +312,39 @@ final class OutcomeEngine {
     }
 
     /// Re-score and sort all active outcomes.
-    func reprioritize() throws {
+    func reprioritize() async throws {
         // Flush any unsaved mutations (e.g. from enrichWithAI) so the context
         // is consistent before we re-fetch and mutate again.
         try? outcomeRepo.save()
 
         let weights = CoachingAdvisor.shared.adjustedWeights()
         let active = try outcomeRepo.fetchActive()
-        let activeIDs = active.map { $0.id }
 
-        let linkedPeople = Set(active.compactMap { outcome -> SamPerson? in
-            guard !outcome.isDeleted, let person = outcome.linkedPerson, !person.isDeleted else { return nil }
-            return person
-        })
-        let healthCache = Dictionary(uniqueKeysWithValues: linkedPeople.compactMap { person -> (UUID, RelationshipHealth)? in
-            guard !person.isDeleted else { return nil }
-            return (person.id, meetingPrep.computeHealth(for: person))
-        })
-
-        // Re-fetch each outcome individually before mutating to avoid stale
-        // relationship references that cause SwiftData assertion failures.
-        for outcomeID in activeIDs {
-            guard let outcome = try? outcomeRepo.fetch(id: outcomeID),
-                  !outcome.isDeleted else {
-                continue
-            }
-            outcome.priorityScore = computePriority(outcome: outcome, weights: weights, healthCache: healthCache)
+        // Iter 2: reuse the run-wide healthCache built in scanRelationshipHealth
+        // (covers all people from fetchAllPeople). Falls back to a per-person
+        // computeHealth only if the active outcome links a person we didn't see
+        // on this pass (rare). Was rebuilding the whole cache here = 2.3–4.5 s.
+        var healthCache = currentRunHealthCache
+        var personBatch = 0
+        for outcome in active {
+            guard !outcome.isDeleted,
+                  let person = outcome.linkedPerson,
+                  !person.isDeleted,
+                  healthCache[person.id] == nil else { continue }
+            healthCache[person.id] = meetingPrep.computeHealth(for: person)
+            personBatch += 1
+            if personBatch % 25 == 0 { await Task.yield() }
         }
+
+        // Iter 2: iterate the already-fetched array directly — the prior code
+        // did a full-table fetch per outcome (N²) which dominated the 2.7 s cost.
+        var outcomeBatch = 0
+        for outcome in active where !outcome.isDeleted {
+            outcome.priorityScore = computePriority(outcome: outcome, weights: weights, healthCache: healthCache)
+            outcomeBatch += 1
+            if outcomeBatch % 25 == 0 { await Task.yield() }
+        }
+        try? outcomeRepo.save()
     }
 
     // MARK: - Snooze Auto-Resolve
@@ -479,13 +509,42 @@ final class OutcomeEngine {
         return outcomes
     }
 
+    /// Per-run cache of relationship health, populated by `scanRelationshipHealth`
+    /// and reused by `scorePriorities` / `reprioritize` to avoid re-faulting evidence
+    /// for every linked person on every scoring pass.
+    /// Iter 2 fix: prevented reprioritize from doing 50× redundant computeHealth
+    /// calls (was 4.5 s on the +5 min run).
+    private var currentRunHealthCache: [UUID: RelationshipHealth] = [:]
+
+    /// Read-only snapshot of the most recent health cache. Used by
+    /// `DailyBriefingCoordinator.gatherFollowUps` to avoid recomputing
+    /// health for ~200 people that `scanRelationshipHealth` just walked.
+    /// Empty if outcome generation has not yet run this session.
+    var healthCacheSnapshot: [UUID: RelationshipHealth] {
+        currentRunHealthCache
+    }
+
     /// Scan relationship health for people going cold → outreach outcomes.
     /// Includes both static-threshold outcomes and velocity-aware predictive outcomes.
+    /// Side effect: populates `currentRunHealthCache` so later phases can reuse the work.
     private func scanRelationshipHealth(people: [SamPerson]) throws -> [SamOutcome] {
         var outcomes: [SamOutcome] = []
+        currentRunHealthCache.removeAll(keepingCapacity: true)
+        currentRunHealthCache.reserveCapacity(people.count)
+
+        // Phase 1c instrumentation — relationshipHealth is the slowest scanner.
+        // We log aggregate timing once per call so the cost can be split between
+        // computeHealth (per-person evidence walk) and the rest of the iteration.
+        let scanStart = Date()
+        var healthCumulative: TimeInterval = 0
+        var healthCalls = 0
 
         for person in people {
+            let healthStart = Date()
             let health = meetingPrep.computeHealth(for: person)
+            currentRunHealthCache[person.id] = health
+            healthCumulative += Date().timeIntervalSince(healthStart)
+            healthCalls += 1
             guard let days = health.daysSinceLastInteraction else { continue }
 
             let name = person.displayNameCache ?? person.displayName
@@ -565,6 +624,9 @@ final class OutcomeEngine {
                 ))
             }
         }
+
+        let totalElapsed = Date().timeIntervalSince(scanStart)
+        logger.info("scanRelationshipHealth: \(healthCalls) people in \(totalElapsed, format: .fixed(precision: 3))s (computeHealth \(healthCumulative, format: .fixed(precision: 3))s = \(healthCumulative / max(totalElapsed, 0.001) * 100, format: .fixed(precision: 0))%)")
 
         return outcomes
     }

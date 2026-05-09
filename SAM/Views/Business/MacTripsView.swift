@@ -133,6 +133,10 @@ struct MacTripsView: View {
             MacTripDetailView(trip: trip)
                 .frame(minWidth: 500, minHeight: 500)
         }
+        .restoreOnUnlock(item: Binding(
+            get: { selectedTrip },
+            set: { newVal in selectedTripID = newVal?.id }
+        ))
     }
 
     // MARK: - Stats Header
@@ -463,6 +467,7 @@ struct MacTripDetailView: View {
             }
             .formStyle(.grouped)
         }
+        .dismissOnLock(isPresented: $showAddVehicle)
         .alert("Add Vehicle", isPresented: $showAddVehicle) {
             TextField("Vehicle name", text: $newVehicleName)
             Button("Add") {

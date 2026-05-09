@@ -622,6 +622,12 @@ final class MeetingPrepCoordinator {
     // MARK: - Private: Briefings
 
     private func buildBriefings() async throws -> [MeetingBriefing] {
+        try await PerformanceMonitor.shared.measure("MeetingPrep.buildBriefings") {
+            try await self._buildBriefingsImpl()
+        }
+    }
+
+    private func _buildBriefingsImpl() async throws -> [MeetingBriefing] {
         let now = Date()
         let fortyEightHoursFromNow = Calendar.current.date(byAdding: .hour, value: 48, to: now)!
         let thirtyDaysAgo = Calendar.current.date(byAdding: .day, value: -30, to: now)!
@@ -705,6 +711,12 @@ final class MeetingPrepCoordinator {
     // MARK: - Private: Follow-Up Prompts
 
     private func buildFollowUpPrompts() throws -> [FollowUpPrompt] {
+        try PerformanceMonitor.shared.measureSync("MeetingPrep.buildFollowUpPrompts") {
+            try _buildFollowUpPromptsImpl()
+        }
+    }
+
+    private func _buildFollowUpPromptsImpl() throws -> [FollowUpPrompt] {
         let now = Date()
         let fortyEightHoursAgo = Calendar.current.date(byAdding: .hour, value: -48, to: now)!
         // Pull a slightly wider window so events whose endedAt falls inside

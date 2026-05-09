@@ -92,6 +92,7 @@ struct CompanionPhoneSettingsPane: View {
         } message: {
             Text("All iPhones currently paired with this Mac will need to fetch the new token from iCloud before they can reconnect.")
         }
+        .dismissOnLock(isPresented: $showingResetConfirm)
     }
 }
 
@@ -139,6 +140,7 @@ private struct PairedDeviceRow: View {
             } message: {
                 Text("This iPhone will be removed from the paired list, but it will re-appear here on its next connection because the iCloud pairing token still gives it access. Use Reset Pairing Token to lock it out completely.")
             }
+            .dismissOnLock(isPresented: $showingUnpairConfirm)
         }
         .padding(.vertical, 2)
     }

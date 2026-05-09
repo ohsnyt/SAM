@@ -476,6 +476,82 @@ final class OutcomeRepository {
         }
     }
 
+    // MARK: - Bulk Insert (no per-item save)
+
+    /// Insert a new outcome without saving. The caller MUST call `save()`
+    /// after a batch of inserts. Resolves cross-context relationships first.
+    /// Used by OutcomeEngine.persistOutcomes to avoid O(N) save overhead.
+    func insertWithoutSave(outcome: SamOutcome) throws {
+        guard let context else { throw RepositoryError.notConfigured }
+        outcome.linkedPerson = try resolveInContext(outcome.linkedPerson)
+        outcome.linkedContext = try resolveInContext(outcome.linkedContext)
+        context.insert(outcome)
+    }
+
+    // MARK: - Dedup Index
+
+    /// Pre-computed lookup tables for kind+person duplicate detection.
+    /// Built from a single full-table fetch — drastically faster than calling
+    /// `hasSimilarOutcome` / `hasRecentlyActedOutcome` per candidate (each of
+    /// those does its own full-table fetch).
+    struct DedupIndex {
+        /// Keys for active (pending/inProgress/snoozed) outcomes within the window.
+        let activeKeys: Set<String>
+        /// Keys for recently dismissed/completed outcomes within the window.
+        let actedOnKeys: Set<String>
+
+        static func key(kindRaw: String, personID: UUID?) -> String {
+            "\(kindRaw)|\(personID?.uuidString ?? "nil")"
+        }
+
+        func isDuplicate(kindRaw: String, personID: UUID?) -> Bool {
+            activeKeys.contains(Self.key(kindRaw: kindRaw, personID: personID))
+        }
+
+        func wasActedOn(kindRaw: String, personID: UUID?) -> Bool {
+            actedOnKeys.contains(Self.key(kindRaw: kindRaw, personID: personID))
+        }
+    }
+
+    /// Build a `DedupIndex` from one full-table fetch.
+    /// Use the same windows that `hasSimilarOutcome` / `hasRecentlyActedOutcome` use.
+    func buildDedupIndex(
+        activeWindowHours: Int = 24,
+        actedOnWindowDays: Int = 7
+    ) throws -> DedupIndex {
+        guard let context else { throw RepositoryError.notConfigured }
+
+        let activeCutoff = Calendar.current.date(byAdding: .hour, value: -activeWindowHours, to: .now) ?? .now
+        let actedCutoff = Calendar.current.date(byAdding: .day, value: -actedOnWindowDays, to: .now) ?? .now
+
+        let descriptor = FetchDescriptor<SamOutcome>()
+        let all = try context.fetch(descriptor)
+
+        var active = Set<String>()
+        var acted = Set<String>()
+        active.reserveCapacity(all.count)
+        acted.reserveCapacity(all.count)
+
+        for outcome in all {
+            let key = DedupIndex.key(kindRaw: outcome.outcomeKindRawValue, personID: outcome.linkedPerson?.id)
+            switch outcome.status {
+            case .pending, .inProgress, .snoozed:
+                if outcome.createdAt >= activeCutoff {
+                    active.insert(key)
+                }
+            case .dismissed, .completed:
+                let actedAt = (outcome.dismissedAt ?? outcome.completedAt) ?? outcome.createdAt
+                if actedAt >= actedCutoff {
+                    acted.insert(key)
+                }
+            case .expired:
+                break
+            }
+        }
+
+        return DedupIndex(activeKeys: active, actedOnKeys: acted)
+    }
+
     // MARK: - Deduplication Helpers
 
     /// Check if a similar outcome already exists within a time window.

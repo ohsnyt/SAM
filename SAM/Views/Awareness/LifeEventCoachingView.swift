@@ -92,6 +92,7 @@ struct LifeEventCoachingView: View {
                 onCancel: { showContentDraftSheet = false }
             )
         }
+        .restoreOnUnlock(isPresented: $showContentDraftSheet)
     }
 
     // MARK: - Header

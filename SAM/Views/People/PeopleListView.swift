@@ -33,6 +33,11 @@ enum PeopleSpecialFilter: String, CaseIterable {
     case archived = "Archived"
     case dnc = "Do Not Contact"
     case deceased = "Deceased"
+    case inactiveAppleContacts = "Inactive · Apple Contacts"
+    case inactiveLinkedIn = "Inactive · LinkedIn"
+    case inactiveFacebook = "Inactive · Facebook"
+    case inactiveNotes = "Inactive · Notes"
+    case inactiveOther = "Inactive · Other"
 
     /// SF Symbol icon for filter summary display.
     var icon: String {
@@ -44,6 +49,24 @@ enum PeopleSpecialFilter: String, CaseIterable {
         case .archived:              return "archivebox"
         case .dnc:                   return "hand.raised"
         case .deceased:              return "heart.slash"
+        case .inactiveAppleContacts,
+             .inactiveLinkedIn,
+             .inactiveFacebook,
+             .inactiveNotes,
+             .inactiveOther:         return "person.crop.circle.dashed"
+        }
+    }
+
+    /// Maps an inactive-bucket filter to its `SamPerson.NoSignalBucket`.
+    /// Returns nil for filters that aren't inactive-bucket variants.
+    var inactiveBucket: SamPerson.NoSignalBucket? {
+        switch self {
+        case .inactiveAppleContacts: return .appleContacts
+        case .inactiveLinkedIn:      return .linkedIn
+        case .inactiveFacebook:      return .facebook
+        case .inactiveNotes:         return .notes
+        case .inactiveOther:         return .other
+        default:                     return nil
         }
     }
 
@@ -51,6 +74,10 @@ enum PeopleSpecialFilter: String, CaseIterable {
     static let attentionGroup: Set<PeopleSpecialFilter> = [.pendingRoleSuggestions, .needsContactUpdate, .notInSAM, .notInContacts]
     /// "Excluded" group — contacts removed from active consideration.
     static let excludedGroup: Set<PeopleSpecialFilter> = [.archived, .dnc, .deceased]
+    /// "Inactive" group — no-signal contacts (dead-weight social imports / stale
+    /// Apple Contacts), bucketed by origin. Hidden from the list by default;
+    /// selecting any of these filters focuses the list on those buckets.
+    static let inactiveGroup: Set<PeopleSpecialFilter> = [.inactiveAppleContacts, .inactiveLinkedIn, .inactiveFacebook, .inactiveNotes, .inactiveOther]
 }
 
 struct PeopleListView: View {
@@ -88,6 +115,20 @@ struct PeopleListView: View {
     }
 
     // MARK: - Computed
+
+    /// Counts of active no-signal contacts per origin bucket. Used to
+    /// surface "Inactive · Apple Contacts (1234)" labels in the filter menu
+    /// so the user can see where noise volume is coming from.
+    private var inactiveBucketCounts: [SamPerson.NoSignalBucket: Int] {
+        var counts: [SamPerson.NoSignalBucket: Int] = [:]
+        for person in allPeople {
+            guard person.lifecycleStatus == .active,
+                  !person.isMe,
+                  !person.hasMeaningfulSignal else { continue }
+            counts[person.noSignalBucket, default: 0] += 1
+        }
+        return counts
+    }
 
     /// All roles present across all people (unfiltered), for the filter menu.
     private var availableRoles: [String] {
@@ -127,10 +168,13 @@ struct PeopleListView: View {
             }
         }
 
-        // Lifecycle special filters — show ONLY people in that state
-        let lifecycleFilters: Set<PeopleSpecialFilter> = [.archived, .dnc, .deceased]
-        let activeLifecycleFilters = activeSpecialFilters.intersection(lifecycleFilters)
+        // Lifecycle / inactive-bucket filters — these are mutually exclusive
+        // "show only" focus modes. Default (none active) hides non-active
+        // contacts AND hides no-signal contacts (dead-weight social imports).
+        let activeLifecycleFilters = activeSpecialFilters.intersection(PeopleSpecialFilter.excludedGroup)
+        let activeInactiveFilters = activeSpecialFilters.intersection(PeopleSpecialFilter.inactiveGroup)
         if !activeLifecycleFilters.isEmpty {
+            // Focus on archived / DNC / deceased
             let statuses: Set<String> = Set(activeLifecycleFilters.compactMap { filter -> String? in
                 switch filter {
                 case .archived: return ContactLifecycleStatus.archived.rawValue
@@ -140,9 +184,17 @@ struct PeopleListView: View {
                 }
             })
             list = list.filter { statuses.contains($0.lifecycleStatusRawValue) }
+        } else if !activeInactiveFilters.isEmpty {
+            // Focus on no-signal contacts in the selected origin buckets
+            let buckets = Set(activeInactiveFilters.compactMap(\.inactiveBucket))
+            list = list.filter { person in
+                person.lifecycleStatus == .active
+                    && !person.hasMeaningfulSignal
+                    && buckets.contains(person.noSignalBucket)
+            }
         } else {
-            // Default: hide non-active contacts
-            list = list.filter { $0.lifecycleStatus == .active || $0.isMe }
+            // Default: hide non-active contacts AND no-signal noise
+            list = list.filter { ($0.lifecycleStatus == .active || $0.isMe) && ($0.hasMeaningfulSignal || $0.isMe) }
         }
 
         // Special filters
@@ -319,6 +371,7 @@ struct PeopleListView: View {
                 selectedPersonID = newID
             }
         }
+        .restoreOnUnlock(isPresented: $showingNewPersonSheet)
         .onChange(of: allPeople.count) { _, newCount in
             if newCount != lastCheckedPeopleCount {
                 lastCheckedPeopleCount = newCount
@@ -414,6 +467,17 @@ struct PeopleListView: View {
                 specialFilterButton(.archived)
                 specialFilterButton(.dnc)
                 specialFilterButton(.deceased)
+                Divider()
+                // Inactive group — no-signal contacts bucketed by origin.
+                // Hidden from the list by default; selecting any of these
+                // focuses the list on that bucket so the user can audit /
+                // archive in bulk.
+                let bucketCounts = inactiveBucketCounts
+                specialFilterButton(.inactiveAppleContacts, count: bucketCounts[.appleContacts] ?? 0)
+                specialFilterButton(.inactiveLinkedIn,      count: bucketCounts[.linkedIn] ?? 0)
+                specialFilterButton(.inactiveFacebook,      count: bucketCounts[.facebook] ?? 0)
+                specialFilterButton(.inactiveNotes,         count: bucketCounts[.notes] ?? 0)
+                specialFilterButton(.inactiveOther,         count: bucketCounts[.other] ?? 0)
             } label: {
                 let anyFiltersActive = !activeRoleFilters.isEmpty || !activeSpecialFilters.isEmpty
                 Label("Filter", systemImage: anyFiltersActive
@@ -439,18 +503,26 @@ struct PeopleListView: View {
         .padding(.vertical, 4)
     }
 
-    /// Button for a special filter with mutual exclusivity: attention vs excluded groups.
-    private func specialFilterButton(_ filter: PeopleSpecialFilter) -> some View {
+    /// Button for a special filter with mutual exclusivity between the three
+    /// focus groups (attention, excluded, inactive). Only one focus group
+    /// can be active at a time. Optional `count` is appended to the label
+    /// (used for the inactive-bucket filters so the user can see noise volume).
+    private func specialFilterButton(_ filter: PeopleSpecialFilter, count: Int? = nil) -> some View {
         let isSelected = activeSpecialFilters.contains(filter)
         return Button {
             if isSelected {
                 activeSpecialFilters.remove(filter)
             } else {
-                // Clear the opposite group before inserting
+                // Clear the other two focus groups before inserting
                 if PeopleSpecialFilter.attentionGroup.contains(filter) {
                     activeSpecialFilters.subtract(PeopleSpecialFilter.excludedGroup)
+                    activeSpecialFilters.subtract(PeopleSpecialFilter.inactiveGroup)
                 } else if PeopleSpecialFilter.excludedGroup.contains(filter) {
                     activeSpecialFilters.subtract(PeopleSpecialFilter.attentionGroup)
+                    activeSpecialFilters.subtract(PeopleSpecialFilter.inactiveGroup)
+                } else if PeopleSpecialFilter.inactiveGroup.contains(filter) {
+                    activeSpecialFilters.subtract(PeopleSpecialFilter.attentionGroup)
+                    activeSpecialFilters.subtract(PeopleSpecialFilter.excludedGroup)
                 }
                 activeSpecialFilters.insert(filter)
             }
@@ -460,7 +532,11 @@ struct PeopleListView: View {
                     .foregroundStyle(isSelected ? Color.accentColor : .secondary)
                 Image(systemName: filter.icon)
                     .foregroundStyle(isSelected ? Color.accentColor : .secondary)
-                Text(filter.rawValue)
+                if let count {
+                    Text("\(filter.rawValue) (\(count))")
+                } else {
+                    Text(filter.rawValue)
+                }
             }
         }
     }
@@ -541,6 +617,7 @@ struct PeopleListView: View {
         .sheet(item: $personToMerge) { person in
             MergeContactSheet(sourcePerson: person)
         }
+        .restoreOnUnlock(item: $personToMerge)
         .alert(
             "Delete Person?",
             isPresented: Binding(
@@ -567,10 +644,14 @@ struct PeopleListView: View {
                 personToDelete = nil
             }
         } message: {
-            if let person = personToDelete {
-                Text("Permanently delete \(person.displayNameCache ?? person.displayName)? This removes them from SAM but not from Apple Contacts.")
+            if personToDelete != nil {
+                Text("Permanently delete this person? This removes them from SAM but not from Apple Contacts.")
             }
         }
+        .dismissOnLock(isPresented: Binding(
+            get: { personToDelete != nil },
+            set: { if !$0 { personToDelete = nil } }
+        ))
     }
 
     // MARK: - No Match State

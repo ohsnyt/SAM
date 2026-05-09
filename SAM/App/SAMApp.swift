@@ -43,6 +43,11 @@ final class SAMAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidatio
 
         SystemNotificationService.shared.configure()
 
+        // § Main-actor responsiveness watchdog (Phase 1a). Starts before any
+        // heavy launch work so the first 15 minutes — when beachballs are
+        // most common — are covered. Skipped in Safe Mode (above guard).
+        HangWatchdog.shared.start()
+
         // Register global clipboard capture hotkey if enabled + Accessibility granted
         if UserDefaults.standard.bool(forKey: GlobalHotkeyService.enabledKey),
            GlobalHotkeyService.shared.checkAccessibilityPermission() {
@@ -84,6 +89,7 @@ final class SAMAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidatio
 
         log.info("App termination requested — cancelling background tasks")
         CrashReportService.shared.markCleanShutdown()
+        HangWatchdog.shared.stop()
         periodicSaveTimer?.invalidate()
         periodicSaveTimer = nil
         ContactsImportCoordinator.shared.cancelAll()
@@ -364,6 +370,7 @@ struct SAMApp: App {
                                 backupCoordinator.status = .failed(error.localizedDescription)
                             }
                         }
+                        .dismissOnLock(isPresented: $showImportFilePicker)
                         .alert("Replace All Data?", isPresented: $showImportConfirmation) {
                             Button("Cancel", role: .cancel) {
                                 pendingImportURL = nil
@@ -389,6 +396,7 @@ struct SAMApp: App {
                                 Text("This will delete ALL existing data and replace it with:\n\n\(counts.people) people, \(counts.notes) notes, \(counts.evidence) evidence items, \(counts.contexts) contexts\n\nA safety backup will be saved to your temp directory first.\(schemaNote)")
                             }
                         }
+                        .dismissOnLock(isPresented: $showImportConfirmation)
                         .onDisappear {
                             // Show intro immediately after onboarding dismisses.
                             // Brief delay so the sheet animation completes first.
@@ -405,14 +413,20 @@ struct SAMApp: App {
                         }
                 }
                 .task {
+                    let perf = PerformanceMonitor.shared
+
                     // Configure app lock on launch
-                    lockService.configureOnLaunch()
+                    perf.measureSync("Launch.task.configureLockService") {
+                        lockService.configureOnLaunch()
+                    }
 
                     // Check permissions ONCE on first launch
                     // This runs before user interaction, preventing the race condition
                     // where users could click on people before permissions are verified
                     guard !hasCheckedPermissions else { return }
-                    await checkPermissionsAndSetup()
+                    await perf.measure("Launch.task.checkPermissionsAndSetup") {
+                        await checkPermissionsAndSetup()
+                    }
                     hasCheckedPermissions = true
 
                     // Briefing generation is deferred until after imports complete
@@ -422,7 +436,9 @@ struct SAMApp: App {
                     if !UserDefaults.standard.bool(forKey: "sam.contacts.enabled")
                         && !UserDefaults.standard.bool(forKey: "calendarAutoImportEnabled") {
                         if DailyBriefingCoordinator.shared.morningBriefing == nil {
-                            await DailyBriefingCoordinator.shared.checkFirstOpenOfDay()
+                            await perf.measure("Launch.task.briefingFirstOpenOfDay") {
+                                await DailyBriefingCoordinator.shared.checkFirstOpenOfDay()
+                            }
                         }
                     }
 
@@ -434,14 +450,20 @@ struct SAMApp: App {
 
                     // Load pairing state (macDeviceID + token from Keychain, whitelist
                     // from UserDefaults) before the listener starts accepting connections.
-                    await DevicePairingService.shared.bootstrap()
+                    await perf.measure("Launch.task.devicePairingBootstrap") {
+                        await DevicePairingService.shared.bootstrap()
+                    }
 
                     // Start the always-on transcription listener so the iPhone can
                     // connect and record without needing the user to click Start on Mac.
                     // Safe to call even if this runs before onboarding completes —
                     // startListening() is idempotent.
-                    TranscriptionSessionCoordinator.shared.configure(container: SAMModelContainer.shared)
-                    TranscriptionSessionCoordinator.shared.startListening()
+                    perf.measureSync("Launch.task.transcriptionConfigure") {
+                        TranscriptionSessionCoordinator.shared.configure(container: SAMModelContainer.shared)
+                    }
+                    perf.measureSync("Launch.task.transcriptionStartListening") {
+                        TranscriptionSessionCoordinator.shared.startListening()
+                    }
 
                     // Run the audio retention pass on launch in the background.
                     // Looks for sessions signed off >30d ago (configurable) and
@@ -506,6 +528,7 @@ struct SAMApp: App {
                         backupCoordinator.status = .failed(error.localizedDescription)
                     }
                 }
+                .dismissOnLock(isPresented: $showImportFilePicker)
                 .alert("Replace All Data?", isPresented: $showImportConfirmation) {
                     Button("Cancel", role: .cancel) {
                         pendingImportURL = nil
@@ -528,6 +551,7 @@ struct SAMApp: App {
                         Text("This will delete ALL existing data and replace it with:\n\n\(counts.people) people, \(counts.notes) notes, \(counts.evidence) evidence items, \(counts.contexts) contexts\n\nA safety backup will be saved to your temp directory first.\(schemaNote)")
                     }
                 }
+                .dismissOnLock(isPresented: $showImportConfirmation)
                 .alert("Clear All Data?", isPresented: $showClearDataConfirmation) {
                     Button("Cancel", role: .cancel) { }
                     Button("Clear Data", role: .destructive) {
@@ -536,20 +560,25 @@ struct SAMApp: App {
                 } message: {
                     Text("This will delete all people, notes, evidence, and settings, then quit the app. On relaunch you will go through onboarding again.")
                 }
+                .dismissOnLock(isPresented: $showClearDataConfirmation)
                 .sheet(isPresented: $showLinkedInImportSheet) {
                     LinkedInImportSheet()
                 }
+                .restoreOnUnlock(isPresented: $showLinkedInImportSheet)
                 .sheet(isPresented: $showFacebookImportSheet) {
                     FacebookImportSheet()
                 }
+                .restoreOnUnlock(isPresented: $showFacebookImportSheet)
                 .sheet(isPresented: $showEvernotePreviewSheet) {
                     EvernoteImportPreviewSheet {
                         showEvernotePreviewSheet = false
                     }
                 }
+                .restoreOnUnlock(isPresented: $showEvernotePreviewSheet)
                 .sheet(isPresented: $showSubstackImportSheet) {
                     SubstackImportSheet()
                 }
+                .restoreOnUnlock(isPresented: $showSubstackImportSheet)
                 .sheet(isPresented: $showPassphraseSheet) {
                     BackupPassphraseSheet(
                         passphrase: $backupPassphrase,
@@ -566,6 +595,7 @@ struct SAMApp: App {
                         pendingBackupURL = nil
                     }
                 }
+                .dismissOnLock(isPresented: $showPassphraseSheet)
                 .sheet(isPresented: $showImportPassphraseSheet) {
                     BackupPassphraseSheet(
                         passphrase: $importPassphrase,
@@ -587,6 +617,7 @@ struct SAMApp: App {
                         pendingImportURL = nil
                     }
                 }
+                .dismissOnLock(isPresented: $showImportPassphraseSheet)
                 .onReceive(NotificationCenter.default.publisher(for: .samLinkedInAwaitingReview)) { _ in
                     showLinkedInImportSheet = true
                 }
@@ -608,7 +639,7 @@ struct SAMApp: App {
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                     lockService.appDidBecomeActive()
                 }
-                .lockGuarded()
+                .observeForLock()
         }
         .defaultSize(Self.mainWindowSize)
 
@@ -917,7 +948,7 @@ struct SAMApp: App {
                 QuickNoteWindowView(payload: payload)
                     .modelContainer(SAMModelContainer.shared)
                     .environment(\.samTextScale, SAMTextSize(rawValue: textSizeRawValue)?.scale ?? 1.0)
-                    .lockGuarded()
+                    .observeForLock()
             }
         }
         .defaultSize(width: 500, height: 300)
@@ -930,7 +961,7 @@ struct SAMApp: App {
                 ClipboardCaptureWindowView(payload: payload)
                     .modelContainer(SAMModelContainer.shared)
                     .environment(\.samTextScale, SAMTextSize(rawValue: textSizeRawValue)?.scale ?? 1.0)
-                    .lockGuarded()
+                    .observeForLock()
             }
         }
         .defaultSize(width: 600, height: 500)
@@ -943,7 +974,7 @@ struct SAMApp: App {
                 ComposeWindowView(payload: payload)
                     .modelContainer(SAMModelContainer.shared)
                     .environment(\.samTextScale, SAMTextSize(rawValue: textSizeRawValue)?.scale ?? 1.0)
-                    .lockGuarded()
+                    .observeForLock()
             }
         }
         .defaultSize(width: 540, height: 400)
@@ -954,18 +985,18 @@ struct SAMApp: App {
         Settings {
             SettingsView()
                 .modelContainer(SAMModelContainer.shared)
-                .lockGuarded()
+                .observeForLock()
         }
 
         Window("Prompt Lab", id: "prompt-lab") {
             PromptLabView()
-                .lockGuarded()
+                .observeForLock()
         }
         .defaultSize(width: 1200, height: 700)
 
         Window("SAM Guide", id: "guide") {
             GuideWindowView()
-                .lockGuarded()
+                .observeForLock()
         }
         .defaultSize(width: 700, height: 550)
         #endif
@@ -1058,7 +1089,13 @@ struct SAMApp: App {
     /// Wire all repositories to the given container.
     /// Called at launch and again after an in-process store replacement (e.g. test data seed).
     static func configureDataLayer(container: ModelContainer? = nil) {
-        let c = container ?? SAMModelContainer.shared
+        // The first touch of `SAMModelContainer.shared` opens the SwiftData
+        // store on the main actor — measured separately so a slow open is
+        // attributed to "container open" rather than "configure repositories".
+        let perf = PerformanceMonitor.shared
+        let c: ModelContainer = perf.measureSync("Launch.openSAMModelContainer") {
+            container ?? SAMModelContainer.shared
+        }
 
         // Log the store path so we can verify the correct file is being used/deleted
         let storeURL = c.configurations.first?.url
@@ -1096,21 +1133,31 @@ struct SAMApp: App {
         TripIngestCoordinator.shared.configure(container: c)
 
         // One-time migration: isArchived → lifecycleStatusRawValue (v31→v32)
-        SAMModelContainer.runMigrationV32IfNeeded()
+        perf.measureSync("Launch.runMigrationV32IfNeeded") {
+            SAMModelContainer.runMigrationV32IfNeeded()
+        }
 
         // One-time migration: backfill directionRaw on existing evidence
-        SAMModelContainer.runDirectionBackfillIfNeeded()
+        perf.measureSync("Launch.runDirectionBackfillIfNeeded") {
+            SAMModelContainer.runDirectionBackfillIfNeeded()
+        }
 
         // Defer heavy database maintenance to background — these were
         // blocking the main actor during startup and causing beachball.
         // EventRepository.repairIntegrity() has N+1 fetch patterns that
-        // scale with data size (events × participations × people).
+        // scale with data size (events × populations × people).
         Task(priority: .utility) {
-            EventRepository.shared.repairIntegrity()
-            EventRepository.shared.backfillPersonNameCache()
-
-            let retentionDays = UserDefaults.standard.object(forKey: "complianceAuditRetentionDays") as? Int ?? 90
-            try? ComplianceAuditRepository.shared.pruneExpired(retentionDays: retentionDays)
+            let perf = PerformanceMonitor.shared
+            await perf.measure("Launch.eventRepairIntegrity") {
+                EventRepository.shared.repairIntegrity()
+            }
+            await perf.measure("Launch.backfillPersonNameCache") {
+                EventRepository.shared.backfillPersonNameCache()
+            }
+            await perf.measure("Launch.pruneComplianceAudits") {
+                let retentionDays = UserDefaults.standard.object(forKey: "complianceAuditRetentionDays") as? Int ?? 90
+                try? ComplianceAuditRepository.shared.pruneExpired(retentionDays: retentionDays)
+            }
         }
     }
     
@@ -1324,30 +1371,56 @@ struct SAMApp: App {
         Task(priority: .utility) {
             try? await Task.sleep(for: .seconds(3))
 
+            // Don't pile OutcomeEngine + Briefing + pipeline backfill on top of
+            // an in-flight ContactsImport. ContactsImport runs on the main actor
+            // and routinely takes 6–8 s; layering the engine on top produced
+            // 4-deep main-actor stacks (ContactsImport.performImport ↔
+            // OutcomeEngine.generateOutcomes ↔ devicePairingBootstrap) and
+            // multi-second beachballs at launch. Wait — yielding — until
+            // imports settle, with a hard cap so we never block forever.
+            let waitDeadline = Date().addingTimeInterval(30)
+            while ContactsImportCoordinator.isImportingContacts && Date() < waitDeadline {
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+
+            let perf = PerformanceMonitor.shared
+
             // Pruning and purging used to run inline during launch on the
             // main actor; they fetch every row of their respective tables
             // and were a small but noticeable beachball just before contact
             // import logged "Starting import from group ID..."
-            try? OutcomeRepository.shared.pruneExpired()
-            try? OutcomeRepository.shared.purgeOld()
-            try? UndoRepository.shared.pruneExpired()
-
-            if autoGenerateOutcomes {
-                OutcomeEngine.shared.startGeneration()
+            await perf.measure("Launch.deferred.pruneExpiredOutcomes") {
+                try? OutcomeRepository.shared.pruneExpired()
+            }
+            await perf.measure("Launch.deferred.purgeOldOutcomes") {
+                try? OutcomeRepository.shared.purgeOld()
+            }
+            await perf.measure("Launch.deferred.pruneExpiredUndo") {
+                try? UndoRepository.shared.pruneExpired()
             }
 
-            if runPipelineBackfill, !UserDefaults.standard.bool(forKey: "pipelineBackfillComplete") {
-                do {
-                    let allPeople = try PeopleRepository.shared.fetchAll()
-                    let count = try PipelineRepository.shared.backfillInitialTransitions(allPeople: allPeople)
-                    UserDefaults.standard.set(true, forKey: "pipelineBackfillComplete")
-                    logger.debug("Pipeline backfill complete: \(count) transitions created")
-                } catch {
-                    logger.error("Pipeline backfill failed: \(error)")
+            if autoGenerateOutcomes {
+                await perf.measure("Launch.deferred.startOutcomeGeneration") {
+                    OutcomeEngine.shared.startGeneration()
                 }
             }
 
-            await DailyBriefingCoordinator.shared.checkFirstOpenOfDay()
+            if runPipelineBackfill, !UserDefaults.standard.bool(forKey: "pipelineBackfillComplete") {
+                await perf.measure("Launch.deferred.pipelineBackfill") {
+                    do {
+                        let allPeople = try PeopleRepository.shared.fetchAll()
+                        let count = try PipelineRepository.shared.backfillInitialTransitions(allPeople: allPeople)
+                        UserDefaults.standard.set(true, forKey: "pipelineBackfillComplete")
+                        logger.debug("Pipeline backfill complete: \(count) transitions created")
+                    } catch {
+                        logger.error("Pipeline backfill failed: \(error)")
+                    }
+                }
+            }
+
+            await perf.measure("Launch.deferred.briefingFirstOpenOfDay") {
+                await DailyBriefingCoordinator.shared.checkFirstOpenOfDay()
+            }
         }
     }
 }

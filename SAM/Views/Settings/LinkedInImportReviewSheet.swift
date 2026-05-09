@@ -312,6 +312,7 @@ struct LinkedInImportReviewSheet: View {
                 }
             )
         }
+        .restoreOnUnlock(isPresented: $showSyncConfirmation)
     }
 
     @ViewBuilder

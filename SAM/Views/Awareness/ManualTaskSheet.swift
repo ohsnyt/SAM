@@ -19,6 +19,12 @@ struct ManualTaskSheet: View {
     /// Dismiss callback
     var onSave: () -> Void = {}
 
+    // MARK: - Draft persistence
+
+    private static let draftKind = "manual-task"
+
+    private var draftID: String { prefilledPerson?.id.uuidString ?? "new" }
+
     // MARK: - State
 
     @State private var title = ""
@@ -162,7 +168,21 @@ struct ManualTaskSheet: View {
             if let person = prefilledPerson {
                 selectedPersonID = person.id
             }
+            if let stored = DraftStore.shared.load(kind: Self.draftKind, id: draftID) {
+                if let v = stored["title"] { title = v }
+                if let v = stored["notes"] { notes = v }
+            }
         }
+        .onChange(of: title) { saveDraft() }
+        .onChange(of: notes) { saveDraft() }
+    }
+
+    private func saveDraft() {
+        DraftStore.shared.save(
+            kind: Self.draftKind,
+            id: draftID,
+            fields: ["title": title, "notes": notes]
+        )
     }
 
     // MARK: - Save
@@ -189,6 +209,7 @@ struct ManualTaskSheet: View {
 
         do {
             try OutcomeRepository.shared.upsert(outcome: outcome)
+            DraftStore.shared.clear(kind: Self.draftKind, id: draftID)
             onSave()
             dismiss()
         } catch {

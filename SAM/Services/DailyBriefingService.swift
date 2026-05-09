@@ -133,36 +133,30 @@ actor DailyBriefingService {
             visualSystem = "Respond with ONLY the narrative paragraph. No headers, bullets, or formatting."
         }
 
-        // TTS narrative
-        let ttsPrompt = """
-            You are a warm, professional executive assistant briefing the advisor verbally.
-            Write a short spoken briefing (2-3 sentences) based ONLY on the data below.
-            Only reference people, meetings, and details that appear in the data. Never invent anything. Use dates exactly as given.
+        // TTS narrative is generated but no consumer plays it (no AVSpeechSynthesizer
+        // wired up, NarrationService doesn't reference ttsNarrative). Skip it to
+        // halve the briefing critical-path inference time. Re-enable when audio
+        // playback is implemented by restoring the second generateNarrative call.
 
-            PRONOUN DISCIPLINE: address the advisor as "you" / "your" — never "I" or "we". The advisor's meetings are "your 10 AM", not "our meeting" or "I'll meet with…".
-
-            Lead with what's coming up first and the most important action for the next few hours.
-            Use conversational transitions ("First up...", "Also worth noting...").
-            Round numbers ("about a dozen" instead of "12"), use relative times ("in a couple hours").
-            Keep sentences short and clear for audio delivery.
-
-            \(dataBlock)
-            """
-
-        let ttsSystem = "Respond with ONLY the spoken narrative. No formatting, headers, or brackets."
+        let clock = ContinuousClock()
+        logger.info("⏱️ Narrative prompt ready — visual prompt \(visualPrompt.count)ch")
 
         do {
-            async let visualResult = AIService.shared.generateNarrative(prompt: visualPrompt, systemInstruction: visualSystem)
-            async let ttsResult = AIService.shared.generateNarrative(prompt: ttsPrompt, systemInstruction: ttsSystem)
+            let visualStart = clock.now
+            let visual = try await AIService.shared.generateNarrative(prompt: visualPrompt, systemInstruction: visualSystem, priority: .interactive)
+            let visualElapsed = clock.now - visualStart
+            logger.info("⏱️ Visual narrative complete (\(Self.formatElapsed(visualElapsed)), \(visual.count)ch)")
 
-            let visual = try await visualResult
-            let tts = try await ttsResult
-
-            return (visual, tts)
+            return (visual, "")
         } catch {
             logger.warning("Morning narrative generation failed: \(error.localizedDescription)")
             return ("", "")
         }
+    }
+
+    private static func formatElapsed(_ duration: Duration) -> String {
+        let seconds = Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
+        return String(format: "%.2fs", seconds)
     }
 
     // MARK: - Evening Narrative
@@ -226,27 +220,10 @@ actor DailyBriefingService {
             visualSystem = "Respond with ONLY the narrative paragraph. No headers, bullets, or formatting."
         }
 
-        let ttsPrompt = """
-            You are a warm, professional executive assistant giving a spoken evening summary.
-            Write a short recap (2-3 sentences) based ONLY on the data below. Never invent details. Use dates exactly as given.
-
-            PRONOUN DISCIPLINE: address the advisor as "you" / "your" — never "I" or "we". "You closed three this week", not "we had a good week".
-
-            Highlight accomplishments and tomorrow's plan.
-            Use conversational, encouraging tone with short sentences for audio delivery.
-
-            \(dataBlock)
-            """
-
-        let ttsSystem = "Respond with ONLY the spoken narrative. No formatting, headers, or brackets."
-
+        // TTS narrative skipped — see comment in generateMorningNarrative.
         do {
-            async let visualResult = AIService.shared.generateNarrative(prompt: visualPrompt, systemInstruction: visualSystem)
-            async let ttsResult = AIService.shared.generateNarrative(prompt: ttsPrompt, systemInstruction: ttsSystem)
-
-            let visual = try await visualResult
-            let tts = try await ttsResult
-            return (visual, tts)
+            let visual = try await AIService.shared.generateNarrative(prompt: visualPrompt, systemInstruction: visualSystem, priority: .interactive)
+            return (visual, "")
         } catch {
             logger.warning("Evening narrative generation failed: \(error.localizedDescription)")
             return ("", "")

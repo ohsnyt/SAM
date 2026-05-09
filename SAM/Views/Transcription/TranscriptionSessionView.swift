@@ -65,9 +65,11 @@ struct TranscriptionSessionView: View {
         .sheet(item: $reviewSession) { session in
             TranscriptionReviewView(session: session)
         }
+        .restoreOnUnlock(item: $reviewSession)
         .sheet(isPresented: $showEnrollment) {
             SpeakerEnrollmentView()
         }
+        .restoreOnUnlock(isPresented: $showEnrollment)
     }
 
     // MARK: - Active Session Panel

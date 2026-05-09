@@ -2,130 +2,43 @@
 //  AppLockView.swift
 //  SAM
 //
-//  Created on March 13, 2026.
-//  Full-screen lock overlay requiring authentication to access the app.
+//  SwiftUI body for the lock overlay. Hosted inside `LockOverlayWindow`
+//  (an NSWindow at .floating level), which is what `LockOverlayCoordinator`
+//  attaches to every visible SAM window when the app is locked.
+//
+//  The visual is a wall of translucent "glass blocks" — each block is a
+//  separate `.regularMaterial` tile that samples its own patch of the
+//  content behind it, so text that crosses a seam refracts differently
+//  on each side. The net effect reads like looking into SAM through a
+//  glass-block shower wall: you see pale color washes move behind, but
+//  can't read any detail. Palette pulled from the SAM logo — pale
+//  cornflower blue on icy white.
 //
 
 import SwiftUI
 
-struct AppLockView: View {
+// MARK: - LockOverlayContent
+
+/// Top-level SwiftUI view rendered inside `LockOverlayWindow`. Handles
+/// the auto-prompt on appear and the tap-to-retry fallback. This is the
+/// only public entry point — everything else in this file is the visual.
+struct LockOverlayContent: View {
 
     @State private var lockService = AppLockService.shared
-    @State private var iconScale: CGFloat = 0.8
-    @State private var iconOpacity: Double = 0.0
-
-    // MARK: - Body
 
     var body: some View {
-        ZStack {
-            // Tappable background — clicking anywhere triggers authentication
-            Color.clear
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    lockService.authenticate()
-                }
-
-            Rectangle()
-                .fill(.ultraThinMaterial)
-                .ignoresSafeArea()
-                .allowsHitTesting(false)
-
-            VStack(spacing: 24) {
-                // App Icon
-                Image(nsImage: NSApp.applicationIconImage)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: 96, height: 96)
-                    .scaleEffect(iconScale)
-                    .opacity(iconOpacity)
-
-                // Title
-                Text("SAM is Locked")
-                    .samFont(.title)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.primary)
-
-                Text("Click anywhere to unlock")
-                    .samFont(.caption)
-                    .foregroundStyle(.secondary)
-
-                // Unlock Button
-                Button(action: { lockService.authenticate() }) {
-                    Label("Unlock", systemImage: lockService.isBiometricAvailable ? "touchid" : "lock.open")
-                        .samFont(.body, weight: .medium)
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .disabled(lockService.isAuthenticating)
-
-                // Error Text
-                if let error = lockService.authError {
-                    Text(error)
-                        .samFont(.caption)
-                        .foregroundStyle(.red)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: 260)
-                }
+        GlassBlockLockOverlay()
+            .contentShape(Rectangle())
+            .onTapGesture {
+                // Tap is the fallback path. The primary prompt appears
+                // automatically from `tryAutoAuthenticate()` on app
+                // activation; the user only needs to tap if they
+                // dismissed the system Touch ID dialog.
+                lockService.authenticate()
             }
-        }
-        .onAppear {
-            withAnimation(.easeOut(duration: 0.4)) {
-                iconScale = 1.0
-                iconOpacity = 1.0
+            .onAppear {
+                lockService.tryAutoAuthenticate()
             }
-
-            // Attempt authentication immediately on appear
-            lockService.authenticate()
-        }
-    }
-}
-
-// MARK: - Lock Guard Modifier
-
-/// Overlay any window with a lock screen when the app is locked.
-///
-/// Rendered as a wall of translucent "glass blocks" — each block is a
-/// separate `.regularMaterial` tile that samples its own patch of the
-/// content behind it, so text that crosses a seam refracts differently
-/// on each side. The net effect reads like looking into SAM through a
-/// glass-block shower wall: you see pale color washes move behind, but
-/// can't read any detail. Palette pulled from the SAM logo — pale
-/// cornflower blue on icy white.
-struct LockGuardModifier: ViewModifier {
-    @State private var lockService = AppLockService.shared
-
-    func body(content: Content) -> some View {
-        ZStack {
-            content
-                .allowsHitTesting(!lockService.isLocked)
-
-            if lockService.isLocked {
-                GlassBlockLockOverlay()
-                    .transition(.opacity)
-                    .onTapGesture {
-                        bringMainWindowToFront()
-                        lockService.authenticate()
-                    }
-            }
-        }
-        .animation(.easeInOut(duration: 0.22), value: lockService.isLocked)
-    }
-
-    private func bringMainWindowToFront() {
-        // Find the main app window (the one without an auxiliary identifier)
-        let auxiliaryIDs: Set<String> = ["prompt-lab", "guide", "quick-note", "clipboard-capture", "compose-message"]
-        for window in NSApplication.shared.windows where window.isVisible {
-            let id = window.identifier?.rawValue ?? ""
-            let isAuxiliary = auxiliaryIDs.contains(where: { id.contains($0) })
-            let isSettings = id.contains("Settings")
-            if !isAuxiliary && !isSettings && !id.isEmpty {
-                window.makeKeyAndOrderFront(nil)
-                NSApplication.shared.activate(ignoringOtherApps: true)
-                return
-            }
-        }
-        // Fallback: just activate the app
-        NSApplication.shared.activate(ignoringOtherApps: true)
     }
 }
 
@@ -152,6 +65,8 @@ private struct GlassBlockLockOverlay: View {
 
     @State private var iconScale: CGFloat = 0.85
     @State private var iconOpacity: Double = 0
+    @State private var lockService = AppLockService.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         GeometryReader { geo in
@@ -177,9 +92,14 @@ private struct GlassBlockLockOverlay: View {
         }
         .contentShape(Rectangle())
         .onAppear {
-            withAnimation(.easeOut(duration: 0.45)) {
+            if reduceMotion {
                 iconScale = 1
                 iconOpacity = 1
+            } else {
+                withAnimation(.easeOut(duration: 0.45)) {
+                    iconScale = 1
+                    iconOpacity = 1
+                }
             }
         }
     }
@@ -238,9 +158,24 @@ private struct GlassBlockLockOverlay: View {
                 .font(.system(size: 22, weight: .semibold, design: .rounded))
                 .foregroundStyle(.primary)
 
-            Text("Click to unlock")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            // Replace the static "click to unlock" hint with a Try Again
+            // button when biometrics has been cancelled or failed. The
+            // primary prompt is automatic; this is the recovery path.
+            if lockService.isAuthenticating {
+                Text("Unlocking…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else if lockService.authError != nil {
+                Button("Try Again with Touch ID") {
+                    lockService.authenticate()
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            } else {
+                Text("Click to unlock")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .padding(.horizontal, 44)
         .padding(.vertical, 32)
@@ -290,16 +225,9 @@ private struct GlassBlockTile: View {
     }
 }
 
-extension View {
-    /// Guard this window's content behind the app lock screen.
-    func lockGuarded() -> some View {
-        modifier(LockGuardModifier())
-    }
-}
-
 // MARK: - Preview
 
 #Preview {
-    AppLockView()
+    LockOverlayContent()
         .frame(width: 600, height: 400)
 }

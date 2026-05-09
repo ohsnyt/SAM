@@ -97,6 +97,7 @@ struct LinkedInImportSettingsContent: View {
                 }
             }
         }
+        .restoreOnUnlock(isPresented: $showProfileAnalysis)
         .onAppear { FeatureAdoptionTracker.shared.recordUsage(.linkedInImport) }
     }
 

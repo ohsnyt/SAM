@@ -4,6 +4,131 @@
 
 ---
 
+## App Lock redesign shipped: leak-proof modals, no-click unlock, post-unlock state preservation (May 8, 2026)
+
+**What**: A 7-phase rebuild of the app lock system per `SAM-Lock-Redesign-Plan.md`. Three coupled goals: (1) zero sensitive content visible in any modal layer when locked, (2) Touch ID auto-prompts on lock-state transitions without requiring a click, (3) on unlock the user is back where they were — same windows, same sheets, same in-progress edit text.
+
+### Why
+
+The previous lock attached a SwiftUI `.lockGuarded()` modifier to each `WindowGroup` content root. Sheets, alerts, file pickers, and popovers present *above* that root in the window stack, so the blur sat underneath them and they leaked. Unlock required two clicks because `bringMainWindowToFront()` heuristically picked the wrong window. Aux windows were `close()`d on lock so they had to be reopened by hand on unlock, several seconds later. Sitting on SAM without interacting never triggered a lock at all — only `appDidBecomeActive` checked elapsed time.
+
+### Architecture
+
+- **`AppLockService`** — kept the `@Observable` state machine and the system-event observers, removed `closeAuxiliaryWindows()` / `bringMainWindowToFront()` / per-window `restoreWindowSharing()`. Added a foreground idle timer (10s tick + non-consuming NSEvent monitor for mouse/key/scroll) that fires `lock()` when `Date() - lastActivityAt >= timeout`. Added unlock-side observers (`com.apple.screenIsUnlocked`, `com.apple.screensaver.didstop`, `NSWorkspace.didWakeNotification`) plus a `LockOverlayWindow.didBecomeKey` failsafe — each invokes `tryAutoAuthenticateAfterSystemEvent(...)` which drops the `NSApp.isActive` guard since the system is mid-transition. One-shot 500ms retry in `authenticate()` handles the LAContext quirk where `evaluatePolicy` returns `userCancel`/`appCancel`/`systemCancel` within a few ms when the system isn't ready to host the prompt.
+- **`LockOverlayCoordinator` + `LockOverlayWindow`** — a `LockOverlayWindow` (NSWindow at `.floating` level, `isLockOverlay = true`) is attached as a child window to every visible SAM window when locked, hosting `LockOverlayContent` (glass-block tile wall sampling refraction per tile, palette pulled from the SAM logo). Hide-don't-close: aux windows `orderOut(nil)` on lock and `orderFront(nil)` on unlock — instant restore, SwiftUI state preserved.
+- **`ModalCoordinator`** — singleton tracking three kinds of registrations: `dismissOnly` (alerts, confirmations), `restorable` (sheets — dismissed on lock, re-presented on unlock), and `panel` (NSOpenPanel/NSSavePanel — `cancel(nil)` on lock). Bound via two `ViewModifier`s: `DismissOnLock(isPresented:)` and `RestoreOnUnlock(item:)` / `RestoreOnUnlock(isPresented:)` in `LockModifiers.swift`. Wired across ~75 sheet sites and ~11 file importer/exporter sites.
+- **`DraftStore`** — in-memory `[kind: [id: [field: value]]]` keyed by sheet kind + entity ID. Forms load drafts on `init`/`.onAppear`, save on `.onChange` of every text field, and clear on commit-success or explicit Discard. Plain dismiss/lock-dismiss does NOT clear — that's how unlock recovers in-progress edits. v1 is in-memory only; disk persistence deferred (would require encryption work). Wired into 8 forms: `NoteEditorView`, `ComposeWindowView`, `ContentDraftSheet`, `EventFormView`, `GoalEntryForm`, `ProductionEntryForm`, `ManualTaskSheet`, `CorrectionSheetView`. Passphrase forms (`BackupPassphraseSheet`, `ImportPassphraseSheet`) intentionally excluded — security boundary.
+- **String rewrite pass** — ~25 alert/confirmation sites switched from interpolated names ("Archive John Smith?", "Delete '{name}'?") to generic phrasing ("Archive this contact?", "Delete this context?"). Reduces sensitive content visible in modals before lock-time dismiss can catch them.
+
+### Verified
+
+- `xcodebuild -scheme SAM -destination 'platform=macOS' build` — `BUILD SUCCEEDED` after every phase.
+- Foreground idle timer: confirmed locking after timeout while user is in-app.
+- Auto-prompt: confirmed Touch ID prompts without first click after screen-lock, screensaver, and system-sleep cycles.
+
+### Files
+
+**New**: `SAM/Services/ModalCoordinator.swift`, `SAM/Services/DraftStore.swift`, `SAM/Views/Shared/LockModifiers.swift`, `SAM/Views/Shared/LockOverlayWindow.swift` (lock overlay NSWindow class — created in Phase 3).
+
+**Modified**: `SAM/Services/AppLockService.swift` (rework), `SAM/Views/Shared/AppLockView.swift` (glass-block overlay rewrite), `SAM/App/SAMApp.swift` (window observer wiring + 4 modifier sites), plus ~30 view files for `.dismissOnLock` / `.restoreOnUnlock` modifiers, ~25 view files for the string rewrite pass, and 8 edit-form views for `DraftStore` integration.
+
+**Deferred to v2** (per plan §8): disk-persistent encrypted drafts, popover restoration, multi-display overlay positioning on hot-plug.
+
+---
+
+## Phase 1c shipped: instrumentation expansion driven by first-day hang reports (May 8, 2026)
+
+**What**: A second pass of `PerformanceMonitor` wraps targeting the gaps the Phase 1a/1b reports surfaced. The 23 hang JSON files captured on the first day showed two recurring blind spots: `OutcomeEngine.generateOutcomes` taking up to 66.93 s while its 18 instrumented scanners only summed to ~3.7 s (i.e. ~63 s in *uninstrumented* pre/post-scanner work), and `ContactsImport.performImport` running back-to-back twice in the same launch (6.36 s + 7.20 s) with no record of who triggered each call.
+
+### Why
+
+The watchdog was reporting beach-balls but pointing at empty stacks — the operation had already finished by the time the heartbeat returned, so the active-stack snapshot was blank and only the ring buffer hinted at the cause. To turn those "post-stack" reports into actionable signal, every phase that runs on the main actor in `OutcomeEngine`, `ContactsImportCoordinator`, and the launch sequence now has its own measured frame.
+
+### What got wrapped
+
+- **`OutcomeEngine` pre-scanner phases** — `pruneExpired`, `wakeExpiredSnoozes`, `autoResolveWoken`, `fetchAllPeople`, `fetchAllNotes`. These run on the main actor before any scanner fires and weren't visible in the existing 18-scanner breakdown.
+- **`OutcomeEngine` post-scanner phases** — `classifyActionLanes`, `buildSequenceSteps`, `buildCompanions`, `scorePriorities`, `filterMutedKinds`, `softSuppress`, `persistOutcomes`, `detectKnowledgeGaps`, `enrichWithAI`, `reprioritize`. These walk every generated outcome (often 80+) on the main actor and were the prime suspect for the missing ~63 s.
+- **`scanRelationshipHealth` aggregate timing** — instead of a per-person frame (would have spammed the ring buffer with hundreds of entries), the loop logs total elapsed time, `MeetingPrepCoordinator.computeHealth` cumulative time, and the percentage of the loop spent inside `computeHealth`. This pinpoints whether the hot loop is in the health computation or in the surrounding outcome-construction code.
+- **`ContactsImportCoordinator.performImport`** now takes a `triggeredBy reason: String` parameter logged via `Logger.notice` and signposted via the wrapped frame. Three callers updated: `importNow` → `"importNow"`, `importIfConditionsMet` → `"configChange:<reason>"`, `importIfNeeded` → `"scheduled:<reason>"`. The next hang report will name *which* code path triggered the duplicate import.
+- **`ContactsImportCoordinator` inner phases** — `fetchContacts`, `bulkUpsert`, `meContact`, `mergeDuplicates`, `clearStaleIDs`, `unlinkNonGroup`, `reresolveParticipants`, `deduceRelationships`. Each phase is independently measured so we can tell whether the duplicate run is wasting time on the same expensive sub-step (likely `bulkUpsert` or `mergeDuplicates`) or short-circuiting most of it.
+- **`SAMApp` launch sequence** — `Launch.openSAMModelContainer` (first SwiftData touch), `Launch.runMigrationV32IfNeeded`, `Launch.runDirectionBackfillIfNeeded`, the post-`configureDataLayer` background pass (`Launch.eventRepairIntegrity`, `Launch.backfillPersonNameCache`, `Launch.pruneComplianceAudits`), the `.task` block (`Launch.task.configureLockService`, `Launch.task.checkPermissionsAndSetup`, `Launch.task.briefingFirstOpenOfDay`, `Launch.task.devicePairingBootstrap`, `Launch.task.transcriptionConfigure`, `Launch.task.transcriptionStartListening`), and `scheduleDeferredLaunchWork` (`Launch.deferred.pruneExpiredOutcomes`, `Launch.deferred.purgeOldOutcomes`, `Launch.deferred.pruneExpiredUndo`, `Launch.deferred.startOutcomeGeneration`, `Launch.deferred.pipelineBackfill`, `Launch.deferred.briefingFirstOpenOfDay`).
+
+### Why aggregate timing for `scanRelationshipHealth` instead of per-person frames
+
+A 256-person store with per-person `measureSync` would push 256 frames onto the active stack and through the ring buffer in a single scanner run, evicting every other useful frame in the buffer. The `os.signpost` channel would also become unreadable in Instruments. Aggregate cumulative timing keeps the cost bounded and makes the question "is the loop body or `computeHealth` the bottleneck?" answerable from the log line alone.
+
+### Verified
+
+- `xcodebuild -project SAM.xcodeproj -scheme SAM -configuration Debug -destination 'platform=macOS' build` — `BUILD SUCCEEDED`.
+- All wraps are mechanical begin/end pairs around existing call sites; underlying logic unchanged.
+- Existing scanner instrumentation from 1b is preserved — the new pre/post wraps surround it without altering its frames.
+
+### Files
+
+- `SAM/Coordinators/OutcomeEngine.swift` — pre-scanner, post-scanner, `scanRelationshipHealth` aggregate timing.
+- `SAM/Coordinators/ContactsImportCoordinator.swift` — `triggeredBy` parameter + 8 inner-phase wraps.
+- `SAM/App/SAMApp.swift` — `configureDataLayer` open + migrations + maintenance wraps; `.task` block wraps; `scheduleDeferredLaunchWork` wraps.
+
+---
+
+## Phase 1a + 1b shipped: MainActor hang watchdog and signpost instrumentation (May 8, 2026)
+
+**What**: SAM now self-reports when its main thread freezes for more than a second. Each hang produces a JSON file in `~/Library/Application Support/SAM/diagnostics/` naming the operation that was running, how long it had been running, and a ring buffer of recent completions. Recent hangs surface in Settings → Diagnostics → Performance Watchdog.
+
+### Why
+
+Sarah reports beachballs, especially in the first ~15 minutes after launch and around screen unlock. We've patched several O(P × E) hot spots already (May 7 changelog entry), but more remain. Phase 1's purpose is to stop guessing: instrument production so the next round of optimization targets *measured* hot paths, not hypothesized ones.
+
+### 1a — Hang Watchdog (`SAM/Services/HangWatchdog.swift`)
+
+Two `DispatchSourceTimer`s on a private `.utility` background queue:
+
+- **Pinger** — every 250 ms, schedules a tiny block on `DispatchQueue.main` that records a heartbeat into the lock-protected `HeartbeatStore`. The block only runs when the main queue is free; if the main thread is blocked, heartbeats stop landing.
+- **Watcher** — every 250 ms on the background queue, checks heartbeat age. If > 1.0 s and we are not already in a hang, captures a snapshot (active operation beacon, 32-entry recent-completed history, hang count) and writes `hang-{ISO8601}.json`. When the next heartbeat lands, transitions out of the hang state and logs the recovery.
+
+`DispatchSourceTimer` over `Task.sleep` for deterministic 250 ms cadence and to guarantee the watcher runs off-main. Started in `SAMAppDelegate.applicationDidFinishLaunching` so the launch window is covered; stopped in `applicationShouldTerminate`. Skipped in Safe Mode.
+
+Cross-thread main-thread call-stack capture (Mach `task_threads` + `thread_get_state`) is **deferred**. The active-operation beacon plus recent-completed history covers most "what was running?" questions without bookkeeping overhead. Add later if real reports show the beacon is blank too often.
+
+### 1b — Signpost instrumentation (`SAM/Services/PerformanceMonitor.swift`)
+
+`PerformanceMonitor.measure(_:perform:)` and `measureSync(_:perform:)` wrap an operation in a begin/end pair: pushes a frame onto the lock-protected active-operation stack (read by the watchdog when a hang fires), emits an `OSSignposter` interval (visible in Instruments timeline), and pops on exit regardless of throw or cancellation.
+
+Wrapped surfaces in this round:
+
+- `OutcomeEngine.generateOutcomes` and all 18 scanners individually (`upcomingMeetings`, `pastMeetingsWithoutNotes`, `pendingActionItems`, `relationshipHealth`, `growthOpportunities`, `coverageGaps`, `contentSuggestions`, `contentCadence`, `goalPacing`, `deducedRelationships`, `notificationSetupGuidance`, `roleSuggestions`, `staleContacts`, `featureAdoption`, `substackAutoDetection`, `whatsAppAutoDetection`, `roleRecruiting`, `openCommitments`).
+- `DailyBriefingCoordinator` — `gatherCalendarItems`, `gatherPriorityActions`, `gatherFollowUps`, `gatherLifeEvents`, `gatherTomorrowPreview`.
+- `MeetingPrepCoordinator.buildBriefings` and `buildFollowUpPrompts`.
+- `ContactsImportCoordinator.performImport`.
+
+### Concurrency notes
+
+- `HeartbeatStore` is `nonisolated final class` guarded by `OSAllocatedUnfairLock<State>`. Both the main thread (writers) and the watcher (reader) touch it — every access goes through the lock. No `nonisolated(unsafe)` (forbidden by `CLAUDE.md`).
+- The store is a module-level `nonisolated let _samPerformanceStore` so `HangWatchdog` (nonisolated) can reach it without hopping through `@MainActor`. `PerformanceMonitor.shared.store` returns the same instance.
+- `PerformanceMonitor` itself is `@MainActor` because every `measure(...)` call site is already on the main actor — zero hop cost wrapping fast operations.
+
+### UI
+
+`SAM/Views/Settings/DiagnosticsSettingsPane.swift` gained a Performance Watchdog block: a table of the 10 most recent hangs (timestamp, active operation, stalled seconds), a Refresh button, and an "Open Diagnostics Folder" button that reveals the JSON files in Finder.
+
+### Verified
+
+- `xcodebuild` clean.
+- Heartbeat / hang transition logic reviewed by inspection: watcher only writes on the *transition* into hang; recovery logs once when heartbeat returns; pruning keeps at most 50 reports.
+- The 18-scanner instrumentation is a mechanical wrap of existing call sites; the underlying scanners are unchanged.
+
+### Out of scope (deferred to 1c / 1d)
+
+- MetricKit subscription (`MXMetricManager` daily payloads).
+- Auto-delivery webhook to `SAM@stillwaiting.org` behind `INTERNAL_TELEMETRY=1` build flag. Manual transfer of hang JSON files via the existing diagnostics folder is fine for now.
+- Cross-thread main-thread call-stack capture.
+
+### Files
+
+`SAM/Services/PerformanceMonitor.swift` (new), `SAM/Services/HangWatchdog.swift` (new), `SAM/App/SAMApp.swift`, `SAM/Coordinators/OutcomeEngine.swift`, `SAM/Coordinators/DailyBriefingCoordinator.swift`, `SAM/Coordinators/MeetingPrepCoordinator.swift`, `SAM/Coordinators/ContactsImportCoordinator.swift`, `SAM/Views/Settings/DiagnosticsSettingsPane.swift`, `SAM/1_Documentation/scaling-roadmap.md`.
+
+---
+
 ## Phase 0 shipped: Dataset Audit, Trip Durability, pre-approved diagnostics auto-send (May 7, 2026)
 
 **What**: First two scaling-roadmap deliverables. Sarah's Mac can now produce a quantitative audit of her dataset growth and (with pre-approval) auto-email the JSON back so we can plot it offline. Trips also became durable across phone reinstalls — the Mac is now a system-of-record mirror for `SamTrip`/`SamTripStop`/`SamSavedAddress`, with backup coverage and first-launch resync.

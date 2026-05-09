@@ -94,12 +94,17 @@ struct AwarenessView: View {
         .sheet(isPresented: $showingManualTaskSheet) {
             ManualTaskSheet()
         }
+        .restoreOnUnlock(isPresented: $showingManualTaskSheet)
         .sheet(isPresented: Binding(
             get: { briefingCoordinator.showEveningBriefing },
             set: { briefingCoordinator.showEveningBriefing = $0 }
         )) {
             EveningRecapOverlay()
         }
+        .restoreOnUnlock(isPresented: Binding(
+            get: { briefingCoordinator.showEveningBriefing },
+            set: { briefingCoordinator.showEveningBriefing = $0 }
+        ))
         .onReceive(NotificationCenter.default.publisher(for: .samExpandMeetingPrep)) { _ in
             withAnimation { showMore = true }
         }

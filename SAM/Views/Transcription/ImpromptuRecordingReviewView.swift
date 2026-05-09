@@ -79,6 +79,7 @@ struct ImpromptuRecordingReviewView: View {
         } message: {
             Text("Deletes the audio, transcript, and summary. Can't be undone.")
         }
+        .dismissOnLock(isPresented: $confirmDiscard)
     }
 
     // MARK: - Subviews

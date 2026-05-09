@@ -60,6 +60,22 @@ final class AppLockService {
     @ObservationIgnored private var currentAuthContext: LAContext?
     @ObservationIgnored private var keyEventMonitor: Any?
     @ObservationIgnored private var screenLockObservers: [NSObjectProtocol] = []
+    @ObservationIgnored private var windowKeyObserver: NSObjectProtocol?
+    @ObservationIgnored private var didRetryAfterSystemCancel = false
+
+    /// Last user input within the app (mouse move, click, scroll, key).
+    /// Drives the foreground inactivity timer — without this, the app
+    /// only locks on resign-active or screen events, never while the
+    /// user is sitting on SAM doing nothing.
+    @ObservationIgnored private var lastActivityAt: Date = Date()
+    @ObservationIgnored private var activityMonitor: Any?
+    @ObservationIgnored private var idleTimer: Timer?
+
+    /// Snapshot of windows that were visible when lock fired. Used to
+    /// `orderFront(nil)` only those on unlock, preserving z-order intent
+    /// instead of bringing every NSWindow the app has ever spawned to the
+    /// foreground.
+    @ObservationIgnored private var hiddenWindowsAtLock: [NSWindow] = []
 
     // MARK: - Initializer
 
@@ -83,21 +99,31 @@ final class AppLockService {
     // MARK: - Authentication
 
     /// Authenticate using Touch ID with system password fallback. Unlocks the app on success.
-    /// If an authentication dialog is already showing, cancels it and presents a fresh one
-    /// so the new system dialog receives focus.
+    ///
+    /// Always creates a fresh `LAContext` per call — reusing a context across
+    /// attempts can leave it in a "canceled" state where subsequent
+    /// `evaluatePolicy` returns immediately without prompting.
     func authenticate() {
-        guard isLocked else { return }
+        guard isLocked else {
+            logger.debug("authenticate() — skip: not locked")
+            return
+        }
 
         // Prevent duplicate auth dialogs — if one is already in flight,
         // let it complete rather than spawning a second.
-        guard !isAuthenticating else { return }
+        guard !isAuthenticating else {
+            logger.debug("authenticate() — skip: already authenticating")
+            return
+        }
 
+        logger.debug("authenticate() — starting LAContext.evaluatePolicy")
         isAuthenticating = true
         authError = nil
 
         let context = LAContext()
         context.localizedCancelTitle = "Cancel"
         currentAuthContext = context
+        let startedAt = Date()
 
         Task {
             do {
@@ -108,17 +134,38 @@ final class AppLockService {
                 if success {
                     isLocked = false
                     lastActiveTime = Date()
+                    lastActivityAt = Date()
                     authError = nil
+                    didRetryAfterSystemCancel = false
                     removeKeyEventMonitor()
-                    restoreWindowSharing()
+                    LockOverlayCoordinator.shared.handleLockStateChange(isLocked: false)
+                    restoreVisibleWindows()
+                    ModalCoordinator.shared.handleLockStateChange(isLocked: false)
                     logger.info("Authentication successful — app unlocked")
                 }
             } catch {
                 let laError = error as? LAError
+                let elapsed = Date().timeIntervalSince(startedAt)
                 switch laError?.code {
                 case .userCancel, .appCancel, .systemCancel:
-                    logger.debug("Authentication cancelled by user or system")
+                    logger.debug("Auth cancelled (\(String(describing: laError?.code))) after \(Int(elapsed * 1000))ms")
                     authError = nil
+                    // Documented LAContext quirk (plan §8): evaluatePolicy can
+                    // return *.systemCancel/.appCancel within a few ms when the
+                    // system isn't ready to host the prompt (e.g., screen still
+                    // unlocking, app not yet frontmost). One silent retry
+                    // recovers; loops are guarded by didRetryAfterSystemCancel.
+                    if elapsed < 0.5, !didRetryAfterSystemCancel {
+                        didRetryAfterSystemCancel = true
+                        logger.debug("Scheduling 500ms retry after fast cancel")
+                        currentAuthContext = nil
+                        isAuthenticating = false
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                            guard let self, self.isLocked, !self.isAuthenticating else { return }
+                            self.authenticate()
+                        }
+                        return
+                    }
                 default:
                     authError = error.localizedDescription
                     logger.warning("Authentication failed: \(error.localizedDescription)")
@@ -127,6 +174,32 @@ final class AppLockService {
             currentAuthContext = nil
             isAuthenticating = false
         }
+    }
+
+    /// Auto-prompt biometrics when the app is locked and frontmost.
+    /// Safe to call repeatedly — guards against re-entry and inactive state.
+    func tryAutoAuthenticate() {
+        guard isLocked, !isAuthenticating else {
+            logger.debug("tryAutoAuthenticate — skip (locked=\(self.isLocked, privacy: .public), authing=\(self.isAuthenticating, privacy: .public))")
+            return
+        }
+        guard NSApp.isActive else {
+            logger.debug("tryAutoAuthenticate — skip: NSApp not active")
+            return
+        }
+        authenticate()
+    }
+
+    /// Variant for screen-unlock / wake / screensaver-stop paths. The system
+    /// is mid-transition; `NSApp.isActive` may briefly be false before the OS
+    /// hands focus back. Skip the active check — the LAContext fast-cancel
+    /// retry inside `authenticate()` handles the case where the system isn't
+    /// quite ready yet.
+    func tryAutoAuthenticateAfterSystemEvent(source: String) {
+        logger.debug("tryAutoAuthenticateAfterSystemEvent(\(source, privacy: .public)) — locked=\(self.isLocked, privacy: .public)")
+        guard isLocked, !isAuthenticating else { return }
+        didRetryAfterSystemCancel = false
+        authenticate()
     }
 
     /// Authenticate for export/import operations. Always required.
@@ -151,34 +224,30 @@ final class AppLockService {
 
     // MARK: - Lock Management
 
-    /// Immediately lock the app: close auxiliary windows, dismiss sheets,
-    /// block keyboard shortcuts, and disable menus.
+    /// Immediately lock the app: hide auxiliary windows (preserving their
+    /// SwiftUI state for instant restore), attach lock overlays to every
+    /// remaining visible main window, dismiss sheets, block keyboard
+    /// shortcuts, and disable menus. Auto-prompts biometrics on the next
+    /// activation tick.
     func lock() {
         isLocked = true
-        closeAuxiliaryWindows()
-        dismissOpenSheets()
+        hideAuxiliaryWindows()
+        // Overlay attach must run AFTER hideAuxiliaryWindows so we don't
+        // build covers for windows we're about to orderOut. The coordinator
+        // skips windows that aren't visible.
+        LockOverlayCoordinator.shared.handleLockStateChange(isLocked: true)
+        // Dismiss alerts/sheets/popovers/file panels via the coordinator.
+        // SwiftUI presentation state lives in @State on the host view —
+        // each registration flips its own binding, which is the only clean
+        // way to tear down a modal without leaving SwiftUI state stale.
+        ModalCoordinator.shared.handleLockStateChange(isLocked: true)
         installKeyEventMonitor()
-        applyWindowSharingRestriction()
         logger.info("App locked")
-    }
-
-    /// Set `sharingType = .none` on every app window so screen recording
-    /// tools that respect the flag capture a black rectangle instead of
-    /// window contents. Modern `ScreenCaptureKit`-based recorders ignore
-    /// this on macOS 15+, but legacy `CGWindowList`-based callers still
-    /// honor it, and it's free defense in depth.
-    private func applyWindowSharingRestriction() {
-        for window in NSApplication.shared.windows {
-            window.sharingType = .none
-        }
-    }
-
-    /// Restore the default sharing type after unlock so legitimate screen
-    /// capture (Loom, QuickTime, Zoom share) works normally.
-    fileprivate func restoreWindowSharing() {
-        for window in NSApplication.shared.windows {
-            window.sharingType = .readOnly
-        }
+        // Queue auto-prompt — fires the moment SAM is frontmost. If SAM
+        // lost focus during the lock event (e.g., screensaver took over)
+        // the guard inside tryAutoAuthenticate exits early; the prompt
+        // appears later from didBecomeActive instead.
+        tryAutoAuthenticate()
     }
 
     /// Called when the app resigns active (user switches away).
@@ -189,21 +258,19 @@ final class AppLockService {
     }
 
     /// Called when the app becomes active again.
-    /// Locks if the user was away longer than the timeout.
+    /// Locks if the user was away longer than the timeout, then auto-prompts Touch ID if locked.
     func appDidBecomeActive() {
-        guard !isLocked else { return }
-
-        guard let lastActive = lastActiveTime else { return }
-
-        let elapsed = Date().timeIntervalSince(lastActive)
-        let timeout = TimeInterval(lockTimeoutMinutes * 60)
-        if elapsed >= timeout {
-            isLocked = true
-            closeAuxiliaryWindows()
-            dismissOpenSheets()
-            installKeyEventMonitor()
-            logger.debug("App locked — inactive for \(Int(elapsed / 60)) minutes (timeout: \(self.lockTimeoutMinutes)m)")
+        if !isLocked, let lastActive = lastActiveTime {
+            let elapsed = Date().timeIntervalSince(lastActive)
+            let timeout = TimeInterval(lockTimeoutMinutes * 60)
+            if elapsed >= timeout {
+                lock()
+                logger.debug("App locked — inactive for \(Int(elapsed / 60)) minutes (timeout: \(self.lockTimeoutMinutes)m)")
+                return
+            }
         }
+
+        tryAutoAuthenticate()
     }
 
     // MARK: - Launch Configuration
@@ -216,13 +283,54 @@ final class AppLockService {
             isLocked = false
             logger.notice("🔓 sam.debug.skipAppLock=true — launching unlocked (DEBUG only)")
             installScreenLockObservers()
+            installActivityTracking()
             return
         }
         #endif
         isLocked = true
         installKeyEventMonitor()
         installScreenLockObservers()
+        installActivityTracking()
         logger.debug("App launch — awaiting authentication")
+    }
+
+    // MARK: - Foreground Inactivity Timer
+
+    /// Track in-app user activity and lock when idle exceeds the timeout.
+    /// Without this, sitting on SAM without interacting never locks —
+    /// resign-active is the only path that records inactivity, but the
+    /// user never resigns active when they're staring at the app.
+    private func installActivityTracking() {
+        if activityMonitor == nil {
+            let mask: NSEvent.EventTypeMask = [
+                .keyDown, .leftMouseDown, .rightMouseDown,
+                .otherMouseDown, .scrollWheel, .mouseMoved
+            ]
+            activityMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
+                Task { @MainActor [weak self] in
+                    self?.lastActivityAt = Date()
+                }
+                return event
+            }
+        }
+
+        idleTimer?.invalidate()
+        let timer = Timer(timeInterval: 10, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.checkIdleTimeout() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        idleTimer = timer
+        lastActivityAt = Date()
+        logger.debug("Activity tracking installed (timer + event monitor)")
+    }
+
+    private func checkIdleTimeout() {
+        guard !isLocked else { return }
+        let elapsed = Date().timeIntervalSince(lastActivityAt)
+        let timeout = TimeInterval(lockTimeoutMinutes * 60)
+        guard elapsed >= timeout else { return }
+        logger.info("Foreground idle timeout — locking (idle \(Int(elapsed))s, timeout \(Int(timeout))s)")
+        lock()
     }
 
     /// Subscribe to the system events that mean "someone might walk away
@@ -263,7 +371,62 @@ final class AppLockService {
             Task { @MainActor [weak self] in self?.handleScreenEvent(source: "workspace.willSleep") }
         })
 
-        logger.debug("Screen-lock observers installed")
+        // Unlock-side observers: re-prompt biometrics when the system returns
+        // from screen lock / screensaver / sleep. Without these the user has
+        // to click the overlay because the original `tryAutoAuthenticate()`
+        // fired while the OS lock screen was on top and got swallowed.
+        screenLockObservers.append(dc.addObserver(
+            forName: .init("com.apple.screenIsUnlocked"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.tryAutoAuthenticateAfterSystemEvent(source: "screenIsUnlocked")
+            }
+        })
+
+        screenLockObservers.append(dc.addObserver(
+            forName: .init("com.apple.screensaver.didstop"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.tryAutoAuthenticateAfterSystemEvent(source: "screensaver.didstop")
+            }
+        })
+
+        screenLockObservers.append(ws.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.tryAutoAuthenticateAfterSystemEvent(source: "workspace.didWake")
+            }
+        })
+
+        // Failsafe: when any window becomes key while SAM is locked, the
+        // overlay is what the user is actually focused on. If notification
+        // observers missed (rare race during screen-unlock transitions),
+        // this catches the moment the overlay window takes focus and
+        // triggers the prompt — so the *first* click on SAM unlocks.
+        if windowKeyObserver == nil {
+            windowKeyObserver = NotificationCenter.default.addObserver(
+                forName: NSWindow.didBecomeKeyNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] note in
+                Task { @MainActor [weak self] in
+                    guard let self, self.isLocked, !self.isAuthenticating else { return }
+                    if note.object is LockOverlayWindow {
+                        self.logger.debug("LockOverlayWindow became key — re-prompting")
+                        self.tryAutoAuthenticateAfterSystemEvent(source: "overlay.didBecomeKey")
+                    }
+                }
+            }
+        }
+
+        logger.debug("Screen-lock observers installed (lock + unlock sides)")
     }
 
     private func handleScreenEvent(source: String) {
@@ -274,36 +437,38 @@ final class AppLockService {
 
     // MARK: - Private Helpers
 
-    /// Known auxiliary window identifiers that must close when the app locks.
+    /// Known auxiliary window identifiers that must hide when the app locks.
     /// The main WindowGroup has no explicit id, so it is excluded by omission.
     private static let auxiliaryWindowIDs: Set<String> = [
         "prompt-lab", "guide", "quick-note", "clipboard-capture", "compose-message"
     ]
 
-    /// Close all auxiliary windows so they can't be read while locked.
-    /// Matches SwiftUI Settings (by Apple's internal identifier prefix) and
-    /// SAM's named windows (Prompt Lab, Guide, Quick Note, Compose, Clipboard).
-    private func closeAuxiliaryWindows() {
-        for window in NSApplication.shared.windows where window.isVisible {
+    /// Hide all auxiliary windows (Settings, Prompt Lab, Guide, Quick Note,
+    /// Compose, Clipboard) on lock without destroying their SwiftUI view trees.
+    /// `orderOut(nil)` removes the window from screen but preserves the
+    /// underlying state, so unlock is `orderFront(nil)` — instantaneous —
+    /// instead of rebuilding the view hierarchy from scratch.
+    private func hideAuxiliaryWindows() {
+        hiddenWindowsAtLock = NSApplication.shared.windows.filter { window in
+            guard window.isVisible else { return false }
             let id = window.identifier?.rawValue ?? ""
             let isSettings = id.contains("Settings")
             let isAuxiliary = Self.auxiliaryWindowIDs.contains(where: { id.contains($0) })
-
-            if isSettings || isAuxiliary {
-                window.close()
-                logger.debug("Closed auxiliary window on lock: \(id)")
-            }
+            return isSettings || isAuxiliary
+        }
+        for window in hiddenWindowsAtLock {
+            window.orderOut(nil)
+            logger.debug("Hid auxiliary window on lock: \(window.identifier?.rawValue ?? "<no id>")")
         }
     }
 
-    /// Dismiss any open sheets so they can't be read behind the lock overlay.
-    private func dismissOpenSheets() {
-        for window in NSApplication.shared.windows where window.isVisible {
-            if let sheet = window.attachedSheet {
-                window.endSheet(sheet, returnCode: .cancel)
-                logger.debug("Dismissed sheet on lock")
-            }
+    /// Restore the auxiliary windows that were visible at lock time.
+    /// Z-order intent is preserved by iterating in original visibility order.
+    private func restoreVisibleWindows() {
+        for window in hiddenWindowsAtLock {
+            window.orderFront(nil)
         }
+        hiddenWindowsAtLock.removeAll()
     }
 
     // MARK: - Keyboard Event Blocking

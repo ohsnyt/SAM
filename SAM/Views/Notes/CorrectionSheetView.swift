@@ -21,6 +21,12 @@ struct CorrectionSheetView: View {
 
     @Environment(\.dismiss) private var dismiss
 
+    // MARK: - Draft persistence
+
+    private static let draftKind = "correction"
+
+    private var draftID: String { person.id.uuidString }
+
     @State private var correctionText = ""
     @State private var isSaving = false
 
@@ -201,6 +207,19 @@ struct CorrectionSheetView: View {
         }
         .padding(20)
         .frame(width: 560, height: 520)
+        .onAppear {
+            if let stored = DraftStore.shared.load(kind: Self.draftKind, id: draftID),
+               let v = stored["correction"], !v.isEmpty {
+                correctionText = v
+            }
+        }
+        .onChange(of: correctionText) {
+            DraftStore.shared.save(
+                kind: Self.draftKind,
+                id: draftID,
+                fields: ["correction": correctionText]
+            )
+        }
     }
 
     // MARK: - Image Attach
@@ -386,6 +405,7 @@ struct CorrectionSheetView: View {
                 await analysisCoordinator.analyzeNote(note)
             }
 
+            DraftStore.shared.clear(kind: Self.draftKind, id: draftID)
             dismiss()
         } catch {
             logger.error("Failed to save correction note: \(error)")

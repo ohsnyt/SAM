@@ -105,6 +105,7 @@ struct PostEventEvaluationView: View {
         .sheet(isPresented: $showImportSheet) {
             EventEvaluationImportSheet(event: event)
         }
+        .restoreOnUnlock(isPresented: $showImportSheet)
     }
 
     // MARK: - Header

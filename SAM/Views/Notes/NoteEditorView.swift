@@ -51,10 +51,14 @@ struct NoteEditorView: View {
 
     // MARK: - Initialization
 
+    private static let draftKind = "note-edit"
+
     init(note: SamNote, onSave: @escaping () -> Void) {
         self.note = note
         self.onSave = onSave
-        _content = State(initialValue: note.content)
+        let initial = DraftStore.shared.load(kind: Self.draftKind, id: note.id.uuidString)?["content"]
+            ?? note.content
+        _content = State(initialValue: initial)
     }
 
     // MARK: - Computed
@@ -197,14 +201,23 @@ struct NoteEditorView: View {
             .padding(.vertical, 10)
         }
         .frame(minWidth: 500, minHeight: 350)
+        .onChange(of: content) { _, newValue in
+            DraftStore.shared.save(
+                kind: Self.draftKind,
+                id: note.id.uuidString,
+                fields: ["content": newValue]
+            )
+        }
         .alert("Discard Changes?", isPresented: $showingDiscardConfirmation) {
             Button("Discard", role: .destructive) {
+                DraftStore.shared.clear(kind: Self.draftKind, id: note.id.uuidString)
                 dismiss()
             }
             Button("Keep Editing", role: .cancel) {}
         } message: {
             Text("You have unsaved changes that will be lost.")
         }
+        .dismissOnLock(isPresented: $showingDiscardConfirmation)
     }
 
     // MARK: - Actions
@@ -375,6 +388,7 @@ struct NoteEditorView: View {
                 try repository.addImages(to: note, images: extractedImages)
             }
 
+            DraftStore.shared.clear(kind: Self.draftKind, id: note.id.uuidString)
             onSave()
             dismiss()
 

@@ -94,6 +94,7 @@ struct UnknownSenderTriageSection: View {
                 }
             )
         }
+        .restoreOnUnlock(isPresented: $showMatchConfirmation)
     }
 
     private var triageCard: some View {
@@ -634,7 +635,7 @@ struct UnknownSenderTriageSection: View {
             // Refresh participant hints on existing evidence now that new contacts exist
             if !addedEmails.isEmpty {
                 do {
-                    try EvidenceRepository.shared.refreshParticipantResolution()
+                    try await EvidenceRepository.shared.refreshParticipantResolution()
                 } catch {
                     logger.error("Failed to refresh participant resolution after triage: \(error)")
                 }
@@ -719,7 +720,7 @@ struct UnknownSenderTriageSection: View {
 
             if !addedEmails.isEmpty {
                 do {
-                    try EvidenceRepository.shared.refreshParticipantResolution()
+                    try await EvidenceRepository.shared.refreshParticipantResolution()
                 } catch {
                     logger.error("Failed to refresh participant resolution after match confirmation: \(error)")
                 }

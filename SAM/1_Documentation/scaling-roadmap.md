@@ -1,7 +1,7 @@
 # SAM — Scaling Roadmap
 
 **Created**: 2026-05-07
-**Status**: Phase 0 shipped (2026-05-07) — see `changelog.md`. Phase 1 next.
+**Status**: Phase 0 shipped (2026-05-07). Phase 1a + 1b shipped (2026-05-08). 1c (MetricKit) and 1d (auto-delivery webhook) next.
 **Owner**: David
 **Related**: `context.md` §2 (Architecture), `changelog.md` (May 7, 2026 launch performance pass; Phase 0 ship)
 
@@ -102,24 +102,29 @@ Phase 0 ships two related deliverables in one build cycle. Both target Sarah's M
 
 **Deliverables**:
 
-### 1a. MainActor hang watchdog
+### 1a. MainActor hang watchdog — **Shipped 2026-05-08**
 
-A detached `Task` on `.utility` priority pings `MainActor.run { }` every 250ms with a 1s timeout. On miss:
-- Capture `Thread.callStackSymbols` for the main thread.
-- Snapshot current state: active coordinator, last completed `os_signpost`, dataset sizes (rough counts), recent `os_log` tail.
-- Write `hang-{ISO8601}.json` to `~/Library/Application Support/SAM/diagnostics/`.
+`HangWatchdog` (`SAM/Services/HangWatchdog.swift`) runs two `DispatchSourceTimer`s on a `.utility` background queue:
+- **Pinger** posts a tiny block to `DispatchQueue.main` every 250 ms; the block records a heartbeat into a lock-protected `HeartbeatStore`. Heartbeats only land when the main thread is free.
+- **Watcher** checks heartbeat age every 250 ms. When it crosses 1.0 s and we are not already in a hang, it captures a snapshot (active operation beacon, recent-completed history, hang count) and writes `hang-{ISO8601}.json` to `~/Library/Application Support/SAM/diagnostics/`. Pruned to 50 most recent.
 
-### 1b. `os_signpost` instrumentation
+Started in `SAMAppDelegate.applicationDidFinishLaunching` so the first 15 minutes (Sarah's worst window) are covered. Skipped in Safe Mode.
 
-Add signposts on the surfaces we already know are hot, plus the launch sequence:
-- Launch phases (each — see `SAMApp.scheduleDeferredLaunchWork`).
-- `OutcomeEngine` scanners (each scanner gets its own signpost).
+Cross-thread main-thread call-stack capture via Mach `task_threads` is **deferred** — the active-operation beacon plus a 32-entry recent-completed ring buffer covers most "what was running?" questions without bookkeeping overhead. Add later if reports show the beacon is blank too often.
+
+### 1b. `os_signpost` instrumentation — **Shipped 2026-05-08**
+
+`PerformanceMonitor.measure(...)` and `measureSync(...)` (`SAM/Services/PerformanceMonitor.swift`) wrap an operation in a begin/end pair: pushes a frame onto the active-operation stack (read by the watchdog when a hang fires), emits an `OSSignposter` interval (visible in Instruments timeline), and pops on exit regardless of throw.
+
+Wrapped surfaces in this round:
+- `OutcomeEngine.generateOutcomes` and all 18 scanners individually (`OutcomeEngine.upcomingMeetings`, `relationshipHealth`, `growthOpportunities`, …).
+- `DailyBriefingCoordinator` — `gatherCalendarItems`, `gatherPriorityActions`, `gatherFollowUps`, `gatherLifeEvents`, `gatherTomorrowPreview`.
 - `MeetingPrepCoordinator.buildBriefings` and `buildFollowUpPrompts`.
-- `InsightGenerator.generateRelationshipInsights`.
-- `DailyBriefingCoordinator` gather methods.
-- Import sweeps (calendar, mail, contacts, messages).
+- `ContactsImportCoordinator.performImport`.
 
-Signposts let Instruments visualize the timeline and the watchdog payload references the most recent active signpost so we know what was running when it hung.
+Recent hangs are visible in **Settings → Diagnostics → Performance Watchdog** with timestamp, active operation, and stalled duration. "Open Diagnostics Folder" reveals the JSON files for analysis.
+
+Remaining surfaces to instrument as data arrives: launch phases (`SAMApp.scheduleDeferredLaunchWork`), `InsightGenerator.generateRelationshipInsights`, calendar/mail/messages import sweeps.
 
 ### 1c. MetricKit subscriber
 
