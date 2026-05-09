@@ -74,6 +74,22 @@ final class BackupCoordinator {
         "sam.businessProfile",
         "sam.userLinkedInProfile", "sam.userFacebookProfile", "sam.userSubstackProfile",
         "sam.profileAnalyses", "sam.profileAnalysisSnapshot", "sam.facebookAnalysisSnapshot",
+        // Import watermarks — exported so a restore on a new Mac resumes
+        // from the same point, and a same-Mac restore doesn't skip messages
+        // newer than the backup. Legacy backups without these keys trigger a
+        // watermark reset in refreshAfterRestore so the next pass walks the
+        // full lookback window.
+        "mailLastWatermark", "mailLastSentWatermark",
+        "commsLastMessageWatermark", "commsLastCallWatermark",
+        "commsLastWhatsAppMessageWatermark", "commsLastWhatsAppCallWatermark",
+    ]
+
+    /// Watermark keys that, when absent from a restored backup, must be
+    /// cleared locally so the next import pass scans the full lookback window.
+    private static let watermarkKeys: [String] = [
+        "mailLastWatermark", "mailLastSentWatermark",
+        "commsLastMessageWatermark", "commsLastCallWatermark",
+        "commsLastWhatsAppMessageWatermark", "commsLastWhatsAppCallWatermark",
     ]
 
     // ─────────────────────────────────────────────────────────────────
@@ -1305,6 +1321,7 @@ final class BackupCoordinator {
             for (key, value) in doc.preferences {
                 value.apply(to: .standard, key: key)
             }
+            let importedPreferenceKeys = Set(doc.preferences.keys)
 
             let summary = "\(doc.people.count) people, \(doc.notes.count) notes, \(doc.evidenceItems.count) evidence. If restoring on a new machine, use Reset Onboarding in Settings to reconfigure permissions."
             logger.info("Import complete: \(summary)")
@@ -1312,7 +1329,7 @@ final class BackupCoordinator {
             progress = ""
 
             // Post-restore: clear date gates and trigger regeneration
-            await refreshAfterRestore()
+            await refreshAfterRestore(importedPreferenceKeys: importedPreferenceKeys)
 
         } catch {
             logger.error("Import failed: \(error.localizedDescription)")
@@ -1683,17 +1700,40 @@ final class BackupCoordinator {
 
     /// After restoring from backup, clear stale date gates and regenerate
     /// outcomes, briefings, and other derived data from the restored dataset.
-    private func refreshAfterRestore() async {
+    ///
+    /// `importedPreferenceKeys` is the set of preference keys that came from
+    /// the backup. Watermarks not present (legacy backups) are reset locally
+    /// so the next import pass walks the full lookback window.
+    private func refreshAfterRestore(importedPreferenceKeys: Set<String> = []) async {
         logger.debug("Post-restore refresh starting")
 
         // Clear briefing date gate so a new briefing generates from restored data
         UserDefaults.standard.removeObject(forKey: "lastBriefingDate")
         UserDefaults.standard.removeObject(forKey: "lastWeeklyDigestWeek")
 
+        // Reset any import watermark the backup didn't carry. On a legacy
+        // backup this forces a full lookback re-scan; on a new backup the
+        // restored watermark survives and imports resume from that point.
+        var resetWatermarks: [String] = []
+        for key in Self.watermarkKeys where !importedPreferenceKeys.contains(key) {
+            if UserDefaults.standard.object(forKey: key) != nil {
+                UserDefaults.standard.removeObject(forKey: key)
+                resetWatermarks.append(key)
+            }
+        }
+        if !resetWatermarks.isEmpty {
+            let joined = resetWatermarks.joined(separator: ", ")
+            logger.info("Reset \(resetWatermarks.count) watermark(s) absent from backup: \(joined)")
+        }
+
         // Prune expired outcomes/undo entries
         try? OutcomeRepository.shared.pruneExpired()
         try? OutcomeRepository.shared.purgeOld()
         try? UndoRepository.shared.pruneExpired()
+
+        // Write a placeholder briefing so the user (and the phone via CloudKit)
+        // sees an explicit "restoring" state until a real briefing regenerates.
+        await writeRestorePlaceholderBriefing()
 
         // Regenerate outcomes from restored data
         let autoGenerate = UserDefaults.standard.object(forKey: "outcomeAutoGenerate") == nil
@@ -1703,16 +1743,75 @@ final class BackupCoordinator {
             OutcomeEngine.shared.startGeneration()
         }
 
-        // Do NOT auto-generate briefing here — the restored data may not have
-        // calendar/contacts imported yet, which leads to hallucinated narratives.
-        // The date gate is cleared above so the next time the user visits Today
-        // (or taps "Generate Briefing"), a fresh briefing will be created with
-        // whatever data is actually available at that point.
-
         // Refresh meeting prep from restored evidence
         await MeetingPrepCoordinator.shared.refresh()
 
+        // Re-run the launch-time import + deferred work so imports resume
+        // (Contacts → Calendar/Mail/Comms → role deduction → briefing).
+        // Imports honor the watermark logic above; legacy backups will do a
+        // full lookback re-scan, fresh backups will resume from where the
+        // source Mac left off.
+        SAMApp.runPostRestoreStartup()
+
+        // Park the user on Today (matches the placeholder briefing we just
+        // wrote) and notify cache-holding @Observable coordinators to
+        // invalidate derived state. SwiftData @Query-bound views auto-repaint
+        // from the rewritten store.
+        UserDefaults.standard.set("today", forKey: "sam.sidebar.selection")
+        NotificationCenter.default.post(name: .samBackupDidRestore, object: nil)
+
         logger.debug("Post-restore refresh complete")
+    }
+
+    /// Write a placeholder SamDailyBriefing locally and push the same payload
+    /// to CloudKit so the iPhone companion stops showing the pre-restore
+    /// briefing. The placeholder is replaced when DailyBriefingCoordinator
+    /// generates the next real briefing.
+    private func writeRestorePlaceholderBriefing() async {
+        let placeholderNarrative = "SAM has just restored data from a backup. A fresh briefing will be available shortly."
+
+        // Write locally so the Mac UI shows the same placeholder until regen.
+        do {
+            let context = ModelContext(SAMModelContainer.shared)
+            // Remove any existing briefings — they reflect pre-restore state.
+            let existing = try context.fetch(FetchDescriptor<SamDailyBriefing>())
+            for old in existing {
+                context.delete(old)
+            }
+            let placeholder = SamDailyBriefing(
+                briefingType: .morning,
+                dateKey: Calendar.current.startOfDay(for: .now)
+            )
+            placeholder.narrativeSummary = placeholderNarrative
+            placeholder.ttsNarrative = placeholderNarrative
+            context.insert(placeholder)
+            try context.save()
+            logger.debug("Restore placeholder briefing written locally")
+        } catch {
+            logger.error("Failed to write placeholder briefing: \(error.localizedDescription)")
+        }
+
+        // Push the same placeholder to CloudKit so the phone replaces the
+        // pre-restore briefing it cached. Schema mirrors DailyBriefingCoordinator.pushBriefingToCloud.
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        var dict: [String: String] = [
+            "date": ISO8601DateFormatter().string(from: .now),
+            "meetingCount": "0",
+            "narrativeSummary": placeholderNarrative,
+            "sectionHeading": "Restoring backup"
+        ]
+        let emptyCalendar: [BriefingCalendarItem] = []
+        let emptyActions: [BriefingAction] = []
+        let emptyFollowUps: [BriefingFollowUp] = []
+        if let d = try? encoder.encode(emptyCalendar) { dict["calendarItems"] = String(data: d, encoding: .utf8) }
+        if let d = try? encoder.encode(emptyActions) { dict["priorityActions"] = String(data: d, encoding: .utf8) }
+        if let d = try? encoder.encode(emptyFollowUps) { dict["followUps"] = String(data: d, encoding: .utf8) }
+        if let d = try? encoder.encode(emptyActions) { dict["strategicHighlights"] = String(data: d, encoding: .utf8) }
+        if let data = try? encoder.encode(dict),
+           let json = String(data: data, encoding: .utf8) {
+            await CloudSyncService.shared.pushBriefing(briefingJSON: json)
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────

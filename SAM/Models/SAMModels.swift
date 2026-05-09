@@ -1253,6 +1253,11 @@ extension Notification.Name {
     /// Listeners should refresh their data.
     static let samUndoDidRestore = Notification.Name("samUndoDidRestore")
 
+    /// Posted after BackupCoordinator finishes a restore. Listeners with
+    /// cached @Observable state (graph, strategic, business intelligence)
+    /// should invalidate and reload from the rewritten store.
+    static let samBackupDidRestore = Notification.Name("samBackupDidRestore")
+
     /// Posted when an RSVP detection auto-adds a person to an event.
     /// userInfo: ["personName": String, "eventTitle": String, "rsvpStatus": String, "eventID": String, "participationID": String]
     static let samRSVPAutoAdded = Notification.Name("samRSVPAutoAdded")

@@ -70,7 +70,23 @@ final class StrategicCoordinator {
     private let peopleRepo = PeopleRepository.shared
     private let evidenceRepo = EvidenceRepository.shared
 
-    private init() {}
+    private init() {
+        // Backup restore wipes StrategicDigest rows; drop cached state so the
+        // next read pulls the placeholder/regenerated digest from the new store.
+        NotificationCenter.default.addObserver(
+            forName: .samBackupDidRestore,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in
+                self.latestDigest = nil
+                self.strategicRecommendations = []
+                self.invalidateContentCache()
+                self.loadLatestDigest()
+            }
+        }
+    }
 
     // MARK: - Configuration
 

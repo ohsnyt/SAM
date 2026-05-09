@@ -4,6 +4,32 @@
 
 ---
 
+## Backup restore: full state refresh + iCloud briefing replacement + watermark handling (May 9, 2026)
+
+**What**: After restoring from a `.sambackup` file, SAM now resets stale in-memory state across the app, replaces the pre-restore briefing in CloudKit so the iPhone companion stops showing it, navigates the user to Today, re-runs the launch-time import + deferred work pipeline, and either resumes from the backup's import watermarks or — for legacy backups that pre-date this change — clears the local watermarks so the next import does a full lookback re-scan.
+
+### Why
+
+A restore wipes SwiftData and reinserts records from the backup, but leaves the rest of the running app frozen on pre-restore state: graph node/edge caches still reference deleted IDs, the Strategic Coordinator's last-loaded digest is gone from disk but still in memory, the iPhone companion keeps reading the pre-restore briefing JSON from CloudKit, and `mailLastWatermark` / the comms watermarks in UserDefaults still claim "last imported = today" — so the next import cycle skips messages newer than the backup, leaving a hole between backup-date and the stale watermark. The previous `refreshAfterRestore` only cleared the briefing date gate, pruned outcomes, restarted OutcomeEngine, and refreshed MeetingPrepCoordinator. Imports never re-ran, the graph never rebuilt, and CloudKit was untouched.
+
+### Architecture
+
+- **`BackupCoordinator.includedPreferenceKeys`** — Six watermark keys added to the export list: `mailLastWatermark`, `mailLastSentWatermark`, `commsLastMessageWatermark`, `commsLastCallWatermark`, `commsLastWhatsAppMessageWatermark`, `commsLastWhatsAppCallWatermark`. Forward-compat: a backup made on Mac A and restored on Mac B will resume imports from the same point Mac A left off.
+- **`BackupCoordinator.refreshAfterRestore(importedPreferenceKeys:)`** — Now accepts the set of preference keys actually present in the backup. For each watermark key absent from that set, removes the local UserDefaults entry. Legacy backups (pre-May-9-2026) trigger a full reset; new backups carry their watermarks through.
+- **`BackupCoordinator.writeRestorePlaceholderBriefing()`** — Deletes existing `SamDailyBriefing` rows (they reflect pre-restore state and are not exported) and inserts a single placeholder with `narrativeSummary = "SAM has just restored data from a backup. A fresh briefing will be available shortly."`. Then encodes the same payload using `DailyBriefingCoordinator.pushBriefingToCloud`'s schema (`date`, `meetingCount`, `narrativeSummary`, `sectionHeading="Restoring backup"`, plus empty `calendarItems` / `priorityActions` / `followUps` / `strategicHighlights`) and pushes to CloudKit so the iPhone replaces the cached briefing immediately.
+- **`SAMApp.runPostRestoreStartup()`** — New static `@MainActor` entry point that re-runs the launch-time import sequence (Contacts → Calendar/Mail/Comms → role deduction → outcome engine → briefing first-open-of-day). `triggerImportsForEnabledSources` and `scheduleDeferredLaunchWork` were promoted from instance methods to `static @MainActor` so they can be invoked from `BackupCoordinator` without holding a reference to the running `SAMApp` instance. Onboarding/permission gating is intentionally skipped — a restore can only complete when the app is past onboarding.
+- **`Notification.Name.samBackupDidRestore`** — New notification posted at the end of `refreshAfterRestore`. SwiftData `@Query`-bound views auto-repaint from the rewritten store, so the notification only targets `@Observable` coordinators that hold derived caches.
+- **`RelationshipGraphCoordinator`** — Listens for `samBackupDidRestore` and resets `nodes`, `edges`, `lensHighlightedNodeIDs`, `lensAnnotations`, `lensClusterLabels`, sets `graphStatus = .idle`, then triggers a fresh `buildGraph()`.
+- **`StrategicCoordinator`** — Listens for `samBackupDidRestore` and clears `latestDigest`, `strategicRecommendations`, calls `invalidateContentCache()`, then `loadLatestDigest()` from the new store.
+- **Sidebar nav** — `refreshAfterRestore` writes `"today"` to `UserDefaults` key `sam.sidebar.selection` (the `@AppStorage` key bound by `AppShellView`) so the user lands on the Today screen, where the placeholder briefing immediately renders. Avoids stranding them on a stale People/Graph/Business view.
+
+### Verified
+
+- `xcodebuild -scheme SAM -destination 'platform=macOS' build` — `BUILD SUCCEEDED`.
+- All changes are additive: existing backups without watermark keys trigger the legacy reset path; existing call sites of `triggerImportsForEnabledSources` continue to work via `Self.` qualifier; the new notification is opt-in (only the two cache-holding coordinators listen).
+
+---
+
 ## Three duplicate-work fixes from log audit: WhatsApp re-scan, summary regen, role deduction (May 9, 2026)
 
 **What**: A log review surfaced three patterns of duplicate work running every comms-import cycle: WhatsApp unknown senders being re-recorded on every pass with `Date()` overwriting `latestEmailDate`, relationship summaries regenerating back-to-back when a note save and a comms import touched the same person within seconds, and role deduction walking the full candidate set even when no person's evidence had changed since the last run.

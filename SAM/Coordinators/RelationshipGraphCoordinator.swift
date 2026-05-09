@@ -204,6 +204,25 @@ final class RelationshipGraphCoordinator {
                 self.applyFilters()
             }
         }
+
+        // Backup restore wipes the SwiftData store; rebuild the graph from
+        // the new dataset so cached nodes/edges don't reference deleted IDs.
+        NotificationCenter.default.addObserver(
+            forName: .samBackupDidRestore,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in
+                self.nodes = []
+                self.edges = []
+                self.lensHighlightedNodeIDs = []
+                self.lensAnnotations = [:]
+                self.lensClusterLabels = []
+                self.graphStatus = .idle
+                await self.buildGraph()
+            }
+        }
     }
 
     // MARK: - Status Enum

@@ -1188,7 +1188,7 @@ struct SAMApp: App {
         }
         
         // Onboarding is marked complete and permissions are valid - trigger imports
-        await triggerImportsForEnabledSources()
+        await Self.triggerImportsForEnabledSources()
     }
     
     /// Check if permissions that should be granted (based on settings) are actually missing
@@ -1253,15 +1253,28 @@ struct SAMApp: App {
 
         if hasCompletedOnboarding {
             logger.info("Onboarding completed — triggering imports")
+            await Self.triggerImportsForEnabledSources()
+        }
+    }
+
+    /// Re-run the launch-time import + deferred work after a backup restore.
+    /// Mirrors what `checkPermissionsAndSetup → triggerImportsForEnabledSources`
+    /// does at app launch, but without the onboarding/permission gate (a restore
+    /// only completes when the app is already past onboarding).
+    @MainActor
+    static func runPostRestoreStartup() {
+        logger.info("Post-restore: re-running startup imports + deferred work")
+        Task { @MainActor in
             await triggerImportsForEnabledSources()
         }
     }
-    
+
     /// Shared function to trigger imports based on which sources are enabled.
     /// Contacts must run first (other sources depend on known people),
     /// then remaining imports fire concurrently and are non-blocking — the
     /// app can terminate at any time without waiting for them to finish.
-    private func triggerImportsForEnabledSources() async {
+    @MainActor
+    static func triggerImportsForEnabledSources() async {
         // Never run real imports while Harvey Snodgrass test data is active —
         // real contacts would overwrite the seed dataset.
         // Briefing + outcome generation still run (they only read existing data).
@@ -1367,7 +1380,8 @@ struct SAMApp: App {
     /// Held at `.utility` priority and behind a short sleep so first paint completes
     /// before any of these touch the SwiftData store. Each step is a no-op when the
     /// caller's gate (settings, completion flag) says so.
-    private func scheduleDeferredLaunchWork(autoGenerateOutcomes: Bool, runPipelineBackfill: Bool) {
+    @MainActor
+    private static func scheduleDeferredLaunchWork(autoGenerateOutcomes: Bool, runPipelineBackfill: Bool) {
         Task(priority: .utility) {
             try? await Task.sleep(for: .seconds(3))
 
