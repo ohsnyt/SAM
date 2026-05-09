@@ -423,11 +423,11 @@ final class CommunicationsImportCoordinator {
                 logger.debug("[comms-import] WhatsApp calls done: \(totalWACalls)")
             }
 
-            // --- WhatsApp Unknown Sender Discovery ---
+            // --- WhatsApp Unknown Sender Discovery + Enrichment ---
+            // Both passes iterate the same JID list, so fetch once and share.
             if (whatsAppMessagesEnabled || whatsAppCallsEnabled), bookmarkManager.hasWhatsAppAccess {
                 logger.debug("[comms-import] Starting WhatsApp unknown sender discovery…")
-                await discoverWhatsAppUnknownSenders(knownPhones: knownPhones)
-                await generateWhatsAppEnrichments(knownPhones: knownPhones)
+                await runWhatsAppPostScan(knownPhones: knownPhones)
                 logger.debug("[comms-import] WhatsApp discovery done")
             }
 
@@ -788,93 +788,106 @@ final class CommunicationsImportCoordinator {
         return calls.count
     }
 
-    // MARK: - WhatsApp Unknown Sender Discovery
+    // MARK: - WhatsApp Unknown Sender Discovery + Enrichment
 
-    private func discoverWhatsAppUnknownSenders(knownPhones: Set<String>) async {
+    /// One-shot post-scan: open the WhatsApp DB once, fetch all JIDs once,
+    /// then run both the unknown-sender discovery and the enrichment passes
+    /// over the shared list. Earlier this was two separate methods that each
+    /// resolved the bookmark + ran `fetchAllJIDs` independently — same DB
+    /// scan twice in succession.
+    private func runWhatsAppPostScan(knownPhones: Set<String>) async {
         guard let resolved = bookmarkManager.resolveWhatsAppURL() else { return }
         guard resolved.directory.startAccessingSecurityScopedResource() else { return }
         defer { bookmarkManager.stopAccessing(resolved.directory) }
 
+        let allJIDs: [(jid: String, partnerName: String?, messageCount: Int)]
         do {
-            let allJIDs = try await whatsAppService.fetchAllJIDs(dbURL: resolved.messagesDB)
-
-            var unknownSenders: [(email: String, displayName: String?, subject: String, date: Date, source: EvidenceSource, isLikelyMarketing: Bool)] = []
-
-            for jid in allJIDs {
-                let phone = whatsAppJIDToPhone(jid.jid)
-                guard !knownPhones.contains(phone) else { continue }
-                let displayName = jid.partnerName ?? phone
-                unknownSenders.append((
-                    email: phone,
-                    displayName: displayName,
-                    subject: "WhatsApp (\(jid.messageCount) messages)",
-                    date: Date(),
-                    source: .whatsApp,
-                    isLikelyMarketing: false
-                ))
-            }
-
-            if !unknownSenders.isEmpty {
-                try UnknownSenderRepository.shared.bulkRecordUnknownSenders(unknownSenders)
-                logger.debug("Recorded \(unknownSenders.count) unknown WhatsApp senders for triage")
-            }
+            allJIDs = try await whatsAppService.fetchAllJIDs(dbURL: resolved.messagesDB)
         } catch {
-            logger.warning("WhatsApp unknown sender discovery failed: \(error)")
+            logger.warning("WhatsApp JID fetch failed: \(error)")
+            return
         }
+
+        discoverWhatsAppUnknownSenders(allJIDs: allJIDs, knownPhones: knownPhones)
+        generateWhatsAppEnrichments(allJIDs: allJIDs, knownPhones: knownPhones)
     }
 
-    // MARK: - WhatsApp Enrichment
+    private func discoverWhatsAppUnknownSenders(
+        allJIDs: [(jid: String, partnerName: String?, messageCount: Int)],
+        knownPhones: Set<String>
+    ) {
+        var unknownSenders: [(email: String, displayName: String?, subject: String, date: Date, source: EvidenceSource, isLikelyMarketing: Bool)] = []
+
+        for jid in allJIDs {
+            let phone = whatsAppJIDToPhone(jid.jid)
+            guard !knownPhones.contains(phone) else { continue }
+            let displayName = jid.partnerName ?? phone
+            unknownSenders.append((
+                email: phone,
+                displayName: displayName,
+                subject: "WhatsApp (\(jid.messageCount) messages)",
+                date: Date(),
+                source: .whatsApp,
+                isLikelyMarketing: false
+            ))
+        }
+
+        guard !unknownSenders.isEmpty else { return }
+        do {
+            try UnknownSenderRepository.shared.bulkRecordUnknownSenders(unknownSenders)
+            logger.debug("Recorded \(unknownSenders.count) unknown WhatsApp senders for triage")
+        } catch {
+            logger.warning("WhatsApp unknown sender record failed: \(error)")
+        }
+    }
 
     /// Generate enrichment candidates for Apple Contacts from WhatsApp JID phone numbers.
     /// When a WhatsApp JID matches a SamPerson by canonicalized phone, but the full
     /// international number isn't in their phoneAliases, suggest adding it.
-    private func generateWhatsAppEnrichments(knownPhones: Set<String>) async {
-        guard let resolved = bookmarkManager.resolveWhatsAppURL() else { return }
-        guard resolved.directory.startAccessingSecurityScopedResource() else { return }
-        defer { bookmarkManager.stopAccessing(resolved.directory) }
+    private func generateWhatsAppEnrichments(
+        allJIDs: [(jid: String, partnerName: String?, messageCount: Int)],
+        knownPhones: Set<String>
+    ) {
+        guard let people = try? peopleRepository.fetchAll() else { return }
 
+        var candidates: [EnrichmentCandidate] = []
+
+        for jid in allJIDs {
+            let canonPhone = whatsAppJIDToPhone(jid.jid)
+            guard knownPhones.contains(canonPhone) else { continue }
+
+            // Find the matching person
+            guard let person = people.first(where: { p in
+                p.phoneAliases.contains(where: { canonicalizePhone($0) == canonPhone })
+            }) else { continue }
+
+            // Extract the full international number from the JID (before @)
+            let fullNumber = jid.jid.split(separator: "@").first.map(String.init) ?? ""
+            guard !fullNumber.isEmpty else { continue }
+
+            // Format as +{number} for display
+            let formattedNumber = fullNumber.hasPrefix("+") ? fullNumber : "+\(fullNumber)"
+
+            // Check if this full number is already in the person's phoneAliases
+            let alreadyHas = person.phoneAliases.contains(where: { alias in
+                alias.filter(\.isNumber) == fullNumber.filter(\.isNumber)
+            })
+            guard !alreadyHas else { continue }
+
+            candidates.append(EnrichmentCandidate(
+                personID: person.id,
+                field: .whatsApp,
+                proposedValue: formattedNumber,
+                currentValue: person.phoneAliases.first,
+                source: .whatsAppMessages,
+                sourceDetail: "WhatsApp contact: \(jid.partnerName ?? canonPhone)"
+            ))
+        }
+
+        guard !candidates.isEmpty else { return }
         do {
-            let allJIDs = try await whatsAppService.fetchAllJIDs(dbURL: resolved.messagesDB)
-            guard let people = try? peopleRepository.fetchAll() else { return }
-
-            var candidates: [EnrichmentCandidate] = []
-
-            for jid in allJIDs {
-                let canonPhone = whatsAppJIDToPhone(jid.jid)
-                guard knownPhones.contains(canonPhone) else { continue }
-
-                // Find the matching person
-                guard let person = people.first(where: { p in
-                    p.phoneAliases.contains(where: { canonicalizePhone($0) == canonPhone })
-                }) else { continue }
-
-                // Extract the full international number from the JID (before @)
-                let fullNumber = jid.jid.split(separator: "@").first.map(String.init) ?? ""
-                guard !fullNumber.isEmpty else { continue }
-
-                // Format as +{number} for display
-                let formattedNumber = fullNumber.hasPrefix("+") ? fullNumber : "+\(fullNumber)"
-
-                // Check if this full number is already in the person's phoneAliases
-                let alreadyHas = person.phoneAliases.contains(where: { alias in
-                    alias.filter(\.isNumber) == fullNumber.filter(\.isNumber)
-                })
-                guard !alreadyHas else { continue }
-
-                candidates.append(EnrichmentCandidate(
-                    personID: person.id,
-                    field: .whatsApp,
-                    proposedValue: formattedNumber,
-                    currentValue: person.phoneAliases.first,
-                    source: .whatsAppMessages,
-                    sourceDetail: "WhatsApp contact: \(jid.partnerName ?? canonPhone)"
-                ))
-            }
-
-            if !candidates.isEmpty {
-                let inserted = try EnrichmentRepository.shared.bulkRecord(candidates)
-                logger.debug("Generated \(inserted) WhatsApp phone enrichment candidates")
-            }
+            let inserted = try EnrichmentRepository.shared.bulkRecord(candidates)
+            logger.debug("Generated \(inserted) WhatsApp phone enrichment candidates")
         } catch {
             logger.warning("WhatsApp enrichment generation failed: \(error)")
         }
