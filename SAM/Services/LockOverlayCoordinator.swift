@@ -46,7 +46,6 @@ final class LockOverlayCoordinator {
         guard !(window is LockOverlayWindow) else { return }
         if registrations.contains(where: { $0.window === window }) { return }
         registrations.append(Registration(window: window))
-        logger.debug("Registered window: \(window.identifier?.rawValue ?? "<no id>", privacy: .public)")
 
         if AppLockService.shared.isLocked {
             // Seal first regardless of visibility — orderOut'd windows
@@ -173,8 +172,6 @@ final class LockOverlayCoordinator {
         }
         overlay.orderOut(nil)
         registrations[index].overlay = nil
-
-        logger.debug("Detached overlay")
     }
 
     private func syncOverlayFrame(parentIndex: Int) {

@@ -132,7 +132,6 @@ final class ModalCoordinator {
 
     private func dismissAll() {
         guard !entries.isEmpty else { return }
-        logger.debug("Dismissing \(self.entries.count) modal(s) on lock")
 
         for entry in entries {
             switch entry.kind {
@@ -162,7 +161,6 @@ final class ModalCoordinator {
 
     private func restorePending() {
         guard !pendingRestores.isEmpty else { return }
-        logger.debug("Restoring \(self.pendingRestores.count) modal(s) on unlock")
 
         let toRestore = pendingRestores
         pendingRestores.removeAll()

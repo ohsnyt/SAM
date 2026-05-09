@@ -38,7 +38,6 @@ final class AppLockService {
         }
         set {
             UserDefaults.standard.set(newValue, forKey: timeoutKey)
-            logger.debug("Lock timeout updated to \(newValue) minutes")
         }
     }
 
@@ -48,9 +47,7 @@ final class AppLockService {
         let context = LAContext()
         var error: NSError?
         let available = context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error)
-        if let error {
-            logger.debug("Biometric not available: \(error.localizedDescription)")
-        }
+        _ = error
         return available
     }
 
@@ -104,19 +101,12 @@ final class AppLockService {
     /// attempts can leave it in a "canceled" state where subsequent
     /// `evaluatePolicy` returns immediately without prompting.
     func authenticate() {
-        guard isLocked else {
-            logger.debug("authenticate() — skip: not locked")
-            return
-        }
+        guard isLocked else { return }
 
         // Prevent duplicate auth dialogs — if one is already in flight,
         // let it complete rather than spawning a second.
-        guard !isAuthenticating else {
-            logger.debug("authenticate() — skip: already authenticating")
-            return
-        }
+        guard !isAuthenticating else { return }
 
-        logger.debug("authenticate() — starting LAContext.evaluatePolicy")
         isAuthenticating = true
         authError = nil
 
@@ -141,14 +131,12 @@ final class AppLockService {
                     LockOverlayCoordinator.shared.handleLockStateChange(isLocked: false)
                     restoreVisibleWindows()
                     ModalCoordinator.shared.handleLockStateChange(isLocked: false)
-                    logger.info("Authentication successful — app unlocked")
                 }
             } catch {
                 let laError = error as? LAError
                 let elapsed = Date().timeIntervalSince(startedAt)
                 switch laError?.code {
                 case .userCancel, .appCancel, .systemCancel:
-                    logger.debug("Auth cancelled (\(String(describing: laError?.code))) after \(Int(elapsed * 1000))ms")
                     authError = nil
                     // Documented LAContext quirk (plan §8): evaluatePolicy can
                     // return *.systemCancel/.appCancel within a few ms when the
@@ -157,7 +145,6 @@ final class AppLockService {
                     // recovers; loops are guarded by didRetryAfterSystemCancel.
                     if elapsed < 0.5, !didRetryAfterSystemCancel {
                         didRetryAfterSystemCancel = true
-                        logger.debug("Scheduling 500ms retry after fast cancel")
                         currentAuthContext = nil
                         isAuthenticating = false
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
@@ -179,14 +166,8 @@ final class AppLockService {
     /// Auto-prompt biometrics when the app is locked and frontmost.
     /// Safe to call repeatedly — guards against re-entry and inactive state.
     func tryAutoAuthenticate() {
-        guard isLocked, !isAuthenticating else {
-            logger.debug("tryAutoAuthenticate — skip (locked=\(self.isLocked, privacy: .public), authing=\(self.isAuthenticating, privacy: .public))")
-            return
-        }
-        guard NSApp.isActive else {
-            logger.debug("tryAutoAuthenticate — skip: NSApp not active")
-            return
-        }
+        guard isLocked, !isAuthenticating else { return }
+        guard NSApp.isActive else { return }
         authenticate()
     }
 
@@ -196,7 +177,7 @@ final class AppLockService {
     /// retry inside `authenticate()` handles the case where the system isn't
     /// quite ready yet.
     func tryAutoAuthenticateAfterSystemEvent(source: String) {
-        logger.debug("tryAutoAuthenticateAfterSystemEvent(\(source, privacy: .public)) — locked=\(self.isLocked, privacy: .public)")
+        _ = source
         guard isLocked, !isAuthenticating else { return }
         didRetryAfterSystemCancel = false
         authenticate()
@@ -212,9 +193,6 @@ final class AppLockService {
                 .deviceOwnerAuthentication,
                 localizedReason: "Authenticate to access SAM backup data"
             )
-            if success {
-                logger.debug("Export authentication successful")
-            }
             return success
         } catch {
             logger.warning("Export authentication failed: \(error.localizedDescription)")
@@ -242,7 +220,6 @@ final class AppLockService {
         // way to tear down a modal without leaving SwiftUI state stale.
         ModalCoordinator.shared.handleLockStateChange(isLocked: true)
         installKeyEventMonitor()
-        logger.info("App locked")
         // Queue auto-prompt — fires the moment SAM is frontmost. If SAM
         // lost focus during the lock event (e.g., screensaver took over)
         // the guard inside tryAutoAuthenticate exits early; the prompt
@@ -265,7 +242,6 @@ final class AppLockService {
             let timeout = TimeInterval(lockTimeoutMinutes * 60)
             if elapsed >= timeout {
                 lock()
-                logger.debug("App locked — inactive for \(Int(elapsed / 60)) minutes (timeout: \(self.lockTimeoutMinutes)m)")
                 return
             }
         }
@@ -291,7 +267,6 @@ final class AppLockService {
         installKeyEventMonitor()
         installScreenLockObservers()
         installActivityTracking()
-        logger.debug("App launch — awaiting authentication")
     }
 
     // MARK: - Foreground Inactivity Timer
@@ -321,7 +296,6 @@ final class AppLockService {
         RunLoop.main.add(timer, forMode: .common)
         idleTimer = timer
         lastActivityAt = Date()
-        logger.debug("Activity tracking installed (timer + event monitor)")
     }
 
     private func checkIdleTimeout() {
@@ -329,7 +303,6 @@ final class AppLockService {
         let elapsed = Date().timeIntervalSince(lastActivityAt)
         let timeout = TimeInterval(lockTimeoutMinutes * 60)
         guard elapsed >= timeout else { return }
-        logger.info("Foreground idle timeout — locking (idle \(Int(elapsed))s, timeout \(Int(timeout))s)")
         lock()
     }
 
@@ -419,19 +392,17 @@ final class AppLockService {
                 Task { @MainActor [weak self] in
                     guard let self, self.isLocked, !self.isAuthenticating else { return }
                     if note.object is LockOverlayWindow {
-                        self.logger.debug("LockOverlayWindow became key — re-prompting")
                         self.tryAutoAuthenticateAfterSystemEvent(source: "overlay.didBecomeKey")
                     }
                 }
             }
         }
 
-        logger.debug("Screen-lock observers installed (lock + unlock sides)")
     }
 
     private func handleScreenEvent(source: String) {
+        _ = source
         guard !isLocked else { return }
-        logger.info("App lock engaged — trigger: \(source, privacy: .public)")
         lock()
     }
 
@@ -458,7 +429,6 @@ final class AppLockService {
         }
         for window in hiddenWindowsAtLock {
             window.orderOut(nil)
-            logger.debug("Hid auxiliary window on lock: \(window.identifier?.rawValue ?? "<no id>")")
         }
     }
 
@@ -489,7 +459,6 @@ final class AppLockService {
             // Consume all other key events
             return nil
         }
-        logger.debug("Key event monitor installed")
     }
 
     /// Remove the keyboard event monitor after unlock.
@@ -497,7 +466,6 @@ final class AppLockService {
         if let monitor = keyEventMonitor {
             NSEvent.removeMonitor(monitor)
             keyEventMonitor = nil
-            logger.debug("Key event monitor removed")
         }
     }
 
