@@ -336,6 +336,9 @@ struct SAMApp: App {
         } else {
             AppShellView()
                 .modelContainer(SAMModelContainer.shared)
+                .overlay {
+                    RestoreInProgressOverlay()
+                }
         }
     }
 

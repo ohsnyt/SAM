@@ -39,6 +39,11 @@ final class BackupCoordinator {
 
     var status: BackupStatus = .idle
     var progress: String = ""
+
+    /// Names of background coordinators currently blocking the settle phase.
+    /// Empty when not in settle phase or when nothing is blocking. Drives the
+    /// "Waiting for X to finish" detail line in the restore overlay.
+    var blockedBy: [String] = []
     var pendingImport: (url: URL, preview: ImportPreview)?
     var isEncryptedBackup: Bool = false
     var needsPassphrase: Bool = false
@@ -81,19 +86,30 @@ final class BackupCoordinator {
             let role = RoleDeductionEngine.shared.deductionStatus == .running
             let busy = comms || mail || cal || contacts || outcome || strategic || role
             if !busy {
+                blockedBy = []
                 if loggedWaiting {
                     logger.info("In-flight work settled — proceeding with restore")
                 }
                 return
             }
+            var blockers: [String] = []
+            if comms    { blockers.append("communications import") }
+            if mail     { blockers.append("mail import") }
+            if cal      { blockers.append("calendar import") }
+            if contacts { blockers.append("contacts import") }
+            if outcome  { blockers.append("outcome generation") }
+            if strategic { blockers.append("strategic digest") }
+            if role     { blockers.append("role deduction") }
+            blockedBy = blockers
             if !loggedWaiting {
-                progress = "Pausing background work..."
+                progress = "Waiting for background work to finish..."
                 logger.info("Restore waiting for in-flight work — comms=\(comms) mail=\(mail) cal=\(cal) contacts=\(contacts) outcome=\(outcome) strategic=\(strategic) role=\(role)")
                 loggedWaiting = true
             }
             try? await Task.sleep(for: .milliseconds(250))
         }
         logger.warning("Restore settle timeout after \(Int(timeout))s — proceeding anyway (some work may still be in flight)")
+        blockedBy = []
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -1797,11 +1813,16 @@ final class BackupCoordinator {
         // sees an explicit "restoring" state until a real briefing regenerates.
         await writeRestorePlaceholderBriefing()
 
-        // Regenerate outcomes from restored data
+        // Regenerate outcomes from restored data. Skip AI enrichment on the
+        // first cycle — every person has fresh outcomes with no cached AI
+        // rationale, so enrichWithAI would otherwise spend several minutes
+        // making LLM calls before the user sees anything on Today.
+        // The next scheduled OutcomeEngine cycle fills in AI rationale.
         let autoGenerate = UserDefaults.standard.object(forKey: "outcomeAutoGenerate") == nil
             ? true
             : UserDefaults.standard.bool(forKey: "outcomeAutoGenerate")
         if autoGenerate {
+            OutcomeEngine.shared.skipEnrichmentNextRun = true
             OutcomeEngine.shared.startGeneration()
         }
 

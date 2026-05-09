@@ -4,6 +4,31 @@
 
 ---
 
+## Backup restore: cap AI enrichment + blocking overlay (May 9, 2026)
+
+**What**: Two fixes for the post-restore window where the app appears hung for 5+ minutes:
+
+1. `OutcomeEngine.enrichWithAI` now skips entirely on the first cycle after a restore (the cycle that has zero cached AI rationale and would otherwise burn through 5 outcomes × ~30 s × 2 LLM calls each), and is bounded by a 45 s wall-clock budget on every cycle. Outcomes past the budget enrich on the next scheduled run.
+2. A new `RestoreInProgressOverlay` blocks all UI input from the moment `BackupCoordinator.status` enters `.importing` until the restore returns to `.idle`. The overlay shows the current phase string, and during the settle wait names the specific coordinators it's still waiting on.
+
+### Why
+
+A hang report audit traced a real-world 5-minute stall to `OutcomeEngine.enrichWithAI` running for 311 s right after a restore — the fresh post-restore batch had no cached `suggestedNextStep` or `draftMessageText` on any outcome, so the top-5 enrichment loop made the maximum number of AI calls (10) back-to-back, all on the main actor. The user (reasonably) thought the app had hung and force-quit it, which kicked off a fresh launch + a duplicate contacts import + another planned enrichment cycle. The whole sequence is non-cancellable once the user confirms the destructive restore alert, so the right answer is to make the post-restore window short and to make it clear what's happening.
+
+### Architecture
+
+- **`OutcomeEngine.skipEnrichmentNextRun`** — `@ObservationIgnored` one-shot bool. `BackupCoordinator.refreshAfterRestore` sets it to `true` immediately before calling `OutcomeEngine.shared.startGeneration()`. `enrichWithAI` checks the flag at entry, logs, clears it, and returns. The next scheduled cycle (idle-time, no restore pressure) populates AI rationale.
+- **`OutcomeEngine.enrichmentBudgetSeconds = 45`** — Wall-clock budget tracked from the start of `enrichWithAI`. Before each per-outcome iteration, the elapsed time is compared against the budget; if exceeded, the loop logs `AI enrichment budget exceeded (Ns > 45s) after K/N outcomes — deferring rest` and returns. Independent of the restore guard added inside the same loop (`BackupCoordinator.isRestoring` short-circuit).
+- **`BackupCoordinator.blockedBy: [String]`** — Observable list of human-readable coordinator names that are still busy during the settle phase. Updated each 250 ms poll in `waitForInFlightWorkToSettle`. Cleared when settled or on timeout.
+- **`RestoreInProgressOverlay`** — `View` in `Views/Shared/`. Reads `BackupCoordinator.shared` directly via `@State`. Shows when `status == .importing`. Renders a Glass-material card with `ProgressView`, "Restoring Backup" title, the current `progress` string, and the `blockedBy` list when non-empty. The full-window backdrop is a 40 % black overlay with a `contentShape(Rectangle())` + empty `onTapGesture` that swallows clicks behind it. Wired into `SAMApp.mainContent` via `.overlay { RestoreInProgressOverlay() }`.
+
+### Verified
+
+- `xcodebuild -scheme SAM -destination 'platform=macOS' build` — `BUILD SUCCEEDED`.
+- The overlay is opacity-only — does not block the file importer, alerts, or onboarding sheets that exist outside `mainContent`. Restore is only invokable from Settings (post-onboarding) so the overlay covers the relevant paths.
+
+---
+
 ## Backup restore: pause in-flight work to prevent SwiftData fatalError (May 9, 2026)
 
 **What**: Restoring a backup now sets a process-wide `BackupCoordinator.isRestoring` flag for the duration of the wipe-and-reinsert pass, waits up to 30 s for in-flight imports/engines to drain before tearing down the store, and short-circuits any new background work (or in-progress yield-bounded loops) that runs while the flag is set.

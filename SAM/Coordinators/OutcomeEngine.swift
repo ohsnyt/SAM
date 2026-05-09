@@ -51,6 +51,18 @@ final class OutcomeEngine {
     /// Active knowledge gaps detected during outcome generation.
     var activeGaps: [KnowledgeGap] = []
 
+    /// One-shot flag: skip the next AI enrichment pass. Set after a backup
+    /// restore so the first post-restore cycle paints deterministic outcomes
+    /// fast — enrichment fills in on the next scheduled cycle.
+    @ObservationIgnored
+    var skipEnrichmentNextRun: Bool = false
+
+    /// Wall-clock budget for `enrichWithAI`. Each AI call (next-step + draft)
+    /// can take 30 s on a busy machine; with 5 outcomes × 2 calls that's
+    /// 5 minutes worst case. The budget caps the user-visible blocking
+    /// window — outcomes past the budget enrich on the next cycle.
+    private let enrichmentBudgetSeconds: TimeInterval = 45
+
     // MARK: - Dependencies
 
     private let outcomeRepo = OutcomeRepository.shared
@@ -2082,6 +2094,11 @@ final class OutcomeEngine {
 
     /// Best-effort: enhance rationale, suggestedNextStep, and draft messages with AI for top outcomes.
     private func enrichWithAI() async {
+        if skipEnrichmentNextRun {
+            skipEnrichmentNextRun = false
+            logger.info("Skipping AI enrichment for this cycle (one-shot flag — likely post-restore)")
+            return
+        }
         do {
             let active = try outcomeRepo.fetchActive()
             // Only enrich top 5 to avoid excessive LLM calls
@@ -2094,7 +2111,23 @@ final class OutcomeEngine {
                 return
             }
 
+            let enrichmentStart = Date()
+            var enrichedCount = 0
+
             for outcomeID in topOutcomeIDs {
+                // Wall-clock budget guard — bail before starting a new outcome
+                // if the cycle has already eaten its blocking budget. The
+                // remaining outcomes get enriched on the next scheduled run.
+                let elapsed = Date().timeIntervalSince(enrichmentStart)
+                if elapsed > enrichmentBudgetSeconds {
+                    logger.info("AI enrichment budget exceeded (\(Int(elapsed))s > \(Int(self.enrichmentBudgetSeconds))s) after \(enrichedCount)/\(topOutcomeIDs.count) outcomes — deferring rest")
+                    return
+                }
+                if BackupCoordinator.isRestoring {
+                    logger.info("AI enrichment aborted — backup restore started mid-cycle")
+                    return
+                }
+
                 // Re-fetch outcome after each await to avoid stale/deleted model crashes
                 guard let outcome = try? outcomeRepo.fetch(id: outcomeID),
                       !outcome.isDeleted,
@@ -2163,6 +2196,8 @@ final class OutcomeEngine {
                    (draftOutcome.actionLane == .communicate || draftOutcome.actionLane == .call) {
                     await generateDraftMessage(for: outcomeID)
                 }
+
+                enrichedCount += 1
             }
         } catch {
             logger.warning("AI enrichment skipped: \(error.localizedDescription)")
