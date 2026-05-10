@@ -4,6 +4,36 @@
 
 ---
 
+## Graph layout: sqrt-hop stress + repulsion cutoff (May 10, 2026)
+
+**What**: Two changes to `GraphBuilderService` to tighten the relationship graph and eliminate visual artifacts caused by force-directed numerical drift.
+
+1. **Sqrt scaling on graph-theoretic distance** in `applyStressMajorization` (line 546). Replaced linear `desiredDist = idealEdgeLength * graphDist` with `desiredDist = idealEdgeLength * sqrt(graphDist)`. 1-hop distance is unchanged; 2-hop sits at ~1.4× ideal (was 2×); 4-hop at 2× (was 4×). One isolated 4-hop outlier no longer forces the entire chart to scale down to 1/4 visual size.
+2. **Repulsion cutoff** in `applyDirectRepulsion`. Added a `cutoff` parameter so pairs beyond ~3× minimum spacing (120 pixels) no longer push each other. This is the classic Fruchterman-Reingold neighbor-cell optimization. Without it, every node in a dense central cluster contributes a small outward push to every degree-1 dangling node, and the cumulative "halo" pushed the outer ring ~100 units out — leaving a visible band gap between the cluster and the dangling nodes. With the cutoff, dangling nodes feel only local repulsion and settle close to their attachment point.
+
+Cache key bumped to `graphLayoutCache_v2` so existing caches (computed with the old math) are ignored. A fresh layout runs on next graph build.
+
+### Why
+
+User-visible symptoms before the fix:
+- A few extreme spikes (Abdul-Massih Saadi, Sharon Schnare) sat at 4× the radius of direct neighbors because they were 4 hops from Me. The whole chart had to shrink to fit them.
+- Two Leads with byte-identical inspector data (Les Kline, Stephen Davis — verified directly against the SwiftData store) sat at noticeably different distances from Me. Both had exactly one edge: a derived role-relationship edge from Me. The drift was pure layout artifact: degree-1 dangling nodes have only a single weak inward pull, so where they settle depends on local repulsion neighborhood, not graph structure.
+- A visible band gap separated the dense cluster from the outer dangling ring.
+
+Both fixes are surgical and one-line each. No call-site or behavior changes for curated lenses (Book of Business, etc.) — only the underlying force math. Sqrt preserves hop ordering (1-hop < 2-hop < 3-hop is still visible), just compresses the gaps. Cutoff preserves local anti-overlap behavior (still 40px collision spacing).
+
+### Verified
+
+- `xcodebuild -scheme SAM -destination 'platform=macOS' build` — `BUILD SUCCEEDED`.
+- Both layout call sites (`layoutGraph` and `incrementalLayout`) pass an explicit cutoff so neither path is left on the old math.
+- Cache invalidation is automatic (key bump); user does not need to clear UserDefaults manually.
+
+### Diagnostic-trail note
+
+While diagnosing, I queried the live SwiftData store directly (read-only) at `~/Library/Containers/sam.SAM/Data/Library/Application Support/SAM_v34.store` to confirm Les Kline and Stephen Davis had identical edges. Useful technique for "why does the layout do X for these two specific nodes" questions in the future — the inspector doesn't surface every edge source the layout uses.
+
+---
+
 ## Role filter: pre-check all roles + show counts (May 9, 2026)
 
 **What**: Two changes to the Graph toolbar's role-filter menu so users can exclude individual roles instead of only including them.
