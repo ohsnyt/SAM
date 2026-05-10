@@ -280,7 +280,6 @@ final class RelationshipGraphCoordinator {
                 // --- Try cached layout first ---
                 allNodes = result.nodes
                 allEdges = result.edges
-                meNodeID = (try? peopleRepository.fetchMe())?.id
 
                 if restoreCachedLayout() {
                     progress = "Restored from cache..."
@@ -288,12 +287,13 @@ final class RelationshipGraphCoordinator {
                 } else {
                     progress = "Computing layout..."
 
-                    // --- Run deterministic radial layout (Me-centered) ---
-                    let laidOutNodes = await graphBuilder.layoutGraphRadial(
+                    // --- Run force-directed layout ---
+                    let laidOutNodes = await graphBuilder.layoutGraph(
                         nodes: result.nodes,
                         edges: result.edges,
-                        meID: meNodeID,
-                        bounds: bounds
+                        iterations: 300,
+                        bounds: bounds,
+                        contextClusters: contexts
                     )
 
                     guard !Task.isCancelled else { return }
@@ -311,6 +311,7 @@ final class RelationshipGraphCoordinator {
                 }
 
                 // --- Finalize ---
+                meNodeID = (try? peopleRepository.fetchMe())?.id
                 let nodeCount = allNodes.count
                 let edgeCount = allEdges.count
                 lastComputedAt = Date()
@@ -909,9 +910,11 @@ final class RelationshipGraphCoordinator {
 
     // MARK: - Layout Caching
 
-    // v5: bumped for deterministic radial layout (replaces force-directed).
-    private static let cacheKey = "graphLayoutCache_v5"
-    private static let cacheTimestampKey = "graphLayoutCacheTimestamp_v5"
+    // v6: bumped after reverting the v4 (Hooke) and v5 (radial) experiments
+    // back to the original force-directed layout — invalidate any cached
+    // positions from those attempts.
+    private static let cacheKey = "graphLayoutCache_v6"
+    private static let cacheTimestampKey = "graphLayoutCacheTimestamp_v6"
     private static let cacheTTL: TimeInterval = 86400 // 24 hours
 
     /// Save current node positions to UserDefaults for fast restore.

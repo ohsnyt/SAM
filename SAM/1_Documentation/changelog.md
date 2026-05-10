@@ -4,6 +4,29 @@
 
 ---
 
+## Graph layout: reverted both Hooke and radial back to original physics (May 10, 2026)
+
+**What**: Restored `GraphBuilderService.swift` and `RelationshipGraphCoordinator.swift` to the state at commit `0c38ef9` — i.e. the original force-directed layout with linear-pull attraction (`force = strength * weight * dist`) and the full Phase 1–4 pipeline (initial placement → stress majorization → Fruchterman-Reingold → PrEd). Cache key bumped to `graphLayoutCache_v6` to invalidate cached positions from the v4 (Hooke) and v5 (radial) experiments.
+
+### Why
+
+Both the Hooke's-law spring (`152aa93`) and the deterministic radial layout (`2e97d53`) produced worse visuals than the original physics. The radial layout in particular pushed L2 nodes onto a hard concentric ring far from their parents, exposing the structural rigidity of fixed-radius layers.
+
+User direction: "Can we revert back to the first physics model we had? Then let's examine what is pushing out that second band so far." The plan is to debug the band-gap pathology in-place on the original layout rather than keep replacing the algorithm.
+
+### Next
+
+Investigate what causes the visible "second ring" of nodes that sit roughly 2× the inner-ring distance under the original force-directed model. Candidates to inspect:
+- Whether stress majorization's `idealEdgeLength = min(bounds) / max(1, n/3)` is producing inconsistent target distances for two-hop vs one-hop pairs.
+- Whether `applyDirectRepulsion`'s O(N²) sum on dense central clusters dominates the single weak attraction pull for degree-1 dangling nodes (the original symptom that motivated the Hooke attempt).
+- Whether `assignInitialPositions` golden-angle spiral leaves degree-1 nodes far enough out that the temperature schedule never pulls them back in.
+
+### Verified
+
+- `xcodebuild -scheme SAM -destination 'platform=macOS' build` — `BUILD SUCCEEDED`.
+
+---
+
 ## Graph layout: deterministic radial replaces force-directed physics (May 10, 2026)
 
 **What**: Replaced the multi-phase force-directed layout (stress majorization → Fruchterman-Reingold → PrEd) with a deterministic radial layout. Me sits at center; BFS assigns every other node a layer; L1 (direct neighbors of Me) is grouped by primary role and placed clockwise from 12 o'clock with the smallest role bucket first; L2/L3 sub-trees fan outward from their parent.
