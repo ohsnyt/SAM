@@ -4,6 +4,32 @@
 
 ---
 
+## Graph layout: Hooke's-law attraction with rest length (May 9, 2026)
+
+**What**: Replaced the unbounded linear attraction force in the force-directed layout with a Hooke's-law spring model that has a natural rest length.
+
+- `applyAttraction` now computes `force = strength * weight * (dist - restLength)` instead of `force = strength * weight * dist`. The spring pulls in when an edge is stretched past `restLength` and pushes apart when compressed below it.
+- Added `restLength` parameter to `applyAttraction`; both call sites (`layoutGraph` and `incrementalLayout`) compute it as `sqrt(bounds.width * bounds.height / max(1, n))` — roughly the spacing at which `n` evenly-distributed nodes would tile the canvas. For 200 nodes in 1200×800 that's ~70 px.
+- Bumped `attractionStrength` from 0.01 → 0.05 to keep edges responsive against the existing repulsion budget.
+- Cache key bumped to `graphLayoutCache_v4` so previously-cached bad layouts under v3 are invalidated.
+
+### Why
+
+User reported the All Contacts lens produced a wide band gap around the central cluster: degree-1 dangling nodes (people with only the implicit Me→person edge) sat roughly twice as far from the center as expected. Two specific Lead/Healthy contacts (Les Kline, Stephan Davis) with byte-identical data were placed at significantly different distances, confirming it was layout drift, not a data difference.
+
+Root cause: the old attraction force scaled linearly with distance with **no equilibrium** — it was an unbounded inward pull. The final position of every node was determined purely by where outward repulsion happened to balance inward pull. For a degree-1 node next to a 200-node cluster, the cumulative O(N) outward repulsion from the cluster dominated the single weak inward pull, parking the node ~100 px out where forces balanced.
+
+A previous attempt (sqrt graph-distance scaling + 120 px repulsion cutoff, commit `0c38ef9`-reverted) made the bands worse — sqrt over-compressed the stress targets and the cutoff removed long-range containment without fixing the underlying attraction/repulsion imbalance.
+
+Hooke's law with a rest length fixes this at the physics level: every edge has a natural length, and the spring force vanishes at equilibrium. Nodes settle near `restLength` regardless of how dense the surrounding cluster is.
+
+### Verified
+
+- `xcodebuild -scheme SAM -destination 'platform=macOS' build` — `BUILD SUCCEEDED`.
+- User to verify visually that the band gap and radial-spike pattern from the All Contacts lens are resolved.
+
+---
+
 ## Role filter: pre-check all roles + show counts (May 9, 2026)
 
 **What**: Two changes to the Graph toolbar's role-filter menu so users can exclude individual roles instead of only including them.

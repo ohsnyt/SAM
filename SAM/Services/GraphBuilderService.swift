@@ -367,7 +367,13 @@ actor GraphBuilderService {
         let center = CGPoint(x: bounds.width / 2, y: bounds.height / 2)
 
         let repulsionStrength: CGFloat = 5000.0
-        let attractionStrength: CGFloat = 0.01
+        // Hooke's-law attraction with a rest length: each edge becomes a spring
+        // that pulls in when stretched beyond `restLength` and pushes apart when
+        // compressed. Naturally settles each edge near restLength regardless of
+        // cluster repulsion — fixes the band-gap problem where dangling degree-1
+        // nodes were pushed ~100 px out by cumulative cluster repulsion.
+        let attractionStrength: CGFloat = 0.05
+        let restLength: CGFloat = sqrt(bounds.width * bounds.height / CGFloat(max(1, mutableNodes.count)))
         let gravityStrength: CGFloat = 0.02
         let dampingFactor: CGFloat = 0.75
         let minNodeSpacing: CGFloat = 40.0
@@ -379,7 +385,7 @@ actor GraphBuilderService {
 
             applyDirectRepulsion(&mutableNodes, strength: repulsionStrength * temperature)
 
-            applyAttraction(&mutableNodes, adjacency: adjacency, strength: attractionStrength)
+            applyAttraction(&mutableNodes, adjacency: adjacency, strength: attractionStrength, restLength: restLength)
             applyGravity(&mutableNodes, center: center, strength: gravityStrength)
             resolveCollisions(&mutableNodes, minSpacing: minNodeSpacing)
 
@@ -446,6 +452,7 @@ actor GraphBuilderService {
         }
 
         let center = CGPoint(x: bounds.width / 2, y: bounds.height / 2)
+        let restLength: CGFloat = sqrt(bounds.width * bounds.height / CGFloat(max(1, nodes.count)))
 
         // Run 50 iterations of FR on the hot subgraph
         for iteration in 0..<50 {
@@ -453,7 +460,7 @@ actor GraphBuilderService {
             let temperature = max(0.05, 1.0 - CGFloat(iteration) / 50.0)
 
             applyDirectRepulsion(&nodes, strength: 5000.0 * temperature)
-            applyAttraction(&nodes, adjacency: adjacency, strength: 0.01)
+            applyAttraction(&nodes, adjacency: adjacency, strength: 0.05, restLength: restLength)
             applyGravity(&nodes, center: center, strength: 0.02)
             resolveCollisions(&nodes, minSpacing: 40.0)
 
@@ -754,10 +761,18 @@ actor GraphBuilderService {
 
     // MARK: - Force: Attraction (Hooke's law)
 
-    private func applyAttraction(_ nodes: inout [GraphNode], adjacency: [[AdjacencyEntry]], strength: CGFloat) {
+    private func applyAttraction(_ nodes: inout [GraphNode], adjacency: [[AdjacencyEntry]], strength: CGFloat, restLength: CGFloat) {
         // Adjacency is bidirectional (each edge listed for both endpoints),
         // so only apply force to node i here — node j gets its turn when
         // j is the outer loop index. This avoids double-counting.
+        //
+        // Hooke's law with rest length: force scales with `(dist - restLength)`,
+        // not raw `dist`. When stretched, the spring pulls in; when compressed,
+        // it pushes apart. Each edge settles at its rest length under no other
+        // forces. The previous `force = strength * weight * dist` model was an
+        // unbounded inward pull that never reached equilibrium — final node
+        // distances were determined purely by repulsion balance, which produced
+        // a wide band gap for degree-1 dangling nodes.
         for i in nodes.indices where !nodes[i].isPinned {
             for entry in adjacency[i] {
                 let j = entry.neighborIndex
@@ -766,7 +781,8 @@ actor GraphBuilderService {
                 let dist = sqrt(dx * dx + dy * dy)
                 guard dist > 1.0 else { continue }
 
-                let force = strength * CGFloat(entry.weight) * dist
+                let stretch = dist - restLength
+                let force = strength * CGFloat(entry.weight) * stretch
                 nodes[i].velocity.x += force * dx / dist
                 nodes[i].velocity.y += force * dy / dist
             }

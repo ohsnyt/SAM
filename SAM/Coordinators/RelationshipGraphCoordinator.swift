@@ -910,9 +910,9 @@ final class RelationshipGraphCoordinator {
 
     // MARK: - Layout Caching
 
-    // v3: bumped to invalidate the bad layouts written under v2.
-    private static let cacheKey = "graphLayoutCache_v3"
-    private static let cacheTimestampKey = "graphLayoutCacheTimestamp_v3"
+    // v4: bumped for Hooke's-law attraction with rest length (new force model).
+    private static let cacheKey = "graphLayoutCache_v4"
+    private static let cacheTimestampKey = "graphLayoutCacheTimestamp_v4"
     private static let cacheTTL: TimeInterval = 86400 // 24 hours
 
     /// Save current node positions to UserDefaults for fast restore.
