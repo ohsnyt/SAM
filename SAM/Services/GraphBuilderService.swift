@@ -484,6 +484,201 @@ actor GraphBuilderService {
         logger.debug("Incremental layout complete: \(hotIndices.count) hot nodes")
     }
 
+    // MARK: - Radial Layout (deterministic, Me-centered)
+
+    /// Deterministic radial layout: Me at center, BFS-layered concentric rings,
+    /// L1 nodes role-grouped clockwise from 12 o'clock. Replaces force-directed
+    /// physics for the standard Me-centered view. Children fan out within their
+    /// parent's angular slot; max useful depth is ~3.
+    ///
+    /// Determinism: identical inputs produce identical positions, eliminating
+    /// the layout drift that caused byte-identical nodes (e.g., Les vs Stephan)
+    /// to render at different distances under the old physics layout.
+    func layoutGraphRadial(
+        nodes: [GraphNode],
+        edges: [GraphEdge],
+        meID: UUID?,
+        bounds: CGSize
+    ) async -> [GraphNode] {
+        guard !nodes.isEmpty else { return nodes }
+
+        var mutableNodes = nodes
+        let nodeIndex = Dictionary(uniqueKeysWithValues: mutableNodes.enumerated().map { ($1.id, $0) })
+
+        // --- Pick the center node (Me, or highest-degree fallback) ---
+        let meIdx: Int = {
+            if let id = meID, let idx = nodeIndex[id] { return idx }
+            var degrees = [Int](repeating: 0, count: mutableNodes.count)
+            for edge in edges {
+                if let si = nodeIndex[edge.sourceID] { degrees[si] += 1 }
+                if let ti = nodeIndex[edge.targetID] { degrees[ti] += 1 }
+            }
+            return degrees.indices.max(by: { degrees[$0] < degrees[$1] }) ?? 0
+        }()
+
+        let center = CGPoint(x: bounds.width / 2, y: bounds.height / 2)
+
+        // --- Undirected adjacency + best-weight edge map (for parent selection) ---
+        var neighbors = [Set<Int>](repeating: [], count: mutableNodes.count)
+        var bestWeight: [Int: [Int: Double]] = [:]
+        for edge in edges {
+            guard let si = nodeIndex[edge.sourceID], let ti = nodeIndex[edge.targetID], si != ti else { continue }
+            neighbors[si].insert(ti)
+            neighbors[ti].insert(si)
+            let w = max(bestWeight[si]?[ti] ?? 0, edge.weight)
+            bestWeight[si, default: [:]][ti] = w
+            bestWeight[ti, default: [:]][si] = w
+        }
+
+        // --- BFS layers from Me ---
+        var layer = [Int](repeating: -1, count: mutableNodes.count)
+        layer[meIdx] = 0
+        var bfsQueue = [meIdx]
+        var head = 0
+        while head < bfsQueue.count {
+            let u = bfsQueue[head]; head += 1
+            for v in neighbors[u] where layer[v] == -1 {
+                layer[v] = layer[u] + 1
+                bfsQueue.append(v)
+            }
+        }
+
+        // --- Parent selection (strongest edge to a lower-layer neighbor) ---
+        // Tie-break by displayName so the tree is reproducible across runs.
+        var children = [Int: [Int]]()
+        for i in mutableNodes.indices where layer[i] > 0 {
+            let myL = layer[i]
+            let candidates = neighbors[i].filter { layer[$0] == myL - 1 }
+            let best = candidates.max { a, b in
+                let wa = bestWeight[i]?[a] ?? 0
+                let wb = bestWeight[i]?[b] ?? 0
+                if wa != wb { return wa < wb }
+                return mutableNodes[a].displayName > mutableNodes[b].displayName
+            }
+            if let p = best {
+                children[p, default: []].append(i)
+            }
+        }
+        for p in children.keys {
+            children[p]!.sort { mutableNodes[$0].displayName < mutableNodes[$1].displayName }
+        }
+
+        // --- Linear-arc budget: each leaf claims `leafLinearArc` pixels of arc
+        // at the L1 ring. A sub-tree's width = max(own arc, sum of children's
+        // arcs). Deeper layers naturally over-provision because they sit at a
+        // larger radius — that's fine; it leaves breathing room. ---
+        let leafLinearArc: CGFloat = 50.0   // node diameter + padding
+        let bucketGap: CGFloat = 30.0       // linear gap between role buckets
+
+        func subtreeLinearWidth(_ idx: Int) -> CGFloat {
+            let kids = children[idx] ?? []
+            if kids.isEmpty { return leafLinearArc }
+            let sum = kids.reduce(0.0) { $0 + subtreeLinearWidth($1) }
+            return max(leafLinearArc, sum)
+        }
+
+        // --- Group L1 by primary role, smallest bucket first (clockwise from 12) ---
+        let l1Indices = mutableNodes.indices.filter { layer[$0] == 1 }
+        var roleBuckets: [String: [Int]] = [:]
+        for i in l1Indices {
+            let role = mutableNodes[i].primaryRole ?? "Unknown"
+            roleBuckets[role, default: []].append(i)
+        }
+        for r in roleBuckets.keys {
+            roleBuckets[r]!.sort { mutableNodes[$0].displayName < mutableNodes[$1].displayName }
+        }
+        let orderedRoles = roleBuckets.keys.sorted { a, b in
+            let ca = roleBuckets[a]!.count, cb = roleBuckets[b]!.count
+            if ca != cb { return ca < cb }
+            return a < b
+        }
+
+        // --- Compute L1 radius from total linear circumference needed ---
+        let totalL1Linear = orderedRoles.reduce(0.0) { acc, role in
+            acc + roleBuckets[role]!.reduce(0.0) { $0 + subtreeLinearWidth($1) }
+        }
+        let totalGapsLinear = bucketGap * CGFloat(max(0, orderedRoles.count - 1))
+        let circumferenceNeeded = totalL1Linear + totalGapsLinear
+
+        let baseRadius: CGFloat = 140.0
+        let l1Radius: CGFloat = max(baseRadius, circumferenceNeeded / (2 * .pi))
+        let layerSpacing: CGFloat = 100.0
+
+        func radiusForLayer(_ l: Int) -> CGFloat {
+            guard l >= 1 else { return 0 }
+            return l1Radius + CGFloat(l - 1) * layerSpacing
+        }
+
+        let twoPi: CGFloat = 2 * .pi
+        let gapAngular = bucketGap / l1Radius
+        let availableAngular = twoPi - gapAngular * CGFloat(max(0, orderedRoles.count - 1))
+        let angularPerLinear: CGFloat = totalL1Linear > 0 ? availableAngular / totalL1Linear : 0
+
+        // --- Place Me at center ---
+        mutableNodes[meIdx].position = center
+        mutableNodes[meIdx].isPinned = true
+
+        // --- Recursive placement: each node sits at its slot's angular midpoint ---
+        func placeSubtree(_ idx: Int, startAngle: CGFloat, endAngle: CGFloat) {
+            let midAngle = (startAngle + endAngle) / 2
+            let r = radiusForLayer(layer[idx])
+            mutableNodes[idx].position = CGPoint(
+                x: center.x + r * cos(midAngle),
+                y: center.y + r * sin(midAngle)
+            )
+            mutableNodes[idx].isPinned = false
+
+            let kids = children[idx] ?? []
+            guard !kids.isEmpty else { return }
+
+            let slotSize = endAngle - startAngle
+            let childTotalLinear = kids.reduce(0.0) { $0 + subtreeLinearWidth($1) }
+            guard childTotalLinear > 0 else { return }
+            var a = startAngle
+            for c in kids {
+                let cw = subtreeLinearWidth(c) / childTotalLinear * slotSize
+                placeSubtree(c, startAngle: a, endAngle: a + cw)
+                a += cw
+            }
+        }
+
+        // --- Walk clockwise from 12 o'clock (screen coords: y grows down,
+        // so increasing angle from -π/2 sweeps clockwise visually) ---
+        var currentAngle: CGFloat = -.pi / 2
+        for (bi, role) in orderedRoles.enumerated() {
+            for idx in roleBuckets[role]! {
+                let w = subtreeLinearWidth(idx) * angularPerLinear
+                placeSubtree(idx, startAngle: currentAngle, endAngle: currentAngle + w)
+                currentAngle += w
+            }
+            if bi < orderedRoles.count - 1 {
+                currentAngle += gapAngular
+            }
+        }
+
+        // --- Orphans (no path to Me) on an outer ring ---
+        let orphans = mutableNodes.indices.filter { layer[$0] == -1 && $0 != meIdx }
+        if !orphans.isEmpty {
+            let maxConnectedRadius = mutableNodes.indices
+                .filter { layer[$0] > 0 }
+                .map { radiusForLayer(layer[$0]) }
+                .max() ?? l1Radius
+            let orphanRadius = maxConnectedRadius + layerSpacing
+            for (i, idx) in orphans.enumerated() {
+                let angle = -.pi / 2 + CGFloat(i) / CGFloat(orphans.count) * twoPi
+                mutableNodes[idx].position = CGPoint(
+                    x: center.x + orphanRadius * cos(angle),
+                    y: center.y + orphanRadius * sin(angle)
+                )
+                mutableNodes[idx].isPinned = false
+            }
+        }
+
+        await Task.yield()
+        logger.debug("Radial layout: \(mutableNodes.count) nodes, \(orderedRoles.count) role buckets, l1Radius=\(l1Radius)")
+        return mutableNodes
+    }
+
     // MARK: - Phase 2: Stress Majorization
 
     /// Compute all-pairs shortest paths using BFS (unweighted) via Floyd-Warshall for small graphs.

@@ -4,6 +4,41 @@
 
 ---
 
+## Graph layout: deterministic radial replaces force-directed physics (May 10, 2026)
+
+**What**: Replaced the multi-phase force-directed layout (stress majorization → Fruchterman-Reingold → PrEd) with a deterministic radial layout. Me sits at center; BFS assigns every other node a layer; L1 (direct neighbors of Me) is grouped by primary role and placed clockwise from 12 o'clock with the smallest role bucket first; L2/L3 sub-trees fan outward from their parent.
+
+- New `GraphBuilderService.layoutGraphRadial(nodes:edges:meID:bounds:)` runs in a single deterministic pass — no iterations, no physics, no random initialization.
+- Per-leaf arc budget (50 px at L1 radius) plus a per-bucket gap (30 px) drives a recursive sub-tree-width calculation. L1 radius is computed from `max(140, requiredCircumference / 2π)` so the ring expands to fit all sub-trees without overlap, and contracts when the graph is small.
+- Children sit at parent radius + 100 px and inherit their parent's angular slot, sub-divided proportional to each child's recursive sub-tree width. Useful depth is ~3 per the user's spec.
+- Parent for each L2/L3 node = lower-layer neighbor with the strongest edge weight, tie-broken by `displayName` so the tree is reproducible run-to-run.
+- Orphans (no path to Me) get an outer ring at `maxConnectedRadius + 100 px`.
+- Cache key bumped to `graphLayoutCache_v5` to invalidate prior force-directed cached positions.
+- Coordinator now fetches `meNodeID` *before* layout (was after) so it can be passed to the layout call.
+
+### Why
+
+The user reported repeated band-gap / starburst pathologies from the force-directed approach. Both attempts at fixing the physics — sqrt graph-distance scaling + 120 px repulsion cutoff (reverted in `0c38ef9`), and Hooke's-law attraction with rest length (`152aa93`) — produced worse layouts than before, including a degenerate vertical-spike pattern. The user proposed switching to a deterministic geometric model: "While the organic look of what we had tried before was nice, something about the math is just not working for us."
+
+Concrete advantages over physics:
+- **No layout drift.** Identical inputs always produce identical positions. The Les-vs-Stephan distance discrepancy (byte-identical data, different positions) cannot happen here — the algorithm has no notion of starting state.
+- **No band gaps.** Each layer sits at a known radius; ring spacing is constant and explicit, not emergent from force balance.
+- **Role clustering is structural, not emergent.** Sub-tree placement is decided by the algorithm, not by which random initial position a node happened to land near.
+- **Predictable scaling.** With N L1 nodes the ring radius adjusts so they don't collide; deeper sub-trees naturally claim more arc.
+
+### Limitations / known trade-offs
+
+- L1 nodes with very large fan-outs (e.g., one client with 50 children) can dominate the L1 angular budget, leaving the rest of L1 cramped on the opposite side. Acceptable for V1; a cap or visual hierarchy adjustment can be added if it shows in practice.
+- Context clusters (the old `contextClusters: [ContextGraphInput]` parameter) are no longer a layout influence. They can still drive filters/highlights elsewhere; placement is now strictly Me-centered.
+- The old force-directed `layoutGraph` method remains in the file as dead code for now (in case we want to A/B compare). Will be removed once radial is confirmed good.
+
+### Verified
+
+- `xcodebuild -scheme SAM -destination 'platform=macOS' build` — `BUILD SUCCEEDED`.
+- User to verify visually that the All Contacts lens renders with role-grouped wedges and no band gaps.
+
+---
+
 ## Graph layout: Hooke's-law attraction with rest length (May 9, 2026)
 
 **What**: Replaced the unbounded linear attraction force in the force-directed layout with a Hooke's-law spring model that has a natural rest length.

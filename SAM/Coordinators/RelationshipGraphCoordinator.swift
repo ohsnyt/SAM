@@ -280,6 +280,7 @@ final class RelationshipGraphCoordinator {
                 // --- Try cached layout first ---
                 allNodes = result.nodes
                 allEdges = result.edges
+                meNodeID = (try? peopleRepository.fetchMe())?.id
 
                 if restoreCachedLayout() {
                     progress = "Restored from cache..."
@@ -287,13 +288,12 @@ final class RelationshipGraphCoordinator {
                 } else {
                     progress = "Computing layout..."
 
-                    // --- Run force-directed layout ---
-                    let laidOutNodes = await graphBuilder.layoutGraph(
+                    // --- Run deterministic radial layout (Me-centered) ---
+                    let laidOutNodes = await graphBuilder.layoutGraphRadial(
                         nodes: result.nodes,
                         edges: result.edges,
-                        iterations: 300,
-                        bounds: bounds,
-                        contextClusters: contexts
+                        meID: meNodeID,
+                        bounds: bounds
                     )
 
                     guard !Task.isCancelled else { return }
@@ -311,7 +311,6 @@ final class RelationshipGraphCoordinator {
                 }
 
                 // --- Finalize ---
-                meNodeID = (try? peopleRepository.fetchMe())?.id
                 let nodeCount = allNodes.count
                 let edgeCount = allEdges.count
                 lastComputedAt = Date()
@@ -910,9 +909,9 @@ final class RelationshipGraphCoordinator {
 
     // MARK: - Layout Caching
 
-    // v4: bumped for Hooke's-law attraction with rest length (new force model).
-    private static let cacheKey = "graphLayoutCache_v4"
-    private static let cacheTimestampKey = "graphLayoutCacheTimestamp_v4"
+    // v5: bumped for deterministic radial layout (replaces force-directed).
+    private static let cacheKey = "graphLayoutCache_v5"
+    private static let cacheTimestampKey = "graphLayoutCacheTimestamp_v5"
     private static let cacheTTL: TimeInterval = 86400 // 24 hours
 
     /// Save current node positions to UserDefaults for fast restore.
