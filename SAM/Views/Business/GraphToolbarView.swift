@@ -35,6 +35,19 @@ struct GraphToolbarView: ToolbarContent {
         return result
     }
 
+    /// Counts how many nodes carry each role badge in the current `allNodes`
+    /// snapshot. Used to annotate role filter menu items so the user can see
+    /// which roles dominate the graph before unchecking any.
+    private var roleCounts: [String: Int] {
+        var counts: [String: Int] = [:]
+        for node in coordinator.allNodes {
+            for role in node.roleBadges {
+                counts[role, default: 0] += 1
+            }
+        }
+        return counts
+    }
+
     var body: some ToolbarContent {
 
         // MARK: - Status
@@ -159,13 +172,18 @@ struct GraphToolbarView: ToolbarContent {
             // Role filter
             Menu {
                 Button("Show All Roles") {
-                    coordinator.activeRoleFilters.removeAll()
+                    // Pre-populate with every discovered role so the user can
+                    // uncheck individual roles to exclude them. Using the empty
+                    // set as a "show all" sentinel makes exclusion impossible.
+                    coordinator.activeRoleFilters = Set(allRoles)
                     coordinator.applyFilters()
                 }
                 Divider()
+                let counts = roleCounts
                 ForEach(allRoles, id: \.self) { role in
                     let isActive = coordinator.activeRoleFilters.contains(role)
                     let style = RoleBadgeStyle.forBadge(role)
+                    let count = counts[role] ?? 0
                     Button {
                         if isActive {
                             coordinator.activeRoleFilters.remove(role)
@@ -179,7 +197,7 @@ struct GraphToolbarView: ToolbarContent {
                                 .foregroundStyle(isActive ? style.color : .secondary)
                             Image(systemName: style.icon)
                                 .foregroundStyle(style.color)
-                            Text(role)
+                            Text("\(role) (\(count))")
                         }
                     }
                 }

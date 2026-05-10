@@ -4,6 +4,29 @@
 
 ---
 
+## Role filter: pre-check all roles + show counts (May 9, 2026)
+
+**What**: Two changes to the Graph toolbar's role-filter menu so users can exclude individual roles instead of only including them.
+
+1. **"Show All Roles" pre-checks every role.** Previously the button cleared `activeRoleFilters` to `[]` and relied on the "empty set = show all" sentinel. With nothing checked, the user had no way to exclude one role and keep the rest — they'd have to manually check every other role one by one. Now the button populates `activeRoleFilters` with every discovered role, so the user can immediately uncheck the one they don't want.
+2. **All Contacts lens does the same on entry.** `loadAllContacts(bounds:)` now pre-populates `activeRoleFilters` after `buildGraph` returns. The lens summary line was updated to "uncheck a role in the toolbar to exclude it" so the affordance is discoverable.
+3. **Per-role counts in the dropdown.** Each role label now reads "Client (47)" / "Vendor (3)" using node counts from the current `allNodes` snapshot. This makes it obvious which roles dominate the graph before the user unchecks anything.
+
+### Why
+
+User feedback: "When the new All Contacts lens is used, SAM should check on all the roles in the role picker on the window bar. Similarly, the top 'Show all roles' should check all roles on. The reason this would be helpful is when the user wants to exclude one role while showing all the rest." Plus: "A nice-to-have feature would be to have a count of the roles after each role in that dropdown menu. This would make it easy to see what role or roles will reduce larger numbers of nodes."
+
+### Behavior change worth noting
+
+If the user unchecks every role, the graph now shows nothing — instead of falling back to "show everything." This matches the pre-checked mental model and was confirmed with the user before implementation.
+
+### Verified
+
+- `xcodebuild -scheme SAM -destination 'platform=macOS' build` — `BUILD SUCCEEDED`.
+- `applyFilters` semantics unchanged — the only change is what populates `activeRoleFilters`. Curated lenses (Book of Business etc.) continue to leave the filter alone.
+
+---
+
 ## All Contacts lens for the relationship graph (May 9, 2026)
 
 **What**: Added a fifth lens — **All Contacts** — to the People → Graph picker. Unlike the four curated lenses (Book of Business, Referrer Productivity, Missed Nudges, Family Gaps), All Contacts shows the entire network with every connection SAM can see and hands control to the toolbar's existing role / edge-type / visibility filters.

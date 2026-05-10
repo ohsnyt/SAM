@@ -520,11 +520,20 @@ extension RelationshipGraphCoordinator {
     /// drive what's visible. Delegates to `buildGraph` so users get the same
     /// force-directed layout, edge bundling, and cached layout the main graph
     /// already supports — but framed as a lens so the picker UI stays coherent.
+    ///
+    /// Pre-populates `activeRoleFilters` with every role present in the data so
+    /// the user can *uncheck* one role to exclude it (vs. the "empty = show
+    /// everything" default semantic, which makes exclusion impossible).
     private func loadAllContacts(bounds: CGSize) async {
         lensLoadingPhase = .primary
         await buildGraph(bounds: bounds)
         if Task.isCancelled { return }
-        lensSummary = "\(allNodes.count) people · \(allEdges.count) connections · use toolbar filters to drill in"
+        let discoveredRoles = Set(allNodes.flatMap(\.roleBadges))
+        if activeRoleFilters != discoveredRoles {
+            activeRoleFilters = discoveredRoles
+            applyFilters()
+        }
+        lensSummary = "\(allNodes.count) people · \(allEdges.count) connections · uncheck a role in the toolbar to exclude it"
     }
 
     // MARK: - Helpers
