@@ -14,6 +14,7 @@ enum GraphLens: String, CaseIterable, Identifiable, Sendable {
     case referrerProductivity
     case missedNudges
     case familyGaps
+    case allContacts
 
     var id: String { rawValue }
 
@@ -23,6 +24,7 @@ enum GraphLens: String, CaseIterable, Identifiable, Sendable {
         case .referrerProductivity: return "Referrer Productivity"
         case .missedNudges:         return "Missed Nudges"
         case .familyGaps:           return "Family Gaps"
+        case .allContacts:          return "All Contacts"
         }
     }
 
@@ -33,6 +35,7 @@ enum GraphLens: String, CaseIterable, Identifiable, Sendable {
         case .referrerProductivity: return "Who drives my growth?"
         case .missedNudges:         return "Where did I lose momentum?"
         case .familyGaps:           return "Who am I missing the family picture on?"
+        case .allContacts:          return "Show me everything — let me filter."
         }
     }
 
@@ -47,6 +50,8 @@ enum GraphLens: String, CaseIterable, Identifiable, Sendable {
             return "People SAM nudged you about — clustered by why momentum slipped. Each has a path to recover."
         case .familyGaps:
             return "Active clients with no defined family. Each card shows what's missing and how to enrich."
+        case .allContacts:
+            return "Everyone SAM knows about, with every connection it can see. Use the toolbar's role and connection filters to drill into church, ABT, prospects, or any group you've defined."
         }
     }
 
@@ -56,6 +61,7 @@ enum GraphLens: String, CaseIterable, Identifiable, Sendable {
         case .referrerProductivity: return "chart.line.uptrend.xyaxis"
         case .missedNudges:         return "bell.slash"
         case .familyGaps:           return "person.2.badge.plus"
+        case .allContacts:          return "circle.grid.3x3.fill"
         }
     }
 
@@ -65,6 +71,7 @@ enum GraphLens: String, CaseIterable, Identifiable, Sendable {
         case .referrerProductivity: return .yellow
         case .missedNudges:         return .orange
         case .familyGaps:           return .blue
+        case .allContacts:          return .purple
         }
     }
 }

@@ -2,12 +2,13 @@
 //  RelationshipGraphCoordinator+Lens.swift
 //  SAM
 //
-//  Lens loaders for the four-lens graph experience: Book of Business,
-//  Referrer Productivity, Missed Nudges, Family Gaps.
+//  Lens loaders for the graph experience: Book of Business,
+//  Referrer Productivity, Missed Nudges, Family Gaps, All Contacts.
 //
-//  Each loader builds a curated subset of the network, places nodes
-//  deterministically (Me at center, waves radiating out), and streams
-//  in additional waves with brief sleeps so the UI re-renders progressively.
+//  Curated lenses build a deterministic subset of the network (Me at center,
+//  waves radiating out) and stream in waves with brief sleeps for progressive
+//  rendering. The All Contacts lens delegates to the full `buildGraph` path so
+//  the user can drive it with the toolbar's role/edge/visibility filters.
 //
 
 import Foundation
@@ -52,6 +53,8 @@ extension RelationshipGraphCoordinator {
                 await loadMissedNudges(bounds: bounds)
             case .familyGaps:
                 await loadFamilyGaps(bounds: bounds)
+            case .allContacts:
+                await loadAllContacts(bounds: bounds)
             }
             if !Task.isCancelled {
                 lensLoadingPhase = .complete
@@ -509,6 +512,19 @@ extension RelationshipGraphCoordinator {
         lensSummary = "\(gapClients.count) client\(gapClients.count == 1 ? "" : "s") without family context"
         lensLoadingPhase = .primary
         commitLensSnapshot(nodes: lensNodes, edges: lensEdges)
+    }
+
+    // MARK: - Lens 5: All Contacts
+
+    /// Show the full network and let the toolbar's role/edge/visibility filters
+    /// drive what's visible. Delegates to `buildGraph` so users get the same
+    /// force-directed layout, edge bundling, and cached layout the main graph
+    /// already supports — but framed as a lens so the picker UI stays coherent.
+    private func loadAllContacts(bounds: CGSize) async {
+        lensLoadingPhase = .primary
+        await buildGraph(bounds: bounds)
+        if Task.isCancelled { return }
+        lensSummary = "\(allNodes.count) people · \(allEdges.count) connections · use toolbar filters to drill in"
     }
 
     // MARK: - Helpers

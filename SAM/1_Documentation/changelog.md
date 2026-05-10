@@ -4,6 +4,26 @@
 
 ---
 
+## All Contacts lens for the relationship graph (May 9, 2026)
+
+**What**: Added a fifth lens — **All Contacts** — to the People → Graph picker. Unlike the four curated lenses (Book of Business, Referrer Productivity, Missed Nudges, Family Gaps), All Contacts shows the entire network with every connection SAM can see and hands control to the toolbar's existing role / edge-type / visibility filters.
+
+- New `GraphLens.allContacts` case (icon `circle.grid.3x3.fill`, accent `.purple`, subtitle "Show me everything — let me filter.").
+- Loader `RelationshipGraphCoordinator+Lens.loadAllContacts(bounds:)` delegates to the existing `buildGraph(bounds:)` path, so users get the full force-directed layout, edge bundling, and cached layout — but framed as a lens so the picker UI stays coherent.
+- Lens summary line reads "N people · M connections · use toolbar filters to drill in" so the user knows the toolbar is the steering wheel.
+- `LensPickerView` iterates `GraphLens.allCases`, so the new card appears automatically with no view-side changes.
+
+### Why
+
+The four curated lenses each answer one question. They're great for the questions they're built around, but they hide everything else. The user works across overlapping social groups (church, ABT, friends-of-friends, prospects-of-prospects), and those groups are exactly what the toolbar's role / edge / visibility filters were built to slice — but the toolbar had no top-level entry point unless you were already inside a curated lens. All Contacts is that entry point. It also helps the curated lenses feel valuable by contrast: switching from "Everything" → "Book of Business" makes obvious how much focus the curated lens is providing.
+
+### Verified
+
+- `xcodebuild -scheme SAM -destination 'platform=macOS' build` — `BUILD SUCCEEDED`.
+- New lens delegates to `buildGraph(bounds:)`, which already sets `meNodeID`, `allNodes`, `allEdges`, runs layout, calls `applyFilters()`, and sets `graphStatus = .ready` — so toolbar filters work the moment the lens renders.
+
+---
+
 ## Briefing narrative: stop hallucinating meetings on empty calendars (May 9, 2026)
 
 **What**: Three fixes to `DailyBriefingService.generateMorningNarrative` after a real-world hallucination where the briefing invented a 10 AM meeting with "Jane Martinez", a 2 PM with "Sarah" (the advisor's own first name), and a 7 PM with "Mike" — even though the calendar was empty.
