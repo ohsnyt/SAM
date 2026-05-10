@@ -4,6 +4,20 @@
 
 ---
 
+## Graph: dragged nodes' edges follow the cursor when bundling is on (May 10, 2026)
+
+**What**: Fixed a regression where dragging a node in the relationship graph left its connected edges behind when edge bundling was enabled.
+
+**Why**: `drawEdges` renders edges from `coordinator.bundledEdgePaths[edge.id]` — a cache of control points computed at layout time against the original node positions. Dragging mutates `coordinator.nodes[idx].position`, but the bundled-path cache never invalidated, so edges visually stayed put while the node moved.
+
+**How**:
+- In `drawEdges` (`RelationshipGraphView.swift`): collect the active drag set (`draggedNodeID` + group/cluster offset members) and skip the bundled-path branch for any edge touching one of those nodes — they fall back to a straight line that follows the live position.
+- In `handleDragEnded`: if any node was dragged and bundling is on, call `coordinator.recomputeEdgeBundling()` so the cache catches up to the new positions and bundled curves resume.
+
+Edges now follow the cursor during drag and re-bundle once the user releases.
+
+---
+
 ## Graph layout: per-edge rest length in stress majorization + growth animation (May 10, 2026)
 
 **What**: Two changes to the force-directed layout:

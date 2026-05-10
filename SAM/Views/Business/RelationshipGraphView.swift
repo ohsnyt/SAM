@@ -1637,6 +1637,8 @@ struct RelationshipGraphView: View {
             showPersonMergeConfirmation = true
         }
 
+        let didDragNodes = draggedNodeID != nil
+
         if draggedNodeID != nil {
             NSCursor.pop()
         }
@@ -1649,6 +1651,12 @@ struct RelationshipGraphView: View {
         compatibleNodeIDs = []
         magneticSnapTargetID = nil
         lastOffset = offset
+
+        // Bundled edge control points were computed against pre-drag node positions;
+        // rebundle now that the dragged nodes have settled.
+        if didDragNodes && coordinator.edgeBundlingEnabled {
+            coordinator.recomputeEdgeBundling()
+        }
     }
 
     // MARK: - Coordinate Transforms
@@ -2114,6 +2122,13 @@ struct RelationshipGraphView: View {
     private func drawEdges(context: inout GraphicsContext, center: CGPoint, viewport: CGRect) {
         let nodeMap = Dictionary(uniqueKeysWithValues: coordinator.nodes.map { ($0.id, $0) })
 
+        // Nodes whose positions are mid-drag — their bundled edge control points
+        // are stale until drag-end triggers a rebundle, so render straight lines for them.
+        var draggingIDs: Set<UUID> = []
+        if let id = draggedNodeID { draggingIDs.insert(id) }
+        if isDraggingGroup { draggingIDs.formUnion(groupDragOffsets.keys) }
+        if isDraggingCluster { draggingIDs.formUnion(clusterDragOffsets.keys) }
+
         // Pre-compute edge group counts for parallel offset
         var edgeGroups: [String: [GraphEdge]] = [:]
         for edge in coordinator.edges {
@@ -2182,7 +2197,9 @@ struct RelationshipGraphView: View {
             var path = Path()
             var midPoint: CGPoint
 
+            let edgeIsBeingDragged = draggingIDs.contains(edge.sourceID) || draggingIDs.contains(edge.targetID)
             if coordinator.edgeBundlingEnabled,
+               !edgeIsBeingDragged,
                let bundledPts = coordinator.bundledEdgePaths[edge.id],
                bundledPts.count >= 3 {
                 // Edge bundling: convert graph-space control points to screen-space
