@@ -371,14 +371,13 @@ actor GraphBuilderService {
         let gravityStrength: CGFloat = 0.02
         let dampingFactor: CGFloat = 0.75
         let minNodeSpacing: CGFloat = 40.0
-        let repulsionCutoff: CGFloat = minNodeSpacing * 3.0
 
         for iteration in 0..<frIterations {
             guard !Task.isCancelled else { break }
 
             let temperature = max(0.01, 1.0 - CGFloat(iteration) / CGFloat(frIterations))
 
-            applyDirectRepulsion(&mutableNodes, strength: repulsionStrength * temperature, cutoff: repulsionCutoff)
+            applyDirectRepulsion(&mutableNodes, strength: repulsionStrength * temperature)
 
             applyAttraction(&mutableNodes, adjacency: adjacency, strength: attractionStrength)
             applyGravity(&mutableNodes, center: center, strength: gravityStrength)
@@ -453,7 +452,7 @@ actor GraphBuilderService {
             guard !Task.isCancelled else { break }
             let temperature = max(0.05, 1.0 - CGFloat(iteration) / 50.0)
 
-            applyDirectRepulsion(&nodes, strength: 5000.0 * temperature, cutoff: 120.0)
+            applyDirectRepulsion(&nodes, strength: 5000.0 * temperature)
             applyAttraction(&nodes, adjacency: adjacency, strength: 0.01)
             applyGravity(&nodes, center: center, strength: 0.02)
             resolveCollisions(&nodes, minSpacing: 40.0)
@@ -544,11 +543,7 @@ actor GraphBuilderService {
                     let graphDist = shortestPaths[i][j]
                     guard graphDist < Int.max / 2 else { continue }
 
-                    // Sqrt scaling compresses multi-hop spikes: 1-hop stays at
-                    // ideal length, 2-hop sits at ~1.4×, 4-hop at 2× (vs. linear
-                    // 4×). Without this, one isolated 4-hop outlier forces the
-                    // whole chart down to 1/4 visual size to fit on canvas.
-                    let desiredDist = idealEdgeLength * sqrt(CGFloat(graphDist))
+                    let desiredDist = idealEdgeLength * CGFloat(graphDist)
                     let weight = 1.0 / (CGFloat(graphDist) * CGFloat(graphDist))
 
                     let dx = nodes[i].position.x - nodes[j].position.x
@@ -733,22 +728,14 @@ actor GraphBuilderService {
 
     // MARK: - Force: Direct Repulsion O(n²)
 
-    /// `cutoff` caps repulsion to a finite range (classic Fruchterman-Reingold
-    /// neighbor cell). Without it, every node pushes every other node forever
-    /// and dense central clusters create a "halo" that pushes degree-1 dangling
-    /// nodes ~100 units out, leaving a visible band gap. With cutoff at ~3×
-    /// minimum spacing, nodes still anti-overlap locally but distant nodes
-    /// stop pushing each other away. Pass `.infinity` to disable.
-    private func applyDirectRepulsion(_ nodes: inout [GraphNode], strength: CGFloat, cutoff: CGFloat) {
+    private func applyDirectRepulsion(_ nodes: inout [GraphNode], strength: CGFloat) {
         let count = nodes.count
-        let cutoffSq = cutoff * cutoff
         for i in 0..<count {
             guard !nodes[i].isPinned else { continue }
             for j in (i + 1)..<count {
                 let dx = nodes[i].position.x - nodes[j].position.x
                 let dy = nodes[i].position.y - nodes[j].position.y
                 let distSq = max(1.0, dx * dx + dy * dy)
-                if distSq > cutoffSq { continue }
                 let force = strength / distSq
                 let fx = force * dx / sqrt(distSq)
                 let fy = force * dy / sqrt(distSq)

@@ -910,11 +910,9 @@ final class RelationshipGraphCoordinator {
 
     // MARK: - Layout Caching
 
-    // v2: bumped after sqrt-hop stress + repulsion-cutoff layout changes so
-    // existing caches (computed with the old linear-hop / no-cutoff math) are
-    // ignored and a fresh layout runs on next build.
-    private static let cacheKey = "graphLayoutCache_v2"
-    private static let cacheTimestampKey = "graphLayoutCacheTimestamp_v2"
+    // v3: bumped to invalidate the bad layouts written under v2.
+    private static let cacheKey = "graphLayoutCache_v3"
+    private static let cacheTimestampKey = "graphLayoutCacheTimestamp_v3"
     private static let cacheTTL: TimeInterval = 86400 // 24 hours
 
     /// Save current node positions to UserDefaults for fast restore.
