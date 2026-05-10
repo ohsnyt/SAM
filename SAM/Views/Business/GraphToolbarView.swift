@@ -258,6 +258,12 @@ struct GraphToolbarView: ToolbarContent {
                         coordinator.applyFilters()
                     }
                 ))
+                Divider()
+                Toggle("Animate Growth (debug)", isOn: Binding(
+                    get: { coordinator.growthAnimationEnabled },
+                    set: { coordinator.growthAnimationEnabled = $0 }
+                ))
+                .help("On the next graph build, reveal nodes one at a time in BFS order from Me")
             } label: {
                 Label("Visibility", systemImage: "eye")
             }

@@ -4,6 +4,41 @@
 
 ---
 
+## Graph layout: per-edge rest length in stress majorization + growth animation (May 10, 2026)
+
+**What**: Two changes to the force-directed layout:
+
+1. **Stress majorization is now hierarchy-aware.** Replaced `desiredDist = idealEdgeLength × hopCount` with a per-edge rest-length sum along Me's BFS tree. Each edge's rest length is sized from the parent's child count: `restLen(parent → child) = max(baseEdgeLen, K × leafArc / 2π)` where K = parent's child count. Distance from Me to any node = sum along the BFS tree path; pairwise desired distance = path through the LCA. Pairs not in Me's tree (orphans) fall back to the original hop-count formula.
+2. **Growth animation toggle** in the Visibility menu. When enabled, the next graph build reveals nodes one at a time in BFS order from Me, with a small delay (default 50 ms) between each. Final positions are already computed before the animation starts — only visibility changes.
+
+Cache key bumped to `graphLayoutCache_v7`.
+
+### Why
+
+User insight: "is it possible to calculate the distance of the hop of secondary nodes only based on the number of nodes to their parent node? Why do we calculate it as 2× the distance of the first node?"
+
+The old formula came from textbook stress majorization, which is designed to preserve graph-theoretic distances in the embedding. For SAM's Me-centered view that's the wrong objective — it literally tells every two-hop node to sit twice as far as one-hop nodes regardless of local fan-out, producing the visible "second band" of L2 nodes that all look identical to the user but were placed at double radius by the algorithm.
+
+Per-edge rest lengths fix this at the source: a parent with 50 children needs longer outgoing edges (so its children fan non-collidingly), but a parent with 2 children gets a short edge. L2 distance from Me becomes `L1distance + L2offset`, where the L2 offset can be much smaller than the L1 distance — eliminating the rigid 2× band.
+
+The growth animation is for visual debugging: by watching nodes appear in BFS order, the user can see whether outliers settle far because of structural reasons (their parent has many siblings) or because of late-stage algorithmic drift.
+
+### Implementation notes
+
+- `applyStressMajorization` now takes `edges`, `nodeIndex`, `meID`. When `meID` is non-nil, it precomputes a `treeDist[i][j]` matrix using LCA over Me's BFS tree.
+- Parent for each non-Me node = lower-layer neighbor with the strongest edge weight (deterministic across runs).
+- LCA computation is per-pair via parent-chain walks, O(N² × depth). For N=400 and depth ~4 that's ~640K ops — done once per layout.
+- `growthAnimationEnabled` and `growthAnimationDelayMs` are UserDefaults-backed under `sam.graph.growthAnimation*`.
+- `progressiveRevealedIDs: Set<UUID>?` gates `applyFilters` during the reveal walk; cleared when the walk completes.
+- Cached layouts skip the animation (positions are already finalized — toggle takes effect on the next fresh compute, e.g. via the toolbar Rebuild button).
+
+### Verified
+
+- `xcodebuild -scheme SAM -destination 'platform=macOS' build` — `BUILD SUCCEEDED`.
+- User to verify visually: enable growth animation, hit Rebuild, watch L1 vs L2 distances.
+
+---
+
 ## Graph layout: reverted both Hooke and radial back to original physics (May 10, 2026)
 
 **What**: Restored `GraphBuilderService.swift` and `RelationshipGraphCoordinator.swift` to the state at commit `0c38ef9` — i.e. the original force-directed layout with linear-pull attraction (`force = strength * weight * dist`) and the full Phase 1–4 pipeline (initial placement → stress majorization → Fruchterman-Reingold → PrEd). Cache key bumped to `graphLayoutCache_v6` to invalidate cached positions from the v4 (Hooke) and v5 (radial) experiments.

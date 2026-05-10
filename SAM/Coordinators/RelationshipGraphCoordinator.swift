@@ -140,6 +140,24 @@ final class RelationshipGraphCoordinator {
     /// Bundled edge control points (computed by GraphBuilderService when bundling enabled).
     var bundledEdgePaths: [UUID: [CGPoint]] = [:]
 
+    // MARK: - Growth Animation (debug)
+
+    /// When enabled, the next graph build reveals nodes one at a time in
+    /// BFS order from Me, with a small delay between each. Used for visually
+    /// debugging which nodes settle far from the center.
+    var growthAnimationEnabled: Bool = UserDefaults.standard.bool(forKey: "sam.graph.growthAnimation") {
+        didSet { UserDefaults.standard.set(growthAnimationEnabled, forKey: "sam.graph.growthAnimation") }
+    }
+
+    /// Per-step delay (ms) between node reveals during growth animation.
+    var growthAnimationDelayMs: Int = max(20, UserDefaults.standard.integer(forKey: "sam.graph.growthAnimationDelayMs")) {
+        didSet { UserDefaults.standard.set(growthAnimationDelayMs, forKey: "sam.graph.growthAnimationDelayMs") }
+    }
+
+    /// When non-nil, `applyFilters` only includes nodes in this set.
+    /// Driven by `revealProgressively`; cleared once growth animation completes.
+    var progressiveRevealedIDs: Set<UUID>?
+
     // MARK: - Intelligence Overlay State
 
     /// Active intelligence overlay (only one at a time).
@@ -280,8 +298,10 @@ final class RelationshipGraphCoordinator {
                 // --- Try cached layout first ---
                 allNodes = result.nodes
                 allEdges = result.edges
+                meNodeID = (try? peopleRepository.fetchMe())?.id
 
-                if restoreCachedLayout() {
+                let restoredFromCache = restoreCachedLayout()
+                if restoredFromCache {
                     progress = "Restored from cache..."
                     logger.debug("Using cached layout for \(result.nodes.count) nodes")
                 } else {
@@ -293,7 +313,8 @@ final class RelationshipGraphCoordinator {
                         edges: result.edges,
                         iterations: 300,
                         bounds: bounds,
-                        contextClusters: contexts
+                        contextClusters: contexts,
+                        meID: meNodeID
                     )
 
                     guard !Task.isCancelled else { return }
@@ -311,10 +332,20 @@ final class RelationshipGraphCoordinator {
                 }
 
                 // --- Finalize ---
-                meNodeID = (try? peopleRepository.fetchMe())?.id
                 let nodeCount = allNodes.count
                 let edgeCount = allEdges.count
                 lastComputedAt = Date()
+
+                // Growth animation: progressive BFS-order reveal for visual debugging.
+                // Only triggers on fresh computes (cache restores are already final).
+                if growthAnimationEnabled && !restoredFromCache {
+                    progressiveRevealedIDs = []
+                    applyFilters()
+                    graphStatus = .ready
+                    progress = "Animating growth..."
+                    await revealProgressively()
+                }
+
                 applyFilters()
                 graphStatus = .ready
                 progress = "\(nodeCount) people, \(edgeCount) connections"
@@ -428,6 +459,8 @@ final class RelationshipGraphCoordinator {
             if !showGhostNodes && node.isGhost { return false }
             // Orphaned filter
             if !showOrphanedNodes && node.isOrphaned && !revealedNodeIDs.contains(node.id) { return false }
+            // Growth-animation reveal gate (debug)
+            if let revealedSoFar = progressiveRevealedIDs, !revealedSoFar.contains(node.id) { return false }
             visibleNodeIDs.insert(node.id)
             return true
         }
@@ -910,12 +943,62 @@ final class RelationshipGraphCoordinator {
 
     // MARK: - Layout Caching
 
-    // v6: bumped after reverting the v4 (Hooke) and v5 (radial) experiments
-    // back to the original force-directed layout — invalidate any cached
-    // positions from those attempts.
-    private static let cacheKey = "graphLayoutCache_v6"
-    private static let cacheTimestampKey = "graphLayoutCacheTimestamp_v6"
+    // v7: bumped for per-edge rest-length stress majorization
+    // (hierarchy-aware desired distances replace `idealEdgeLength × hopCount`).
+    private static let cacheKey = "graphLayoutCache_v7"
+    private static let cacheTimestampKey = "graphLayoutCacheTimestamp_v7"
     private static let cacheTTL: TimeInterval = 86400 // 24 hours
+
+    // MARK: - Growth Animation
+
+    /// Progressive BFS-order reveal from Me. Drives `progressiveRevealedIDs`
+    /// node-by-node so the user can visually inspect the layout as it forms.
+    /// Final positions are already computed when this runs — only visibility
+    /// changes.
+    private func revealProgressively() async {
+        let order = computeBFSRevealOrder()
+        var revealed = Set<UUID>()
+        let delay = max(20, growthAnimationDelayMs)
+        for id in order {
+            guard !Task.isCancelled else { break }
+            revealed.insert(id)
+            progressiveRevealedIDs = revealed
+            applyFilters()
+            try? await Task.sleep(for: .milliseconds(delay))
+        }
+        progressiveRevealedIDs = nil
+    }
+
+    /// BFS order from Me. Tie-broken by displayName for deterministic playback.
+    /// Orphans (no path to Me) are appended at the end, alphabetically.
+    private func computeBFSRevealOrder() -> [UUID] {
+        let nameByID = Dictionary(uniqueKeysWithValues: allNodes.map { ($0.id, $0.displayName) })
+        var adjacency: [UUID: [UUID]] = [:]
+        for edge in allEdges {
+            adjacency[edge.sourceID, default: []].append(edge.targetID)
+            adjacency[edge.targetID, default: []].append(edge.sourceID)
+        }
+        guard let meID = meNodeID, allNodes.contains(where: { $0.id == meID }) else {
+            return allNodes.sorted { $0.displayName < $1.displayName }.map(\.id)
+        }
+        var visited: Set<UUID> = [meID]
+        var queue = [meID]
+        var head = 0
+        var order = [meID]
+        while head < queue.count {
+            let u = queue[head]; head += 1
+            let neighbors = (adjacency[u] ?? []).sorted { (nameByID[$0] ?? "") < (nameByID[$1] ?? "") }
+            for v in neighbors where visited.insert(v).inserted {
+                queue.append(v)
+                order.append(v)
+            }
+        }
+        let orphans = allNodes.filter { !visited.contains($0.id) }
+                              .sorted { $0.displayName < $1.displayName }
+                              .map(\.id)
+        order.append(contentsOf: orphans)
+        return order
+    }
 
     /// Save current node positions to UserDefaults for fast restore.
     func cacheLayout() {

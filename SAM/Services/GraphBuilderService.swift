@@ -338,7 +338,8 @@ actor GraphBuilderService {
         edges: [GraphEdge],
         iterations: Int = 300,
         bounds: CGSize,
-        contextClusters: [ContextGraphInput] = []
+        contextClusters: [ContextGraphInput] = [],
+        meID: UUID? = nil
     ) async -> [GraphNode] {
         guard !nodes.isEmpty else { return nodes }
 
@@ -355,6 +356,9 @@ actor GraphBuilderService {
         await applyStressMajorization(
             &mutableNodes,
             shortestPaths: shortestPaths,
+            edges: edges,
+            nodeIndex: nodeIndex,
+            meID: meID,
             iterations: min(100, mutableNodes.count > 200 ? 60 : 100),
             bounds: bounds
         )
@@ -514,18 +518,52 @@ actor GraphBuilderService {
         return dist
     }
 
-    /// Apply stress majorization to minimize graph-theoretic distance distortion.
+    /// Apply stress majorization with hierarchy-aware desired distances.
+    ///
+    /// For pairs of nodes that both lie in Me's BFS tree, the desired distance
+    /// is the **sum of per-edge rest lengths** along the tree path, where each
+    /// edge's rest length is sized from the parent's child count (a parent with
+    /// more children needs longer outgoing edges so its children can fan
+    /// non-collidingly). This replaces the textbook `idealEdgeLength × hopCount`
+    /// formula, which incorrectly placed every two-hop node at exactly 2× the
+    /// one-hop distance — producing the visible "second band" of L2 nodes
+    /// regardless of their parent's local fan-out.
+    ///
+    /// For node pairs without a path through Me (orphans, disconnected
+    /// components), we fall back to the original hop-count formula.
     private func applyStressMajorization(
         _ nodes: inout [GraphNode],
         shortestPaths: [[Int]],
+        edges: [GraphEdge],
+        nodeIndex: [UUID: Int],
+        meID: UUID?,
         iterations: Int,
         bounds: CGSize
     ) async {
         let n = nodes.count
         guard n > 1 else { return }
 
-        // Desired spacing per hop
+        // Hop-based fallback (used for orphans + as the rest-length floor).
         let idealEdgeLength: CGFloat = min(bounds.width, bounds.height) / CGFloat(max(1, n / 3))
+
+        // Per-edge tree distances: only available when Me is in the graph.
+        let leafArc: CGFloat = 50.0
+        let baseEdgeLen: CGFloat = max(80.0, idealEdgeLength)
+        var treeDist: [[CGFloat]]? = nil
+        var inTree = [Bool](repeating: false, count: n)
+
+        if let meID = meID, let meIdx = nodeIndex[meID] {
+            let result = computeTreeDistances(
+                nodeCount: n,
+                edges: edges,
+                nodeIndex: nodeIndex,
+                meIdx: meIdx,
+                leafArc: leafArc,
+                baseEdgeLen: baseEdgeLen
+            )
+            treeDist = result.treeDist
+            inTree = result.inTree
+        }
 
         for iteration in 0..<iterations {
             guard !Task.isCancelled else { break }
@@ -543,7 +581,15 @@ actor GraphBuilderService {
                     let graphDist = shortestPaths[i][j]
                     guard graphDist < Int.max / 2 else { continue }
 
-                    let desiredDist = idealEdgeLength * CGFloat(graphDist)
+                    // Tree-aware desired distance when both nodes are in Me's tree;
+                    // hop-based fallback otherwise.
+                    let desiredDist: CGFloat
+                    if let td = treeDist, inTree[i], inTree[j] {
+                        desiredDist = td[i][j]
+                    } else {
+                        desiredDist = idealEdgeLength * CGFloat(graphDist)
+                    }
+
                     let weight = 1.0 / (CGFloat(graphDist) * CGFloat(graphDist))
 
                     let dx = nodes[i].position.x - nodes[j].position.x
@@ -575,7 +621,108 @@ actor GraphBuilderService {
             }
         }
 
-        logger.debug("Stress majorization complete: \(iterations) iterations")
+        logger.debug("Stress majorization complete: \(iterations) iterations, tree-aware=\(treeDist != nil)")
+    }
+
+    /// Compute per-pair desired distances in Me's BFS tree using per-edge rest
+    /// lengths derived from each parent's child count.
+    ///
+    /// For a parent P with K direct children, each child sits at distance
+    /// `max(baseEdgeLen, K × leafArc / 2π)` from P — large enough that K children
+    /// can fan around P without collision. Distance from Me to any node = sum
+    /// along the BFS tree path. Pairwise distance = path through their LCA.
+    private func computeTreeDistances(
+        nodeCount: Int,
+        edges: [GraphEdge],
+        nodeIndex: [UUID: Int],
+        meIdx: Int,
+        leafArc: CGFloat,
+        baseEdgeLen: CGFloat
+    ) -> (treeDist: [[CGFloat]], inTree: [Bool]) {
+        // Undirected adjacency + best-weight map for parent selection.
+        var neighbors = [[Int]](repeating: [], count: nodeCount)
+        var bestWeight = [Int: [Int: Double]]()
+        var seen = Set<UInt64>()
+        for edge in edges {
+            guard let si = nodeIndex[edge.sourceID], let ti = nodeIndex[edge.targetID], si != ti else { continue }
+            let key = UInt64(min(si, ti)) << 32 | UInt64(max(si, ti))
+            if seen.insert(key).inserted {
+                neighbors[si].append(ti)
+                neighbors[ti].append(si)
+            }
+            let w = max(bestWeight[si]?[ti] ?? 0, edge.weight)
+            bestWeight[si, default: [:]][ti] = w
+            bestWeight[ti, default: [:]][si] = w
+        }
+
+        // BFS layers from Me.
+        var layer = [Int](repeating: -1, count: nodeCount)
+        layer[meIdx] = 0
+        var queue = [meIdx]
+        var head = 0
+        while head < queue.count {
+            let u = queue[head]; head += 1
+            for v in neighbors[u] where layer[v] == -1 {
+                layer[v] = layer[u] + 1
+                queue.append(v)
+            }
+        }
+
+        // Parent = lower-layer neighbor with strongest edge weight.
+        var parent = [Int](repeating: -1, count: nodeCount)
+        for i in 0..<nodeCount where layer[i] > 0 {
+            let myL = layer[i]
+            var bestParent = -1
+            var bestW: Double = -1
+            for nb in neighbors[i] where layer[nb] == myL - 1 {
+                let w = bestWeight[i]?[nb] ?? 0
+                if w > bestW { bestW = w; bestParent = nb }
+            }
+            parent[i] = bestParent
+        }
+
+        // Children counts per parent.
+        var childCount = [Int](repeating: 0, count: nodeCount)
+        for i in 0..<nodeCount where parent[i] >= 0 {
+            childCount[parent[i]] += 1
+        }
+
+        // Distance from Me along the BFS tree (sum of per-edge rest lengths).
+        // Computed in BFS order so parents are always available before children.
+        var distFromMe = [CGFloat](repeating: 0, count: nodeCount)
+        for idx in queue where parent[idx] >= 0 {
+            let p = parent[idx]
+            let K = CGFloat(childCount[p])
+            let restLen = max(baseEdgeLen, K * leafArc / (2 * .pi))
+            distFromMe[idx] = distFromMe[p] + restLen
+        }
+
+        // In-tree mask.
+        var inTree = [Bool](repeating: false, count: nodeCount)
+        for i in 0..<nodeCount where layer[i] >= 0 { inTree[i] = true }
+
+        // Pairwise distances via LCA. For each pair (i, j) walk i's chain into
+        // a set, then walk j until we hit a marked ancestor — that's the LCA.
+        var treeDist = [[CGFloat]](repeating: [CGFloat](repeating: 0, count: nodeCount), count: nodeCount)
+        for i in 0..<nodeCount where inTree[i] {
+            var ancestorsI = Set<Int>()
+            var node = i
+            while node >= 0 { ancestorsI.insert(node); node = parent[node] }
+            for j in (i + 1)..<nodeCount where inTree[j] {
+                var lca = -1
+                var n2 = j
+                while n2 >= 0 {
+                    if ancestorsI.contains(n2) { lca = n2; break }
+                    n2 = parent[n2]
+                }
+                guard lca >= 0 else { continue }
+                let d = distFromMe[i] + distFromMe[j] - 2 * distFromMe[lca]
+                treeDist[i][j] = d
+                treeDist[j][i] = d
+            }
+        }
+
+        return (treeDist, inTree)
     }
 
     // MARK: - Phase 4: PrEd Edge-Crossing Reduction
