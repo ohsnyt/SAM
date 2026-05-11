@@ -1200,6 +1200,12 @@ struct SAMApp: App {
             await perf.measure("Launch.sphereBootstrap") {
                 await SphereBootstrapCoordinator.runIfNeeded()
             }
+            // Phase 4: retroactively open a Stewardship arc for every person
+            // already sitting at a Funnel-terminal stage. Idempotent — guarded
+            // by its own UserDefaults flag.
+            await perf.measure("Launch.stewardshipBackfill") {
+                await StewardshipSpawnService.runBackfillIfNeeded()
+            }
         }
     }
     

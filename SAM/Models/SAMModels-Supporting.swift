@@ -1135,6 +1135,7 @@ public enum OutcomeKind: String, Codable, Sendable, CaseIterable {
     case roleFilling       // Role recruiting discovery & cultivation
     case userTask          // User-created manual task or follow-up
     case commitment        // Block 3: Sarah's open commitment to someone, due soon
+    case clientWithoutStewardship   // Phase 4: Funnel-terminal person lacks an active Stewardship arc
 }
 
 public enum OutcomeStatus: String, Codable, Sendable {
@@ -1163,13 +1164,14 @@ extension OutcomeKind {
         case .roleFilling:                return .quick
         case .userTask:                   return .quick
         case .commitment:                 return .quick
+        case .clientWithoutStewardship:   return .quick
         }
     }
 
     var defaultAction: OutcomeAction {
         switch self {
         case .followUp, .preparation: return .captureNote
-        case .proposal, .outreach, .growth, .training, .compliance, .contentCreation, .setup, .roleFilling, .userTask, .commitment: return .openPerson
+        case .proposal, .outreach, .growth, .training, .compliance, .contentCreation, .setup, .roleFilling, .userTask, .commitment, .clientWithoutStewardship: return .openPerson
         }
     }
 
@@ -1181,6 +1183,7 @@ extension OutcomeKind {
         case .roleFilling: return "View"
         case .userTask: return "View"
         case .commitment: return "Resolve"
+        case .clientWithoutStewardship: return "Reconnect"
         case .proposal, .outreach, .growth, .training, .compliance: return "View"
         }
     }
@@ -1193,6 +1196,7 @@ extension OutcomeKind {
         case .roleFilling: return "person.badge.key"
         case .userTask: return "checklist"
         case .commitment: return "hand.raised"
+        case .clientWithoutStewardship: return "person.crop.circle.badge.checkmark"
         case .proposal, .outreach, .growth, .training, .compliance: return "arrow.right.circle"
         }
     }

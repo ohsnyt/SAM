@@ -429,6 +429,7 @@ extension OutcomeKind {
         case .roleFilling:     return "Recruiting"
         case .userTask:        return "Task"
         case .commitment:      return "Commitment"
+        case .clientWithoutStewardship: return "Stewardship"
         }
     }
 
@@ -446,6 +447,7 @@ extension OutcomeKind {
         case .roleFilling:     return .cyan
         case .userTask:        return .gray
         case .commitment:      return .pink
+        case .clientWithoutStewardship: return .indigo
         }
     }
 
@@ -463,6 +465,7 @@ extension OutcomeKind {
         case .roleFilling:     return "person.badge.key"
         case .userTask:        return "checklist"
         case .commitment:      return "hand.raised"
+        case .clientWithoutStewardship: return "person.crop.circle.badge.checkmark"
         }
     }
 }

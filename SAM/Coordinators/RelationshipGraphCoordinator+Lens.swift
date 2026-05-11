@@ -635,6 +635,7 @@ extension RelationshipGraphCoordinator {
         case .roleFilling:     return "Recruiting paused"
         case .userTask:        return "Open commitments"
         case .commitment:      return "Promise unkept"
+        case .clientWithoutStewardship: return "Client without stewardship"
         }
     }
 }

@@ -232,6 +232,11 @@ final class OutcomeEngine {
             await Task.yield()
             if BackupCoordinator.isRestoring { generationStatus = .idle; return }
 
+            // 19. Phase 4 — Funnel-terminal persons without an active Stewardship arc
+            newOutcomes.append(contentsOf: perf.measureSync("OutcomeEngine.clientsWithoutStewardship") { scanClientsWithoutStewardship() })
+            await Task.yield()
+            if BackupCoordinator.isRestoring { generationStatus = .idle; return }
+
             // Classify action lanes and suggest channels
             perf.measureSync("OutcomeEngine.classifyActionLanes") {
                 for outcome in newOutcomes {
@@ -1259,6 +1264,73 @@ final class OutcomeEngine {
         return []
     }
 
+    // MARK: - Clients Without Stewardship (Phase 4)
+
+    /// Safety net for Phase 4. The spawn-on-transition hook and the launch
+    /// backfill cover the common cases, but a Funnel-terminal person can still
+    /// end up without an active Stewardship arc — e.g., bootstrap created their
+    /// pipeline entry but their Sphere membership got out of sync, or a future
+    /// programmatic stage move bypassed the inline hook.
+    ///
+    /// Emits a single outcome per affected person (deduped by 7-day window) so
+    /// the user gets a clear "reconnect" prompt instead of a silently broken
+    /// state. 30-day grace period prevents alerting on fresh closures where
+    /// the user is still inside the immediate-post-close conversation window.
+    private func scanClientsWithoutStewardship() -> [SamOutcome] {
+        let graceCutoff = Calendar.current.date(byAdding: .day, value: -30, to: .now) ?? .now
+
+        let allActive: [PersonTrajectoryEntry]
+        do {
+            allActive = try PersonTrajectoryRepository.shared.fetchAllActive()
+        } catch {
+            return []
+        }
+
+        // Funnel-terminal entries past the 30-day grace window.
+        let candidates = allActive.filter { entry in
+            entry.trajectory?.mode == .funnel
+                && (entry.currentStage?.isTerminal ?? false)
+                && entry.enteredAt < graceCutoff
+        }
+        guard !candidates.isEmpty else { return [] }
+
+        // Persons already on an active Stewardship trajectory.
+        let stewardshipPersonIDs: Set<UUID> = Set(
+            allActive
+                .filter { $0.trajectory?.mode == .stewardship }
+                .compactMap { $0.person?.id }
+        )
+
+        var outcomes: [SamOutcome] = []
+        for entry in candidates {
+            guard let person = entry.person else { continue }
+            if person.isArchived || person.isMe { continue }
+            if stewardshipPersonIDs.contains(person.id) { continue }
+
+            // 7-day dedup window — once the user sees this, don't refire daily.
+            let isDuplicate = (try? outcomeRepo.hasSimilarOutcome(
+                kind: .clientWithoutStewardship,
+                personID: person.id,
+                withinHours: 168
+            )) ?? false
+            if isDuplicate { continue }
+
+            let personName = person.displayNameCache ?? person.displayName
+            let outcome = SamOutcome(
+                title: "Open a stewardship rhythm with \(personName)",
+                rationale: "They closed in the Funnel but don't have an ongoing relationship cadence. Without one, this contact will drift quietly.",
+                outcomeKind: .clientWithoutStewardship,
+                priorityScore: 0.4,
+                sourceInsightSummary: "Funnel-terminal with no Stewardship arc",
+                suggestedNextStep: "Check in — a short, non-transactional message is enough to anchor the next cadence.",
+                linkedPerson: person
+            )
+            outcomes.append(outcome)
+        }
+
+        return outcomes
+    }
+
     /// Progressive feature adoption coaching — suggests one feature at a time
     /// based on days since onboarding and whether the user has tried each feature.
     private func scanFeatureAdoption() -> [SamOutcome] {
@@ -1745,6 +1817,8 @@ final class OutcomeEngine {
         case .userTask:
             outcome.actionLane = .record
         case .commitment:
+            outcome.actionLane = .communicate
+        case .clientWithoutStewardship:
             outcome.actionLane = .communicate
         }
     }

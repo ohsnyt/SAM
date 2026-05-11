@@ -926,6 +926,13 @@ struct PersonDetailView: View {
                     pipelineType: .client
                 )
             } catch {}
+
+            // Phase 4 — reaching the terminal Funnel stage opens a Stewardship
+            // arc so the post-close relationship has a cadence frame. Service
+            // is idempotent, so re-entry into Client is a no-op.
+            if badge == "Client" {
+                StewardshipSpawnService.spawnStewardshipIfNeeded(personID: person.id)
+            }
         }
 
         // For each removed client badge with no replacement, record exit
