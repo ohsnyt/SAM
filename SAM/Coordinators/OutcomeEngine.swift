@@ -683,7 +683,7 @@ final class OutcomeEngine {
         let healthMap = Dictionary(uniqueKeysWithValues: people.map { ($0.id, meetingPrep.computeHealth(for: $0)) })
 
         // Find leads not contacted recently, sorted by staleness
-        let leads = people.filter { $0.roleBadges.contains("Lead") }
+        let leads = people.filter { PersonStageResolver.isLead(forPerson: $0.id) }
         let staleLeads = leads.compactMap { person -> (SamPerson, Int, SamEvidenceItem?)? in
             let days = healthMap[person.id]?.daysSinceLastInteraction ?? 999
             guard days > 14 else { return nil }
@@ -731,7 +731,7 @@ final class OutcomeEngine {
 
         // Suggest referral outreach if a client has been active
         let activeClients = people.filter { person in
-            person.roleBadges.contains("Client")
+            PersonStageResolver.isClient(forPerson: person.id)
             && (healthMap[person.id]?.daysSinceLastInteraction ?? 999) <= 14
         }
         if let client = activeClients.first {
@@ -760,7 +760,7 @@ final class OutcomeEngine {
         let retirementTypes: Set<WFGProductType> = [.retirementPlan, .annuity]
         let educationTypes: Set<WFGProductType> = [.educationPlan]
 
-        let clients = people.filter { $0.roleBadges.contains("Client") }
+        let clients = people.filter { PersonStageResolver.isClient(forPerson: $0.id) }
 
         for client in clients {
             let records = (try? ProductionRepository.shared.fetchRecords(forPerson: client.id)) ?? []
@@ -1436,7 +1436,7 @@ final class OutcomeEngine {
         case .newClients:
             // Find warmest leads
             let allLeads = (try? peopleRepo.fetchAll()
-                .filter { $0.roleBadges.contains("Lead") && !$0.isArchived }) ?? []
+                .filter { PersonStageResolver.isLead(forPerson: $0.id) && !$0.isArchived }) ?? []
             let leadHealthMap = Dictionary(uniqueKeysWithValues: allLeads.map { ($0.id, meetingPrep.computeHealth(for: $0)) })
             let leadNames = allLeads
                 .sorted {
@@ -1455,7 +1455,7 @@ final class OutcomeEngine {
         case .policiesSubmitted:
             // Find applicants with pending paperwork
             let applicantNames = (try? peopleRepo.fetchAll()
-                .filter { $0.roleBadges.contains("Applicant") && !$0.isArchived }
+                .filter { PersonStageResolver.isApplicant(forPerson: $0.id) && !$0.isArchived }
                 .prefix(3)
                 .compactMap { $0.displayNameCache ?? $0.displayName }) ?? []
             let appStr = applicantNames.isEmpty ? "" : " You have \(applicantNames.count) applicant\(applicantNames.count == 1 ? "" : "s") with pending paperwork: \(applicantNames.joined(separator: ", "))."
@@ -2082,7 +2082,7 @@ final class OutcomeEngine {
         let defaults = UserDefaults.standard
 
         // No leads and no known referral sources
-        let hasLeads = (try? peopleRepo.fetchAll().contains { $0.roleBadges.contains("Lead") }) ?? false
+        let hasLeads = (try? peopleRepo.fetchAll().contains { PersonStageResolver.isLead(forPerson: $0.id) }) ?? false
         if !hasLeads && defaults.string(forKey: "sam.gap.referralSources") == nil {
             gaps.append(KnowledgeGap(
                 id: "referralSources",
@@ -2109,7 +2109,7 @@ final class OutcomeEngine {
         }
 
         // Stale leads but no associations/groups recorded
-        let allLeadsForGaps = (try? peopleRepo.fetchAll().filter { $0.roleBadges.contains("Lead") }) ?? []
+        let allLeadsForGaps = (try? peopleRepo.fetchAll().filter { PersonStageResolver.isLead(forPerson: $0.id) }) ?? []
         let gapHealthMap = Dictionary(uniqueKeysWithValues: allLeadsForGaps.map { ($0.id, meetingPrep.computeHealth(for: $0)) })
         let staleLeads = allLeadsForGaps.filter {
             (gapHealthMap[$0.id]?.daysSinceLastInteraction ?? 999) > 14

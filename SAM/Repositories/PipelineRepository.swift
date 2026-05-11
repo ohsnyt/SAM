@@ -61,6 +61,7 @@ final class PipelineRepository {
         )
         context.insert(transition)
         try context.save()
+        PersonStageResolver.invalidateCache()
         logger.debug("Recorded transition: \(fromStage.isEmpty ? "(new)" : fromStage) → \(toStage) for person \(personID)")
         return transition
     }
@@ -151,6 +152,7 @@ final class PipelineRepository {
             existing.enteredDate = .now
             if let notes { existing.notes = notes }
             try context.save()
+            PersonStageResolver.invalidateCache()
             return existing
         }
 
@@ -161,6 +163,7 @@ final class PipelineRepository {
         )
         context.insert(record)
         try context.save()
+        PersonStageResolver.invalidateCache()
         logger.debug("Created recruiting stage \(stage.rawValue) for person \(personID)")
         return record
     }
@@ -259,6 +262,7 @@ final class PipelineRepository {
 
         if count > 0 {
             try context.save()
+            PersonStageResolver.invalidateCache()
             logger.debug("Backfilled \(count) initial pipeline transitions")
         }
 

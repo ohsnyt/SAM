@@ -994,9 +994,18 @@ final class MeetingPrepCoordinator {
             lifeEvents = []
         }
 
-        // Pipeline stage from role badges
-        let pipelineRoles: Set<String> = ["Client", "Applicant", "Lead", "Agent"]
-        let pipelineStage = person.roleBadges.first(where: { pipelineRoles.contains($0) })
+        // Pipeline stage from canonical stage repositories (Phase 8). Client
+        // funnel first, then recruiting — Agent only shows if there's no
+        // client-funnel placement.
+        let pipelineStage: String? = {
+            if let clientStage = PersonStageResolver.currentClientStage(forPerson: person.id) {
+                return clientStage
+            }
+            if PersonStageResolver.isAgent(forPerson: person.id) {
+                return "Agent"
+            }
+            return nil
+        }()
 
         // Product holdings
         let productHoldings: [String]

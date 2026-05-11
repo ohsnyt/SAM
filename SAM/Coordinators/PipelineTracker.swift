@@ -61,13 +61,15 @@ final class PipelineTracker {
 
     private func refreshClientPipeline() {
         do {
-            // Funnel counts from current role badges
+            // Funnel counts from canonical stage transitions (Phase 8). Stage
+            // is the most-recent StageTransition.toStage per person — not
+            // roleBadges, which is the label collection, not the pipeline.
             let allPeople = try PeopleRepository.shared.fetchAll()
             let active = allPeople.filter { !$0.isArchived && !$0.isMe }
 
-            let leads = active.filter { $0.roleBadges.contains("Lead") }
-            let applicants = active.filter { $0.roleBadges.contains("Applicant") }
-            let clients = active.filter { $0.roleBadges.contains("Client") }
+            let leads = active.filter { PersonStageResolver.isLead(forPerson: $0.id) }
+            let applicants = active.filter { PersonStageResolver.isApplicant(forPerson: $0.id) }
+            let clients = active.filter { PersonStageResolver.isClient(forPerson: $0.id) }
 
             clientFunnel = FunnelSnapshot(
                 leadCount: leads.count,

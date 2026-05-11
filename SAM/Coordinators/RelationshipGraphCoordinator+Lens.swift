@@ -589,7 +589,7 @@ extension RelationshipGraphCoordinator {
         guard !person.isMe else { return false }
         guard !person.isArchived else { return false }
         guard person.lifecycleStatus == .active else { return false }
-        guard person.roleBadges.contains("Client") else { return false }
+        guard PersonStageResolver.isClient(forPerson: person.id) else { return false }
         return person.hasMeaningfulSignal
     }
 

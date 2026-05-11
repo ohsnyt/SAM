@@ -238,12 +238,15 @@ final class RoleRecruitingCoordinator {
         let agentRoleNames: Set<String> = ["Agent", "WFG Agent"]
         guard agentRoleNames.contains(role.name) else { return }
 
-        // Add Agent badge if missing
+        // Display-only: keep the visual "Agent" chip in sync. The canonical
+        // recruiting-pipeline signal is the RecruitingStage record created
+        // below — readers must use PersonStageResolver.isAgent(forPerson:),
+        // not this badge (see phase0_audit.md §2).
         if !person.roleBadges.contains("Agent") {
             person.roleBadges.append("Agent")
         }
 
-        // Create RecruitingStage at prospect
+        // Create RecruitingStage at prospect — canonical recruiting signal.
         do {
             try pipelineRepo.upsertRecruitingStage(personID: person.id, stage: .prospect)
             logger.info("Handoff: \(person.displayNameCache ?? "unknown") → WFG recruiting pipeline at Prospect")
