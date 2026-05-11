@@ -67,6 +67,11 @@ final class CommunicationsImportCoordinator {
     /// File descriptor + DispatchSource pairs for database file monitoring.
     private var fileWatcherSources: [DispatchSourceFileSystemObject] = []
     private var fileWatcherFDs: [Int32] = []
+    /// Security-scoped directory URLs that have active access for the
+    /// lifetime of the watchers. `open(O_EVTONLY)` inside a bookmarked
+    /// directory only succeeds while access is started on the directory;
+    /// we stop each one in `stopFileWatchers`.
+    private var fileWatcherScopedDirs: [URL] = []
     /// Debounce task for coalescing rapid file system events.
     private var watcherDebounceTask: Task<Void, Never>?
     /// Fallback poll interval when file watchers are active (safety net).
@@ -182,29 +187,42 @@ final class CommunicationsImportCoordinator {
         guard messagesEnabled || callsEnabled || whatsAppMessagesEnabled || whatsAppCallsEnabled else { return }
         guard fileWatcherSources.isEmpty else { return } // Already watching
 
-        var watchPaths: [(url: URL, label: String)] = []
+        // Each entry pairs the watched file URL with the directory whose
+        // security-scoped access we must keep alive for the watcher's
+        // lifetime. `open(O_EVTONLY)` inside the bookmarked directory
+        // returns -1 until we've started access on the directory URL.
+        var watchPaths: [(url: URL, directory: URL, label: String)] = []
 
         // iMessage chat.db
         if messagesEnabled, let resolved = bookmarkManager.resolveMessagesURL() {
-            watchPaths.append((url: resolved.database, label: "iMessage"))
+            watchPaths.append((url: resolved.database, directory: resolved.directory, label: "iMessage"))
         }
 
         // Call history
         if callsEnabled, let resolved = bookmarkManager.resolveCallHistoryURL() {
-            watchPaths.append((url: resolved.database, label: "CallHistory"))
+            watchPaths.append((url: resolved.database, directory: resolved.directory, label: "CallHistory"))
         }
 
         // WhatsApp ChatStorage.sqlite
         if whatsAppMessagesEnabled || whatsAppCallsEnabled, let resolved = bookmarkManager.resolveWhatsAppURL() {
-            watchPaths.append((url: resolved.messagesDB, label: "WhatsApp"))
+            watchPaths.append((url: resolved.messagesDB, directory: resolved.directory, label: "WhatsApp"))
         }
 
-        for (url, label) in watchPaths {
+        for (url, directory, label) in watchPaths {
+            // Start (and hold) security-scoped access on the directory.
+            // If a previous watcher session already started it, the system
+            // ref-counts and we'll stop the same number of times.
+            guard directory.startAccessingSecurityScopedResource() else {
+                logger.warning("Could not start security-scoped access for \(label) at \(directory.path)")
+                continue
+            }
             let fd = open(url.path, O_EVTONLY)
             guard fd >= 0 else {
                 logger.warning("Could not open \(label) database for watching: \(url.path)")
+                bookmarkManager.stopAccessing(directory)
                 continue
             }
+            fileWatcherScopedDirs.append(directory)
 
             let source = DispatchSource.makeFileSystemObjectSource(
                 fileDescriptor: fd,
@@ -240,6 +258,12 @@ final class CommunicationsImportCoordinator {
         }
         fileWatcherSources.removeAll()
         fileWatcherFDs.removeAll()
+        // Release security-scoped access in reverse order to mirror the
+        // start sequence (matters when multiple watchers share a directory).
+        for directory in fileWatcherScopedDirs.reversed() {
+            bookmarkManager.stopAccessing(directory)
+        }
+        fileWatcherScopedDirs.removeAll()
         watcherDebounceTask?.cancel()
         watcherDebounceTask = nil
         stopFallbackPoll()
