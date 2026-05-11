@@ -17,14 +17,22 @@ struct BusinessDashboardView: View {
     @State private var strategic = StrategicCoordinator.shared
     @State private var selectedTab = 0  // 0 = Strategic (default)
     @State private var isFinancial = true
+    @State private var sphereCount = 0
 
-    /// Tab definitions that adapt to practice type.
+    /// Tab definitions that adapt to practice type. The Spheres tab (tag 5)
+    /// only appears when the user has 2+ Spheres — keeping the single-Sphere
+    /// experience visually unchanged (Sarah-regression check).
     private var tabs: [(label: String, tag: Int)] {
+        var base: [(String, Int)]
         if isFinancial {
-            return [("Strategic", 0), ("Pipeline", 1), ("Production", 2), ("Goals", 3), ("Mileage", 4)]
+            base = [("Strategic", 0), ("Pipeline", 1), ("Production", 2), ("Goals", 3), ("Mileage", 4)]
         } else {
-            return [("Strategic", 0), ("Pipeline", 1), ("Goals", 3), ("Mileage", 4)]
+            base = [("Strategic", 0), ("Pipeline", 1), ("Goals", 3), ("Mileage", 4)]
         }
+        if sphereCount >= 2 {
+            base.append(("Spheres", 5))
+        }
+        return base
     }
 
     var body: some View {
@@ -65,6 +73,8 @@ struct BusinessDashboardView: View {
                     GoalProgressView()
                 case 4:
                     MacTripsView()
+                case 5:
+                    SpheresOverviewView()
                 default:
                     EmptyView()
                 }
@@ -90,6 +100,7 @@ struct BusinessDashboardView: View {
         }
         .task {
             isFinancial = await BusinessProfileService.shared.isFinancialPractice()
+            refreshSphereCount()
         }
         .onAppear {
             tracker.refresh()
@@ -130,6 +141,10 @@ struct BusinessDashboardView: View {
                 )
             }
         }
+    }
+
+    private func refreshSphereCount() {
+        sphereCount = (try? SphereRepository.shared.fetchAll().count) ?? 0
     }
 
     private var formattedProduction: String {
