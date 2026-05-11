@@ -262,6 +262,7 @@ final class NotesRepository {
         extractedTopics: [String],
         discoveredRelationships: [DiscoveredRelationship] = [],
         lifeEvents: [LifeEvent] = [],
+        interactionKind: InteractionKind = .neutral,
         analysisVersion: Int
     ) throws {
         guard let modelContext = modelContext else {
@@ -274,6 +275,7 @@ final class NotesRepository {
         note.extractedTopics = extractedTopics
         note.discoveredRelationships = discoveredRelationships
         note.lifeEvents = lifeEvents
+        note.interactionKind = interactionKind
         note.isAnalyzed = true
         note.analysisVersion = analysisVersion
         note.updatedAt = .now
@@ -377,6 +379,32 @@ final class NotesRepository {
         return all.filter { note in
             note.linkedPeople.contains(where: { $0.id == personID })
         }
+    }
+
+    /// Give / neutral / ask counts for a person over a rolling window.
+    /// Phase 7c — used by PersonDetailView to render the give/ask ratio and
+    /// by the coaching engine to nudge when the user has tipped into asking.
+    /// `windowDays` defaults to 90 — long enough to span ~5 interactions for
+    /// a typical Stewardship cadence, short enough to reflect current posture.
+    /// Returns `nil` when fewer than 3 notes are in the window — not enough
+    /// signal to draw a conclusion.
+    func interactionKindCounts(
+        forPerson person: SamPerson,
+        windowDays: Int = 90
+    ) throws -> (give: Int, neutral: Int, ask: Int, total: Int)? {
+        let cutoff = Date().addingTimeInterval(-Double(windowDays) * 86_400)
+        let notes = try fetchNotes(forPerson: person)
+            .filter { $0.createdAt >= cutoff && $0.isAnalyzed }
+        guard notes.count >= 3 else { return nil }
+        var give = 0, neutral = 0, ask = 0
+        for note in notes {
+            switch note.interactionKind {
+            case .give:    give += 1
+            case .neutral: neutral += 1
+            case .ask:     ask += 1
+            }
+        }
+        return (give, neutral, ask, notes.count)
     }
 
     /// Fetch notes linked to a specific context

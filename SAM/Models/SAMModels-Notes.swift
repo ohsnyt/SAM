@@ -12,6 +12,31 @@ import SwiftData
 import Foundation
 
 // ─────────────────────────────────────────────────────────────────────
+// MARK: - InteractionKind
+// ─────────────────────────────────────────────────────────────────────
+
+/// Direction of an interaction note from the user's posture toward the linked
+/// person. Phase 7c of the relationship-model refactor — drives the per-person
+/// give/ask ratio that flags relationships where the user is asking more than
+/// they're giving (a known relational deficit per the synthesis doc).
+public enum InteractionKind: String, Codable, Sendable, CaseIterable {
+    /// User offered, helped, shared, checked in, or otherwise gave value.
+    case give    = "give"
+    /// Catch-up, status update, mutual exchange with no clear direction.
+    case neutral = "neutral"
+    /// User requested help, info, a favor, or an introduction.
+    case ask     = "ask"
+
+    public var displayName: String {
+        switch self {
+        case .give:    return "Give"
+        case .neutral: return "Neutral"
+        case .ask:     return "Ask"
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // MARK: - Notes
 // ─────────────────────────────────────────────────────────────────────
 
@@ -51,6 +76,18 @@ public final class SamNote {
     public enum SourceType: String, Codable, Sendable {
         case typed
         case dictated
+    }
+
+    /// Direction of the interaction this note records, from the user's posture
+    /// toward the linked person. Phase 7c of the relationship-model refactor.
+    /// Defaults to `.neutral` for legacy/unclassified notes so existing rows
+    /// pick up the field without explicit migration.
+    public var interactionKindRawValue: String = "neutral"
+
+    @Transient
+    public var interactionKind: InteractionKind {
+        get { InteractionKind(rawValue: interactionKindRawValue) ?? .neutral }
+        set { interactionKindRawValue = newValue.rawValue }
     }
 
     /// Dedup key for imported notes (e.g., "evernote:<guid>")

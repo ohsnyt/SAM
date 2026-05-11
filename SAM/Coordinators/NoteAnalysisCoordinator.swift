@@ -159,6 +159,11 @@ final class NoteAnalysisCoordinator {
                 }
             }
 
+            // Step 4c: Classify the user's posture in this interaction
+            // (give/neutral/ask). Rule-based, cheap, runs synchronously here
+            // so the kind lands in the same save as the rest of the analysis.
+            let kind = InteractionKindClassifier.classify(note.content)
+
             // Step 5: Store analysis results
             try notesRepository.storeAnalysis(
                 note: note,
@@ -168,6 +173,7 @@ final class NoteAnalysisCoordinator {
                 extractedTopics: analysis.topics,
                 discoveredRelationships: discoveredRelationships,
                 lifeEvents: lifeEvents,
+                interactionKind: kind,
                 analysisVersion: analysis.analysisVersion
             )
 
