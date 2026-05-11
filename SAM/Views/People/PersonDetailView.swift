@@ -1505,11 +1505,103 @@ struct PersonDetailView: View {
                 relationshipSummarySection
             }
 
+            // Give / Ask ratio (Phase 7c-d) — only rendered when there's
+            // enough recent note signal to draw a conclusion.
+            if !person.isMe, let counts = interactionCounts {
+                giveAskRatioSection(counts: counts)
+            }
+
             // Family & Relationships (note-discovered)
             if !person.familyReferences.isEmpty {
                 familyReferencesSection
             }
         }
+    }
+
+    // MARK: - Give / Ask ratio (Phase 7d)
+
+    /// Cached counts for the give/ask ratio. Recomputed when the notes list
+    /// changes (loadNotes updates personNotes which triggers re-evaluation).
+    private var interactionCounts: (give: Int, neutral: Int, ask: Int, total: Int)? {
+        try? notesRepository.interactionKindCounts(forPerson: person)
+    }
+
+    @ViewBuilder
+    private func giveAskRatioSection(
+        counts: (give: Int, neutral: Int, ask: Int, total: Int)
+    ) -> some View {
+        samSection(title: "Give / Ask balance (last 90 days)") {
+            VStack(alignment: .leading, spacing: 8) {
+                // Counts row
+                HStack(spacing: 12) {
+                    countPill(label: "Give", count: counts.give, color: .green)
+                    countPill(label: "Neutral", count: counts.neutral, color: .secondary)
+                    countPill(label: "Ask", count: counts.ask, color: .orange)
+                    Spacer()
+                    Text("\(counts.total) notes")
+                        .samFont(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+
+                // Proportional bar
+                GeometryReader { geo in
+                    HStack(spacing: 0) {
+                        Rectangle()
+                            .fill(Color.green.opacity(0.7))
+                            .frame(width: geo.size.width * proportion(counts.give, of: counts.total))
+                        Rectangle()
+                            .fill(Color.secondary.opacity(0.4))
+                            .frame(width: geo.size.width * proportion(counts.neutral, of: counts.total))
+                        Rectangle()
+                            .fill(Color.orange.opacity(0.7))
+                            .frame(width: geo.size.width * proportion(counts.ask, of: counts.total))
+                    }
+                }
+                .frame(height: 6)
+                .clipShape(Capsule())
+
+                if let nudge = giveAskNudge(counts: counts) {
+                    Text(nudge)
+                        .samFont(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 2)
+                }
+            }
+            .padding(.vertical, 4)
+        }
+    }
+
+    private func countPill(label: String, count: Int, color: Color) -> some View {
+        HStack(spacing: 4) {
+            Circle()
+                .fill(color)
+                .frame(width: 6, height: 6)
+            Text("\(label) \(count)")
+                .samFont(.caption)
+                .foregroundStyle(.primary)
+        }
+    }
+
+    private func proportion(_ part: Int, of total: Int) -> CGFloat {
+        guard total > 0 else { return 0 }
+        return CGFloat(part) / CGFloat(total)
+    }
+
+    /// Coaching nudge when the balance tips toward asking. Returns nil for
+    /// healthy balances and for small samples where the signal isn't strong
+    /// enough to act on. Phase 7c-d.
+    private func giveAskNudge(
+        counts: (give: Int, neutral: Int, ask: Int, total: Int)
+    ) -> String? {
+        guard counts.total >= 5 else { return nil }
+        let name = person.displayNameCache ?? person.displayName
+        if counts.ask > counts.give && counts.ask >= 2 {
+            return "You've been asking \(name) more than giving recently. Consider leading the next contact with value — share a resource, a relevant intro, or simply check in without an ask."
+        }
+        if counts.give >= counts.ask * 2 && counts.give >= 3 {
+            return "Strong give-first pattern with \(name). Healthy ground for any future ask."
+        }
+        return nil
     }
 
     // MARK: - Family & Relationships
