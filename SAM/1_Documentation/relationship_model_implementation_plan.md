@@ -340,13 +340,92 @@ Total: roughly 4–6 weeks of focused engineering, depending on whether phases r
 
 ---
 
+## Migration coaching plan (how existing users actually adopt the model)
+
+The phased data work above is necessary but not sufficient. Auto-creating `"My Practice"` for Sarah leaves the new model invisible to her: she'd technically be on the new schema, but still operating as if everyone is in one Funnel. This section is the deliberate plan for graduating existing users (starting with Sarah and David) from "everything in one auto-Sphere" to actually using Spheres, Modes, Covenant tagging, and Trajectories.
+
+**Guiding rule:** never make the user do all of it at once. Progressive disclosure, one decision at a time, dismissable. Migration coaching uses the existing `CalibrationLedger` feedback system — two dismissals of a prompt kind silences that kind permanently. This must not become nag-ware.
+
+### Tier 1 — Silent upgrades (Phases 2–4, no user action)
+
+These improvements land underneath the existing UI. The user notices things getting better without being asked to do anything.
+
+- **Drift-based Health** replaces fixed thresholds → alerts become more honest. Validated in shadow mode for 2 weeks before the swap.
+- **Funnel → Stewardship auto-spawn** → when a Lead becomes a Client, a Stewardship Trajectory opens automatically. Existing post-deal touches now have a structured home.
+- **Covenant silence rule** defaults off until the user explicitly tags someone Covenant. No behavior change until the user opts in per-person.
+- **"Reaching for you" signal** (the new `contactDrivenIgnored` alert) surfaces in the briefing as a new section. This is the highest-leverage new signal — it tells the user "Bob has been reaching for you and you haven't responded" — and it requires no setup.
+
+**Exit:** before any new vocabulary lands in the UI, the user's existing experience is measurably better.
+
+### Tier 2 — One-question coaching prompts (Phase 5+)
+
+After the Spheres UI surface exists, SAM picks the right moment to surface each new concept with one tap to resolve. Each prompt is event-triggered, not calendar-triggered, so it lands in context.
+
+- **Covenant tagging** — Trigger: SAM detects a contact with `personalBaselineCadence > 60d`, infrequent but warm interactions, and a self-identified-as-family signal (shared surname, "Mom"/"Dad"/"Sis" in iMessage history, frequent at-home meetings). Prompt: *"You haven't messaged [David Snyder] in 12 days. I don't think he wants a cadence reminder — tag him as a Covenant relationship so I stay quiet unless something important happens?"* One tap → done. First exposure to the Mode vocabulary, in context.
+- **Stewardship migration for past clients** — Trigger: ≥5 contacts at the Funnel terminus with no recent touches. Prompt: *"You have 8 past clients who haven't been touched in 90+ days. Open a Stewardship list so I keep them warm?"* One tap → bulk Stewardship Trajectory creation. Teaches Stewardship mode by doing.
+- **Stalled-stage diagnosis** — Trigger: a person stuck in a Funnel stage > 2× the personal-baseline transition time. Prompt: *"[Bob] has been at Lead for 60 days with no movement. Stall, or slow burn?"* Options: *"Stall — close out"*, *"Slow burn — keep watching"*, *"Move to next stage"*. Introduces stage-drift coaching.
+- **Campaign suggestion from notes** — Trigger: note text matches a Campaign-shaped intent ("I'm doing a recruiting push", "looking for a new ED", "Q3 launch"). Prompt: *"Want this to be a Campaign? I'll track who's in it and dissolve the trajectory when it closes."* One tap → Campaign created with detected participants pre-staged for confirmation.
+
+**Each prompt:** has a "Don't ask again" option, is logged in `CalibrationLedger`, and respects existing muted-kind filters.
+
+### Tier 3 — Sphere creation (opt-in, single offer)
+
+A user with all their contacts in one Sphere doesn't necessarily need a second one. SAM offers, once, when it sees evidence of a second Sphere being needed.
+
+- **Trigger:** after 2 weeks of usage with the new model, if SAM detects 2+ distinct contact clusters (different communication patterns, different time-of-day rhythms, different topic vocabularies, different Apple Contacts groups).
+- **Prompt:** *"It looks like you've got two kinds of people in here — work contacts and church friends. Want to put them in separate Spheres so they don't share coaching context?"* with a "Show me how" link to a 60-second walkthrough.
+- **Settings entry:** always available at *Settings → Your Spheres → +* with the same template list from Phase 5. The proactive offer just surfaces the existing path.
+- **Dismissal:** if the user says "no thanks", the proactive offer never repeats for that cluster pair.
+
+### Tier 4 — Trajectory creation (Phase 6+)
+
+Specialist analysts in the Strategic Coordinator detect intent and propose Trajectories. Same one-tap mechanic as Tier 2.
+
+- *"Three of your prospect notes this week mentioned LinkedIn outreach. Want a 'LinkedIn Outbound' Funnel Trajectory?"*
+- *"You've added 4 ED candidates to Contacts. Open an 'ED Search' Campaign?"*
+
+### Sarah-specific adoption path
+
+A concrete walkthrough of what Sarah experiences across the rollout:
+
+1. **Week 1 (Phase 1 ships):** Sarah sees nothing different. Her "My Practice" Sphere is created silently with her existing pipeline embedded as a Funnel Trajectory. Every contact gets a `PersonTrajectoryEntry` matching their current stage.
+2. **Week 3 (Phase 2 ships):** Sarah still sees nothing different. Mode field exists in the data but isn't surfaced. No Covenant tags exist yet.
+3. **Week 5 (Phase 3 ships, after shadow validation):** Sarah's briefing gains a "Reaching for you" section if any of her contacts trigger `contactDrivenIgnored`. Drift-based Health replaces fixed thresholds; her alerts feel more accurate.
+4. **Week 7 (Phase 4 ships):** Each new Client transition silently creates a Stewardship Trajectory. Sarah's client cards show a small "Stewardship: monthly" badge. Her briefing gains "stewardship watch" items for clients she hasn't touched.
+5. **Week 9 (Phase 5 ships):** Sarah still sees no Spheres tab — she has only one Sphere. Settings gains a "Your Spheres" entry, but she has no reason to open it yet.
+6. **Week 10–11:** Tier 2 prompts begin firing. Sarah is offered Covenant tagging for family contacts, Stewardship migration for old clients, stalled-stage diagnosis for old Leads. Each is one tap.
+7. **Week 12+:** If SAM detects a second cluster (e.g., church friends she's been messaging), it offers the Sphere split once. Sarah decides.
+
+### David-specific adoption path
+
+Different because David is the canonical multi-Sphere user.
+
+1. **Week 1 (Phase 1):** David's "My Practice" auto-Sphere is created. His existing contacts move into it.
+2. **Week 9 (Phase 5 ships):** First-run setup is not retroactive — David already has a default Sphere. But: SAM detects from his Apple Contacts groups (Trinity Bible, ABT, public connections) that he has clear cluster signals. He gets a banner: *"You look like a multi-Sphere user. Set up 2 more Spheres?"* → walks through templates: Faith community leader (Elder), Nonprofit board chairman (ABT), Personal advocate (Promoting Sarah). Each pre-populates members from the corresponding Contacts group.
+3. **Week 10:** Tier 2 prompts fire for his family contacts (Covenant tags) and for the active ED search (Campaign Trajectory creation).
+4. **Week 11:** Per-Sphere briefing sections light up (Phase 6 effect).
+
+### What doesn't get a coaching prompt
+
+To prevent overload, these are deliberately *not* surfaced as prompts:
+
+- `trustCurrency` per-relationship — invisible attribute, set by Mode default, user only sees it if they go into a Trajectory's settings.
+- `give/ask` interaction tagging — happens automatically on notes; surfaced only in PersonDetailView, never pushed.
+- BRAVING decomposition — only appears in PersonDetailView when a relationship is at-risk *and* the user opens a "diagnose" disclosure.
+
+### Telemetry
+
+For every migration prompt we ship, track: shown count, accepted count, dismissed count, "don't ask again" count. After 30 days, prune prompt kinds with < 10% accept rate — they're noise, not coaching.
+
+---
+
 ## Decision points before starting
 
-The plan above is the recommended path. These are decisions to confirm before Phase 1:
+The plan above is the recommended path. These are decisions to confirm before Phase 1, with the Migration Coaching Plan now informing each answer:
 
-1. **Single auto-Sphere for everyone, or first-run setup for General users?** Plan currently auto-creates "My Practice" for everyone. Alternative: General users hit a setup screen on first launch.
-2. **Should `PersonModeOverride` exist** or should Mode always be derived from active Trajectory? Plan currently includes it as an escape hatch.
-3. **Should Covenant default to `warmth` currency, or both?** Plan currently says `warmth`. Pastoral examples support both.
-4. **Is the new "Reaching for you" briefing section worth a top-level surface, or just embedded in person cards?** Plan currently makes it top-level — it's the highest-leverage new signal.
+1. **Migration: single auto-Sphere for everyone (recommended).** All existing users — Sarah, David, and any new installs — get `"My Practice"` created silently. The richer model emerges via the Tier 1–4 migration coaching above. No first-run setup screen in Phase 1; sphere creation lives in Settings + Phase 5 templates. Rationale: smallest Phase 1 blast radius, Sarah's flow is identical, no UI scope creeps into the data refactor.
+2. **`PersonModeOverride` deferred to Phase 5 (recommended).** In Phase 1, a person's effective Mode is derived: Trajectory Mode (if on an active Trajectory) → Sphere's defaultMode (fallback). Phase 5 introduces a stored per-Person override only when the UI exists to set it. Rationale: don't add fields the user can't see or change.
+3. **Covenant defaults to `warmth` currency (recommended).** Tier 2 Covenant tagging fires first on intimate relationships (spouse, parent, close friend), where warmth is the right primary signal (Gottman turn-toward, 5:1 ratio). Users can change to `both` per-Person in Phase 7 for competence-bonded Covenants (long-time mentor, co-founder). Rationale: optimize the default for the common case.
+4. **"Reaching for you" is a top-level briefing section (recommended).** It's the highest-leverage new signal in the entire model — it tells the user something they couldn't see before. Burying it in person cards loses 80% of its value. Rationale: this is the headline win of Phase 3.
 
 If any of these warrant different choices, pause before Phase 1 and update the plan.
