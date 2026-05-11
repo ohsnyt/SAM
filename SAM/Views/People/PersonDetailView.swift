@@ -1924,6 +1924,13 @@ struct PersonDetailView: View {
                         }
                     }
 
+                    // Spheres & active Trajectories
+                    if shouldShowSpheresSection {
+                        samSection(title: "Spheres") {
+                            spheresContent
+                        }
+                    }
+
                     // Relationship health details
                     samSection(title: "Relationship Health") {
                         RelationshipHealthView(
@@ -1934,7 +1941,85 @@ struct PersonDetailView: View {
             }
         }
     }
-    
+
+    // MARK: - Spheres (Phase 5c)
+
+    /// Hide the Spheres section for single-Sphere users so Sarah's view stays
+    /// unchanged. Surfaces when the user has 2+ Spheres OR this person is on
+    /// any active Trajectory entry (where the per-Sphere/Trajectory placement
+    /// is genuinely informative beyond the role badges already shown above).
+    private var shouldShowSpheresSection: Bool {
+        let sphereCount = (try? SphereRepository.shared.fetchAll().count) ?? 0
+        if sphereCount >= 2 { return true }
+        let activeEntries = (try? PersonTrajectoryRepository.shared
+            .activeEntries(forPerson: person.id).count) ?? 0
+        return activeEntries > 0
+    }
+
+    private var spheresContent: some View {
+        let memberships = (try? SphereRepository.shared.spheres(forPerson: person.id)) ?? []
+        let activeEntries = (try? PersonTrajectoryRepository.shared
+            .activeEntries(forPerson: person.id)) ?? []
+        let entriesBySphere: [UUID: [PersonTrajectoryEntry]] = Dictionary(
+            grouping: activeEntries,
+            by: { $0.trajectory?.sphere?.id ?? UUID() }
+        )
+
+        return VStack(alignment: .leading, spacing: 10) {
+            if memberships.isEmpty {
+                Text("Not yet placed in any Sphere.")
+                    .samFont(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 4)
+            } else {
+                ForEach(memberships) { sphere in
+                    sphereRow(sphere, entries: entriesBySphere[sphere.id] ?? [])
+                }
+            }
+        }
+        .padding(.vertical, 6)
+    }
+
+    private func sphereRow(_ sphere: Sphere, entries: [PersonTrajectoryEntry]) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(sphere.accentColor.color)
+                    .frame(width: 10, height: 10)
+                Text(sphere.name)
+                    .samFont(.subheadline)
+                    .fontWeight(.medium)
+                Spacer()
+            }
+            if entries.isEmpty {
+                Text("Member — no active trajectory")
+                    .samFont(.caption)
+                    .foregroundStyle(.tertiary)
+                    .padding(.leading, 16)
+            } else {
+                ForEach(entries) { entry in
+                    HStack(spacing: 6) {
+                        Image(systemName: (entry.trajectory?.mode ?? .stewardship).icon)
+                            .foregroundStyle((entry.trajectory?.mode ?? .stewardship).color)
+                            .samFont(.caption)
+                        Text(entry.trajectory?.name ?? "Trajectory")
+                            .samFont(.caption)
+                        if let stageName = entry.currentStage?.name {
+                            Text("·")
+                                .foregroundStyle(.tertiary)
+                            Text(stageName)
+                                .samFont(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                    }
+                    .padding(.leading, 16)
+                }
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
     // Helper view for SAM data sections
     private func samSection<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 0) {
