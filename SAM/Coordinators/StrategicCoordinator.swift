@@ -39,6 +39,23 @@ final class StrategicCoordinator {
     var strategicRecommendations: [StrategicRec] = []
     var suggestedEventTopics: [SuggestedEventTopic] = []
 
+    /// Latest per-Sphere digest, keyed by Sphere ID. Populated by the
+    /// per-Sphere fan-out after the global digest completes when the user
+    /// has 2+ active Spheres. Empty for single-Sphere setups.
+    /// Phase 6c of the relationship-model refactor.
+    var latestDigestsBySphere: [UUID: StrategicDigest] = [:]
+
+    /// Resolve the right digest for the caller's scope: `nil` returns the
+    /// global digest; a Sphere ID returns that Sphere's digest if one has
+    /// been generated, otherwise falls back to the global digest so callers
+    /// always get something to render.
+    func digest(forSphere sphereID: UUID?) -> StrategicDigest? {
+        if let sphereID, let perSphere = latestDigestsBySphere[sphereID] {
+            return perSphere
+        }
+        return latestDigest
+    }
+
     // MARK: - Private State
 
     private var context: ModelContext?
@@ -218,6 +235,14 @@ final class StrategicCoordinator {
 
         let totalElapsed = digestClock.now - digestStart
         logger.info("⏱ Strategic digest complete — \(topRecs.count) recommendations — total: \(totalElapsed.formatted(.units(allowed: [.seconds, .milliseconds], width: .abbreviated))) — backend: \(modelLabel)")
+
+        // Per-Sphere fan-out runs as a background tail-task — Layer 2 work
+        // that produces one digest per active Sphere when the user has 2+.
+        // Single-Sphere users (Sarah) skip this entirely so behavior is
+        // unchanged. Phase 6c of the relationship-model refactor.
+        Task(priority: .utility) { [weak self] in
+            await self?.fanOutPerSphereDigests(type: type)
+        }
     }
 
     /// Check if a fresh digest exists (< maxAge old).
@@ -899,9 +924,10 @@ final class StrategicCoordinator {
         time: TimeAnalysis,
         pattern: PatternAnalysis,
         content: ContentAnalysis,
-        topRecs: [StrategicRec]
+        topRecs: [StrategicRec],
+        sphereID: UUID? = nil
     ) -> StrategicDigest {
-        let digest = StrategicDigest(digestType: type)
+        let digest = StrategicDigest(digestType: type, sphereID: sphereID)
         digest.pipelineSummary = pipeline.healthSummary
         digest.timeSummary = time.balanceSummary
         digest.patternInsights = pattern.patterns.map(\.description).joined(separator: "; ")
@@ -949,32 +975,194 @@ final class StrategicCoordinator {
         return digest
     }
 
+    // MARK: - Per-Sphere Fan-Out (Phase 6c)
+
+    /// Generate per-Sphere digests when the user has 2+ active Spheres.
+    /// Each Sphere gets its own Pipeline + Pattern analyst pass with data
+    /// scoped to that Sphere's members; Time and Content stay global.
+    /// Runs at utility priority after the global digest completes.
+    private func fanOutPerSphereDigests(type: DigestType) async {
+        let spheres = (try? SphereRepository.shared.fetchAll()) ?? []
+        guard spheres.count >= 2 else { return }
+
+        let memberships = (try? SphereRepository.shared.fetchAllMemberships()) ?? []
+        var membersBySphere: [UUID: Set<UUID>] = [:]
+        for m in memberships {
+            guard let sid = m.sphere?.id, let pid = m.person?.id else { continue }
+            membersBySphere[sid, default: []].insert(pid)
+        }
+
+        for sphere in spheres {
+            // Yield between Spheres so foreground work isn't starved.
+            await Task.yield()
+            let memberIDs = membersBySphere[sphere.id] ?? []
+            guard !memberIDs.isEmpty else { continue }
+            await generatePerSphereDigest(
+                type: type,
+                sphere: sphere,
+                memberIDs: memberIDs
+            )
+        }
+        logger.info("⏱ Per-Sphere digest fan-out complete — \(spheres.count) Spheres")
+    }
+
+    private func generatePerSphereDigest(
+        type: DigestType,
+        sphere: Sphere,
+        memberIDs: Set<UUID>
+    ) async {
+        let pipelineData = gatherPipelineData(forSphere: sphere, memberIDs: memberIDs)
+        let patternData = gatherPatternData(forSphere: sphere, memberIDs: memberIDs)
+
+        async let pipelineResult = runPipelineAnalyst(data: pipelineData)
+        async let patternResult = runPatternDetector(data: patternData)
+        let pipeline = await pipelineResult
+        let pattern = await patternResult
+
+        // Synthesize using only the two scoped analyses; time and content stay
+        // global (their inputs aren't naturally per-Sphere).
+        let scopedRecs = synthesize(
+            pipeline: pipeline,
+            time: TimeAnalysis(),
+            pattern: pattern,
+            content: ContentAnalysis()
+        )
+
+        let digest = persistDigest(
+            type: type,
+            pipeline: pipeline,
+            time: TimeAnalysis(),
+            pattern: pattern,
+            content: ContentAnalysis(),
+            topRecs: scopedRecs,
+            sphereID: sphere.id
+        )
+        latestDigestsBySphere[sphere.id] = digest
+    }
+
+    /// Pipeline data filtered to a single Sphere's members. Prepends a
+    /// focus header so the analyst knows it's narrating one slice of the
+    /// business, not the whole picture.
+    private func gatherPipelineData(forSphere sphere: Sphere, memberIDs: Set<UUID>) -> String {
+        tracker.refresh()
+
+        let stuck = tracker.clientStuckPeople.filter { memberIDs.contains($0.personID) }
+        let pendingAging = tracker.productionPendingAging.filter {
+            guard let pid = $0.personID else { return false }
+            return memberIDs.contains(pid)
+        }
+        let mentoringAlerts = tracker.recruitMentoringAlerts.filter { memberIDs.contains($0.personID) }
+
+        var lines: [String] = []
+        lines.append("FOCUS: Sphere \"\(sphere.name)\" — \(sphere.purpose.isEmpty ? "no purpose set" : sphere.purpose)")
+        lines.append("Members in this Sphere: \(memberIDs.count)")
+
+        if !stuck.isEmpty {
+            lines.append("STUCK PEOPLE IN THIS SPHERE:")
+            for person in stuck.prefix(10) {
+                lines.append("  \(person.personName) — \(person.stage) for \(person.daysStuck) days")
+            }
+        }
+
+        if !pendingAging.isEmpty {
+            lines.append("PENDING AGING IN THIS SPHERE:")
+            for item in pendingAging.prefix(5) {
+                lines.append("  \(item.personName) — \(item.productType.rawValue), \(item.daysPending)d pending, $\(String(format: "%.0f", item.premium))")
+            }
+        }
+
+        if !mentoringAlerts.isEmpty {
+            lines.append("MENTORING ALERTS IN THIS SPHERE:")
+            for alert in mentoringAlerts.prefix(5) {
+                lines.append("  \(alert.personName) — \(alert.stage.rawValue), \(alert.daysSinceContact)d since contact")
+            }
+        }
+
+        if stuck.isEmpty, pendingAging.isEmpty, mentoringAlerts.isEmpty {
+            lines.append("No active risks detected in this Sphere.")
+        }
+
+        return lines.joined(separator: "\n")
+    }
+
+    /// Pattern data filtered to a single Sphere's members.
+    private func gatherPatternData(forSphere sphere: Sphere, memberIDs: Set<UUID>) -> String {
+        var lines: [String] = []
+        lines.append("FOCUS: Sphere \"\(sphere.name)\" — \(sphere.purpose.isEmpty ? "no purpose set" : sphere.purpose)")
+
+        do {
+            let allPeople = try peopleRepo.fetchAll()
+            let active = allPeople.filter {
+                memberIDs.contains($0.id)
+                    && !$0.isArchived
+                    && !$0.isMe
+                    && $0.hasMeaningfulSignal
+            }
+
+            var commsByRole: [String: (count: Int, people: Int)] = [:]
+            for person in active {
+                let evidenceCount = person.linkedEvidence.count
+                let primaryRole = person.roleBadges.first ?? "Untagged"
+                var entry = commsByRole[primaryRole] ?? (count: 0, people: 0)
+                entry.count += evidenceCount
+                entry.people += 1
+                commsByRole[primaryRole] = entry
+            }
+
+            lines.append("INTERACTION PATTERNS IN THIS SPHERE:")
+            if commsByRole.isEmpty {
+                lines.append("  No active members with recent signal.")
+            } else {
+                for (role, data) in commsByRole.sorted(by: { $0.value.count > $1.value.count }) {
+                    let avg = data.people > 0 ? Double(data.count) / Double(data.people) : 0
+                    lines.append("  \(role): \(data.count) interactions across \(data.people) people (avg \(String(format: "%.1f", avg))/person)")
+                }
+            }
+        } catch {
+            logger.error("Failed to gather Sphere-scoped pattern data: \(error)")
+        }
+
+        return lines.joined(separator: "\n")
+    }
+
     // MARK: - Loading
 
     private func loadLatestDigest() {
         guard let context else { return }
         do {
+            // Fetch all recent digests and partition into global (sphereID == nil)
+            // and per-Sphere. The latest of each Sphere wins. We sort descending
+            // first so the dictionary walk keeps the newest per Sphere.
             var descriptor = FetchDescriptor<StrategicDigest>(
                 sortBy: [SortDescriptor(\.generatedAt, order: .reverse)]
             )
-            descriptor.fetchLimit = 1
-            if let digest = try context.fetch(descriptor).first {
-                latestDigest = digest
-                lastGeneratedAt = digest.generatedAt
+            descriptor.fetchLimit = 100
+            let recent = try context.fetch(descriptor)
 
-                // Parse recommendations
-                if let data = digest.strategicActions.data(using: .utf8),
+            if let globalDigest = recent.first(where: { $0.sphereID == nil }) {
+                latestDigest = globalDigest
+                lastGeneratedAt = globalDigest.generatedAt
+
+                if let data = globalDigest.strategicActions.data(using: .utf8),
                    let recs = try? JSONDecoder().decode([StrategicRec].self, from: data) {
                     strategicRecommendations = recs
                 }
 
-                // Restore event topic suggestions
-                if let topicJSON = digest.eventTopicSuggestions,
+                if let topicJSON = globalDigest.eventTopicSuggestions,
                    let topicData = topicJSON.data(using: .utf8),
                    let topics = try? JSONDecoder().decode([SuggestedEventTopic].self, from: topicData) {
                     suggestedEventTopics = topics
                 }
             }
+
+            var bySphere: [UUID: StrategicDigest] = [:]
+            for digest in recent {
+                guard let sphereID = digest.sphereID else { continue }
+                if bySphere[sphereID] == nil {
+                    bySphere[sphereID] = digest
+                }
+            }
+            latestDigestsBySphere = bySphere
         } catch {
             logger.error("Failed to load latest digest: \(error)")
         }

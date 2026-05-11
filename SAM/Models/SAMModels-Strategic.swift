@@ -48,6 +48,13 @@ public final class StrategicDigest {
     /// Pre-computed event topic suggestions (JSON array of SuggestedEventTopic)
     public var eventTopicSuggestions: String?
 
+    /// Sphere this digest is scoped to. `nil` = global / all-Spheres digest
+    /// (legacy behavior, what single-Sphere users always see). Set when the
+    /// per-Sphere fan-out generates one digest per active Sphere so the
+    /// strategic view can show Sphere-specific insight alongside the global
+    /// roll-up. Phase 6c of the relationship-model refactor.
+    public var sphereID: UUID?
+
     // MARK: - Transient
 
     @Transient
@@ -64,7 +71,8 @@ public final class StrategicDigest {
         timeSummary: String = "",
         patternInsights: String = "",
         contentSuggestions: String = "",
-        strategicActions: String = "[]"
+        strategicActions: String = "[]",
+        sphereID: UUID? = nil
     ) {
         self.id = UUID()
         self.generatedAt = .now
@@ -76,6 +84,7 @@ public final class StrategicDigest {
         self.strategicActions = strategicActions
         self.rawJSON = nil
         self.feedbackJSON = nil
+        self.sphereID = sphereID
     }
 }
 
