@@ -51,6 +51,11 @@ public final class SamDailyBriefing {
     /// matched their cadence. Phase 3g of the relationship-model refactor.
     /// Defaults to empty so legacy briefings migrate without intervention.
     public var reachingForYou: [BriefingReachingForYou] = []
+    /// Per-Sphere section roll-up. Empty for single-Sphere users so the
+    /// briefing renders unchanged for Sarah. Populated by the briefing
+    /// coordinator only when the user has 2+ active Spheres. Phase 6 of
+    /// the relationship-model refactor.
+    public var sphereSections: [BriefingSphereSection] = []
 
     // MARK: - Raw Metrics (for recap aggregation)
 
@@ -91,7 +96,8 @@ public final class SamDailyBriefing {
         streakUpdates: [BriefingStreakUpdate] = [],
         weeklyPriorities: [BriefingAction] = [],
         strategicHighlights: [BriefingAction] = [],
-        reachingForYou: [BriefingReachingForYou] = []
+        reachingForYou: [BriefingReachingForYou] = [],
+        sphereSections: [BriefingSphereSection] = []
     ) {
         self.id = UUID()
         self.briefingTypeRawValue = briefingType.rawValue
@@ -109,6 +115,7 @@ public final class SamDailyBriefing {
         self.weeklyPriorities = weeklyPriorities
         self.strategicHighlights = strategicHighlights
         self.reachingForYou = reachingForYou
+        self.sphereSections = sphereSections
         self.meetingCount = 0
         self.notesTakenCount = 0
         self.outcomesCompletedCount = 0
@@ -301,6 +308,57 @@ public struct BriefingReachingForYou: Codable, Sendable, Identifiable {
         self.inboundCount30 = inboundCount30
         self.initiationRatio = initiationRatio
         self.suggestedAction = suggestedAction
+    }
+}
+
+/// Phase 6 — Per-Sphere briefing section. One per active Sphere when the
+/// user has 2+ Spheres. Each section rolls up the top actions, follow-ups,
+/// and reaching-for-you signals scoped to that Sphere's members, plus a
+/// terse trajectory status string ("3 in Buyer Pipeline, 1 stalled").
+///
+/// Single-Sphere users get an empty `sphereSections` array — the existing
+/// briefing structure is unchanged for them (Sarah-regression contract).
+public struct BriefingSphereSection: Codable, Sendable, Identifiable {
+    public var id: UUID
+    public var sphereID: UUID
+    public var sphereName: String
+    /// Hex / palette tag for the section accent. Storing the raw value
+    /// (not the SwiftUI Color) keeps the DTO Codable/Sendable across the
+    /// SwiftData persistence boundary.
+    public var accentColorRaw: String
+    /// 1–2 highest-priority actions among this Sphere's members. Drawn
+    /// from the same OutcomeRepository slice that powers the global
+    /// `priorityActions` — never duplicates copy, just re-buckets.
+    public var topActions: [BriefingAction]
+    /// 1–2 follow-up prompts for people in this Sphere. Same slice as
+    /// the global `followUps`, scoped to membership.
+    public var topFollowUps: [BriefingFollowUp]
+    /// Count of "Reaching for you" signals (people in this Sphere who
+    /// pinged us and we haven't replied). Shown as a single number, with
+    /// the names already surfaced in the global Reaching-for-you section.
+    public var reachingForYouCount: Int
+    /// Terse trajectory health line — e.g. "3 in Buyer Pipeline · 1 stalled".
+    /// Pre-rendered at briefing-assembly time so the view never recomputes.
+    public var trajectoryStatus: String?
+
+    public init(
+        id: UUID = UUID(),
+        sphereID: UUID,
+        sphereName: String,
+        accentColorRaw: String,
+        topActions: [BriefingAction] = [],
+        topFollowUps: [BriefingFollowUp] = [],
+        reachingForYouCount: Int = 0,
+        trajectoryStatus: String? = nil
+    ) {
+        self.id = id
+        self.sphereID = sphereID
+        self.sphereName = sphereName
+        self.accentColorRaw = accentColorRaw
+        self.topActions = topActions
+        self.topFollowUps = topFollowUps
+        self.reachingForYouCount = reachingForYouCount
+        self.trajectoryStatus = trajectoryStatus
     }
 }
 

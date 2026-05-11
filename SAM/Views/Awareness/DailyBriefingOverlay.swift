@@ -41,6 +41,11 @@ struct DailyBriefingOverlay: View {
                         calendarSection(upcoming)
                     }
 
+                    // Per-Sphere roll-up (Phase 6 — multi-Sphere users only)
+                    if !briefing.sphereSections.isEmpty {
+                        sphereSectionsBlock(briefing.sphereSections)
+                    }
+
                     // Priority actions
                     if !briefing.priorityActions.isEmpty {
                         actionsSection(briefing.priorityActions)
@@ -292,6 +297,79 @@ struct DailyBriefingOverlay: View {
     // to you, you haven't come back yet" — copy and icon deliberately call
     // that out rather than treating it as user-initiated outreach.
 
+    // MARK: - Spheres roll-up (Phase 6)
+
+    private func sphereSectionsBlock(_ sections: [BriefingSphereSection]) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader("By Sphere", icon: "circle.grid.3x3.fill", count: sections.count)
+
+            ForEach(sections) { section in
+                let accent = SphereAccentColor(rawValue: section.accentColorRaw)?.color ?? .secondary
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Circle().fill(accent).frame(width: 10, height: 10)
+                        Text(section.sphereName)
+                            .samFont(.subheadline)
+                            .fontWeight(.semibold)
+                        Spacer()
+                        if section.reachingForYouCount > 0 {
+                            Label("\(section.reachingForYouCount)", systemImage: "hand.wave.fill")
+                                .samFont(.caption)
+                                .foregroundStyle(.indigo)
+                        }
+                    }
+                    if let status = section.trajectoryStatus, !status.isEmpty {
+                        Text(status)
+                            .samFont(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    if !section.topActions.isEmpty {
+                        ForEach(section.topActions) { action in
+                            HStack(alignment: .top, spacing: 6) {
+                                Image(systemName: "lightbulb.fill")
+                                    .samFont(.caption)
+                                    .foregroundStyle(.orange)
+                                Text(action.title)
+                                    .samFont(.caption)
+                                    .lineLimit(2)
+                                Spacer()
+                            }
+                            .padding(.leading, 16)
+                        }
+                    }
+                    if !section.topFollowUps.isEmpty {
+                        ForEach(section.topFollowUps) { followUp in
+                            HStack(alignment: .top, spacing: 6) {
+                                Image(systemName: "person.circle")
+                                    .samFont(.caption)
+                                    .foregroundStyle(.orange)
+                                Text(followUp.personName)
+                                    .samFont(.caption)
+                                    .fontWeight(.medium)
+                                Text("· \(followUp.reason)")
+                                    .samFont(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                Spacer()
+                            }
+                            .padding(.leading, 16)
+                        }
+                    }
+                }
+                .padding(10)
+                .background(accent.opacity(0.05))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .strokeBorder(accent.opacity(0.15), lineWidth: 1)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+        }
+        .padding()
+        .background(Color.secondary.opacity(0.04))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+
     private func reachingForYouSection(_ items: [BriefingReachingForYou]) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             sectionHeader("Reaching for you", icon: "hand.wave.fill", count: items.count)
@@ -490,6 +568,25 @@ struct DailyBriefingOverlay: View {
                 if !item.attendeeNames.isEmpty { line += " (\(item.attendeeNames.joined(separator: ", ")))" }
                 if let prep = item.preparationNote, !prep.isEmpty { line += " — \(prep)" }
                 parts.append(line)
+            }
+        }
+
+        if !briefing.sphereSections.isEmpty {
+            parts.append("BY SPHERE:")
+            for section in briefing.sphereSections {
+                parts.append("• \(section.sphereName)")
+                if let status = section.trajectoryStatus, !status.isEmpty {
+                    parts.append("  \(status)")
+                }
+                for action in section.topActions {
+                    parts.append("  - \(action.title)")
+                }
+                for followUp in section.topFollowUps {
+                    parts.append("  - \(followUp.personName): \(followUp.reason)")
+                }
+                if section.reachingForYouCount > 0 {
+                    parts.append("  - \(section.reachingForYouCount) reaching for you")
+                }
             }
         }
 

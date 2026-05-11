@@ -198,9 +198,65 @@ struct PersistentBriefingSection: View {
                 }
             }
 
+            // Per-Sphere summary (Phase 6 — multi-Sphere users only).
+            // Compact summary line per Sphere — the actionable items are
+            // already in Zone 2 outcome cards; this is the navigation
+            // header that lets the user see where their attention is split.
+            if !briefing.sphereSections.isEmpty {
+                sphereSummarySection(briefing.sphereSections)
+            }
+
             // Follow-ups and life events are shown as outcome cards in Zone 2 —
             // no need to duplicate them here.
         }
+    }
+
+    // MARK: - Sphere summary (Phase 6)
+
+    private func sphereSummarySection(_ sections: [BriefingSphereSection]) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "circle.grid.3x3.fill")
+                    .samFont(.caption)
+                    .foregroundStyle(.secondary)
+                Text("By Sphere")
+                    .samFont(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+            ForEach(sections) { section in
+                let accent = SphereAccentColor(rawValue: section.accentColorRaw)?.color ?? .secondary
+                HStack(spacing: 8) {
+                    Circle().fill(accent).frame(width: 8, height: 8)
+                    Text(section.sphereName)
+                        .samFont(.caption)
+                        .fontWeight(.medium)
+                    if let status = section.trajectoryStatus, !status.isEmpty {
+                        Text("· \(status)")
+                            .samFont(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    Spacer()
+                    let actionCount = section.topActions.count + section.topFollowUps.count
+                    if actionCount > 0 {
+                        Text("\(actionCount)")
+                            .samFont(.caption2)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(accent.opacity(0.15))
+                            .clipShape(Capsule())
+                    }
+                    if section.reachingForYouCount > 0 {
+                        Image(systemName: "hand.wave.fill")
+                            .samFont(.caption2)
+                            .foregroundStyle(.indigo)
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 6)
     }
 
     // MARK: - Reaching For You Row
