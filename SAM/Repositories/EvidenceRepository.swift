@@ -1100,6 +1100,7 @@ final class EvidenceRepository {
             ))
         }
         existing.signals = signals
+        existing.sentimentRaw = EvidenceSentiment(rawValue: analysis.sentiment.rawValue)?.rawValue
 
         try context.save()
 
@@ -1144,6 +1145,7 @@ final class EvidenceRepository {
             ))
         }
         existing.signals = signals
+        existing.sentimentRaw = EvidenceSentiment(rawValue: analysis.sentiment.rawValue)?.rawValue
 
         try context.save()
 

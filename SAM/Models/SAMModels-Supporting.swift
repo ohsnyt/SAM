@@ -307,6 +307,27 @@ public enum EvidenceTriageState: String, Codable, Sendable {
     case done = "done"
 }
 
+/// Phase 3d (relationship-model refactor) — coarse affective tone derived
+/// from per-source analyzer output (email/message sentiment, note affect).
+/// Drives the positive/negative balance signal on `RelationshipHealth`.
+///
+/// `urgent` maps from `MessageAnalysisDTO.Sentiment.urgent`. It is signal
+/// of pressure, not necessarily negative tone, so it counts as neither
+/// positive nor negative in the P/N ratio — keeping the ratio honest when
+/// a client has a flurry of time-sensitive but otherwise warm messages.
+public enum EvidenceSentiment: String, Codable, Sendable {
+    case positive
+    case neutral
+    case negative
+    case urgent
+
+    /// True when this tone counts toward the "positive" side of the P/N ratio.
+    public var isPositive: Bool { self == .positive }
+
+    /// True when this tone counts toward the "negative" side of the P/N ratio.
+    public var isNegative: Bool { self == .negative }
+}
+
 /// Whether a scheduled event actually occurred. Applies primarily to calendar evidence.
 /// `.confirmed` is the default/legacy state — legacy evidence behaves as it did before this field existed.
 /// `.pending` is set when `DailyBriefingCoordinator.checkRecentlyEndedMeetings()` surfaces an event for review.

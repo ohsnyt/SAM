@@ -152,7 +152,9 @@ struct RelationshipHealth: Sendable {
     let driftRatio: Double?
     /// outboundCount90 / max(1, totalCount90). Nil when no 90-day interactions.
     let initiationRatio: Double?
-    /// Phase 3d will populate; nil until then.
+    /// positiveCount90 / max(1, negativeCount90) over sentiment-tagged
+    /// evidence in the last 90 days. Nil when no tagged positive *or*
+    /// negative items exist (means "no signal", not "perfectly neutral").
     let pnRatio: Double?
     /// Which Phase 3 signal currently dominates this person's Health.
     let dominantSignal: HealthSignal
@@ -501,13 +503,48 @@ final class MeetingPrepCoordinator {
             ? Double(outboundCount90) / Double(total90)
             : nil
 
-        // Dominant signal selector. Phase 3d will add negativeBalance.
-        // contactDrivenIgnored is the new "Reaching for you" signal — fires
-        // when the contact has been initiating but the user hasn't reciprocated
-        // within their own baseline cadence.
+        // pnRatio over rolling 90 days. Numerator = positive-tagged evidence;
+        // denominator = max(1, negative-tagged) so a "no negatives" person
+        // doesn't divide-by-zero and doesn't artificially read worse than a
+        // person with one mild negative. Counted only over items the analyzer
+        // tagged — neutral/urgent and untagged items don't move either side.
+        // Returns nil when there is no tagged-positive AND no tagged-negative
+        // evidence; that's a "we don't know" state, not a "perfectly balanced" one.
+        let positiveCount90 = evidence.filter {
+            $0.occurredAt >= ninetyDaysAgo && $0.sentiment?.isPositive == true
+        }.count
+        let negativeCount90 = evidence.filter {
+            $0.occurredAt >= ninetyDaysAgo && $0.sentiment?.isNegative == true
+        }.count
+        let pnRatio: Double? = (positiveCount90 + negativeCount90 > 0)
+            ? Double(positiveCount90) / Double(max(1, negativeCount90))
+            : nil
+
+        // P/N warn threshold by Mode. Sourced from
+        // `relationship_model_implementation_plan.md` §3.2.3 defaults.
+        // Covenant is intentionally excluded — quiet by design.
+        let pnWarnThreshold: Double? = {
+            switch mode {
+            case .stewardship, .service: return 5.0
+            case .funnel, .campaign:     return 3.0
+            case .covenant:              return nil
+            }
+        }()
+
+        // Dominant signal selector. Order matters — the most-actionable
+        // negative-tone signal wins over neglect-shaped signals because it
+        // changes *what kind* of outreach SAM should suggest.
         let dominantSignal: HealthSignal = {
             // Silenced for Covenant — Phase 2 rule applies to Phase 3 signals too.
             guard mode.generatesCadenceAlerts else { return .none }
+            // Require at least two tagged data points before negativeBalance
+            // fires; one rough email shouldn't trip it.
+            if let ratio = pnRatio,
+               let threshold = pnWarnThreshold,
+               (positiveCount90 + negativeCount90) >= 2,
+               ratio < threshold {
+                return .negativeBalance
+            }
             if let ratio = initiationRatio, total90 >= 5,
                ratio < 0.30,
                let outboundGap = daysSinceLastOutbound,
@@ -544,7 +581,7 @@ final class MeetingPrepCoordinator {
             inboundCount30: inboundCount30,
             driftRatio: driftRatio,
             initiationRatio: initiationRatio,
-            pnRatio: nil,
+            pnRatio: pnRatio,
             dominantSignal: dominantSignal
         )
     }

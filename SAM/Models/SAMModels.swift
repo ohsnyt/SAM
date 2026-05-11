@@ -754,6 +754,21 @@ public final class SamEvidenceItem {
     /// never queried independently.
     public var signals: [EvidenceSignal] = []
 
+    /// Phase 3d (relationship-model refactor) — affective tone of this
+    /// evidence item, as inferred from LLM analysis at import time.
+    /// Persisted only when an analyzer produces a confident value; nil
+    /// for non-analyzable sources (calls, all-day events) and for items
+    /// whose analyzer hasn't run yet. Drives the P/N balance signal
+    /// inside `RelationshipHealth`. Stored raw to match the rest of the
+    /// enum-on-SwiftData pattern in this file.
+    public var sentimentRaw: String?
+
+    @Transient
+    public var sentiment: EvidenceSentiment? {
+        get { sentimentRaw.flatMap { EvidenceSentiment(rawValue: $0) } }
+        set { sentimentRaw = newValue?.rawValue }
+    }
+
     // ── Participant hints (from the source event / message) ────────
     /// Raw attendee info as resolved at import time.  Verified
     /// participants have been matched to a CNContact; unverified ones
