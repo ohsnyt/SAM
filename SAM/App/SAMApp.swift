@@ -1167,6 +1167,9 @@ struct SAMApp: App {
         CommitmentRepository.shared.configure(container: c)
         TripRepository.shared.configure(container: c)
         TripIngestCoordinator.shared.configure(container: c)
+        SphereRepository.shared.configure(container: c)
+        TrajectoryRepository.shared.configure(container: c)
+        PersonTrajectoryRepository.shared.configure(container: c)
 
         // One-time migration: isArchived → lifecycleStatusRawValue (v31→v32)
         perf.measureSync("Launch.runMigrationV32IfNeeded") {
@@ -1193,6 +1196,9 @@ struct SAMApp: App {
             await perf.measure("Launch.pruneComplianceAudits") {
                 let retentionDays = UserDefaults.standard.object(forKey: "complianceAuditRetentionDays") as? Int ?? 90
                 try? ComplianceAuditRepository.shared.pruneExpired(retentionDays: retentionDays)
+            }
+            await perf.measure("Launch.sphereBootstrap") {
+                await SphereBootstrapCoordinator.runIfNeeded()
             }
         }
     }

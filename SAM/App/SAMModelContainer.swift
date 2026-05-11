@@ -77,6 +77,11 @@ enum SAMSchema {
         PendingUpload.self,                            // Phase B: iPhone-side pending upload queue
         ProcessedSessionTombstone.self,                // Prevents SAMField re-uploading sessions the user deleted on the Mac
         SamCommitment.self,                            // Block 3: commitment tracking + follow-through rate
+        Sphere.self,                                   // Relationship model Phase 1: multi-Sphere context
+        Trajectory.self,                               // Relationship model Phase 1: named arcs inside a Sphere
+        TrajectoryStage.self,                          // Relationship model Phase 1: stages on a Trajectory
+        PersonSphereMembership.self,                   // Relationship model Phase 1: person ↔ Sphere
+        PersonTrajectoryEntry.self,                    // Relationship model Phase 1: person ↔ Trajectory (active + historical)
     ]
 }
 

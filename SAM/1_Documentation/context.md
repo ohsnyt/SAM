@@ -337,8 +337,18 @@ All models use SwiftData lightweight migration. Enum storage uses `rawValue` pat
 | **GoalJournalEntry** | Distilled learnings from goal check-in conversations | goalID, headline, whatsWorkingJSON, whatsNotWorkingJSON, barriersJSON, adjustedStrategy, keyInsight, commitmentActionsJSON, paceAtCheckIn, progressAtCheckIn, conversationTurnCount |
 | **RoleDefinition** | Role specifications for recruiting pipeline | title, description, idealProfile, refinementNotes, scoringCriteria |
 | **EventEvaluation** | Post-event workshop analysis | participantAnalyses (JSON), feedbackResponses (JSON), topQuestions, contentGapSummary, overallSummary, averageOverallRating, conversionRate |
+| **Sphere** | Relationship-model Phase 1: a role/context the user inhabits ("My Practice", "Elder at Trinity"). One per user at bootstrap; multi-Sphere from Phase 5. | name, purpose, accentColor, defaultMode, defaultCadenceDays, sortOrder, archived, isBootstrapDefault |
+| **Trajectory** | Phase 1: a named arc inside (or outside) a Sphere — Funnel/Stewardship/Campaign/Service/Covenant Mode. People move along Trajectories. | sphere, name, mode, archived, completedAt, stages, entries |
+| **TrajectoryStage** | Phase 1: a single stage on a Trajectory (e.g. "Lead", "Applicant", "Client"; "Initial Conversation"→"Final Round"). | trajectory, name, sortOrder, isTerminal, stageCadenceDaysOverride |
+| **PersonSphereMembership** | Phase 1: a person belongs to a Sphere even without being on any active Trajectory inside it. | person, sphere, addedAt, notes |
+| **PersonTrajectoryEntry** | Phase 1: a single person's current place on one Trajectory. Active until exitedAt is set; preserved historically for conversion-rate computation. | person, trajectory, currentStage, cadenceDaysOverride, enteredAt, exitedAt, exitReason |
 
 **Non-SwiftData**: `UserLinkedInProfileDTO`, `UserFacebookProfileDTO` — stored as JSON in UserDefaults, injected into AI prompts via `BusinessProfileService.contextFragment()`.
+
+### Phase 1 Relationship-Model migration
+First-launch bootstrap creates a single `"My Practice"` Sphere (with `isBootstrapDefault: true`) per user, gated by `UserDefaults["sam.migration.sphereBootstrapDone"]`. WFG users additionally get a Funnel-mode `"Client Pipeline"` Trajectory with `Lead → Applicant → Client` stages, and every existing Person is seeded with a `PersonSphereMembership` plus, where a current pipeline stage can be derived (most recent `StageTransition.toStage`, falling back to roleBadges), a `PersonTrajectoryEntry` on that Trajectory. General users get the Sphere only — no Trajectory.
+
+Phase 1 writes these models but no existing system reads from them yet. The legacy reads of `roleBadges` as a stage proxy are catalogued in `phase0_audit.md` §2 and replaced in Phase 8.
 
 ---
 
