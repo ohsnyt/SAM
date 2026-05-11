@@ -2242,7 +2242,7 @@ final class OutcomeEngine {
             Never assume or invent topics not supported by the actual evidence.
             """
 
-        let systemInstruction: String
+        var systemInstruction: String
         switch (category, channel) {
         case (.quick, .iMessage):
             systemInstruction = """
@@ -2291,6 +2291,13 @@ final class OutcomeEngine {
                 Keep it under 3 sentences. Casual but professional, like a text message.
                 No emojis. No signature.
                 """
+        }
+
+        // Phase 2: Mode-aware tone hint. Prepends a one-line voice steer based
+        // on the person's effective Mode (active Trajectory → Sphere default).
+        if let personID = person?.id {
+            let mode = PersonModeResolver.effectiveMode(for: personID)
+            systemInstruction = mode.coachingToneHint + "\n\n" + systemInstruction
         }
 
         do {

@@ -409,10 +409,18 @@ final class MeetingPrepCoordinator {
         let roleConfig = RoleVelocityConfig.forRole(person.roleBadges.first)
 
         // --- Decay risk ---
-        let decayRisk = assessDecayRisk(
+        let rawDecayRisk = assessDecayRisk(
             overdueRatio: overdueRatio, velocityTrend: velocityTrend,
             daysSince: daysSince, role: person.roleBadges.first
         )
+
+        // Phase 2 Covenant silence rule: when the person's effective Mode is
+        // Covenant, cadence-decay alerts never fire. Life-event signals and
+        // user-set reminders still surface through other paths.
+        let mode = PersonModeResolver.effectiveMode(for: person.id)
+        let decayRisk: DecayRisk = mode.generatesCadenceAlerts ? rawDecayRisk : .none
+        let effectiveOverdueRatio: Double? = mode.generatesCadenceAlerts ? overdueRatio : nil
+        let effectivePredictedOverdueDays: Int? = mode.generatesCadenceAlerts ? predictedOverdueDays : nil
 
         // --- Direction-aware fields ---
         let outbound = evidence.filter { $0.direction == .outbound }
@@ -437,10 +445,10 @@ final class MeetingPrepCoordinator {
             role: person.roleBadges.first,
             cadenceDays: cadenceDays,
             effectiveCadenceDays: effectiveCadenceDays,
-            overdueRatio: overdueRatio,
+            overdueRatio: effectiveOverdueRatio,
             velocityTrend: velocityTrend,
             qualityScore30: qualityScore30,
-            predictedOverdueDays: predictedOverdueDays,
+            predictedOverdueDays: effectivePredictedOverdueDays,
             decayRisk: decayRisk,
             predictiveLeadDays: roleConfig.predictiveLeadDays,
             daysSinceLastOutbound: daysSinceLastOutbound,

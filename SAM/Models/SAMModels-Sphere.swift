@@ -85,6 +85,24 @@ public enum Mode: String, Codable, Sendable, CaseIterable {
         self != .covenant
     }
 
+    /// One-line tone hint prepended to coaching/draft prompts. Steers voice
+    /// without rewriting the body of the prompt. Phase 2 introduces this;
+    /// Phase 7 promotes it to a per-Trajectory `trustCurrency` field.
+    public var coachingToneHint: String {
+        switch self {
+        case .funnel:
+            return "Tone: confident and competent. Show you understand their situation and can move the conversation forward."
+        case .stewardship:
+            return "Tone: warm and competent. Demonstrate ongoing care and remember specific details from prior interactions."
+        case .campaign:
+            return "Tone: focused and urgent without pressuring. Reinforce the shared goal and the time-bounded nature of the effort."
+        case .service:
+            return "Tone: reliable and responsive. Make it easy for them to get what they need; never invasive."
+        case .covenant:
+            return "Tone: warm and human. This is an intimate relationship — no business framing, no follow-up scripts. Speak as a person, not a professional."
+        }
+    }
+
     /// Color used for Mode chips in person detail and briefing.
     public var color: Color {
         switch self {
