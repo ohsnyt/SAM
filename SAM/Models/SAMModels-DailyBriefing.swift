@@ -46,6 +46,11 @@ public final class SamDailyBriefing {
     public var weeklyPriorities: [BriefingAction]
     /// Top strategic recommendations for today (Phase V)
     public var strategicHighlights: [BriefingAction]
+    /// People whose `RelationshipHealth.dominantSignal` is
+    /// `.contactDrivenIgnored` — they've been reaching out and SAM hasn't
+    /// matched their cadence. Phase 3g of the relationship-model refactor.
+    /// Defaults to empty so legacy briefings migrate without intervention.
+    public var reachingForYou: [BriefingReachingForYou] = []
 
     // MARK: - Raw Metrics (for recap aggregation)
 
@@ -85,7 +90,8 @@ public final class SamDailyBriefing {
         accomplishments: [BriefingAccomplishment] = [],
         streakUpdates: [BriefingStreakUpdate] = [],
         weeklyPriorities: [BriefingAction] = [],
-        strategicHighlights: [BriefingAction] = []
+        strategicHighlights: [BriefingAction] = [],
+        reachingForYou: [BriefingReachingForYou] = []
     ) {
         self.id = UUID()
         self.briefingTypeRawValue = briefingType.rawValue
@@ -102,6 +108,7 @@ public final class SamDailyBriefing {
         self.streakUpdates = streakUpdates
         self.weeklyPriorities = weeklyPriorities
         self.strategicHighlights = strategicHighlights
+        self.reachingForYou = reachingForYou
         self.meetingCount = 0
         self.notesTakenCount = 0
         self.outcomesCompletedCount = 0
@@ -252,6 +259,48 @@ public struct BriefingAccomplishment: Codable, Sendable, Identifiable {
         self.title = title
         self.category = category
         self.personName = personName
+    }
+}
+
+/// Phase 3g — "Reaching for you" section. One row per person whose
+/// `RelationshipHealth.dominantSignal` is `.contactDrivenIgnored`.
+/// Distinct from `BriefingFollowUp` (which is user-initiated outreach
+/// prompts) because the framing is "they came to you, you haven't come
+/// back yet" — copy and visuals deliberately call that out.
+public struct BriefingReachingForYou: Codable, Sendable, Identifiable {
+    public var id: UUID
+    public var personName: String
+    public var personID: UUID?
+    /// Days since the user's last outbound to this person. Drives the
+    /// "you've been quiet for X days" framing in the section copy.
+    public var daysSinceLastOutbound: Int?
+    /// 30-day inbound count from this person. Matches the count surfaced
+    /// elsewhere in the briefing for consistency. "Maria has reached out 7
+    /// times in the last month" reads stronger than a ratio.
+    public var inboundCount30: Int
+    /// Outbound share of the 90-day total — useful for fine-tuning copy
+    /// ("almost entirely from her" vs "mostly from her").
+    public var initiationRatio: Double?
+    /// Action SAM suggests. Generated at briefing-assembly time so the
+    /// UI can render it without re-running the LLM.
+    public var suggestedAction: String
+
+    public init(
+        id: UUID = UUID(),
+        personName: String,
+        personID: UUID? = nil,
+        daysSinceLastOutbound: Int? = nil,
+        inboundCount30: Int = 0,
+        initiationRatio: Double? = nil,
+        suggestedAction: String
+    ) {
+        self.id = id
+        self.personName = personName
+        self.personID = personID
+        self.daysSinceLastOutbound = daysSinceLastOutbound
+        self.inboundCount30 = inboundCount30
+        self.initiationRatio = initiationRatio
+        self.suggestedAction = suggestedAction
     }
 }
 

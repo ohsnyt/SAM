@@ -311,6 +311,12 @@ final class DailyBriefingCoordinator {
             let tomorrowPreview = perf.measureSync("Briefing.gatherTomorrowPreview") { gatherTomorrowPreview() }
             logger.info("⏱️ gatherTomorrowPreview: \(self.formatElapsed(briefingClock.now - phaseStart)) (\(tomorrowPreview.count) items)")
 
+            generationStageLabel = "Scanning for people reaching out to you..."
+            await Task.yield()
+            phaseStart = briefingClock.now
+            let reachingForYou = perf.measureSync("Briefing.gatherReachingForYou") { gatherReachingForYou() }
+            logger.info("⏱️ gatherReachingForYou: \(self.formatElapsed(briefingClock.now - phaseStart)) (\(reachingForYou.count) items)")
+
             // Stage 2: Goal progress
             generationStageLabel = "Calculating goal progress..."
             await Task.yield()
@@ -326,7 +332,8 @@ final class DailyBriefingCoordinator {
                 priorityActions: priorityActions,
                 followUps: followUps,
                 lifeEventOutreach: lifeEvents,
-                tomorrowPreview: tomorrowPreview
+                tomorrowPreview: tomorrowPreview,
+                reachingForYou: reachingForYou
             )
             briefing.meetingCount = calendarItems.count
 
@@ -1559,6 +1566,55 @@ final class DailyBriefingCoordinator {
         }
 
         return followUps.sorted { $0.daysSinceInteraction > $1.daysSinceInteraction }.prefix(5).map { $0 }
+    }
+
+    /// Phase 3g — assemble "Reaching for you" items from anyone whose
+    /// `RelationshipHealth.dominantSignal` is `.contactDrivenIgnored`.
+    /// Re-uses OutcomeEngine's per-run health cache so we don't refault
+    /// every person's evidence collection a second time in one briefing.
+    ///
+    /// Lifecycle filter: only `.active` people. The plan explicitly calls
+    /// out that this signal mustn't fire on archived/DNC/deceased contacts —
+    /// `isArchived` collapses those three states already (see SamPerson.swift).
+    private func gatherReachingForYou() -> [BriefingReachingForYou] {
+        guard let people = try? peopleRepo.fetchAll() else { return [] }
+
+        let activePeople = people.filter { !$0.isMe && !$0.isArchived }
+        let healthCache = OutcomeEngine.shared.healthCacheSnapshot
+
+        var items: [BriefingReachingForYou] = []
+        for person in activePeople {
+            let health = healthCache[person.id] ?? meetingPrep.computeHealth(for: person)
+            guard health.dominantSignal == .contactDrivenIgnored else { continue }
+
+            let name = person.displayNameCache ?? person.displayName
+            let outboundDays = health.daysSinceLastOutbound
+            let inboundCount30 = health.inboundCount30
+            // suggestedAction tone: respect the asymmetry — don't suggest a
+            // big "let's grab coffee" gesture, just close the loop.
+            let actionPrefix: String = {
+                if let days = outboundDays, days > 30 { return "Send a short reply" }
+                if let days = outboundDays, days > 14 { return "Acknowledge their last message" }
+                return "Reply in their thread"
+            }()
+            let suggested = "\(actionPrefix) — they've been initiating."
+
+            items.append(BriefingReachingForYou(
+                personName: name,
+                personID: person.id,
+                daysSinceLastOutbound: outboundDays,
+                inboundCount30: inboundCount30,
+                initiationRatio: health.initiationRatio,
+                suggestedAction: suggested
+            ))
+        }
+
+        // Prioritize the longest-quiet-from-user cases first — that's where
+        // SAM is failing the user the hardest. Cap to 5 to keep the section
+        // scannable and prevent dominating the morning view.
+        return items.sorted { lhs, rhs in
+            (lhs.daysSinceLastOutbound ?? 0) > (rhs.daysSinceLastOutbound ?? 0)
+        }.prefix(5).map { $0 }
     }
 
     private func gatherLifeEvents() -> [BriefingLifeEvent] {

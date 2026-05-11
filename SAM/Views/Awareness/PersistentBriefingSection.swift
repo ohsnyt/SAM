@@ -183,9 +183,72 @@ struct PersistentBriefingSection: View {
                 }
             }
 
+            // Reaching for you (Phase 3g — contactDrivenIgnored).
+            // Rendered inline here because it has no outcome-card path —
+            // unlike follow-ups/life events which surface in Zone 2.
+            if !briefing.reachingForYou.isEmpty {
+                checkableSection(
+                    title: "Reaching for you",
+                    icon: "hand.wave.fill",
+                    color: .indigo
+                ) {
+                    ForEach(briefing.reachingForYou) { item in
+                        reachingForYouRow(item)
+                    }
+                }
+            }
+
             // Follow-ups and life events are shown as outcome cards in Zone 2 —
             // no need to duplicate them here.
         }
+    }
+
+    // MARK: - Reaching For You Row
+
+    private func reachingForYouRow(_ item: BriefingReachingForYou) -> some View {
+        let itemID = item.id.uuidString
+        let checked = coordinator.isItemChecked(itemID)
+
+        return Button(action: {
+            if checked {
+                coordinator.markItemUnchecked(itemID)
+            } else {
+                coordinator.markItemChecked(itemID)
+            }
+        }) {
+            HStack(spacing: 10) {
+                Image(systemName: checked ? "checkmark.circle.fill" : "circle")
+                    .samFont(.body)
+                    .foregroundStyle(checked ? .green : .secondary)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.personName)
+                        .samFont(.subheadline)
+                        .strikethrough(checked, color: .secondary)
+                        .foregroundStyle(checked ? .secondary : .primary)
+
+                    Text(item.suggestedAction)
+                        .samFont(.caption)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                if let days = item.daysSinceLastOutbound {
+                    Text("\(days)d")
+                        .samFont(.caption2)
+                        .foregroundStyle(.indigo)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(.indigo.opacity(0.12))
+                        .clipShape(Capsule())
+                }
+            }
+            .padding(.vertical, 4)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Checkable Section Container

@@ -46,6 +46,11 @@ struct DailyBriefingOverlay: View {
                         actionsSection(briefing.priorityActions)
                     }
 
+                    // Reaching for you (Phase 3g — contactDrivenIgnored)
+                    if !briefing.reachingForYou.isEmpty {
+                        reachingForYouSection(briefing.reachingForYou)
+                    }
+
                     // Follow-ups
                     if !briefing.followUps.isEmpty {
                         followUpSection(briefing.followUps)
@@ -280,6 +285,57 @@ struct DailyBriefingOverlay: View {
         }
     }
 
+    // MARK: - Reaching for You (Phase 3g)
+    //
+    // Distinct from Follow-ups: this surfaces people who have been reaching
+    // out to *you* and your outbound has lagged. The framing is "they came
+    // to you, you haven't come back yet" — copy and icon deliberately call
+    // that out rather than treating it as user-initiated outreach.
+
+    private func reachingForYouSection(_ items: [BriefingReachingForYou]) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader("Reaching for you", icon: "hand.wave.fill", count: items.count)
+
+            ForEach(items) { item in
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "person.crop.circle.badge.exclamationmark")
+                        .samFont(.title3)
+                        .foregroundStyle(.indigo)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 6) {
+                            Text(item.personName)
+                                .samFont(.subheadline)
+                                .fontWeight(.medium)
+
+                            if let days = item.daysSinceLastOutbound {
+                                Text("· quiet \(days)d")
+                                    .samFont(.caption)
+                                    .foregroundStyle(.indigo)
+                            }
+                        }
+
+                        Text(item.suggestedAction)
+                            .samFont(.caption)
+                            .foregroundStyle(.secondary)
+
+                        if item.inboundCount30 > 0 {
+                            Text("\(item.inboundCount30) inbound in last 30 days")
+                                .samFont(.caption2)
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+
+                    Spacer()
+                }
+                .padding(.vertical, 4)
+            }
+        }
+        .padding()
+        .background(Color.indigo.opacity(0.05))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+
     // MARK: - Follow-ups
 
     private func followUpSection(_ followUps: [BriefingFollowUp]) -> some View {
@@ -442,6 +498,17 @@ struct DailyBriefingOverlay: View {
             for (i, a) in briefing.priorityActions.enumerated() {
                 var line = "\(i + 1). \(a.title)"
                 if let name = a.personName { line += " [\(name)]" }
+                parts.append(line)
+            }
+        }
+
+        if !briefing.reachingForYou.isEmpty {
+            parts.append("REACHING FOR YOU:")
+            for r in briefing.reachingForYou {
+                var line = "• \(r.personName)"
+                if let days = r.daysSinceLastOutbound { line += " — quiet \(days)d" }
+                if r.inboundCount30 > 0 { line += " (\(r.inboundCount30) inbound/30d)" }
+                line += "\n  → \(r.suggestedAction)"
                 parts.append(line)
             }
         }
