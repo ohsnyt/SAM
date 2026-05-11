@@ -553,7 +553,7 @@ extension RelationshipGraphCoordinator {
 
     private func makeNode(for person: SamPerson, at position: CGPoint) -> GraphNode {
         let health = MeetingPrepCoordinator.shared.computeHealth(for: person)
-        let healthLevel = mapHealthToLevel(health)
+        let healthLevel = mapHealthToLevel(health, personID: person.id)
         let productionValue = person.productionRecords
             .filter { $0.status != .declined }
             .reduce(0.0) { $0 + $1.annualPremium }

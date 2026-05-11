@@ -517,7 +517,7 @@ final class RelationshipGraphCoordinator {
             guard person.hasMeaningfulSignal else { return nil }
 
             let health = meetingPrepCoordinator.computeHealth(for: person)
-            let healthLevel = mapHealthToLevel(health)
+            let healthLevel = mapHealthToLevel(health, personID: person.id)
             let productionValue = person.productionRecords
                 .filter { $0.status != .declined }
                 .reduce(0.0) { $0 + $1.annualPremium }
@@ -759,7 +759,7 @@ final class RelationshipGraphCoordinator {
             guard !person.roleBadges.isEmpty else { return nil }
 
             let health = meetingPrepCoordinator.computeHealth(for: person)
-            let healthLevel = mapHealthToLevel(health)
+            let healthLevel = mapHealthToLevel(health, personID: person.id)
 
             // Use the highest-priority role as the label
             let role = GraphNode.primaryRole(from: person.roleBadges) ?? person.roleBadges.first ?? "Unknown"
@@ -785,7 +785,7 @@ final class RelationshipGraphCoordinator {
             guard let person = allPeople.first(where: { $0.id == personID }) else { return }
 
             let health = meetingPrepCoordinator.computeHealth(for: person)
-            let healthLevel = mapHealthToLevel(health)
+            let healthLevel = mapHealthToLevel(health, personID: person.id)
             let productionValue = person.productionRecords
                 .filter { $0.status != .declined }
                 .reduce(0.0) { $0 + $1.annualPremium }
@@ -1418,7 +1418,35 @@ final class RelationshipGraphCoordinator {
 
     // MARK: - Health Mapping
 
-    func mapHealthToLevel(_ health: RelationshipHealth) -> GraphNode.HealthLevel {
+    /// UserDefaults key for the Phase 3e vector-based HealthLevel derivation.
+    /// Off by default — Sarah-regression protection. Will be flipped on once
+    /// the Phase 3f shadow comparison shows the new math agrees with the old
+    /// on the bulk of her contact list. See `relationship_model_implementation_plan.md` §3.
+    static let healthLevelVectorFlagKey = "sam.feature.healthLevelVector"
+
+    /// True when the vector-based HealthLevel derivation is active. Reads from
+    /// UserDefaults each call so the user can toggle it without restarting.
+    static var isVectorHealthLevelEnabled: Bool {
+        UserDefaults.standard.bool(forKey: healthLevelVectorFlagKey)
+    }
+
+    /// Map a person's `RelationshipHealth` to a coarse `HealthLevel` for the
+    /// graph node and any other scalar consumer.
+    ///
+    /// Phase 3e: when the vector flag is on, combines `dominantSignal` and
+    /// `decayRisk` (Mode-aware via PersonModeResolver). When off, falls back
+    /// to the pre-refactor `decayRisk`-only mapping verbatim.
+    func mapHealthToLevel(_ health: RelationshipHealth, personID: UUID? = nil) -> GraphNode.HealthLevel {
+        if Self.isVectorHealthLevelEnabled, let personID {
+            let mode = PersonModeResolver.effectiveMode(for: personID)
+            return vectorHealthLevel(health, mode: mode)
+        }
+        return legacyHealthLevel(health)
+    }
+
+    /// Pre-refactor mapping — decayRisk only. Retained verbatim so the
+    /// feature flag fully recovers the old behavior.
+    private func legacyHealthLevel(_ health: RelationshipHealth) -> GraphNode.HealthLevel {
         switch health.decayRisk {
         case .none, .low:
             return .healthy
@@ -1428,6 +1456,29 @@ final class RelationshipGraphCoordinator {
             return .atRisk
         case .critical:
             return .cold
+        }
+    }
+
+    /// Phase 3e vector derivation. Combines the dominant Phase 3 signal with
+    /// the legacy `decayRisk` so a person with a critical decay reads as
+    /// `.cold` regardless of dominantSignal, but a contact-driven-ignored
+    /// person who isn't yet decay-critical still escalates above the legacy
+    /// mapping that would have called them merely `.cooling`.
+    ///
+    /// Mode is consulted only indirectly — `decayRisk` and `dominantSignal`
+    /// are already mode-aware (Covenant collapses both to `.none`), so this
+    /// function does not need to branch on mode itself.
+    private func vectorHealthLevel(_ health: RelationshipHealth, mode: Mode) -> GraphNode.HealthLevel {
+        if health.decayRisk == .critical { return .cold }
+        switch health.dominantSignal {
+        case .negativeBalance:
+            return health.decayRisk == .high ? .cold : .atRisk
+        case .contactDrivenIgnored:
+            return .atRisk
+        case .drift, .userDrivenAsymmetry:
+            return health.decayRisk == .high ? .atRisk : .cooling
+        case .none:
+            return legacyHealthLevel(health)
         }
     }
 }
