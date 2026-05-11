@@ -124,7 +124,7 @@ struct StreakTrackingSection: View {
         var clientWeeks = Set<Date>()
         for item in allEvidence {
             let hasClient = item.linkedPeople.contains { person in
-                person.roleBadges.contains("Client")
+                PersonStageResolver.isClient(forPerson: person.id)
             }
             if hasClient, let weekStart = calendar.dateInterval(of: .weekOfYear, for: item.occurredAt)?.start {
                 clientWeeks.insert(weekStart)

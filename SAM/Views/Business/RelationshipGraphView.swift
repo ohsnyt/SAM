@@ -2639,7 +2639,7 @@ struct RelationshipGraphView: View {
                     ($0.sourceID == node.id || $0.targetID == node.id) && $0.edgeType == .recruitingTree
                 }
                 if !recruitEdges.isEmpty {
-                    let stageColor: Color = node.roleBadges.contains("Agent") ? .green : .blue
+                    let stageColor: Color = PersonStageResolver.isAgent(forPerson: node.id) ? .green : .blue
                     let stageRadius = radius + 3
                     let stageRect = CGRect(
                         x: sp.x - stageRadius,

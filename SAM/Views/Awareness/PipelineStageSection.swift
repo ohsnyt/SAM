@@ -18,15 +18,15 @@ struct PipelineStageSection: View {
     // MARK: - Computed pipeline data
 
     private var leads: [SamPerson] {
-        allPeople.filter { $0.roleBadges.contains("Lead") && !$0.isArchived }
+        allPeople.filter { PersonStageResolver.isLead(forPerson: $0.id) && !$0.isArchived }
     }
 
     private var applicants: [SamPerson] {
-        allPeople.filter { $0.roleBadges.contains("Applicant") && !$0.isArchived }
+        allPeople.filter { PersonStageResolver.isApplicant(forPerson: $0.id) && !$0.isArchived }
     }
 
     private var clients: [SamPerson] {
-        allPeople.filter { $0.roleBadges.contains("Client") && !$0.isArchived }
+        allPeople.filter { PersonStageResolver.isClient(forPerson: $0.id) && !$0.isArchived }
     }
 
     private var totalCount: Int {

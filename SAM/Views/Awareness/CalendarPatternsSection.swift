@@ -168,7 +168,7 @@ struct CalendarPatternsSection: View {
 
         let clientMeetings = events.filter { event in
             event.linkedPeople.contains { person in
-                person.roleBadges.contains("Client")
+                PersonStageResolver.isClient(forPerson: person.id)
             }
         }
 

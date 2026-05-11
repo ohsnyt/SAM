@@ -46,7 +46,7 @@ struct ReferralTrackingSection: View {
 
         return people
             .filter { person in
-                person.roleBadges.contains("Client")
+                PersonStageResolver.isClient(forPerson: person.id)
                 && person.referrals.isEmpty
                 && earliestEvidenceDate(for: person).map { $0 <= sixMonthsAgo } == true
             }

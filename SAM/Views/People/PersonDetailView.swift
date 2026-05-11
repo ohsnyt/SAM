@@ -890,7 +890,11 @@ struct PersonDetailView: View {
     }
 
     private func notifyBadgeChange() {
-        // Auto-assign Prospect recruiting stage when Agent role is added
+        // Write-through from badge UI intent → canonical RecruitingStage.
+        // The badge here is the user's just-applied intent signal (they
+        // checked "Agent" in the badge editor); the if-guard prevents a
+        // duplicate stage record. Readers must use PersonStageResolver,
+        // not this badge check (Phase 8).
         if person.roleBadges.contains("Agent"), recruitingStage == nil {
             do {
                 try PipelineRepository.shared.upsertRecruitingStage(
@@ -1490,13 +1494,18 @@ struct PersonDetailView: View {
                 socialPlatformSection
             }
 
-            // Recruiting Pipeline (Agent badge)
-            if person.roleBadges.contains("Agent") {
+            // Recruiting Pipeline — gate on canonical recruiting stage
+            // (Phase 8). The badge is display-only; the existence of a
+            // RecruitingStage record is the authoritative signal.
+            if PersonStageResolver.isAgent(forPerson: person.id) {
                 recruitingStageSection
             }
 
-            // Production (Client or Applicant badge)
-            if person.roleBadges.contains("Client") || person.roleBadges.contains("Applicant") {
+            // Production — gate on canonical client-funnel placement
+            // (Phase 8). Production records belong to Clients/Applicants;
+            // we read the most-recent StageTransition, not the badge label.
+            if let stage = PersonStageResolver.currentClientStage(forPerson: person.id),
+               stage == "Client" || stage == "Applicant" {
                 productionSection
             }
 
