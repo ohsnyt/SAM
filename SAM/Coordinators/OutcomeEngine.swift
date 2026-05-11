@@ -2238,11 +2238,19 @@ final class OutcomeEngine {
                         notes. Never assume or invent topics not supported by the context.
                         """
 
-                    let systemInstruction = """
+                    var systemInstruction = """
                         Respond with ONLY the next step — one short, actionable sentence.
                         Do not include any preamble, formatting, or explanation.
                         Base your suggestion strictly on the topics present in the context provided.
                         """
+
+                    // Phase 7: tone steer from the person's trust currency so
+                    // a warmth-currency Covenant gets connection-led prompts
+                    // and a competence-currency Funnel gets insight-led ones.
+                    if let personID = freshOutcome.linkedPerson?.id {
+                        let currency = PersonModeResolver.trustCurrency(for: personID)
+                        systemInstruction = currency.coachingTone + "\n\n" + systemInstruction
+                    }
 
                     do {
                         let nextStep = try await AIService.shared.generateNarrative(
@@ -2367,11 +2375,17 @@ final class OutcomeEngine {
                 """
         }
 
-        // Phase 2: Mode-aware tone hint. Prepends a one-line voice steer based
-        // on the person's effective Mode (active Trajectory → Sphere default).
+        // Phase 2/7: Mode + TrustCurrency tone hints. Prepend a voice steer
+        // based on the person's effective Mode (active Trajectory → Sphere
+        // default) plus the trust currency the relationship runs on. Together
+        // they make a warmth-currency Covenant sound different from a
+        // competence-currency Funnel.
         if let personID = person?.id {
             let mode = PersonModeResolver.effectiveMode(for: personID)
-            systemInstruction = mode.coachingToneHint + "\n\n" + systemInstruction
+            let currency = PersonModeResolver.trustCurrency(for: personID)
+            systemInstruction = mode.coachingToneHint
+                + "\n" + currency.coachingTone
+                + "\n\n" + systemInstruction
         }
 
         do {

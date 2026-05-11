@@ -46,6 +46,7 @@ enum PersonModeResolver {
     /// OutcomeEngine, PersonDetailView, etc., so the unbatched cost is O(N²).
     private static var cache: [UUID: Mode] = [:]
     private static var cadenceCache: [UUID: Int] = [:]
+    private static var trustCache: [UUID: TrustCurrency] = [:]
     private static var cacheBuilt = false
 
     /// Drop the caches. Call after any mutation to Sphere / PersonSphereMembership /
@@ -55,6 +56,7 @@ enum PersonModeResolver {
     static func invalidateCache() {
         cache.removeAll(keepingCapacity: true)
         cadenceCache.removeAll(keepingCapacity: true)
+        trustCache.removeAll(keepingCapacity: true)
         cacheBuilt = false
     }
 
@@ -83,6 +85,16 @@ enum PersonModeResolver {
         return cadenceCache[personID]
     }
 
+    /// Trust currency for the person, derived from their most-restrictive
+    /// active Trajectory's `trustCurrency`. Falls back to the per-Mode default
+    /// when no active Trajectory exists. Phase 7 of the relationship-model
+    /// refactor — drives coaching tone selection.
+    static func trustCurrency(for personID: UUID) -> TrustCurrency {
+        if !cacheBuilt { rebuildCache() }
+        if let cached = trustCache[personID] { return cached }
+        return TrustCurrency.defaultFor(mode: effectiveMode(for: personID))
+    }
+
     // MARK: - Cache build
 
     private static func rebuildCache() {
@@ -96,11 +108,17 @@ enum PersonModeResolver {
         if let entries = try? PersonTrajectoryRepository.shared.fetchAllActive() {
             for entry in entries {
                 guard let pid = entry.person?.id,
-                      let mode = entry.trajectory?.mode else { continue }
+                      let trajectory = entry.trajectory else { continue }
+                let mode = trajectory.mode
                 if let existing = cache[pid] {
-                    cache[pid] = moreRestrictive(existing, mode)
+                    let winning = moreRestrictive(existing, mode)
+                    cache[pid] = winning
+                    if winning == mode {
+                        trustCache[pid] = trajectory.trustCurrency
+                    }
                 } else {
                     cache[pid] = mode
+                    trustCache[pid] = trajectory.trustCurrency
                 }
                 let candidate = entry.cadenceDaysOverride
                     ?? entry.currentStage?.stageCadenceDaysOverride
