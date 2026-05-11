@@ -278,14 +278,16 @@ This is the core measurement change from `relationship_synthesis.md` Findings 2�
 
 **Goal:** retire the redundant old fields once new ones are battle-tested.
 
-**Scope:**
+**Scope (see `phase0_audit.md` §2 for the verified site list — 18+ conflation reads, larger than the initial 5-site estimate):**
 
-- After two releases with the new model in production, audit reads of `roleBadges` for stage-implication usage. Migrate any that conflate badge with stage to use `PersonTrajectoryEntry` instead.
+- **Phase 8a — Coordinator/repository conflation rewrites (12 sites).** Rewrite reads of `roleBadges.contains("Lead"/"Applicant"/"Client"/"Agent")` in MeetingPrepCoordinator, PipelineTracker, OutcomeEngine (×7), RoleRecruitingCoordinator, RelationshipGraphCoordinator+Lens, and PipelineRepository to read from `PersonTrajectoryEntry` (current stage) and `StageTransition` (historical).
+- **Phase 8b — View conflation rewrites (6 sites).** PersonDetailView (×3), RelationshipGraphView, PipelineStageSection, ReferralTrackingSection, CalendarPatternsSection, StreakTrackingSection — same rewrites, view-side.
 - Deprecate `pipelineStage` field on Person in favor of `PersonTrajectoryEntry.currentStageID`. Keep the field but mark deprecated.
 - Remove shadow-mode comparison telemetry from Phase 3.
 
 **Exit criteria:**
 - Single canonical source for "where is this person on a Trajectory."
+- All 18+ conflation reads gone; `roleBadges` reads only used for display.
 
 ---
 
@@ -334,7 +336,7 @@ This is the core measurement change from `relationship_synthesis.md` Findings 2�
 | 5 | New tab (multi-Sphere users) | Yes | 5–8 days | Phase 1 |
 | 6 | Briefing restructure (multi-Sphere) | Yes | 4–6 days | Phase 5 |
 | 7 | Tone shift; new ratios | Yes | 3–5 days | Phase 3 |
-| 8 | None | Yes | 2 days | All prior |
+| 8 | None | Yes | 4–5 days (revised — see phase0_audit) | All prior |
 
 Total: roughly 4–6 weeks of focused engineering, depending on whether phases run sequentially or some are parallelized.
 
