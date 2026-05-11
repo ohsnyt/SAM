@@ -40,6 +40,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     case promptLab = "Prompt Lab"
     // Business
     case businessType = "Business Type"
+    case spheres = "Spheres"
     case compliance = "Compliance"
     case roles = "Roles"
     case tripsAndMileage = "Trips & Mileage"
@@ -64,6 +65,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .dictationVoice: return "mic.fill"
         case .promptLab: return "wand.and.stars"
         case .businessType: return "briefcase"
+        case .spheres: return "circle.grid.3x3.fill"
         case .compliance: return "checkmark.shield"
         case .roles: return "person.badge.key"
         case .tripsAndMileage: return "car.fill"
@@ -76,7 +78,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .personalization, .appearance, .security, .companionPhone: return "General"
         case .contacts, .calendar, .mail, .communications, .clipboardCapture: return "Data"
         case .coaching, .briefings, .dictationVoice, .promptLab: return "AI"
-        case .businessType, .compliance, .roles, .tripsAndMileage: return "Business"
+        case .businessType, .spheres, .compliance, .roles, .tripsAndMileage: return "Business"
         case .diagnostics: return "Advanced"
         }
     }
@@ -148,6 +150,8 @@ struct SettingsView: View {
             PromptLabSettingsPane()
         case .businessType:
             BusinessTypeSettingsPane()
+        case .spheres:
+            SpheresManagementPane()
         case .compliance:
             ComplianceSettingsPane()
         case .roles:
