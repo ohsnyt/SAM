@@ -52,6 +52,57 @@ public enum TrajectoryExitReason: String, Codable, Sendable, CaseIterable {
     }
 }
 
+// MARK: - TrustCurrency
+
+/// What kind of trust this Trajectory is primarily built on. Steers coaching
+/// tone: a Funnel earning *competence* trust gets insight-driven prompts;
+/// a Covenant relying on *warmth* gets connection-driven prompts. Phase 7 of
+/// the relationship-model refactor.
+public enum TrustCurrency: String, Codable, Sendable, CaseIterable {
+    /// Connection and care — "I matter to you."
+    case warmth      = "warmth"
+    /// Expertise and judgment — "You know what you're doing."
+    case competence  = "competence"
+    /// Showing up consistently — "You do what you say."
+    case reliability = "reliability"
+    /// Combination of warmth + competence; default for long Stewardship arcs.
+    case both        = "both"
+
+    public var displayName: String {
+        switch self {
+        case .warmth:      return "Warmth"
+        case .competence:  return "Competence"
+        case .reliability: return "Reliability"
+        case .both:        return "Warmth + Competence"
+        }
+    }
+
+    /// One-line tone direction for coaching prompts.
+    public var coachingTone: String {
+        switch self {
+        case .warmth:
+            return "Lead with connection and personal care; reference shared context, ask about their world."
+        case .competence:
+            return "Lead with insight and clarity; demonstrate expertise, offer the next useful step."
+        case .reliability:
+            return "Lead with follow-through; reference prior commitments and close loops you've opened."
+        case .both:
+            return "Balance care with expertise; show you remember the person and the work."
+        }
+    }
+
+    /// Default currency for a given Mode (per the Phase 7 plan).
+    public static func defaultFor(mode: Mode) -> TrustCurrency {
+        switch mode {
+        case .funnel:      return .competence
+        case .stewardship: return .both
+        case .covenant:    return .warmth
+        case .campaign:    return .competence
+        case .service:     return .reliability
+        }
+    }
+}
+
 // MARK: - Trajectory
 
 /// A named arc that people move along — the unit-of-progression inside a Sphere.
@@ -72,6 +123,11 @@ public final class Trajectory {
 
     /// Raw storage for Mode enum.
     public var modeRaw: String
+
+    /// Raw storage for TrustCurrency enum. Defaults to the Mode's currency
+    /// (set in init) and may be overridden per Trajectory. Phase 7 of the
+    /// relationship-model refactor.
+    public var trustCurrencyRaw: String = TrustCurrency.competence.rawValue
 
     /// Soft-archive flag. Archived Trajectories are hidden from active UI
     /// but preserve their stages and historical entries.
@@ -105,6 +161,12 @@ public final class Trajectory {
         set { modeRaw = newValue.rawValue }
     }
 
+    @Transient
+    public var trustCurrency: TrustCurrency {
+        get { TrustCurrency(rawValue: trustCurrencyRaw) ?? TrustCurrency.defaultFor(mode: mode) }
+        set { trustCurrencyRaw = newValue.rawValue }
+    }
+
     /// True when `completedAt` has been set.
     @Transient
     public var isClosed: Bool {
@@ -116,6 +178,7 @@ public final class Trajectory {
         sphere: Sphere?,
         name: String,
         mode: Mode,
+        trustCurrency: TrustCurrency? = nil,
         archived: Bool = false,
         createdAt: Date = .now,
         completedAt: Date? = nil,
@@ -125,6 +188,7 @@ public final class Trajectory {
         self.sphere = sphere
         self.name = name
         self.modeRaw = mode.rawValue
+        self.trustCurrencyRaw = (trustCurrency ?? TrustCurrency.defaultFor(mode: mode)).rawValue
         self.archived = archived
         self.createdAt = createdAt
         self.completedAt = completedAt
