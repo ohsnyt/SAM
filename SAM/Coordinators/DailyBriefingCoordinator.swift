@@ -317,6 +317,16 @@ final class DailyBriefingCoordinator {
             let reachingForYou = perf.measureSync("Briefing.gatherReachingForYou") { gatherReachingForYou() }
             logger.info("⏱️ gatherReachingForYou: \(self.formatElapsed(briefingClock.now - phaseStart)) (\(reachingForYou.count) items)")
 
+            phaseStart = briefingClock.now
+            let sphereSections = perf.measureSync("Briefing.gatherSphereSections") {
+                gatherSphereSections(
+                    priorityActions: priorityActions,
+                    followUps: followUps,
+                    reachingForYou: reachingForYou
+                )
+            }
+            logger.info("⏱️ gatherSphereSections: \(self.formatElapsed(briefingClock.now - phaseStart)) (\(sphereSections.count) sections)")
+
             // Stage 2: Goal progress
             generationStageLabel = "Calculating goal progress..."
             await Task.yield()
@@ -333,7 +343,8 @@ final class DailyBriefingCoordinator {
                 followUps: followUps,
                 lifeEventOutreach: lifeEvents,
                 tomorrowPreview: tomorrowPreview,
-                reachingForYou: reachingForYou
+                reachingForYou: reachingForYou,
+                sphereSections: sphereSections
             )
             briefing.meetingCount = calendarItems.count
 
@@ -1616,6 +1627,85 @@ final class DailyBriefingCoordinator {
             (lhs.daysSinceLastOutbound ?? 0) > (rhs.daysSinceLastOutbound ?? 0)
         }.prefix(5).map { $0 }
     }
+
+    /// Per-Sphere roll-up of the morning briefing. Returns `[]` when the user
+     /// has fewer than 2 active Spheres so single-Sphere setups render
+     /// unchanged. For multi-Sphere setups, buckets the already-computed
+     /// priority actions, follow-ups, and reaching-for-you signals by Sphere
+     /// membership and adds a short trajectory-status string per Sphere.
+     private func gatherSphereSections(
+         priorityActions: [BriefingAction],
+         followUps: [BriefingFollowUp],
+         reachingForYou: [BriefingReachingForYou]
+     ) -> [BriefingSphereSection] {
+         let spheres = (try? SphereRepository.shared.fetchAll()) ?? []
+         guard spheres.count >= 2 else { return [] }
+
+         let memberships = (try? SphereRepository.shared.fetchAllMemberships()) ?? []
+         var membersBySphere: [UUID: Set<UUID>] = [:]
+         for m in memberships {
+             guard let sid = m.sphere?.id, let pid = m.person?.id else { continue }
+             membersBySphere[sid, default: []].insert(pid)
+         }
+
+         let activeEntries = (try? PersonTrajectoryRepository.shared.fetchAllActive()) ?? []
+         var entriesByTrajectory: [UUID: [PersonTrajectoryEntry]] = [:]
+         var trajectorySphere: [UUID: UUID] = [:]
+         var trajectoryName: [UUID: String] = [:]
+         for entry in activeEntries {
+             guard let traj = entry.trajectory, !traj.archived, !traj.isClosed else { continue }
+             entriesByTrajectory[traj.id, default: []].append(entry)
+             if let sid = traj.sphere?.id { trajectorySphere[traj.id] = sid }
+             trajectoryName[traj.id] = traj.name
+         }
+
+         var sections: [BriefingSphereSection] = []
+         for sphere in spheres {
+             let memberIDs = membersBySphere[sphere.id] ?? []
+
+             let actions = priorityActions
+                 .filter { $0.personID.map(memberIDs.contains) ?? false }
+                 .prefix(2)
+                 .map { $0 }
+
+             let follows = followUps
+                 .filter { $0.personID.map(memberIDs.contains) ?? false }
+                 .prefix(2)
+                 .map { $0 }
+
+             let reaching = reachingForYou
+                 .filter { $0.personID.map(memberIDs.contains) ?? false }
+                 .count
+
+             let trajectoryStatus: String? = {
+                 let trajIDs = trajectorySphere.filter { $0.value == sphere.id }.map(\.key)
+                 let parts: [String] = trajIDs.compactMap { tid in
+                     let count = entriesByTrajectory[tid]?.count ?? 0
+                     guard count > 0, let name = trajectoryName[tid] else { return nil }
+                     return "\(count) in \(name)"
+                 }
+                 guard !parts.isEmpty else { return nil }
+                 return parts.sorted().joined(separator: " · ")
+             }()
+
+             // Skip empty Spheres — no actions, no follow-ups, no reaching,
+             // no trajectory activity. Better to omit than show a blank card.
+             if actions.isEmpty, follows.isEmpty, reaching == 0, trajectoryStatus == nil {
+                 continue
+             }
+
+             sections.append(BriefingSphereSection(
+                 sphereID: sphere.id,
+                 sphereName: sphere.name,
+                 accentColorRaw: sphere.accentColorRaw,
+                 topActions: actions,
+                 topFollowUps: follows,
+                 reachingForYouCount: reaching,
+                 trajectoryStatus: trajectoryStatus
+             ))
+         }
+         return sections
+     }
 
     private func gatherLifeEvents() -> [BriefingLifeEvent] {
         guard let allNotes = try? notesRepo.fetchAll() else { return [] }
