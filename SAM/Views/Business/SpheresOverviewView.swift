@@ -46,6 +46,11 @@ struct SpheresOverviewView: View {
             }
         }
         .task { refresh() }
+        .sheet(isPresented: $showNewSphereSheet) {
+            NewSphereSheet { _ in
+                refresh()
+            }
+        }
     }
 
     // MARK: - Header
@@ -61,8 +66,6 @@ struct SpheresOverviewView: View {
                 Label("New Sphere", systemImage: "plus")
             }
             .buttonStyle(.bordered)
-            .disabled(true)
-            .help("Coming soon — Phase 5b")
         }
     }
 
