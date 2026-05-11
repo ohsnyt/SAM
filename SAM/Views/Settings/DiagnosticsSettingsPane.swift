@@ -28,6 +28,12 @@ struct DiagnosticsSettingsPane: View {
     // Performance — Phase 1a hang watchdog
     @State private var recentHangs: [HangReport] = []
 
+    // Phase 3f — HealthLevel vector vs. legacy shadow report
+    @State private var healthShadow: HealthLevelShadowReport?
+    @State private var isRunningShadow = false
+    @State private var healthShadowError: String?
+    @State private var vectorFlagEnabled: Bool = RelationshipGraphCoordinator.isVectorHealthLevelEnabled
+
     var body: some View {
         Form {
             Section {
@@ -64,6 +70,11 @@ struct DiagnosticsSettingsPane: View {
 
             Section {
                 performanceBlock
+                    .padding()
+            }
+
+            Section {
+                healthShadowBlock
                     .padding()
             }
         }
@@ -358,6 +369,134 @@ struct DiagnosticsSettingsPane: View {
 
     private func reloadHangs() {
         recentHangs = HangReportWriter.loadRecent(limit: 10)
+    }
+
+    // MARK: HealthLevel shadow report (Phase 3f)
+
+    private var healthShadowBlock: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("HealthLevel Shadow Report", systemImage: "waveform.path.ecg")
+                    .samFont(.headline)
+
+                Text("Compares the legacy decay-only HealthLevel against the new vector derivation (drift + initiation + P/N + dominant signal). Run this before turning the vector engine on for real — divergences flag people whose at-a-glance health bucket would change.")
+                    .samFont(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Toggle(isOn: Binding(
+                get: { vectorFlagEnabled },
+                set: { newValue in
+                    vectorFlagEnabled = newValue
+                    UserDefaults.standard.set(newValue, forKey: RelationshipGraphCoordinator.healthLevelVectorFlagKey)
+                }
+            )) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Use vector HealthLevel everywhere")
+                    Text("Off by default. Leave off until you've reviewed the shadow report and the divergences look reasonable.")
+                        .samFont(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            HStack(spacing: 12) {
+                Button {
+                    runShadowReport()
+                } label: {
+                    if isRunningShadow {
+                        HStack(spacing: 6) {
+                            ProgressView().scaleEffect(0.7)
+                            Text("Running…")
+                        }
+                    } else {
+                        Label("Run Shadow Report", systemImage: "play.fill")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isRunningShadow)
+
+                Spacer()
+
+                if let healthShadow {
+                    Text("\(healthShadow.agreementCount)/\(healthShadow.totalPeople) agree (\(String(format: "%.1f", healthShadow.agreementPercent))%)")
+                        .samFont(.caption)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+            }
+
+            if let healthShadowError {
+                Text(healthShadowError)
+                    .samFont(.caption)
+                    .foregroundStyle(.red)
+            }
+
+            if let healthShadow {
+                if healthShadow.divergences.isEmpty {
+                    Text("No divergences — the new vector engine agrees with the legacy mapping for every person.")
+                        .samFont(.caption)
+                        .foregroundStyle(.green)
+                } else {
+                    divergenceTable(for: healthShadow)
+                }
+            }
+        }
+    }
+
+    private func divergenceTable(for report: HealthLevelShadowReport) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("Person").bold()
+                Spacer()
+                Text("Mode").bold().frame(width: 90, alignment: .leading)
+                Text("Legacy").bold().frame(width: 70, alignment: .leading)
+                Text("Vector").bold().frame(width: 70, alignment: .leading)
+                Text("Signal").bold().frame(width: 140, alignment: .leading)
+            }
+            .samFont(.caption)
+            .padding(.vertical, 4)
+
+            Divider()
+
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(report.divergences) { row in
+                        HStack {
+                            Text(row.personName).lineLimit(1)
+                            Spacer()
+                            Text(row.mode.rawValue.capitalized)
+                                .frame(width: 90, alignment: .leading)
+                                .foregroundStyle(.secondary)
+                            Text(row.legacy.rawValue)
+                                .frame(width: 70, alignment: .leading)
+                            Text(row.vector.rawValue)
+                                .frame(width: 70, alignment: .leading)
+                                .bold()
+                            Text(row.dominantSignal.label)
+                                .frame(width: 140, alignment: .leading)
+                                .foregroundStyle(.secondary)
+                        }
+                        .samFont(.caption)
+                        .padding(.vertical, 2)
+                        Divider()
+                    }
+                }
+            }
+            .frame(maxHeight: 240)
+        }
+    }
+
+    private func runShadowReport() {
+        isRunningShadow = true
+        healthShadowError = nil
+        Task { @MainActor in
+            do {
+                healthShadow = try await HealthLevelShadowReportService.runReport()
+            } catch {
+                healthShadowError = "Shadow report failed: \(error.localizedDescription)"
+            }
+            isRunningShadow = false
+        }
     }
 
     private func openDiagnosticsFolder() {

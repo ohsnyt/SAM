@@ -69,6 +69,17 @@ enum HealthSignal: String, Sendable {
     case contactDrivenIgnored
     /// Sentiment-tagged interactions have skewed negative below the Mode threshold.
     case negativeBalance
+
+    /// Short human label used in diagnostics tables and coaching surfaces.
+    var label: String {
+        switch self {
+        case .none:                  return "—"
+        case .drift:                 return "Drift"
+        case .userDrivenAsymmetry:   return "User-driven"
+        case .contactDrivenIgnored:  return "Reaching for you"
+        case .negativeBalance:       return "Negative balance"
+        }
+    }
 }
 
 /// Overall decay risk assessment combining overdue ratio + velocity trend.

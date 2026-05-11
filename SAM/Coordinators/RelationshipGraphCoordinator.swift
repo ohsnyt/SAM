@@ -1444,6 +1444,16 @@ final class RelationshipGraphCoordinator {
         return legacyHealthLevel(health)
     }
 
+    /// Phase 3f shadow-mode hooks. Internal so HealthLevelShadowReportService
+    /// can request both derivations without depending on the feature flag.
+    func legacyHealthLevelForShadow(_ health: RelationshipHealth) -> GraphNode.HealthLevel {
+        legacyHealthLevel(health)
+    }
+
+    func vectorHealthLevelForShadow(_ health: RelationshipHealth, mode: Mode) -> GraphNode.HealthLevel {
+        vectorHealthLevel(health, mode: mode)
+    }
+
     /// Pre-refactor mapping — decayRisk only. Retained verbatim so the
     /// feature flag fully recovers the old behavior.
     private func legacyHealthLevel(_ health: RelationshipHealth) -> GraphNode.HealthLevel {
