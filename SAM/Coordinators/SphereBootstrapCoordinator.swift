@@ -36,6 +36,11 @@ enum SphereBootstrapCoordinator {
         ("Client", true),
     ]
 
+    /// How often to yield the main actor while seeding memberships. With
+    /// ~hundreds of contacts the tight loop otherwise occupies the main
+    /// runloop long enough to drop the first paint and any user input.
+    private static let yieldEveryNPersons = 10
+
     /// Run the bootstrap if it has not been completed.
     ///
     /// Safe to call on every launch — uses UserDefaults to skip after the
@@ -46,6 +51,9 @@ enum SphereBootstrapCoordinator {
     /// Reads the user's PracticeType to decide whether to seed a Funnel-mode
     /// Client Pipeline Trajectory with stages. General users get an empty
     /// Sphere; they'll define Trajectories in Phase 5+.
+    ///
+    /// Stays on the main actor (repositories require it) but yields
+    /// periodically so the UI stays responsive during the per-person loop.
     static func runIfNeeded() async {
         guard !UserDefaults.standard.bool(forKey: migrationDoneKey) else { return }
 
@@ -72,6 +80,7 @@ enum SphereBootstrapCoordinator {
                 defaultCadenceDays: nil,
                 isBootstrapDefault: true
             )
+            await Task.yield()
 
             // 2. For WFG, create the Funnel-mode Client Pipeline Trajectory.
             //    General users start with an empty Sphere; they'll create
@@ -97,16 +106,19 @@ enum SphereBootstrapCoordinator {
                         }
                     }
                 }
+                await Task.yield()
             }
 
             // 3. Seed every existing Person with a Sphere membership and,
             //    where applicable, a PersonTrajectoryEntry on the Client Pipeline.
             let context = ModelContext(SAMModelContainer.shared)
             let people = try context.fetch(FetchDescriptor<SamPerson>())
+            let totalPeople = people.count
+            logger.info("Sphere bootstrap seeding \(totalPeople) persons")
             var membershipsCreated = 0
             var entriesCreated = 0
 
-            for person in people {
+            for (idx, person) in people.enumerated() {
                 try SphereRepository.shared.addMember(
                     personID: person.id,
                     sphereID: sphere.id
@@ -125,9 +137,19 @@ enum SphereBootstrapCoordinator {
                     )
                     entriesCreated += 1
                 }
+
+                // Yield to the main runloop so launch UI can paint and
+                // accept input while seeding runs. Bursts of ~10 persons
+                // are fast enough not to feel choppy on the first paint.
+                if (idx + 1) % yieldEveryNPersons == 0 {
+                    await Task.yield()
+                }
             }
 
             UserDefaults.standard.set(true, forKey: migrationDoneKey)
+            // PersonModeResolver may have observed an empty store before
+            // bootstrap ran — drop its cache so the next read sees seeded data.
+            PersonModeResolver.invalidateCache()
             logger.notice("Sphere bootstrap complete — \(membershipsCreated) memberships, \(entriesCreated) trajectory entries")
         } catch {
             logger.error("Sphere bootstrap failed: \(error.localizedDescription)")

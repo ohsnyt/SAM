@@ -27,33 +27,81 @@ private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "Per
 @MainActor
 enum PersonModeResolver {
 
+    // MARK: - Session cache
+
+    /// Mode keyed by personID. Lazily rebuilt from the repositories on first
+    /// access (or after invalidation) using two bulk fetches instead of two
+    /// per-person fetches — `computeHealth` runs once per person in briefings,
+    /// OutcomeEngine, PersonDetailView, etc., so the unbatched cost is O(N²).
+    private static var cache: [UUID: Mode] = [:]
+    private static var cacheBuilt = false
+
+    /// Drop the cache. Call after any mutation to Sphere / PersonSphereMembership /
+    /// Trajectory / PersonTrajectoryEntry. The bootstrap calls this once it has
+    /// finished seeding so the first real read sees populated state. Cheap —
+    /// the next read rebuilds in two main-actor fetches.
+    static func invalidateCache() {
+        cache.removeAll(keepingCapacity: true)
+        cacheBuilt = false
+    }
+
+    // MARK: - Resolution
+
     /// Resolve the effective Mode for a person. See file header for resolution order.
     /// Returns `.stewardship` as a safe default if any lookup throws or the person
     /// belongs to nothing — the caller treats this as "no special handling".
     static func effectiveMode(for personID: UUID) -> Mode {
-        // 1. Active Trajectory entries — pick the most restrictive Mode.
-        if let active = try? PersonTrajectoryRepository.shared.activeEntries(forPerson: personID),
-           !active.isEmpty {
-            let modes = active.compactMap { $0.trajectory?.mode }
-            if let resolved = mostRestrictive(modes) {
-                return resolved
-            }
-        }
-
-        // 2. Primary Sphere defaultMode.
-        if let spheres = try? SphereRepository.shared.spheres(forPerson: personID),
-           let primary = spheres.first {
-            return primary.defaultMode
-        }
-
-        // 3. Defensive default.
-        return .stewardship
+        if !cacheBuilt { rebuildCache() }
+        return cache[personID] ?? .stewardship
     }
 
     /// Convenience for the common case: "should cadence-decay alerts fire for this person?"
     static func generatesCadenceAlerts(for personID: UUID) -> Bool {
         effectiveMode(for: personID).generatesCadenceAlerts
     }
+
+    // MARK: - Cache build
+
+    private static func rebuildCache() {
+        cacheBuilt = true
+        cache.removeAll(keepingCapacity: true)
+
+        // 1. Active Trajectory entries: most-restrictive Mode wins per person.
+        if let entries = try? PersonTrajectoryRepository.shared.fetchAllActive() {
+            for entry in entries {
+                guard let pid = entry.person?.id,
+                      let mode = entry.trajectory?.mode else { continue }
+                if let existing = cache[pid] {
+                    cache[pid] = moreRestrictive(existing, mode)
+                } else {
+                    cache[pid] = mode
+                }
+            }
+        }
+
+        // 2. Sphere default fallback for persons with no active Trajectory entry.
+        if let memberships = try? SphereRepository.shared.fetchAllMemberships() {
+            // Group by person, keep the lowest-sortOrder sphere as primary.
+            var primarySphereByPerson: [UUID: Sphere] = [:]
+            for membership in memberships {
+                guard let pid = membership.person?.id,
+                      let sphere = membership.sphere,
+                      !sphere.archived else { continue }
+                if let current = primarySphereByPerson[pid] {
+                    if sphere.sortOrder < current.sortOrder {
+                        primarySphereByPerson[pid] = sphere
+                    }
+                } else {
+                    primarySphereByPerson[pid] = sphere
+                }
+            }
+            for (pid, sphere) in primarySphereByPerson where cache[pid] == nil {
+                cache[pid] = sphere.defaultMode
+            }
+        }
+    }
+
+    // MARK: - Mode restrictiveness
 
     /// Order in which Modes override each other when a person is on multiple
     /// Trajectories. Lower index = higher priority. Covenant first because the
@@ -62,11 +110,9 @@ enum PersonModeResolver {
         .covenant, .service, .stewardship, .campaign, .funnel
     ]
 
-    private static func mostRestrictive(_ modes: [Mode]) -> Mode? {
-        guard !modes.isEmpty else { return nil }
-        for candidate in restrictivenessOrder where modes.contains(candidate) {
-            return candidate
-        }
-        return modes.first
+    private static func moreRestrictive(_ a: Mode, _ b: Mode) -> Mode {
+        let ai = restrictivenessOrder.firstIndex(of: a) ?? Int.max
+        let bi = restrictivenessOrder.firstIndex(of: b) ?? Int.max
+        return ai <= bi ? a : b
     }
 }

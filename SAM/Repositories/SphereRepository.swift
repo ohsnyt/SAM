@@ -205,6 +205,15 @@ final class SphereRepository {
         try membership(personID: personID, sphereID: sphereID) != nil
     }
 
+    /// All membership rows in the store. Used by bulk resolvers
+    /// (e.g., PersonModeResolver) to avoid N per-person fetches during
+    /// briefing/health refreshes. Caller filters as needed.
+    func fetchAllMemberships() throws -> [PersonSphereMembership] {
+        guard let context else { throw RepositoryError.notConfigured }
+        let descriptor = FetchDescriptor<PersonSphereMembership>()
+        return try context.fetch(descriptor)
+    }
+
     private func membership(personID: UUID, sphereID: UUID) throws -> PersonSphereMembership? {
         guard let context else { throw RepositoryError.notConfigured }
         let descriptor = FetchDescriptor<PersonSphereMembership>()

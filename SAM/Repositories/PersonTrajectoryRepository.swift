@@ -155,6 +155,16 @@ final class PersonTrajectoryRepository {
         return entries.contains { $0.trajectory?.id == trajectoryID }
     }
 
+    /// All active entries across every person and Trajectory. Used by bulk
+    /// resolvers (e.g., PersonModeResolver) to avoid N per-person fetches
+    /// during briefing/health refreshes.
+    func fetchAllActive() throws -> [PersonTrajectoryEntry] {
+        guard let context else { throw RepositoryError.notConfigured }
+        let descriptor = FetchDescriptor<PersonTrajectoryEntry>()
+        let all = try context.fetch(descriptor)
+        return all.filter { $0.isActive }
+    }
+
     // MARK: - Helpers
 
     private func resolvePerson(id: UUID) throws -> SamPerson? {
