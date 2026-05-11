@@ -414,9 +414,18 @@ final class MeetingPrepCoordinator {
             cadenceDays = nil
         }
 
-        // --- Effective cadence (user override or computed) ---
+        // --- Effective cadence ---
+        // Phase 3b: trajectory-derived cadence (when the user has explicitly
+        // set an entry, stage, or Sphere cadence) wins over the person-level
+        // override and the computed personal baseline. Mode.defaultCadenceDays
+        // is intentionally excluded inside PersonModeResolver so the
+        // bootstrap-created Funnel does not silently override Sarah's
+        // existing clients' personal baseline rhythms.
+        let trajectoryCadence = PersonModeResolver.trajectoryCadenceDays(for: person.id)
         let effectiveCadenceDays: Int?
-        if let override = person.preferredCadenceDays, override > 0 {
+        if let trajectoryCadence {
+            effectiveCadenceDays = trajectoryCadence
+        } else if let override = person.preferredCadenceDays, override > 0 {
             effectiveCadenceDays = override
         } else {
             effectiveCadenceDays = cadenceDays
