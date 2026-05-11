@@ -54,6 +54,23 @@ struct RoleVelocityConfig: Sendable {
     }
 }
 
+/// The signal that currently dominates a person's Health vector. Phase 3
+/// introduces the vector representation; the briefing surfaces the dominant
+/// signal so coaching reads as a single coherent diagnosis rather than a
+/// dashboard of disconnected numbers.
+enum HealthSignal: String, Sendable {
+    case none
+    /// Current gap is far above this person's personal baseline cadence.
+    case drift
+    /// User has been the sole driver (>0.85 outbound share) — coach to ease off.
+    case userDrivenAsymmetry
+    /// Contact has been reaching out and the user has not reciprocated.
+    /// This is the brand-new "Reaching for you" signal in Phase 3.
+    case contactDrivenIgnored
+    /// Sentiment-tagged interactions have skewed negative below the Mode threshold.
+    case negativeBalance
+}
+
 /// Overall decay risk assessment combining overdue ratio + velocity trend.
 enum DecayRisk: String, Sendable, Comparable {
     case none       // Healthy, within cadence
@@ -98,7 +115,11 @@ struct RelationshipHealth: Sendable {
         daysSinceLastOutbound: nil,
         daysSinceLastInbound: nil,
         outboundCount30: 0,
-        inboundCount30: 0
+        inboundCount30: 0,
+        driftRatio: nil,
+        initiationRatio: nil,
+        pnRatio: nil,
+        dominantSignal: .none
     )
 
     let daysSinceLastInteraction: Int?
@@ -122,6 +143,19 @@ struct RelationshipHealth: Sendable {
     let daysSinceLastInbound: Int?     // Days since contact last reached out (nil = no inbound data)
     let outboundCount30: Int           // Outbound interactions in last 30 days
     let inboundCount30: Int            // Inbound interactions in last 30 days
+
+    // Phase 3 vector fields. Computed alongside the existing scalar signals
+    // so consumers migrate incrementally. Existing decayRisk continues to
+    // drive UI until Phase 3e cuts HealthLevel over to the vector.
+    /// currentGap / personalBaselineCadence (median of historical gaps).
+    /// Nil when the person has <3 prior interactions to derive a baseline.
+    let driftRatio: Double?
+    /// outboundCount90 / max(1, totalCount90). Nil when no 90-day interactions.
+    let initiationRatio: Double?
+    /// Phase 3d will populate; nil until then.
+    let pnRatio: Double?
+    /// Which Phase 3 signal currently dominates this person's Health.
+    let dominantSignal: HealthSignal
 
     /// Color incorporating decay risk when velocity data is available;
     /// falls back to static role-based thresholds otherwise.
@@ -437,6 +471,50 @@ final class MeetingPrepCoordinator {
         let outboundCount30 = outbound.filter { $0.occurredAt >= thirtyDaysAgo }.count
         let inboundCount30 = inbound.filter { $0.occurredAt >= thirtyDaysAgo }.count
 
+        // Phase 3 vector fields ------------------------------------------------
+
+        // driftRatio uses the personal baseline cadence (raw median gap), not
+        // the user override. "Drift" specifically means "how far off this
+        // person's own historical rhythm." The user override governs the
+        // overdueRatio that already feeds decayRisk above.
+        let driftRatio: Double? = {
+            guard let baseline = cadenceDays, baseline > 0,
+                  let gap = currentGapDays else { return nil }
+            return gap / Double(baseline)
+        }()
+
+        // initiationRatio over rolling 90 days. <0.5 means contact has been
+        // doing more of the reaching; >0.5 means the user has.
+        let outboundCount90 = outbound.filter { $0.occurredAt >= ninetyDaysAgo }.count
+        let inboundCount90 = inbound.filter { $0.occurredAt >= ninetyDaysAgo }.count
+        let total90 = outboundCount90 + inboundCount90
+        let initiationRatio: Double? = total90 > 0
+            ? Double(outboundCount90) / Double(total90)
+            : nil
+
+        // Dominant signal selector. Phase 3d will add negativeBalance.
+        // contactDrivenIgnored is the new "Reaching for you" signal — fires
+        // when the contact has been initiating but the user hasn't reciprocated
+        // within their own baseline cadence.
+        let dominantSignal: HealthSignal = {
+            // Silenced for Covenant — Phase 2 rule applies to Phase 3 signals too.
+            guard mode.generatesCadenceAlerts else { return .none }
+            if let ratio = initiationRatio, total90 >= 5,
+               ratio < 0.30,
+               let outboundGap = daysSinceLastOutbound,
+               let baseline = cadenceDays,
+               outboundGap > baseline {
+                return .contactDrivenIgnored
+            }
+            if let ratio = initiationRatio, total90 >= 5, ratio > 0.85 {
+                return .userDrivenAsymmetry
+            }
+            if let drift = driftRatio, drift > 1.5 {
+                return .drift
+            }
+            return .none
+        }()
+
         return RelationshipHealth(
             daysSinceLastInteraction: daysSince,
             interactionCount30: count30,
@@ -454,7 +532,11 @@ final class MeetingPrepCoordinator {
             daysSinceLastOutbound: daysSinceLastOutbound,
             daysSinceLastInbound: daysSinceLastInbound,
             outboundCount30: outboundCount30,
-            inboundCount30: inboundCount30
+            inboundCount30: inboundCount30,
+            driftRatio: driftRatio,
+            initiationRatio: initiationRatio,
+            pnRatio: nil,
+            dominantSignal: dominantSignal
         )
     }
 
