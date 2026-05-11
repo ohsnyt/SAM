@@ -55,6 +55,11 @@ public final class StrategicDigest {
     /// roll-up. Phase 6c of the relationship-model refactor.
     public var sphereID: UUID?
 
+    /// Pre-computed list of people who appear in 2+ active Spheres (JSON
+    /// array of CrossSphereInsight). Populated only on the global digest
+    /// when the user has 2+ Spheres; nil/empty otherwise. Phase 6d.
+    public var crossSphereInsightsJSON: String?
+
     // MARK: - Transient
 
     @Transient
@@ -95,4 +100,32 @@ public enum DigestType: String, Codable, Sendable {
     case evening
     case weekly
     case onDemand
+}
+
+// MARK: - CrossSphereInsight
+
+/// A person who participates in 2+ active Spheres. Surfaced in the global
+/// digest so the user sees where their relationships span roles — useful
+/// for context-switching, sensitive intros, and avoiding cross-Sphere
+/// double-asks. Phase 6d of the relationship-model refactor.
+public struct CrossSphereInsight: Codable, Sendable, Identifiable {
+    public var id: UUID
+    public var personID: UUID
+    public var personName: String
+    public var sphereNames: [String]
+    public var implication: String
+
+    public init(
+        id: UUID = UUID(),
+        personID: UUID,
+        personName: String,
+        sphereNames: [String],
+        implication: String
+    ) {
+        self.id = id
+        self.personID = personID
+        self.personName = personName
+        self.sphereNames = sphereNames
+        self.implication = implication
+    }
 }

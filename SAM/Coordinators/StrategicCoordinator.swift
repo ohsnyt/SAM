@@ -45,6 +45,11 @@ final class StrategicCoordinator {
     /// Phase 6c of the relationship-model refactor.
     var latestDigestsBySphere: [UUID: StrategicDigest] = [:]
 
+    /// People who span 2+ active Spheres. Populated alongside the global
+    /// digest when the user has multi-Sphere overlap; empty for
+    /// single-Sphere setups. Phase 6d of the relationship-model refactor.
+    var crossSphereInsights: [CrossSphereInsight] = []
+
     /// Resolve the right digest for the caller's scope: `nil` returns the
     /// global digest; a Sphere ID returns that Sphere's digest if one has
     /// been generated, otherwise falls back to the global digest so callers
@@ -217,6 +222,11 @@ final class StrategicCoordinator {
         // Synthesize (deterministic)
         let topRecs = synthesize(pipeline: pipeline, time: time, pattern: pattern, content: content)
 
+        // Cross-Sphere overlaps (deterministic, no LLM). Empty when the user
+        // has <2 Spheres so single-Sphere setups see no change.
+        let crossSphere = gatherCrossSphereInsights()
+        crossSphereInsights = crossSphere
+
         // Persist
         let digest = persistDigest(
             type: type,
@@ -224,7 +234,8 @@ final class StrategicCoordinator {
             time: time,
             pattern: pattern,
             content: content,
-            topRecs: topRecs
+            topRecs: topRecs,
+            crossSphereInsights: crossSphere
         )
 
         latestDigest = digest
@@ -925,9 +936,15 @@ final class StrategicCoordinator {
         pattern: PatternAnalysis,
         content: ContentAnalysis,
         topRecs: [StrategicRec],
-        sphereID: UUID? = nil
+        sphereID: UUID? = nil,
+        crossSphereInsights: [CrossSphereInsight] = []
     ) -> StrategicDigest {
         let digest = StrategicDigest(digestType: type, sphereID: sphereID)
+        if !crossSphereInsights.isEmpty,
+           let data = try? JSONEncoder().encode(crossSphereInsights),
+           let json = String(data: data, encoding: .utf8) {
+            digest.crossSphereInsightsJSON = json
+        }
         digest.pipelineSummary = pipeline.healthSummary
         digest.timeSummary = time.balanceSummary
         digest.patternInsights = pattern.patterns.map(\.description).joined(separator: "; ")
@@ -1085,6 +1102,59 @@ final class StrategicCoordinator {
         return lines.joined(separator: "\n")
     }
 
+    /// Detect people who participate in 2+ active Spheres. Returns `[]` when
+    /// the user has fewer than 2 Spheres or no overlap exists. Phase 6d.
+    private func gatherCrossSphereInsights() -> [CrossSphereInsight] {
+        let spheres = (try? SphereRepository.shared.fetchAll()) ?? []
+        guard spheres.count >= 2 else { return [] }
+        let sphereByID: [UUID: Sphere] = Dictionary(uniqueKeysWithValues: spheres.map { ($0.id, $0) })
+
+        let memberships = (try? SphereRepository.shared.fetchAllMemberships()) ?? []
+        var sphereNamesByPerson: [UUID: [String]] = [:]
+        var personRef: [UUID: SamPerson] = [:]
+        for m in memberships {
+            guard let person = m.person,
+                  let sphereID = m.sphere?.id,
+                  let sphere = sphereByID[sphereID] else { continue }
+            sphereNamesByPerson[person.id, default: []].append(sphere.name)
+            personRef[person.id] = person
+        }
+
+        var insights: [CrossSphereInsight] = []
+        for (personID, sphereNames) in sphereNamesByPerson {
+            guard sphereNames.count >= 2,
+                  let person = personRef[personID],
+                  !person.isMe,
+                  !person.isArchived else { continue }
+            let sortedNames = sphereNames.sorted()
+            let name = person.displayNameCache ?? person.displayName
+            let implication: String = {
+                if sortedNames.count == 2 {
+                    return "Active in \(sortedNames[0]) and \(sortedNames[1]) — keep contexts distinct in outreach."
+                }
+                return "Active across \(sortedNames.count) Spheres — context-switch carefully when reaching out."
+            }()
+            insights.append(CrossSphereInsight(
+                personID: personID,
+                personName: name,
+                sphereNames: sortedNames,
+                implication: implication
+            ))
+        }
+
+        // Most-overlap first, then alphabetical. Cap to 10 so the strategic
+        // view stays scannable.
+        return insights
+            .sorted { lhs, rhs in
+                if lhs.sphereNames.count != rhs.sphereNames.count {
+                    return lhs.sphereNames.count > rhs.sphereNames.count
+                }
+                return lhs.personName.localizedCaseInsensitiveCompare(rhs.personName) == .orderedAscending
+            }
+            .prefix(10)
+            .map { $0 }
+    }
+
     /// Pattern data filtered to a single Sphere's members.
     private func gatherPatternData(forSphere sphere: Sphere, memberIDs: Set<UUID>) -> String {
         var lines: [String] = []
@@ -1152,6 +1222,12 @@ final class StrategicCoordinator {
                    let topicData = topicJSON.data(using: .utf8),
                    let topics = try? JSONDecoder().decode([SuggestedEventTopic].self, from: topicData) {
                     suggestedEventTopics = topics
+                }
+
+                if let crossJSON = globalDigest.crossSphereInsightsJSON,
+                   let crossData = crossJSON.data(using: .utf8),
+                   let insights = try? JSONDecoder().decode([CrossSphereInsight].self, from: crossData) {
+                    crossSphereInsights = insights
                 }
             }
 

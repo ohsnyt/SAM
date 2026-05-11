@@ -78,6 +78,12 @@ struct StrategicInsightsView: View {
                     narrativeSection(title: "Patterns", content: digest.patternInsights, icon: "waveform.path.ecg")
                 }
 
+                // Cross-Sphere overlaps (Phase 6d) — only renders when the user
+                // has 2+ Spheres with at least one person in common.
+                if !coordinator.crossSphereInsights.isEmpty {
+                    crossSphereSection(coordinator.crossSphereInsights)
+                }
+
                 // Content Ideas
                 if let digest = coordinator.latestDigest, !digest.contentSuggestions.isEmpty {
                     contentIdeasSection(digest.contentSuggestions)
@@ -313,6 +319,45 @@ struct StrategicInsightsView: View {
             Text(content)
                 .samFont(.callout)
                 .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(.fill.quaternary, in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    // MARK: - Cross-Sphere Overlaps (Phase 6d)
+
+    private func crossSphereSection(_ insights: [CrossSphereInsight]) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Image(systemName: "circle.grid.3x3.fill")
+                    .foregroundStyle(.indigo)
+                Text("Cross-Sphere Overlaps")
+                    .samFont(.headline)
+                Spacer()
+                Text("\(insights.count)")
+                    .samFont(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            ForEach(insights) { insight in
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(insight.personName)
+                            .samFont(.callout, weight: .medium)
+                        Text("·")
+                            .foregroundStyle(.tertiary)
+                        Text(insight.sphereNames.joined(separator: " + "))
+                            .samFont(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Text(insight.implication)
+                        .samFont(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 2)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
