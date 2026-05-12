@@ -16,6 +16,21 @@ private enum CrashReportKeys {
     nonisolated static let cleanShutdown = "sam.cleanShutdown"
     nonisolated static let lastLaunch = "sam.lastLaunchTimestamp"
     nonisolated static let dismissedCrash = "sam.crashReport.dismissedTimestamp"
+    nonisolated static let debuggerAttached = "sam.debuggerAttached"
+}
+
+/// True when the current process is being traced by a debugger (Xcode/lldb).
+/// Used to distinguish "stop from debugger" (clean dev termination, no crash report
+/// will be written) from real crashes.
+private func isDebuggerAttached() -> Bool {
+    var info = kinfo_proc()
+    var size = MemoryLayout<kinfo_proc>.size
+    var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()]
+    let result = mib.withUnsafeMutableBufferPointer { ptr -> Int32 in
+        sysctl(ptr.baseAddress, UInt32(ptr.count), &info, &size, nil, 0)
+    }
+    guard result == 0 else { return false }
+    return (info.kp_proc.p_flag & P_TRACED) != 0
 }
 
 @MainActor
@@ -46,9 +61,13 @@ final class CrashReportService {
     func markLaunchAndCheckPreviousCrash() {
         let wasClean = UserDefaults.standard.bool(forKey: CrashReportKeys.cleanShutdown)
         let lastLaunch = UserDefaults.standard.double(forKey: CrashReportKeys.lastLaunch)
+        let previousHadDebugger = UserDefaults.standard.bool(forKey: CrashReportKeys.debuggerAttached)
 
-        // Mark this session as not-yet-clean
+        // Mark this session as not-yet-clean, and record whether a debugger is
+        // attached so the next launch can distinguish "stop from debugger" from
+        // a real crash.
         UserDefaults.standard.set(false, forKey: CrashReportKeys.cleanShutdown)
+        UserDefaults.standard.set(isDebuggerAttached(), forKey: CrashReportKeys.debuggerAttached)
 
         // If previous session didn't shut down cleanly, look for a crash report
         if !wasClean && lastLaunch > 0 {
@@ -67,11 +86,12 @@ final class CrashReportService {
                 crashReportText = report
                 crashDetected = true
                 logger.info("Found crash report for previous session")
+            } else if previousHadDebugger {
+                // Previous session had Xcode/lldb attached and no .ips was written.
+                // Almost certainly a "Stop" from the debugger, not a crash.
+                logger.info("No crash report found and previous session had debugger attached — treating as clean dev termination")
             } else {
-                logger.info("No crash report found in DiagnosticReports (may not have been written yet)")
-                // Still show the banner — we can send a minimal report without the .ips
-                crashReportText = buildMinimalReport(launchDate: launchDate)
-                crashDetected = true
+                logger.info("Previous session ended uncleanly but no crash report was written — skipping (nothing actionable to send)")
             }
         }
     }
@@ -223,34 +243,4 @@ final class CrashReportService {
         """
     }
 
-    /// Build a minimal report when no .ips file is found.
-    private func buildMinimalReport(launchDate: Date) -> String {
-        let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
-        let buildNumber = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
-        let osVersion = ProcessInfo.processInfo.operatingSystemVersionString
-
-        var size = 0
-        sysctlbyname("hw.model", nil, &size, nil, 0)
-        var model = [CChar](repeating: 0, count: size)
-        sysctlbyname("hw.model", &model, &size, nil, 0)
-        let macModel = String(cString: model)
-
-        return """
-        SAM Crash Report (no .ips file found)
-        =====================================
-        App Version:    \(appVersion) (\(buildNumber))
-        Schema:         \(SAMModelContainer.schemaVersion)
-        macOS:          \(osVersion)
-        Hardware:       \(macModel)
-        Previous Launch:\(ISO8601DateFormatter().string(from: launchDate))
-
-        Note: The macOS crash report (.ips file) was not found in
-        ~/Library/Logs/DiagnosticReports/. It may not have been
-        written yet, or the crash may have been a force-quit.
-
-        If you can locate the crash report manually, please attach it
-        to this email. Look for a file named SAM_*.ips in:
-          ~/Library/Logs/DiagnosticReports/
-        """
-    }
 }
