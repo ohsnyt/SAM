@@ -533,7 +533,6 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				63A8C4F92F4BD173002160AD /* XCRemoteSwiftPackageReference "mlx-swift-lm" */,
-				63CDDBB42F86B2B3000F9453 /* XCLocalSwiftPackageReference "SAMKit" */,
 				63FA010A2FA0000000000001 /* XCRemoteSwiftPackageReference "WhisperKit" */,
 			);
 			preferredProjectObjectVersion = 77;
@@ -1274,13 +1273,6 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
-
-/* Begin XCLocalSwiftPackageReference section */
-		63CDDBB42F86B2B3000F9453 /* XCLocalSwiftPackageReference "SAMKit" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = SAMKit;
-		};
-/* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
 		63A8C4F92F4BD173002160AD /* XCRemoteSwiftPackageReference "mlx-swift-lm" */ = {
