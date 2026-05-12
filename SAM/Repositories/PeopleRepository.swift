@@ -44,9 +44,17 @@ final class PeopleRepository {
 
     /// Configure the repository with the app-wide ModelContainer.
     /// Must be called once at app launch before any operations.
+    ///
+    /// Uses `container.mainContext` rather than a private `ModelContext`
+    /// so that SamPerson deletes and relationship mutations propagate to the
+    /// same context SwiftUI views observe. A private context would leave the
+    /// mainContext holding stale references to deleted SamPerson rows, which
+    /// crashes the next render with "backing data was detached from a
+    /// context without resolving attribute faults" on faulted properties
+    /// like `roleBadges`.
     func configure(container: ModelContainer) {
         self.container = container
-        self.modelContext = ModelContext(container)
+        self.modelContext = container.mainContext
     }
 
     // MARK: - CRUD Operations
@@ -560,9 +568,19 @@ final class PeopleRepository {
 
     /// Delete a person — severs all many-to-many relationships first
     /// to avoid SwiftData "Constraint trigger violation" on nullify inverses.
-    func delete(person: SamPerson) throws {
+    ///
+    /// Resolves the person in the repository's own context. Calling
+    /// `delete()` with a model instance from a different context (e.g. a
+    /// SwiftUI `@Query`) silently no-ops in SwiftData, so we re-fetch by
+    /// ID before mutating.
+    func delete(personID: UUID) throws {
         guard let modelContext = modelContext else {
             throw RepositoryError.notConfigured
+        }
+
+        let allPeople = try modelContext.fetch(FetchDescriptor<SamPerson>())
+        guard let person = allPeople.first(where: { $0.id == personID }) else {
+            throw RepositoryError.personNotFound
         }
 
         // Sever all .nullify MTM relationships before deleting
