@@ -80,6 +80,11 @@ struct CoachingSettingsContent: View {
 
             // ── Feedback ───────────────────────────────
             feedbackSection
+
+            Divider()
+
+            // ── Weekly Bundle Review (P9) ───────────────
+            WeeklyBundleReviewView()
         }
     }
 

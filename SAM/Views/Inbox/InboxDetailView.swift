@@ -103,12 +103,15 @@ struct InboxDetailView: View {
                 }
             }
         }
-        .sheet(item: $editingNote) { note in
+        .managedSheet(
+            item: $editingNote,
+            priority: .userInitiated,
+            identifier: "inbox.note-editor"
+        ) { note in
             NoteEditorView(note: note) {
                 // Note saved
             }
         }
-        .restoreOnUnlock(item: $editingNote)
         .confirmationDialog(
             "Delete Evidence",
             isPresented: $showingDeleteConfirmation,

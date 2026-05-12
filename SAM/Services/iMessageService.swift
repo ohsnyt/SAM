@@ -119,6 +119,39 @@ actor iMessageService {
         return (known: messages, unknown: unknownMessages)
     }
 
+    /// Fetch the (GUID → handleID) mapping for back-filling participant hints on
+    /// existing iMessage evidence that was imported before phone-based hints were
+    /// stored. Filters to GUIDs in `guids` (set lookup) to keep the result small.
+    func fetchHandlesForGUIDs(dbURL: URL, guids: Set<String>) async throws -> [String: String] {
+        guard !guids.isEmpty else { return [:] }
+        let db = try openDatabase(at: dbURL)
+        defer { sqlite3_close(db) }
+
+        // Pull all (guid, handle) pairs; filter in-memory to avoid a 14K-IN clause.
+        let query = """
+            SELECT m.guid, h.id
+            FROM message m
+            LEFT JOIN handle h ON m.handle_id = h.ROWID
+            WHERE m.guid IS NOT NULL
+            """
+
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, query, -1, &stmt, nil) == SQLITE_OK else {
+            let error = String(cString: sqlite3_errmsg(db))
+            throw iMessageError.queryFailed(error)
+        }
+        defer { sqlite3_finalize(stmt) }
+
+        var result: [String: String] = [:]
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            guard let guid = columnText(stmt, 0), guids.contains(guid) else { continue }
+            if let handle = columnText(stmt, 1), !handle.isEmpty {
+                result[guid] = handle
+            }
+        }
+        return result
+    }
+
     /// Fetch all unique handles with message counts (for future unknown sender discovery).
     func fetchAllHandles(dbURL: URL) async throws -> [(handleID: String, messageCount: Int)] {
         let db = try openDatabase(at: dbURL)

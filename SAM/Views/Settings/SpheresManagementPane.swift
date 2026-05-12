@@ -57,10 +57,18 @@ struct SpheresManagementPane: View {
         }
         .formStyle(.grouped)
         .task { refresh() }
-        .sheet(isPresented: $showNewSphereSheet) {
+        .managedSheet(
+            isPresented: $showNewSphereSheet,
+            priority: .userInitiated,
+            identifier: "settings.new-sphere"
+        ) {
             NewSphereSheet { _ in refresh() }
         }
-        .sheet(item: $editingSphere) { sphere in
+        .managedSheet(
+            item: $editingSphere,
+            priority: .userInitiated,
+            identifier: "settings.edit-sphere"
+        ) { sphere in
             EditSphereSheet(sphere: sphere) { refresh() }
         }
     }

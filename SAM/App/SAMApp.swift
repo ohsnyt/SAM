@@ -87,16 +87,24 @@ final class SAMAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidatio
         // In Safe Mode the data layer was never initialized — just terminate.
         guard periodicSaveTimer != nil else { return .terminateNow }
 
+        // If the user clicks Quit again while we're already waiting, just
+        // keep waiting — don't fire a second settle/teardown pass that
+        // would race with the in-flight one.
+        if ShutdownCoordinator.shared.isShuttingDown {
+            log.info("App termination requested but graceful-quit wait already in progress — continuing wait")
+            return .terminateLater
+        }
+
         // If background AI work is in flight (outcome generation, strategic
-        // digest, role deduction, or any active import), block quit and
-        // surface the BlockingActivityOverlay until they settle. Forcing
-        // teardown while these are mid-call has previously crashed on
-        // dropped MLX containers and partially-saved SwiftData.
+        // digest, role deduction, briefing refresh, or any active import),
+        // block quit and surface the BlockingActivityOverlay until they
+        // settle. Forcing teardown while these are mid-call has previously
+        // crashed on dropped MLX containers and partially-saved SwiftData.
         if BackgroundWorkProbe.isAnyBusy {
             log.info("App termination requested but background work is busy — entering graceful-quit wait")
             ShutdownCoordinator.shared.isShuttingDown = true
             Task { @MainActor in
-                _ = await ShutdownCoordinator.shared.settle(timeout: 15)
+                _ = await ShutdownCoordinator.shared.settle()
                 self.performShutdownTeardown()
                 sender.reply(toApplicationShouldTerminate: true)
             }
@@ -160,11 +168,9 @@ struct SAMApp: App {
     @State private var pendingImportURL: URL?
     @State private var pendingImportPreview: ImportPreview?
 
-    // Social import sheets from File menu
-    @State private var showLinkedInImportSheet = false
-    @State private var showFacebookImportSheet = false
-    @State private var showEvernotePreviewSheet = false
-    @State private var showSubstackImportSheet = false
+    // Social imports run in standalone Window scenes — see openWindow calls
+    // posted from File menu and from import coordinators (Phase 2 of modal
+    // arbiter rewrite). No @State sheets here.
 
     // Backup passphrase
     @State private var showPassphraseSheet = false
@@ -379,7 +385,11 @@ struct SAMApp: App {
         WindowGroup {
             mainContent
                 .environment(\.samTextScale, SAMTextSize(rawValue: textSizeRawValue)?.scale ?? 1.0)
-                .sheet(isPresented: $showOnboarding) {
+                .managedSheet(
+                    isPresented: $showOnboarding,
+                    priority: .critical,
+                    identifier: "app.onboarding"
+                ) {
                     OnboardingView()
                         .interactiveDismissDisabled() // Prevent accidental dismissal
                         // Users can use "Skip" buttons for each step or "Quit" to exit entirely
@@ -597,25 +607,11 @@ struct SAMApp: App {
                     Text("This will delete all people, notes, evidence, and settings, then quit the app. On relaunch you will go through onboarding again.")
                 }
                 .dismissOnLock(isPresented: $showClearDataConfirmation)
-                .sheet(isPresented: $showLinkedInImportSheet) {
-                    LinkedInImportSheet()
-                }
-                .restoreOnUnlock(isPresented: $showLinkedInImportSheet)
-                .sheet(isPresented: $showFacebookImportSheet) {
-                    FacebookImportSheet()
-                }
-                .restoreOnUnlock(isPresented: $showFacebookImportSheet)
-                .sheet(isPresented: $showEvernotePreviewSheet) {
-                    EvernoteImportPreviewSheet {
-                        showEvernotePreviewSheet = false
-                    }
-                }
-                .restoreOnUnlock(isPresented: $showEvernotePreviewSheet)
-                .sheet(isPresented: $showSubstackImportSheet) {
-                    SubstackImportSheet()
-                }
-                .restoreOnUnlock(isPresented: $showSubstackImportSheet)
-                .sheet(isPresented: $showPassphraseSheet) {
+                .managedSheet(
+                    isPresented: $showPassphraseSheet,
+                    priority: .userInitiated,
+                    identifier: "backup.export-passphrase"
+                ) {
                     BackupPassphraseSheet(
                         passphrase: $backupPassphrase,
                         isExport: true
@@ -631,8 +627,11 @@ struct SAMApp: App {
                         pendingBackupURL = nil
                     }
                 }
-                .dismissOnLock(isPresented: $showPassphraseSheet)
-                .sheet(isPresented: $showImportPassphraseSheet) {
+                .managedSheet(
+                    isPresented: $showImportPassphraseSheet,
+                    priority: .userInitiated,
+                    identifier: "backup.import-passphrase"
+                ) {
                     BackupPassphraseSheet(
                         passphrase: $importPassphrase,
                         isExport: false
@@ -652,22 +651,6 @@ struct SAMApp: App {
                         showImportPassphraseSheet = false
                         pendingImportURL = nil
                     }
-                }
-                .dismissOnLock(isPresented: $showImportPassphraseSheet)
-                .onReceive(NotificationCenter.default.publisher(for: .samLinkedInAwaitingReview)) { _ in
-                    showLinkedInImportSheet = true
-                }
-                .onReceive(NotificationCenter.default.publisher(for: .samLinkedInZipDetected)) { _ in
-                    showLinkedInImportSheet = true
-                }
-                .onReceive(NotificationCenter.default.publisher(for: .samFacebookAwaitingReview)) { _ in
-                    showFacebookImportSheet = true
-                }
-                .onReceive(NotificationCenter.default.publisher(for: .samFacebookZipDetected)) { _ in
-                    showFacebookImportSheet = true
-                }
-                .onReceive(NotificationCenter.default.publisher(for: .samSubstackZipDetected)) { _ in
-                    showSubstackImportSheet = true
                 }
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.willResignActiveNotification)) { _ in
                     lockService.appDidResignActive()
@@ -751,15 +734,15 @@ struct SAMApp: App {
             // File → Import + Backup/Restore
             CommandGroup(replacing: .importExport) {
                 Button("Import Substack...") {
-                    showSubstackImportSheet = true
+                    NotificationCenter.default.post(name: .samShowSubstackImportWindow, object: nil)
                 }
 
                 Button("Import LinkedIn...") {
-                    showLinkedInImportSheet = true
+                    NotificationCenter.default.post(name: .samShowLinkedInImportWindow, object: nil)
                 }
 
                 Button("Import Facebook...") {
-                    showFacebookImportSheet = true
+                    NotificationCenter.default.post(name: .samShowFacebookImportWindow, object: nil)
                 }
 
                 Button("Import Evernote Notes...") {
@@ -1035,6 +1018,37 @@ struct SAMApp: App {
                 .observeForLock()
         }
         .defaultSize(width: 700, height: 550)
+
+        // Social imports as standalone windows — they no longer present as
+        // sheets on the main window, so an incoming post-call capture (or
+        // any other sheet) can't dismiss them mid-review.
+        Window("Import LinkedIn", id: "import-linkedin") {
+            LinkedInImportSheet()
+                .modelContainer(SAMModelContainer.shared)
+                .observeForLock()
+        }
+        .defaultSize(width: 720, height: 560)
+
+        Window("Import Facebook", id: "import-facebook") {
+            FacebookImportSheet()
+                .modelContainer(SAMModelContainer.shared)
+                .observeForLock()
+        }
+        .defaultSize(width: 720, height: 560)
+
+        Window("Import Substack", id: "import-substack") {
+            SubstackImportSheet()
+                .modelContainer(SAMModelContainer.shared)
+                .observeForLock()
+        }
+        .defaultSize(width: 720, height: 560)
+
+        Window("Import Evernote", id: "import-evernote") {
+            EvernoteImportWindowContent()
+                .modelContainer(SAMModelContainer.shared)
+                .observeForLock()
+        }
+        .defaultSize(width: 720, height: 560)
         #endif
     }
     
@@ -1042,9 +1056,9 @@ struct SAMApp: App {
         let coordinator = EvernoteImportCoordinator.shared
         guard let folderURL = coordinator.pickEvernoteFolder() else { return }
         await coordinator.loadDirectory(url: folderURL)
-        // Evernote uses previewing status (not awaitingReview) — show the preview sheet
+        // Evernote uses previewing status (not awaitingReview) — open the standalone window
         if coordinator.importStatus == .previewing {
-            showEvernotePreviewSheet = true
+            NotificationCenter.default.post(name: .samShowEvernoteImportWindow, object: nil)
         }
     }
 
@@ -1181,6 +1195,16 @@ struct SAMApp: App {
             SAMModelContainer.runDirectionBackfillIfNeeded()
         }
 
+        // Bundled-outcome repository + one-time legacy SamOutcome wipe.
+        // Wipe runs AFTER the repository is configured so the dismissal
+        // preservation pass has a context to write into. The next
+        // OutcomeEngine pass repopulates the queue via OutcomeBundles.
+        OutcomeBundleRepository.shared.configure(container: c)
+        WeeklyBundleRatingRepository.shared.configure(container: c)
+        perf.measureSync("Launch.runOutcomeBundleWipeIfNeeded") {
+            SAMModelContainer.runOutcomeBundleWipeIfNeeded()
+        }
+
         // Defer heavy database maintenance to background — these were
         // blocking the main actor during startup and causing beachball.
         // EventRepository.repairIntegrity() has N+1 fetch patterns that
@@ -1206,6 +1230,30 @@ struct SAMApp: App {
             await perf.measure("Launch.stewardshipBackfill") {
                 await StewardshipSpawnService.runBackfillIfNeeded()
             }
+            // One-time back-fill of rawPhone hints on iMessage / call / WA
+            // evidence imported before phone hints were stored. Reads source
+            // SQLite DBs by sourceUID; idempotent — guarded by a UserDefaults flag.
+            await perf.measure("Launch.handleHintBackfill") {
+                await Self.runHandleHintBackfillIfNeeded()
+            }
+        }
+    }
+
+    private static let handleHintBackfillKey = "handleHintBackfillDone_v1"
+
+    @MainActor
+    private static func runHandleHintBackfillIfNeeded() async {
+        guard !UserDefaults.standard.bool(forKey: handleHintBackfillKey) else { return }
+        do {
+            let updated = try await EvidenceRepository.shared.backfillHandleHints(
+                bookmarkManager: BookmarkManager.shared
+            )
+            UserDefaults.standard.set(true, forKey: handleHintBackfillKey)
+            Logger(subsystem: "com.matthewsessions.SAM", category: "SAMApp")
+                .notice("Handle-hint back-fill complete — updated \(updated) evidence items")
+        } catch {
+            Logger(subsystem: "com.matthewsessions.SAM", category: "SAMApp")
+                .error("Handle-hint back-fill failed: \(error.localizedDescription)")
         }
     }
     

@@ -90,14 +90,17 @@ struct LinkedInImportSettingsContent: View {
             }
         }
         .padding(.vertical, 4)
-        .sheet(isPresented: $showProfileAnalysis) {
+        .managedSheet(
+            isPresented: $showProfileAnalysis,
+            priority: .userInitiated,
+            identifier: "settings.linkedin-profile-analysis"
+        ) {
             if let analysis = coordinator.latestProfileAnalysis {
                 ProfileAnalysisSheet(analysis: analysis) {
                     await coordinator.runProfileAnalysis()
                 }
             }
         }
-        .restoreOnUnlock(isPresented: $showProfileAnalysis)
         .onAppear { FeatureAdoptionTracker.shared.recordUsage(.linkedInImport) }
     }
 

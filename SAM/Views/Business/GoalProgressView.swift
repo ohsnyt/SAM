@@ -61,7 +61,11 @@ struct GoalProgressView: View {
             refreshProgress()
             loadJournalEntries()
         }
-        .sheet(item: $checkInContext) { ctx in
+        .managedSheet(
+            item: $checkInContext,
+            priority: .userInitiated,
+            identifier: "goal.check-in"
+        ) { ctx in
             GoalCheckInSessionView(
                 context: ctx,
                 onDone: {
@@ -70,19 +74,24 @@ struct GoalProgressView: View {
                 }
             )
         }
-        .restoreOnUnlock(item: $checkInContext)
-        .sheet(isPresented: $showAddGoal) {
+        .managedSheet(
+            isPresented: $showAddGoal,
+            priority: .userInitiated,
+            identifier: "goal.add"
+        ) {
             GoalEntryForm(mode: .create) {
                 refreshProgress()
             }
         }
-        .restoreOnUnlock(isPresented: $showAddGoal)
-        .sheet(item: $editingGoal) { goal in
+        .managedSheet(
+            item: $editingGoal,
+            priority: .userInitiated,
+            identifier: "goal.edit"
+        ) { goal in
             GoalEntryForm(mode: .edit(goal)) {
                 refreshProgress()
             }
         }
-        .restoreOnUnlock(item: $editingGoal)
     }
 
     // MARK: - Goal List

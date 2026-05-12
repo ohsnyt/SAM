@@ -24,6 +24,7 @@ struct OutcomeQueueView: View {
 
     private var engine: OutcomeEngine { OutcomeEngine.shared }
     private var outcomeRepo: OutcomeRepository { OutcomeRepository.shared }
+    private var bundleRepo: OutcomeBundleRepository { OutcomeBundleRepository.shared }
     @Environment(\.modelContext) private var modelContext
     @Environment(\.openWindow) private var openWindow
 
@@ -31,6 +32,9 @@ struct OutcomeQueueView: View {
 
     @Query(sort: \SamOutcome.priorityScore, order: .reverse)
     private var allOutcomes: [SamOutcome]
+
+    @Query(sort: \OutcomeBundle.priorityScore, order: .reverse)
+    private var allBundles: [OutcomeBundle]
 
     // MARK: - State
 
@@ -64,10 +68,14 @@ struct OutcomeQueueView: View {
         activeOutcomes.count > maxVisible
     }
 
+    private var activeBundles: [OutcomeBundle] {
+        allBundles.filter { $0.closedAt == nil && !$0.openSubItems.isEmpty }
+    }
+
     // MARK: - Body
 
     var body: some View {
-        if activeOutcomes.isEmpty {
+        if activeOutcomes.isEmpty && activeBundles.isEmpty {
             EmptyView()
         } else {
             VStack(alignment: .leading, spacing: 0) {
@@ -93,12 +101,30 @@ struct OutcomeQueueView: View {
                     .padding(.horizontal)
                     .padding(.bottom, 4)
 
+                // Per-person bundle cards (one card per person, multiple sub-items inside).
+                if !activeBundles.isEmpty {
+                    VStack(spacing: 12) {
+                        ForEach(Array(activeBundles.enumerated()), id: \.element.id) { index, bundle in
+                            OutcomeBundleCardView(
+                                bundle: bundle,
+                                isHero: index == 0 && activeOutcomes.isEmpty,
+                                onTick: { item in handleBundleTick(item, in: bundle) },
+                                onSkip: { item in handleBundleSkip(item, in: bundle) },
+                                onOpenPerson: { openPerson(for: bundle) },
+                                onCompose: composeClosure(for: bundle)
+                            )
+                        }
+                    }
+                    .padding(.horizontal)
+                    .padding(.vertical, 12)
+                }
+
                 // Active outcome cards
                 VStack(spacing: 12) {
                     ForEach(Array(visibleOutcomes.enumerated()), id: \.element.id) { index, outcome in
                         OutcomeCardView(
                             outcome: outcome,
-                            isHero: index == 0,
+                            isHero: index == 0 && activeBundles.isEmpty,
                             onAct: actClosure(for: outcome),
                             onDone: { markDone(outcome) },
                             onSkip: { markSkipped(outcome) },
@@ -128,11 +154,18 @@ struct OutcomeQueueView: View {
                     .padding(.bottom, 12)
                 }
             }
-            .sheet(item: $showRatingFor) { outcome in
+            .managedSheet(
+                item: $showRatingFor,
+                priority: .userInitiated,
+                identifier: "outcome.rating"
+            ) { outcome in
                 ratingSheet(for: outcome)
             }
-            .restoreOnUnlock(item: $showRatingFor)
-            .sheet(isPresented: $showDeepWorkSheet) {
+            .managedSheet(
+                isPresented: $showDeepWorkSheet,
+                priority: .userInitiated,
+                identifier: "outcome.deep-work"
+            ) {
                 if let outcome = deepWorkOutcome {
                     DeepWorkScheduleSheet(
                         payload: DeepWorkPayload(
@@ -152,8 +185,11 @@ struct OutcomeQueueView: View {
                     )
                 }
             }
-            .restoreOnUnlock(isPresented: $showDeepWorkSheet)
-            .sheet(isPresented: $showContentDraftSheet) {
+            .managedSheet(
+                isPresented: $showContentDraftSheet,
+                priority: .userInitiated,
+                identifier: "outcome.content-draft"
+            ) {
                 if let outcome = contentDraftOutcome {
                     let parsed = parseContentTopic(from: outcome.sourceInsightSummary)
                     ContentDraftSheet(
@@ -172,8 +208,11 @@ struct OutcomeQueueView: View {
                     )
                 }
             }
-            .restoreOnUnlock(isPresented: $showContentDraftSheet)
-            .sheet(isPresented: $showSetupGuideSheet) {
+            .managedSheet(
+                isPresented: $showSetupGuideSheet,
+                priority: .userInitiated,
+                identifier: "outcome.linkedin-setup-guide"
+            ) {
                 if let outcome = setupGuideOutcome {
                     LinkedInSetupGuideSheet(
                         outcome: outcome,
@@ -193,7 +232,6 @@ struct OutcomeQueueView: View {
                     )
                 }
             }
-            .restoreOnUnlock(isPresented: $showSetupGuideSheet)
         }
     }
 
@@ -405,6 +443,104 @@ struct OutcomeQueueView: View {
     private func snoozeOutcome(_ outcome: SamOutcome, until date: Date) {
         try? outcomeRepo.markSnoozed(id: outcome.id, until: date)
         Task { await CalibrationService.shared.recordSnooze(kind: outcome.outcomeKindRawValue) }
+    }
+
+    // MARK: - Bundle Actions
+
+    private func handleBundleTick(_ item: OutcomeSubItem, in bundle: OutcomeBundle) {
+        let kindRaw = item.kindRawValue
+        applyBundleStatusChange(item: item, in: bundle, kind: .completed)
+        Task { await CalibrationService.shared.recordCompletion(
+            kind: kindRaw, responseMinutes: 0, hour: Calendar.current.component(.hour, from: .now),
+            dayOfWeek: Calendar.current.component(.weekday, from: .now)) }
+    }
+
+    private func handleBundleSkip(_ item: OutcomeSubItem, in bundle: OutcomeBundle) {
+        let kindRaw = item.kindRawValue
+        applyBundleStatusChange(item: item, in: bundle, kind: .skipped)
+        Task { await CalibrationService.shared.recordDismissal(kind: kindRaw) }
+    }
+
+    private enum BundleStatusChange { case completed, skipped }
+
+    /// Tick/skip a sub-item using the view's `modelContext` so SwiftUI observes
+    /// the mutation and the bundle's `openSubItems` re-filters on next render.
+    /// `OutcomeBundleRepository` owns a separate context — writing through it
+    /// leaves the view stale (cross-context visibility), so all state the UI
+    /// renders is mutated here. The suppression record is still written via
+    /// the repo since it's only consumed by background scanners.
+    private func applyBundleStatusChange(item: OutcomeSubItem, in bundle: OutcomeBundle, kind: BundleStatusChange) {
+        let kindRaw = item.kindRawValue
+        let nextDue = OutcomeRecurrence.nextDueAt(for: item.kind, after: .now, isMilestone: item.isMilestone)
+
+        switch kind {
+        case .completed: item.completedAt = .now
+        case .skipped:   item.skippedAt = .now
+        }
+        item.nextDueAt = nextDue
+        bundle.updatedAt = .now
+
+        let open = bundle.openSubItems
+        if open.isEmpty {
+            bundle.priorityScore = 0
+            bundle.nearestDueDate = nil
+        } else {
+            let maxPriority = open.map(\.priorityScore).max() ?? 0
+            let groups = Set(open.map { $0.kind.topicGroup })
+            let bump = groups.count >= 2 ? 0.1 : 0.0
+            bundle.priorityScore = min(1.0, maxPriority + bump)
+            bundle.nearestDueDate = open.compactMap(\.dueDate).min()
+        }
+
+        if bundle.closedAt == nil,
+           !bundle.subItems.isEmpty,
+           bundle.subItems.allSatisfy({ $0.completedAt != nil || $0.skippedAt != nil }) {
+            bundle.closedAt = .now
+        }
+
+        try? modelContext.save()
+
+        try? bundleRepo.recordSuppression(
+            personID: bundle.personID,
+            kindRawValue: kindRaw,
+            suppressUntil: nextDue,
+            migratedFromLegacy: false
+        )
+    }
+
+    private func openPerson(for bundle: OutcomeBundle) {
+        guard let personID = bundle.person?.id else { return }
+        NotificationCenter.default.post(
+            name: .samNavigateToPerson,
+            object: nil,
+            userInfo: ["personID": personID]
+        )
+    }
+
+    private func composeClosure(for bundle: OutcomeBundle) -> (() -> Void)? {
+        guard let draft = bundle.combinedDraftMessage, !draft.isEmpty,
+              let person = bundle.person else { return nil }
+        return {
+            let channel = person.effectiveChannel ?? .iMessage
+            let address: String
+            if channel == .linkedIn, let url = person.linkedInProfileURL {
+                address = url
+            } else {
+                address = person.emailCache ?? person.phoneAliases.first ?? ""
+            }
+            let payload = ComposePayload(
+                outcomeID: bundle.id,
+                personID: person.id,
+                personName: person.displayNameCache ?? person.displayName,
+                recipientAddress: address,
+                channel: channel,
+                draftBody: draft,
+                contextTitle: "Outreach to \(person.displayNameCache ?? person.displayName)",
+                linkedInProfileURL: person.linkedInProfileURL,
+                contactAddresses: person.contactAddresses
+            )
+            openWindow(id: "compose-message", value: payload)
+        }
     }
 
     // MARK: - Setup Guidance UserDefaults Helpers (Phase 6)

@@ -79,7 +79,7 @@ struct BlockingActivityOverlay: View {
         if shutdown.isShuttingDown {
             return Activity(
                 title: "Quitting SAM",
-                subtitle: "Waiting for background work to finish before quit.",
+                subtitle: "Waiting for AI tasks to complete before closing. This may take up to several minutes.",
                 progress: shutdown.progress,
                 blockedBy: shutdown.blockedBy
             )

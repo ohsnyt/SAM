@@ -102,10 +102,13 @@ struct PostEventEvaluationView: View {
             }
             .padding()
         }
-        .sheet(isPresented: $showImportSheet) {
+        .managedSheet(
+            isPresented: $showImportSheet,
+            priority: .userInitiated,
+            identifier: "post-event.evaluation-import"
+        ) {
             EventEvaluationImportSheet(event: event)
         }
-        .restoreOnUnlock(isPresented: $showImportSheet)
     }
 
     // MARK: - Header

@@ -126,17 +126,17 @@ struct MacTripsView: View {
                 .help("Export mileage log as PDF")
             }
         }
-        .sheet(item: Binding(
-            get: { selectedTrip },
-            set: { newVal in selectedTripID = newVal?.id }
-        )) { trip in
+        .managedSheet(
+            item: Binding(
+                get: { selectedTrip },
+                set: { newVal in selectedTripID = newVal?.id }
+            ),
+            priority: .userInitiated,
+            identifier: "trips.detail"
+        ) { trip in
             MacTripDetailView(trip: trip)
                 .frame(minWidth: 500, minHeight: 500)
         }
-        .restoreOnUnlock(item: Binding(
-            get: { selectedTrip },
-            set: { newVal in selectedTripID = newVal?.id }
-        ))
     }
 
     // MARK: - Stats Header

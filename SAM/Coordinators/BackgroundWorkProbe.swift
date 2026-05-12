@@ -38,6 +38,24 @@ enum BackgroundWorkProbe {
         if RoleDeductionEngine.shared.deductionStatus == .running {
             blockers.append("role deduction")
         }
+        // MLX-touching coordinators — tearing down the model container while
+        // any of these are mid-inference crashes on dropped MLX containers.
+        if DailyBriefingCoordinator.shared.generationStatus == .generating {
+            blockers.append("daily briefing")
+        }
+        if NoteAnalysisCoordinator.shared.analysisStatus == .analyzing {
+            blockers.append("note analysis")
+        }
+        if InsightGenerator.shared.generationStatus == .generating {
+            blockers.append("insight generation")
+        }
+        let presentationStatus = PresentationAnalysisCoordinator.shared.analysisStatus
+        if presentationStatus == .extracting || presentationStatus == .analyzing {
+            blockers.append("presentation analysis")
+        }
+        if EventCoordinator.shared.isGeneratingDrafts {
+            blockers.append("event drafts")
+        }
         return blockers
     }
 

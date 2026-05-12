@@ -91,20 +91,23 @@ struct AwarenessView: View {
                 }
             }
         }
-        .sheet(isPresented: $showingManualTaskSheet) {
+        .managedSheet(
+            isPresented: $showingManualTaskSheet,
+            priority: .userInitiated,
+            identifier: "awareness.manual-task"
+        ) {
             ManualTaskSheet()
         }
-        .restoreOnUnlock(isPresented: $showingManualTaskSheet)
-        .sheet(isPresented: Binding(
-            get: { briefingCoordinator.showEveningBriefing },
-            set: { briefingCoordinator.showEveningBriefing = $0 }
-        )) {
+        .managedSheet(
+            isPresented: Binding(
+                get: { briefingCoordinator.showEveningBriefing },
+                set: { briefingCoordinator.showEveningBriefing = $0 }
+            ),
+            priority: .coaching,
+            identifier: "awareness.evening-recap"
+        ) {
             EveningRecapOverlay()
         }
-        .restoreOnUnlock(isPresented: Binding(
-            get: { briefingCoordinator.showEveningBriefing },
-            set: { briefingCoordinator.showEveningBriefing = $0 }
-        ))
         .onReceive(NotificationCenter.default.publisher(for: .samExpandMeetingPrep)) { _ in
             withAnimation { showMore = true }
         }

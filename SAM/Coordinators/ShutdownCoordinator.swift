@@ -34,12 +34,17 @@ final class ShutdownCoordinator {
     /// Poll background coordinators until they're all idle, with a hard
     /// timeout so a stuck coordinator can't block quit forever. Returns
     /// `true` if everything settled cleanly, `false` on timeout.
-    func settle(timeout: TimeInterval = 15) async -> Bool {
+    ///
+    /// Default timeout is 5 minutes — MLX briefing/digest generation can
+    /// legitimately take several minutes on first run, and forcing teardown
+    /// mid-inference crashes on the dropped model container.
+    func settle(timeout: TimeInterval = 300) async -> Bool {
         isShuttingDown = true
         progress = "Finishing background work..."
         blockedBy = BackgroundWorkProbe.currentBlockers()
 
-        let deadline = Date().addingTimeInterval(timeout)
+        let start = Date()
+        let deadline = start.addingTimeInterval(timeout)
         while Date() < deadline {
             let blockers = BackgroundWorkProbe.currentBlockers()
             if blockers.isEmpty {
@@ -49,6 +54,8 @@ final class ShutdownCoordinator {
                 return true
             }
             blockedBy = blockers
+            let elapsed = Int(Date().timeIntervalSince(start))
+            progress = "Waiting for AI tasks to finish (\(elapsed)s elapsed)..."
             try? await Task.sleep(for: .milliseconds(250))
         }
         logger.warning("Shutdown settle timeout after \(Int(timeout))s — force-exiting (some work may still be in flight)")

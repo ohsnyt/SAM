@@ -177,7 +177,11 @@ struct RelationshipGraphView: View {
             .onKeyPress(phases: .down) { keyPress in
                 handleKeyPress(keyPress)
             }
-            .sheet(isPresented: $showGhostMergePicker) {
+            .managedSheet(
+                isPresented: $showGhostMergePicker,
+                priority: .userInitiated,
+                identifier: "graph.ghost-merge-picker"
+            ) {
                 GhostMergePersonPicker(
                     ghostName: ghostMergeSourceName,
                     onSelect: { person in
@@ -193,7 +197,6 @@ struct RelationshipGraphView: View {
                     onCancel: { showGhostMergePicker = false }
                 )
             }
-            .restoreOnUnlock(isPresented: $showGhostMergePicker)
             .alert(
                 "Link Ghost to Contact?",
                 isPresented: $showDropMergeConfirmation

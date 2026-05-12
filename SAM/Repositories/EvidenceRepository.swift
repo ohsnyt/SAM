@@ -206,6 +206,7 @@ final class EvidenceRepository {
             existing.linkedContexts = linkedContexts
             try context.save()
             restorePhotoCacheIfNeeded(photoSnapshots, in: context)
+            OutcomeBundleGenerator.shared.nudgeForEvidence(personIDs: linkedPeople.map(\.id))
             return existing
         }
 
@@ -225,6 +226,7 @@ final class EvidenceRepository {
         context.insert(evidence)
         try context.save()
         restorePhotoCacheIfNeeded(photoSnapshots, in: context)
+        OutcomeBundleGenerator.shared.nudgeForEvidence(personIDs: linkedPeople.map(\.id))
 
         return evidence
     }
@@ -504,6 +506,28 @@ final class EvidenceRepository {
         }
     }
 
+    /// Build a participant hint from a raw handle (email or phone).
+    /// Used by iMessage / call / WhatsApp upserts so the identifier survives on
+    /// the evidence item and `refreshParticipantResolution()` can re-link later.
+    private func buildHandleHint(handle: String, displayName: String?, isVerified: Bool) -> ParticipantHint {
+        let trimmed = handle.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.contains("@") {
+            return ParticipantHint(
+                displayName: displayName ?? trimmed,
+                isVerified: isVerified,
+                rawEmail: trimmed,
+                rawPhone: nil
+            )
+        } else {
+            return ParticipantHint(
+                displayName: displayName ?? trimmed,
+                isVerified: isVerified,
+                rawEmail: nil,
+                rawPhone: trimmed
+            )
+        }
+    }
+
     // MARK: - Upsert Operations
 
     /// Upsert evidence item from calendar event.
@@ -711,27 +735,29 @@ final class EvidenceRepository {
     func refreshParticipantResolution() async throws {
         guard let context = context else { throw RepositoryError.notConfigured }
 
-        // Read the authoritative email set from PeopleRepository's context
-        let allKnownEmails = try PeopleRepository.shared.allKnownEmails()
-        let allPeople = try PeopleRepository.shared.fetchAll()
+        // Build email/phone indices from EvidenceRepository's OWN context. Using
+        // PeopleRepository.fetchAll() returned SamPerson instances from a
+        // separate context — attaching them via setLinkedPeople produced
+        // cross-context references that crashed in
+        // SamPerson.roleBadges.getter ("backing data detached") when SwiftUI
+        // later read those persons. Single-context resolution is the safe path.
+        invalidateResolutionCache()
+        let personByEmail: [String: SamPerson] = {
+            var flat: [String: SamPerson] = [:]
+            for (email, people) in getEmailLookup() {
+                if let first = people.first { flat[email] = first }
+            }
+            return flat
+        }()
+        let personByPhone: [String: SamPerson] = {
+            var flat: [String: SamPerson] = [:]
+            for (phone, people) in getPhoneLookup() {
+                if let first = people.first { flat[phone] = first }
+            }
+            return flat
+        }()
+        let allKnownEmails = Set(personByEmail.keys)
         let meEmails = meEmailSet()
-
-        // Build [canonicalEmail -> SamPerson] in one pass so the per-evidence
-        // resolve becomes O(emails on the evidence) instead of O(allPeople).
-        // Without this, a 14K evidence × 1.4K people sweep was 19M+ filter
-        // comparisons synchronously on the main actor.
-        var personByEmail: [String: SamPerson] = [:]
-        for person in allPeople {
-            if let primary = canonicalizeEmail(person.emailCache) {
-                personByEmail[primary] = person
-            }
-            for alias in person.emailAliases {
-                let lower = alias.lowercased()
-                if !lower.isEmpty, personByEmail[lower] == nil {
-                    personByEmail[lower] = person
-                }
-            }
-        }
 
         let all = try fetchAll()
         var updated = 0
@@ -747,14 +773,23 @@ final class EvidenceRepository {
             let emails = item.participantHints.compactMap { hint in
                 hint.rawEmail?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             }
-            guard !emails.isEmpty else { continue }
+            let phones = item.participantHints.compactMap { hint in
+                canonicalizePhone(hint.rawPhone)
+            }
+            guard !emails.isEmpty || !phones.isEmpty else { continue }
 
-            // Resolve people via the prebuilt email index. Dedup with a Set
-            // since the same person can match multiple participant hints.
+            // Resolve people via the prebuilt email + phone indexes. Dedup with
+            // a Set since a person may match multiple hints (e.g., both email
+            // and phone on the same evidence).
             var resolvedIDs: Set<UUID> = []
             var resolved: [SamPerson] = []
             for email in emails {
                 if let person = personByEmail[email], resolvedIDs.insert(person.id).inserted {
+                    resolved.append(person)
+                }
+            }
+            for phone in phones {
+                if let person = personByPhone[phone], resolvedIDs.insert(person.id).inserted {
                     resolved.append(person)
                 }
             }
@@ -763,10 +798,12 @@ final class EvidenceRepository {
             var hintsChanged = false
             var newHints = item.participantHints
             for i in newHints.indices {
-                let canonical = canonicalizeEmail(newHints[i].rawEmail)
-                let isMe = canonical.map { meEmails.contains($0) } ?? false
-                let matched = canonical.map { allKnownEmails.contains($0) } ?? false
-                let newVerified = isMe || matched
+                let canonicalEmail = canonicalizeEmail(newHints[i].rawEmail)
+                let canonicalPhone = canonicalizePhone(newHints[i].rawPhone)
+                let isMe = canonicalEmail.map { meEmails.contains($0) } ?? false
+                let emailMatched = canonicalEmail.map { allKnownEmails.contains($0) } ?? false
+                let phoneMatched = canonicalPhone.map { personByPhone[$0] != nil } ?? false
+                let newVerified = isMe || emailMatched || phoneMatched
                 if newHints[i].isVerified != newVerified {
                     newHints[i].isVerified = newVerified
                     hintsChanged = true
@@ -796,6 +833,187 @@ final class EvidenceRepository {
     /// Legacy alias — calls `refreshParticipantResolution()`.
     func reresolveParticipantsForUnlinkedEvidence() async throws {
         try await refreshParticipantResolution()
+    }
+
+    // MARK: - Handle Hint Back-Fill
+
+    /// One-time back-fill: populate `rawPhone` on `participantHints` for
+    /// existing iMessage / phoneCall / faceTime / whatsApp / whatsAppCall
+    /// evidence imported before phone-based hints were stored.
+    ///
+    /// Reads handle/JID from the source SQLite DBs by sourceUID, fills in
+    /// hints, then calls `refreshParticipantResolution()` to link any
+    /// previously-unlinked evidence to existing people via phone match.
+    ///
+    /// Returns the number of evidence items that received a hint update.
+    @discardableResult
+    func backfillHandleHints(bookmarkManager: BookmarkManager) async throws -> Int {
+        guard let context = context else { throw RepositoryError.notConfigured }
+
+        let all = try fetchAll()
+
+        // Bucket evidence by source, indexed for fast lookup during the
+        // service-result merge step.
+        var iMessageByGUID: [String: SamEvidenceItem] = [:]
+        var callBySourceUID: [String: SamEvidenceItem] = [:]
+        var waMessageByStanzaID: [String: SamEvidenceItem] = [:]
+        var waCallByCallID: [String: SamEvidenceItem] = [:]
+
+        for item in all {
+            // Skip items that already have a phone hint — they were imported
+            // after the new code path. Email-only hints still get processed so
+            // we can add phone hints on top.
+            let hasPhone = item.participantHints.contains { $0.rawPhone != nil }
+            if hasPhone { continue }
+            guard let uid = item.sourceUID else { continue }
+
+            switch item.source {
+            case .iMessage:
+                guard uid.hasPrefix("imessage:") else { continue }
+                let guid = String(uid.dropFirst("imessage:".count))
+                iMessageByGUID[guid] = item
+            case .phoneCall, .faceTime:
+                guard uid.hasPrefix("call:") else { continue }
+                callBySourceUID[uid] = item
+            case .whatsApp:
+                guard uid.hasPrefix("whatsapp:") else { continue }
+                let stanzaID = String(uid.dropFirst("whatsapp:".count))
+                waMessageByStanzaID[stanzaID] = item
+            case .whatsAppCall:
+                guard uid.hasPrefix("whatsappcall:") else { continue }
+                let callID = String(uid.dropFirst("whatsappcall:".count))
+                waCallByCallID[callID] = item
+            default:
+                continue
+            }
+        }
+
+        var updated = 0
+
+        // iMessage back-fill
+        if !iMessageByGUID.isEmpty, let resolved = bookmarkManager.resolveMessagesURL() {
+            let dir = resolved.directory
+            guard dir.startAccessingSecurityScopedResource() else {
+                logger.warning("Back-fill: could not access Messages directory")
+                return updated
+            }
+            defer { bookmarkManager.stopAccessing(dir) }
+
+            do {
+                let guidToHandle = try await iMessageService.shared.fetchHandlesForGUIDs(
+                    dbURL: resolved.database,
+                    guids: Set(iMessageByGUID.keys)
+                )
+                for (guid, handle) in guidToHandle {
+                    guard let item = iMessageByGUID[guid] else { continue }
+                    let hint = buildHandleHint(handle: handle, displayName: nil, isVerified: false)
+                    item.participantHints = mergeHandleHint(into: item.participantHints, new: hint)
+                    updated += 1
+                }
+            } catch {
+                logger.error("iMessage back-fill failed: \(error)")
+            }
+        }
+
+        // Call history back-fill
+        if !callBySourceUID.isEmpty, let resolved = bookmarkManager.resolveCallHistoryURL() {
+            let dir = resolved.directory
+            if dir.startAccessingSecurityScopedResource() {
+                defer { bookmarkManager.stopAccessing(dir) }
+                do {
+                    let uidToAddress = try await CallHistoryService.shared.fetchAddressesForSourceUIDs(
+                        dbURL: resolved.database,
+                        sourceUIDs: Set(callBySourceUID.keys)
+                    )
+                    for (uid, address) in uidToAddress {
+                        guard let item = callBySourceUID[uid] else { continue }
+                        let hint = buildHandleHint(handle: address, displayName: nil, isVerified: false)
+                        item.participantHints = mergeHandleHint(into: item.participantHints, new: hint)
+                        updated += 1
+                    }
+                } catch {
+                    logger.error("Call back-fill failed: \(error)")
+                }
+            } else {
+                logger.warning("Back-fill: could not access CallHistory directory")
+            }
+        }
+
+        // WhatsApp back-fill (messages + calls share one bookmark)
+        if (!waMessageByStanzaID.isEmpty || !waCallByCallID.isEmpty),
+           let resolved = bookmarkManager.resolveWhatsAppURL() {
+            let dir = resolved.directory
+            if dir.startAccessingSecurityScopedResource() {
+                defer { bookmarkManager.stopAccessing(dir) }
+
+                if !waMessageByStanzaID.isEmpty {
+                    do {
+                        let stanzaToJID = try await WhatsAppService.shared.fetchJIDsForStanzaIDs(
+                            dbURL: resolved.messagesDB,
+                            stanzaIDs: Set(waMessageByStanzaID.keys)
+                        )
+                        for (stanza, jid) in stanzaToJID {
+                            guard let item = waMessageByStanzaID[stanza] else { continue }
+                            let phone = whatsAppJIDToPhone(jid)
+                            let hint = buildHandleHint(handle: phone, displayName: nil, isVerified: false)
+                            item.participantHints = mergeHandleHint(into: item.participantHints, new: hint)
+                            updated += 1
+                        }
+                    } catch {
+                        logger.error("WhatsApp message back-fill failed: \(error)")
+                    }
+                }
+
+                if !waCallByCallID.isEmpty {
+                    do {
+                        let callToJIDs = try await WhatsAppService.shared.fetchJIDsForCallIDs(
+                            dbURL: resolved.callsDB,
+                            callIDStrings: Set(waCallByCallID.keys)
+                        )
+                        for (callID, jids) in callToJIDs {
+                            guard let item = waCallByCallID[callID] else { continue }
+                            var hints = item.participantHints
+                            for jid in jids {
+                                let phone = whatsAppJIDToPhone(jid)
+                                let hint = buildHandleHint(handle: phone, displayName: nil, isVerified: false)
+                                hints = mergeHandleHint(into: hints, new: hint)
+                            }
+                            item.participantHints = hints
+                            updated += 1
+                        }
+                    } catch {
+                        logger.error("WhatsApp call back-fill failed: \(error)")
+                    }
+                }
+            } else {
+                logger.warning("Back-fill: could not access WhatsApp directory")
+            }
+        }
+
+        if updated > 0 {
+            try context.save()
+            logger.info("Back-filled rawPhone hints on \(updated) evidence items")
+        }
+
+        // Now re-run participant resolution so phone hints get matched to people.
+        try await refreshParticipantResolution()
+
+        return updated
+    }
+
+    /// Merge a new handle hint into an existing hints array, deduplicating by
+    /// (rawEmail, rawPhone). Avoids duplicate hints when an evidence item is
+    /// processed twice (e.g., multi-participant calls).
+    private func mergeHandleHint(into hints: [ParticipantHint], new: ParticipantHint) -> [ParticipantHint] {
+        var result = hints
+        let duplicate = result.contains { existing in
+            (existing.rawEmail?.lowercased() == new.rawEmail?.lowercased() && new.rawEmail != nil)
+                || (canonicalizePhone(existing.rawPhone) == canonicalizePhone(new.rawPhone) && new.rawPhone != nil)
+        }
+        if !duplicate {
+            result.append(new)
+        }
+        return result
     }
 
     // MARK: - Recent Meeting Lookup
@@ -999,6 +1217,11 @@ final class EvidenceRepository {
 
             // Resolve people by handle
             let resolved = resolvePeopleByHandle(message.handleID)
+            let handleHint = buildHandleHint(
+                handle: message.handleID,
+                displayName: resolved.first?.displayNameCache ?? resolved.first?.displayName,
+                isVerified: !resolved.isEmpty
+            )
 
             // Build snippet: use analysis summary if available, otherwise truncated text
             let snippet: String
@@ -1030,6 +1253,7 @@ final class EvidenceRepository {
                 existing.occurredAt = message.date
                 existing.isFromMe = message.isFromMe
                 existing.direction = msgDirection
+                existing.participantHints = [handleHint]
                 setLinkedPeople(resolved, on: existing)
                 existing.signals = signals
                 updated += 1
@@ -1053,6 +1277,7 @@ final class EvidenceRepository {
                 )
                 evidence.isFromMe = message.isFromMe
                 evidence.direction = msgDirection
+                evidence.participantHints = [handleHint]
                 setLinkedPeople(resolved, on: evidence)
                 context.insert(evidence)
                 created += 1
@@ -1176,6 +1401,11 @@ final class EvidenceRepository {
 
             let resolved = resolvePeople(byPhones: [call.address])
             let personName = resolved.first?.displayNameCache ?? resolved.first?.displayName
+            let handleHint = buildHandleHint(
+                handle: call.address,
+                displayName: personName,
+                isVerified: !resolved.isEmpty
+            )
 
             let source: EvidenceSource = call.callType.isFaceTime ? .faceTime : .phoneCall
 
@@ -1219,6 +1449,7 @@ final class EvidenceRepository {
                 existing.occurredAt = call.date
                 existing.endedAt = endedAt
                 existing.direction = callDirection
+                existing.participantHints = [handleHint]
                 setLinkedPeople(resolved, on: existing)
                 updated += 1
             } else {
@@ -1233,6 +1464,7 @@ final class EvidenceRepository {
                     snippet: snippet
                 )
                 evidence.direction = callDirection
+                evidence.participantHints = [handleHint]
                 setLinkedPeople(resolved, on: evidence)
                 context.insert(evidence)
                 created += 1
@@ -1258,6 +1490,11 @@ final class EvidenceRepository {
             // Resolve people by phone extracted from JID
             let phone = whatsAppJIDToPhone(message.contactJID)
             let resolved = resolvePeople(byPhones: [phone])
+            let handleHint = buildHandleHint(
+                handle: phone,
+                displayName: resolved.first?.displayNameCache ?? resolved.first?.displayName ?? message.partnerName,
+                isVerified: !resolved.isEmpty
+            )
 
             // Build snippet: use analysis summary if available, otherwise truncated text
             let snippet: String
@@ -1289,6 +1526,7 @@ final class EvidenceRepository {
                 existing.occurredAt = message.date
                 existing.isFromMe = message.isFromMe
                 existing.direction = waDirection
+                existing.participantHints = [handleHint]
                 setLinkedPeople(resolved, on: existing)
                 existing.signals = signals
                 updated += 1
@@ -1314,6 +1552,7 @@ final class EvidenceRepository {
                 )
                 evidence.isFromMe = message.isFromMe
                 evidence.direction = waDirection
+                evidence.participantHints = [handleHint]
                 setLinkedPeople(resolved, on: evidence)
                 context.insert(evidence)
                 created += 1
@@ -1337,6 +1576,11 @@ final class EvidenceRepository {
             let phones = call.participantJIDs.map { whatsAppJIDToPhone($0) }
             let resolved = resolvePeople(byPhones: phones)
             let personName = resolved.first?.displayNameCache ?? resolved.first?.displayName
+            let handleHints: [ParticipantHint] = phones.enumerated().map { idx, phone in
+                let matched = idx < resolved.count ? resolved[idx] : nil
+                let name = matched?.displayNameCache ?? matched?.displayName
+                return buildHandleHint(handle: phone, displayName: name, isVerified: matched != nil)
+            }
 
             let wasAnswered = call.outcome == 0
 
@@ -1372,6 +1616,7 @@ final class EvidenceRepository {
                 existing.occurredAt = call.date
                 existing.endedAt = endedAt
                 existing.direction = waCallDirection
+                existing.participantHints = handleHints
                 setLinkedPeople(resolved, on: existing)
                 updated += 1
             } else {
@@ -1386,6 +1631,7 @@ final class EvidenceRepository {
                     snippet: snippet
                 )
                 evidence.direction = waCallDirection
+                evidence.participantHints = handleHints
                 setLinkedPeople(resolved, on: evidence)
                 context.insert(evidence)
                 created += 1

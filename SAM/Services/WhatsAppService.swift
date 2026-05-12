@@ -188,6 +188,70 @@ actor WhatsAppService {
         return calls
     }
 
+    /// Fetch (stanzaID → JID) pairs for back-filling participant hints on existing
+    /// WhatsApp message evidence imported before phone-based hints were stored.
+    func fetchJIDsForStanzaIDs(dbURL: URL, stanzaIDs: Set<String>) async throws -> [String: String] {
+        guard !stanzaIDs.isEmpty else { return [:] }
+        let db = try openDatabase(at: dbURL)
+        defer { sqlite3_close(db) }
+
+        let query = """
+            SELECT m.ZSTANZAID, cs.ZCONTACTJID
+            FROM ZWAMESSAGE m
+            JOIN ZWACHATSESSION cs ON m.ZCHATSESSION = cs.Z_PK
+            WHERE cs.ZSESSIONTYPE = 0 AND m.ZSTANZAID IS NOT NULL
+            """
+
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, query, -1, &stmt, nil) == SQLITE_OK else {
+            let error = String(cString: sqlite3_errmsg(db))
+            throw WhatsAppError.queryFailed(error)
+        }
+        defer { sqlite3_finalize(stmt) }
+
+        var result: [String: String] = [:]
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            guard let stanzaID = columnText(stmt, 0), stanzaIDs.contains(stanzaID) else { continue }
+            if let jid = columnText(stmt, 1), !jid.isEmpty {
+                result[stanzaID] = jid
+            }
+        }
+        return result
+    }
+
+    /// Fetch (callIDString → [JID]) pairs for back-filling participant hints on
+    /// existing WhatsApp call evidence.
+    func fetchJIDsForCallIDs(dbURL: URL, callIDStrings: Set<String>) async throws -> [String: [String]] {
+        guard !callIDStrings.isEmpty else { return [:] }
+        let db = try openDatabase(at: dbURL)
+        defer { sqlite3_close(db) }
+
+        guard tableExists("ZWACDCALLEVENT", in: db) else { return [:] }
+
+        let query = """
+            SELECT ce.ZCALLIDSTRING, p.ZJID
+            FROM ZWACDCALLEVENT ce
+            LEFT JOIN ZWACDCALLEVENTPARTICIPANT p ON p.ZCALLEVENT = ce.Z_PK
+            WHERE ce.ZCALLIDSTRING IS NOT NULL
+            """
+
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, query, -1, &stmt, nil) == SQLITE_OK else {
+            let error = String(cString: sqlite3_errmsg(db))
+            throw WhatsAppError.queryFailed(error)
+        }
+        defer { sqlite3_finalize(stmt) }
+
+        var result: [String: [String]] = [:]
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            guard let callID = columnText(stmt, 0), callIDStrings.contains(callID) else { continue }
+            if let jid = columnText(stmt, 1), !jid.isEmpty {
+                result[callID, default: []].append(jid)
+            }
+        }
+        return result
+    }
+
     /// Fetch all unique JIDs with message counts (for unknown sender discovery).
     func fetchAllJIDs(dbURL: URL) async throws -> [(jid: String, partnerName: String?, messageCount: Int, latestMessageDate: Date?)] {
         let db = try openDatabase(at: dbURL)

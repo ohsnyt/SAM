@@ -80,7 +80,11 @@ struct RolesSettingsPane: View {
         .task {
             isFinancial = await BusinessProfileService.shared.isFinancialPractice()
         }
-        .sheet(isPresented: $showingEditor) {
+        .managedSheet(
+            isPresented: $showingEditor,
+            priority: .userInitiated,
+            identifier: "settings.role-editor"
+        ) {
             RoleDefinitionEditorSheet(
                 mode: editingRole.map { .edit($0) } ?? .create,
                 onSave: {
@@ -89,7 +93,6 @@ struct RolesSettingsPane: View {
                 }
             )
         }
-        .restoreOnUnlock(isPresented: $showingEditor)
         .dismissOnLock(isPresented: $showDeleteConfirmation)
         .alert("Delete Role?", isPresented: $showDeleteConfirmation) {
             Button("Cancel", role: .cancel) { }

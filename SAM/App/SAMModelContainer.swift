@@ -82,6 +82,10 @@ enum SAMSchema {
         TrajectoryStage.self,                          // Relationship model Phase 1: stages on a Trajectory
         PersonSphereMembership.self,                   // Relationship model Phase 1: person ↔ Sphere
         PersonTrajectoryEntry.self,                    // Relationship model Phase 1: person ↔ Trajectory (active + historical)
+        OutcomeBundle.self,                            // Per-person bundled outreach outcomes
+        OutcomeSubItem.self,                           // One topic inside an OutcomeBundle
+        OutcomeDismissalRecord.self,                   // Survives the v34→bundle wipe to preserve user skips
+        WeeklyBundleRating.self,                       // P9: weekly user rating of a bundle's coaching quality
     ]
 }
 
@@ -406,6 +410,107 @@ enum SAMModelContainer {
         }
 
         UserDefaults.standard.set(true, forKey: key)
+    }
+
+    /// Dismissal-preserving wipe of person-linked outreach SamOutcome rows.
+    /// Phase: per-person bundled outcome redesign.
+    ///
+    /// What it does
+    /// 1. For every SamOutcome with linkedPerson != nil AND an outreach-class
+    ///    OutcomeKind: if status == .dismissed, translate the kind into an
+    ///    OutcomeSubItemKind and persist an OutcomeDismissalRecord so the
+    ///    user's prior "no" suppresses the new bundle scanner from re-firing.
+    /// 2. Then delete those legacy SamOutcome rows so the bundle generator
+    ///    starts from a clean slate. Non-person and non-outreach outcomes
+    ///    (preparation, training, compliance, contentCreation, setup, growth)
+    ///    are left untouched.
+    ///
+    /// Safe to call repeatedly — guarded by `sam.migration.outcomeBundleWipeV1`.
+    @MainActor
+    static func runOutcomeBundleWipeIfNeeded() {
+        let key = "sam.migration.outcomeBundleWipeV1"
+        guard !UserDefaults.standard.bool(forKey: key) else { return }
+
+        let context = ModelContext(shared)
+        let outreachKinds: Set<OutcomeKind> = [
+            .outreach, .followUp, .proposal, .commitment,
+            .clientWithoutStewardship, .roleFilling
+        ]
+        let translation: [OutcomeKind: OutcomeSubItemKind] = [
+            .outreach:                 .cadenceReconnect,
+            .followUp:                 .openActionItem,
+            .proposal:                 .proposalPrep,
+            .commitment:               .openCommitment,
+            .clientWithoutStewardship: .stewardshipArc,
+            .roleFilling:              .recruitTouch
+        ]
+
+        do {
+            let descriptor = FetchDescriptor<SamOutcome>()
+            let all = try context.fetch(descriptor)
+
+            var preservedDismissals = 0
+            var deletedLegacy = 0
+
+            for outcome in all {
+                guard let person = outcome.linkedPerson else { continue }
+                guard outreachKinds.contains(outcome.outcomeKind) else { continue }
+
+                // Preserve dismissal as suppression record.
+                if outcome.status == .dismissed,
+                   let subKind = translation[outcome.outcomeKind] {
+                    let personID = person.id
+                    let kindRaw = subKind.rawValue
+                    let dupDescriptor = FetchDescriptor<OutcomeDismissalRecord>(
+                        predicate: #Predicate { $0.personID == personID && $0.kindRawValue == kindRaw }
+                    )
+                    let alreadyHave = (try? context.fetch(dupDescriptor).first) != nil
+                    if !alreadyHave {
+                        let record = OutcomeDismissalRecord(
+                            personID: personID,
+                            kindRawValue: kindRaw,
+                            dismissedAt: outcome.dismissedAt ?? .now,
+                            suppressUntil: defaultLegacySuppressUntil(for: subKind, from: outcome.dismissedAt ?? .now),
+                            migratedFromLegacy: true
+                        )
+                        context.insert(record)
+                        preservedDismissals += 1
+                    }
+                }
+
+                context.delete(outcome)
+                deletedLegacy += 1
+            }
+
+            if preservedDismissals > 0 || deletedLegacy > 0 {
+                try context.save()
+                containerLogger.notice("Outcome bundle wipe: preserved \(preservedDismissals) dismissals, removed \(deletedLegacy) legacy person-outreach outcomes")
+            }
+        } catch {
+            containerLogger.error("Outcome bundle wipe failed: \(error.localizedDescription) — will retry next launch")
+            return  // don't set the flag; try again next launch
+        }
+
+        UserDefaults.standard.set(true, forKey: key)
+    }
+
+    /// Suppression window applied to migrated dismissals. Cadence reconnects
+    /// expire fast (the user's "no" is freshness-bound); birthdays/anniversaries
+    /// suppress until the next yearly window; the rest get 30 days.
+    private nonisolated static func defaultLegacySuppressUntil(for kind: OutcomeSubItemKind, from dismissedAt: Date) -> Date? {
+        let cal = Calendar.current
+        switch kind {
+        case .cadenceReconnect:
+            return cal.date(byAdding: .day, value: 7,  to: dismissedAt)
+        case .birthday, .anniversary, .annualReview:
+            return cal.date(byAdding: .day, value: 365, to: dismissedAt)
+        case .lifeEventTouch:
+            return nil  // open-ended — user explicitly didn't want this one
+        case .stewardshipArc, .stalledPipeline,
+             .openCommitment, .openActionItem,
+             .proposalPrep, .recruitTouch:
+            return cal.date(byAdding: .day, value: 30, to: dismissedAt)
+        }
     }
 
     /// Backfill directionRaw on existing evidence from isFromMe / source / title.

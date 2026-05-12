@@ -412,3 +412,17 @@ struct EvernoteImportPreviewSheet: View {
     }
 }
 
+// MARK: - Window Wrapper
+
+/// Hosts `EvernoteImportPreviewSheet` inside a standalone `Window` scene.
+/// Bridges the sheet's `onDismiss` callback to the window's native close.
+struct EvernoteImportWindowContent: View {
+    @Environment(\.dismissWindow) private var dismissWindow
+
+    var body: some View {
+        EvernoteImportPreviewSheet {
+            dismissWindow(id: "import-evernote")
+        }
+    }
+}
+

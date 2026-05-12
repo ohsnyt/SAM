@@ -43,13 +43,16 @@ struct PresentationLibraryView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
-        .sheet(isPresented: $showNewPresentation) {
+        .managedSheet(
+            isPresented: $showNewPresentation,
+            priority: .userInitiated,
+            identifier: "presentations.new"
+        ) {
             PresentationFormSheet { presentation in
                 selectedPresentationID = presentation.id
                 refreshToken = UUID()
             }
         }
-        .restoreOnUnlock(isPresented: $showNewPresentation)
         .alert("Delete Presentation?", isPresented: $showDeleteConfirmation) {
             Button("Delete", role: .destructive) {
                 deleteSelectedPresentation()

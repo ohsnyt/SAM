@@ -423,12 +423,14 @@ public struct ParticipantHint: Codable, Sendable {
     public var isOrganizer: Bool
     public var isVerified: Bool      // True if matched to CNContact
     public var rawEmail: String?
+    public var rawPhone: String?     // Phone handle for iMessage / call / WhatsApp evidence
 
-    public init(displayName: String, isOrganizer: Bool = false, isVerified: Bool = false, rawEmail: String? = nil) {
+    public init(displayName: String, isOrganizer: Bool = false, isVerified: Bool = false, rawEmail: String? = nil, rawPhone: String? = nil) {
         self.displayName = displayName
         self.isOrganizer = isOrganizer
         self.isVerified = isVerified
         self.rawEmail = rawEmail
+        self.rawPhone = rawPhone
     }
 
     /// Live status computed from the current People list.

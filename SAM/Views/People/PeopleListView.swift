@@ -366,12 +366,15 @@ struct PeopleListView: View {
                 GuideButton(articleID: "people.contact-list")
             }
         }
-        .sheet(isPresented: $showingNewPersonSheet) {
+        .managedSheet(
+            isPresented: $showingNewPersonSheet,
+            priority: .userInitiated,
+            identifier: "people.new-person"
+        ) {
             NewPersonSheet { newID in
                 selectedPersonID = newID
             }
         }
-        .restoreOnUnlock(isPresented: $showingNewPersonSheet)
         .onChange(of: allPeople.count) { _, newCount in
             if newCount != lastCheckedPeopleCount {
                 lastCheckedPeopleCount = newCount
@@ -614,10 +617,13 @@ struct PeopleListView: View {
             }
         }
         .listStyle(.sidebar)
-        .sheet(item: $personToMerge) { person in
+        .managedSheet(
+            item: $personToMerge,
+            priority: .userInitiated,
+            identifier: "people.merge-contact"
+        ) { person in
             MergeContactSheet(sourcePerson: person)
         }
-        .restoreOnUnlock(item: $personToMerge)
         .alert(
             "Delete Person?",
             isPresented: Binding(
@@ -632,7 +638,7 @@ struct PeopleListView: View {
                         selectedPersonID = nil
                     }
                     do {
-                        try PeopleRepository.shared.delete(person: person)
+                        try PeopleRepository.shared.delete(personID: person.id)
                     } catch {
                         Logger(subsystem: "com.matthewsessions.SAM", category: "PeopleList")
                             .error("Failed to delete person \(name, privacy: .private): \(error.localizedDescription)")

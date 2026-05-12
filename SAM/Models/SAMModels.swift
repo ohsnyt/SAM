@@ -1353,5 +1353,30 @@ extension Notification.Name {
     /// Posted when the file watcher detects a Facebook export ZIP in ~/Downloads.
     /// SAMApp listens to auto-present the FacebookImportSheet.
     static let samFacebookZipDetected = Notification.Name("samFacebookZipDetected")
+
+    // MARK: - Import-window open requests
+    //
+    // The four import flows (LinkedIn, Facebook, Substack, Evernote) live
+    // in their own NSWindows rather than as sheets on the main window.
+    // Sheets used to dismiss each other when a background-triggered sheet
+    // appeared mid-import (the Apr 24 collision Sarah hit); separate
+    // windows can't collide. Commands and coordinators post these to ask
+    // AppShellView (which has `@Environment(\.openWindow)`) to bring up
+    // the corresponding window. AppShellView also observes the
+    // `*ZipDetected` and `*AwaitingReview` notifications above and opens
+    // the same windows on those signals.
+
+    /// Posted from File → Import LinkedIn… to open the LinkedIn import window.
+    static let samShowLinkedInImportWindow = Notification.Name("samShowLinkedInImportWindow")
+
+    /// Posted from File → Import Facebook… to open the Facebook import window.
+    static let samShowFacebookImportWindow = Notification.Name("samShowFacebookImportWindow")
+
+    /// Posted from File → Import Substack… to open the Substack import window.
+    static let samShowSubstackImportWindow = Notification.Name("samShowSubstackImportWindow")
+
+    /// Posted from File → Import Evernote Notes… (after preview load) to
+    /// open the Evernote import preview window.
+    static let samShowEvernoteImportWindow = Notification.Name("samShowEvernoteImportWindow")
 }
 

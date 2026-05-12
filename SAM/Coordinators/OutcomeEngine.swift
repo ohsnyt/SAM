@@ -311,6 +311,35 @@ final class OutcomeEngine {
                 }
             }
 
+            // Route person-linked outreach candidates into per-person bundles.
+            // Strips them from `newOutcomes` so they don't double-persist as
+            // standalone SamOutcome rows. Non-bundleable candidates fall
+            // through to the persistence path below.
+            let bundleResult = try await perf.measure("OutcomeEngine.routeBundles") { () -> OutcomeBundleGenerator.PartitionResult in
+                try await OutcomeBundleGenerator.shared.routeCandidates(&newOutcomes)
+            }
+            await Task.yield()
+            if BackupCoordinator.isRestoring { generationStatus = .idle; return }
+
+            // Scan upcoming birthdays/anniversaries from Contacts.
+            await perf.measure("OutcomeEngine.scanLifeDates") {
+                await OutcomeBundleGenerator.shared.scanLifeDates(people: allPeople)
+            }
+            await Task.yield()
+            if BackupCoordinator.isRestoring { generationStatus = .idle; return }
+
+            // Close bundles whose sub-items are all completed/skipped.
+            perf.measureSync("OutcomeEngine.sweepClosedBundles") {
+                OutcomeBundleGenerator.shared.sweepClosedBundles()
+            }
+
+            // Generate combined drafts for bundles whose sub-item set changed.
+            // Background priority — yields to user input.
+            await perf.measure("OutcomeEngine.refreshCombinedDrafts") {
+                await OutcomeBundleGenerator.shared.refreshCombinedDrafts()
+            }
+            await Task.yield()
+
             // Persist (deduplication: skip if an active duplicate exists OR
             // if the user recently dismissed/completed the same suggestion).
             // Iter 2: pre-build a single dedup index and insert without per-item
@@ -345,7 +374,7 @@ final class OutcomeEngine {
 
             generationStatus = .success
             lastGeneratedAt = .now
-            logger.info("Generated \(persisted) new outcomes (\(newOutcomes.count) candidates, \(newOutcomes.count - persisted) duplicates)")
+            logger.info("Generated \(persisted) new outcomes (\(newOutcomes.count) candidates, \(newOutcomes.count - persisted) duplicates); bundled \(bundleResult.bundled) into \(bundleResult.bundlesTouched) bundles (\(bundleResult.suppressed) suppressed)")
 
         } catch {
             generationStatus = .failed

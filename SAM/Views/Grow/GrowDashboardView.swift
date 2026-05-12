@@ -99,7 +99,11 @@ struct GrowDashboardView: View {
         .onReceive(NotificationCenter.default.publisher(for: .samProfileAnalysisDidUpdate)) { _ in
             Task { await loadAnalyses() }
         }
-        .sheet(item: $selectedContentTopic) { topic in
+        .managedSheet(
+            item: $selectedContentTopic,
+            priority: .userInitiated,
+            identifier: "grow.content-draft"
+        ) { topic in
             ContentDraftSheet(
                 topic: topic.topic,
                 keyPoints: topic.keyPoints,
@@ -110,13 +114,15 @@ struct GrowDashboardView: View {
                 onCancel: { selectedContentTopic = nil }
             )
         }
-        .restoreOnUnlock(item: $selectedContentTopic)
-        .sheet(isPresented: $showCustomTopicSheet) {
+        .managedSheet(
+            isPresented: $showCustomTopicSheet,
+            priority: .userInitiated,
+            identifier: "grow.custom-topic"
+        ) {
             CustomTopicSheet { topic in
                 selectedContentTopic = topic
             }
         }
-        .restoreOnUnlock(isPresented: $showCustomTopicSheet)
     }
 
     // MARK: - Profile Tab

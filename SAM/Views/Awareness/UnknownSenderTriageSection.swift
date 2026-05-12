@@ -86,7 +86,11 @@ struct UnknownSenderTriageSection: View {
                 loadPendingSenders()
             }
         }
-        .sheet(isPresented: $showMatchConfirmation) {
+        .managedSheet(
+            isPresented: $showMatchConfirmation,
+            priority: .userInitiated,
+            identifier: "triage.match-confirmation"
+        ) {
             TriageMatchConfirmationView(
                 pendingMatches: $pendingMatches,
                 onDone: { resolvedMatches in
@@ -94,7 +98,6 @@ struct UnknownSenderTriageSection: View {
                 }
             )
         }
-        .restoreOnUnlock(isPresented: $showMatchConfirmation)
     }
 
     private var triageCard: some View {

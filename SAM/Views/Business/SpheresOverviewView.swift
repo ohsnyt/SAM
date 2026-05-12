@@ -46,7 +46,11 @@ struct SpheresOverviewView: View {
             }
         }
         .task { refresh() }
-        .sheet(isPresented: $showNewSphereSheet) {
+        .managedSheet(
+            isPresented: $showNewSphereSheet,
+            priority: .userInitiated,
+            identifier: "spheres.new"
+        ) {
             NewSphereSheet { _ in
                 refresh()
             }

@@ -214,35 +214,54 @@ struct PersonDetailView: View {
         .onReceive(NotificationCenter.default.publisher(for: .samUndoDidRestore)) { _ in
             loadNotes()
         }
-        .sheet(isPresented: $showingEnrichmentSheet, onDismiss: {
-            pendingEnrichments = enrichmentCoordinator.pendingEnrichments(for: person.id)
-            // Re-fetch contact data so updated company/job title appear immediately
-            Task { await loadFullContact() }
-        }) {
+        .managedSheet(
+            isPresented: $showingEnrichmentSheet,
+            priority: .userInitiated,
+            identifier: "person.enrichment-review"
+        ) {
             EnrichmentReviewSheet(person: person, enrichments: pendingEnrichments)
         }
-        .restoreOnUnlock(isPresented: $showingEnrichmentSheet)
-        .sheet(isPresented: $showingContextPicker) {
+        .onChange(of: showingEnrichmentSheet) { _, newValue in
+            if !newValue {
+                pendingEnrichments = enrichmentCoordinator.pendingEnrichments(for: person.id)
+                Task { await loadFullContact() }
+            }
+        }
+        .managedSheet(
+            isPresented: $showingContextPicker,
+            priority: .userInitiated,
+            identifier: "person.context-picker"
+        ) {
             ContextPickerSheet(person: person)
         }
-        .restoreOnUnlock(isPresented: $showingContextPicker)
-        .sheet(isPresented: $showingReferrerPicker) {
+        .managedSheet(
+            isPresented: $showingReferrerPicker,
+            priority: .userInitiated,
+            identifier: "person.referrer-picker"
+        ) {
             ReferrerPickerSheet(
                 person: person,
                 candidates: allPeople.filter { $0.id != person.id && !$0.isMe }
             )
         }
-        .restoreOnUnlock(isPresented: $showingReferrerPicker)
-        .sheet(isPresented: $showingCorrectionSheet, onDismiss: {
-            loadNotes()
-        }) {
+        .managedSheet(
+            isPresented: $showingCorrectionSheet,
+            priority: .userInitiated,
+            identifier: "person.correction"
+        ) {
             CorrectionSheetView(
                 person: person,
                 currentSummary: person.relationshipSummary ?? ""
             )
         }
-        .restoreOnUnlock(isPresented: $showingCorrectionSheet)
-        .sheet(isPresented: $showingProductionForm) {
+        .onChange(of: showingCorrectionSheet) { _, newValue in
+            if !newValue { loadNotes() }
+        }
+        .managedSheet(
+            isPresented: $showingProductionForm,
+            priority: .userInitiated,
+            identifier: "person.production-entry"
+        ) {
             ProductionEntryForm(
                 personName: person.displayNameCache ?? person.displayName,
                 personID: person.id,
@@ -251,15 +270,20 @@ struct PersonDetailView: View {
                 }
             )
         }
-        .restoreOnUnlock(isPresented: $showingProductionForm)
-        .sheet(isPresented: $showingManualTaskSheet) {
+        .managedSheet(
+            isPresented: $showingManualTaskSheet,
+            priority: .userInitiated,
+            identifier: "person.manual-task"
+        ) {
             ManualTaskSheet(prefilledPerson: person)
         }
-        .restoreOnUnlock(isPresented: $showingManualTaskSheet)
-        .sheet(isPresented: $showingMergeSheet) {
+        .managedSheet(
+            isPresented: $showingMergeSheet,
+            priority: .userInitiated,
+            identifier: "person.merge-contact"
+        ) {
             MergeContactSheet(sourcePerson: person)
         }
-        .restoreOnUnlock(isPresented: $showingMergeSheet)
         .alert("Error", isPresented: $showingError) {
             Button("OK") { }
         } message: {

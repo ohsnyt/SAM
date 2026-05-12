@@ -62,14 +62,20 @@ struct TranscriptionSessionView: View {
                 .help("Train SAM to recognize your voice in meeting transcripts")
             }
         }
-        .sheet(item: $reviewSession) { session in
+        .managedSheet(
+            item: $reviewSession,
+            priority: .userInitiated,
+            identifier: "transcription.review"
+        ) { session in
             TranscriptionReviewView(session: session)
         }
-        .restoreOnUnlock(item: $reviewSession)
-        .sheet(isPresented: $showEnrollment) {
+        .managedSheet(
+            isPresented: $showEnrollment,
+            priority: .userInitiated,
+            identifier: "transcription.speaker-enrollment"
+        ) {
             SpeakerEnrollmentView()
         }
-        .restoreOnUnlock(isPresented: $showEnrollment)
     }
 
     // MARK: - Active Session Panel

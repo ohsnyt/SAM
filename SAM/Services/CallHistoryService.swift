@@ -79,6 +79,41 @@ actor CallHistoryService {
         return records
     }
 
+    /// Fetch the (sourceUID → address) mapping for back-filling participant hints on
+    /// existing call evidence. sourceUID format matches EvidenceRepository:
+    /// "call:{Z_PK}:{Int64(date.timeIntervalSinceReferenceDate)}".
+    func fetchAddressesForSourceUIDs(dbURL: URL, sourceUIDs: Set<String>) async throws -> [String: String] {
+        guard !sourceUIDs.isEmpty else { return [:] }
+        let db = try openDatabase(at: dbURL)
+        defer { sqlite3_close(db) }
+
+        let query = """
+            SELECT Z_PK, CAST(ZADDRESS AS TEXT), ZDATE
+            FROM ZCALLRECORD
+            WHERE ZADDRESS IS NOT NULL
+            """
+
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, query, -1, &stmt, nil) == SQLITE_OK else {
+            let error = String(cString: sqlite3_errmsg(db))
+            throw CallHistoryError.queryFailed(error)
+        }
+        defer { sqlite3_finalize(stmt) }
+
+        var result: [String: String] = [:]
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let pk = sqlite3_column_int64(stmt, 0)
+            let address = columnText(stmt, 1) ?? ""
+            let dateVal = sqlite3_column_double(stmt, 2)
+            let dateTimestamp = Int64(dateVal)
+            let uid = "call:\(pk):\(dateTimestamp)"
+            if sourceUIDs.contains(uid), !address.isEmpty {
+                result[uid] = address
+            }
+        }
+        return result
+    }
+
     /// Fetch all unique addresses with call counts (for future unknown caller discovery).
     func fetchAllAddresses(dbURL: URL) async throws -> [(address: String, callCount: Int)] {
         let db = try openDatabase(at: dbURL)

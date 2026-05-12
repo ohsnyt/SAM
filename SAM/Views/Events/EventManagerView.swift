@@ -45,13 +45,16 @@ struct EventManagerView: View {
         .onReceive(NotificationCenter.default.publisher(for: .samRSVPAutoAdded)) { _ in
             refreshToken = UUID()
         }
-        .sheet(isPresented: $showNewEventForm) {
+        .managedSheet(
+            isPresented: $showNewEventForm,
+            priority: .userInitiated,
+            identifier: "events.new-event"
+        ) {
             EventFormView(onCreated: { event in
                 selectedEventID = event.id
                 refreshToken = UUID()
             })
         }
-        .restoreOnUnlock(isPresented: $showNewEventForm)
     }
 
     private var eventsContent: some View {

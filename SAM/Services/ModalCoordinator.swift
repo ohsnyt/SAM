@@ -2,9 +2,24 @@
 //  ModalCoordinator.swift
 //  SAM
 //
-//  Tracks every active modal presentation (alert, confirmation, sheet,
-//  popover, NSPanel) so AppLockService can dismiss them all when the app
-//  locks and re-present a curated subset on unlock.
+//  Two responsibilities, one type:
+//
+//  1. Lock arbitration (original purpose): tracks every active modal
+//     (alert, confirmation, sheet, popover, NSPanel) so AppLockService can
+//     dismiss them on lock and re-present a curated subset on unlock.
+//
+//  2. Presentation arbitration: serializes sheet presentations across the
+//     app so two sheets never try to present at the same time. SwiftUI on
+//     macOS can only show one sheet per window — when a second sheet's
+//     binding flips to true at a different hierarchy level, SwiftUI tears
+//     down the first to present the second. This bit Sarah on Apr 24: a
+//     post-call capture sheet appeared mid-LinkedIn-import and the import
+//     UI was gone afterward. The arbiter routes every presentation through
+//     a single active-slot + priority queue so this can't happen.
+//
+//  Call sites use the `managedSheet` ViewModifier (Views/Shared/
+//  ManagedSheetModifier.swift) rather than calling `requestPresentation`
+//  directly — the modifier handles the binding handshake.
 //
 //  The split between this and `LockOverlayCoordinator` is by *what each
 //  layer can reach*. `LockOverlayCoordinator` puts a child window over each
@@ -13,13 +28,18 @@
 //  popovers — those are independent windows in their own right. Instead of
 //  trying to cover them, we dismiss them.
 //
-//  Three registration paths reflect the three modal categories:
+//  Three legacy registration paths reflect the three modal categories used
+//  before the presentation arbiter existed:
 //    • restorable: sheets/popovers we want to bring back on unlock with
 //      the same data. Caller supplies a dismiss closure and a restore
 //      closure; we snapshot the latter and replay it after unlock.
 //    • dismissOnly: alerts/confirmations. The user re-triggers if needed —
 //      restoring "Are you sure?" prompts has no value, only confusion.
 //    • panel: system file pickers. Cancel them; cancelling is non-destructive.
+//
+//  Managed sheets (via `requestPresentation`) handle lock + restore
+//  inline — callers don't need to additionally register via the legacy
+//  paths.
 //
 
 import AppKit
@@ -64,6 +84,71 @@ final class ModalCoordinator {
     /// snapshots forward.
     private var pendingRestores: [() -> Void] = []
 
+    // MARK: - Presentation Arbiter State
+
+    /// Priority of a managed sheet presentation. Higher beats lower for
+    /// `replaceLowerPriority` conflicts; ties queue in arrival order.
+    enum Priority: Int, Comparable, Sendable {
+        /// Background-triggered prompts: post-call capture, post-meeting
+        /// capture, deceased detection, unknown-sender quick-add. Dropped
+        /// from the queue on lock (will re-fire from their source timers).
+        case opportunistic = 0
+        /// SAM-initiated coaching: outcome review, briefing prompts.
+        /// Restored on unlock if active when lock fired.
+        case coaching = 1
+        /// User explicitly invoked: File menu imports, ⌘N flows, etc.
+        /// Always restored on unlock.
+        case userInitiated = 2
+        /// Errors and unrecoverable-state prompts. Always restored.
+        case critical = 3
+
+        public static func < (lhs: Self, rhs: Self) -> Bool {
+            lhs.rawValue < rhs.rawValue
+        }
+    }
+
+    /// How a presentation request behaves when another modal is active.
+    enum ConflictPolicy: Sendable {
+        /// Wait for the active modal to dismiss, then present.
+        case queue
+        /// Skip silently if anything else is active. Used for low-stakes
+        /// background prompts that aren't worth queueing.
+        case dropIfBusy
+        /// If the active modal is strictly lower priority, displace it.
+        /// Otherwise queue.
+        case replaceLowerPriority
+    }
+
+    /// Returned to the caller of `requestPresentation`. Caller invokes
+    /// `dismissed()` when their sheet's binding goes false for any reason
+    /// (user closed, ESC, programmatic dismissal). Idempotent.
+    struct PresentationToken: Sendable {
+        let id: UUID
+        fileprivate let release: @Sendable () -> Void
+        public func dismissed() { release() }
+    }
+
+    private struct PresentationEntry {
+        let id: UUID
+        let identifier: String
+        let priority: Priority
+        let present: () -> Void
+        let dismissActive: () -> Void
+    }
+
+    /// The single modal currently presenting (or about to). `nil` means the
+    /// slot is free.
+    private var activeEntry: PresentationEntry?
+
+    /// FIFO within each priority. Higher-priority entries jump the line at
+    /// dequeue time (see `advanceQueue`).
+    private var pendingQueue: [PresentationEntry] = []
+
+    /// Snapshot of the active managed presentation at lock time, restored
+    /// on unlock if its priority warrants it (everything except
+    /// `.opportunistic`).
+    private var pendingManagedRestore: PresentationEntry?
+
     private init() {}
 
     // MARK: - Public API
@@ -102,6 +187,135 @@ final class ModalCoordinator {
         return makeRegistration(for: token)
     }
 
+    // MARK: - Public API: Presentation Arbiter
+
+    /// Request to present a sheet. The coordinator decides *when* to invoke
+    /// `present()` based on what's currently active and the `policy`:
+    ///
+    /// - If the slot is free → invoke `present()` synchronously, return
+    ///   token (active).
+    /// - If something is active and `policy == .queue` → enqueue, return
+    ///   token (queued); `present()` fires when the active slot frees up.
+    /// - If `policy == .dropIfBusy` → return a no-op token; caller's
+    ///   intent is silently dropped. Useful for "would be nice" prompts
+    ///   that shouldn't pile up.
+    /// - If `policy == .replaceLowerPriority` and the active entry is
+    ///   strictly lower priority → call its `dismissActive()`, then
+    ///   present the new entry.
+    ///
+    /// `dismissActive` is what the coordinator calls to push the sheet
+    /// back off-screen — typically `{ isPresented = false }` or
+    /// `{ item = nil }`. Required even though most callers only "dismiss"
+    /// via user action, because the coordinator may need to displace this
+    /// entry for a higher-priority one or to clear the slot on lock.
+    ///
+    /// `present` is the closure that flips the caller's binding to true.
+    /// It runs on the main actor.
+    func requestPresentation(
+        identifier: String,
+        priority: Priority,
+        policy: ConflictPolicy = .queue,
+        present: @escaping () -> Void,
+        dismissActive: @escaping () -> Void
+    ) -> PresentationToken {
+        let id = UUID()
+        let entry = PresentationEntry(
+            id: id,
+            identifier: identifier,
+            priority: priority,
+            present: present,
+            dismissActive: dismissActive
+        )
+        let token = makeToken(id: id)
+
+        if activeEntry == nil {
+            // Slot free — present immediately.
+            activeEntry = entry
+            logger.debug("Presenting '\(identifier, privacy: .public)' (priority \(priority.rawValue))")
+            present()
+            return token
+        }
+
+        // Slot busy — apply policy.
+        switch policy {
+        case .queue:
+            insertIntoQueueByPriority(entry)
+            logger.debug("Queued '\(identifier, privacy: .public)' behind '\(self.activeEntry?.identifier ?? "?", privacy: .public)'")
+            return token
+
+        case .dropIfBusy:
+            logger.debug("Dropped '\(identifier, privacy: .public)' — slot busy with '\(self.activeEntry?.identifier ?? "?", privacy: .public)'")
+            // Token's release is a no-op since we never put it in the queue.
+            return token
+
+        case .replaceLowerPriority:
+            if let active = activeEntry, entry.priority > active.priority {
+                logger.debug("Replacing '\(active.identifier, privacy: .public)' with '\(identifier, privacy: .public)' (priority \(entry.priority.rawValue) > \(active.priority.rawValue))")
+                // Push the displaced entry back to the head of the queue so
+                // it re-presents when the new entry dismisses. Detach
+                // active first so the displaced entry's eventual
+                // `token.dismissed()` call (when SwiftUI tears it down) is
+                // a no-op rather than freeing the slot under us.
+                let displaced = active
+                activeEntry = entry
+                pendingQueue.insert(displaced, at: 0)
+                displaced.dismissActive()
+                present()
+                return token
+            } else {
+                insertIntoQueueByPriority(entry)
+                logger.debug("Queued '\(identifier, privacy: .public)' (no lower-priority active to displace)")
+                return token
+            }
+        }
+    }
+
+    // MARK: - Presentation Arbiter Internals
+
+    private func insertIntoQueueByPriority(_ entry: PresentationEntry) {
+        // Insert at the position that keeps the queue sorted by priority
+        // (high first) while preserving FIFO within a priority band.
+        let insertIndex = pendingQueue.firstIndex(where: { $0.priority < entry.priority })
+            ?? pendingQueue.endIndex
+        pendingQueue.insert(entry, at: insertIndex)
+    }
+
+    private func makeToken(id: UUID) -> PresentationToken {
+        PresentationToken(id: id) { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.releaseToken(id: id)
+            }
+        }
+    }
+
+    /// Called when the caller's sheet has dismissed (binding observed
+    /// false). Frees the slot if `id` is the active entry; otherwise
+    /// removes it from the queue (caller gave up before presenting).
+    /// Idempotent: re-entering with the same id is a no-op.
+    private func releaseToken(id: UUID) {
+        if activeEntry?.id == id {
+            let leaving = activeEntry?.identifier ?? "?"
+            activeEntry = nil
+            logger.debug("Released active '\(leaving, privacy: .public)'")
+            advanceQueue()
+            return
+        }
+        if let queuedIndex = pendingQueue.firstIndex(where: { $0.id == id }) {
+            let leaving = pendingQueue[queuedIndex].identifier
+            pendingQueue.remove(at: queuedIndex)
+            logger.debug("Withdrew queued '\(leaving, privacy: .public)' before presentation")
+        }
+        // else: token already released, or was dropped via .dropIfBusy.
+    }
+
+    private func advanceQueue() {
+        guard activeEntry == nil, let next = pendingQueue.first else { return }
+        pendingQueue.removeFirst()
+        activeEntry = next
+        logger.debug("Advancing queue: presenting '\(next.identifier, privacy: .public)'")
+        next.present()
+    }
+
     // MARK: - Lock Transitions
 
     /// Called by `AppLockService` from `lock()` and the success branch of
@@ -111,9 +325,40 @@ final class ModalCoordinator {
     func handleLockStateChange(isLocked: Bool) {
         if isLocked {
             dismissAll()
+            snapshotAndDismissManaged()
         } else {
             restorePending()
+            restoreManaged()
         }
+    }
+
+    /// On lock: snapshot the active managed entry (if its priority warrants
+    /// restoration), then dismiss it. Clear the queue — queued opportunistic
+    /// prompts shouldn't pile up across lock cycles, and queued
+    /// user-initiated requests are rare enough that re-triggering manually
+    /// is fine.
+    private func snapshotAndDismissManaged() {
+        guard let active = activeEntry else {
+            pendingQueue.removeAll()
+            return
+        }
+        if active.priority >= .coaching {
+            pendingManagedRestore = active
+        }
+        active.dismissActive()
+        activeEntry = nil
+        pendingQueue.removeAll()
+    }
+
+    /// On unlock: if we snapshotted a managed entry on lock, restore it.
+    /// The slot is free at this point (we cleared it on lock), so just
+    /// re-set active and call present().
+    private func restoreManaged() {
+        guard let entry = pendingManagedRestore else { return }
+        pendingManagedRestore = nil
+        activeEntry = entry
+        logger.debug("Restoring managed '\(entry.identifier, privacy: .public)' after unlock")
+        entry.present()
     }
 
     // MARK: - Internals

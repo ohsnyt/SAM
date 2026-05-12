@@ -350,7 +350,7 @@ struct UnknownSenderQuickAddSheet: View {
             try? EventRepository.shared.removeParticipant(participationID: participation.id, from: event)
         }
         if let person = addedPerson {
-            try? PeopleRepository.shared.delete(person: person)
+            try? PeopleRepository.shared.delete(personID: person.id)
         }
         // Re-mark the unknown sender as dismissed (user chose to undo the add)
         if let sender = try? UnknownSenderRepository.shared.fetchByID(rsvp.id) {

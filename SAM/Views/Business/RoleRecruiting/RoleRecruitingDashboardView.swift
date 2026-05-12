@@ -64,7 +64,11 @@ struct RoleRecruitingDashboardView: View {
                 selectedRoleID = coordinator.roleDefinitions.first?.id
             }
         }
-        .sheet(isPresented: $showingEditor) {
+        .managedSheet(
+            isPresented: $showingEditor,
+            priority: .userInitiated,
+            identifier: "recruiting.role-editor"
+        ) {
             RoleDefinitionEditorSheet(
                 mode: editingRole.map { .edit($0) } ?? .create,
                 onSave: {
@@ -76,8 +80,11 @@ struct RoleRecruitingDashboardView: View {
                 }
             )
         }
-        .restoreOnUnlock(isPresented: $showingEditor)
-        .sheet(isPresented: $showingReviewSheet) {
+        .managedSheet(
+            isPresented: $showingReviewSheet,
+            priority: .userInitiated,
+            identifier: "recruiting.candidate-review"
+        ) {
             if let roleID = selectedRoleID,
                let results = coordinator.pendingResults[roleID] {
                 RoleCandidateReviewSheet(
@@ -88,7 +95,6 @@ struct RoleRecruitingDashboardView: View {
                 )
             }
         }
-        .restoreOnUnlock(isPresented: $showingReviewSheet)
     }
 
     // MARK: - Empty State

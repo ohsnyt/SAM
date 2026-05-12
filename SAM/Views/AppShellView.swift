@@ -74,18 +74,29 @@ struct AppShellView: View {
             peopleMode: $peopleMode,
             openWindow: openWindow
         ))
-        .sheet(item: $capturePayload) { payload in
+        .managedSheet(
+            item: $capturePayload,
+            priority: .opportunistic,
+            identifier: "post-meeting-capture"
+        ) { payload in
             PostMeetingCaptureView(
                 payload: payload,
                 onSave: {}
             )
         }
-        .restoreOnUnlock(item: $capturePayload)
-        .sheet(item: $impromptuReviewPayload) { payload in
+        .managedSheet(
+            item: $impromptuReviewPayload,
+            priority: .opportunistic,
+            identifier: "impromptu-recording-review"
+        ) { payload in
             ImpromptuRecordingReviewView(payload: payload)
         }
-        .restoreOnUnlock(item: $impromptuReviewPayload)
-        .sheet(isPresented: $showCommandPalette) {
+        .managedSheet(
+            isPresented: $showCommandPalette,
+            priority: .userInitiated,
+            policy: .replaceLowerPriority,
+            identifier: "command-palette"
+        ) {
             CommandPaletteView(
                 onNavigate: { section in
                     sidebarSelection = section
@@ -99,7 +110,6 @@ struct AppShellView: View {
                 }
             )
         }
-        .dismissOnLock(isPresented: $showCommandPalette)
         .overlay(alignment: .bottom) {
             UndoToastView()
         }
@@ -127,10 +137,14 @@ struct AppShellView: View {
             get: { noteAnalysisCoordinator.deceasedCandidate != nil },
             set: { if !$0 { noteAnalysisCoordinator.dismissDeceasedCandidate() } }
         ))
-        .sheet(isPresented: Binding(
-            get: { introCoordinator.showIntroSequence },
-            set: { introCoordinator.showIntroSequence = $0 }
-        )) {
+        .managedSheet(
+            isPresented: Binding(
+                get: { introCoordinator.showIntroSequence },
+                set: { introCoordinator.showIntroSequence = $0 }
+            ),
+            priority: .critical,
+            identifier: "intro-sequence"
+        ) {
             IntroSequenceOverlay()
                 .interactiveDismissDisabled()
         }
@@ -394,6 +408,49 @@ private struct AppShellNotificationHandlers: ViewModifier {
             }
             .onReceive(NotificationCenter.default.publisher(for: .samOpenGuide)) { _ in
                 openWindow(id: "guide")
+            }
+            .modifier(SocialImportWindowObservers(openWindow: openWindow))
+    }
+}
+
+/// Routes social-import notifications to standalone Window scenes.
+/// Split out from `AppShellNotificationHandlers` to keep each ViewModifier
+/// body small enough for the Swift type-checker to handle in reasonable
+/// time. File menu commands fire `samShow*ImportWindow`; import
+/// coordinators fire the `AwaitingReview` / `ZipDetected` flavors when an
+/// inbound zip or email attachment is auto-detected. All route to the
+/// same windows.
+private struct SocialImportWindowObservers: ViewModifier {
+    let openWindow: OpenWindowAction
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .samShowLinkedInImportWindow)) { _ in
+                openWindow(id: "import-linkedin")
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .samLinkedInAwaitingReview)) { _ in
+                openWindow(id: "import-linkedin")
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .samLinkedInZipDetected)) { _ in
+                openWindow(id: "import-linkedin")
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .samShowFacebookImportWindow)) { _ in
+                openWindow(id: "import-facebook")
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .samFacebookAwaitingReview)) { _ in
+                openWindow(id: "import-facebook")
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .samFacebookZipDetected)) { _ in
+                openWindow(id: "import-facebook")
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .samShowSubstackImportWindow)) { _ in
+                openWindow(id: "import-substack")
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .samSubstackZipDetected)) { _ in
+                openWindow(id: "import-substack")
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .samShowEvernoteImportWindow)) { _ in
+                openWindow(id: "import-evernote")
             }
     }
 }

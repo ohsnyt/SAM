@@ -88,14 +88,20 @@ struct ContextDetailView: View {
         .onReceive(NotificationCenter.default.publisher(for: .samUndoDidRestore)) { _ in
             loadNotes()
         }
-        .sheet(isPresented: $showingEditSheet) {
+        .managedSheet(
+            isPresented: $showingEditSheet,
+            priority: .userInitiated,
+            identifier: "context.edit"
+        ) {
             EditContextSheet(context: context, isPresented: $showingEditSheet)
         }
-        .restoreOnUnlock(isPresented: $showingEditSheet)
-        .sheet(isPresented: $showingAddParticipantSheet) {
+        .managedSheet(
+            isPresented: $showingAddParticipantSheet,
+            priority: .userInitiated,
+            identifier: "context.add-participant"
+        ) {
             AddParticipantSheet(context: context, isPresented: $showingAddParticipantSheet)
         }
-        .restoreOnUnlock(isPresented: $showingAddParticipantSheet)
         .confirmationDialog(
             "Delete this context?",
             isPresented: $showingDeleteConfirmation,

@@ -68,14 +68,17 @@ struct ContextListView: View {
                 .help("Create a new context")
             }
         }
-        .sheet(isPresented: $showingCreateSheet) {
+        .managedSheet(
+            isPresented: $showingCreateSheet,
+            priority: .userInitiated,
+            identifier: "context.create"
+        ) {
             CreateContextSheet(isPresented: $showingCreateSheet) {
                 Task {
                     await loadContexts()
                 }
             }
         }
-        .restoreOnUnlock(isPresented: $showingCreateSheet)
         .task {
             await loadContexts()
         }

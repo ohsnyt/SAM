@@ -85,7 +85,11 @@ struct LifeEventsSection: View {
                 .padding()
             }
             .background(Color(nsColor: .controlBackgroundColor))
-            .sheet(item: $activeCoachingContext) { context in
+            .managedSheet(
+                item: $activeCoachingContext,
+                priority: .coaching,
+                identifier: "life-events.coaching"
+            ) { context in
                 LifeEventCoachingView(
                     context: context,
                     onDone: {
@@ -96,7 +100,6 @@ struct LifeEventsSection: View {
                     }
                 )
             }
-            .restoreOnUnlock(item: $activeCoachingContext)
         }
     }
 

@@ -102,17 +102,23 @@ struct EventDetailView: View {
             Text("Event details changed. Would you like to notify participants who have already been invited?")
         }
         .dismissOnLock(isPresented: $showUpdateNotification)
-        .sheet(isPresented: $showUpdateSheet, onDismiss: {
-            pendingChangeSummary = nil
-            refreshToken = UUID()
-        }) {
+        .managedSheet(
+            isPresented: $showUpdateSheet,
+            priority: .coaching,
+            identifier: "event.update-notification"
+        ) {
             if let event, let changes = pendingChangeSummary {
                 EventUpdateSheet(event: event, changes: changes) {
                     refreshToken = UUID()
                 }
             }
         }
-        .restoreOnUnlock(isPresented: $showUpdateSheet)
+        .onChange(of: showUpdateSheet) { _, newValue in
+            if !newValue {
+                pendingChangeSummary = nil
+                refreshToken = UUID()
+            }
+        }
     }
 
     // MARK: - Delete
@@ -218,12 +224,18 @@ struct EventDetailView: View {
             }
             .listStyle(.plain)
             .frame(maxHeight: .infinity)
-            .sheet(isPresented: $showBulkReviewSheet, onDismiss: { refreshToken = UUID() }) {
+            .managedSheet(
+                isPresented: $showBulkReviewSheet,
+                priority: .userInitiated,
+                identifier: "event.bulk-rsvp-review"
+            ) {
                 BulkRSVPReviewSheet(event: event) {
                     refreshToken = UUID()
                 }
             }
-            .restoreOnUnlock(isPresented: $showBulkReviewSheet)
+            .onChange(of: showBulkReviewSheet) { _, newValue in
+                if !newValue { refreshToken = UUID() }
+            }
 
             // Unknown sender RSVPs
             if !unknownRSVPs.isEmpty {
@@ -287,13 +299,16 @@ struct EventDetailView: View {
             }
         }
         .padding(.bottom, 8)
-        .sheet(item: $quickAddRSVP) { rsvp in
+        .managedSheet(
+            item: $quickAddRSVP,
+            priority: .userInitiated,
+            identifier: "event.unknown-sender-quick-add"
+        ) { rsvp in
             UnknownSenderQuickAddSheet(rsvp: rsvp, eventID: eventID) {
                 refreshToken = UUID()
                 lastActionMessage = "Added to event and confirmed"
             }
         }
-        .restoreOnUnlock(item: $quickAddRSVP)
     }
 
     // MARK: - Event Header
@@ -329,7 +344,11 @@ struct EventDetailView: View {
                 }
                 .menuStyle(.borderlessButton)
                 .frame(width: 24)
-                .sheet(isPresented: $showEditEvent) {
+                .managedSheet(
+                    isPresented: $showEditEvent,
+                    priority: .userInitiated,
+                    identifier: "event.edit"
+                ) {
                     EventFormView(existingEvent: event, onUpdated: { changeSummary in
                         refreshToken = UUID()
                         if let changes = changeSummary {
@@ -338,7 +357,6 @@ struct EventDetailView: View {
                         }
                     })
                 }
-                .restoreOnUnlock(isPresented: $showEditEvent)
             }
 
             HStack(spacing: 16) {
@@ -448,30 +466,55 @@ struct EventDetailView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .sheet(isPresented: $showAddParticipants, onDismiss: { refreshToken = UUID() }) {
+        .managedSheet(
+            isPresented: $showAddParticipants,
+            priority: .userInitiated,
+            identifier: "event.add-participants"
+        ) {
             AddParticipantsSheet(event: event)
         }
-        .restoreOnUnlock(isPresented: $showAddParticipants)
-        .sheet(isPresented: $showSocialPromotion) {
+        .onChange(of: showAddParticipants) { _, newValue in
+            if !newValue { refreshToken = UUID() }
+        }
+        .managedSheet(
+            isPresented: $showSocialPromotion,
+            priority: .userInitiated,
+            identifier: "event.social-promotion"
+        ) {
             SocialPromotionSheet(event: event)
         }
-        .restoreOnUnlock(isPresented: $showSocialPromotion)
-        .sheet(isPresented: $showInvitationDrafts, onDismiss: { refreshToken = UUID() }) {
+        .managedSheet(
+            isPresented: $showInvitationDrafts,
+            priority: .userInitiated,
+            identifier: "event.invitation-drafts"
+        ) {
             InvitationDraftSheet(event: event) {
                 refreshToken = UUID()
             }
         }
-        .restoreOnUnlock(isPresented: $showInvitationDrafts)
-        .sheet(isPresented: $showEvaluationImport, onDismiss: { refreshToken = UUID() }) {
+        .onChange(of: showInvitationDrafts) { _, newValue in
+            if !newValue { refreshToken = UUID() }
+        }
+        .managedSheet(
+            isPresented: $showEvaluationImport,
+            priority: .userInitiated,
+            identifier: "event.evaluation-import"
+        ) {
             EventEvaluationImportSheet(event: event) {
                 refreshToken = UUID()
             }
         }
-        .restoreOnUnlock(isPresented: $showEvaluationImport)
-        .sheet(isPresented: Binding(
-            get: { SentMailDetectionService.shared.pendingReviewResult != nil },
-            set: { if !$0 { SentMailDetectionService.shared.pendingReviewResult = nil } }
-        ), onDismiss: { refreshToken = UUID() }) {
+        .onChange(of: showEvaluationImport) { _, newValue in
+            if !newValue { refreshToken = UUID() }
+        }
+        .managedSheet(
+            isPresented: Binding(
+                get: { SentMailDetectionService.shared.pendingReviewResult != nil },
+                set: { if !$0 { SentMailDetectionService.shared.pendingReviewResult = nil } }
+            ),
+            priority: .coaching,
+            identifier: "event.invitation-recipient-review"
+        ) {
             if let (match, recipients) = SentMailDetectionService.shared.pendingReviewResult {
                 InvitationRecipientReviewSheet(matchResult: match, recipients: recipients) {
                     SentMailDetectionService.shared.pendingReviewResult = nil
@@ -479,10 +522,6 @@ struct EventDetailView: View {
                 }
             }
         }
-        .restoreOnUnlock(isPresented: Binding(
-            get: { SentMailDetectionService.shared.pendingReviewResult != nil },
-            set: { if !$0 { SentMailDetectionService.shared.pendingReviewResult = nil } }
-        ))
     }
 
     // MARK: - Participant Detail (right)
@@ -929,7 +968,11 @@ struct ParticipantDetailView: View {
             Text("This will remove this person from the event and clear all invitation and RSVP data. SAM will not associate them with this event.")
         }
         .dismissOnLock(isPresented: $showRemoveConfirmation)
-        .sheet(isPresented: $showInvitationDraft) {
+        .managedSheet(
+            isPresented: $showInvitationDraft,
+            priority: .userInitiated,
+            identifier: "event.invitation-draft.single"
+        ) {
             InvitationDraftSheet(
                 event: event,
                 singleParticipation: participation
@@ -937,7 +980,6 @@ struct ParticipantDetailView: View {
                 showInvitationDraft = false
             }
         }
-        .restoreOnUnlock(isPresented: $showInvitationDraft)
     }
 
     // MARK: - Helpers

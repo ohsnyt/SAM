@@ -96,7 +96,11 @@ struct StrategicInsightsView: View {
         .task {
             projectionEngine.refresh()
         }
-        .sheet(item: $selectedRecForAction) { rec in
+        .managedSheet(
+            item: $selectedRecForAction,
+            priority: .userInitiated,
+            identifier: "strategic.action"
+        ) { rec in
             StrategicActionSheet(
                 recommendation: rec,
                 onFeedback: { feedback in
@@ -109,8 +113,11 @@ struct StrategicInsightsView: View {
                 }
             )
         }
-        .restoreOnUnlock(item: $selectedRecForAction)
-        .sheet(item: $activeCoachingPlan) { plan in
+        .managedSheet(
+            item: $activeCoachingPlan,
+            priority: .userInitiated,
+            identifier: "strategic.coaching-session"
+        ) { plan in
             CoachingSessionView(
                 context: CoachingSessionContext(
                     recommendation: plan.recommendation,
@@ -125,8 +132,11 @@ struct StrategicInsightsView: View {
                 }
             )
         }
-        .restoreOnUnlock(item: $activeCoachingPlan)
-        .sheet(item: $selectedContentTopic) { topic in
+        .managedSheet(
+            item: $selectedContentTopic,
+            priority: .userInitiated,
+            identifier: "strategic.content-draft"
+        ) { topic in
             ContentDraftSheet(
                 topic: topic.topic,
                 keyPoints: topic.keyPoints,
@@ -137,7 +147,6 @@ struct StrategicInsightsView: View {
                 onCancel: { selectedContentTopic = nil }
             )
         }
-        .restoreOnUnlock(item: $selectedContentTopic)
     }
 
     // MARK: - Status Banner
