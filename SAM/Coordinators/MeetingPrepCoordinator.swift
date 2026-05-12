@@ -532,7 +532,7 @@ final class MeetingPrepCoordinator {
             : nil
 
         // P/N warn threshold by Mode. Sourced from
-        // `relationship_model_implementation_plan.md` §3.2.3 defaults.
+        // `relationship-model/relationship_model_implementation_plan.md` §3.2.3 defaults.
         // Covenant is intentionally excluded — quiet by design.
         let pnWarnThreshold: Double? = {
             switch mode {

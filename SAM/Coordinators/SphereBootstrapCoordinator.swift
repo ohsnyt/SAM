@@ -171,7 +171,7 @@ enum SphereBootstrapCoordinator {
 
     /// Derive the pipeline stage name for a person at migration time.
     ///
-    /// Preference order (matching phase0_audit.md §3 guidance):
+    /// Preference order (matching relationship-model/phase0_audit.md §3 guidance):
     /// 1. Most recent StageTransition.toStage in the client pipeline.
     /// 2. roleBadges containing one of "Client" / "Applicant" / "Lead".
     /// 3. nil — person is not on the pipeline and gets only a membership.

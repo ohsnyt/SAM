@@ -6,7 +6,7 @@
 //
 //  Bulk-cached "what stage is this person at" resolver. Replaces the 18+
 //  `roleBadges.contains("Lead"/"Applicant"/"Client"/"Agent")` conflated
-//  reads catalogued in phase0_audit.md §2.
+//  reads catalogued in relationship-model/phase0_audit.md §2.
 //
 //  `roleBadges` was a *label collection* ("what kind of person is this")
 //  used in 18+ places as a *pipeline-stage proxy*. The fix: read the

@@ -4,7 +4,7 @@
 //
 //  Phase 1a — main-actor responsiveness monitor.
 //
-//  See `1_Documentation/scaling-roadmap.md` Phase 1. This file holds the
+//  See `1_Documentation/roadmap/scaling-roadmap.md` Phase 1. This file holds the
 //  cross-thread heartbeat store and the public `measure` API used to mark
 //  long-running operations. The actual ping/watch loops live in
 //  `HangWatchdog.swift`; the JSON writer lives in this file too because it

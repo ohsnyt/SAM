@@ -27,7 +27,7 @@ import SwiftUI
 
 /// The five relationship shapes SAM coaches. Mode drives cadence sensitivity,
 /// coaching tone, and which signals fire (e.g. Covenant never fires cadence-decay
-/// alerts). See `relationship_model.md` and `relationship_synthesis.md` for the
+/// alerts). See `relationship-model/relationship_model.md` and `relationship-model/relationship_synthesis.md` for the
 /// taxonomy rationale.
 public enum Mode: String, Codable, Sendable, CaseIterable {
     /// Moving someone toward a defined outcome (sale, hire, donation ask).

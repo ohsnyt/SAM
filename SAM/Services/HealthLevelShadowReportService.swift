@@ -11,7 +11,7 @@
 //
 //  The report counts agreements and surfaces every divergence so the user
 //  can spot-check whether the new math makes sense for her contacts (per
-//  `relationship_model_implementation_plan.md` §3 Sarah-regression check).
+//  `relationship-model/relationship_model_implementation_plan.md` §3 Sarah-regression check).
 //
 
 import Foundation

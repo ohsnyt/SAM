@@ -241,7 +241,7 @@ final class RoleRecruitingCoordinator {
         // Display-only: keep the visual "Agent" chip in sync. The canonical
         // recruiting-pipeline signal is the RecruitingStage record created
         // below — readers must use PersonStageResolver.isAgent(forPerson:),
-        // not this badge (see phase0_audit.md §2).
+        // not this badge (see relationship-model/phase0_audit.md §2).
         if !person.roleBadges.contains("Agent") {
             person.roleBadges.append("Agent")
         }

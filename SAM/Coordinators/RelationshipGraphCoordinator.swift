@@ -1421,7 +1421,7 @@ final class RelationshipGraphCoordinator {
     /// UserDefaults key for the Phase 3e vector-based HealthLevel derivation.
     /// Off by default — Sarah-regression protection. Will be flipped on once
     /// the Phase 3f shadow comparison shows the new math agrees with the old
-    /// on the bulk of her contact list. See `relationship_model_implementation_plan.md` §3.
+    /// on the bulk of her contact list. See `relationship-model/relationship_model_implementation_plan.md` §3.
     static let healthLevelVectorFlagKey = "sam.feature.healthLevelVector"
 
     /// True when the vector-based HealthLevel derivation is active. Reads from

@@ -19,7 +19,7 @@
 //  Phase 1 writes these models through the bootstrap migration but no
 //  existing system reads from them yet. Phase 8 promotes them to the
 //  canonical source of truth, deprecating the roleBadges-as-stage usages
-//  catalogued in phase0_audit.md §2.
+//  catalogued in relationship-model/phase0_audit.md §2.
 //
 
 import Foundation

@@ -6,15 +6,17 @@ This document carries only the context that future development is most likely to
 
 - `CLAUDE.md` (repo root) — Product philosophy, AI behavior rules, code standards
 - `changelog.md` — Completed phase history (Phases A–Z + post-phase features)
-- `scaling-roadmap.md` — Phase 0–4 plan for data-growth observability and architectural scaling
-- `social-import-pipeline.md` — Async export auto-detection pipeline (Substack / LinkedIn / Facebook)
-- `app-lock-architecture.md` — Lock state, overlays, draft preservation, security primitives
-- `crash-recovery.md` — Startup hardening, crash detection, Safe Mode
-- `compliance-architecture.md` — Practice-type compliance scanning rules and maintenance
-- `contact-photo-and-invitations.md` — Photo write-back to Contacts, rich invitations + sent-mail detection
-- `transcription-and-summary.md` — Recording contexts, auditable summary fields, lecture pipeline
-- `text-scaling.md` — `samFont` / `samTextScale` font scaling rules
-- `accepted-warnings.md` — Warnings we live with on purpose, with reasons
+- `roadmap/scaling-roadmap.md` — Phase 0–4 plan for data-growth observability and architectural scaling
+- `architecture/social-import-pipeline.md` — Async export auto-detection pipeline (Substack / LinkedIn / Facebook)
+- `architecture/app-lock-architecture.md` — Lock state, overlays, draft preservation, security primitives
+- `architecture/crash-recovery.md` — Startup hardening, crash detection, Safe Mode
+- `architecture/compliance-architecture.md` — Practice-type compliance scanning rules and maintenance
+- `architecture/contact-photo-and-invitations.md` — Photo write-back to Contacts, rich invitations + sent-mail detection
+- `architecture/transcription-and-summary.md` — Recording contexts, auditable summary fields, lecture pipeline
+- `architecture/text-scaling.md` — `samFont` / `samTextScale` font scaling rules
+- `architecture/accepted-warnings.md` — Warnings we live with on purpose, with reasons
+- `relationship-model/` — Relationship-model refactor research, plan, audit, and user overview
+- `audits/ai-usage-audit.md` — Cross-codebase AI usage inventory
 
 ---
 
@@ -136,7 +138,7 @@ Contacts have a lifecycle beyond active/inactive. `ContactLifecycleStatus` on `S
 
 ## 5. Social Platform Imports
 
-Detailed pipeline in `social-import-pipeline.md`. The headline rules:
+Detailed pipeline in `architecture/social-import-pipeline.md`. The headline rules:
 
 - Social imports create **standalone SamPerson** records (`contactIdentifier: nil`)
 - Coordinator follows standard `ImportStatus` pattern: idle → parsing → preview → importing → success/error
@@ -191,7 +193,7 @@ All models use SwiftData lightweight migration. Enum storage uses `rawValue` pat
 
 **Non-SwiftData**: `UserLinkedInProfileDTO`, `UserFacebookProfileDTO`, `UserSubstackProfileDTO` — stored as JSON in UserDefaults, injected into AI prompts via `BusinessProfileService.contextFragment()`.
 
-**Phase 1 Relationship Model**: First-launch bootstrap creates a `"My Practice"` Sphere (with `isBootstrapDefault: true`), gated by `UserDefaults["sam.migration.sphereBootstrapDone"]`. WFG users additionally get a Funnel-mode `"Client Pipeline"` Trajectory with `Lead → Applicant → Client` stages, and every existing Person is seeded with a `PersonSphereMembership` plus a `PersonTrajectoryEntry` where pipeline stage can be derived. Phase 8 routes coordinator + view stage reads through `PersonStageResolver`; legacy `roleBadges`-as-stage-proxy reads are catalogued in `phase0_audit.md` §2.
+**Phase 1 Relationship Model**: First-launch bootstrap creates a `"My Practice"` Sphere (with `isBootstrapDefault: true`), gated by `UserDefaults["sam.migration.sphereBootstrapDone"]`. WFG users additionally get a Funnel-mode `"Client Pipeline"` Trajectory with `Lead → Applicant → Client` stages, and every existing Person is seeded with a `PersonSphereMembership` plus a `PersonTrajectoryEntry` where pipeline stage can be derived. Phase 8 routes coordinator + view stage reads through `PersonStageResolver`; legacy `roleBadges`-as-stage-proxy reads are catalogued in `relationship-model/phase0_audit.md` §2.
 
 ---
 
@@ -283,7 +285,7 @@ macOS allows only **one sheet per window** at a time. When two root-level sheets
 
 Lean summary; full detail in satellite docs.
 
-### App Security (`app-lock-architecture.md`)
+### App Security (`architecture/app-lock-architecture.md`)
 
 - **Authentication is mandatory** — SAM always locks on launch and after idle timeout. `LocalAuthentication` (Touch ID + system password fallback). No opt-out.
 - **Lock**: `AppLockService` + `LockOverlayCoordinator` (per-window glass overlays) + `ModalCoordinator` (dismisses sheets on lock) + `DraftStore` (in-memory autosave for edit forms, restored on unlock).
@@ -291,13 +293,13 @@ Lean summary; full detail in satellite docs.
 - **Backup encryption is mandatory** — AES-256-GCM, HKDF-SHA256, `SAMENC1` header.
 - **Other primitives** — Clipboard auto-clear (60s, sensitive only), `privacy: .private` for all PII in logs, `KeychainService` for credentials, FileVault for database (no `FileProtectionType.complete`).
 
-### Crash Recovery (`crash-recovery.md`)
+### Crash Recovery (`architecture/crash-recovery.md`)
 
 - **Startup hardening** every launch: WAL checkpoint, timestamped backup (keeps 3), orphaned FK cleanup, crash-loop guard.
 - **Crash report auto-detection** — `sam.cleanShutdown` flag + `.ips` scan; debugger-attached state is tracked and suppresses false positives when the user "stops" from Xcode.
 - **Safe Mode** — Hold Option at launch. Skips coordinators / AI; operates on raw SQLite with 7 check categories. Email report → `sam@stillwaiting.org`.
 
-### Compliance (`compliance-architecture.md`)
+### Compliance (`architecture/compliance-architecture.md`)
 
 - Practice-type-driven (WFG Financial Advisor maintained by SAM, General custom-keyword-only).
 - WFG profile references the "U.S. Agent Agreement Packet, April 2025" — when the source doc updates and rules change, update both the prompt (`MeetingSummaryService.complianceSectionFinancialAdvisor`) and the Settings disclaimer (`ComplianceSettingsContent.swift`).

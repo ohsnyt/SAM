@@ -8,14 +8,14 @@
 
 **What**: Rewrote `context.md` from 568 lines to 364 lines, extracting eight self-contained subsystems into satellite docs under `1_Documentation/`:
 
-- `social-import-pipeline.md` — Async export auto-detection pipeline (Substack / LinkedIn / Facebook), state machine, watcher persistence
-- `app-lock-architecture.md` — Lock state, overlays, draft preservation, security primitives
-- `crash-recovery.md` — Startup hardening, crash detection (incl. debugger-attached suppression), Safe Mode
-- `compliance-architecture.md` — Practice-type compliance scanning maintenance rules
-- `contact-photo-and-invitations.md` — Photo drop / paste → Apple Contacts; rich invitation + sent-mail detection
-- `transcription-and-summary.md` — Recording contexts, auditable summary fields, lecture pipeline
-- `text-scaling.md` — `samFont` / `samTextScale` rules
-- `accepted-warnings.md` — Warnings we live with on purpose
+- `architecture/social-import-pipeline.md` — Async export auto-detection pipeline (Substack / LinkedIn / Facebook), state machine, watcher persistence
+- `architecture/app-lock-architecture.md` — Lock state, overlays, draft preservation, security primitives
+- `architecture/crash-recovery.md` — Startup hardening, crash detection (incl. debugger-attached suppression), Safe Mode
+- `architecture/compliance-architecture.md` — Practice-type compliance scanning maintenance rules
+- `architecture/contact-photo-and-invitations.md` — Photo drop / paste → Apple Contacts; rich invitation + sent-mail detection
+- `architecture/transcription-and-summary.md` — Recording contexts, auditable summary fields, lecture pipeline
+- `architecture/text-scaling.md` — `samFont` / `samTextScale` rules
+- `architecture/accepted-warnings.md` — Warnings we live with on purpose
 
 Promoted two recently-validated architectural patterns to top-level sections in `context.md`:
 
@@ -595,7 +595,7 @@ Wrapped surfaces in this round:
 
 ### Files
 
-`SAM/Services/PerformanceMonitor.swift` (new), `SAM/Services/HangWatchdog.swift` (new), `SAM/App/SAMApp.swift`, `SAM/Coordinators/OutcomeEngine.swift`, `SAM/Coordinators/DailyBriefingCoordinator.swift`, `SAM/Coordinators/MeetingPrepCoordinator.swift`, `SAM/Coordinators/ContactsImportCoordinator.swift`, `SAM/Views/Settings/DiagnosticsSettingsPane.swift`, `SAM/1_Documentation/scaling-roadmap.md`.
+`SAM/Services/PerformanceMonitor.swift` (new), `SAM/Services/HangWatchdog.swift` (new), `SAM/App/SAMApp.swift`, `SAM/Coordinators/OutcomeEngine.swift`, `SAM/Coordinators/DailyBriefingCoordinator.swift`, `SAM/Coordinators/MeetingPrepCoordinator.swift`, `SAM/Coordinators/ContactsImportCoordinator.swift`, `SAM/Views/Settings/DiagnosticsSettingsPane.swift`, `SAM/1_Documentation/roadmap/scaling-roadmap.md`.
 
 ---
 
