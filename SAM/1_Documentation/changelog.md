@@ -4,6 +4,81 @@
 
 ---
 
+## Documentation: lean `context.md` + satellite docs (2026-05-12)
+
+**What**: Rewrote `context.md` from 568 lines to 364 lines, extracting eight self-contained subsystems into satellite docs under `1_Documentation/`:
+
+- `social-import-pipeline.md` — Async export auto-detection pipeline (Substack / LinkedIn / Facebook), state machine, watcher persistence
+- `app-lock-architecture.md` — Lock state, overlays, draft preservation, security primitives
+- `crash-recovery.md` — Startup hardening, crash detection (incl. debugger-attached suppression), Safe Mode
+- `compliance-architecture.md` — Practice-type compliance scanning maintenance rules
+- `contact-photo-and-invitations.md` — Photo drop / paste → Apple Contacts; rich invitation + sent-mail detection
+- `transcription-and-summary.md` — Recording contexts, auditable summary fields, lecture pipeline
+- `text-scaling.md` — `samFont` / `samTextScale` rules
+- `accepted-warnings.md` — Warnings we live with on purpose
+
+Promoted two recently-validated architectural patterns to top-level sections in `context.md`:
+
+- **§8 Modal Arbitration** — `ModalCoordinator` presentation arbiter with priority levels (`.opportunistic` < `.coaching` < `.userInitiated` < `.critical`) + `.managedSheet` modifier; standalone `Window` scenes for long-running social imports so they can't be dismissed by a coincident background coaching sheet.
+- **§7 SwiftData Single-Context Rule** — `@MainActor` repositories whose models are bound by SwiftUI `@Query` must share `container.mainContext`. Documents both manifestations (cross-repo writes; repo-vs-mainContext deletes) and the `\SamPerson.roleBadges`-style crash that surfaces in the next render, not at the write site.
+
+**Why**: The previous `context.md` was 568 lines and growing. The user's stated goal: future development should not "accidentally skip critical context because the context file is too large to retain the critical context." Lean main doc + satellite docs lets future AI/developer sessions load the critical material without burning context on subsystem details that are only needed when actively touching that subsystem.
+
+---
+
+## CrashReport: suppress false positives from debugger-stop (2026-05-12)
+
+**What**: `CrashReportService` now tracks whether the previous session had Xcode/lldb attached (`sysctl` + `kinfo_proc.p_flag & P_TRACED`). On the next launch, if `sam.cleanShutdown` is `false` AND no `.ips` was written AND the previous session had a debugger attached, treat it as a clean dev termination and skip the crash banner. Also dropped the `buildMinimalReport()` fallback that produced empty noise emails.
+
+**Why**: The crash banner fired on every "Stop" from the Xcode debugger because `applicationShouldTerminate` (which sets `sam.cleanShutdown = true`) is bypassed by debugger stops, and an empty `.ips` scan still flagged "previous session ended uncleanly." Real crashes from a debugged session still surface because a `.ips` is still written.
+
+---
+
+## PeopleRepository: share mainContext + delete by ID (2026-05-12)
+
+**What**: Two fixes for the same root cause — cross-context SwiftData crashes.
+
+1. `configure()` now binds to `container.mainContext` instead of constructing a private `ModelContext`. SwiftUI `@Query` reads the mainContext; when the repo deleted on a separate context, the mainContext kept live `SamPerson` references pointing at deleted rows, and the next render crashed on `"backing data was detached from a context without resolving attribute faults"` reading e.g. `SamPerson.roleBadges`.
+2. `delete(person:)` → `delete(personID:)`. Passing a `SamPerson` from a different context (e.g. SwiftUI `@Query`) silently no-ops in SwiftData; re-fetching by ID guarantees the model is bound to the repo's context before mutation.
+
+**Why**: Reproduced after a contacts import merged a duplicate while the People list was on screen. Latent for months — the same family of bug also showed up in `EvidenceRepository.refreshParticipantResolution()` once a 14K-item back-fill widened the detach window.
+
+**Migration roadmap**: 24 other `@MainActor` repos still hold private `ModelContext` instances. Migrate proactively when next touching delete/merge logic in any of them.
+
+---
+
+## App architecture: presentation arbiter + OutcomeBundle redesign + comms backfill + shutdown extension (2026-05-12)
+
+Four intertwined changes shipped together because their `SAMApp.swift` edits overlap.
+
+### Presentation arbiter
+
+**What**: `ModalCoordinator` promoted from a lock-arbitration utility to a real presentation arbiter. Replaces ~24 raw `.sheet` modifiers with `.managedSheet` across view files. Adds priority levels (`.opportunistic` < `.coaching` < `.userInitiated` < `.critical`) and conflict policies. Long-running social imports (LinkedIn / Facebook / Substack / Evernote) moved to their own `Window` scenes triggered via notifications observed by `AppShellView`'s `SocialImportWindowObservers`.
+
+**Why**: macOS allows only one sheet per window. A post-call capture sheet (background-triggered) was dismissing an in-progress LinkedIn import sheet (user-initiated). The new arbiter rejects/queues lower-priority requests; standalone Windows make long-running flows immune to sheet collisions altogether.
+
+### OutcomeBundle redesign
+
+**What**: Per-person bundled outreach replaces per-topic `SamOutcome` for outreach-class kinds. New SwiftData models: `OutcomeBundle`, `OutcomeSubItem`, `OutcomeDismissalRecord`, `WeeklyBundleRating`. New `OutcomeBundleGenerator` coordinator, `OutcomeBundleRepository`, `WeeklyBundleRatingRepository`, `WeeklyBundleReviewView`, `OutcomeBundleCardView`.
+
+One-time dismissal-preserving migration (`SAMModelContainer.runOutcomeBundleWipeIfNeeded`, guarded by `sam.migration.outcomeBundleWipeV1`): for every legacy outreach `SamOutcome` with status `.dismissed`, persist an `OutcomeDismissalRecord` so the new bundle generator doesn't re-fire it; then delete the legacy rows so the new generator starts clean. Non-person and non-outreach outcomes (preparation, training, compliance, content creation, setup, growth) are left untouched.
+
+**Why**: The previous design generated five separate cards per person on a busy day — Sarah's queue was visually noisy. Bundling collapses multiple signals (life event, stale cadence, pending follow-up) into one card with sub-items that can be individually skipped or completed. Dismissal preservation honors the user's prior choices across the redesign.
+
+### Comms hint backfill
+
+**What**: One-time idempotent pass (`EvidenceRepository.backfillHandleHints`, guarded by `handleHintBackfillDone_v1`) to populate `rawPhone` hints on iMessage / call / WhatsApp evidence imported before phone hints were stored.
+
+**Why**: Older evidence rows lacked the rawPhone metadata that newer outcome scoring uses for participant resolution.
+
+### Shutdown extension
+
+**What**: `ShutdownCoordinator.settle()`'s default timeout raised so MLX-aware coordinators (which can need 1+ minute to release their model context cleanly) have room to finish before teardown. Re-entrant `applicationShouldTerminate` guard prevents a second settle pass from racing the in-flight one if the user clicks Quit twice.
+
+**Why**: A 15-second timeout was occasionally too short for the MLX bench coordinator to release its compute resources, leading to teardown crashes. The second-Quit race was a separate latent bug that would have surfaced eventually.
+
+---
+
 ## Graph: dragged nodes' edges follow the cursor when bundling is on (May 10, 2026)
 
 **What**: Fixed a regression where dragging a node in the relationship graph left its connected edges behind when edge bundling was enabled.
