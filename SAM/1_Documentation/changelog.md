@@ -4,6 +4,25 @@
 
 ---
 
+## Onboarding: first-run sphere selection (2026-05-13)
+
+**What**: A new step in the first-run onboarding wizard, slotted between Mail address selection and the comms permission, asks the user how they want to organize their relationships. Two spheres are pre-checked (Work, Family & close friends); three are optional add-ons (Church, Volunteer/civic, Hobby). Spheres are created from the user's selection *before* contacts/mail/calendar imports kick off, and any SamPerson that ends an import with zero memberships is seeded into the lowest-sort-order sphere afterwards.
+
+- **`OnboardingStep.sphereSelection`** — new wizard step. Uses the same pre-check / readiness machinery as the rest of the wizard, so it self-skips when `sam.migration.sphereBootstrapDone` is already set (existing installs upgrading past the new build).
+- **`SphereBootstrapCoordinator.createFromOnboarding(templates:practiceType:)`** — creates a `Sphere` per selected `LifeSphereTemplate`. WFG users who select Work additionally get the funnel-mode "Client Pipeline" trajectory pre-populated with the canonical Lead → Applicant → Client stages, mirroring the legacy bootstrap path. Sets both `sam.migration.sphereBootstrapDone` and `sam.lifeSphereSelection.shown.v1` so neither the legacy "My Practice" default nor the post-onboarding `LifeSphereSelectionSheet` nudge fires.
+- **`SphereBootstrapCoordinator.seedOrphansIfNeeded()`** — runs after contacts import finishes. Walks all `SamPerson` rows; any person with zero `PersonSphereMembership` rows gets added to the first (lowest sortOrder) sphere via the idempotent `SphereRepository.addMember`. Newly imported contacts therefore land somewhere by default and stay reachable even if classification hasn't fired yet.
+- **`SphereBootstrapCoordinator.runIfNeeded()` gating** — now also guards on `hasCompletedOnboarding`, so a fresh install never auto-creates "My Practice" before the wizard has a chance to ask. Existing installs (already past onboarding) get the legacy single-sphere default exactly as before.
+- **Copy** — "Fewer spheres = less classification friction. Most users do well with 2–3." The optional-row group makes it explicit that Church/Volunteer/Hobby should only be added if the user has *meaningful ongoing conversations* in that context, not just acquaintances.
+
+**Why**: Up through Phase C, sphere creation only ever happened (a) automatically as "My Practice" on first launch or (b) via a post-onboarding `LifeSphereSelectionSheet` nudge. The auto-default beat the nudge for fresh installs, so testers landed in a one-sphere world named after their practice and the multi-sphere classification machinery had nothing to route across. Pulling the choice forward into onboarding makes the dual-sphere case (Work + Family) the default new-install state, which is what the classifier and lens were actually designed around.
+
+**Key design decisions**:
+- **Two pre-checked, three optional.** The pre-checked pair is the minimum that exercises classification (any Work/Family person becomes a dual-sphere person). Optional spheres are framed as "only if you have meaningful ongoing conversations there" to keep the per-evidence classification surface small.
+- **Spheres before imports.** Creating spheres first means the orphan-seed pass at the end of imports has somewhere to put new contacts, and the very first round of classification has multiple candidates to pick from.
+- **Legacy paths still work.** Existing installs that already ran `runIfNeeded` keep their "My Practice" sphere. The new path only fires for fresh installs that haven't completed onboarding yet.
+
+---
+
 ## Multi-sphere classification: per-evidence sphere inference + lens (Phase C, 2026-05-13)
 
 **What**: When a person belongs to ≥2 active spheres, new evidence is routed to the correct sphere by an on-device classifier instead of falling back to the person's default. A sphere lens at the app shell lets the user view Today + People scoped to one sphere at a time. The picker stays hidden until at least one dual-sphere person exists, so single-sphere users see no new chrome.

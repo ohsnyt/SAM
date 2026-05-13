@@ -71,12 +71,16 @@ struct OnboardingView: View {
         case calendarSelection
         case mailPermission
         case mailAddressSelection
+        case sphereSelection
         case communicationsPermission
         case microphonePermission
         case notificationsPermission
         case aiSetup
         case complete
     }
+
+    @State private var selectedSphereTemplateIDs: Set<String> =
+        Set(LifeSphereTemplate.onboardingDefaults.map(\.id))
 
     var body: some View {
         VStack(spacing: 0) {
@@ -103,6 +107,8 @@ struct OnboardingView: View {
                         mailPermissionStep
                     case .mailAddressSelection:
                         mailAddressSelectionStep
+                    case .sphereSelection:
+                        sphereSelectionStep
                     case .communicationsPermission:
                         communicationsPermissionStep
                     case .microphonePermission:
@@ -167,6 +173,7 @@ struct OnboardingView: View {
             .contactsPermission, .contactsGroupSelection,
             .calendarPermission, .calendarSelection,
             .mailPermission, .mailAddressSelection,
+            .sphereSelection,
             .communicationsPermission, .microphonePermission,
             .notificationsPermission, .aiSetup
         ]
@@ -190,6 +197,7 @@ struct OnboardingView: View {
         .welcome, .contactsPermission, .contactsGroupSelection,
         .calendarPermission, .calendarSelection,
         .mailPermission, .mailAddressSelection,
+        .sphereSelection,
         .communicationsPermission, .microphonePermission,
         .notificationsPermission, .aiSetup, .complete
     ]
@@ -290,6 +298,11 @@ struct OnboardingView: View {
         } else {
             stepReadiness[.mailAddressSelection] = false
         }
+
+        // Sphere selection: ready if the user already has any sphere (returning
+        // installs that ran the legacy bootstrap will, fresh installs will not).
+        let alreadyHasSpheres = UserDefaults.standard.bool(forKey: "sam.migration.sphereBootstrapDone")
+        stepReadiness[.sphereSelection] = alreadyHasSpheres
 
         // Communications
         stepReadiness[.communicationsPermission] = BookmarkManager.shared.hasMessagesAccess || BookmarkManager.shared.hasCallHistoryAccess
@@ -735,6 +748,84 @@ struct OnboardingView: View {
                 }
             }
         }
+    }
+
+    private var sphereSelectionStep: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Image(systemName: "circle.grid.3x3.fill")
+                .font(.system(size: 48))
+                .foregroundStyle(.indigo)
+                .frame(maxWidth: .infinity)
+
+            Text("How do you want to organize your relationships?")
+                .samFont(.title)
+                .bold()
+
+            Text("SAM uses **spheres** to keep relationship health honest. The same person can show up in more than one — a coworker who's also a friend has separate cadences, separate health, and separate coaching depending on which sphere is in view.")
+                .samFont(.body)
+                .foregroundStyle(.secondary)
+
+            sphereTemplateGroup(
+                title: "Start with these",
+                subtitle: "Most users do well with just these two.",
+                templates: LifeSphereTemplate.onboardingDefaults
+            )
+
+            sphereTemplateGroup(
+                title: "Add only if you have meaningful ongoing conversations there",
+                subtitle: "Fewer spheres = less classification friction.",
+                templates: LifeSphereTemplate.onboardingOptionals
+            )
+
+            Text("You can change this anytime in **People → Relationship Graph → Spheres**.")
+                .samFont(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func sphereTemplateGroup(
+        title: String,
+        subtitle: String,
+        templates: [LifeSphereTemplate]
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title).samFont(.subheadline).bold()
+            Text(subtitle).samFont(.caption).foregroundStyle(.secondary)
+            VStack(spacing: 4) {
+                ForEach(templates) { template in
+                    sphereTemplateRow(template)
+                }
+            }
+        }
+    }
+
+    private func sphereTemplateRow(_ template: LifeSphereTemplate) -> some View {
+        let isSelected = selectedSphereTemplateIDs.contains(template.id)
+        return Button {
+            if isSelected { selectedSphereTemplateIDs.remove(template.id) }
+            else { selectedSphereTemplateIDs.insert(template.id) }
+        } label: {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: isSelected ? "checkmark.square.fill" : "square")
+                    .foregroundStyle(isSelected ? Color.accentColor : .secondary)
+                    .samFont(.title3)
+                Image(systemName: template.icon)
+                    .foregroundStyle(template.accentColor.color)
+                    .frame(width: 22)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(template.name).samFont(.body).bold()
+                    Text(template.purpose).samFont(.caption).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(10)
+            .background(
+                isSelected ? Color.accentColor.opacity(0.08) : Color.clear,
+                in: RoundedRectangle(cornerRadius: 8)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private var communicationsPermissionStep: some View {
@@ -1233,6 +1324,13 @@ struct OnboardingView: View {
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
                     .tint(addressReady ? .green : nil)
+            } else if currentStep == .sphereSelection {
+                let hasSelection = !selectedSphereTemplateIDs.isEmpty
+                Button("Next") { Task { await goNext() } }
+                    .keyboardShortcut(.defaultAction)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!hasSelection)
+                    .tint(hasSelection ? nil : .gray)
             } else if currentStep == .aiSetup {
                 if mlxModelReady {
                     alreadyEnabledBadgeWith(text: "Model ready")
@@ -1301,6 +1399,8 @@ struct OnboardingView: View {
             return "Next" // not used; footer overrides
         case .mailAddressSelection:
             return "Next"
+        case .sphereSelection:
+            return "Next"
         case .communicationsPermission:
             return "Next"
         case .microphonePermission:
@@ -1332,6 +1432,8 @@ struct OnboardingView: View {
             return true
         case .mailAddressSelection:
             return true
+        case .sphereSelection:
+            return !selectedSphereTemplateIDs.isEmpty
         case .communicationsPermission:
             return true
         case .microphonePermission:
@@ -1412,6 +1514,10 @@ struct OnboardingView: View {
 
         case .mailAddressSelection:
             applyMailFilterRules()
+            advanceToNextActiveStep()
+
+        case .sphereSelection:
+            stepReadiness[.sphereSelection] = true
             advanceToNextActiveStep()
 
         case .communicationsPermission:
@@ -1639,6 +1745,18 @@ struct OnboardingView: View {
     }
 
     private func triggerImports() async {
+        // Create the user's chosen starter spheres *before* contacts import
+        // populates SamPerson rows. seedOrphansIfNeeded runs afterwards to
+        // place every newly-created person into the default (first) sphere.
+        let templates = LifeSphereTemplate.all.filter { selectedSphereTemplateIDs.contains($0.id) }
+        if !templates.isEmpty {
+            let practiceType = await BusinessProfileService.shared.profile().practiceType
+            await SphereBootstrapCoordinator.createFromOnboarding(
+                templates: templates,
+                practiceType: practiceType
+            )
+        }
+
         // Only trigger imports for enabled sources
         if !skippedContacts && !selectedGroupIdentifier.isEmpty {
             await ContactsImportCoordinator.shared.importNow()
@@ -1651,6 +1769,10 @@ struct OnboardingView: View {
         if !skippedMail && mailAccessGranted {
             MailImportCoordinator.shared.startAutoImport()
         }
+
+        // Place any orphan SamPersons created by the imports into the default
+        // sphere. Idempotent — no-op if every person already has a membership.
+        await SphereBootstrapCoordinator.seedOrphansIfNeeded()
 
         // Run role deduction after imports settle
         Task(priority: .utility) {

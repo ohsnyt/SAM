@@ -48,6 +48,12 @@ enum SphereBootstrapCoordinator {
     /// the store (defensive: if a user somehow created one before migration,
     /// we don't replace it).
     ///
+    /// **First-launch ordering**: this method skips when onboarding has not
+    /// yet completed, so the OnboardingView's sphere-selection step gets
+    /// first dibs at creating starter spheres. For existing installs that
+    /// finished onboarding before the sphere step shipped, this still
+    /// auto-creates "My Practice" as the legacy default.
+    ///
     /// Reads the user's PracticeType to decide whether to seed a Funnel-mode
     /// Client Pipeline Trajectory with stages. General users get an empty
     /// Sphere; they'll define Trajectories in Phase 5+.
@@ -56,6 +62,10 @@ enum SphereBootstrapCoordinator {
     /// periodically so the UI stays responsive during the per-person loop.
     static func runIfNeeded() async {
         guard !UserDefaults.standard.bool(forKey: migrationDoneKey) else { return }
+        // First-launch: let OnboardingView's sphere-selection step run before
+        // we create any sphere. Otherwise we'd race "My Practice" into the
+        // store ahead of the user picking Work / Family / Church / etc.
+        guard UserDefaults.standard.bool(forKey: "hasCompletedOnboarding") else { return }
 
         do {
             // Defensive: if the user already has a Sphere, mark migration
@@ -154,6 +164,107 @@ enum SphereBootstrapCoordinator {
         } catch {
             logger.error("Sphere bootstrap failed: \(error.localizedDescription)")
             // Do NOT set the done flag — we want a retry on next launch.
+        }
+    }
+
+    /// Onboarding entry point — create the user's chosen starter spheres
+    /// instead of the legacy single "My Practice" default.
+    ///
+    /// Called from `OnboardingView` after the user picks templates in the
+    /// sphere-selection step. Creates spheres in the order received (so the
+    /// first one becomes their default sphere via sortOrder), wires the WFG
+    /// Client Pipeline trajectory onto "Work" when applicable, and sets both
+    /// `sphereBootstrapDone` and `lifeSphereSelectionShownKey` so neither the
+    /// launch-time bootstrap nor the post-onboarding nudge sheet ever fires.
+    ///
+    /// Seeding for existing SamPersons is skipped here — fresh installs have
+    /// none yet (imports run after this) and existing installs already
+    /// completed bootstrap. Post-import orphan seeding runs separately via
+    /// `seedOrphansIfNeeded()`.
+    static func createFromOnboarding(
+        templates: [LifeSphereTemplate],
+        practiceType: PracticeType
+    ) async {
+        guard !templates.isEmpty else { return }
+        guard !UserDefaults.standard.bool(forKey: migrationDoneKey) else {
+            logger.info("createFromOnboarding skipped — bootstrap already done.")
+            return
+        }
+
+        do {
+            var createdWork: Sphere?
+            for template in templates {
+                let sphere = try SphereRepository.shared.createSphere(from: template)
+                if template.id == LifeSphereTemplate.work.id {
+                    createdWork = sphere
+                }
+            }
+
+            // WFG users who picked Work get the Funnel-mode Client Pipeline.
+            // General users get an empty Sphere; they'll define Trajectories
+            // in Phase 5+.
+            if practiceType == .wfgFinancialAdvisor, let work = createdWork {
+                let pipeline = try TrajectoryRepository.shared.createTrajectory(
+                    sphereID: work.id,
+                    name: "Client Pipeline",
+                    mode: .funnel,
+                    notes: "Bootstrap-created from existing Lead → Applicant → Client pipeline."
+                )
+                for (idx, stageInfo) in wfgPipelineStages.enumerated() {
+                    _ = try TrajectoryRepository.shared.addStage(
+                        trajectoryID: pipeline.id,
+                        name: stageInfo.name,
+                        sortOrder: idx,
+                        isTerminal: stageInfo.isTerminal
+                    )
+                }
+            }
+
+            UserDefaults.standard.set(true, forKey: migrationDoneKey)
+            UserDefaults.standard.set(true, forKey: "sam.lifeSphereSelection.shown.v1")
+            PersonModeResolver.invalidateCache()
+            logger.notice("Onboarding sphere setup complete — created \(templates.count) spheres")
+        } catch {
+            logger.error("createFromOnboarding failed: \(error.localizedDescription)")
+            // Do not set the done flag — retry next launch.
+        }
+    }
+
+    /// Seed every SamPerson that lacks any sphere membership into the user's
+    /// lowest-sortOrder (default) sphere. Idempotent — a person with any
+    /// existing membership is left untouched.
+    ///
+    /// Called after contacts import completes during first-run onboarding so
+    /// newly-created SamPersons end up in the default sphere. Also safe to
+    /// call from background passes.
+    static func seedOrphansIfNeeded() async {
+        guard UserDefaults.standard.bool(forKey: migrationDoneKey) else { return }
+
+        do {
+            let spheres = try SphereRepository.shared.fetchAll()
+            guard let defaultSphere = spheres.first else { return }
+
+            let context = ModelContext(SAMModelContainer.shared)
+            let people = try context.fetch(FetchDescriptor<SamPerson>())
+            var added = 0
+            for (idx, person) in people.enumerated() {
+                let memberships = try SphereRepository.shared.memberships(forPerson: person.id)
+                if memberships.isEmpty {
+                    try SphereRepository.shared.addMember(
+                        personID: person.id,
+                        sphereID: defaultSphere.id
+                    )
+                    added += 1
+                }
+                if (idx + 1) % yieldEveryNPersons == 0 {
+                    await Task.yield()
+                }
+            }
+            if added > 0 {
+                logger.notice("seedOrphansIfNeeded — added \(added) memberships into '\(defaultSphere.name)'")
+            }
+        } catch {
+            logger.error("seedOrphansIfNeeded failed: \(error.localizedDescription)")
         }
     }
 
