@@ -256,6 +256,12 @@ struct MergeContactSheet: View {
             }
             logger.info("Merged \(sourcePerson.displayNameCache ?? "person", privacy: .private) into target")
 
+            // Engine output (outcomes, bundles, insights, role candidates) for
+            // both source and target was deleted by mergePerson — kick the
+            // outcome engine so the queue refills from the merged data instead
+            // of waiting for the next scheduled tick.
+            OutcomeEngine.shared.startGeneration()
+
             // Navigate sidebar selection to the target BEFORE dismissing.
             // Without this, when the sheet was launched from PersonDetailView
             // the parent re-renders bound to the now-deleted source SamPerson

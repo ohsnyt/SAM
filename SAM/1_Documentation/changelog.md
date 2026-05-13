@@ -4,6 +4,43 @@
 
 ---
 
+## Person merge: full data-graph overhaul (2026-05-12)
+
+**What**: `PeopleRepository.mergePerson(sourceID:targetID:)` now handles every model that references a `SamPerson`. Engine output is **deleted on both sides** (forces clean regeneration from the merged data); user-authored and historical records are **re-pointed** with appropriate dedup; UUID-bearing Codable arrays embedded on notes and people are **scanned and rewritten**. `MergeContactSheet.performMerge()` now calls `OutcomeEngine.shared.startGeneration()` immediately after the merge so the Today queue refills before the user sees it.
+
+**Why**: After the 2026-05-12 detach-crash fix, the user noticed a deeper bug: a merged-away person's `OutcomeBundle` still surfaced in the queue (showing "Unknown") because `mergePerson` never touched bundles. Worse, the bundle carried a stale claim ("haven't contacted in ~50 days") that the merge would have falsified — target had the recent contact. The user directed: delete engine output and let engines regenerate from the merged truth; audit every other person reference; fix all the gaps.
+
+**Delete (engine output — regenerates):**
+- `SamOutcome` — both `linkedPerson?.id == sourceID` and `== targetID`
+- `OutcomeBundle` — both sides by cached `personID`; `OutcomeSubItem`s cascade
+- `SamInsight` — both sides explicitly (target's are now stale relative to the merged evidence; source's would cascade with the source-delete but we delete them up front for symmetry)
+- `RoleCandidate` — both sides; `RoleRecruitingEngine` re-derives matches against the union
+
+**Re-point (preserves user intent + history):**
+- `EventParticipation` (was previously cascade-deleted with source) — re-point with `event.id` dedup
+- `PersonSphereMembership` — re-point with `sphere.id` dedup
+- `PersonTrajectoryEntry` — re-point unconditionally (multiple historical entries are valid)
+- `TranscriptSession.linkedPeople` — array swap with dedup
+- `SpeakerProfile.person`
+- `IntentionalTouch.samPersonID`
+- `WeeklyBundleRating.personID` (calibration signal survives the bundle deletion)
+- `OutcomeDismissalRecord` — dedup by `kindRawValue`; merged record keeps the later `dismissedAt` and the **strongest** suppression (nil = "user must clear" beats any concrete date)
+- `PendingEnrichment` — dedup by `(fieldRawValue, proposedValue)`
+- Source's own `familyReferences[]` — appended to target with `(name, relationship)` lowercased dedup key
+- Referrals, coverages, consents, stage transitions, recruiting stages, production records, joint interests, responsibilities (unchanged from previous behavior)
+
+**Scan + rewrite (UUIDs buried in Codable arrays):**
+- `SamNote.extractedMentions[].matchedPersonID`
+- `SamNote.lifeEvents[].personID`
+- `SamNote.extractedActionItems[].linkedPersonID`
+- `SamPerson.familyReferences[].linkedPersonID` across every other person
+
+**Ordering**: All re-points / scans / deletes happen before `modelContext.delete(source)` so cascade rules don't destroy data we wanted to move. `eventParticipations` in particular has `.cascade` on `inverse: \EventParticipation.person`, so without the explicit re-point the merge would silently delete every event the source ever attended.
+
+**Undo**: `UndoRepository.restorePersonMerge` already iterates `target.linkedEvidence`/`linkedNotes`/etc. by ID and re-points entries back to source. The deleted engine-output rows won't restore (those loops will simply find no matches in `target.insights` or via the `SamOutcome` fetch), which matches the new semantic — undoing a merge brings back the source person and their preserved relationships, and the engines re-derive coaching state. The new re-pointed models (Sphere/Trajectory/Transcript/Touch/Rating/Dismissal/Enrichment/Speaker) are not yet captured in the snapshot, so undo for those types is a no-op; merge UX is correct, undo coverage matches its pre-overhaul scope.
+
+---
+
 ## MergeContactSheet: navigate to target before dismiss (2026-05-12)
 
 **What**: After a successful person merge, `MergeContactSheet.performMerge()` posts `.samNavigateToPerson` with the target's UUID before calling `dismiss()`. This flips the sidebar selection so `PeopleDetailContainer.id(personID)` tears down the source's `PersonDetailView` and rebuilds against the target.

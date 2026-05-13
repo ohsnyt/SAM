@@ -1088,9 +1088,14 @@ final class PeopleRepository {
             record.person = target
         }
 
-        // ── Re-point insights ────────────────────────────────────────
-        for insight in source.insights {
-            insight.samPerson = target
+        // ── Re-point eventParticipations (cascade-deleted on source.person —
+        //    must re-point BEFORE deleting source). Dedup by event.id.
+        let targetEventIDs = Set(target.eventParticipations.compactMap { $0.event?.id })
+        for participation in source.eventParticipations {
+            if let evID = participation.event?.id, !targetEventIDs.contains(evID) {
+                participation.person = target
+            }
+            // duplicate participations are left to cascade-delete with source.
         }
 
         // ── Transfer referrals ───────────────────────────────────────
@@ -1101,12 +1106,147 @@ final class PeopleRepository {
             target.referredBy = sourceReferrer
         }
 
-        // ── Update SamOutcome.linkedPerson ───────────────────────────
+        // ── Transfer source's own familyReferences onto target ──────
+        let existingFamilyKeys = Set(target.familyReferences.map {
+            "\($0.name.lowercased())|\($0.relationship.lowercased())"
+        })
+        for ref in source.familyReferences {
+            let key = "\(ref.name.lowercased())|\(ref.relationship.lowercased())"
+            if !existingFamilyKeys.contains(key) {
+                target.familyReferences.append(ref)
+            }
+        }
+
+        // ── Re-point PersonSphereMembership (dedup by sphere.id) ────
+        let allMemberships = try modelContext.fetch(FetchDescriptor<PersonSphereMembership>())
+        let targetSphereIDs = Set(
+            allMemberships
+                .filter { $0.person?.id == targetID }
+                .compactMap { $0.sphere?.id }
+        )
+        for membership in allMemberships where membership.person?.id == sourceID {
+            if let sphereID = membership.sphere?.id, targetSphereIDs.contains(sphereID) {
+                modelContext.delete(membership)
+            } else {
+                membership.person = target
+            }
+        }
+
+        // ── Re-point PersonTrajectoryEntry (no dedup — history matters) ─
+        let allEntries = try modelContext.fetch(FetchDescriptor<PersonTrajectoryEntry>())
+        for entry in allEntries where entry.person?.id == sourceID {
+            entry.person = target
+        }
+
+        // ── Re-point TranscriptSession.linkedPeople (array swap + dedup) ─
+        let allSessions = try modelContext.fetch(FetchDescriptor<TranscriptSession>())
+        for session in allSessions {
+            guard var people = session.linkedPeople,
+                  people.contains(where: { $0.id == sourceID }) else { continue }
+            people.removeAll { $0.id == sourceID }
+            if !people.contains(where: { $0.id == targetID }) {
+                people.append(target)
+            }
+            session.linkedPeople = people
+        }
+
+        // ── Re-point SpeakerProfile.person ──────────────────────────
+        let allSpeakers = try modelContext.fetch(FetchDescriptor<SpeakerProfile>())
+        for profile in allSpeakers where profile.person?.id == sourceID {
+            profile.person = target
+        }
+
+        // ── Re-point IntentionalTouch.samPersonID ───────────────────
+        let allTouches = try modelContext.fetch(FetchDescriptor<IntentionalTouch>())
+        for touch in allTouches where touch.samPersonID == sourceID {
+            touch.samPersonID = targetID
+        }
+
+        // ── Re-point WeeklyBundleRating.personID (preserves calibration
+        //    signal even though source bundles will be deleted below) ──
+        let allRatings = try modelContext.fetch(FetchDescriptor<WeeklyBundleRating>())
+        for rating in allRatings where rating.personID == sourceID {
+            rating.personID = targetID
+        }
+
+        // ── Re-point OutcomeDismissalRecord (dedup by kind; pick
+        //    strongest suppression — nil suppressUntil wins over any date) ─
+        let allDismissals = try modelContext.fetch(FetchDescriptor<OutcomeDismissalRecord>())
+        var dismissalByKind: [String: OutcomeDismissalRecord] = [:]
+        for d in allDismissals where d.personID == targetID {
+            dismissalByKind[d.kindRawValue] = d
+        }
+        for d in allDismissals where d.personID == sourceID {
+            if let existing = dismissalByKind[d.kindRawValue] {
+                existing.dismissedAt = max(existing.dismissedAt, d.dismissedAt)
+                switch (existing.suppressUntil, d.suppressUntil) {
+                case (nil, _), (_, nil):
+                    existing.suppressUntil = nil   // indefinite suppression wins
+                case (let a?, let b?):
+                    existing.suppressUntil = max(a, b)
+                }
+                modelContext.delete(d)
+            } else {
+                d.personID = targetID
+                dismissalByKind[d.kindRawValue] = d
+            }
+        }
+
+        // ── Re-point PendingEnrichment (dedup by field + proposed value) ─
+        let allEnrichments = try modelContext.fetch(FetchDescriptor<PendingEnrichment>())
+        var enrichmentKeys = Set<String>()
+        for e in allEnrichments where e.personID == targetID {
+            enrichmentKeys.insert("\(e.fieldRawValue)|\(e.proposedValue)")
+        }
+        for e in allEnrichments where e.personID == sourceID {
+            let key = "\(e.fieldRawValue)|\(e.proposedValue)"
+            if enrichmentKeys.contains(key) {
+                modelContext.delete(e)
+            } else {
+                e.personID = targetID
+                enrichmentKeys.insert(key)
+            }
+        }
+
+        // ── Delete engine output (will regenerate from merged data) ──
+        // Source's claims may be stale (e.g. "47 days since last contact"
+        // when target had the recent contact), and target's claims were
+        // computed without source's evidence. Easiest correct answer:
+        // wipe both sides, let the engines rebuild from the union.
+
+        // SamOutcome
         let allOutcomes = try modelContext.fetch(FetchDescriptor<SamOutcome>())
         var outcomeIDs: [UUID] = []
-        for outcome in allOutcomes where outcome.linkedPerson?.id == sourceID {
-            outcome.linkedPerson = target
+        for outcome in allOutcomes
+            where outcome.linkedPerson?.id == sourceID
+               || outcome.linkedPerson?.id == targetID {
             outcomeIDs.append(outcome.id)
+            modelContext.delete(outcome)
+        }
+
+        // OutcomeBundle — sub-items cascade-delete
+        let allBundles = try modelContext.fetch(FetchDescriptor<OutcomeBundle>())
+        for bundle in allBundles
+            where bundle.personID == sourceID || bundle.personID == targetID {
+            modelContext.delete(bundle)
+        }
+
+        // SamInsight — delete both sides explicitly. source.insights would
+        // cascade with source-delete below, but target's insights need to go
+        // too (they're now stale relative to the merged evidence).
+        for insight in Array(source.insights) {
+            modelContext.delete(insight)
+        }
+        for insight in Array(target.insights) {
+            modelContext.delete(insight)
+        }
+
+        // RoleCandidate — engine output; RoleRecruitingEngine will regenerate.
+        let allCandidates = try modelContext.fetch(FetchDescriptor<RoleCandidate>())
+        for candidate in allCandidates
+            where candidate.person?.id == sourceID
+               || candidate.person?.id == targetID {
+            modelContext.delete(candidate)
         }
 
         // ── Update DeducedRelation ───────────────────────────────────
@@ -1143,20 +1283,43 @@ final class PeopleRepository {
             }
         }
 
-        // ── Update SamNote.extractedMentions ─────────────────────────
+        // ── Update embedded UUIDs on notes (mentions / life events / actions) ─
         let allNotes = try modelContext.fetch(FetchDescriptor<SamNote>())
         for note in allNotes {
-            var updated = false
             var mentions = note.extractedMentions
-            for i in mentions.indices {
-                if mentions[i].matchedPersonID == sourceID {
-                    mentions[i].matchedPersonID = targetID
-                    updated = true
-                }
+            var mentionsChanged = false
+            for i in mentions.indices where mentions[i].matchedPersonID == sourceID {
+                mentions[i].matchedPersonID = targetID
+                mentionsChanged = true
             }
-            if updated {
-                note.extractedMentions = mentions
+            if mentionsChanged { note.extractedMentions = mentions }
+
+            var events = note.lifeEvents
+            var eventsChanged = false
+            for i in events.indices where events[i].personID == sourceID {
+                events[i].personID = targetID
+                eventsChanged = true
             }
+            if eventsChanged { note.lifeEvents = events }
+
+            var actions = note.extractedActionItems
+            var actionsChanged = false
+            for i in actions.indices where actions[i].linkedPersonID == sourceID {
+                actions[i].linkedPersonID = targetID
+                actionsChanged = true
+            }
+            if actionsChanged { note.extractedActionItems = actions }
+        }
+
+        // ── Cross-person familyReferences scan ───────────────────────
+        for person in allPeople where person.id != sourceID {
+            var refs = person.familyReferences
+            var changed = false
+            for i in refs.indices where refs[i].linkedPersonID == sourceID {
+                refs[i].linkedPersonID = targetID
+                changed = true
+            }
+            if changed { person.familyReferences = refs }
         }
 
         // ── Merge scalar fields (fill-gaps: target wins) ─────────────
