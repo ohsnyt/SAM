@@ -26,9 +26,15 @@ final class UnknownSenderRepository {
 
     private init() {}
 
+    /// Uses `container.mainContext` rather than a private `ModelContext` so
+    /// status mutations (`markAdded`, `purgeNeverInclude`) don't fault SamPerson
+    /// references that PersonDetailView reads via `@Query` on the mainContext.
+    /// Cross-context writes were crashing roleBadges fault-resolution when
+    /// adding an UnknownSender as a person — see SphereRepository for the
+    /// matching fix on that model.
     func configure(container: ModelContainer) {
         self.container = container
-        self.modelContext = ModelContext(container)
+        self.modelContext = container.mainContext
     }
 
     // MARK: - Fetch

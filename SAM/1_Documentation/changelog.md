@@ -4,6 +4,22 @@
 
 ---
 
+## UnknownSenderRepository: mainContext migration (2026-05-13)
+
+**What**: `UnknownSenderRepository.configure(container:)` now binds to `container.mainContext` instead of allocating a private `ModelContext(container)`.
+
+**Why**: Adding a previously-triaged sender as a SamPerson (Jean Schwabe — the church prayer-request case) crashed in `SamPerson.roleBadges.getter` the next time `PersonDetailView` rendered. Stack:
+```
+SamPerson.roleBadges.getter
+PersonDetailView.contactPhotoView line 401 (`person.roleBadges.first`)
+PersonDetailView.headerSection
+```
+Same fault-resolution crash class as the May-12 `SphereRepository` fix: `markAdded` + `markNeverInclude` mutations on the private context invalidated the SwiftUI `@Query` view of the freshly-inserted SamPerson; on render the persisted-property backing couldn't resolve and the SwiftData runtime asserted.
+
+**How to apply elsewhere**: Same rule, same fix. Any `@MainActor` `@Observable` repository whose models participate in SwiftUI `@Query`-driven views must share `container.mainContext`. Outstanding private-context repos (Notes, Outcome, Pipeline, Evidence, Trip, Production, etc. — 20+ in `Repositories/`) are next-in-line audit targets, but each should be migrated only when a concrete cross-context symptom is observed or when its models are known to be referenced by SwiftUI relationships on the mainContext side.
+
+---
+
 ## Per-person mail history backfill + neverInclude self-heal (2026-05-13)
 
 **What**: New user-initiated action on Person Detail (`Actions → Import Mail History…`) that scans the full Mail Envelope Index for every message to/from a person's known email addresses, shows a preview, and writes evidence only after explicit confirm. Paired with a self-healing scrub of stale `UnknownSender.neverInclude` records.
