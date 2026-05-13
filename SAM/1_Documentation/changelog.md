@@ -4,6 +4,26 @@
 
 ---
 
+## MergeContactSheet: navigate to target before dismiss (2026-05-12)
+
+**What**: After a successful person merge, `MergeContactSheet.performMerge()` posts `.samNavigateToPerson` with the target's UUID before calling `dismiss()`. This flips the sidebar selection so `PeopleDetailContainer.id(personID)` tears down the source's `PersonDetailView` and rebuilds against the target.
+
+**Why**: When the merge sheet was launched from `PersonDetailView` (gear menu → "Merge with…"), the merge would crash with the SwiftData detach assertion:
+
+```
+Fatal error: This backing data was detached from a context without resolving attribute faults
+Thread 1 in SamPerson.familyReferences.getter
+called from PersonDetailView.primarySections.getter (line 1548)
+```
+
+`mergePerson(sourceID:targetID:)` deletes the source row from the mainContext. The sheet's `dismiss()` triggers a parent-view layout pass *before* SwiftUI's `@Query`-driven `PeopleDetailContainer` has the chance to re-resolve. During that pass, `PersonDetailView.body` is still bound to the now-deleted source `SamPerson` and faults its first persisted property — `familyReferences` happened to be the one in the user's case, but any `@_PersistedProperty` getter would trip the same assertion.
+
+**The fix is a navigation reorder, not a data-layer change.** Both repositories involved (`PeopleRepository` and the merge target's relationships) already use `container.mainContext` after the `91fd288` migration. The bug was that the soon-to-be-detached `SamPerson` was kept on screen across the deletion. Switching `selectedPersonID` to the surviving target before dismissing the sheet ensures the parent re-renders with a valid model.
+
+Bulk merge from `ContactsImportCoordinator.mergeDuplicateContacts()` is not affected — it runs outside any PersonDetailView mount, so no detached `SamPerson` is ever observed.
+
+---
+
 ## Today queue overhaul + Sphere focus + life-event UUID matching + sequence sanity (2026-05-12)
 
 Six related changes that ship together because they share `AwarenessView`, `OutcomeQueueView`, and `NoteAnalysisCoordinator` edits.

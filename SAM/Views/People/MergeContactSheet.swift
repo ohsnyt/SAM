@@ -255,6 +255,18 @@ struct MergeContactSheet: View {
                 UndoCoordinator.shared.showToast(for: entry)
             }
             logger.info("Merged \(sourcePerson.displayNameCache ?? "person", privacy: .private) into target")
+
+            // Navigate sidebar selection to the target BEFORE dismissing.
+            // Without this, when the sheet was launched from PersonDetailView
+            // the parent re-renders bound to the now-deleted source SamPerson
+            // and crashes faulting a property like `familyReferences`. Switching
+            // selection forces PeopleDetailContainer's `.id(personID)` to
+            // rebuild PersonDetailView against the surviving target.
+            NotificationCenter.default.post(
+                name: .samNavigateToPerson,
+                object: nil,
+                userInfo: ["personID": targetID]
+            )
             dismiss()
         } catch {
             errorMessage = "Merge failed: \(error.localizedDescription)"
