@@ -63,22 +63,25 @@ final class UnknownSenderRepository {
         return Set(all.filter { $0.status == .neverInclude }.map(\.email))
     }
 
-    /// Delete any `.neverInclude` records whose email now belongs to a known
-    /// SamPerson. Called from MailImportCoordinator after building the
-    /// knownEmails set; resolves the contradiction where a user previously
-    /// excluded an address and later added it as a person (e.g. they marked
-    /// Jean's prayer-request address as junk, then realized she belonged in
-    /// the Church Sphere). Without this cleanup the record is inert — the
-    /// known-sender check short-circuits past it — but if the SamPerson is
-    /// ever unlinked, neverInclude silently reactivates.
+    /// Delete any `.neverInclude` records whose identifier now belongs to a
+    /// known SamPerson. The `UnknownSender.email` column stores both email
+    /// addresses *and* canonicalized phone numbers (10-digit, digits-only),
+    /// so a single Set covers both axes — pass in the union of
+    /// `emailCache + emailAliases + phoneAliases` for every relevant person.
+    /// Resolves the contradiction where a user previously excluded an
+    /// address/number and later added that person (e.g. Jean was junked,
+    /// then added as a Church Sphere contact with two emails + one phone).
+    /// Without this cleanup the record is inert — the known-identifier check
+    /// short-circuits past it — but if the SamPerson is ever unlinked,
+    /// `.neverInclude` silently reactivates.
     @discardableResult
-    func purgeNeverInclude(forKnownEmails knownEmails: Set<String>) throws -> Int {
+    func purgeNeverInclude(forKnownIdentifiers knownIdentifiers: Set<String>) throws -> Int {
         guard let modelContext else { throw RepositoryError.notConfigured }
-        guard !knownEmails.isEmpty else { return 0 }
+        guard !knownIdentifiers.isEmpty else { return 0 }
 
         let descriptor = FetchDescriptor<UnknownSender>()
         let stale = try modelContext.fetch(descriptor)
-            .filter { $0.status == .neverInclude && knownEmails.contains($0.email) }
+            .filter { $0.status == .neverInclude && knownIdentifiers.contains($0.email) }
         guard !stale.isEmpty else { return 0 }
 
         for record in stale {

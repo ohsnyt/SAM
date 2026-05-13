@@ -334,6 +334,7 @@ final class PeopleRepository {
 
         var created = 0
         var updated = 0
+        var touchedIdentifiers: Set<String> = []
 
         // Fetch ALL existing people (not just those with contactIdentifiers)
         let descriptor = FetchDescriptor<SamPerson>()
@@ -386,6 +387,8 @@ final class PeopleRepository {
                 if matchedViaAlias {
                     existing.lastSyncedAt = Date()
                     updated += 1
+                    touchedIdentifiers.formUnion(canonicalEmails)
+                    touchedIdentifiers.formUnion(canonicalPhones)
                     continue
                 }
 
@@ -434,6 +437,8 @@ final class PeopleRepository {
                 if changed {
                     existing.lastSyncedAt = Date()
                     updated += 1
+                    touchedIdentifiers.formUnion(canonicalEmails)
+                    touchedIdentifiers.formUnion(canonicalPhones)
                 }
             } else {
                 // Create new
@@ -454,11 +459,24 @@ final class PeopleRepository {
 
                 modelContext.insert(person)
                 created += 1
+                touchedIdentifiers.formUnion(canonicalEmails)
+                touchedIdentifiers.formUnion(canonicalPhones)
             }
         }
 
         try modelContext.save()
         logger.debug("Bulk upsert complete: \(created) created, \(updated) updated")
+
+        // Clear any stale `.neverInclude` UnknownSender records that match an
+        // address or phone now linked to a SamPerson. Same fix as the
+        // MailImportCoordinator self-heal, applied at the contacts-sync layer
+        // so adding a previously-junked contact directly in Apple Contacts
+        // resolves immediately rather than waiting for the next mail cycle.
+        if !touchedIdentifiers.isEmpty {
+            try? UnknownSenderRepository.shared.purgeNeverInclude(
+                forKnownIdentifiers: touchedIdentifiers
+            )
+        }
 
         return (created, updated)
     }

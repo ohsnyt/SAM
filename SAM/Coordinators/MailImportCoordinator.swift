@@ -471,7 +471,7 @@ final class MailImportCoordinator {
             // email). The known-sender check below short-circuits past these,
             // so they're inert — but removing them prevents silent
             // reactivation if the email is ever unlinked.
-            try? UnknownSenderRepository.shared.purgeNeverInclude(forKnownEmails: knownEmails)
+            try? UnknownSenderRepository.shared.purgeNeverInclude(forKnownIdentifiers: knownEmails)
 
             // 3. Also exclude neverInclude senders
             let neverInclude = try UnknownSenderRepository.shared.neverIncludeEmails()

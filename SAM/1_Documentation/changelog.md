@@ -4,6 +4,18 @@
 
 ---
 
+## neverInclude self-heal: extended to contact sync + phone numbers (2026-05-13)
+
+**What**: `PeopleRepository.bulkUpsert` now collects every email and phone identifier touched during the sync and asks `UnknownSenderRepository` to drop any matching `.neverInclude` records before returning. Method renamed `purgeNeverInclude(forKnownEmails:)` → `purgeNeverInclude(forKnownIdentifiers:)` because the `UnknownSender.email` column stores phone numbers too (canonicalized to 10-digit, digits-only form — same format `phoneAliases` uses).
+
+- **`PeopleRepository.bulkUpsert`** — accumulates a `touchedIdentifiers: Set<String>` covering `canonicalEmails + canonicalPhones` from every contact that produced a create, an update (changed fields), or a merged-alias re-bind. After `modelContext.save()` succeeds the set is passed to the purge — one batched call, no per-contact round-trips.
+- **`UnknownSenderRepository.purgeNeverInclude(forKnownIdentifiers:)`** — same body as before; doc comment updated to document the dual-purpose identifier semantics.
+- **`MailImportCoordinator`** — call site updated to use the new parameter label. Behavior unchanged on the mail-import side (it still passes the email-only `knownEmails` set, which is correct for its purpose).
+
+**Why**: Adding Jean Schwabe directly as a CNContact (two email addresses + one phone on her card) wouldn't clear the prior `.neverInclude` record until the next mail-import cycle (~60s). And even then, only her *email* would have been purged — her phone-number neverInclude entry would have lingered, silently re-activating if her SamPerson ever got unlinked. With the purge wired into the contacts sync at the identifier level, both addresses and the phone clear in the same transaction that creates her SamPerson.
+
+---
+
 ## UnknownSenderRepository: mainContext migration (2026-05-13)
 
 **What**: `UnknownSenderRepository.configure(container:)` now binds to `container.mainContext` instead of allocating a private `ModelContext(container)`.
