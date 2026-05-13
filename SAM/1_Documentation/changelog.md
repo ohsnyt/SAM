@@ -4,6 +4,38 @@
 
 ---
 
+## Multi-sphere classification: per-evidence sphere inference + lens (Phase C, 2026-05-13)
+
+**What**: When a person belongs to ≥2 active spheres, new evidence is routed to the correct sphere by an on-device classifier instead of falling back to the person's default. A sphere lens at the app shell lets the user view Today + People scoped to one sphere at a time. The picker stays hidden until at least one dual-sphere person exists, so single-sphere users see no new chrome.
+
+- **`SphereLens` filter API** (`SAMModels-SphereLens.swift`) — pure helpers. `SamEvidenceItem.matches(lens:defaultSphereID:)` returns true if the lens is nil, the evidence's `contextSphere` matches, or (when `contextSphere` is nil) the person's default sphere matches the lens. `SphereLens.filter(...)` is the array-level convenience. Used by health, briefings, and any future per-sphere consumer.
+- **Lens-aware relationship health** (`MeetingPrepCoordinator.computeHealth(for:lens:)`) — original `computeHealth(for:)` is now a thin wrapper. With a lens, the evidence list is filtered before cadence/decay math runs, so per-sphere views see per-sphere health.
+- **`SphereClassificationService`** (actor) — single inference call per evidence row. DTOs (`SphereClassificationInput`, `SphereClassificationCandidate`, `SphereClassificationEvidenceSnapshot`, `SphereClassificationResult`) are pure `Sendable` so the main-actor coordinator builds the snapshot, hands off, and never crosses contexts. JSON contract: `{"chosen_index": Int or -1, "confidence": 0–1, "reason": "…"}`. Trivial short-circuits for 0/1 candidates. **Cold-start cap**: when any candidate sphere has < 3 confirmed examples (`confirmedExampleCount`), confidence is capped at 0.6, preventing the first auto-applies from anchoring everything to a single sphere.
+- **Confidence gating**: ≥ 0.75 → auto-apply (`contextSphere` written); 0.5–0.75 → record proposal on the evidence row for end-of-day review; < 0.5 → ignore (lens fallback handles routing). The proposal is *not* the same as `contextSphere` — it lives in four new additive fields so the lens still treats unclassified evidence as the person's default sphere until the user acts.
+- **`SphereClassificationCoordinator`** (`@MainActor`) — bridges SwiftData and the background service. `classifyInBackground(evidenceID:)` dispatches a detached `.background` task; the batch overload yields between items so it doesn't starve foreground work. Re-checks `contextSphere == nil` at write-back to never overwrite a user-confirmed pick. Skips when person has < 2 active spheres, when the evidence is already classified, and during BackupCoordinator restore. Reads through `SAMModelContainer.shared.mainContext` per the single-context rule.
+- **Schema (additive, no migration)** on `SamEvidenceItem`: `proposedSphereID: UUID?`, `proposedSphereConfidence: Double = 0.0`, `proposedSphereReason: String?`, `proposedSphereAt: Date?`. All optional or defaulted, so the SwiftData migration stays lightweight.
+- **Ingestion hook** (`EvidenceRepository.create`) — after `OutcomeBundleGenerator.shared.nudgeForEvidence(...)` fires on both the new-row and existing-row paths, classification is kicked off in the background. No-op when person has < 2 spheres.
+- **End-of-day review batch** (`SphereClassificationReviewSheet`) — non-modal sheet that walks the mid-confidence queue one row at a time. Three actions per row: Accept (default action, ⌘⏎, promotes to `contextSphere`), Pick different… (menu of other spheres, treated as the strongest signal), Dismiss (clears proposal; lens fallback continues). Sorted newest-first. Empty state when the queue drains. Opens from a new toolbar badge on `AwarenessView` (Today) — "N to review" — via `.managedSheet(... priority: .userInitiated)`.
+- **`SphereLensCoordinator`** (`@MainActor @Observable`) — owns `currentLens: Sphere?` and `isPickerAvailable: Bool`. UserDefaults-persisted key `sam.sphereLens.currentSphereID.v1`. `recomputeAvailability()` scans `PersonSphereMembership` for any person with ≥ 2 active memberships; auto-clears the lens when the picker becomes unavailable. Refreshed on `samPersonDidChange` / `samSphereDidChange` and at launch after the membership backfill.
+- **`SphereLensPicker`** — toolbar menu, hidden when `!coordinator.isPickerAvailable`. Filtered state shows the sphere's colored capsule; unfiltered shows a muted "All spheres" with `circle.grid.3x3`. Added to the app shell toolbar only on `today` and `people` sections.
+- **`PersonDetailView`** now passes `SphereLensCoordinator.shared.currentLens` into `computeHealth`, so the person detail's health reflects the active sphere when one is set.
+
+**Why**: After the two-bucket evidence work (Phase 1, earlier today), `coParticipants` started producing the co-occurrence signal that sphere deduction needs — but the routing still depended on a person having exactly one sphere. As soon as a person sits in ≥ 2 spheres (e.g., Sarah is in both "My Practice" and "Church"), every new interaction defaulted to the lowest-order sphere and the others were starved. Classification closes that loop: the model picks per evidence row, with cold-start protection so the early days don't ossify into one sphere, and a review queue for the band where it's not confident enough to commit. The lens is the consumer-side counterpart — once routing is right, the user needs a way to view Today / People filtered to one sphere at a time, but only when they actually have multiple spheres in play.
+
+**Key design decisions**:
+- **Hide the picker for single-sphere users**. The whole multi-sphere apparatus is invisible until the user creates a second sphere AND puts at least one person in both. Until then, SAM looks unchanged.
+- **Lenient historical evidence**. Removing a sphere does not strip `contextSphere` from existing rows — the value lingers as a historical fact. The lens API treats unknown sphere IDs the same as "no lens" rather than hiding rows, so deleted spheres don't ghost data out of view.
+- **Sphere management UI lives in People → Relationship Graph**, not Settings. Spheres are a relational construct, not an app-wide preference.
+- **Numerical work in Swift, narrative in the model**. The LLM picks an index + confidence + one-sentence reason; example counting, cold-start capping, and gate decisions are all Swift.
+
+**Out of scope this phase**:
+- Bulk reclassification of historical evidence (deferred — new imports get classified; old rows stay routed via lens fallback)
+- Per-sphere briefing / digest generation (lens scopes the read; producers still aggregate all-spheres)
+- Multi-person classification (group meetings still classify against `linkedPeople.first` only)
+- Surfacing the review badge on the sidebar Today row (only the AwarenessView toolbar carries it today)
+
+---
+
 ## Evidence linking: two-bucket model (linkedPeople + coParticipants) — Phase 1, mail (2026-05-13)
 
 **What**: `SamEvidenceItem` now carries a second person relationship, `coParticipants`, alongside `linkedPeople`. Mail bulk-upsert routes participants into the two buckets per direction. No consumer code reads `coParticipants` yet — this phase only widens the schema and starts populating it correctly for new mail imports.

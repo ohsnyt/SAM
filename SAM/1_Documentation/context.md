@@ -195,6 +195,8 @@ All models use SwiftData lightweight migration. Enum storage uses `rawValue` pat
 
 **Phase 1 Relationship Model**: First-launch bootstrap creates a `"My Practice"` Sphere (with `isBootstrapDefault: true`), gated by `UserDefaults["sam.migration.sphereBootstrapDone"]`. WFG users additionally get a Funnel-mode `"Client Pipeline"` Trajectory with `Lead → Applicant → Client` stages, and every existing Person is seeded with a `PersonSphereMembership` plus a `PersonTrajectoryEntry` where pipeline stage can be derived. Phase 8 routes coordinator + view stage reads through `PersonStageResolver`; legacy `roleBadges`-as-stage-proxy reads are catalogued in `relationship-model/phase0_audit.md` §2.
 
+**Phase C — Multi-sphere classification (2026-05-13)**: When a person sits in ≥ 2 active spheres, `SphereClassificationService` (actor) picks the sphere for each new evidence row via on-device inference; ≥ 0.75 auto-applies to `evidence.contextSphere`, 0.5–0.75 records a proposal (`proposedSphereID/Confidence/Reason/At` on `SamEvidenceItem`) for end-of-day review, < 0.5 falls back to the person's default sphere. Cold-start capped at 0.6 confidence until each candidate sphere has ≥ 3 confirmed examples. `SphereLensCoordinator` owns the global lens; `SphereLensPicker` (toolbar item on Today + People) is hidden until at least one person has ≥ 2 active memberships. Lens filtering for health/briefings uses `SamEvidenceItem.matches(lens:defaultSphereID:)` from `SAMModels-SphereLens.swift`.
+
 ---
 
 ## 7. Concurrency & SwiftData Patterns

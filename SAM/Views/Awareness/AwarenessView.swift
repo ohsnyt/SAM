@@ -44,6 +44,11 @@ struct AwarenessView: View {
     @State private var availableSpheres: [Sphere] = []
     @State private var sphereMemberIDs: Set<UUID>?
 
+    // MARK: - Sphere Classification Review (Phase C4)
+
+    @State private var pendingSphereReviewCount: Int = 0
+    @State private var showSphereReview: Bool = false
+
     // MARK: - Briefing State
 
     private var briefingCoordinator: DailyBriefingCoordinator { DailyBriefingCoordinator.shared }
@@ -97,6 +102,18 @@ struct AwarenessView: View {
                 HStack(spacing: 8) {
                     sphereFilterMenu
 
+                    if pendingSphereReviewCount > 0 {
+                        Button {
+                            showSphereReview = true
+                        } label: {
+                            Label(
+                                "\(pendingSphereReviewCount) to review",
+                                systemImage: "tray.and.arrow.down"
+                            )
+                        }
+                        .help("Mid-confidence sphere classifications waiting for your confirmation")
+                    }
+
                     Button {
                         showingManualTaskSheet = true
                     } label: {
@@ -107,6 +124,13 @@ struct AwarenessView: View {
                     GuideButton(articleID: "today.daily-briefing")
                 }
             }
+        }
+        .managedSheet(
+            isPresented: $showSphereReview,
+            priority: .userInitiated,
+            identifier: "awareness.sphere-review"
+        ) {
+            SphereClassificationReviewSheet()
         }
         .managedSheet(
             isPresented: $showingManualTaskSheet,
@@ -132,6 +156,13 @@ struct AwarenessView: View {
             await loadInsightsIfNeeded()
             await meetingPrepCoordinator.refreshIfNeeded()
             loadSpheresForFilter()
+            refreshPendingSphereReviewCount()
+        }
+        .onChange(of: showSphereReview) { _, isShown in
+            // After the user closes the review sheet, the queue may have
+            // shrunk to zero — recompute so the toolbar badge disappears
+            // without waiting for the next view re-task.
+            if !isShown { refreshPendingSphereReviewCount() }
         }
         .onChange(of: sphereFilterID) {
             recomputeSphereMemberIDs()
@@ -242,6 +273,10 @@ struct AwarenessView: View {
             availableSpheres = []
             sphereMemberIDs = nil
         }
+    }
+
+    private func refreshPendingSphereReviewCount() {
+        pendingSphereReviewCount = SphereClassificationCoordinator.shared.pendingReviewItems().count
     }
 
     private func recomputeSphereMemberIDs() {

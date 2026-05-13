@@ -268,18 +268,30 @@ public final class PersonSphereMembership {
     /// Optional per-person notes about why this person sits in this Sphere.
     public var notes: String?
 
+    /// Ordering of this membership relative to the person's other
+    /// memberships. Lowest `order` value is the person's **default**
+    /// sphere — used when evidence has no explicit `contextSphere` and
+    /// when no per-sphere lens is active. Drag-to-reorder in the person
+    /// detail view rewrites these values. Defaults to a large constant so
+    /// memberships created before the migration sort after any explicitly
+    /// ordered membership; the migration backfills sane values by
+    /// `addedAt`.
+    public var order: Int = 1_000
+
     public init(
         id: UUID = UUID(),
         person: SamPerson?,
         sphere: Sphere?,
         addedAt: Date = .now,
-        notes: String? = nil
+        notes: String? = nil,
+        order: Int = 1_000
     ) {
         self.id = id
         self.person = person
         self.sphere = sphere
         self.addedAt = addedAt
         self.notes = notes
+        self.order = order
     }
 }
 

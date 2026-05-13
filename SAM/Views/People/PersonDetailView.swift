@@ -74,8 +74,16 @@ struct PersonDetailView: View {
     // MARK: - Cached Health
 
     /// Computed once per view evaluation to avoid redundant `computeHealth(for:)` calls.
+    /// Reads the current sphere lens from `SphereLensCoordinator` so the
+    /// detail header reflects whichever sphere the user is viewing
+    /// through. When no lens is active (single-sphere users, or "All
+    /// spheres" selected), this behaves identically to the unfiltered
+    /// overload.
     private var personHealth: RelationshipHealth {
-        MeetingPrepCoordinator.shared.computeHealth(for: person)
+        MeetingPrepCoordinator.shared.computeHealth(
+            for: person,
+            lens: SphereLensCoordinator.shared.currentLens
+        )
     }
 
     // MARK: - Body
@@ -2279,15 +2287,33 @@ struct PersonDetailView: View {
                     .foregroundStyle(.secondary)
                     .padding(.vertical, 4)
             } else {
-                ForEach(memberships) { sphere in
-                    sphereRow(sphere, entries: entriesBySphere[sphere.id] ?? [])
+                ForEach(Array(memberships.enumerated()), id: \.element.id) { idx, sphere in
+                    sphereRow(
+                        sphere,
+                        entries: entriesBySphere[sphere.id] ?? [],
+                        index: idx,
+                        total: memberships.count,
+                        allMembershipIDs: memberships.map(\.id)
+                    )
+                }
+                if memberships.count >= 2 {
+                    Text("The first sphere is **\(person.displayNameCache)**'s default — used when SAM can't tell which sphere a message belongs to. Use the arrows to change which sphere wins.")
+                        .samFont(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 4)
                 }
             }
         }
         .padding(.vertical, 6)
     }
 
-    private func sphereRow(_ sphere: Sphere, entries: [PersonTrajectoryEntry]) -> some View {
+    private func sphereRow(
+        _ sphere: Sphere,
+        entries: [PersonTrajectoryEntry],
+        index: Int,
+        total: Int,
+        allMembershipIDs: [UUID]
+    ) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Circle()
@@ -2296,7 +2322,22 @@ struct PersonDetailView: View {
                 Text(sphere.name)
                     .samFont(.subheadline)
                     .fontWeight(.medium)
+                if index == 0 && total >= 2 {
+                    Text("default")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1)
+                        .background(.quaternary.opacity(0.5), in: Capsule())
+                }
                 Spacer()
+                if total >= 2 {
+                    sphereReorderButtons(
+                        index: index,
+                        total: total,
+                        allMembershipIDs: allMembershipIDs
+                    )
+                }
             }
             if entries.isEmpty {
                 Text("Member — no active trajectory")
@@ -2325,6 +2366,51 @@ struct PersonDetailView: View {
             }
         }
         .padding(.vertical, 2)
+    }
+
+    @ViewBuilder
+    private func sphereReorderButtons(
+        index: Int,
+        total: Int,
+        allMembershipIDs: [UUID]
+    ) -> some View {
+        HStack(spacing: 2) {
+            Button {
+                moveSphere(from: index, to: index - 1, allIDs: allMembershipIDs)
+            } label: {
+                Image(systemName: "chevron.up")
+            }
+            .buttonStyle(.borderless)
+            .disabled(index == 0)
+            .help("Make this sphere more important (move up)")
+            Button {
+                moveSphere(from: index, to: index + 1, allIDs: allMembershipIDs)
+            } label: {
+                Image(systemName: "chevron.down")
+            }
+            .buttonStyle(.borderless)
+            .disabled(index == total - 1)
+            .help("Make this sphere less important (move down)")
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+    }
+
+    private func moveSphere(from src: Int, to dst: Int, allIDs: [UUID]) {
+        guard src != dst, src >= 0, src < allIDs.count, dst >= 0, dst < allIDs.count else { return }
+        var reordered = allIDs
+        let moved = reordered.remove(at: src)
+        reordered.insert(moved, at: dst)
+        do {
+            try SphereRepository.shared.reorderMemberships(
+                forPerson: person.id,
+                sphereOrder: reordered
+            )
+            NotificationCenter.default.post(name: .samPersonDidChange, object: nil, userInfo: ["personID": person.id])
+        } catch {
+            // No user-facing error path here — reorder is a low-stakes
+            // operation and the next view refresh will reflect actual state.
+        }
     }
 
     // Helper view for SAM data sections

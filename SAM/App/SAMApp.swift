@@ -1265,6 +1265,16 @@ struct SAMApp: App {
             await perf.measure("Launch.sphereBootstrap") {
                 await SphereBootstrapCoordinator.runIfNeeded()
             }
+            // Backfill PersonSphereMembership.order so the oldest membership
+            // becomes a person's default sphere. One-shot, idempotent.
+            await perf.measure("Launch.membershipOrderBackfill") {
+                await MembershipOrderBackfillCoordinator.runIfNeeded()
+            }
+            // Lens picker visibility + restored selection. Cheap; recomputes
+            // the dual-sphere gate from PersonSphereMembership rows.
+            await MainActor.run {
+                SphereLensCoordinator.shared.refresh()
+            }
             // Phase 4: retroactively open a Stewardship arc for every person
             // already sitting at a Funnel-terminal stage. Idempotent — guarded
             // by its own UserDefaults flag.

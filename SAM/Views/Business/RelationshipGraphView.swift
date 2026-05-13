@@ -92,6 +92,9 @@ struct RelationshipGraphView: View {
     // Edge hover state
     @State private var hoveredEdge: GraphEdge?
 
+    // Spheres management sheet
+    @State private var showSpheresManagement: Bool = false
+
     // Role confirmation state
     @State private var roleDeductionEngine = RoleDeductionEngine.shared
     @State private var rolePickerNodeID: UUID?
@@ -130,9 +133,20 @@ struct RelationshipGraphView: View {
                     showLegend: $showLegend,
                     fitToView: fitToView
                 )
+                ToolbarItem(placement: .automatic) {
+                    Button {
+                        showSpheresManagement = true
+                    } label: {
+                        Label("Spheres", systemImage: "circle.grid.3x3")
+                    }
+                    .help("Manage spheres — your life areas (Work, Family, Church, …)")
+                }
                 ToolbarItem {
                     GuideButton(articleID: "people.relationship-graph")
                 }
+            }
+            .sheet(isPresented: $showSpheresManagement) {
+                SpheresManagementSheet()
             }
             .task {
                 // Default landing: show the picker (Me-only backdrop) on first appearance.

@@ -30,7 +30,14 @@ struct AppShellView: View {
     @State private var peopleMode: PeopleMode = .contacts
     @State private var peopleSpecialFilters: Set<PeopleSpecialFilter> = []
     @State private var eventSection: EventManagerView.EventSection = .events
+    @State private var showLifeSphereSelection: Bool = false
     @Environment(\.openWindow) private var openWindow
+
+    /// One-shot key gating the life-sphere selection sheet for existing
+    /// users who already finished onboarding before this feature shipped.
+    /// New users see the same sheet from inside OnboardingView's final step,
+    /// then we set this key so they aren't prompted again.
+    private static let lifeSphereSelectionShownKey = "sam.lifeSphereSelection.shown.v1"
 
     /// Whether the People section shows the contact list + detail side by side.
     private var showPeopleList: Bool {
@@ -62,6 +69,11 @@ struct AppShellView: View {
                 }
                 ToolbarItem(placement: .primaryAction) {
                     GuideButton(articleID: "events.overview")
+                }
+            }
+            if sidebarSelection == "today" || sidebarSelection == "people" {
+                ToolbarItem(placement: .primaryAction) {
+                    SphereLensPicker()
                 }
             }
         }
@@ -148,6 +160,15 @@ struct AppShellView: View {
             IntroSequenceOverlay()
                 .interactiveDismissDisabled()
         }
+        .managedSheet(
+            isPresented: $showLifeSphereSelection,
+            priority: .opportunistic,
+            identifier: "life-sphere-selection"
+        ) {
+            LifeSphereSelectionSheet { _ in
+                UserDefaults.standard.set(true, forKey: Self.lifeSphereSelectionShownKey)
+            }
+        }
         .onAppear {
             // Show intro only if onboarding is already complete (returning user who
             // hasn't seen intro yet, e.g. after a Reset Intro). First-launch case
@@ -155,6 +176,7 @@ struct AppShellView: View {
             let onboardingDone = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
             if onboardingDone {
                 introCoordinator.checkAndShow()
+                maybeShowLifeSphereSelection()
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .samToggleCommandPalette)) { _ in
@@ -172,6 +194,26 @@ struct AppShellView: View {
                 RelationshipGraphCoordinator.shared.pendingSuggestionPersonIDs.removeAll()
                 RelationshipGraphCoordinator.shared.applyFilters()
             }
+        }
+    }
+
+    /// Present the life-sphere selection sheet once for existing users who
+    /// finished onboarding before this feature shipped. Skips for users who
+    /// have already gone past "My Practice" (i.e. customised their spheres
+    /// already), since the sheet would be redundant and intrusive.
+    private func maybeShowLifeSphereSelection() {
+        guard !UserDefaults.standard.bool(forKey: Self.lifeSphereSelectionShownKey) else { return }
+        let active = (try? SphereRepository.shared.fetchAll()) ?? []
+        let nonBootstrap = active.filter { !$0.isBootstrapDefault }
+        guard nonBootstrap.isEmpty else {
+            // User already customised — mark seen so we never prompt again.
+            UserDefaults.standard.set(true, forKey: Self.lifeSphereSelectionShownKey)
+            return
+        }
+        // Slight delay so we don't fight intro overlay / first-paint work.
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(800))
+            showLifeSphereSelection = true
         }
     }
 

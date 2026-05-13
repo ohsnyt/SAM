@@ -207,6 +207,7 @@ final class EvidenceRepository {
             try context.save()
             restorePhotoCacheIfNeeded(photoSnapshots, in: context)
             OutcomeBundleGenerator.shared.nudgeForEvidence(personIDs: linkedPeople.map(\.id))
+            SphereClassificationCoordinator.shared.classifyInBackground(evidenceID: existing.id)
             return existing
         }
 
@@ -227,6 +228,7 @@ final class EvidenceRepository {
         try context.save()
         restorePhotoCacheIfNeeded(photoSnapshots, in: context)
         OutcomeBundleGenerator.shared.nudgeForEvidence(personIDs: linkedPeople.map(\.id))
+        SphereClassificationCoordinator.shared.classifyInBackground(evidenceID: evidence.id)
 
         return evidence
     }

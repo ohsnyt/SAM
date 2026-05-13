@@ -187,6 +187,15 @@ public final class Sphere {
     /// system prompt.
     public var purpose: String
 
+    /// Seed prompt SAM uses to classify which Sphere a piece of evidence
+    /// belongs to when a person has multiple active memberships. Shipped
+    /// with a default for the five canonical spheres (Work / Family & Close
+    /// Friends / Church / Volunteer / Hobby) and refined over time as the
+    /// classifier accumulates confirmed examples. User-editable in the
+    /// Spheres management panel (People → Relationship Graph). Empty for
+    /// user-created custom spheres until populated.
+    public var classificationProfile: String = ""
+
     /// Raw storage for SphereAccentColor enum.
     public var accentColorRaw: String
 
@@ -238,6 +247,7 @@ public final class Sphere {
         id: UUID = UUID(),
         name: String,
         purpose: String = "",
+        classificationProfile: String = "",
         accentColor: SphereAccentColor = .slate,
         defaultMode: Mode = .stewardship,
         defaultCadenceDays: Int? = nil,
@@ -249,6 +259,7 @@ public final class Sphere {
         self.id = id
         self.name = name
         self.purpose = purpose
+        self.classificationProfile = classificationProfile
         self.accentColorRaw = accentColor.rawValue
         self.defaultModeRaw = defaultMode.rawValue
         self.defaultCadenceDays = defaultCadenceDays
@@ -256,5 +267,137 @@ public final class Sphere {
         self.archived = archived
         self.createdAt = createdAt
         self.isBootstrapDefault = isBootstrapDefault
+    }
+}
+
+// MARK: - LifeSphereTemplate
+
+/// Shipped templates surfaced in the first-run sphere-selection flow and
+/// the "Add sphere" UI in People → Relationship Graph. Each template
+/// carries a real `classificationProfile` so SAM has classification
+/// context the moment the user adopts it.
+public struct LifeSphereTemplate: Sendable, Identifiable {
+    public let id: String
+    public let name: String
+    public let purpose: String
+    public let classificationProfile: String
+    public let accentColor: SphereAccentColor
+    public let defaultMode: Mode
+    public let icon: String
+    /// Suggested by default in onboarding.
+    public let suggestedAtOnboarding: Bool
+
+    public static let work = LifeSphereTemplate(
+        id: "work",
+        name: "Work",
+        purpose: "Business activities: clients, recruits, vendors, agents.",
+        classificationProfile: """
+        Business activities related to financial services, recruiting, client meetings, \
+        policy work, WFG events, and agent training. Topics include insurance, mortgages, \
+        retirement planning, licensing, AMS, BPM, codes, leads, prospects, commission, \
+        carriers, applications, and underwriting. Tone is professional or quasi-professional. \
+        Exclude purely personal/family content even with the same person.
+        """,
+        accentColor: .blue,
+        defaultMode: .stewardship,
+        icon: "briefcase",
+        suggestedAtOnboarding: true
+    )
+
+    public static let familyAndCloseFriends = LifeSphereTemplate(
+        id: "family",
+        name: "Family & Close Friends",
+        purpose: "Covenantal relationships — no quota, no funnel.",
+        classificationProfile: """
+        Personal relationship maintenance with family members and close friends. \
+        Topics include life events, emotional support, family logistics, shared meals, \
+        milestones (birthdays, anniversaries, deaths), faith conversations not tied to \
+        church duties, parenting, marriage, household decisions, vacations, holidays. \
+        No transactional, sales, or recruiting content even with the same person. \
+        Tone is warm, intimate, unstructured.
+        """,
+        accentColor: .rose,
+        defaultMode: .covenant,
+        icon: "house.fill",
+        suggestedAtOnboarding: true
+    )
+
+    public static let church = LifeSphereTemplate(
+        id: "church",
+        name: "Church",
+        purpose: "Local church community: ministries, elder duties, member care.",
+        classificationProfile: """
+        Local church community life: Sunday services, midweek ministries, prayer requests, \
+        elder/deacon duties, member care, theology and doctrine discussions, church events, \
+        small groups, missions, giving. Spiritual content even with non-church people belongs \
+        here when the discussion is overtly faith-formational. Exclude private family faith \
+        conversations (those belong in Family & Close Friends).
+        """,
+        accentColor: .purple,
+        defaultMode: .stewardship,
+        icon: "building.columns",
+        suggestedAtOnboarding: false
+    )
+
+    public static let volunteer = LifeSphereTemplate(
+        id: "volunteer",
+        name: "Volunteer / Civic",
+        purpose: "Non-profit boards, civic engagement, community service.",
+        classificationProfile: """
+        Non-profit boards, civic engagement, charitable causes, school PTA, neighborhood \
+        associations, community service. Topics include board meetings, fundraising, \
+        volunteer coordination, mission-driven projects, advocacy. Distinct from Work \
+        (no commercial relationship) and from Church (no faith framing).
+        """,
+        accentColor: .green,
+        defaultMode: .campaign,
+        icon: "hand.raised",
+        suggestedAtOnboarding: false
+    )
+
+    public static let hobby = LifeSphereTemplate(
+        id: "hobby",
+        name: "Hobby",
+        purpose: "Shared recreational interest with a defined group.",
+        classificationProfile: """
+        Shared recreational interest with a defined group: band practice, running club \
+        meetups, gaming sessions, book club, sports league, craft group. The topic is the \
+        hobby itself and its logistics — not "we both happen to like X." Rename this sphere \
+        to the specific activity once adopted (e.g., "Jazz Band", "Run Club").
+        """,
+        accentColor: .amber,
+        defaultMode: .stewardship,
+        icon: "music.note",
+        suggestedAtOnboarding: false
+    )
+
+    public static let all: [LifeSphereTemplate] = [
+        .work,
+        .familyAndCloseFriends,
+        .church,
+        .volunteer,
+        .hobby
+    ]
+
+    public static let onboardingDefaults: [LifeSphereTemplate] =
+        all.filter { $0.suggestedAtOnboarding }
+
+    public static let onboardingOptionals: [LifeSphereTemplate] =
+        all.filter { !$0.suggestedAtOnboarding }
+}
+
+public extension Sphere {
+    /// Create a Sphere from a shipped template. Used by the onboarding
+    /// flow and the "Add sphere" UI; preserves classificationProfile so
+    /// the classifier has real context from day one.
+    convenience init(template: LifeSphereTemplate, sortOrder: Int = 0) {
+        self.init(
+            name: template.name,
+            purpose: template.purpose,
+            classificationProfile: template.classificationProfile,
+            accentColor: template.accentColor,
+            defaultMode: template.defaultMode,
+            sortOrder: sortOrder
+        )
     }
 }

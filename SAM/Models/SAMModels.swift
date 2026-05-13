@@ -805,6 +805,30 @@ public final class SamEvidenceItem {
     @Relationship(deleteRule: .nullify)
     public var coParticipants: [SamPerson] = []
 
+    /// Which Sphere this evidence belongs to for health-scoring and lens
+    /// filtering. `nil` means "fall back to each linked person's default
+    /// sphere" — set when SAM has classifier confidence below the
+    /// auto-apply threshold, or for single-sphere users where the
+    /// distinction doesn't matter. Set explicitly when the classifier
+    /// auto-applies or the user confirms in the EOD review batch.
+    /// Historical evidence keeps its `contextSphere` even after a person
+    /// loses that sphere membership (the "jazz band with a former client"
+    /// case) so health math remains stable across sphere reorganizations.
+    @Relationship(deleteRule: .nullify)
+    public var contextSphere: Sphere?
+
+    /// Phase C4: mid-confidence (0.5–0.75) sphere pick from the
+    /// classifier, awaiting user confirmation in the EOD review batch.
+    /// Cleared when the user accepts (which sets `contextSphere`) or
+    /// dismisses. Independent of `contextSphere` so a user-confirmed
+    /// pick is never overwritten by a later classifier run. Stored as a
+    /// UUID rather than a relationship to avoid an extra SwiftData edge
+    /// for a field that is, by design, ephemeral.
+    public var proposedSphereID: UUID?
+    public var proposedSphereConfidence: Double = 0.0
+    public var proposedSphereReason: String?
+    public var proposedSphereAt: Date?
+
     /// UUIDs of confirmed context links.  Same migration note as
     /// `linkedPeople`.
     @Relationship(deleteRule: .nullify)

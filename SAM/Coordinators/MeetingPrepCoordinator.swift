@@ -370,7 +370,21 @@ final class MeetingPrepCoordinator {
     }
 
     /// Compute health for a single person (reused by PersonDetailView, EngagementVelocitySection, etc.).
+    /// Convenience overload that aggregates across every sphere the person belongs to.
     func computeHealth(for person: SamPerson) -> RelationshipHealth {
+        computeHealth(for: person, lens: nil)
+    }
+
+    /// Compute health for a single person, optionally scoped to one sphere.
+    ///
+    /// When `lens` is non-nil, the evidence set is filtered through
+    /// `SphereLens` — direct evidence whose `contextSphere` matches the
+    /// lens, plus nil-context evidence belonging to people whose default
+    /// sphere *is* the lens. This is the per-sphere health split (Phase C5):
+    /// a dual-sphere contact (e.g. "coworker who's also a jazz-band friend")
+    /// can be assessed against either context without the metrics bleeding
+    /// across.
+    func computeHealth(for person: SamPerson, lens: Sphere?) -> RelationshipHealth {
         // Backup restore wipes SwiftData; touching `.linkedEvidence` here
         // hits a fatalError on _PersistedProperty for already-deleted rows.
         // Return an empty/default health so callers stay structurally valid.
@@ -383,11 +397,18 @@ final class MeetingPrepCoordinator {
         let sixtyDaysAgo = Calendar.current.date(byAdding: .day, value: -60, to: now)!
         let ninetyDaysAgo = Calendar.current.date(byAdding: .day, value: -90, to: now)!
 
+        // Resolve the person's default sphere once when a lens is active so
+        // nil-context evidence can fall back to it without N repo hits.
+        let defaultSphereID: UUID? = lens.flatMap { _ in
+            (try? SphereRepository.shared.defaultSphere(forPerson: person.id))?.id
+        }
+
         // Use person.linkedEvidence (direct relationship) filtered to real interactions.
         // Skip calendar events the user marked cancelled / no-show / rescheduled — those didn't
         // actually happen, so counting them as contact would inflate velocity and hide genuine staleness.
         let evidence = person.linkedEvidence
             .filter { $0.source.isInteraction && $0.reviewStatus.countsAsOccurred }
+            .filter { $0.matches(lens: lens, defaultSphereID: defaultSphereID) }
             .sorted { $0.occurredAt < $1.occurredAt }
 
         // --- Days since last interaction ---
