@@ -57,6 +57,32 @@ final class UnknownSenderRepository {
         return Set(all.filter { $0.status == .neverInclude }.map(\.email))
     }
 
+    /// Delete any `.neverInclude` records whose email now belongs to a known
+    /// SamPerson. Called from MailImportCoordinator after building the
+    /// knownEmails set; resolves the contradiction where a user previously
+    /// excluded an address and later added it as a person (e.g. they marked
+    /// Jean's prayer-request address as junk, then realized she belonged in
+    /// the Church Sphere). Without this cleanup the record is inert — the
+    /// known-sender check short-circuits past it — but if the SamPerson is
+    /// ever unlinked, neverInclude silently reactivates.
+    @discardableResult
+    func purgeNeverInclude(forKnownEmails knownEmails: Set<String>) throws -> Int {
+        guard let modelContext else { throw RepositoryError.notConfigured }
+        guard !knownEmails.isEmpty else { return 0 }
+
+        let descriptor = FetchDescriptor<UnknownSender>()
+        let stale = try modelContext.fetch(descriptor)
+            .filter { $0.status == .neverInclude && knownEmails.contains($0.email) }
+        guard !stale.isEmpty else { return 0 }
+
+        for record in stale {
+            modelContext.delete(record)
+        }
+        try modelContext.save()
+        logger.info("Purged \(stale.count) stale neverInclude records superseded by SamPerson links")
+        return stale.count
+    }
+
     /// Returns every identifier (email or canonicalized phone) SAM has already
     /// triaged in any status. Use this to short-circuit bulk re-scans (WhatsApp
     /// JID sweep, sent-recipient discovery) so previously-seen senders aren't

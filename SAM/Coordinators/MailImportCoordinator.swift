@@ -466,6 +466,13 @@ final class MailImportCoordinator {
             // 2. Build known emails set from PeopleRepository
             let knownEmails = try peopleRepository.allKnownEmails()
 
+            // 2b. Self-heal: drop any neverInclude record whose email is now
+            // linked to a SamPerson (user added the person after excluding the
+            // email). The known-sender check below short-circuits past these,
+            // so they're inert — but removing them prevents silent
+            // reactivation if the email is ever unlinked.
+            try? UnknownSenderRepository.shared.purgeNeverInclude(forKnownEmails: knownEmails)
+
             // 3. Also exclude neverInclude senders
             let neverInclude = try UnknownSenderRepository.shared.neverIncludeEmails()
 
@@ -958,7 +965,7 @@ final class MailImportCoordinator {
     /// Lowercased and with `+tag` stripped so `sarah+alerts@foo.com` canonicalizes to `sarah@foo.com`.
     /// Used to detect outbound mail by sender match (provider-agnostic) and to keep the user's
     /// own address from being triaged as an unknown sender inside unified Gmail `All Mail`.
-    private func userSenderAddresses() -> Set<String> {
+    func userSenderAddresses() -> Set<String> {
         var set = Set<String>()
         for id in selectedAccountIDs {
             if let c = canonicalizeSenderAddress(id) { set.insert(c) }
@@ -1122,7 +1129,7 @@ final class MailImportCoordinator {
     }
 
     /// Canonicalize an address for sender matching: trim, lowercase, strip `+tag` from local-part.
-    private func canonicalizeSenderAddress(_ email: String?) -> String? {
+    func canonicalizeSenderAddress(_ email: String?) -> String? {
         guard let raw = email?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
               !raw.isEmpty else { return nil }
         guard let atIndex = raw.firstIndex(of: "@") else { return raw }

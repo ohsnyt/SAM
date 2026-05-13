@@ -4,6 +4,26 @@
 
 ---
 
+## Per-person mail history backfill + neverInclude self-heal (2026-05-13)
+
+**What**: New user-initiated action on Person Detail (`Actions → Import Mail History…`) that scans the full Mail Envelope Index for every message to/from a person's known email addresses, shows a preview, and writes evidence only after explicit confirm. Paired with a self-healing scrub of stale `UnknownSender.neverInclude` records.
+
+- **`MailImportCoordinator+Backfill.swift`** (new) — extension defining `MailHistoryPreview` (Sendable struct with `searchedEmails`, `totalFound`, `alreadyImportedCount`, `newCandidates`, computed `willImportCount`/`dateRange`) and two entry points:
+  - `previewHistoricalMail(for:) async throws` — canonicalizes the person's `emailCache` + `emailAliases`, opens the Envelope Index via `BookmarkManager`, runs `fetchInbound` (sender-side SQL filter, mailbox `.inbox`, max 2000) and `fetchOutbound` (sender-side filter on user's own addresses, mailbox `.sent`, max 5000, then `fetchMetadataOnly` to attach recipients + client-side intersection with the person's emails). Dedups against existing evidence via `EvidenceRepository.fetch(sourceUID: "mail:<Message-ID>")`. No writes.
+  - `commitHistoricalMail(_:) throws -> Int` — splits the candidate list by direction and calls `EvidenceRepository.bulkUpsertEmails` once per direction. Idempotent on `sourceUID`, so re-running the same preview is safe.
+- **`MailHistoryBackfillSheet.swift`** (new) — `Phase`-driven sheet (`.loading / .ready / .error / .done`). Ready state shows a summary strip (found / already in SAM / new — emphasis on new) with date range and the searched address list, plus a `List` of new candidates with directional icons (inbound `arrow.down.left` blue, outbound `arrow.up.right` green). Footer shows `Import N` button (disabled when `willImportCount == 0`). Posts `.samPersonDidChange` after a successful commit so other views refetch.
+- **`PersonDetailView`** — adds `showingMailBackfillSheet` state, an `Import Mail History…` button in the Actions menu (paired with `Refresh Contact`), and a `managedSheet` (`identifier: "person.mail-backfill"`) presenting the new sheet.
+- **`UnknownSenderRepository.purgeNeverInclude(forKnownEmails:)`** — drops every `.neverInclude` record whose email is now associated with a `SamPerson` known-email. Returns the deleted count.
+- **`MailImportCoordinator`** — visibility bumps: `userSenderAddresses()` and `canonicalizeSenderAddress(_:)` are no longer `private` so the backfill extension can reuse them. The mainline scan also calls `purgeNeverInclude(forKnownEmails:)` after building `knownEmails` so adding a previously-excluded contact (e.g., Jean Schwabe) auto-clears the contradictory exclusion on the next normal import.
+
+**Why**: When a new person is added (or someone gets recovered from a prior `neverInclude` triage decision), the standard import lookback misses every message from before the configured window. For high-signal contacts — the user's Jean Schwabe case (church prayer-request threads) is the motivating example — the user wants the full historical record, not a window. The preview step keeps SAM's "no writes without confirm" posture: the user sees exactly which messages will be added before any evidence row is created. The `neverInclude` purge closes the related loophole where re-adding a contact would leave SAM still skipping their mail.
+
+**Performance**: Inbound path uses SQL-level sender filtering (cheap). Outbound path can't push the recipient filter into the Envelope Index, so it pulls the user's sent mail (capped 5000) and filters client-side after the recipients table is joined via `fetchMetadataOnly`. Bodies are deliberately *not* fetched during backfill (`bodySnippet: "Historical mail — body not fetched during backfill."`) — backfill is about establishing the interaction timeline, not regenerating analysis artifacts for years of mail.
+
+**Next**: Apply the same pattern to iMessage history (per-person, security-scoped chat.db scan) and Calendar (past events the person attended). Mail is shipped first because it has the cleanest dedup key and the largest historical surface.
+
+---
+
 ## PersonDetailView: Sphere chip row + repo mainContext migration (2026-05-12)
 
 **What**: Per-person Sphere membership is now editable directly from the header, parallel to the role-badge row.

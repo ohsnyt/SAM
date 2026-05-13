@@ -66,6 +66,7 @@ struct PersonDetailView: View {
     @State private var editingFacebookURL = ""
     @State private var showingManualTaskSheet = false
     @State private var showingMergeSheet = false
+    @State private var showingMailBackfillSheet = false
 
     @Query(filter: #Predicate<SamPerson> { $0.lifecycleStatusRawValue == "active" })
     private var allPeople: [SamPerson]
@@ -200,6 +201,10 @@ struct PersonDetailView: View {
                             await loadFullContact()
                         }
                     }
+
+                    Button("Import Mail History…", systemImage: "tray.and.arrow.down") {
+                        showingMailBackfillSheet = true
+                    }
                 } label: {
                     Label("Actions", systemImage: "ellipsis.circle")
                 }
@@ -288,6 +293,13 @@ struct PersonDetailView: View {
             identifier: "person.merge-contact"
         ) {
             MergeContactSheet(sourcePerson: person)
+        }
+        .managedSheet(
+            isPresented: $showingMailBackfillSheet,
+            priority: .userInitiated,
+            identifier: "person.mail-backfill"
+        ) {
+            MailHistoryBackfillSheet(person: person)
         }
         .managedSheet(
             isPresented: $showingNewSphereSheet,
