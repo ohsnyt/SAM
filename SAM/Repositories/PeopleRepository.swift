@@ -339,13 +339,21 @@ final class PeopleRepository {
         let descriptor = FetchDescriptor<SamPerson>()
         let allExistingPeople = try modelContext.fetch(descriptor)
 
-        // Create lookup by contactIdentifier (keep first if duplicates exist)
-        let existingByIdentifier = Dictionary(
-            allExistingPeople.compactMap { person in
-                person.contactIdentifier.map { ($0, person) }
-            },
-            uniquingKeysWith: { first, _ in first }
-        )
+        // Create lookup by contactIdentifier (keep first if duplicates exist).
+        // Includes mergedFromContactIdentifiers so syncs of a CNContact that
+        // was previously merged into another SamPerson route to the surviving
+        // person instead of spawning a fresh row.
+        var existingByIdentifier: [String: SamPerson] = [:]
+        for person in allExistingPeople {
+            if let primary = person.contactIdentifier,
+               existingByIdentifier[primary] == nil {
+                existingByIdentifier[primary] = person
+            }
+            for alias in person.mergedFromContactIdentifiers
+                where existingByIdentifier[alias] == nil {
+                existingByIdentifier[alias] = person
+            }
+        }
 
         // Create lookup by lowercased display name for standalone (no contactIdentifier) matching
         let standaloneByName = Dictionary(
@@ -367,6 +375,20 @@ final class PeopleRepository {
                 ?? standaloneByName[contact.displayName.lowercased()]
 
             if let existing {
+                // If we matched via merged-from alias, this CNContact's data
+                // belongs to a person that was merged away — don't let it
+                // overwrite the survivor's fields. Just refresh lastSyncedAt
+                // so the alias isn't flagged as stale.
+                let matchedViaAlias =
+                    existing.mergedFromContactIdentifiers.contains(contact.identifier)
+                    && existing.contactIdentifier != contact.identifier
+
+                if matchedViaAlias {
+                    existing.lastSyncedAt = Date()
+                    updated += 1
+                    continue
+                }
+
                 // Link standalone SamPerson to this contact if not yet linked
                 var changed = false
                 if existing.contactIdentifier != contact.identifier {
@@ -509,9 +531,21 @@ final class PeopleRepository {
             let duplicates = sorted.dropFirst()
 
             for dup in duplicates {
-                // Copy contactIdentifier to primary if it doesn't have one
-                if primary.contactIdentifier == nil, let cid = dup.contactIdentifier {
-                    primary.contactIdentifier = cid
+                // Copy contactIdentifier to primary if it doesn't have one; if
+                // both have distinct identifiers, record dup's as an alias so
+                // future syncs of that CNContact route to primary.
+                if let cid = dup.contactIdentifier {
+                    if primary.contactIdentifier == nil {
+                        primary.contactIdentifier = cid
+                    } else if primary.contactIdentifier != cid,
+                              !primary.mergedFromContactIdentifiers.contains(cid) {
+                        primary.mergedFromContactIdentifiers.append(cid)
+                    }
+                }
+                for alias in dup.mergedFromContactIdentifiers
+                    where alias != primary.contactIdentifier
+                       && !primary.mergedFromContactIdentifiers.contains(alias) {
+                    primary.mergedFromContactIdentifiers.append(alias)
                 }
 
                 // Move nullify relationships to primary
@@ -1332,8 +1366,23 @@ final class PeopleRepository {
         let unionedRoleBadges = source.roleBadges.filter { !target.roleBadges.contains($0) }
         target.roleBadges.append(contentsOf: unionedRoleBadges)
 
-        if target.contactIdentifier == nil {
-            target.contactIdentifier = source.contactIdentifier
+        // contactIdentifier: take source's when target has none; otherwise
+        // record source's identifier as a merged-from alias so the next
+        // Apple Contacts sync routes to `target` instead of resurrecting
+        // a fresh SamPerson for the source's CNContact.
+        if let sourceCID = source.contactIdentifier {
+            if target.contactIdentifier == nil {
+                target.contactIdentifier = sourceCID
+            } else if target.contactIdentifier != sourceCID,
+                      !target.mergedFromContactIdentifiers.contains(sourceCID) {
+                target.mergedFromContactIdentifiers.append(sourceCID)
+            }
+        }
+        // Carry forward any aliases the source had absorbed previously.
+        for alias in source.mergedFromContactIdentifiers
+            where alias != target.contactIdentifier
+               && !target.mergedFromContactIdentifiers.contains(alias) {
+            target.mergedFromContactIdentifiers.append(alias)
         }
         if target.linkedInProfileURL == nil {
             target.linkedInProfileURL = source.linkedInProfileURL

@@ -24,6 +24,7 @@ struct MergeContactSheet: View {
     @State private var isMerging = false
     @State private var errorMessage: String?
     @State private var showingConfirmation = false
+    @State private var removeSourceFromSAMGroup = true
 
     @Query(filter: #Predicate<SamPerson> { $0.lifecycleStatusRawValue == "active" },
            sort: \SamPerson.displayNameCache)
@@ -46,6 +47,17 @@ struct MergeContactSheet: View {
     private var targetPerson: SamPerson? {
         guard let id = selectedTargetID else { return nil }
         return allPeople.first { $0.id == id }
+    }
+
+    /// True when both source and target are linked to distinct Apple
+    /// Contact records. If we don't intervene, the next contacts sync
+    /// will resurrect the source from its surviving CNContact.
+    private var bothHaveDistinctCNContacts: Bool {
+        guard let sCID = sourcePerson.contactIdentifier,
+              let target = targetPerson,
+              let tCID = target.contactIdentifier
+        else { return false }
+        return sCID != tCID
     }
 
     // MARK: - Body
@@ -181,6 +193,46 @@ struct MergeContactSheet: View {
                     }
                 }
 
+                // Distinct CNContacts — warn and offer cleanup
+                if bothHaveDistinctCNContacts,
+                   let sourceCID = sourcePerson.contactIdentifier {
+                    GroupBox {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Both contacts are linked to separate entries in Apple Contacts. SAM will remember that **\(sourcePerson.displayNameCache ?? sourcePerson.displayName)**'s Apple Contact now belongs to the merged record, so future syncs won't recreate it.")
+                                .samFont(.caption)
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            HStack {
+                                Button {
+                                    if let url = URL(string: "addressbook://\(sourceCID)") {
+                                        NSWorkspace.shared.open(url)
+                                    }
+                                } label: {
+                                    Label("Show in Contacts", systemImage: "arrow.up.forward.app")
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                                Spacer()
+                            }
+
+                            Toggle(isOn: $removeSourceFromSAMGroup) {
+                                Text("Also remove this entry from the SAM contacts group")
+                                    .samFont(.caption)
+                            }
+                            .toggleStyle(.checkbox)
+
+                            Text("The Apple Contact itself stays put — only its membership in your SAM group is removed, so it won't appear in future SAM imports.")
+                                .samFont(.caption2)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    } label: {
+                        Label("Two Apple Contacts detected", systemImage: "exclamationmark.triangle")
+                            .samFont(.caption)
+                            .foregroundStyle(.orange)
+                    }
+                }
+
                 if let error = errorMessage {
                     Text(error)
                         .foregroundStyle(.red)
@@ -239,6 +291,10 @@ struct MergeContactSheet: View {
         isMerging = true
         errorMessage = nil
 
+        // Capture before the merge — sourcePerson is deleted by mergePerson.
+        let sourceCID = sourcePerson.contactIdentifier
+        let shouldRemoveFromGroup = bothHaveDistinctCNContacts && removeSourceFromSAMGroup
+
         do {
             let snapshot = try PeopleRepository.shared.mergePerson(
                 sourceID: sourcePerson.id,
@@ -261,6 +317,16 @@ struct MergeContactSheet: View {
             // outcome engine so the queue refills from the merged data instead
             // of waiting for the next scheduled tick.
             OutcomeEngine.shared.startGeneration()
+
+            // If the user opted in, drop the source CNContact from the SAM
+            // group so future imports don't see it. The contact itself stays
+            // intact in Apple Contacts — only group membership changes.
+            if shouldRemoveFromGroup, let cid = sourceCID {
+                Task {
+                    let result = await ContactsService.shared.removeContactFromSAMGroup(identifier: cid)
+                    logger.info("Removed source CNContact from SAM group: \(String(describing: result), privacy: .public)")
+                }
+            }
 
             // Navigate sidebar selection to the target BEFORE dismissing.
             // Without this, when the sheet was launched from PersonDetailView

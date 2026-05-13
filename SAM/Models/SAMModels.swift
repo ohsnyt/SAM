@@ -35,6 +35,14 @@ public final class SamPerson {
     /// When nil, person is in temporary state (needs matching to contact).
     public var contactIdentifier: String?
 
+    /// CNContact identifiers absorbed by past merges where the source
+    /// person had its own Apple Contact distinct from this person's.
+    /// `ContactsImportCoordinator.bulkUpsert` routes future syncs of any
+    /// identifier in this list to this person instead of creating a new
+    /// SamPerson — otherwise the merge would be silently undone the next
+    /// time Apple Contacts syncs.
+    public var mergedFromContactIdentifiers: [String] = []
+
     // ── Cached display fields (refreshed on sync) ───────────────────
     
     /// Human-readable name cached from CNContact for list performance.

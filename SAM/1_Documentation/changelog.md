@@ -4,6 +4,25 @@
 
 ---
 
+## Person merge: persist Apple-Contact aliases + offer SAM-group removal (2026-05-12)
+
+**What**: Merged persons now remember every Apple Contact identifier they've ever absorbed, and the merge sheet exposes the dual-CNContact case directly to the user.
+
+- **New field** `SamPerson.mergedFromContactIdentifiers: [String]` (additive — lightweight migration). Stores CNContact identifiers absorbed from sources whose `contactIdentifier` differed from the target's.
+- **`PeopleRepository.mergePerson`** — when source and target both have distinct `contactIdentifier`s, the source CID is appended to the target's alias list instead of being dropped. Source's own alias list is unioned in.
+- **`PeopleRepository.bulkUpsert`** — the existing-person lookup is now keyed by primary CID *and* every alias. When a contact matches via alias only, the upsert exits early after touching `lastSyncedAt` so the next Apple-Contacts sync does not overwrite the merged person's fields with the absorbed CNContact's data.
+- **`PeopleRepository.mergeDuplicateContacts`** — bulk-merge path mirrors the alias logic.
+- **`ContactsService.removeContactFromSAMGroup(identifier:)`** — new actor method that drops a CNContact from the user-configured SAM group via `CNSaveRequest.removeMember`. The contact itself stays put in Apple Contacts; only group membership is removed, so future SAM imports don't see it.
+- **`MergeContactSheet`** — when source and target have distinct `contactIdentifier`s, a new "Two Apple Contacts detected" GroupBox appears explaining the alias behavior, with a "Show in Contacts" button (`addressbook://<id>` URL via `NSWorkspace`) and a toggle (default-on) to also remove the source CNContact from the SAM group. The toggle's result is logged.
+
+**Why**: After merging Sarah Snyder into Sarah Snyder Zhang, both records came back after restart. Each name had its own CNContact; the old merge dropped the source's CID, so the next contacts sync re-created the source SamPerson from scratch — silently undoing the merge. The user asked for two things: (a) make merges survive re-sync, and (b) surface the dual-Contact situation so they can see exactly which Apple Contact they're about to lose visibility on, with a one-click option to evict it from the SAM group.
+
+**Why an alias list (not just overwrite `contactIdentifier`)**: the target might already have its own CNContact the user cares about. Aliasing preserves both the canonical identity and the merge history; bulk-upsert resolves either ID to the same SamPerson without clobbering target's fields.
+
+**Undo**: Restoring a merge via `UndoRepository.restorePersonMerge` does not currently strip the absorbed alias from the target (or restore source's `contactIdentifier`). After undo + a contacts sync, both persons reappear correctly because the source's original CNContact still exists in Apple Contacts and matches by primary CID — but the target retains the alias entry, which would re-route any *new* CNContact created with that identifier (vanishingly unlikely). Out-of-scope for this pass; revisit when the broader undo snapshot grows to cover the new re-pointed models.
+
+---
+
 ## Person merge: full data-graph overhaul (2026-05-12)
 
 **What**: `PeopleRepository.mergePerson(sourceID:targetID:)` now handles every model that references a `SamPerson`. Engine output is **deleted on both sides** (forces clean regeneration from the merged data); user-authored and historical records are **re-pointed** with appropriate dedup; UUID-bearing Codable arrays embedded on notes and people are **scanned and rewritten**. `MergeContactSheet.performMerge()` now calls `OutcomeEngine.shared.startGeneration()` immediately after the merge so the Today queue refills before the user sees it.

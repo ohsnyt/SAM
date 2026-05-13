@@ -1174,6 +1174,61 @@ actor ContactsService {
             return .failed(error.localizedDescription)
         }
     }
+
+    /// Result of attempting to remove a contact from the SAM group.
+    enum RemoveFromGroupResult: Sendable {
+        case removed
+        case notMember
+        case noGroupConfigured
+        case failed(String)
+    }
+
+    /// Remove a contact from the configured SAM group in Apple Contacts.
+    /// The contact itself is **not** deleted — only its membership in the
+    /// SAM group is. Used after a person merge where the source's CNContact
+    /// was distinct from the target's: without this, the next contacts sync
+    /// would resurrect the merged-away person.
+    @discardableResult
+    func removeContactFromSAMGroup(identifier: String) -> RemoveFromGroupResult {
+        let groupID = UserDefaults.standard.string(forKey: "selectedContactGroupIdentifier") ?? ""
+        guard !groupID.isEmpty else {
+            logger.debug("No SAM group configured, skipping group removal")
+            return .noGroupConfigured
+        }
+
+        if !isContactInSAMGroup(identifier: identifier) {
+            logger.debug("Contact \(identifier, privacy: .private) not in SAM group — nothing to remove")
+            return .notMember
+        }
+
+        do {
+            let groups = try store.groups(matching: nil)
+            guard let samGroup = groups.first(where: { $0.identifier == groupID }) else {
+                logger.warning("SAM group not found for identifier: \(groupID, privacy: .public)")
+                return .failed("SAM group not found")
+            }
+
+            let predicate = CNContact.predicateForContacts(withIdentifiers: [identifier])
+            let contacts = try store.unifiedContacts(
+                matching: predicate,
+                keysToFetch: [CNContactIdentifierKey as CNKeyDescriptor]
+            )
+            guard let contact = contacts.first else {
+                logger.warning("Contact not found for identifier: \(identifier, privacy: .private)")
+                return .failed("Contact not found")
+            }
+
+            let saveRequest = CNSaveRequest()
+            saveRequest.removeMember(contact, from: samGroup)
+            try store.execute(saveRequest)
+
+            logger.info("Removed contact \(identifier, privacy: .private) from SAM group")
+            return .removed
+        } catch {
+            logger.warning("Failed to remove contact from SAM group: \(error.localizedDescription)")
+            return .failed(error.localizedDescription)
+        }
+    }
 }
 
 // MARK: - Supporting Types
