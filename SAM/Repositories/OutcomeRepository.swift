@@ -213,6 +213,17 @@ final class OutcomeRepository {
             .first
     }
 
+    /// Delete every SamOutcome. Used by the Debug menu's "Rebuild Outcomes"
+    /// action so legacy false-positive outcomes can be wiped before the engine
+    /// regenerates them from current evidence.
+    func deleteAll() throws {
+        guard let context else { throw RepositoryError.notConfigured }
+        let all = try context.fetch(FetchDescriptor<SamOutcome>())
+        for outcome in all { context.delete(outcome) }
+        try context.save()
+        logger.notice("Deleted all SamOutcomes (\(all.count))")
+    }
+
     // MARK: - Upsert
 
     /// Insert or update an outcome. Returns the persisted outcome.

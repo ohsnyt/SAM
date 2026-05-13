@@ -835,6 +835,10 @@ public struct FamilyReference: Codable, Sendable, Identifiable {
 public struct LifeEvent: Codable, Sendable, Identifiable {
     public var id: UUID
     public var personName: String
+    /// SamPerson UUID this event is attached to. Either the person the event
+    /// is about (when matched) or the note's primary linked person (when the
+    /// event references someone outside SAM — e.g., "Sarah mentioned her uncle Harvey died").
+    public var personID: UUID?
     public var eventType: String          // "new_baby", "marriage", "graduation", etc.
     public var eventDescription: String   // Human-readable description
     public var approximateDate: String?   // e.g. "2026-06", "next month"
@@ -844,6 +848,7 @@ public struct LifeEvent: Codable, Sendable, Identifiable {
     public init(
         id: UUID = UUID(),
         personName: String,
+        personID: UUID? = nil,
         eventType: String,
         eventDescription: String,
         approximateDate: String? = nil,
@@ -852,6 +857,7 @@ public struct LifeEvent: Codable, Sendable, Identifiable {
     ) {
         self.id = id
         self.personName = personName
+        self.personID = personID
         self.eventType = eventType
         self.eventDescription = eventDescription
         self.approximateDate = approximateDate

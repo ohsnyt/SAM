@@ -1291,8 +1291,29 @@ final class DailyBriefingCoordinator {
                         continue
                     }
 
-                    let hasResponse = evidenceRepo.hasRecentCommunication(
-                        fromPersonID: personID,
+                    // Verify the parent outreach actually happened on a tracked channel.
+                    // Window: from parent creation through completion (+1h grace for
+                    // the user clicking Done shortly after sending). If no outbound
+                    // exists, the user marked Done without sending (or sent via an
+                    // untracked channel like LinkedIn) — don't nag about a missing
+                    // reply, just dismiss the awaiting step.
+                    let outboundWindowStart = previousStep.createdAt
+                    let outboundWindowEnd = completedAt.addingTimeInterval(3600)
+                    let didReachOut = evidenceRepo.hasOutboundToPerson(
+                        personID,
+                        between: outboundWindowStart,
+                        and: outboundWindowEnd
+                    )
+                    if !didReachOut {
+                        if let seqID = step.sequenceID {
+                            try outcomeRepo.dismissRemainingSteps(sequenceID: seqID, fromIndex: step.sequenceIndex)
+                        }
+                        logger.debug("Sequence step dismissed (no tracked outbound for parent): \(step.title)")
+                        continue
+                    }
+
+                    let hasResponse = evidenceRepo.hasRecentInboundFromPerson(
+                        personID,
                         since: completedAt
                     )
 

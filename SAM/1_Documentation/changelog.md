@@ -4,6 +4,94 @@
 
 ---
 
+## Today queue overhaul + Sphere focus + life-event UUID matching + sequence sanity (2026-05-12)
+
+Six related changes that ship together because they share `AwarenessView`, `OutcomeQueueView`, and `NoteAnalysisCoordinator` edits.
+
+### Today queue: merged feed with one-expanded discipline
+
+**What**: `OutcomeQueueView` no longer renders bundles-then-outcomes in two stacks. Bundles and standalone outcomes are unified into a single `QueueItem` enum and sorted by `priorityScore` so the real top item leads. Visible cap raised from 5 → 7. Exactly one card is expanded at a time (`expandedItemID`); the rest render as 2-line collapsed summaries (priority dot + name/kind + role pill + count + deadline pill on line 1; top sub-item title on line 2). Tapping a collapsed card swaps the expansion. Overflow beyond the cap hides behind a footer divider — `"N additional tasks have been identified and are ready for your consideration."` — that expands the rest as additional collapsed-only rows.
+
+**Why**: With bundling on, a busy day still produced ~12 expanded cards stacked vertically. The user lost the "what's most important right now" signal. Single-expansion + role-color borders + deadline pills means the top item dominates the screen, while overflow stays scannable.
+
+### Card visuals: role-color borders + last-touch strip + time-critical pill
+
+**What**:
+- Border accent on both `OutcomeCardView` and `OutcomeBundleCardView` derived from the linked person's role badge (green=Client, orange=Lead, etc.); non-person cards (content, growth, setup) use a neutral blue. Replaces the old kind-color border.
+- `OutcomeBundle.lastTouchSummary` — new persisted string built by `OutcomeBundleGenerator.lastTouchSummary(forPersonID:)` whenever a bundle is touched. Format: `"You sent iMessage, 3d ago — [snippet]"` or `"No prior tracked contact — first exchange"`. Rendered as a strip below the bundle header so the user can verify what SAM is following up on.
+- Time-critical deadline pill: <60h remaining gets an orange-filled capsule with hours-left text (`"5h left"`, `"23h left"`); overdue gets red. Above 60h falls back to the muted secondary style.
+
+**Why**: The user repeatedly hit two papercuts — couldn't tell at a glance which bundles were about Clients vs. Leads, and couldn't see what SAM was actually following up on without opening the person. Weekend deadlines (Friday → Monday) also got buried under role-importance scoring; the visual pill makes them pop and a matching priority-score floor (see below) lifts them in the sort.
+
+### Time-critical priority floor
+
+**What**: `OutcomeEngine.computeFinalScore` now applies a floor for time-critical deadlines: overdue → `max(score, 0.95)`; <60h → `max(score, 0.85)`. Matches the visual pill threshold.
+
+**Why**: Without the floor, a stale Client follow-up bundle (Client role weighting → high score) could outrank a 23h-deadline Content card. The floor ensures the visual cue and sort agree.
+
+### Content-pacing outcomes: real topics, not placeholders
+
+**What**: When `OutcomeEngine` creates a content-pacing outcome from a content goal, it pulls a concrete `ContentTopic` from `StrategicCoordinator.shared.latestDigest?.contentSuggestions`, embeds the JSON in `sourceInsightSummary`, and titles it `"Post about: [topic]"`. Falls back to the old generic behavior only when the digest hasn't been generated yet. `OutcomeQueueView.parseContentTopic` now returns empty topic strings (not `"Educational content"`) when JSON parse fails — `ContentDraftSheet` detects that and renders topic-entry fields rather than generating a draft about whatever word it inherited.
+
+**Why**: Generic "Educational content" generation produced low-value drafts. Tying it to the digest's actual analyzed topics means the LLM has real subject matter to write about. If the digest hasn't run, asking the user is better than guessing.
+
+### Sphere focus filter (replaces "By Sphere" rollup)
+
+**What**: New toolbar menu on `AwarenessView` lets the user scope Zone 1 + Zone 2 to a single Sphere ("focus on family Saturday afternoon"). When active, a focus banner appears under the toolbar and a `SphereFilter` bridge struct flows down to `PersistentBriefingSection` and `OutcomeQueueView`. The filter is session-local (no persistence) and resets when the app launches. Reaching-for-you, outcomes, and bundles are filtered by Sphere membership; calendar items are intentionally not filtered (the user wants to see their full schedule even in focus mode).
+
+**Why**: The previous "By Sphere" rollup at the bottom of the briefing was passive — it told the user "here's where your attention is split" but didn't act on it. A filter is the action.
+
+The "By Sphere" rollup in `PersistentBriefingSection.sphereSummarySection` was removed in the same change.
+
+### Life event matching: UUID resolution + reframe-as-loss + canonicalization
+
+**What**: Four-part fix for a class of bugs where life events surfaced as coaching cards pointing at non-existent people.
+
+1. `LifeEvent.personID: UUID?` — new field on the existing `Codable` struct; the analysis pipeline now resolves the event to an explicit SamPerson at extraction time.
+2. `NoteAnalysisCoordinator.autoMatchLifeEvents` — case-insensitive direct match against the `displayNameCache`-fallback display name. Unresolvable names reframe as a `"loss"` event attached to the note's primary linked person (e.g., a note about Sarah saying "my uncle Harvey died" becomes a loss event on Sarah's UUID with description `"Sarah mentioned the death of Harvey. [original]"`). When neither matches, the event is dropped — no orphan cards.
+3. `canonicalizeEventType` — normalizes LLM-invented variants (`"passed_away"`/`"deceased"`/`"died"` → `"death"`; `"new_job"` → `"job_change"`; `"wedding"` → `"marriage"`; etc.) before storage.
+4. Note-analysis prompt addendum: explicit instruction that life-event `person_name` must use the exact name from the Context line, no paraphrasing or invention.
+
+**Launch-time remediation**: `NoteAnalysisCoordinator.remediateLifeEventMatchesIfNeeded()` runs LLM-free at app start when `UserDefaults["sam.lifeEvent.matchingVersion"]` is below the current version (currently 1). Sweeps every stored note's life events through `autoMatchLifeEvents` and rewrites those that changed. Bump the constant in code whenever the matching/reframing logic changes meaningfully to retroactively heal stored data.
+
+**Why**: Historical bug where life events about non-SAM contacts ("Sarah's uncle Harvey died") produced coaching cards keyed to an orphan name "Harvey" — clicking went nowhere because no SamPerson existed. The reframe-as-loss path keeps the signal (Sarah experienced a loss → empathetic outreach warranted) without inventing a target contact.
+
+**Deceased-candidate guard**: the dialog that promotes a person to `.deceased` lifecycle now requires the event to match by `personID` (or, as fallback, an exact name match against active linked people). It never promotes a reframed `"loss"` event to deceased.
+
+### Sequence triggers: verify outbound before nagging
+
+**What**: `DailyBriefingCoordinator.checkSequenceTriggers` previously activated the "no response — follow up" step whenever the parent completed and no inbound was seen. It now also verifies that the parent outreach actually happened on a tracked channel: `EvidenceRepository.hasOutboundToPerson(personID, between: parentCreatedAt, and: parentCompletedAt + 1h)`. If no outbound exists, the awaiting step is dismissed via `OutcomeRepository.dismissRemainingSteps(...)` and SAM stays silent.
+
+**Why**: The user often marks an outreach as Done without sending (just removing it from the queue), or sends via an untracked channel (LinkedIn DM). The old logic then nagged them for two days about a missing reply that was never coming.
+
+`EvidenceRepository.hasRecentCommunication` was split into two focused checks:
+- `hasRecentInboundFromPerson(_:since:)` — strictly inbound, directional sources only
+- `hasOutboundToPerson(_:between:and:)` — strictly outbound, windowed
+- `mostRecentCommunication(forPersonID:)` — most-recent across the broader touch-source set (includes LinkedIn / Facebook / Substack), used by the last-touch strip
+
+### RoleDefinition color picker
+
+**What**: `RoleDefinition.colorHex: String?` — new optional field, parsed via `Color(hex:)` (extension on `Color` added in `RoleBadgeStyle.swift` along with `Color.hexString`). `RoleDefinitionEditorSheet` has a Color section with a `ColorPicker`, a Reset-to-default button, and a horizontally scrolling legend of every existing role (built-in + user-defined) so the user can pick a color that's distinguishable. `RoleBadgeStyle.forBadge(_:)` consults an in-memory `customColorCache` populated by `refreshCustomCache()`, invalidated on save/delete and re-populated on app start (`SAMApp.configureRepositories()`).
+
+**Why**: Custom roles all rendered as gray. The legend prevents users from picking the same green as Client by accident.
+
+### ContentDraftSheet: editable topic + fixed-height layout
+
+**What**: Two changes to `ContentDraftSheet`:
+- When the caller's `topic` is empty (cadence-based content outcomes), the sheet renders topic + key-point input fields and disables `Generate Draft` until the topic is filled in.
+- Layout split into a `ScrollView` body and a fixed action footer (`.frame(width: 560, height: 600)`), so long generated drafts scroll while Copy / Cancel / Log as Posted stay reachable.
+
+### Debug menu additions
+
+**What**: New buttons in the Debug menu (`SAMApp`):
+- **Rebuild Outcomes** — wipes all `SamOutcome` + `OutcomeBundle` + `OutcomeSubItem` rows (via new `deleteAll()` on both repos), then triggers `OutcomeEngine.startGeneration()`. Used to flush legacy false-positive bundles after the sequence-trigger fix.
+- **Re-match Life Events** — invokes `remediateLifeEventMatches()` on demand (same as the launch-time path, but force-run regardless of version).
+- **Re-analyze All Notes (LLM)** — marks every note unanalyzed (`NotesRepository.markAllUnanalyzed`) and runs the batch analyzer. Slow; for when prompt changes warrant a full re-pass.
+
+`NotesRepository.saveContext()` was added so the remediation pass can commit batched mutations to the mainContext.
+
+---
+
 ## Documentation: lean `context.md` + satellite docs (2026-05-12)
 
 **What**: Rewrote `context.md` from 568 lines to 364 lines, extracting eight self-contained subsystems into satellite docs under `1_Documentation/`:

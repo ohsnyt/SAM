@@ -1028,14 +1028,40 @@ final class OutcomeEngine {
                 step = defaultStep
             }
 
+            // For content-pacing outcomes, embed a real topic from the cached
+            // strategic digest so the Draft Post sheet has something concrete
+            // to generate from. Otherwise ContentDraftSheet parses the generic
+            // "Goal: …" string and falls back to "Educational content", which
+            // produces generic, low-value drafts.
+            let resolvedTopic: ContentTopic?
+            let sourceSummary: String
+            let finalTitle: String
+            let finalRationale: String
+            if kind == .contentCreation,
+               let topic = pickContentTopicFromDigest(),
+               let topicJSON = try? String(data: JSONEncoder().encode(topic), encoding: .utf8) {
+                resolvedTopic = topic
+                sourceSummary = topicJSON
+                finalTitle = "Post about: \(topic.topic)"
+                let keyPointsSummary = topic.keyPoints.joined(separator: ". ")
+                finalRationale = keyPointsSummary.isEmpty
+                    ? rationale
+                    : "\(rationale) \(keyPointsSummary)"
+            } else {
+                resolvedTopic = nil
+                sourceSummary = "Goal: \(gp.title) — \(Int(gp.currentValue))/\(Int(gp.targetValue))"
+                finalTitle = title
+                finalRationale = rationale
+            }
+
             let outcome = SamOutcome(
-                title: title,
-                rationale: rationale,
+                title: finalTitle,
+                rationale: finalRationale,
                 outcomeKind: kind,
                 priorityScore: gp.pace == .atRisk ? 0.8 : 0.6,
                 deadlineDate: Calendar.current.date(byAdding: .day, value: min(gp.daysRemaining, 7), to: .now),
-                sourceInsightSummary: "Goal: \(gp.title) — \(Int(gp.currentValue))/\(Int(gp.targetValue))",
-                suggestedNextStep: step
+                sourceInsightSummary: sourceSummary,
+                suggestedNextStep: resolvedTopic?.keyPoints.first ?? step
             )
             outcomes.append(outcome)
         }
@@ -1433,6 +1459,36 @@ final class OutcomeEngine {
         )
         outcome.actionLane = .openURL
         return [outcome]
+    }
+
+    /// Pull a concrete content topic out of the cached strategic digest so
+    /// content-pacing outcomes ship with a real subject rather than the
+    /// generic "Educational content" fallback. Skips topics that already
+    /// have an active outcome to avoid serving the same idea twice.
+    /// Returns nil when the digest hasn't been generated yet — caller keeps
+    /// generic behaviour in that case.
+    private func pickContentTopicFromDigest() -> ContentTopic? {
+        guard let json = StrategicCoordinator.shared.latestDigest?.contentSuggestions,
+              let data = json.data(using: .utf8) else { return nil }
+
+        var topics: [ContentTopic] = []
+        if let analysis = try? JSONDecoder().decode(ContentAnalysis.self, from: data) {
+            topics = analysis.topicSuggestions
+        } else if let array = try? JSONDecoder().decode([ContentTopic].self, from: data) {
+            topics = array
+        }
+
+        guard !topics.isEmpty else { return nil }
+
+        let active = (try? outcomeRepo.fetchActive()) ?? []
+        let activeTitles = Set(active.compactMap { outcome -> String? in
+            guard outcome.outcomeKind == .contentCreation else { return nil }
+            return outcome.title
+        })
+
+        return topics.first { topic in
+            !activeTitles.contains("Post about: \(topic.topic)")
+        } ?? topics.first
     }
 
     /// Map GoalType to the most appropriate OutcomeKind.
@@ -1974,6 +2030,20 @@ final class OutcomeEngine {
             score += weights.userEngagement * kindStat.actRate
         } else {
             score += weights.userEngagement * 0.5  // Neutral until enough data
+        }
+
+        // Time-critical floor: when a deadline is <60h away (matches the
+        // orange-pill visual cue in OutcomeCardView/OutcomeBundleCardView),
+        // ensure the outcome floats to the top of the merged Today feed.
+        // Without this, a stale Client follow-up bundle can outscore a
+        // 23h-deadline Content card because role importance dominates.
+        if let deadline = outcome.deadlineDate {
+            let hoursUntil = deadline.timeIntervalSince(.now) / 3600
+            if hoursUntil <= 0 {
+                score = max(score, 0.95)  // Overdue — almost always top of queue
+            } else if hoursUntil < 60 {
+                score = max(score, 0.85)
+            }
         }
 
         return min(1.0, max(0.0, score))

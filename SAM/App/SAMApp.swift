@@ -519,6 +519,14 @@ struct SAMApp: App {
                         await RetentionService.shared.runOnce(container: SAMModelContainer.shared)
                     }
 
+                    // Cheap one-shot remediation: when the life-event matching
+                    // logic has bumped, re-run matching over all stored events
+                    // so historical bad records (orphan names, unresolvable
+                    // people) get reframed or dropped without an LLM call.
+                    Task(priority: .utility) {
+                        await NoteAnalysisCoordinator.shared.remediateLifeEventMatchesIfNeeded()
+                    }
+
                     // If the selected MLX model isn't on disk (e.g. user
                     // onboarded before Qwen became the default, or skipped
                     // the onboarding download), pull it down quietly in the
@@ -817,6 +825,38 @@ struct SAMApp: App {
                     logger.notice("Comms watermarks reset + import triggered via Debug menu")
                 }
                 .disabled(!BookmarkManager.shared.hasMessagesAccess && !BookmarkManager.shared.hasCallHistoryAccess)
+
+                Button("Rebuild Outcomes") {
+                    Task { @MainActor in
+                        do {
+                            try OutcomeBundleRepository.shared.deleteAll()
+                            try OutcomeRepository.shared.deleteAll()
+                            logger.notice("Outcomes + bundles wiped via Debug menu — regenerating")
+                            OutcomeEngine.shared.startGeneration()
+                        } catch {
+                            logger.error("Rebuild Outcomes failed: \(error.localizedDescription)")
+                        }
+                    }
+                }
+
+                Button("Re-match Life Events") {
+                    Task { @MainActor in
+                        let count = await NoteAnalysisCoordinator.shared.remediateLifeEventMatches()
+                        logger.notice("Re-match Life Events: rewrote \(count) notes")
+                    }
+                }
+
+                Button("Re-analyze All Notes (LLM)") {
+                    Task { @MainActor in
+                        do {
+                            let count = try NotesRepository.shared.markAllUnanalyzed()
+                            logger.notice("Re-analyze: marked \(count) notes unanalyzed — running batch")
+                            await NoteAnalysisCoordinator.shared.analyzeUnanalyzedNotes()
+                        } catch {
+                            logger.error("Re-analyze All Notes failed: \(error.localizedDescription)")
+                        }
+                    }
+                }
 
                 Divider()
 
@@ -1177,6 +1217,7 @@ struct SAMApp: App {
         FacebookImportCoordinator.shared.configure(container: c)
         EventRepository.shared.configure(container: c)
         RoleRecruitingRepository.shared.configure(container: c)
+        RoleBadgeStyle.refreshCustomCache()
         GoalJournalRepository.shared.configure(container: c)
         CommitmentRepository.shared.configure(container: c)
         TripRepository.shared.configure(container: c)

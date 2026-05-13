@@ -67,6 +67,7 @@ final class RoleRecruitingRepository {
         }
         role.updatedAt = .now
         try context.save()
+        RoleBadgeStyle.refreshCustomCache()
         logger.debug("Saved role definition: \(role.name)")
     }
 
@@ -74,6 +75,7 @@ final class RoleRecruitingRepository {
         guard let context else { throw RepositoryError.notConfigured }
         context.delete(role)
         try context.save()
+        RoleBadgeStyle.refreshCustomCache()
         logger.debug("Deleted role definition: \(role.name)")
     }
 

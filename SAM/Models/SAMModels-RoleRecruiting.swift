@@ -120,6 +120,10 @@ public final class RoleDefinition {
     /// whose language and cultural heritage spans millennia."
     public var contentBrief: String = ""
 
+    /// Hex color (e.g., "#34C759") assigned to this role for badges and card borders.
+    /// nil = fall back to RoleBadgeStyle default for known names, gray otherwise.
+    public var colorHex: String?
+
     public var createdAt: Date
     public var updatedAt: Date
 
@@ -195,7 +199,8 @@ public final class RoleDefinition {
         targetCount: Int = 1,
         isActive: Bool = true,
         contentGenerationEnabled: Bool = false,
-        contentBrief: String = ""
+        contentBrief: String = "",
+        colorHex: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -209,6 +214,7 @@ public final class RoleDefinition {
         self.isActive = isActive
         self.contentGenerationEnabled = contentGenerationEnabled
         self.contentBrief = contentBrief
+        self.colorHex = colorHex
         self.createdAt = .now
         self.updatedAt = .now
     }

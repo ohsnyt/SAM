@@ -143,6 +143,14 @@ public final class OutcomeBundle {
     /// Suggested channel for the combined draft (text / email / call / DM).
     public var suggestedChannelRawValue: String?
 
+    /// Short, presentation-agnostic description of the most recent tracked
+    /// communication with this person — direction, channel, age, and a short
+    /// topic snippet. Rendered on the bundle card so the user can verify what
+    /// SAM is actually following up on. Nil when no prior tracked contact
+    /// exists; rendered as "No prior tracked contact — first exchange" in
+    /// that case by the view.
+    public var lastTouchSummary: String?
+
     @Transient
     public var suggestedChannel: CommunicationChannel? {
         get { suggestedChannelRawValue.flatMap { CommunicationChannel(rawValue: $0) } }

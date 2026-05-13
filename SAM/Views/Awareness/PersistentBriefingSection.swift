@@ -19,6 +19,13 @@ private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "Per
 
 struct PersistentBriefingSection: View {
 
+    /// Optional Sphere filter (passed from AwarenessView toolbar). When set,
+    /// schedule items, reaching-for-you, and the per-Sphere rollup are scoped
+    /// to people who are members of the active Sphere.
+    var sphereFilter: AwarenessView.SphereFilter = AwarenessView.SphereFilter(
+        sphereID: nil, memberIDs: nil, accentColor: nil
+    )
+
     private var coordinator: DailyBriefingCoordinator { DailyBriefingCoordinator.shared }
     @State private var isBriefingExpanded = true
 
@@ -167,7 +174,9 @@ struct PersistentBriefingSection: View {
                 allDoneBanner
             }
 
-            // Schedule — filter out past events so the briefing stays current
+            // Schedule — filter out past events so the briefing stays current.
+            // (Calendar items aren't scoped by Sphere: even in focus mode the
+            // user wants to see their full schedule so they don't miss a call.)
             let upcomingEvents = briefing.calendarItems.filter {
                 ($0.endsAt ?? $0.startsAt) > Date()
             }
@@ -186,77 +195,23 @@ struct PersistentBriefingSection: View {
             // Reaching for you (Phase 3g — contactDrivenIgnored).
             // Rendered inline here because it has no outcome-card path —
             // unlike follow-ups/life events which surface in Zone 2.
-            if !briefing.reachingForYou.isEmpty {
+            let reaching = briefing.reachingForYou.filter { sphereFilter.allows(personID: $0.personID) }
+            if !reaching.isEmpty {
                 checkableSection(
                     title: "Reaching for you",
                     icon: "hand.wave.fill",
                     color: .indigo
                 ) {
-                    ForEach(briefing.reachingForYou) { item in
+                    ForEach(reaching) { item in
                         reachingForYouRow(item)
                     }
                 }
             }
 
-            // Per-Sphere summary (Phase 6 — multi-Sphere users only).
-            // Compact summary line per Sphere — the actionable items are
-            // already in Zone 2 outcome cards; this is the navigation
-            // header that lets the user see where their attention is split.
-            if !briefing.sphereSections.isEmpty {
-                sphereSummarySection(briefing.sphereSections)
-            }
-
             // Follow-ups and life events are shown as outcome cards in Zone 2 —
-            // no need to duplicate them here.
+            // no need to duplicate them here. (The legacy "By Sphere" rollup
+            // was removed once the toolbar Sphere filter replaced it.)
         }
-    }
-
-    // MARK: - Sphere summary (Phase 6)
-
-    private func sphereSummarySection(_ sections: [BriefingSphereSection]) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Image(systemName: "circle.grid.3x3.fill")
-                    .samFont(.caption)
-                    .foregroundStyle(.secondary)
-                Text("By Sphere")
-                    .samFont(.subheadline)
-                    .fontWeight(.medium)
-                    .foregroundStyle(.secondary)
-                Spacer()
-            }
-            ForEach(sections) { section in
-                let accent = SphereAccentColor(rawValue: section.accentColorRaw)?.color ?? .secondary
-                HStack(spacing: 8) {
-                    Circle().fill(accent).frame(width: 8, height: 8)
-                    Text(section.sphereName)
-                        .samFont(.caption)
-                        .fontWeight(.medium)
-                    if let status = section.trajectoryStatus, !status.isEmpty {
-                        Text("· \(status)")
-                            .samFont(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                    Spacer()
-                    let actionCount = section.topActions.count + section.topFollowUps.count
-                    if actionCount > 0 {
-                        Text("\(actionCount)")
-                            .samFont(.caption2)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1)
-                            .background(accent.opacity(0.15))
-                            .clipShape(Capsule())
-                    }
-                    if section.reachingForYouCount > 0 {
-                        Image(systemName: "hand.wave.fill")
-                            .samFont(.caption2)
-                            .foregroundStyle(.indigo)
-                    }
-                }
-            }
-        }
-        .padding(.vertical, 6)
     }
 
     // MARK: - Reaching For You Row

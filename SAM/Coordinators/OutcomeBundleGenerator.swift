@@ -179,6 +179,7 @@ final class OutcomeBundleGenerator {
                 let updatedKeep = currentOpen.subtracting(toDrop)
                 try bundleRepo.removeStaleOpenSubItems(from: bundle, keepingKinds: updatedKeep)
                 try bundleRepo.recomputePriority(bundle)
+                bundle.lastTouchSummary = Self.lastTouchSummary(forPersonID: personID)
                 bundlesTouched += 1
             } catch {
                 logger.error("Failed to route bundle for person \(personID): \(error.localizedDescription)")
@@ -226,6 +227,7 @@ final class OutcomeBundleGenerator {
                         isMilestone: birthdayItem.isMilestone
                     )
                     try bundleRepo.recomputePriority(bundle)
+                    bundle.lastTouchSummary = Self.lastTouchSummary(forPersonID: person.id)
                     bundlesTouched += 1
                 } catch {
                     logger.error("Birthday upsert failed for \(person.id): \(error.localizedDescription)")
@@ -256,6 +258,7 @@ final class OutcomeBundleGenerator {
                         isMilestone: item.isMilestone
                     )
                     try bundleRepo.recomputePriority(bundle)
+                    bundle.lastTouchSummary = Self.lastTouchSummary(forPersonID: person.id)
                     bundlesTouched += 1
                 } catch {
                     logger.error("Anniversary upsert failed for \(person.id): \(error.localizedDescription)")
@@ -535,5 +538,82 @@ final class OutcomeBundleGenerator {
                 markers, just plain text lines.
                 """
         }
+    }
+
+    // MARK: - Last-Touch Summary
+
+    /// Build the short "last touch" line shown on the bundle card so the user
+    /// can verify what SAM is actually following up on. Returns nil when there
+    /// is no tracked communication evidence for this person — the view renders
+    /// "No prior tracked contact — first exchange" in that case.
+    static func lastTouchSummary(forPersonID personID: UUID) -> String? {
+        guard let item = EvidenceRepository.shared.mostRecentCommunication(forPersonID: personID) else {
+            return nil
+        }
+        let channel = channelDisplayName(for: item.source)
+        let direction: String = {
+            switch item.direction {
+            case .inbound:  return "Inbound"
+            case .outbound: return "You sent"
+            case .bidirectional, .none: return ""
+            }
+        }()
+        let age = relativeAge(from: item.occurredAt)
+        let snippet = trimmedSnippet(item.snippet)
+
+        let lead: String
+        if direction.isEmpty {
+            lead = "\(channel), \(age)"
+        } else {
+            lead = "\(direction) \(channel), \(age)"
+        }
+        if let snippet, !snippet.isEmpty {
+            return "\(lead) — \(snippet)"
+        }
+        return lead
+    }
+
+    private static func channelDisplayName(for source: EvidenceSource) -> String {
+        switch source {
+        case .iMessage:           return "iMessage"
+        case .mail, .sentMail:    return "email"
+        case .phoneCall:          return "phone call"
+        case .faceTime:           return "FaceTime"
+        case .whatsApp:           return "WhatsApp"
+        case .whatsAppCall:       return "WhatsApp call"
+        case .linkedIn:           return "LinkedIn"
+        case .facebook:           return "Facebook"
+        case .substack:           return "Substack"
+        case .zoomChat:           return "Zoom chat"
+        case .calendar:           return "meeting"
+        case .meetingTranscript:  return "meeting transcript"
+        case .voiceCapture:       return "voice note"
+        case .clipboardCapture:   return "clipboard capture"
+        case .contacts, .note, .manual: return "note"
+        }
+    }
+
+    private static func relativeAge(from date: Date) -> String {
+        let seconds = Date().timeIntervalSince(date)
+        if seconds < 0 { return "just now" }
+        let days = Int(seconds / 86_400)
+        if days <= 0 { return "today" }
+        if days == 1 { return "yesterday" }
+        if days < 14 { return "\(days)d ago" }
+        if days < 60 { return "\(days)d ago" }
+        let months = days / 30
+        if months < 12 { return "\(months)mo ago" }
+        let years = days / 365
+        return "\(years)y ago"
+    }
+
+    private static func trimmedSnippet(_ raw: String, maxLength: Int = 80) -> String? {
+        let cleaned = raw
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty else { return nil }
+        if cleaned.count <= maxLength { return cleaned }
+        let idx = cleaned.index(cleaned.startIndex, offsetBy: maxLength)
+        return cleaned[..<idx].trimmingCharacters(in: .whitespaces) + "…"
     }
 }

@@ -132,10 +132,10 @@ final class NoteAnalysisCoordinator {
                 )
             }
 
-            let lifeEvents = analysis.lifeEvents.map { dto in
+            let rawLifeEvents = analysis.lifeEvents.map { dto in
                 LifeEvent(
                     personName: dto.personName,
-                    eventType: dto.eventType,
+                    eventType: canonicalizeEventType(dto.eventType),
                     eventDescription: dto.eventDescription,
                     approximateDate: dto.approximateDate,
                     outreachSuggestion: dto.outreachSuggestion,
@@ -146,6 +146,7 @@ final class NoteAnalysisCoordinator {
             // Step 4: Auto-match extracted people to existing SamPerson records
             let matchedMentions = try autoMatchPeople(mentions)
             let matchedActions = try autoMatchActions(actionItems)
+            let lifeEvents = try autoMatchLifeEvents(rawLifeEvents, note: note)
 
             // Step 4b: Auto-link unlinked notes to matched people
             if note.linkedPeople.isEmpty {
@@ -257,11 +258,20 @@ final class NoteAnalysisCoordinator {
         guard !lifeEvents.isEmpty, !linkedPeople.isEmpty else { return }
 
         for event in lifeEvents where event.eventType == "death" {
-            // Match by name against linked people who are still active
-            if let match = linkedPeople.first(where: {
-                $0.lifecycleStatus == .active &&
-                $0.displayName.localizedCaseInsensitiveContains(event.personName)
-            }) {
+            // Prefer the explicit personID resolved during auto-matching.
+            // Fall back to linked-people name match only when no UUID is set
+            // — and never auto-promote a reframed "loss" event to deceased.
+            let match: SamPerson?
+            if let personID = event.personID {
+                match = linkedPeople.first(where: { $0.id == personID && $0.lifecycleStatus == .active })
+            } else {
+                match = linkedPeople.first(where: {
+                    $0.lifecycleStatus == .active &&
+                    ($0.displayNameCache ?? $0.displayName).lowercased() == event.personName.lowercased()
+                })
+            }
+
+            if let match {
                 deceasedCandidate = DeceasedCandidate(
                     person: match,
                     eventDescription: event.eventDescription
@@ -467,6 +477,170 @@ final class NoteAnalysisCoordinator {
             }
 
             return matched
+        }
+    }
+
+    // MARK: - Historical Life Event Remediation
+
+    /// Bump this when life-event matching/reframing logic changes meaningfully.
+    /// On launch, if the stored version is below this, `remediateLifeEventMatches`
+    /// re-runs matching over every note's existing life events (no LLM calls).
+    private static let lifeEventMatchingVersion = 1
+    private static let lifeEventMatchingVersionKey = "sam.lifeEvent.matchingVersion"
+
+    /// Re-run life-event auto-matching across all notes' existing events.
+    /// Idempotent and LLM-free: sweeps historical bad matches (unresolvable
+    /// names becoming orphan cards) by reapplying the current matching rules
+    /// to data already on disk. Saves only notes whose events actually changed.
+    /// Returns the number of notes whose events were rewritten.
+    @discardableResult
+    func remediateLifeEventMatches() async -> Int {
+        do {
+            let allNotes = try notesRepository.fetchAll()
+            var touched = 0
+            for note in allNotes where !note.lifeEvents.isEmpty {
+                let original = note.lifeEvents
+                let rematched = try autoMatchLifeEvents(original, note: note)
+                if !lifeEventsEqual(original, rematched) {
+                    note.lifeEvents = rematched
+                    touched += 1
+                }
+            }
+            if touched > 0 {
+                try notesRepository.saveContext()
+                logger.notice("Life event remediation: rewrote \(touched) notes")
+            } else {
+                logger.debug("Life event remediation: no changes needed")
+            }
+            return touched
+        } catch {
+            logger.error("Life event remediation failed: \(error.localizedDescription)")
+            return 0
+        }
+    }
+
+    /// Launch-time remediation: only runs when the matching-logic version has
+    /// bumped since the last successful sweep. Cheap on subsequent launches.
+    func remediateLifeEventMatchesIfNeeded() async {
+        let defaults = UserDefaults.standard
+        let stored = defaults.integer(forKey: Self.lifeEventMatchingVersionKey)
+        guard stored < Self.lifeEventMatchingVersion else { return }
+        let count = await remediateLifeEventMatches()
+        defaults.set(Self.lifeEventMatchingVersion, forKey: Self.lifeEventMatchingVersionKey)
+        logger.notice("Life event remediation bumped to v\(Self.lifeEventMatchingVersion) (\(count) notes touched)")
+    }
+
+    private func lifeEventsEqual(_ a: [LifeEvent], _ b: [LifeEvent]) -> Bool {
+        guard a.count == b.count else { return false }
+        for (lhs, rhs) in zip(a, b) {
+            if lhs.id != rhs.id
+                || lhs.personID != rhs.personID
+                || lhs.personName != rhs.personName
+                || lhs.eventType != rhs.eventType
+                || lhs.eventDescription != rhs.eventDescription
+            { return false }
+        }
+        return true
+    }
+
+    // MARK: - Life Event Matching
+
+    /// Resolve every life event to a SamPerson UUID and a sensible eventType.
+    ///
+    /// Strategy:
+    /// 1. If the event's `personName` matches an existing SamPerson, attach to that UUID as-is.
+    /// 2. If unresolvable but the note has a primary linked person, reframe as a
+    ///    "loss" event attached to that linked person — e.g. a note about Sarah
+    ///    mentioning "my uncle Harvey died" becomes a `loss` event on Sarah's UUID
+    ///    with a description framing it as Sarah's loss of Harvey.
+    /// 3. If unresolvable and the note has no linked people, drop the event —
+    ///    we cannot surface a coaching card for a non-existent contact.
+    private func autoMatchLifeEvents(_ events: [LifeEvent], note: SamNote) throws -> [LifeEvent] {
+        guard !events.isEmpty else { return [] }
+
+        let allPeople = try peopleRepository.fetchAll()
+        let notePrimary = note.linkedPeople.first(where: { !$0.isMe }) ?? note.linkedPeople.first
+
+        var resolved: [LifeEvent] = []
+        for event in events {
+            // 1. Try exact, case-insensitive match on display name
+            let directMatch = allPeople.first(where: {
+                ($0.displayNameCache ?? $0.displayName).lowercased() == event.personName.lowercased()
+            })
+
+            if let person = directMatch {
+                var matched = event
+                matched.personID = person.id
+                resolved.append(matched)
+                logger.debug("Life event matched to \(person.displayNameCache ?? person.displayName, privacy: .private)")
+                continue
+            }
+
+            // 2. Unresolvable name — reframe relative to the note's primary person
+            if let primary = notePrimary {
+                let primaryName = primary.displayNameCache ?? primary.displayName
+                let reframed = LifeEvent(
+                    id: event.id,
+                    personName: primaryName,
+                    personID: primary.id,
+                    eventType: "loss",
+                    eventDescription: reframeAsLoss(
+                        primaryName: primaryName,
+                        mentionedName: event.personName,
+                        original: event.eventDescription,
+                        originalType: event.eventType
+                    ),
+                    approximateDate: event.approximateDate,
+                    outreachSuggestion: event.outreachSuggestion,
+                    status: event.status
+                )
+                resolved.append(reframed)
+                logger.debug("Life event '\(event.personName, privacy: .private)' reframed onto \(primaryName, privacy: .private) as loss")
+                continue
+            }
+
+            // 3. No anchor — drop it
+            logger.debug("Life event for '\(event.personName, privacy: .private)' dropped (no SamPerson match and no note primary)")
+        }
+        return resolved
+    }
+
+    /// Build a description framing the event as the linked person's loss.
+    private func reframeAsLoss(
+        primaryName: String,
+        mentionedName: String,
+        original: String,
+        originalType: String
+    ) -> String {
+        let deathTypes: Set<String> = ["death", "loss", "passed_away"]
+        if deathTypes.contains(originalType) {
+            return "\(primaryName) mentioned the death of \(mentionedName). \(original)"
+        }
+        return "\(primaryName) mentioned \(mentionedName): \(original)"
+    }
+
+    /// Normalize LLM-invented event type strings to the canonical vocabulary.
+    private func canonicalizeEventType(_ raw: String) -> String {
+        let normalized = raw.lowercased().replacingOccurrences(of: " ", with: "_")
+        switch normalized {
+        case "passed_away", "passed", "deceased", "died":
+            return "death"
+        case "new_job", "career_change":
+            return "job_change"
+        case "wedding":
+            return "marriage"
+        case "graduated":
+            return "graduation"
+        case "retired":
+            return "retirement"
+        case "moved", "relocation":
+            return "moving"
+        case "illness", "sick":
+            return "health_issue"
+        case "bereavement":
+            return "loss"
+        default:
+            return normalized
         }
     }
 

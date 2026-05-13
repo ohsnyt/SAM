@@ -35,6 +35,15 @@ struct AwarenessView: View {
     @State private var showMore = false
     @State private var showingManualTaskSheet = false
 
+    // MARK: - Sphere Filter
+
+    /// nil = all Spheres (no filter). When set, Zone 1 + Zone 2 only show
+    /// items tied to people who are members of this Sphere — a session-local
+    /// "Focus on this Sphere" mode (e.g. family on Saturday afternoon).
+    @State private var sphereFilterID: UUID?
+    @State private var availableSpheres: [Sphere] = []
+    @State private var sphereMemberIDs: Set<UUID>?
+
     // MARK: - Briefing State
 
     private var briefingCoordinator: DailyBriefingCoordinator { DailyBriefingCoordinator.shared }
@@ -57,8 +66,14 @@ struct AwarenessView: View {
                     }
                 }
 
+                // Sphere focus banner — visible when the filter is active so
+                // the user always knows they're in a scoped view.
+                if let activeSphere = activeSphereFilter {
+                    sphereFocusBanner(sphere: activeSphere)
+                }
+
                 // Zone 1 — Persistent Briefing
-                PersistentBriefingSection()
+                PersistentBriefingSection(sphereFilter: sphereFilter)
 
                 // Evening recap banner (if prompted)
                 if briefingCoordinator.showEveningPrompt {
@@ -67,8 +82,8 @@ struct AwarenessView: View {
 
                 Divider()
 
-                // Zone 2 — Top Outcome Cards (capped at 5)
-                OutcomeQueueView(maxVisible: 5)
+                // Zone 2 — Top Outcome Cards (capped at 7, merged feed)
+                OutcomeQueueView(maxVisible: 7, sphereFilter: sphereFilter)
 
                 Divider()
 
@@ -80,6 +95,8 @@ struct AwarenessView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 HStack(spacing: 8) {
+                    sphereFilterMenu
+
                     Button {
                         showingManualTaskSheet = true
                     } label: {
@@ -114,6 +131,10 @@ struct AwarenessView: View {
         .task {
             await loadInsightsIfNeeded()
             await meetingPrepCoordinator.refreshIfNeeded()
+            loadSpheresForFilter()
+        }
+        .onChange(of: sphereFilterID) {
+            recomputeSphereMemberIDs()
         }
         .onChange(of: calendarCoordinator.importStatus) {
             if calendarCoordinator.importStatus == .success {
@@ -121,6 +142,118 @@ struct AwarenessView: View {
                     await meetingPrepCoordinator.refresh()
                 }
             }
+        }
+    }
+
+    // MARK: - Sphere Filter UI
+
+    /// Bridge struct passed to child sections so they don't reach into AwarenessView state.
+    struct SphereFilter {
+        let sphereID: UUID?
+        let memberIDs: Set<UUID>?
+        let accentColor: Color?
+
+        var isActive: Bool { sphereID != nil }
+
+        /// Returns true if the personID should be visible under this filter.
+        /// Nil personIDs and nil filters always pass.
+        func allows(personID: UUID?) -> Bool {
+            guard let memberIDs else { return true }
+            guard let personID else { return false }
+            return memberIDs.contains(personID)
+        }
+    }
+
+    private var activeSphereFilter: Sphere? {
+        guard let id = sphereFilterID else { return nil }
+        return availableSpheres.first { $0.id == id }
+    }
+
+    private var sphereFilter: SphereFilter {
+        SphereFilter(
+            sphereID: sphereFilterID,
+            memberIDs: sphereMemberIDs,
+            accentColor: activeSphereFilter.flatMap { SphereAccentColor(rawValue: $0.accentColorRaw)?.color }
+        )
+    }
+
+    @ViewBuilder
+    private var sphereFilterMenu: some View {
+        Menu {
+            Button {
+                sphereFilterID = nil
+            } label: {
+                if sphereFilterID == nil {
+                    Label("All Spheres", systemImage: "checkmark")
+                } else {
+                    Text("All Spheres")
+                }
+            }
+            if !availableSpheres.isEmpty {
+                Divider()
+                ForEach(availableSpheres, id: \.id) { sphere in
+                    Button {
+                        sphereFilterID = sphere.id
+                    } label: {
+                        if sphereFilterID == sphere.id {
+                            Label(sphere.name, systemImage: "checkmark")
+                        } else {
+                            Text(sphere.name)
+                        }
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "circle.grid.3x3.fill")
+                .foregroundStyle(activeSphereFilter == nil
+                                 ? AnyShapeStyle(.secondary)
+                                 : AnyShapeStyle(sphereFilter.accentColor ?? .accentColor))
+        }
+        .help(activeSphereFilter == nil
+              ? "Focus on a single Sphere"
+              : "Focused on \(activeSphereFilter!.name) — tap to change or clear")
+    }
+
+    private func sphereFocusBanner(sphere: Sphere) -> some View {
+        let accent = SphereAccentColor(rawValue: sphere.accentColorRaw)?.color ?? .accentColor
+        return HStack(spacing: 8) {
+            Circle().fill(accent).frame(width: 8, height: 8)
+            Text("Focused on \(sphere.name)")
+                .samFont(.caption)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Button("Show All Spheres") {
+                sphereFilterID = nil
+            }
+            .buttonStyle(.plain)
+            .samFont(.caption)
+            .foregroundStyle(.blue)
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 6)
+        .background(accent.opacity(0.08))
+    }
+
+    private func loadSpheresForFilter() {
+        do {
+            availableSpheres = try SphereRepository.shared.fetchAll()
+            recomputeSphereMemberIDs()
+        } catch {
+            availableSpheres = []
+            sphereMemberIDs = nil
+        }
+    }
+
+    private func recomputeSphereMemberIDs() {
+        guard let sphereID = sphereFilterID else {
+            sphereMemberIDs = nil
+            return
+        }
+        do {
+            let memberships = try SphereRepository.shared.memberships(forSphere: sphereID)
+            sphereMemberIDs = Set(memberships.compactMap { $0.person?.id })
+        } catch {
+            sphereMemberIDs = []
         }
     }
 

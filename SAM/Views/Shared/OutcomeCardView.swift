@@ -28,6 +28,12 @@ struct OutcomeCardView: View {
     /// Optional guide article ID for "Learn more" link (e.g., feature adoption outcomes).
     var guideArticleID: String?
 
+    /// When true, render a compact 2-line summary instead of the full card.
+    /// The whole compact card is tappable when `onExpand` is non-nil.
+    var collapsed: Bool = false
+    /// Invoked when the user taps a collapsed card to expand it.
+    var onExpand: (() -> Void)?
+
     @State private var copiedStep = false
     @State private var copiedAll = false
     @State private var showSnoozePicker = false
@@ -40,6 +46,53 @@ struct OutcomeCardView: View {
     }
 
     var body: some View {
+        if collapsed {
+            collapsedBody
+        } else {
+            expandedBody
+        }
+    }
+
+    // MARK: - Collapsed Body (2-line scannable summary)
+
+    private var collapsedBody: some View {
+        Button(action: { onExpand?() }) {
+            VStack(alignment: .leading, spacing: 4) {
+                // Line 1: priority dot + kind badge + (person or kind label) + deadline
+                HStack(spacing: 8) {
+                    priorityDot
+                    kindBadge
+                    Spacer()
+                    if let deadline = outcome.deadlineDate {
+                        deadlineLabel(deadline)
+                    }
+                }
+                // Line 2: title (truncated)
+                Text(outcome.title)
+                    .samFont(.subheadline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(onExpand == nil)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(.background.tertiary)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .strokeBorder(accentColor.opacity(0.5), lineWidth: 0.5)
+        )
+    }
+
+    // MARK: - Expanded Body (full card)
+
+    private var expandedBody: some View {
         VStack(alignment: .leading, spacing: 10) {
             // Kind badge + priority dot
             HStack(spacing: 8) {
@@ -201,12 +254,12 @@ struct OutcomeCardView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(kindColor.opacity(0.3), lineWidth: 1)
+                .stroke(accentColor.opacity(0.5), lineWidth: 1)
         )
         .overlay(alignment: .leading) {
             if isHero {
                 RoundedRectangle(cornerRadius: 2)
-                    .fill(kindColor)
+                    .fill(accentColor)
                     .frame(width: 4)
                     .padding(.vertical, 6)
             }
@@ -378,9 +431,38 @@ struct OutcomeCardView: View {
             text = "\(Int(remaining / 86400))d left"
         }
 
-        return Text(text)
-            .samFont(.caption2)
-            .foregroundStyle(remaining <= 0 ? .red : remaining < 86400 ? .orange : .secondary)
+        // Time-critical: <60h gets a prominent orange pill badge so weekend
+        // deadlines (Friday afternoon → Monday morning) are easy to spot.
+        let isTimeCritical = remaining < 60 * 3600
+        let isOverdue = remaining <= 0
+
+        return Group {
+            if isTimeCritical {
+                Text(text)
+                    .samFont(.caption2)
+                    .fontWeight(.semibold)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background((isOverdue ? Color.red : Color.orange).opacity(0.18), in: Capsule())
+                    .foregroundStyle(isOverdue ? .red : .orange)
+            } else {
+                Text(text)
+                    .samFont(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    // MARK: - Accent Color (role color for person, neutral for non-person)
+
+    /// Border accent. People cards inherit the linked person's role color;
+    /// non-person cards (content, growth, setup, etc.) use a single neutral
+    /// blue so they're visually distinguishable at a glance.
+    private var accentColor: Color {
+        if let role = outcome.linkedPerson?.roleBadges.first {
+            return RoleBadgeStyle.forBadge(role).color
+        }
+        return .blue
     }
 
     // MARK: - Colors

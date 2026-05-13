@@ -43,9 +43,84 @@ struct ContentDraftSheet: View {
     @State private var hasGenerated = false
     @State private var auditEntryID: UUID?
 
+    /// Editable topic + key points. Seeded from the props at first appear.
+    /// When the caller didn't supply a concrete topic (cadence-based content
+    /// outcomes like "Post on LinkedIn — 47 days since last post"), these
+    /// start empty and the user must fill them in before generation — that
+    /// prevents the AI from writing about whatever generic word happened to
+    /// land in the topic field.
+    @State private var editableTopic: String = ""
+    @State private var editableKeyPointsText: String = ""
+    @State private var didSeed = false
+
+    /// True when the caller didn't pass a real topic. The sheet then renders
+    /// topic + key-point inputs and gates Generate Draft until they're set.
+    private var requiresTopicInput: Bool {
+        topic.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    /// Topic actually used for generation — editable when no caller topic,
+    /// otherwise the caller's value.
+    private var effectiveTopic: String {
+        requiresTopicInput
+            ? editableTopic.trimmingCharacters(in: .whitespaces)
+            : topic
+    }
+
+    /// Key points actually used for generation.
+    private var effectiveKeyPoints: [String] {
+        if requiresTopicInput {
+            return editableKeyPointsText
+                .components(separatedBy: .newlines)
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+        }
+        return keyPoints
+    }
+
+    private var canGenerate: Bool {
+        !effectiveTopic.isEmpty
+    }
+
     // MARK: - Body
 
     var body: some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                scrollableContent
+                    .padding(20)
+            }
+            Divider()
+            actionFooter
+                .padding(20)
+        }
+        .frame(width: 560, height: 600)
+        .onAppear {
+            FeatureAdoptionTracker.shared.recordUsage(.contentDraft)
+            if !didSeed {
+                editableTopic = topic
+                editableKeyPointsText = keyPoints.joined(separator: "\n")
+                didSeed = true
+            }
+            if let stored = DraftStore.shared.load(kind: Self.draftKind, id: draftID),
+               let storedText = stored["body"], !storedText.isEmpty {
+                draftText = storedText
+                hasGenerated = true
+            }
+        }
+        .onChange(of: draftText) {
+            localComplianceFlags = ComplianceScanner.scanWithSettings(draftText)
+            DraftStore.shared.save(
+                kind: Self.draftKind,
+                id: draftID,
+                fields: ["body": draftText]
+            )
+        }
+    }
+
+    // MARK: - Scrollable Content
+
+    private var scrollableContent: some View {
         VStack(alignment: .leading, spacing: 16) {
             TipView(ContentDraftTip())
                 .tipViewStyle(SAMTipViewStyle())
@@ -55,16 +130,21 @@ struct ContentDraftSheet: View {
                 .samFont(.title3)
                 .fontWeight(.semibold)
 
-            // Topic context
-            VStack(alignment: .leading, spacing: 4) {
-                Text(topic)
-                    .samFont(.subheadline)
-                    .fontWeight(.medium)
-                if !keyPoints.isEmpty {
-                    Text(keyPoints.joined(separator: " \u{2022} "))
-                        .samFont(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
+            // Topic context — either show what the caller provided, or
+            // collect it inline when no topic was suggested.
+            if requiresTopicInput {
+                topicEntryFields
+            } else {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(topic)
+                        .samFont(.subheadline)
+                        .fontWeight(.medium)
+                    if !keyPoints.isEmpty {
+                        Text(keyPoints.joined(separator: " \u{2022} "))
+                            .samFont(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
                 }
             }
 
@@ -120,6 +200,8 @@ struct ContentDraftSheet: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.regular)
+                .disabled(!canGenerate)
+                .help(canGenerate ? "" : "Enter a topic before generating")
             }
 
             // Loading indicator
@@ -222,62 +304,76 @@ struct ContentDraftSheet: View {
                     .samFont(.caption)
                     .foregroundStyle(.red)
             }
+        }
+    }
 
-            Divider()
+    // MARK: - Topic Entry (when no concrete topic was supplied)
 
-            // Action buttons
-            HStack {
-                if hasGenerated {
-                    Button {
-                        copyToClipboard()
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "doc.on.doc")
-                                .samFont(.caption)
-                            Text("Copy")
-                        }
+    private var topicEntryFields: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Topic")
+                    .samFont(.subheadline)
+                    .fontWeight(.medium)
+                Text("SAM didn't have a topic in mind — tell it what to post about.")
+                    .samFont(.caption)
+                    .foregroundStyle(.secondary)
+                TextField("e.g., How to read a benefit illustration", text: $editableTopic)
+                    .textFieldStyle(.roundedBorder)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Key Points (optional)")
+                    .samFont(.subheadline)
+                    .fontWeight(.medium)
+                Text("One per line — these guide the draft so it stays on-message.")
+                    .samFont(.caption)
+                    .foregroundStyle(.secondary)
+                TextEditor(text: $editableKeyPointsText)
+                    .samFont(.body)
+                    .frame(minHeight: 80, maxHeight: 140)
+                    .scrollContentBackground(.hidden)
+                    .padding(6)
+                    .background(.fill.quaternary, in: RoundedRectangle(cornerRadius: 6))
+            }
+        }
+    }
+
+    // MARK: - Action Footer
+
+    private var actionFooter: some View {
+        HStack {
+            if hasGenerated {
+                Button {
+                    copyToClipboard()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "doc.on.doc")
+                            .samFont(.caption)
+                        Text("Copy")
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.regular)
-                }
-
-                Spacer()
-
-                Button("Cancel") {
-                    DraftStore.shared.clear(kind: Self.draftKind, id: draftID)
-                    onCancel()
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.regular)
-                .keyboardShortcut(.cancelAction)
+            }
 
-                if hasGenerated {
-                    Button("Log as Posted") {
-                        logAsPosted()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.regular)
-                    .keyboardShortcut(.defaultAction)
+            Spacer()
+
+            Button("Cancel") {
+                DraftStore.shared.clear(kind: Self.draftKind, id: draftID)
+                onCancel()
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.regular)
+            .keyboardShortcut(.cancelAction)
+
+            if hasGenerated {
+                Button("Log as Posted") {
+                    logAsPosted()
                 }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.regular)
+                .keyboardShortcut(.defaultAction)
             }
-        }
-        .padding(20)
-        .frame(width: 560)
-        .onAppear {
-            FeatureAdoptionTracker.shared.recordUsage(.contentDraft)
-            if let stored = DraftStore.shared.load(kind: Self.draftKind, id: draftID),
-               let storedText = stored["body"], !storedText.isEmpty {
-                draftText = storedText
-                hasGenerated = true
-            }
-        }
-        .onChange(of: draftText) {
-            localComplianceFlags = ComplianceScanner.scanWithSettings(draftText)
-            DraftStore.shared.save(
-                kind: Self.draftKind,
-                id: draftID,
-                fields: ["body": draftText]
-            )
         }
     }
 
@@ -290,8 +386,8 @@ struct ContentDraftSheet: View {
         Task {
             do {
                 let draft = try await ContentAdvisorService.shared.generateDraft(
-                    topic: topic,
-                    keyPoints: keyPoints,
+                    topic: effectiveTopic,
+                    keyPoints: effectiveKeyPoints,
                     platform: selectedPlatform,
                     tone: suggestedTone,
                     complianceNotes: complianceNotes

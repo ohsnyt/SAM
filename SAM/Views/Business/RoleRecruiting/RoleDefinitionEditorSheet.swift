@@ -31,6 +31,9 @@ struct RoleDefinitionEditorSheet: View {
     @State private var targetCount: Int = 1
     @State private var contentGenerationEnabled: Bool = false
     @State private var contentBrief: String = ""
+    @State private var badgeColor: Color = .gray
+    @State private var hasCustomColor: Bool = false
+    @State private var existingRoles: [(name: String, color: Color, isBuiltIn: Bool)] = []
 
     private var isEditing: Bool {
         if case .edit = mode { return true }
@@ -163,6 +166,53 @@ struct RoleDefinitionEditorSheet: View {
                 }
 
                 Section {
+                    HStack(spacing: 12) {
+                        ColorPicker("Badge color", selection: $badgeColor, supportsOpacity: false)
+                            .onChange(of: badgeColor) { _, _ in hasCustomColor = true }
+                        if hasCustomColor {
+                            Button("Reset") {
+                                badgeColor = builtInColor(for: name) ?? .gray
+                                hasCustomColor = false
+                            }
+                            .buttonStyle(.borderless)
+                            .samFont(.caption)
+                        }
+                    }
+
+                    if !existingRoles.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("In use:")
+                                .samFont(.caption)
+                                .foregroundStyle(.secondary)
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 6) {
+                                    ForEach(existingRoles, id: \.name) { entry in
+                                        HStack(spacing: 4) {
+                                            Circle()
+                                                .fill(entry.color)
+                                                .frame(width: 10, height: 10)
+                                            Text(entry.name)
+                                                .samFont(.caption2)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 3)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 6)
+                                                .fill(.background.secondary)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } header: {
+                    Text("Color")
+                } footer: {
+                    Text("Pick a color that's distinguishable from your other roles. Used on badges and Today cards.")
+                }
+
+                Section {
                     Toggle("Generate content topics for this role", isOn: $contentGenerationEnabled)
 
                     if contentGenerationEnabled {
@@ -194,8 +244,38 @@ struct RoleDefinitionEditorSheet: View {
                 targetCount = role.targetCount
                 contentGenerationEnabled = role.contentGenerationEnabled
                 contentBrief = role.contentBrief
+                if let hex = role.colorHex, let parsed = Color(hex: hex) {
+                    badgeColor = parsed
+                    hasCustomColor = true
+                } else {
+                    badgeColor = builtInColor(for: role.name) ?? .gray
+                }
+            }
+            loadExistingRoles()
+        }
+    }
+
+    private func builtInColor(for badge: String) -> Color? {
+        let style = RoleBadgeStyle.builtInStyle(for: badge)
+        return style.icon == "tag.circle.fill" ? nil : style.color
+    }
+
+    private func loadExistingRoles() {
+        let editingID: UUID? = {
+            if case .edit(let r) = mode { return r.id }
+            return nil
+        }()
+        var entries: [(name: String, color: Color, isBuiltIn: Bool)] = []
+        for builtIn in RoleBadgeStyle.builtInRoleNames {
+            entries.append((builtIn, RoleBadgeStyle.builtInStyle(for: builtIn).color, true))
+        }
+        if let custom = try? RoleRecruitingRepository.shared.fetchAllRoles() {
+            for role in custom where role.id != editingID {
+                let color: Color = role.colorHex.flatMap { Color(hex: $0) } ?? .gray
+                entries.append((role.name, color, false))
             }
         }
+        existingRoles = entries
     }
 
     // MARK: - Helpers
@@ -221,6 +301,8 @@ struct RoleDefinitionEditorSheet: View {
             let cleanCriteria = criteria.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
             let cleanExclusions = exclusionCriteria.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
+            let resolvedColorHex: String? = hasCustomColor ? badgeColor.hexString : nil
+
             if case .edit(let role) = mode {
                 role.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
                 role.roleDescription = roleDescription
@@ -231,6 +313,7 @@ struct RoleDefinitionEditorSheet: View {
                 role.targetCount = targetCount
                 role.contentGenerationEnabled = contentGenerationEnabled
                 role.contentBrief = contentBrief
+                role.colorHex = resolvedColorHex
                 try repo.saveRoleDefinition(role)
             } else {
                 let role = RoleDefinition(
@@ -242,7 +325,8 @@ struct RoleDefinitionEditorSheet: View {
                     timeCommitment: timeCommitment.isEmpty ? nil : timeCommitment,
                     targetCount: targetCount,
                     contentGenerationEnabled: contentGenerationEnabled,
-                    contentBrief: contentBrief
+                    contentBrief: contentBrief,
+                    colorHex: resolvedColorHex
                 )
                 try repo.saveRoleDefinition(role)
             }

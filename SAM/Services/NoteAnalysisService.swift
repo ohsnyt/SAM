@@ -425,6 +425,7 @@ actor NoteAnalysisService {
         - For discovered_relationships, flag spousal, familial, referral, or business connections mentioned in the note
         - For life_events, extract any mentioned life milestones, transitions, or personal events. Include an outreach suggestion.
         - IMPORTANT: If the note indicates that the person themselves has died or passed away, use event_type "death" with their name as person_name. Use "loss" only when the person experienced someone else's death.
+        - For life_events person_name: when the event is about someone named in the Context line, use their EXACT name from the Context (do not paraphrase, shorten, or invent variations).
         - Confidence reflects how certain you are (0.5 = implied, 0.9 = explicit)
         - If the note is too short or ambiguous, return empty arrays - do not hallucinate
         - Use null (not "null") for absent optional fields
@@ -440,6 +441,7 @@ actor NoteAnalysisService {
                 let others = rc.otherLinkedPeople.map { "\($0.name) (\($0.role))" }.joined(separator: ", ")
                 contextLine += " Also involved: \(others)."
             }
+            contextLine += " When extracting life_events about any of these named individuals, use their exact name above as person_name."
             contextLine += "\n\n"
         }
         return """

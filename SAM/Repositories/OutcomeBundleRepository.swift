@@ -129,6 +129,19 @@ final class OutcomeBundleRepository {
         return true
     }
 
+    /// Delete every bundle and sub-item. Used by the Debug menu's "Rebuild
+    /// Outcomes" action so legacy false-positive bundles (e.g. follow-ups built
+    /// before the trigger fix) can be wiped before regeneration.
+    func deleteAll() throws {
+        guard let context else { throw RepositoryError.notConfigured }
+        let bundles = try context.fetch(FetchDescriptor<OutcomeBundle>())
+        for bundle in bundles { context.delete(bundle) }
+        let orphanedSubItems = try context.fetch(FetchDescriptor<OutcomeSubItem>())
+        for item in orphanedSubItems { context.delete(item) }
+        try context.save()
+        logger.notice("Deleted all OutcomeBundles (\(bundles.count)) and OutcomeSubItems (\(orphanedSubItems.count))")
+    }
+
     // MARK: - Sub-Item Upsert
 
     /// Find an existing open sub-item of the same kind in the bundle, or insert

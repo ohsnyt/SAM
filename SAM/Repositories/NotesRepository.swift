@@ -50,6 +50,13 @@ final class NotesRepository {
         return try modelContext.fetch(descriptor)
     }
 
+    /// Save pending changes on this repository's model context. Used by callers
+    /// that mutate fetched notes in batch (e.g. one-shot remediation passes).
+    func saveContext() throws {
+        guard let modelContext else { throw RepositoryError.notConfigured }
+        try modelContext.save()
+    }
+
     /// Fetch a single note by ID
     func fetch(id: UUID) throws -> SamNote? {
         guard let modelContext = modelContext else {

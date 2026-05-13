@@ -17,8 +17,16 @@ struct OutcomeQueueView: View {
 
     // MARK: - Parameters
 
-    /// Maximum number of outcome cards to show before "Show all" link.
-    var maxVisible: Int = 5
+    /// Maximum number of cards to show before the "Show more" footer.
+    /// 7 covers a typical day's worth of high-priority items without overwhelming
+    /// the user; remaining items appear in collapsed form below when expanded.
+    var maxVisible: Int = 7
+
+    /// Optional Sphere filter (passed from AwarenessView toolbar). When set,
+    /// only outcomes/bundles for people in the active Sphere are shown.
+    var sphereFilter: AwarenessView.SphereFilter = AwarenessView.SphereFilter(
+        sphereID: nil, memberIDs: nil, accentColor: nil
+    )
 
     // MARK: - Dependencies
 
@@ -40,6 +48,9 @@ struct OutcomeQueueView: View {
 
     @State private var showRatingFor: SamOutcome?
     @State private var ratingValue: Int = 3
+    /// When true, overflow items beyond `maxVisible` render below the footer
+    /// as collapsed-only cards. Resets to false each app launch — focus
+    /// discipline by default.
     @State private var showAllOutcomes = false
     @State private var showDeepWorkSheet = false
     @State private var deepWorkOutcome: SamOutcome?
@@ -49,27 +60,87 @@ struct OutcomeQueueView: View {
     @State private var setupGuideOutcome: SamOutcome?
     @State private var gapRefreshToken = UUID()
 
+    /// Which card in the merged feed is rendered expanded. The id matches
+    /// either an `OutcomeBundle.id` or a `SamOutcome.id`. Defaults to the
+    /// top-priority item (lazily resolved in `expandedItemResolved`).
+    @State private var expandedItemID: UUID?
+
+    // MARK: - Queue Item (unified bundle + standalone outcome)
+
+    /// Wraps either type so we can merge into a single priority-sorted feed.
+    /// Priority lives on a shared [0,1] scale (see CLAUDE.md / OutcomeEngine),
+    /// so sorting across both types reflects actual urgency rather than the
+    /// older bundles-first-then-outcomes rendering rule.
+    private enum QueueItem: Identifiable {
+        case bundle(OutcomeBundle)
+        case outcome(SamOutcome)
+
+        var id: UUID {
+            switch self {
+            case .bundle(let b):  return b.id
+            case .outcome(let o): return o.id
+            }
+        }
+
+        var priorityScore: Double {
+            switch self {
+            case .bundle(let b):  return b.priorityScore
+            case .outcome(let o): return o.priorityScore
+            }
+        }
+    }
+
     // MARK: - Computed
 
     private var activeOutcomes: [SamOutcome] {
         allOutcomes.filter {
-            ($0.status == .pending || $0.status == .inProgress) && !$0.isAwaitingTrigger
+            ($0.status == .pending || $0.status == .inProgress)
+                && !$0.isAwaitingTrigger
+                && sphereFilter.allows(personID: $0.linkedPerson?.id)
         }
-    }
-
-    private var visibleOutcomes: [SamOutcome] {
-        if showAllOutcomes {
-            return activeOutcomes
-        }
-        return Array(activeOutcomes.prefix(maxVisible))
-    }
-
-    private var hasMore: Bool {
-        activeOutcomes.count > maxVisible
     }
 
     private var activeBundles: [OutcomeBundle] {
-        allBundles.filter { $0.closedAt == nil && !$0.openSubItems.isEmpty }
+        allBundles.filter {
+            $0.closedAt == nil
+                && !$0.openSubItems.isEmpty
+                && sphereFilter.allows(personID: $0.personID)
+        }
+    }
+
+    /// Single priority-sorted feed combining bundles and standalone outcomes.
+    private var mergedFeed: [QueueItem] {
+        let items: [QueueItem] = activeBundles.map { .bundle($0) } + activeOutcomes.map { .outcome($0) }
+        return items.sorted { $0.priorityScore > $1.priorityScore }
+    }
+
+    /// Top `maxVisible` items — always rendered with one expanded + rest collapsed.
+    private var topItems: [QueueItem] {
+        Array(mergedFeed.prefix(maxVisible))
+    }
+
+    /// Overflow items — only rendered when the user taps the footer to expand.
+    /// These are always collapsed and cannot be expanded individually.
+    private var overflowItems: [QueueItem] {
+        guard mergedFeed.count > maxVisible else { return [] }
+        return Array(mergedFeed.dropFirst(maxVisible))
+    }
+
+    private var hasMore: Bool {
+        mergedFeed.count > maxVisible
+    }
+
+    /// Which item is currently expanded. Defaults to the top-priority item
+    /// when the user hasn't explicitly picked one (or has picked one that's
+    /// since left the queue via completion/dismissal). The chosen item can
+    /// live in either the top section or the overflow section — both are
+    /// expandable so the user can preview any card without losing place.
+    private var expandedItemResolved: UUID? {
+        if let chosen = expandedItemID,
+           mergedFeed.contains(where: { $0.id == chosen }) {
+            return chosen
+        }
+        return topItems.first?.id
     }
 
     // MARK: - Body
@@ -101,55 +172,60 @@ struct OutcomeQueueView: View {
                     .padding(.horizontal)
                     .padding(.bottom, 4)
 
-                // Per-person bundle cards (one card per person, multiple sub-items inside).
-                if !activeBundles.isEmpty {
-                    VStack(spacing: 12) {
-                        ForEach(Array(activeBundles.enumerated()), id: \.element.id) { index, bundle in
-                            OutcomeBundleCardView(
-                                bundle: bundle,
-                                isHero: index == 0 && activeOutcomes.isEmpty,
-                                onTick: { item in handleBundleTick(item, in: bundle) },
-                                onSkip: { item in handleBundleSkip(item, in: bundle) },
-                                onOpenPerson: { openPerson(for: bundle) },
-                                onCompose: composeClosure(for: bundle)
-                            )
-                        }
-                    }
-                    .padding(.horizontal)
-                    .padding(.vertical, 12)
-                }
-
-                // Active outcome cards
-                VStack(spacing: 12) {
-                    ForEach(Array(visibleOutcomes.enumerated()), id: \.element.id) { index, outcome in
-                        OutcomeCardView(
-                            outcome: outcome,
-                            isHero: index == 0 && activeBundles.isEmpty,
-                            onAct: actClosure(for: outcome),
-                            onDone: { markDone(outcome) },
-                            onSkip: { markSkipped(outcome) },
-                            onSnooze: { date in snoozeOutcome(outcome, until: date) },
-                            onMuteKind: {
-                                Task { await CalibrationService.shared.setMuted(kind: outcome.outcomeKindRawValue, muted: true) }
-                            },
-                            sequenceStepCount: sequenceStepCount(for: outcome),
-                            nextAwaitingStep: nextAwaitingStep(for: outcome)
-                        )
+                // Merged feed: bundles + standalones interleaved by priorityScore.
+                // Only one card is expanded at a time (top by default; user can
+                // tap a collapsed card to swap which one is expanded). Items beyond
+                // `maxVisible` only render when the footer is tapped, and always
+                // as collapsed-only cards — preserves focus discipline.
+                let expandedID = expandedItemResolved
+                VStack(spacing: 10) {
+                    ForEach(topItems) { item in
+                        renderCard(item, expandedID: expandedID, allowExpand: true)
                     }
                 }
                 .padding(.horizontal)
                 .padding(.vertical, 12)
 
-                // Show all / collapse link
+                // Footer — tappable: expands the backlog as a list of collapsed cards.
                 if hasMore {
+                    let overflowCount = overflowItems.count
                     Button(action: {
                         withAnimation { showAllOutcomes.toggle() }
                     }) {
-                        Text(showAllOutcomes ? "Show fewer" : "Show all \(activeOutcomes.count) suggestions")
-                            .samFont(.subheadline)
-                            .foregroundStyle(.blue)
+                        VStack(spacing: 6) {
+                            Rectangle()
+                                .fill(.separator)
+                                .frame(height: 0.5)
+                            HStack(spacing: 6) {
+                                Image(systemName: showAllOutcomes ? "chevron.up" : "chevron.down")
+                                    .samFont(.caption2)
+                                    .foregroundStyle(.secondary)
+                                Text(showAllOutcomes
+                                     ? "Show fewer"
+                                     : "\(overflowCount) additional \(overflowCount == 1 ? "task has" : "tasks have") been identified and are ready for your consideration.")
+                                    .samFont(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .multilineTextAlignment(.center)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .center)
+                        }
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .padding(.horizontal)
+                    .padding(.top, 8)
+                    .padding(.bottom, 12)
+                }
+
+                // Overflow items — tappable to expand in place. Expansion is
+                // single-card across the whole feed, so tapping here collapses
+                // whatever was expanded in the top section.
+                if showAllOutcomes && !overflowItems.isEmpty {
+                    VStack(spacing: 8) {
+                        ForEach(overflowItems) { item in
+                            renderCard(item, expandedID: expandedID, allowExpand: true)
+                        }
+                    }
                     .padding(.horizontal)
                     .padding(.bottom, 12)
                 }
@@ -278,6 +354,49 @@ struct OutcomeQueueView: View {
         }
         .padding(24)
         .frame(width: 300)
+    }
+
+    // MARK: - Card Rendering
+
+    /// Renders a queue item as the appropriate card type. `allowExpand` is
+    /// false for overflow items beyond the top cap — they remain collapsed.
+    @ViewBuilder
+    private func renderCard(_ item: QueueItem, expandedID: UUID?, allowExpand: Bool) -> some View {
+        switch item {
+        case .bundle(let bundle):
+            let isExpanded = allowExpand && bundle.id == expandedID
+            OutcomeBundleCardView(
+                bundle: bundle,
+                isHero: isExpanded,
+                collapsed: !isExpanded,
+                onExpand: allowExpand ? {
+                    withAnimation { expandedItemID = bundle.id }
+                } : nil,
+                onTick: { sub in handleBundleTick(sub, in: bundle) },
+                onSkip: { sub in handleBundleSkip(sub, in: bundle) },
+                onOpenPerson: { openPerson(for: bundle) },
+                onCompose: composeClosure(for: bundle)
+            )
+        case .outcome(let outcome):
+            let isExpanded = allowExpand && outcome.id == expandedID
+            OutcomeCardView(
+                outcome: outcome,
+                isHero: isExpanded,
+                onAct: actClosure(for: outcome),
+                onDone: { markDone(outcome) },
+                onSkip: { markSkipped(outcome) },
+                onSnooze: { date in snoozeOutcome(outcome, until: date) },
+                onMuteKind: {
+                    Task { await CalibrationService.shared.setMuted(kind: outcome.outcomeKindRawValue, muted: true) }
+                },
+                sequenceStepCount: sequenceStepCount(for: outcome),
+                nextAwaitingStep: nextAwaitingStep(for: outcome),
+                collapsed: !isExpanded,
+                onExpand: allowExpand ? {
+                    withAnimation { expandedItemID = outcome.id }
+                } : nil
+            )
+        }
     }
 
     // MARK: - Actions
@@ -587,12 +706,16 @@ struct OutcomeQueueView: View {
     // MARK: - Content Topic Parsing (Phase W)
 
     /// Parse a ContentTopic from JSON stored in sourceInsightSummary.
-    /// Falls back to using the outcome title as the topic.
+    /// Returns an empty topic when the outcome was created without a
+    /// concrete suggestion (e.g. cadence nudges like "Post on LinkedIn —
+    /// 47 days since last post"). ContentDraftSheet detects the empty
+    /// topic and prompts the user to enter one — that's better than
+    /// generating a draft about the word "Educational content".
     private func parseContentTopic(from json: String) -> (topic: String, keyPoints: [String], suggestedTone: String, complianceNotes: String?) {
         guard !json.isEmpty,
               let data = json.data(using: .utf8),
               let topic = try? JSONDecoder().decode(ContentTopic.self, from: data) else {
-            return (topic: "Educational content", keyPoints: [], suggestedTone: "educational", complianceNotes: nil)
+            return (topic: "", keyPoints: [], suggestedTone: "educational", complianceNotes: nil)
         }
         return (topic: topic.topic, keyPoints: topic.keyPoints, suggestedTone: topic.suggestedTone, complianceNotes: topic.complianceNotes)
     }

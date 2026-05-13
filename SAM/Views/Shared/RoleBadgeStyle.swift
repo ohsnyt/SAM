@@ -13,8 +13,20 @@ struct RoleBadgeStyle {
     let color: Color
     let icon: String
 
-    /// Known role → style mapping. Every role gets a unique color + icon.
+    /// Built-in roles ship with these defaults. Custom roles (user-defined via
+    /// `RoleDefinition.colorHex`) override these when present; unknown names
+    /// without a custom color fall through to gray.
+    @MainActor
     static func forBadge(_ badge: String) -> RoleBadgeStyle {
+        if let customHex = customColorCache[badge], let color = Color(hex: customHex) {
+            return RoleBadgeStyle(color: color, icon: iconForBuiltIn(badge) ?? "tag.circle.fill")
+        }
+        return builtInStyle(for: badge)
+    }
+
+    /// Built-in default style. Exposed for the editor legend so it can render
+    /// known roles without depending on the runtime cache.
+    static func builtInStyle(for badge: String) -> RoleBadgeStyle {
         switch badge {
         case "Client":
             return RoleBadgeStyle(color: .green, icon: "c.circle.fill")
@@ -35,6 +47,72 @@ struct RoleBadgeStyle {
         default:
             return RoleBadgeStyle(color: .gray, icon: "tag.circle.fill")
         }
+    }
+
+    private static func iconForBuiltIn(_ badge: String) -> String? {
+        let style = builtInStyle(for: badge)
+        return style.color == .gray && style.icon == "tag.circle.fill" ? nil : style.icon
+    }
+
+    /// Names of built-in roles (in legend display order).
+    static let builtInRoleNames: [String] = [
+        "Client", "Applicant", "Lead", "Prospect",
+        "Agent", "External Agent", "Referral Partner", "Vendor"
+    ]
+
+    // MARK: - Custom Role Cache
+
+    /// In-memory cache of custom role name → colorHex. Populated lazily and
+    /// invalidated whenever a `RoleDefinition` is saved or deleted.
+    @MainActor
+    private static var customColorCache: [String: String] = [:]
+
+    /// Reload the cache from the active RoleDefinitions. Call after role
+    /// edits so the next render picks up new colors.
+    @MainActor
+    static func refreshCustomCache() {
+        guard let roles = try? RoleRecruitingRepository.shared.fetchAllRoles() else { return }
+        var map: [String: String] = [:]
+        for role in roles {
+            if let hex = role.colorHex, !hex.isEmpty {
+                map[role.name] = hex
+            }
+        }
+        customColorCache = map
+    }
+}
+
+// MARK: - Color Hex Helpers
+
+extension Color {
+    /// Parses "#RRGGBB" / "RRGGBB" / "#RRGGBBAA". Returns nil for malformed input.
+    init?(hex: String) {
+        var trimmed = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasPrefix("#") { trimmed.removeFirst() }
+        guard trimmed.count == 6 || trimmed.count == 8,
+              let value = UInt64(trimmed, radix: 16) else { return nil }
+        let r, g, b, a: Double
+        if trimmed.count == 6 {
+            r = Double((value >> 16) & 0xFF) / 255.0
+            g = Double((value >>  8) & 0xFF) / 255.0
+            b = Double( value        & 0xFF) / 255.0
+            a = 1.0
+        } else {
+            r = Double((value >> 24) & 0xFF) / 255.0
+            g = Double((value >> 16) & 0xFF) / 255.0
+            b = Double((value >>  8) & 0xFF) / 255.0
+            a = Double( value        & 0xFF) / 255.0
+        }
+        self.init(.sRGB, red: r, green: g, blue: b, opacity: a)
+    }
+
+    /// Returns "#RRGGBB" from this Color (best effort; macOS only).
+    var hexString: String? {
+        let ns = NSColor(self).usingColorSpace(.sRGB) ?? NSColor(self)
+        let r = Int(round(ns.redComponent * 255))
+        let g = Int(round(ns.greenComponent * 255))
+        let b = Int(round(ns.blueComponent * 255))
+        return String(format: "#%02X%02X%02X", r, g, b)
     }
 }
 

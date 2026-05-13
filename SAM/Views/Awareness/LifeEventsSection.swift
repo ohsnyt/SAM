@@ -114,6 +114,11 @@ struct LifeEventsSection: View {
     }
 
     private func resolvePersonID(event: LifeEvent, note: SamNote) -> (id: UUID?, person: SamPerson?) {
+        // Prefer the UUID resolved at analysis time
+        if let personID = event.personID,
+           let person = note.linkedPeople.first(where: { $0.id == personID }) {
+            return (person.id, person)
+        }
         let matchedPerson = note.linkedPeople.first { person in
             let displayName = person.displayNameCache ?? person.displayName
             return displayName.lowercased() == event.personName.lowercased()
@@ -302,13 +307,21 @@ private struct LifeEventCard: View {
     }
 
     private func navigateToPerson() {
-        // Find matching person by name from the note's linked people
-        let matchedPerson = note.linkedPeople.first { person in
-            let displayName = person.displayNameCache ?? person.displayName
-            return displayName.lowercased() == event.personName.lowercased()
-        } ?? note.linkedPeople.first
+        // Prefer the personID resolved at analysis time so the card never
+        // points at a non-existent contact.
+        let personID: UUID? = {
+            if let id = event.personID,
+               note.linkedPeople.contains(where: { $0.id == id }) {
+                return id
+            }
+            let matched = note.linkedPeople.first { person in
+                let displayName = person.displayNameCache ?? person.displayName
+                return displayName.lowercased() == event.personName.lowercased()
+            } ?? note.linkedPeople.first
+            return matched?.id
+        }()
 
-        guard let personID = matchedPerson?.id else { return }
+        guard let personID else { return }
         NotificationCenter.default.post(
             name: .samNavigateToPerson,
             object: nil,
