@@ -4,6 +4,42 @@
 
 ---
 
+## Evidence linking: two-bucket model (linkedPeople + coParticipants) — Phase 1, mail (2026-05-13)
+
+**What**: `SamEvidenceItem` now carries a second person relationship, `coParticipants`, alongside `linkedPeople`. Mail bulk-upsert routes participants into the two buckets per direction. No consumer code reads `coParticipants` yet — this phase only widens the schema and starts populating it correctly for new mail imports.
+
+- **`SamEvidenceItem.coParticipants`** (new `@Relationship(deleteRule: .nullify)`) — bystander participants: CC/BCC recipients on email, attendees on large meetings, other thread members in group iMessage. Counts for sphere co-occurrence deduction; never for per-person interaction history, health scoring, or decay. The doc comment makes the contract explicit: consumers showing "your history with X" must read only `linkedPeople`; only sphere inference reads `linkedPeople ∪ coParticipants`. Lightweight (additive relationship) so the SwiftData migration is automatic.
+- **`EvidenceRepository.bulkUpsertEmails`** — routing rules:
+
+  | Source | → `linkedPeople` | → `coParticipants` |
+  |---|---|---|
+  | Inbound mail | Sender | TO + CC + BCC matches |
+  | Outbound mail | TO matches | CC + BCC matches |
+
+  - **No size cap**: every matched bystander is co-linked, regardless of recipient count. Newsletters and group blasts are some of the highest-quality sphere evidence available — a 60-person church newsletter or a 200-person work all-hands is exactly the kind of co-occurrence signal Phase 5 deduction needs. (An early draft of this change capped at 8 recipients, but that instinct was carried over from the interaction-tracking side, where bystander noise actually matters; in the sphere bucket it just destroys the strongest signal.) Storage is linear per row; co-occurrence is computed at query time, so there's no O(N²) blowup to defend against.
+  - **Me-filter**: the user's own SamPerson is dropped from both buckets — being CC'd on a thread you sent isn't an interaction with yourself.
+  - **Disjoint sets**: `coParticipants` is deduped against `linkedPeople` so a person can't be in both buckets on the same evidence row.
+  - Direction defaults to `.inbound`; the existing call sites for sent mail pass `.outbound` and now get the inverted routing automatically.
+- **`setCoParticipants(_:on:)`** — new helper mirroring `setLinkedPeople`. Uses explicit `removeAll() + append` (not direct assignment) so SwiftData's change tracking fires reliably on existing rows.
+
+**Why**: SAM had a structural blind spot — 99.84% of evidence rows linked to exactly one SamPerson because mail upsert dumped *everyone* (sender + every recipient + CC + BCC) into a single `linkedPeople` relationship. This had two opposite failure modes depending on the consumer:
+
+1. Sphere deduction starved: there was no way to ask "who tends to appear on the same threads as Sarah?" because each evidence row only really represented one person from the user's POV after the actual sender/recipient distinction was lost. The Church-sphere deduction query for Jean Schwabe's circle returned zero candidates.
+2. Health scoring inflated: a person who was always CC'd but never directly emailed would still show up as a frequent "interaction" in their PersonDetailView history, because they were in `linkedPeople`.
+
+User's explicit refinement during scoping: "CC should not count for interactions with me. CC only counts for finding spheres." The two-bucket model honors both invariants — `linkedPeople` becomes the truthful interaction list, `coParticipants` becomes the signal layer for sphere/cohort inference.
+
+**Migration note**: Existing evidence rows are unchanged — they keep their (possibly over-broad) `linkedPeople` populations until they're either re-upserted (next normal mail-import cycle for that sourceUID) or hit by a future Phase rescan. No data loss; new imports will be accurate.
+
+**Out of scope this phase**:
+- Calendar evidence routing (Phase 2)
+- iMessage group-thread routing (Phase 3)
+- Sphere triage UI that reads `coParticipants` (Phase 5)
+- Bulk rescan/recompute for historical rows (deferred, optional follow-up)
+- Consumer code changes (`refreshParticipantResolution`, PersonDetailView, etc.) — Phase 1 deliberately leaves these untouched.
+
+---
+
 ## neverInclude self-heal: extended to contact sync + phone numbers (2026-05-13)
 
 **What**: `PeopleRepository.bulkUpsert` now collects every email and phone identifier touched during the sync and asks `UnknownSenderRepository` to drop any matching `.neverInclude` records before returning. Method renamed `purgeNeverInclude(forKnownEmails:)` → `purgeNeverInclude(forKnownIdentifiers:)` because the `UnknownSender.email` column stores phone numbers too (canonicalized to 10-digit, digits-only form — same format `phoneAliases` uses).

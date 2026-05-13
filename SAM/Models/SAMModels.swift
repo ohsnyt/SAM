@@ -795,6 +795,16 @@ public final class SamEvidenceItem {
     @Relationship(deleteRule: .nullify)
     public var linkedPeople: [SamPerson] = []
 
+    /// Bystander participants — CC/BCC recipients on email, attendees on
+    /// large meetings, other thread members in group iMessage. These count
+    /// for sphere co-occurrence deduction but NEVER for per-person
+    /// interaction history, health scoring, or decay calculations: being
+    /// CC'd on a thread isn't a real interaction with the user. Consumers
+    /// that show "your history with X" must read only `linkedPeople`;
+    /// only sphere inference reads `linkedPeople ∪ coParticipants`.
+    @Relationship(deleteRule: .nullify)
+    public var coParticipants: [SamPerson] = []
+
     /// UUIDs of confirmed context links.  Same migration note as
     /// `linkedPeople`.
     @Relationship(deleteRule: .nullify)

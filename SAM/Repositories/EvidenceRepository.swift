@@ -497,6 +497,15 @@ final class EvidenceRepository {
         }
     }
 
+    /// Reliably set coParticipants on an evidence item — same change-tracking
+    /// rationale as `setLinkedPeople`.
+    private func setCoParticipants(_ people: [SamPerson], on evidence: SamEvidenceItem) {
+        evidence.coParticipants.removeAll()
+        for person in people {
+            evidence.coParticipants.append(person)
+        }
+    }
+
     /// Resolve people by a handle that could be an email or phone number.
     private func resolvePeopleByHandle(_ handle: String) -> [SamPerson] {
         if handle.contains("@") {
@@ -1161,11 +1170,46 @@ final class EvidenceRepository {
 
         var created = 0, updated = 0
 
+        // Me's id is filtered out of both buckets — being on a thread you sent
+        // or were CC'd on isn't an "interaction with yourself".
+        let meID = (try? PeopleRepository.shared.fetchMe())?.id
+
         for (email, analysis) in emails {
             let sourceUID = email.sourceUID
             let participantEmails = email.allParticipantEmails
-            let resolved = resolvePeople(byEmails: participantEmails)
-            let knownEmails = knownEmailSet(from: resolved)
+            // Resolve the full participant set once for verification of hints.
+            let allResolved = resolvePeople(byEmails: participantEmails)
+            let knownEmails = knownEmailSet(from: allResolved)
+
+            // Route per direction:
+            //   inbound  → sender becomes `linkedPeople`; TO+CC+BCC matches → `coParticipants`
+            //   outbound → TO recipients become `linkedPeople`; CC+BCC matches → `coParticipants`
+            //   bidirectional (rare for mail) → fall through to the inbound shape
+            let primaryPeople: [SamPerson]
+            let bystanderEmails: [String]
+            switch direction {
+            case .outbound:
+                primaryPeople = resolvePeople(byEmails: email.recipientEmails)
+                bystanderEmails = email.ccEmails + email.bccEmails
+            default:
+                primaryPeople = resolvePeople(byEmails: [email.senderEmail])
+                bystanderEmails = email.recipientEmails + email.ccEmails + email.bccEmails
+            }
+
+            // No size cap: newsletters and mailing-list blasts are some of the
+            // strongest evidence for sphere co-occurrence (60-person church
+            // newsletter, 200-person work all-hands). Storage is linear in
+            // recipient count per row; co-occurrence is computed at query
+            // time, so there's no O(N²) blowup to defend against.
+            let bystanderPeople = resolvePeople(byEmails: bystanderEmails)
+
+            // Apply Me-filter and dedupe coParticipants against primary so the
+            // two buckets are disjoint.
+            let primaryFiltered = primaryPeople.filter { $0.id != meID }
+            let primaryIDs = Set(primaryFiltered.map(\.id))
+            let coFiltered = bystanderPeople.filter { person in
+                person.id != meID && !primaryIDs.contains(person.id)
+            }
 
             // Build participant hints from email participants
             let hints = buildMailParticipantHints(from: email, knownEmails: knownEmails)
@@ -1201,7 +1245,8 @@ final class EvidenceRepository {
                 existing.occurredAt = email.date
                 existing.participantHints = hints
                 existing.direction = direction
-                setLinkedPeople(resolved, on: existing)
+                setLinkedPeople(primaryFiltered, on: existing)
+                setCoParticipants(coFiltered, on: existing)
                 existing.signals = signals
                 updated += 1
             } else {
@@ -1217,7 +1262,8 @@ final class EvidenceRepository {
                     signals: signals
                 )
                 evidence.direction = direction
-                setLinkedPeople(resolved, on: evidence)
+                setLinkedPeople(primaryFiltered, on: evidence)
+                setCoParticipants(coFiltered, on: evidence)
                 context.insert(evidence)
                 created += 1
             }
