@@ -4,6 +4,23 @@
 
 ---
 
+## PersonDetailView: Sphere chip row + repo mainContext migration (2026-05-12)
+
+**What**: Per-person Sphere membership is now editable directly from the header, parallel to the role-badge row.
+
+- New chip row immediately below `roleBadgesView` in the header VStack. Each chip is colored by `sphere.accentColor`; tapping the pencil/plus button toggles edit mode, where existing chips become removable (`xmark`) and a `FlowLayout` of available Spheres appears with plus-chips to add.
+- "New sphere…" button inside edit mode launches `NewSphereSheet`; on creation the new Sphere is auto-joined and the chip row refreshes.
+- Gating: chip row hidden when only the bootstrap default Sphere exists (single-Sphere users see no change). Shows when ≥2 Spheres exist OR the person is already a member of 2+ Spheres.
+- All mutations go through `SphereRepository.shared.addMember` / `removeMember` and call a local `refreshSpheres()` that re-populates `currentSpheres` and `availableSpheres` from the repo.
+
+**Repo migration**: `SphereRepository` previously held a private `ModelContext(container)`. Switched to `container.mainContext` to match `PeopleRepository` (commit `91fd288`). Without this, adding a membership from `PersonDetailView` (which reads via `@Query` on the mainContext) would strand the new `PersonSphereMembership.person` reference in a sibling context and crash SwiftUI's next fault resolution — same failure mode as the May-12 merge detach crash, just on a different relationship.
+
+**Why**: There was no end-user UI to place someone into a Sphere — `addMember` existed in the repo but only `SphereBootstrapCoordinator` and the Contacts import path called it. With multiple Spheres on the horizon (church, work, etc.), the chip row makes Sphere membership as discoverable and prominent as role badges. The migration paired with this change because the chip row would have been the first cross-context membership write from a SwiftUI view; better to fix the repo than to add a footgun.
+
+**Next** (out of scope for this pass): Sphere triage in Awareness — auto-suggest Sphere membership from co-mention signals in mail/notes (e.g., names appearing with known Church-Sphere members like Jean Schwabe in prayer-request threads), with approve/snooze/dismiss UX mirroring `UnknownSenderTriageSection`.
+
+---
+
 ## Person merge: persist Apple-Contact aliases + offer SAM-group removal (2026-05-12)
 
 **What**: Merged persons now remember every Apple Contact identifier they've ever absorbed, and the merge sheet exposes the dual-CNContact case directly to the user.

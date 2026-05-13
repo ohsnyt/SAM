@@ -42,6 +42,10 @@ struct PersonDetailView: View {
     @State private var isEditingBadges = false
     @State private var customBadgeText = ""
     @State private var badgesBeforeEdit: Set<String> = []
+    @State private var isEditingSpheres = false
+    @State private var currentSpheres: [Sphere] = []
+    @State private var availableSpheres: [Sphere] = []
+    @State private var showingNewSphereSheet = false
     @State private var showingCorrectionSheet = false
     @State private var showingReferrerPicker = false
     @State private var recruitingStage: RecruitingStage?
@@ -210,6 +214,7 @@ struct PersonDetailView: View {
             productionRecords = (try? ProductionRepository.shared.fetchRecords(forPerson: person.id)) ?? []
             visibleInteractionCount = 3
             pendingEnrichments = enrichmentCoordinator.pendingEnrichments(for: person.id)
+            refreshSpheres()
         }
         .onReceive(NotificationCenter.default.publisher(for: .samUndoDidRestore)) { _ in
             loadNotes()
@@ -283,6 +288,19 @@ struct PersonDetailView: View {
             identifier: "person.merge-contact"
         ) {
             MergeContactSheet(sourcePerson: person)
+        }
+        .managedSheet(
+            isPresented: $showingNewSphereSheet,
+            priority: .userInitiated,
+            identifier: "person.new-sphere"
+        ) {
+            NewSphereSheet { newSphereID in
+                try? SphereRepository.shared.addMember(
+                    personID: person.id,
+                    sphereID: newSphereID
+                )
+                refreshSpheres()
+            }
         }
         .alert("Error", isPresented: $showingError) {
             Button("OK") { }
@@ -509,6 +527,11 @@ struct PersonDetailView: View {
 
                     // Role badges
                     roleBadgesView
+
+                    // Sphere chips (only when 2+ Spheres exist or already a member)
+                    if shouldShowSphereChips {
+                        sphereChipsView
+                    }
                 }
 
                 Spacer()
@@ -936,6 +959,153 @@ struct PersonDetailView: View {
         }
         try? modelContext.save()
         NotificationCenter.default.post(name: .samPersonDidChange, object: nil)
+    }
+
+    // MARK: - Sphere chips
+
+    /// Hide the chip row for users with only the bootstrap default Sphere,
+    /// where membership is automatic and chips would be visual noise. Shows
+    /// when 2+ Spheres exist (so Sphere membership is a real choice) or when
+    /// this person is in more than one Sphere already.
+    private var shouldShowSphereChips: Bool {
+        let total = (try? SphereRepository.shared.fetchAll().count) ?? 0
+        if total >= 2 { return true }
+        return currentSpheres.count >= 2
+    }
+
+    private var sphereChipsView: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                if currentSpheres.isEmpty && !isEditingSpheres {
+                    Text("Add to a sphere")
+                        .samFont(.subheadline)
+                        .foregroundStyle(.tertiary)
+                        .italic()
+                }
+
+                ForEach(currentSpheres, id: \.id) { sphere in
+                    if isEditingSpheres {
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.15)) {
+                                removeFromSphere(sphere)
+                            }
+                        } label: {
+                            sphereChipLabel(sphere, trailing: "xmark")
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        sphereChipLabel(sphere, trailing: nil)
+                    }
+                }
+
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        isEditingSpheres.toggle()
+                    }
+                } label: {
+                    Image(systemName: isEditingSpheres ? "checkmark.circle.fill" : "plus.circle")
+                        .samFont(.caption)
+                        .foregroundStyle(isEditingSpheres ? .green : .secondary)
+                }
+                .buttonStyle(.plain)
+                .help(isEditingSpheres ? "Done editing spheres" : "Add to a sphere")
+            }
+
+            if isEditingSpheres {
+                if !availableSpheres.isEmpty {
+                    FlowLayout(spacing: 6) {
+                        ForEach(availableSpheres, id: \.id) { sphere in
+                            Button {
+                                withAnimation(.easeInOut(duration: 0.15)) {
+                                    addToSphere(sphere)
+                                }
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "plus")
+                                        .font(.system(size: 8, weight: .bold))
+                                    Circle()
+                                        .fill(sphere.accentColor.color)
+                                        .frame(width: 6, height: 6)
+                                    Text(sphere.name)
+                                }
+                                .samFont(.caption)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(sphere.accentColor.color.opacity(0.08))
+                                .foregroundStyle(sphere.accentColor.color.opacity(0.7))
+                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+
+                Button {
+                    showingNewSphereSheet = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "plus")
+                            .font(.system(size: 8, weight: .bold))
+                        Text("New sphere…")
+                    }
+                    .samFont(.caption)
+                    .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.top, 2)
+    }
+
+    private func sphereChipLabel(_ sphere: Sphere, trailing: String?) -> some View {
+        HStack(spacing: 4) {
+            Circle()
+                .fill(sphere.accentColor.color)
+                .frame(width: 6, height: 6)
+            Text(sphere.name)
+            if let trailing {
+                Image(systemName: trailing)
+                    .font(.system(size: 8, weight: .bold))
+            }
+        }
+        .samFont(.caption)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(sphere.accentColor.color.opacity(0.15))
+        .foregroundStyle(sphere.accentColor.color)
+        .clipShape(RoundedRectangle(cornerRadius: 4))
+    }
+
+    private func refreshSpheres() {
+        let mine = (try? SphereRepository.shared.spheres(forPerson: person.id)) ?? []
+        let all = (try? SphereRepository.shared.fetchAll()) ?? []
+        let memberIDs = Set(mine.map(\.id))
+        currentSpheres = mine
+        availableSpheres = all.filter { !memberIDs.contains($0.id) }
+    }
+
+    private func addToSphere(_ sphere: Sphere) {
+        do {
+            _ = try SphereRepository.shared.addMember(
+                personID: person.id,
+                sphereID: sphere.id
+            )
+            refreshSpheres()
+        } catch {
+            logger.error("Failed to add person to sphere: \(error.localizedDescription)")
+        }
+    }
+
+    private func removeFromSphere(_ sphere: Sphere) {
+        do {
+            try SphereRepository.shared.removeMember(
+                personID: person.id,
+                sphereID: sphere.id
+            )
+            refreshSpheres()
+        } catch {
+            logger.error("Failed to remove person from sphere: \(error.localizedDescription)")
+        }
     }
 
     /// Record client pipeline transitions when role badges change.

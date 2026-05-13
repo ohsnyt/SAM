@@ -29,9 +29,15 @@ final class SphereRepository {
 
     private init() {}
 
+    /// Uses `container.mainContext` rather than a private `ModelContext` so
+    /// memberships created from PersonDetailView (which reads via `@Query`
+    /// on the mainContext) don't strand SamPerson references in a sibling
+    /// context. Cross-context relationships fault the next SwiftUI render
+    /// with "backing data was detached from a context without resolving
+    /// attribute faults" on properties like `roleBadges` or `familyReferences`.
     func configure(container: ModelContainer) {
         self.container = container
-        self.context = ModelContext(container)
+        self.context = container.mainContext
     }
 
     // MARK: - Sphere: Create
