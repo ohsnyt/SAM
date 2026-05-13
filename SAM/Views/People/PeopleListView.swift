@@ -192,9 +192,17 @@ struct PeopleListView: View {
                     && !person.hasMeaningfulSignal
                     && buckets.contains(person.noSignalBucket)
             }
-        } else {
-            // Default: hide non-active contacts AND no-signal noise
+        } else if searchText.isEmpty {
+            // Default: hide non-active contacts AND no-signal noise.
+            // Skipped when the user is searching — an explicit query means
+            // "find this person regardless of signal," so a freshly-imported
+            // contact with no evidence yet still appears in results.
             list = list.filter { ($0.lifecycleStatus == .active || $0.isMe) && ($0.hasMeaningfulSignal || $0.isMe) }
+        } else {
+            // Search active: only the no-signal hide is dropped; archived /
+            // DNC / deceased contacts are still hidden unless the user
+            // explicitly turns on those lifecycle filters.
+            list = list.filter { $0.lifecycleStatus == .active || $0.isMe }
         }
 
         // Special filters
