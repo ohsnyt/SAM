@@ -63,101 +63,40 @@ struct PostMeetingCaptureView: View {
 
     let payload: CapturePayload
     let onSave: () -> Void
+    @Bindable var coordinator: PostMeetingCaptureCoordinator
 
-    // MARK: - Mode
+    // MARK: - Type aliases for in-view shorthand
+    //
+    // The form's state types now live on the coordinator. Aliases keep
+    // the existing render code readable without `coordinator.` prefixes
+    // on every type reference.
 
-    private enum CaptureMode: String, CaseIterable {
-        case guided = "Guided"
-        case freeform = "Freeform"
-    }
+    typealias CaptureMode = PostMeetingCaptureCoordinator.CaptureMode
+    typealias OccurrenceDecision = PostMeetingCaptureCoordinator.OccurrenceDecision
+    typealias ActionItemEntry = PostMeetingCaptureCoordinator.ActionItemEntry
 
-    @State private var mode: CaptureMode = .guided
     private var hasFreeformEdits: Bool {
-        !discussionText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        || actionItemEntries.contains(where: { !$0.description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
-        || !followUpText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        || !lifeEventsText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !coordinator.discussionText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        || coordinator.actionItemEntries.contains(where: { !$0.description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+        || !coordinator.followUpText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        || !coordinator.lifeEventsText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    // MARK: - Guided State
+    // MARK: - Transient view-only state
+    //
+    // Polishing and dictation lifecycle are bound to the visible sheet,
+    // not the form's logical content — these stay as @State and reset
+    // on each presentation.
 
-    @State private var guidedStep: Int = 0
-    @State private var attendancePresent: Set<UUID> = []
-    @State private var extraAttendeeNames: [String] = []
-    @State private var callAnswered: Bool = true
-    @State private var occurrenceDecision: OccurrenceDecision = .happened
-
-    /// Whether this meeting actually took place. Defaults to "happened" (current behavior).
-    /// Non-"happened" choices short-circuit the capture flow — we record the status on the
-    /// linked evidence and close the sheet without creating a note.
-    enum OccurrenceDecision: String, CaseIterable, Identifiable, Hashable {
-        case happened
-        case rescheduled
-        case cancelled
-        case didNotHappen
-
-        var id: String { rawValue }
-
-        var label: String {
-            switch self {
-            case .happened:     return "Yes, it happened"
-            case .rescheduled:  return "Rescheduled"
-            case .cancelled:    return "Cancelled"
-            case .didNotHappen: return "Didn't happen"
-            }
-        }
-
-        var evidenceStatus: EvidenceReviewStatus {
-            switch self {
-            case .happened:     return .confirmed
-            case .rescheduled:  return .rescheduled
-            case .cancelled:    return .cancelled
-            case .didNotHappen: return .didNotHappen
-            }
-        }
-
-        var primaryButtonLabel: String {
-            switch self {
-            case .happened:     return "Save"
-            case .rescheduled:  return "Mark rescheduled"
-            case .cancelled:    return "Mark cancelled"
-            case .didNotHappen: return "Mark no-show"
-            }
-        }
-    }
-    @State private var mainOutcomeText = ""
-    @State private var talkingPointResponses: [String: String] = [:]  // point → response
-    @State private var actionItemResponses: [String: String] = [:]    // action → response
-    @State private var guidedActionItemsText = ""
-    @State private var guidedFollowUpText = ""
-    @State private var guidedLifeEventsText = ""
-    @State private var voicemailNoteText = ""
-
-    // MARK: - Freeform State
-
-    @State private var discussionText = ""
-    @State private var actionItemEntries: [ActionItemEntry] = [ActionItemEntry()]
-    @State private var followUpText = ""
-    @State private var lifeEventsText = ""
-
-    // MARK: - Shared State
-
-    @State private var isSaving = false
     @State private var isPolishing = false
-    @State private var errorMessage: String?
     @State private var activeDictationSection: DictationTarget?
     @State private var dictationService = DictationService.shared
-    @State private var accumulatedSegments: [String] = []
-    @State private var lastSegmentPeakLength = 0
+    @State private var dictationAccumulator = DictationService.Accumulator()
+    @State private var showDiscardConfirmation = false
 
     @Environment(\.dismiss) private var dismiss
 
     // MARK: - Types
-
-    struct ActionItemEntry: Identifiable {
-        let id = UUID()
-        var description: String = ""
-    }
 
     private enum DictationTarget: Equatable {
         // Freeform sections
@@ -238,8 +177,8 @@ struct PostMeetingCaptureView: View {
 
     private var currentStepIndex: Int {
         let steps = guidedSteps
-        guard guidedStep >= 0 && guidedStep < steps.count else { return 0 }
-        return guidedStep
+        guard coordinator.guidedStep >= 0 && coordinator.guidedStep < steps.count else { return 0 }
+        return coordinator.guidedStep
     }
 
     // MARK: - Body
@@ -251,7 +190,7 @@ struct PostMeetingCaptureView: View {
             header
             Divider()
 
-            if mode == .guided {
+            if coordinator.mode == .guided {
                 guidedContent
             } else {
                 freeformContent
@@ -264,13 +203,34 @@ struct PostMeetingCaptureView: View {
         .interactiveDismissDisabled(hasContent)
         .onAppear {
             FeatureAdoptionTracker.shared.recordUsage(.postMeetingCapture)
-            // Pre-check all attendees as present
-            attendancePresent = Set(payload.attendees.map(\.personID))
-            // Pre-populate unknown attendee names so the user can confirm/edit
-            if !payload.unknownAttendeeNames.isEmpty {
-                extraAttendeeNames = payload.unknownAttendeeNames
-            }
+            // Seeding (pre-checking attendees, copying unknown names) now
+            // happens in PostMeetingCaptureCoordinator.init, so it stays in
+            // sync with restoreFromDraft. The coordinator already reflects
+            // either a fresh seed or a restored draft by the time we mount.
         }
+        .onDisappear {
+            // Flush the latest debounced edits before the view tears down.
+            // ModalCoordinator-driven displacement, lock, or ⌘W can all
+            // unmount this view inside the debounce window; without this
+            // call the last ~1.5 s of typing would only live in memory.
+            coordinator.flushNow()
+        }
+        .alert(
+            "Discard these notes?",
+            isPresented: $showDiscardConfirmation
+        ) {
+            Button("Discard", role: .destructive) {
+                stopDictation()
+                coordinator.clearDraft()
+                dismiss()
+            }
+            Button("Keep editing", role: .cancel) {
+                showDiscardConfirmation = false
+            }
+        } message: {
+            Text("Your in-progress notes will be deleted. This can't be undone. To keep your work and close, use Close instead.")
+        }
+        .dismissOnLock(isPresented: $showDiscardConfirmation)
     }
 
     // MARK: - Header
@@ -305,14 +265,14 @@ struct PostMeetingCaptureView: View {
 
                 Spacer()
 
-                Picker("", selection: $mode) {
+                Picker("", selection: $coordinator.mode) {
                     ForEach(CaptureMode.allCases, id: \.self) { m in
                         Text(m.rawValue).tag(m)
                     }
                 }
                 .pickerStyle(.segmented)
                 .frame(width: 160)
-                .onChange(of: mode) { _, newMode in
+                .onChange(of: coordinator.mode) { _, newMode in
                     if newMode == .freeform {
                         mapGuidedToFreeform()
                     }
@@ -407,7 +367,7 @@ struct PostMeetingCaptureView: View {
             if payload.captureKind.isMeeting {
                 occurrenceDecisionPicker
 
-                if occurrenceDecision != .happened {
+                if coordinator.occurrenceDecision != .happened {
                     occurrenceExplanation
                 } else {
                     attendanceChecklist
@@ -425,7 +385,7 @@ struct PostMeetingCaptureView: View {
             Text("Did this meeting happen?")
                 .samFont(.subheadline)
                 .foregroundStyle(.secondary)
-            Picker("Occurrence", selection: $occurrenceDecision) {
+            Picker("Occurrence", selection: $coordinator.occurrenceDecision) {
                 ForEach(OccurrenceDecision.allCases) { decision in
                     Text(decision.label).tag(decision)
                 }
@@ -440,7 +400,7 @@ struct PostMeetingCaptureView: View {
     private var occurrenceExplanation: some View {
         VStack(alignment: .leading, spacing: 8) {
             let message: String = {
-                switch occurrenceDecision {
+                switch coordinator.occurrenceDecision {
                 case .rescheduled:
                     return "Got it. SAM won't count this as a completed meeting. If the new time is on your calendar, SAM will prompt you again after it ends."
                 case .cancelled:
@@ -465,16 +425,16 @@ struct PostMeetingCaptureView: View {
         // Checklist of attendees
         ForEach(payload.attendees) { attendee in
                     Button {
-                        if attendancePresent.contains(attendee.personID) {
-                            attendancePresent.remove(attendee.personID)
+                        if coordinator.attendancePresent.contains(attendee.personID) {
+                            coordinator.attendancePresent.remove(attendee.personID)
                         } else {
-                            attendancePresent.insert(attendee.personID)
+                            coordinator.attendancePresent.insert(attendee.personID)
                         }
                     } label: {
                         HStack(spacing: 8) {
-                            Image(systemName: attendancePresent.contains(attendee.personID)
+                            Image(systemName: coordinator.attendancePresent.contains(attendee.personID)
                                   ? "checkmark.circle.fill" : "circle")
-                                .foregroundStyle(attendancePresent.contains(attendee.personID) ? .green : .secondary)
+                                .foregroundStyle(coordinator.attendancePresent.contains(attendee.personID) ? .green : .secondary)
                             Text(attendee.displayName)
                                 .samFont(.body)
                             ForEach(attendee.roleBadges, id: \.self) { badge in
@@ -494,13 +454,13 @@ struct PostMeetingCaptureView: View {
 
                 // Add extra attendee
                 HStack(spacing: 8) {
-                    ForEach(extraAttendeeNames.indices, id: \.self) { i in
+                    ForEach(coordinator.extraAttendeeNames.indices, id: \.self) { i in
                         HStack(spacing: 4) {
-                            TextField("Name", text: $extraAttendeeNames[i])
+                            TextField("Name", text: $coordinator.extraAttendeeNames[i])
                                 .textFieldStyle(.plain)
                                 .samFont(.body)
                             Button {
-                                extraAttendeeNames.remove(at: i)
+                                coordinator.extraAttendeeNames.remove(at: i)
                             } label: {
                                 Image(systemName: "xmark.circle.fill")
                                     .foregroundStyle(.secondary)
@@ -517,7 +477,7 @@ struct PostMeetingCaptureView: View {
                 }
 
                 Button {
-                    extraAttendeeNames.append("")
+                    coordinator.extraAttendeeNames.append("")
                 } label: {
                     Label("Add attendee", systemImage: "plus.circle")
                         .samFont(.caption)
@@ -533,7 +493,7 @@ struct PostMeetingCaptureView: View {
                 Text(primary.displayName)
                     .samFont(.body)
             }
-            Picker("", selection: $callAnswered) {
+            Picker("", selection: $coordinator.callAnswered) {
                 Text("Answered").tag(true)
                 Text("No answer").tag(false)
             }
@@ -549,19 +509,19 @@ struct PostMeetingCaptureView: View {
             if payload.captureKind.isMeeting {
                 stepHeader("text.bubble", title: "What was the main outcome or decision?")
             } else {
-                if callAnswered {
+                if coordinator.callAnswered {
                     stepHeader("text.bubble", title: "What did you discuss?")
                 } else {
                     stepHeader("text.bubble", title: "Left a voicemail? Any notes?")
                 }
             }
 
-            if !payload.captureKind.isMeeting && !callAnswered {
+            if !payload.captureKind.isMeeting && !coordinator.callAnswered {
                 // Voicemail note for unanswered calls
-                captureTextEditor(text: $voicemailNoteText, placeholder: "Optional note...", dictationTarget: .voicemailNote, minHeight: 60)
+                captureTextEditor(text: $coordinator.voicemailNoteText, placeholder: "Optional note...", dictationTarget: .voicemailNote, minHeight: 60)
             } else {
                 // Main discussion/outcome
-                captureTextEditor(text: $mainOutcomeText, placeholder: "Key points, decisions, context...", dictationTarget: .mainOutcome, minHeight: 100)
+                captureTextEditor(text: $coordinator.mainOutcomeText, placeholder: "Key points, decisions, context...", dictationTarget: .mainOutcome, minHeight: 100)
             }
 
             // Contextual reminders from briefing
@@ -634,7 +594,7 @@ struct PostMeetingCaptureView: View {
             stepHeader("checklist", title: payload.captureKind.isMeeting ? "Any action items or next steps?" : "Any next steps?")
 
             captureTextEditor(
-                text: $guidedActionItemsText,
+                text: $coordinator.guidedActionItemsText,
                 placeholder: "List action items, one per line...",
                 dictationTarget: .guidedActionItems,
                 minHeight: 80
@@ -649,7 +609,7 @@ struct PostMeetingCaptureView: View {
             stepHeader("arrow.turn.up.right", title: "Any commitments or deadlines to track?")
 
             captureTextEditor(
-                text: $guidedFollowUpText,
+                text: $coordinator.guidedFollowUpText,
                 placeholder: "Follow-up commitments, deadlines...",
                 dictationTarget: .guidedFollowUp,
                 minHeight: 60
@@ -664,7 +624,7 @@ struct PostMeetingCaptureView: View {
             stepHeader("star", title: "Any personal milestones mentioned?")
 
             captureTextEditor(
-                text: $guidedLifeEventsText,
+                text: $coordinator.guidedLifeEventsText,
                 placeholder: "Birthdays, anniversaries, milestones...",
                 dictationTarget: .guidedLifeEvents,
                 minHeight: 60
@@ -684,7 +644,7 @@ struct PostMeetingCaptureView: View {
         HStack {
             if currentStepIndex > 0 {
                 Button {
-                    withAnimation(.easeInOut(duration: 0.2)) { guidedStep -= 1 }
+                    withAnimation(.easeInOut(duration: 0.2)) { coordinator.guidedStep -= 1 }
                 } label: {
                     Label("Back", systemImage: "chevron.left")
                         .samFont(.subheadline)
@@ -704,13 +664,13 @@ struct PostMeetingCaptureView: View {
 
             if currentStepIndex < steps.count - 1 {
                 Button("Skip") {
-                    withAnimation(.easeInOut(duration: 0.2)) { guidedStep += 1 }
+                    withAnimation(.easeInOut(duration: 0.2)) { coordinator.guidedStep += 1 }
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
 
                 Button {
-                    withAnimation(.easeInOut(duration: 0.2)) { guidedStep += 1 }
+                    withAnimation(.easeInOut(duration: 0.2)) { coordinator.guidedStep += 1 }
                 } label: {
                     Label("Next", systemImage: "chevron.right")
                 }
@@ -741,7 +701,7 @@ struct PostMeetingCaptureView: View {
             sectionHeader("Discussion", icon: "text.bubble", dictationTarget: .discussion)
 
             captureTextEditor(
-                text: $discussionText,
+                text: $coordinator.discussionText,
                 placeholder: payload.talkingPoints.isEmpty
                     ? "Key discussion points, decisions made, important context..."
                     : "Topics: \(payload.talkingPoints.prefix(3).joined(separator: ", "))...",
@@ -762,7 +722,7 @@ struct PostMeetingCaptureView: View {
                 Spacer()
             }
 
-            ForEach($actionItemEntries) { $item in
+            ForEach($coordinator.actionItemEntries) { $item in
                 HStack(spacing: 8) {
                     Image(systemName: "circle")
                         .samFont(.caption)
@@ -779,7 +739,7 @@ struct PostMeetingCaptureView: View {
             }
 
             Button {
-                actionItemEntries.append(ActionItemEntry())
+                coordinator.actionItemEntries.append(ActionItemEntry())
             } label: {
                 Label("Add Action Item", systemImage: "plus.circle")
                     .samFont(.caption)
@@ -794,7 +754,7 @@ struct PostMeetingCaptureView: View {
             sectionHeader("Follow-Up", icon: "arrow.turn.up.right", dictationTarget: .followUp)
 
             captureTextEditor(
-                text: $followUpText,
+                text: $coordinator.followUpText,
                 placeholder: "Commitments made, next steps, deadlines...",
                 dictationTarget: .followUp,
                 minHeight: 60
@@ -807,7 +767,7 @@ struct PostMeetingCaptureView: View {
             sectionHeader("Life Events", icon: "star", dictationTarget: .lifeEvents)
 
             captureTextEditor(
-                text: $lifeEventsText,
+                text: $coordinator.lifeEventsText,
                 placeholder: "Birthdays, anniversaries, milestones mentioned...",
                 dictationTarget: .lifeEvents,
                 minHeight: 40
@@ -915,7 +875,7 @@ struct PostMeetingCaptureView: View {
                         .samFont(.caption)
                         .foregroundStyle(.secondary)
                 }
-            } else if let error = errorMessage {
+            } else if let error = coordinator.errorMessage {
                 Text(error)
                     .samFont(.caption)
                     .foregroundStyle(.red)
@@ -923,8 +883,21 @@ struct PostMeetingCaptureView: View {
 
             Spacer()
 
-            Button("Cancel") {
+            // "Discard" deletes the draft and closes — destructive, gated
+            // by a confirmation dialog because it can't be undone.
+            Button("Discard") {
+                showDiscardConfirmation = true
+            }
+            .buttonStyle(.bordered)
+            .foregroundStyle(.red)
+            .help("Delete this draft and close. Your in-progress notes will be lost.")
+
+            // "Close" preserves the draft on disk. Sarah can resume from
+            // the Today restore banner later. ESC also routes here so
+            // accidental dismissal never destroys work.
+            Button("Close") {
                 stopDictation()
+                coordinator.flushNow()
                 dismiss()
             }
             .buttonStyle(.bordered)
@@ -935,7 +908,7 @@ struct PostMeetingCaptureView: View {
                     skipAndAdvance()
                 }
                 .buttonStyle(.bordered)
-                .disabled(isSaving || isPolishing)
+                .disabled(coordinator.isSaving || isPolishing)
                 .help("Leave this meeting on the review queue and move to the next one.")
             }
 
@@ -944,7 +917,7 @@ struct PostMeetingCaptureView: View {
             }
             .buttonStyle(.borderedProminent)
             .keyboardShortcut("s", modifiers: .command)
-            .disabled(isSaving || isPolishing || !canSave)
+            .disabled(coordinator.isSaving || isPolishing || !canSave)
         }
         .padding()
     }
@@ -974,35 +947,35 @@ struct PostMeetingCaptureView: View {
     /// when the user has declared the meeting didn't happen normally.
     private var primaryActionLabel: String {
         guard payload.captureKind.isMeeting else { return "Save" }
-        return occurrenceDecision.primaryButtonLabel
+        return coordinator.occurrenceDecision.primaryButtonLabel
     }
 
     /// Whether the primary action is available. A non-happened occurrence decision is itself
     /// enough to save — we don't need any note content.
     private var canSave: Bool {
-        if payload.captureKind.isMeeting && occurrenceDecision != .happened {
+        if payload.captureKind.isMeeting && coordinator.occurrenceDecision != .happened {
             return true
         }
         return hasContent
     }
 
     private var hasContent: Bool {
-        if mode == .guided {
+        if coordinator.mode == .guided {
             // For unanswered calls, always allow save (status: no answer)
-            if !payload.captureKind.isMeeting && !callAnswered {
+            if !payload.captureKind.isMeeting && !coordinator.callAnswered {
                 return true
             }
-            return !mainOutcomeText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                || !guidedActionItemsText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                || !guidedFollowUpText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                || !guidedLifeEventsText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                || !voicemailNoteText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                || talkingPointResponses.values.contains(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
-                || actionItemResponses.values.contains(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+            return !coordinator.mainOutcomeText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                || !coordinator.guidedActionItemsText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                || !coordinator.guidedFollowUpText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                || !coordinator.guidedLifeEventsText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                || !coordinator.voicemailNoteText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                || coordinator.talkingPointResponses.values.contains(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+                || coordinator.actionItemResponses.values.contains(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
         } else {
-            return !discussionText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                || actionItemEntries.contains(where: { !$0.description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
-                || !followUpText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            return !coordinator.discussionText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                || coordinator.actionItemEntries.contains(where: { !$0.description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+                || !coordinator.followUpText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
     }
 
@@ -1012,64 +985,65 @@ struct PostMeetingCaptureView: View {
         // Map guided Q&A answers into freeform section fields
         var discussion: [String] = []
 
-        let outcome = mainOutcomeText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let outcome = coordinator.mainOutcomeText.trimmingCharacters(in: .whitespacesAndNewlines)
         if !outcome.isEmpty {
             discussion.append(outcome)
         }
 
         // Talking point responses
         for point in payload.talkingPoints {
-            if let resp = talkingPointResponses[point]?.trimmingCharacters(in: .whitespacesAndNewlines), !resp.isEmpty {
+            if let resp = coordinator.talkingPointResponses[point]?.trimmingCharacters(in: .whitespacesAndNewlines), !resp.isEmpty {
                 discussion.append("\(point): \(resp)")
             }
         }
 
         // Action point responses
         for action in payload.openActionItems {
-            if let resp = actionItemResponses[action]?.trimmingCharacters(in: .whitespacesAndNewlines), !resp.isEmpty {
+            if let resp = coordinator.actionItemResponses[action]?.trimmingCharacters(in: .whitespacesAndNewlines), !resp.isEmpty {
                 discussion.append("\(action): \(resp)")
             }
         }
 
         if !discussion.isEmpty {
-            discussionText = discussion.joined(separator: "\n\n")
+            coordinator.discussionText = discussion.joined(separator: "\n\n")
         }
 
         // Action items
-        let guidedActions = guidedActionItemsText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let guidedActions = coordinator.guidedActionItemsText.trimmingCharacters(in: .whitespacesAndNewlines)
         if !guidedActions.isEmpty {
             let lines = guidedActions.components(separatedBy: .newlines).filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-            actionItemEntries = lines.map { line in
+            coordinator.actionItemEntries = lines.map { line in
                 var entry = ActionItemEntry()
                 entry.description = line.trimmingCharacters(in: .whitespacesAndNewlines)
                     .replacingOccurrences(of: "^[\\-•] ?", with: "", options: .regularExpression)
                 return entry
             }
-            if actionItemEntries.isEmpty { actionItemEntries = [ActionItemEntry()] }
+            if coordinator.actionItemEntries.isEmpty { coordinator.actionItemEntries = [ActionItemEntry()] }
         }
 
         // Follow-up
-        let guidedFU = guidedFollowUpText.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !guidedFU.isEmpty { followUpText = guidedFU }
+        let guidedFU = coordinator.guidedFollowUpText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !guidedFU.isEmpty { coordinator.followUpText = guidedFU }
 
         // Life events
-        let guidedLE = guidedLifeEventsText.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !guidedLE.isEmpty { lifeEventsText = guidedLE }
+        let guidedLE = coordinator.guidedLifeEventsText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !guidedLE.isEmpty { coordinator.lifeEventsText = guidedLE }
     }
 
     // MARK: - Save
 
     private func save() {
-        isSaving = true
-        errorMessage = nil
+        coordinator.isSaving = true
+        coordinator.errorMessage = nil
 
         // Short-circuit: user declared the meeting didn't occur normally.
         // Mark the evidence so velocity/history consumers skip it, refresh the consolidated
         // review outcome, and close the sheet without creating a note.
-        if payload.captureKind.isMeeting && occurrenceDecision != .happened {
-            markEvidenceReviewStatus(occurrenceDecision.evidenceStatus)
+        if payload.captureKind.isMeeting && coordinator.occurrenceDecision != .happened {
+            markEvidenceReviewStatus(coordinator.occurrenceDecision.evidenceStatus)
             DailyBriefingCoordinator.shared.refreshPendingReviewsOutcome()
-            isSaving = false
+            coordinator.isSaving = false
+            coordinator.clearDraft()
             onSave()
             dismiss()
             advanceWalkerIfNeeded()
@@ -1077,7 +1051,7 @@ struct PostMeetingCaptureView: View {
         }
 
         let content: String
-        if mode == .guided {
+        if coordinator.mode == .guided {
             content = composeGuidedContent()
         } else {
             content = composeFreeformContent()
@@ -1086,7 +1060,7 @@ struct PostMeetingCaptureView: View {
         // Determine linked people IDs
         let linkedIDs: [UUID]
         if payload.captureKind.isMeeting {
-            linkedIDs = Array(attendancePresent)
+            linkedIDs = Array(coordinator.attendancePresent)
         } else {
             if let primary = payload.attendees.first {
                 linkedIDs = [primary.personID]
@@ -1114,13 +1088,19 @@ struct PostMeetingCaptureView: View {
                 DailyBriefingCoordinator.shared.refreshPendingReviewsOutcome()
             }
 
-            isSaving = false
+            coordinator.isSaving = false
+            // Note succeeded — only now is it safe to discard the draft.
+            // A failed save below leaves the draft intact so Sarah can retry.
+            coordinator.clearDraft()
             onSave()
             dismiss()
             advanceWalkerIfNeeded()
         } catch {
-            errorMessage = "Failed to save: \(error.localizedDescription)"
-            isSaving = false
+            coordinator.errorMessage = "Failed to save: \(error.localizedDescription)"
+            coordinator.isSaving = false
+            // Make sure the latest in-memory edits are durably on disk so
+            // a retry from a re-opened sheet still has the work.
+            coordinator.flushNow()
             logger.error("Capture note save failed: \(error)")
         }
     }
@@ -1163,9 +1143,9 @@ struct PostMeetingCaptureView: View {
 
         // Attendance
         if payload.captureKind.isMeeting {
-            let present = payload.attendees.filter { attendancePresent.contains($0.personID) }.map(\.displayName)
-            let absent = payload.attendees.filter { !attendancePresent.contains($0.personID) }.map(\.displayName)
-            let extras = extraAttendeeNames.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            let present = payload.attendees.filter { coordinator.attendancePresent.contains($0.personID) }.map(\.displayName)
+            let absent = payload.attendees.filter { !coordinator.attendancePresent.contains($0.personID) }.map(\.displayName)
+            let extras = coordinator.extraAttendeeNames.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
             if !present.isEmpty || !extras.isEmpty {
                 parts.append("Attendees: \((present + extras).joined(separator: ", "))")
@@ -1173,9 +1153,9 @@ struct PostMeetingCaptureView: View {
             if !absent.isEmpty {
                 parts.append("Absent: \(absent.joined(separator: ", "))")
             }
-        } else if !callAnswered {
+        } else if !coordinator.callAnswered {
             parts.append("Status: No answer")
-            let vm = voicemailNoteText.trimmingCharacters(in: .whitespacesAndNewlines)
+            let vm = coordinator.voicemailNoteText.trimmingCharacters(in: .whitespacesAndNewlines)
             if !vm.isEmpty {
                 parts.append(vm)
             }
@@ -1186,17 +1166,17 @@ struct PostMeetingCaptureView: View {
 
         // Discussion
         var discussion: [String] = []
-        let outcome = mainOutcomeText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let outcome = coordinator.mainOutcomeText.trimmingCharacters(in: .whitespacesAndNewlines)
         if !outcome.isEmpty { discussion.append(outcome) }
 
         for point in payload.talkingPoints {
-            if let resp = talkingPointResponses[point]?.trimmingCharacters(in: .whitespacesAndNewlines), !resp.isEmpty {
+            if let resp = coordinator.talkingPointResponses[point]?.trimmingCharacters(in: .whitespacesAndNewlines), !resp.isEmpty {
                 discussion.append("\(point): \(resp)")
             }
         }
 
         for action in payload.openActionItems {
-            if let resp = actionItemResponses[action]?.trimmingCharacters(in: .whitespacesAndNewlines), !resp.isEmpty {
+            if let resp = coordinator.actionItemResponses[action]?.trimmingCharacters(in: .whitespacesAndNewlines), !resp.isEmpty {
                 discussion.append("[\(action)] \(resp)")
             }
         }
@@ -1208,7 +1188,7 @@ struct PostMeetingCaptureView: View {
         }
 
         // Action Items
-        let actions = guidedActionItemsText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let actions = coordinator.guidedActionItemsText.trimmingCharacters(in: .whitespacesAndNewlines)
         if !actions.isEmpty {
             parts.append("Action Items:")
             let lines = actions.components(separatedBy: .newlines).filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -1224,7 +1204,7 @@ struct PostMeetingCaptureView: View {
         }
 
         // Follow-Up
-        let fu = guidedFollowUpText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fu = coordinator.guidedFollowUpText.trimmingCharacters(in: .whitespacesAndNewlines)
         if !fu.isEmpty {
             parts.append("Follow-Up:")
             parts.append(fu)
@@ -1232,7 +1212,7 @@ struct PostMeetingCaptureView: View {
         }
 
         // Life Events
-        let le = guidedLifeEventsText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let le = coordinator.guidedLifeEventsText.trimmingCharacters(in: .whitespacesAndNewlines)
         if !le.isEmpty {
             parts.append("Life Events:")
             parts.append(le)
@@ -1258,9 +1238,9 @@ struct PostMeetingCaptureView: View {
 
         // Attendance for meetings
         if payload.captureKind.isMeeting {
-            let present = payload.attendees.filter { attendancePresent.contains($0.personID) }.map(\.displayName)
-            let absent = payload.attendees.filter { !attendancePresent.contains($0.personID) }.map(\.displayName)
-            let extras = extraAttendeeNames.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            let present = payload.attendees.filter { coordinator.attendancePresent.contains($0.personID) }.map(\.displayName)
+            let absent = payload.attendees.filter { !coordinator.attendancePresent.contains($0.personID) }.map(\.displayName)
+            let extras = coordinator.extraAttendeeNames.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
             if !present.isEmpty || !extras.isEmpty {
                 parts.append("Attendees: \((present + extras).joined(separator: ", "))")
@@ -1271,14 +1251,14 @@ struct PostMeetingCaptureView: View {
         }
         parts.append("")
 
-        let discussion = discussionText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let discussion = coordinator.discussionText.trimmingCharacters(in: .whitespacesAndNewlines)
         if !discussion.isEmpty {
             parts.append("Discussion:")
             parts.append(discussion)
             parts.append("")
         }
 
-        let validActions = actionItemEntries.map(\.description).filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        let validActions = coordinator.actionItemEntries.map(\.description).filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         if !validActions.isEmpty {
             parts.append("Action Items:")
             for action in validActions {
@@ -1287,14 +1267,14 @@ struct PostMeetingCaptureView: View {
             parts.append("")
         }
 
-        let fu = followUpText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fu = coordinator.followUpText.trimmingCharacters(in: .whitespacesAndNewlines)
         if !fu.isEmpty {
             parts.append("Follow-Up:")
             parts.append(fu)
             parts.append("")
         }
 
-        let le = lifeEventsText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let le = coordinator.lifeEventsText.trimmingCharacters(in: .whitespacesAndNewlines)
         if !le.isEmpty {
             parts.append("Life Events:")
             parts.append(le)
@@ -1307,15 +1287,15 @@ struct PostMeetingCaptureView: View {
 
     private func bindingForTalkingPoint(_ point: String) -> Binding<String> {
         Binding(
-            get: { talkingPointResponses[point] ?? "" },
-            set: { talkingPointResponses[point] = $0 }
+            get: { coordinator.talkingPointResponses[point] ?? "" },
+            set: { coordinator.talkingPointResponses[point] = $0 }
         )
     }
 
     private func bindingForActionPoint(_ action: String) -> Binding<String> {
         Binding(
-            get: { actionItemResponses[action] ?? "" },
-            set: { actionItemResponses[action] = $0 }
+            get: { coordinator.actionItemResponses[action] ?? "" },
+            set: { coordinator.actionItemResponses[action] = $0 }
         )
     }
 
@@ -1328,37 +1308,18 @@ struct PostMeetingCaptureView: View {
 
         let availability = dictationService.checkAvailability()
         guard availability == .available else {
-            errorMessage = "Speech recognition is not available"
+            coordinator.errorMessage = "Speech recognition is not available"
             return
         }
 
         activeDictationSection = target
-        accumulatedSegments = []
-        lastSegmentPeakLength = 0
-
-        let existingText = currentText(for: target).trimmingCharacters(in: .whitespacesAndNewlines)
-        if !existingText.isEmpty {
-            accumulatedSegments.append(existingText)
-        }
+        dictationAccumulator.reset(initialText: currentText(for: target))
 
         Task {
             do {
                 let stream = try await dictationService.startRecognition()
                 for await result in stream {
-                    let currentText = result.text
-
-                    if currentText.count < lastSegmentPeakLength / 2 && lastSegmentPeakLength > 5 {
-                        let previousSegment = extractCurrentSegment(for: target)
-                        if !previousSegment.isEmpty {
-                            accumulatedSegments.append(previousSegment)
-                        }
-                        lastSegmentPeakLength = 0
-                    }
-
-                    lastSegmentPeakLength = max(lastSegmentPeakLength, currentText.count)
-
-                    let prefix = accumulatedSegments.joined(separator: " ")
-                    let fullText = prefix.isEmpty ? currentText : "\(prefix) \(currentText)"
+                    let fullText = dictationAccumulator.process(result)
                     setCurrentText(fullText, for: target)
 
                     if result.isFinal {
@@ -1372,7 +1333,7 @@ struct PostMeetingCaptureView: View {
                     polishDictatedText(for: target)
                 }
             } catch {
-                errorMessage = error.localizedDescription
+                coordinator.errorMessage = error.localizedDescription
                 activeDictationSection = nil
             }
         }
@@ -1406,43 +1367,34 @@ struct PostMeetingCaptureView: View {
 
     private func currentText(for target: DictationTarget) -> String {
         switch target {
-        case .discussion: return discussionText
-        case .followUp: return followUpText
-        case .lifeEvents: return lifeEventsText
-        case .mainOutcome: return mainOutcomeText
-        case .guidedActionItems: return guidedActionItemsText
-        case .guidedFollowUp: return guidedFollowUpText
-        case .guidedLifeEvents: return guidedLifeEventsText
-        case .voicemailNote: return voicemailNoteText
-        case .talkingPoint(let point): return talkingPointResponses[point] ?? ""
-        case .actionPoint(let action): return actionItemResponses[action] ?? ""
+        case .discussion: return coordinator.discussionText
+        case .followUp: return coordinator.followUpText
+        case .lifeEvents: return coordinator.lifeEventsText
+        case .mainOutcome: return coordinator.mainOutcomeText
+        case .guidedActionItems: return coordinator.guidedActionItemsText
+        case .guidedFollowUp: return coordinator.guidedFollowUpText
+        case .guidedLifeEvents: return coordinator.guidedLifeEventsText
+        case .voicemailNote: return coordinator.voicemailNoteText
+        case .talkingPoint(let point): return coordinator.talkingPointResponses[point] ?? ""
+        case .actionPoint(let action): return coordinator.actionItemResponses[action] ?? ""
         }
     }
 
     private func setCurrentText(_ text: String, for target: DictationTarget) {
         switch target {
-        case .discussion: discussionText = text
-        case .followUp: followUpText = text
-        case .lifeEvents: lifeEventsText = text
-        case .mainOutcome: mainOutcomeText = text
-        case .guidedActionItems: guidedActionItemsText = text
-        case .guidedFollowUp: guidedFollowUpText = text
-        case .guidedLifeEvents: guidedLifeEventsText = text
-        case .voicemailNote: voicemailNoteText = text
-        case .talkingPoint(let point): talkingPointResponses[point] = text
-        case .actionPoint(let action): actionItemResponses[action] = text
+        case .discussion: coordinator.discussionText = text
+        case .followUp: coordinator.followUpText = text
+        case .lifeEvents: coordinator.lifeEventsText = text
+        case .mainOutcome: coordinator.mainOutcomeText = text
+        case .guidedActionItems: coordinator.guidedActionItemsText = text
+        case .guidedFollowUp: coordinator.guidedFollowUpText = text
+        case .guidedLifeEvents: coordinator.guidedLifeEventsText = text
+        case .voicemailNote: coordinator.voicemailNoteText = text
+        case .talkingPoint(let point): coordinator.talkingPointResponses[point] = text
+        case .actionPoint(let action): coordinator.actionItemResponses[action] = text
         }
     }
 
-    private func extractCurrentSegment(for target: DictationTarget) -> String {
-        let prefix = accumulatedSegments.joined(separator: " ")
-        let full = currentText(for: target).trimmingCharacters(in: .whitespacesAndNewlines)
-        if prefix.isEmpty { return full }
-        if full.hasPrefix(prefix) {
-            return String(full.dropFirst(prefix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        return full
-    }
 }
 
 // MARK: - Safe Array Subscript

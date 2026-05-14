@@ -134,6 +134,22 @@ final class ModalCoordinator {
         let priority: Priority
         let present: () -> Void
         let dismissActive: () -> Void
+        /// Optional probe into the active sheet's coordinator. When this
+        /// returns `true`, the soft-displacement policy keeps the active
+        /// sheet on screen and queues incoming `.replaceLowerPriority`
+        /// requests instead of bumping it. Only `.critical` priority can
+        /// override the block — errors and unrecoverable-state prompts
+        /// must always reach the user. Used to prevent autonomous
+        /// coaching/briefing sheets from blowing away a form Sarah is
+        /// actively typing into.
+        let hasUserContentProvider: (() -> Bool)?
+        /// Optional gate checked at dequeue time. When this returns
+        /// `false`, the entry is dropped from the queue without
+        /// presenting. Used to prevent stale background prompts (an
+        /// evening briefing that's now 4 hours old, a post-meeting
+        /// capture for a meeting that ended at lunch) from cascading out
+        /// of the queue when Sarah finally finishes her current work.
+        let isStillRelevant: (() -> Bool)?
     }
 
     /// The single modal currently presenting (or about to). `nil` means the
@@ -216,7 +232,9 @@ final class ModalCoordinator {
         priority: Priority,
         policy: ConflictPolicy = .queue,
         present: @escaping () -> Void,
-        dismissActive: @escaping () -> Void
+        dismissActive: @escaping () -> Void,
+        hasUserContentProvider: (() -> Bool)? = nil,
+        isStillRelevant: (() -> Bool)? = nil
     ) -> PresentationToken {
         let id = UUID()
         let entry = PresentationEntry(
@@ -224,7 +242,9 @@ final class ModalCoordinator {
             identifier: identifier,
             priority: priority,
             present: present,
-            dismissActive: dismissActive
+            dismissActive: dismissActive,
+            hasUserContentProvider: hasUserContentProvider,
+            isStillRelevant: isStillRelevant
         )
         let token = makeToken(id: id)
 
@@ -250,6 +270,18 @@ final class ModalCoordinator {
 
         case .replaceLowerPriority:
             if let active = activeEntry, entry.priority > active.priority {
+                // Soft-displacement guard: if the active sheet's
+                // coordinator reports the user is typing real content,
+                // don't bump them — queue the incoming request instead.
+                // `.critical` priority overrides this (errors/lock must
+                // reach the user no matter what), but `.userInitiated`
+                // and below will wait.
+                if entry.priority < .critical,
+                   active.hasUserContentProvider?() == true {
+                    insertIntoQueueByPriority(entry)
+                    logger.debug("Soft-queued '\(identifier, privacy: .public)' behind active '\(active.identifier, privacy: .public)' (active has unsaved user content)")
+                    return token
+                }
                 logger.debug("Replacing '\(active.identifier, privacy: .public)' with '\(identifier, privacy: .public)' (priority \(entry.priority.rawValue) > \(active.priority.rawValue))")
                 // Push the displaced entry back to the head of the queue so
                 // it re-presents when the new entry dismisses. Detach
@@ -309,11 +341,24 @@ final class ModalCoordinator {
     }
 
     private func advanceQueue() {
-        guard activeEntry == nil, let next = pendingQueue.first else { return }
-        pendingQueue.removeFirst()
-        activeEntry = next
-        logger.debug("Advancing queue: presenting '\(next.identifier, privacy: .public)'")
-        next.present()
+        guard activeEntry == nil else { return }
+        // Skip entries whose relevance gate now returns false. A queued
+        // post-meeting prompt for a meeting that ended hours ago, or an
+        // evening briefing that's already morning, has no business
+        // surfacing the moment Sarah finishes the current sheet. The
+        // gate is opt-in; entries without one are always considered
+        // relevant.
+        while let next = pendingQueue.first {
+            pendingQueue.removeFirst()
+            if let stillRelevant = next.isStillRelevant, !stillRelevant() {
+                logger.debug("Dropping stale queued '\(next.identifier, privacy: .public)' on dequeue")
+                continue
+            }
+            activeEntry = next
+            logger.debug("Advancing queue: presenting '\(next.identifier, privacy: .public)'")
+            next.present()
+            return
+        }
     }
 
     // MARK: - Lock Transitions
@@ -403,6 +448,21 @@ final class ModalCoordinator {
         // will re-register themselves when their views reappear after unlock.
         entries.removeAll()
     }
+
+    // MARK: - Test Support
+
+    #if DEBUG
+    /// Wipes active + queued + lock-snapshot state. Test-only; production
+    /// code must go through `requestPresentation` and token release so the
+    /// arbiter's logging and state machine stay coherent.
+    func resetForTesting() {
+        activeEntry = nil
+        pendingQueue.removeAll()
+        pendingManagedRestore = nil
+        entries.removeAll()
+        pendingRestores.removeAll()
+    }
+    #endif
 
     private func restorePending() {
         guard !pendingRestores.isEmpty else { return }

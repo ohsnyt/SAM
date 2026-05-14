@@ -87,6 +87,7 @@ enum SAMSchema {
         OutcomeSubItem.self,                           // One topic inside an OutcomeBundle
         OutcomeDismissalRecord.self,                   // Survives the v34→bundle wipe to preserve user skips
         WeeklyBundleRating.self,                       // P9: weekly user rating of a bundle's coaching quality
+        FormDraft.self,                                // Phase 1 (sheet tear-down fix): per-form draft snapshots
     ]
 }
 

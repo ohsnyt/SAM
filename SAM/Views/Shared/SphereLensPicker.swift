@@ -59,7 +59,11 @@ struct SphereLensPicker: View {
             .onReceive(NotificationCenter.default.publisher(for: .samSphereDidChange)) { _ in
                 reloadSpheres()
             }
-            .sheet(isPresented: $showingManagement) {
+            .managedSheet(
+                isPresented: $showingManagement,
+                priority: .userInitiated,
+                identifier: "sphere-lens.management"
+            ) {
                 SpheresManagementSheet()
             }
         }

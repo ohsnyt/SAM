@@ -110,6 +110,24 @@ final class RetentionService {
             }
             guard let path = session.audioFilePath else { continue }
 
+            // Compliance gate: if a post-meeting capture for the same
+            // meeting is still in flight, defer purge. The user hasn't
+            // confirmed the derived outputs for that meeting yet, so
+            // destroying the source material under her would violate
+            // the retention rule that drives this service. The draft's
+            // own 7-day TTL ensures audio still gets purged eventually
+            // even if Sarah never finishes the capture.
+            if let evidenceID = await evidenceIDForSession(session, context: context),
+               await MainActor.run(body: {
+                   DraftPersistenceService.shared.hasUnfinishedDraft(
+                       kind: .postMeetingCapture,
+                       subjectID: evidenceID
+                   )
+               }) {
+                logger.info("Retention deferring audio purge for session \(session.id.uuidString) — unfinished post-meeting capture for evidence \(evidenceID)")
+                continue
+            }
+
             let url = appSupport.appendingPathComponent(path)
             let size: Int64 = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64) ?? 0
 
@@ -141,6 +159,24 @@ final class RetentionService {
 
         logger.notice("🗑️ Retention pass complete — purged \(purgedCount) audio file(s), freed \(bytesFreed) bytes")
         return (purgedCount, bytesFreed)
+    }
+
+    /// Resolves the `SamEvidenceItem.id` for a TranscriptSession, when
+    /// the session was recorded against a calendar event. Returns nil
+    /// for ad-hoc sessions with no calendar linkage. Used by the
+    /// retention gate to find unfinished post-meeting captures keyed
+    /// by the same evidence.
+    private func evidenceIDForSession(
+        _ session: TranscriptSession,
+        context: ModelContext
+    ) async -> UUID? {
+        guard let calendarEventID = session.calendarEventID,
+              !calendarEventID.isEmpty else { return nil }
+        let sourceUID = "eventkit:\(calendarEventID)"
+        let descriptor = FetchDescriptor<SamEvidenceItem>(
+            predicate: #Predicate { $0.sourceUID == sourceUID }
+        )
+        return (try? context.fetch(descriptor).first)?.id
     }
 
     /// Sign off on a session. Sets `signedOffAt` and saves. The audio

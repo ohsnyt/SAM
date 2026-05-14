@@ -24,6 +24,12 @@ struct AppShellView: View {
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var capturePayload: CapturePayload?
     @State private var impromptuReviewPayload: ImpromptuReviewPayload?
+    /// Per-meeting capture coordinators, keyed by `PostMeetingCaptureCoordinator.resolveSubjectID(for:)`.
+    /// Lazily created on first presentation and reused across re-presentations of the
+    /// same meeting so the form survives sheet displacement. Coordinators self-evict
+    /// after a successful submit; otherwise they persist for the lifetime of the
+    /// process (draft state lives on disk via FormDraft regardless).
+    @State private var captureCoordinators: [UUID: PostMeetingCaptureCoordinator] = [:]
     @State private var showCommandPalette = false
     @State private var introCoordinator = IntroSequenceCoordinator.shared
     @State private var noteAnalysisCoordinator = NoteAnalysisCoordinator.shared
@@ -89,11 +95,25 @@ struct AppShellView: View {
         .managedSheet(
             item: $capturePayload,
             priority: .opportunistic,
-            identifier: "post-meeting-capture"
+            identifier: "post-meeting-capture",
+            hasUserContentProvider: {
+                // Block displacement only while Sarah is actively typing.
+                // Idle decay inside the coordinator relaxes the block after
+                // ~15 min so background sheets can eventually surface; the
+                // FormDraft on disk keeps the work safe regardless.
+                guard let payload = capturePayload else { return false }
+                let subjectID = PostMeetingCaptureCoordinator.resolveSubjectID(for: payload)
+                return captureCoordinators[subjectID]?.hasUserContentForDisplacement == true
+            }
         ) { payload in
             PostMeetingCaptureView(
                 payload: payload,
-                onSave: {}
+                onSave: { [subjectID = PostMeetingCaptureCoordinator.resolveSubjectID(for: payload)] in
+                    // Coordinator is one-shot per submit: free its slot so a
+                    // future capture for the same meeting starts fresh.
+                    captureCoordinators.removeValue(forKey: subjectID)
+                },
+                coordinator: captureCoordinator(for: payload)
             )
         }
         .managedSheet(
@@ -238,6 +258,24 @@ struct AppShellView: View {
         }
         .pickerStyle(.segmented)
         .frame(width: 220)
+    }
+
+    // MARK: - Post-meeting capture coordinator lookup
+
+    /// Returns a `PostMeetingCaptureCoordinator` for the payload, creating
+    /// one on the fly if this is the first presentation for this meeting.
+    /// Returning the same instance across re-presentations is what lets a
+    /// displaced capture sheet come back with all of Sarah's in-progress
+    /// edits intact — the form lives on the coordinator, not in the view.
+    private func captureCoordinator(for payload: CapturePayload) -> PostMeetingCaptureCoordinator {
+        let subjectID = PostMeetingCaptureCoordinator.resolveSubjectID(for: payload)
+        if let existing = captureCoordinators[subjectID] {
+            existing.updatePayload(payload)
+            return existing
+        }
+        let new = PostMeetingCaptureCoordinator(payload: payload)
+        captureCoordinators[subjectID] = new
+        return new
     }
 
     // MARK: - Sidebar

@@ -268,18 +268,95 @@ If background AI work is in flight (outcome generation, strategic digest, role d
 
 ---
 
-## 8. Modal Arbitration (Sibling-Sheet Collision Prevention)
+## 8. Modal Arbitration & Work Loss Prevention
 
-macOS allows only **one sheet per window** at a time. When two root-level sheets bind on the same parent (e.g. a LinkedIn import sheet + a post-call capture sheet triggered by a phone call), the second one dismisses the first. SAM's `ModalCoordinator` arbitrates this.
+> **Core principle (non-negotiable):** Sarah should never lose typed work because a sheet, dialog, or modal was torn down before she finished. Every new sheet, every new background trigger, every new form must be evaluated against this rule.
 
-- **`ModalCoordinator`** (`@MainActor @Observable` singleton) arbitrates sheet presentation with priority + conflict policy. `request(priority:policy:identifier:)` returns a `PresentationToken` (UUID + release closure). The active token is the one bound to SwiftUI's `.sheet()` modifier.
+The history: Apr 24, Sarah was mid-LinkedIn-import when a post-call capture sheet appeared, SwiftUI tore down the import sheet, and she lost her place. That single incident drove this entire architecture. Three orthogonal problems had to be solved: sibling-sheet collision (only one sheet per window), in-progress form state survival (across displacement, lock, and crash), and timing of autonomous triggers (don't interrupt active work).
+
+### 8.1 Sibling-Sheet Collision (`ModalCoordinator`)
+
+macOS allows only **one sheet per window** at a time. When two root-level sheets bind on the same parent, the second one dismisses the first. The arbiter prevents that.
+
+- **`ModalCoordinator`** (`@MainActor @Observable` singleton) arbitrates sheet presentation with priority + conflict policy. `requestPresentation(...)` returns a `PresentationToken` (UUID + release closure). The active token is the one bound to SwiftUI's `.sheet()` modifier.
 - **Priority levels**: `.opportunistic` < `.coaching` < `.userInitiated` < `.critical`. Higher-priority requests can preempt with `.replaceLowerPriority`; same/lower priority queue or drop per `ConflictPolicy`.
 - **`.managedSheet(isPresented:priority:identifier:content:)`** — drop-in replacement for `.sheet(isPresented:)` that registers with `ModalCoordinator`. Also handles lock/unlock dismiss + restore for `.coaching`+ priorities; callers do **not** also apply `.restoreOnUnlock`. An item-binding variant exists too.
 - **Standalone Window scenes** — Long-running flows that must not be interrupted by background-coordinator sheets live in their own `Window` scenes with stable ids: `import-linkedin`, `import-facebook`, `import-substack`, `import-evernote`. Triggered via notifications (`samShowLinkedInImportWindow`, etc.) observed by `AppShellView`'s `SocialImportWindowObservers` ViewModifier, which calls `@Environment(\.openWindow)`.
 - **Nested sheets** — A `.sheet()` *inside* the content of another sheet does **not** suffer from sibling collision (SwiftUI stacks them correctly on macOS) and is intentionally left as plain `.sheet()` with `.restoreOnUnlock` (e.g., `LinkedInImportReviewSheet`, `EventEvaluationImportSheet`, `GoalEntryForm`, `TranscriptionReviewView`, `LifeEventCoachingView`, `CoachingSessionView`).
 - **Onboarding** uses `.managedSheet` with `.critical` priority so first-launch flow can never be preempted.
 
-**When adding a new root-level sheet**, use `.managedSheet` with the appropriate priority. Background-generated coaching sheets use `.coaching`. User-clicked-button sheets use `.userInitiated`. First-launch/unrecoverable flows use `.critical`.
+### 8.2 Soft-Displacement Guard
+
+Even with the arbiter, `.replaceLowerPriority` can yank an active sheet to make room for a higher-priority one. That's correct for empty sheets, wrong when Sarah is mid-typing.
+
+- `requestPresentation(...)` accepts `hasUserContentProvider: (() -> Bool)?`. When the active sheet's provider returns `true`, `.replaceLowerPriority` requests below `.critical` priority **automatically downgrade to `.queue`** — the autonomous sheet waits instead of bumping the user.
+- Only `.critical` priority (errors, lock) can break through the guard. The user must always see those.
+- Form coordinators (see 8.3) report `hasUserContent` based on whether real text/choices are present, gated by an **idle-decay window** (~15 min). Once idle, the guard relaxes so background work isn't blocked forever; the on-disk draft (see 8.3) keeps Sarah's work safe regardless.
+
+### 8.3 Form-State Survival (`FormDraft` + `DraftBackedFormCoordinator`)
+
+Multi-step forms (`PostMeetingCaptureView`, content drafts, enrichment review) must survive three independent failure modes: sheet-flip displacement, app crash, force-quit / power loss. The answer is **state lives in a coordinator, not in view `@State`**, and that state flushes to a disk-backed `FormDraft` row.
+
+- **`FormDraft` SwiftData model** — `(formKind, subjectID)` keyed JSON snapshot with `payloadVersion`, `displayTitle`, `displaySubtitle`, `updatedAt`. Schema-tolerant decode (`decodeIfPresent` everywhere) so older drafts survive field additions; total decode failure soft-fails and surfaces in the auto-discard notice rather than crashing.
+- **`DraftPersistenceService`** — `@MainActor` CRUD over `FormDraft` using `container.mainContext` (per the SwiftData single-context rule). Typed `save<Payload: Encodable>` and `load<Payload: Decodable>` for coordinator-backed forms; legacy field-map API (`saveLegacy` / `loadLegacy`) backs the older `DraftStore` so its 9 callers got crash recovery without API changes.
+- **`DraftBackedFormCoordinator` protocol** — `@MainActor @Observable` form owners adopt this to get the lifecycle: `scheduleDraftFlush()` (debounced 1.5s), `flushNow()`, `restoreFromDraft()`, `clearDraft()`, `submitAndClear { ... }` (only clears on submit success; re-flushes on throw). Conformers expose `hasUserContent` and optional `draftDisplayTitle` / `draftDisplaySubtitle`.
+- **Identity**: subject UUIDs are stable across re-presentations (e.g., `PostMeetingCaptureCoordinator` derives from `payload.evidenceID` or hashes `eventTitle|eventDate`). Reusing the same coordinator across displacements is what makes sheet-flip recovery transparent.
+- **Defensive restore**: coordinators filter out dangling references (UUIDs that no longer point at live entities) on restore and on payload refresh.
+
+### 8.4 Today Restore Banner & 7-Day Auto-Discard
+
+Drafts that survive a crash or are intentionally set aside need a path back. The Today view surfaces them.
+
+- **`UnfinishedDraftBanner`** — mounted at the top of `AwarenessView`. Lists up to 3 unfinished drafts with **Resume** (reconstructs the payload from `CapturePayloadSnapshot` and posts `.samOpenPostMeetingCapture`) and **Discard** (alert-confirmed delete). Refreshes on `.samFormDraftsDidChange`.
+- **7-day TTL**: `DraftPersistenceService.runAutoDiscardIfNeeded()` runs on app launch. Drafts older than 7 days are purged; the count accumulates in `UserDefaults` until Sarah acknowledges with the in-banner OK button.
+- **Plain-English notice copy** is mandatory: "X unfinished notes were cleared. SAM keeps unfinished work for one week. Older notes are cleared automatically so the Today view stays tidy." Never use jargon like "auto-discard" or "TTL" in the banner.
+
+### 8.5 Audio Retention Crosstalk
+
+The WFG retention rule destroys audio + verbatim transcripts after the user confirms derived outputs. An unfinished post-meeting capture is **derived output not yet confirmed**.
+
+- `RetentionService.runOnce(...)` consults `DraftPersistenceService.hasUnfinishedDraft(kind: .postMeetingCapture, subjectID:)` keyed by the meeting's `SamEvidenceItem.id` (resolved from `TranscriptSession.calendarEventID` via `sourceUID = "eventkit:<id>"`). If a draft exists, audio purge defers for that session.
+- The draft's own 7-day TTL eventually clears the draft, after which the next retention pass purges the audio. Sarah is never stranded; audio purge is just deferred, not blocked indefinitely.
+
+### 8.6 Dismiss Button Semantics
+
+Closing a sheet is never destructive by default.
+
+- **Close** (or pressing ESC) — flushes the latest edits and dismisses. Draft is preserved on disk; Today banner surfaces it.
+- **Discard** — alert-confirmed destructive action. Only this button deletes the draft.
+- **Save** (primary) — submits, then clears the draft on success. A failed submit re-flushes and leaves the draft intact for retry.
+
+These three actions must be visibly distinct. Never label a button "Cancel" when its real semantics are "Close, preserving work."
+
+### 8.7 Stale Queue Dequeue
+
+When Sarah finishes the active sheet, the queue advances. Stale entries (a briefing prompt from 4 hours ago, a post-meeting capture for a meeting that ended at lunch) shouldn't cascade out.
+
+- `requestPresentation` accepts `isStillRelevant: (() -> Bool)?`. The gate is checked at dequeue time; `false` drops the entry. Entries without a gate are always considered relevant.
+- Use this for any autonomous sheet whose value decays with time.
+
+### 8.8 Rules for New Sheets, Triggers, and Forms
+
+Every new sheet or modal **MUST**:
+
+1. **Use `.managedSheet`** with the appropriate priority for any root-level (non-nested) presentation on the main window. Nested sheets stay as plain `.sheet`.
+2. **Provide `hasUserContentProvider`** if the sheet contains user-editable content (text fields, selections, action items). The coordinator should report `true` only when real content exists and there's been a recent edit (idle-decay window).
+3. **Provide `isStillRelevant`** if the sheet is generated by a background trigger whose value decays (briefing, recap, post-meeting prompt). Skip-on-dequeue if the original opportunity has passed.
+4. **For multi-step forms**, adopt `DraftBackedFormCoordinator` rather than holding state in view `@State`. The coordinator MUST:
+   - Stamp `lastEditAt` on every editable property `didSet` (route through a `markUserEdit()` helper)
+   - Suppress edit tracking during init seeding / restore (use a `suppressEditTracking` flag)
+   - Implement defensive `sanitizeAgainstPayload(_:)` for dangling references
+   - Set `draftDisplayTitle` / `draftDisplaySubtitle` for the Today restore banner
+   - Snapshot any non-user-editable context the Resume path needs (the analog of `PostMeetingCaptureCoordinator.CapturePayloadSnapshot`)
+5. **Wire `onDisappear { coordinator.flushNow() }`** on the view so the last debounce window of typing isn't lost.
+6. **Use `submitAndClear { try save() }`** for submission, never bare `clearDraft()` followed by save. Submit-success-before-clear is non-negotiable.
+7. **Replace "Cancel" with Close + Discard** if the sheet contains editable work. Wire ESC to Close, not Discard.
+8. **If the sheet's source artifact has retention rules** (audio, transcripts, anything WFG asks us to delete), gate the destruction on `DraftPersistenceService.hasUnfinishedDraft(...)`.
+9. **Write tests** that exercise: save → restore round-trip, displacement-then-reopen, submit-success-clears, submit-failure-preserves, defensive restore against missing references.
+
+When in doubt, ask: *"Could Sarah lose work she's actively doing if this fires at the wrong moment?"* If yes, the new code needs all of the above. If no (a confirmation alert, a one-shot picker with no editable state), plain `.sheet` is fine.
+
+The arbiter, the soft-displacement guard, the form drafts, the restore banner, the audio gate, and the dismiss semantics together form one system. Removing any single piece reopens the data-loss surface. Future refactors of any of these components should be accompanied by an updated audit confirming the others still cover the same scenarios.
 
 ---
 

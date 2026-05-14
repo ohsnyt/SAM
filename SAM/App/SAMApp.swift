@@ -135,6 +135,10 @@ final class SAMAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidatio
         FacebookImportCoordinator.shared.cancelAll()
         EventCoordinator.shared.stopReminderScheduler()
         GlobalHotkeyService.shared.unregisterHotkey()
+        // Flush any debounced draft writes so the last ~1.5s of typing
+        // doesn't die with the process. Runs before the mainContext save
+        // below so the draft rows it inserts get persisted in that save.
+        DraftStore.shared.flushAllPending()
         // Flush any pending SwiftData changes before exit. macOS does NOT
         // automatically trigger autosave on quit, so unsaved mutations
         // from the main context would be silently lost without this call.
@@ -1225,6 +1229,12 @@ struct SAMApp: App {
         SphereRepository.shared.configure(container: c)
         TrajectoryRepository.shared.configure(container: c)
         PersonTrajectoryRepository.shared.configure(container: c)
+        DraftPersistenceService.shared.configure(container: c)
+        // Sweep stale (>7 day) form drafts on launch. The count is
+        // remembered in UserDefaults so the Today restore banner can
+        // tell Sarah, in plain English, that some old unfinished notes
+        // were cleared. Acknowledging the banner clears the count.
+        DraftPersistenceService.shared.runAutoDiscardIfNeeded()
 
         // One-time migration: isArchived → lifecycleStatusRawValue (v31→v32)
         perf.measureSync("Launch.runMigrationV32IfNeeded") {

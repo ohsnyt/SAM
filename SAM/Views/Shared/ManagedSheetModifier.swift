@@ -72,6 +72,8 @@ private struct ManagedSheetIsPresented<SheetContent: View>: ViewModifier {
     let priority: ModalCoordinator.Priority
     let policy: ModalCoordinator.ConflictPolicy
     let identifier: String
+    let hasUserContentProvider: (() -> Bool)?
+    let isStillRelevant: (() -> Bool)?
     let sheetContent: () -> SheetContent
 
     /// SwiftUI-reactive visibility. The coordinator drives this directly
@@ -103,7 +105,9 @@ private struct ManagedSheetIsPresented<SheetContent: View>: ViewModifier {
                         dismissActive: {
                             capturedBox.coordinatorDrivenDismissal = true
                             isShowing = false
-                        }
+                        },
+                        hasUserContentProvider: hasUserContentProvider,
+                        isStillRelevant: isStillRelevant
                     )
                 } else {
                     // Caller withdrew the request (set isPresented to
@@ -155,6 +159,8 @@ private struct ManagedSheetItem<Item: Identifiable, SheetContent: View>: ViewMod
     let priority: ModalCoordinator.Priority
     let policy: ModalCoordinator.ConflictPolicy
     let identifier: String
+    let hasUserContentProvider: (() -> Bool)?
+    let isStillRelevant: (() -> Bool)?
     let sheetContent: (Item) -> SheetContent
 
     /// Mirrors `item` for the actual SwiftUI sheet. Separate so the
@@ -183,7 +189,9 @@ private struct ManagedSheetItem<Item: Identifiable, SheetContent: View>: ViewMod
                             dismissActive: {
                                 capturedBox.coordinatorDrivenDismissal = true
                                 presentedItem = nil
-                            }
+                            },
+                            hasUserContentProvider: hasUserContentProvider,
+                            isStillRelevant: isStillRelevant
                         )
                     } else if presentedItem != nil {
                         // Already presenting — caller swapped to a
@@ -238,6 +246,8 @@ extension View {
         priority: ModalCoordinator.Priority,
         policy: ModalCoordinator.ConflictPolicy = .queue,
         identifier: String,
+        hasUserContentProvider: (() -> Bool)? = nil,
+        isStillRelevant: (() -> Bool)? = nil,
         @ViewBuilder content: @escaping () -> SheetContent
     ) -> some View {
         modifier(ManagedSheetIsPresented(
@@ -245,6 +255,8 @@ extension View {
             priority: priority,
             policy: policy,
             identifier: identifier,
+            hasUserContentProvider: hasUserContentProvider,
+            isStillRelevant: isStillRelevant,
             sheetContent: content
         ))
     }
@@ -257,6 +269,8 @@ extension View {
         priority: ModalCoordinator.Priority,
         policy: ModalCoordinator.ConflictPolicy = .queue,
         identifier: String,
+        hasUserContentProvider: (() -> Bool)? = nil,
+        isStillRelevant: (() -> Bool)? = nil,
         @ViewBuilder content: @escaping (Item) -> SheetContent
     ) -> some View {
         modifier(ManagedSheetItem(
@@ -264,6 +278,8 @@ extension View {
             priority: priority,
             policy: policy,
             identifier: identifier,
+            hasUserContentProvider: hasUserContentProvider,
+            isStillRelevant: isStillRelevant,
             sheetContent: content
         ))
     }

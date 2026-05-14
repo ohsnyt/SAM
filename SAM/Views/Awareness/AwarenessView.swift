@@ -77,6 +77,9 @@ struct AwarenessView: View {
                     sphereFocusBanner(sphere: activeSphere)
                 }
 
+                // Unfinished capture / auto-discard banner.
+                UnfinishedDraftBanner()
+
                 // Zone 1 — Persistent Briefing
                 PersistentBriefingSection(sphereFilter: sphereFilter)
 

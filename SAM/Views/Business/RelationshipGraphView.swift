@@ -145,7 +145,11 @@ struct RelationshipGraphView: View {
                     GuideButton(articleID: "people.relationship-graph")
                 }
             }
-            .sheet(isPresented: $showSpheresManagement) {
+            .managedSheet(
+                isPresented: $showSpheresManagement,
+                priority: .userInitiated,
+                identifier: "graph.spheres-management"
+            ) {
                 SpheresManagementSheet()
             }
             .task {
