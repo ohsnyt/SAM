@@ -46,8 +46,7 @@ struct NoteEditorView: View {
     @State private var isPolishing = false
     @State private var rawDictationText: String?
     @State private var usedDictation = false
-    @State private var accumulatedSegments: [String] = []
-    @State private var lastSegmentPeakLength = 0
+    @State private var dictationAccumulator = DictationService.Accumulator()
 
     // MARK: - Initialization
 
@@ -277,33 +276,13 @@ struct NoteEditorView: View {
         isDictating = true
         usedDictation = true
         errorMessage = nil
-        accumulatedSegments = []
-        lastSegmentPeakLength = 0
-
-        // Preserve any existing text as the first segment
-        let existingText = content.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !existingText.isEmpty {
-            accumulatedSegments.append(existingText)
-        }
+        dictationAccumulator.reset(initialText: content)
 
         Task {
             do {
                 let stream = try await dictationService.startRecognition()
                 for await result in stream {
-                    let currentText = result.text
-
-                    if currentText.count < lastSegmentPeakLength / 2 && lastSegmentPeakLength > 5 {
-                        let previousSegment = extractCurrentSegment()
-                        if !previousSegment.isEmpty {
-                            accumulatedSegments.append(previousSegment)
-                        }
-                        lastSegmentPeakLength = 0
-                    }
-
-                    lastSegmentPeakLength = max(lastSegmentPeakLength, currentText.count)
-
-                    let prefix = accumulatedSegments.joined(separator: " ")
-                    content = prefix.isEmpty ? currentText : "\(prefix) \(currentText)"
+                    content = dictationAccumulator.process(result)
 
                     if result.isFinal {
                         isDictating = false
@@ -321,18 +300,6 @@ struct NoteEditorView: View {
                 isDictating = false
             }
         }
-    }
-
-    private func extractCurrentSegment() -> String {
-        let prefix = accumulatedSegments.joined(separator: " ")
-        if prefix.isEmpty {
-            return content.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        let full = content.trimmingCharacters(in: .whitespacesAndNewlines)
-        if full.hasPrefix(prefix) {
-            return String(full.dropFirst(prefix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        return full
     }
 
     private func stopDictation() {

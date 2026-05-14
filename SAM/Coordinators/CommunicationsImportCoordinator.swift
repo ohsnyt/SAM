@@ -59,6 +59,12 @@ final class CommunicationsImportCoordinator {
     private var importTask: Task<Void, Never>?
     private var periodicImportTask: Task<Void, Never>?
 
+    /// mtime of the WhatsApp messages DB at the last successful post-scan.
+    /// Used to skip re-scanning when nothing has changed (the periodic poll
+    /// and 5-min fallback otherwise re-run an unbounded SQLite GROUP BY on
+    /// every cycle even when no new messages arrived).
+    private var lastWhatsAppDBScanMtime: Date?
+
     /// Import interval in seconds (default: 1 minute). 0 disables periodic import.
     private(set) var importIntervalSeconds: TimeInterval = 60
 
@@ -470,10 +476,10 @@ final class CommunicationsImportCoordinator {
             // Both passes iterate the same JID list, so fetch once and share.
             // Pass the triaged-aware phone set so JIDs already in the
             // UnknownSender table aren't re-recorded every cycle.
+            // runWhatsAppPostScan handles its own mtime gate + logging so
+            // unchanged DB cycles produce no log noise.
             if (whatsAppMessagesEnabled || whatsAppCallsEnabled), bookmarkManager.hasWhatsAppAccess {
-                logger.debug("[comms-import] Starting WhatsApp unknown sender discovery…")
                 await runWhatsAppPostScan(knownPhones: knownPhonesUnion)
-                logger.debug("[comms-import] WhatsApp discovery done")
             }
 
             lastImportedAt = Date()
@@ -862,6 +868,21 @@ final class CommunicationsImportCoordinator {
         guard resolved.directory.startAccessingSecurityScopedResource() else { return }
         defer { bookmarkManager.stopAccessing(resolved.directory) }
 
+        // Skip the scan when the WhatsApp DB hasn't changed since last run.
+        // The fallback poll + periodic timer would otherwise re-run an
+        // unbounded SELECT … GROUP BY every cycle even on a quiet account.
+        let currentMtime: Date?
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: resolved.messagesDB.path) {
+            currentMtime = attrs[.modificationDate] as? Date
+        } else {
+            currentMtime = nil
+        }
+        if let current = currentMtime, let last = lastWhatsAppDBScanMtime, current <= last {
+            return
+        }
+
+        logger.debug("[comms-import] Starting WhatsApp unknown sender discovery…")
+
         let allJIDs: [(jid: String, partnerName: String?, messageCount: Int, latestMessageDate: Date?)]
         do {
             allJIDs = try await whatsAppService.fetchAllJIDs(dbURL: resolved.messagesDB)
@@ -872,6 +893,11 @@ final class CommunicationsImportCoordinator {
 
         discoverWhatsAppUnknownSenders(allJIDs: allJIDs, knownPhones: knownPhones)
         generateWhatsAppEnrichments(allJIDs: allJIDs, knownPhones: knownPhones)
+
+        if let current = currentMtime {
+            lastWhatsAppDBScanMtime = current
+        }
+        logger.debug("[comms-import] WhatsApp discovery done")
     }
 
     private func discoverWhatsAppUnknownSenders(
@@ -954,7 +980,9 @@ final class CommunicationsImportCoordinator {
         guard !candidates.isEmpty else { return }
         do {
             let inserted = try EnrichmentRepository.shared.bulkRecord(candidates)
-            logger.debug("Generated \(inserted) WhatsApp phone enrichment candidates")
+            if inserted > 0 {
+                logger.debug("Generated \(inserted) WhatsApp phone enrichment candidates")
+            }
         } catch {
             logger.warning("WhatsApp enrichment generation failed: \(error)")
         }

@@ -33,14 +33,27 @@ final class DictationService {
     /// Amplitude below which a buffer counts as "silent"
     private let silenceAmplitudeThreshold: Float = 0.01
 
-    /// Seconds of silence before auto-stopping (UserDefaults-backed)
+    /// Seconds of silence before auto-stopping (UserDefaults-backed).
+    /// Default raised to 4.0s so a short thinking pause doesn't end the session;
+    /// shorter pauses now insert paragraph breaks instead (see paragraphPauseSeconds).
     @ObservationIgnored
     var silenceTimeoutSeconds: Double {
         get {
             let stored = UserDefaults.standard.double(forKey: "sam.dictation.silenceTimeout")
-            return stored > 0 ? stored : 2.0
+            return stored > 0 ? stored : 4.0
         }
         set { UserDefaults.standard.set(newValue, forKey: "sam.dictation.silenceTimeout") }
+    }
+
+    /// Seconds of silence that trigger a mid-stream paragraph break event.
+    /// Must be < silenceTimeoutSeconds. Default 2.0s.
+    @ObservationIgnored
+    var paragraphPauseSeconds: Double {
+        get {
+            let stored = UserDefaults.standard.double(forKey: "sam.dictation.paragraphPause")
+            return stored > 0 ? stored : 2.0
+        }
+        set { UserDefaults.standard.set(newValue, forKey: "sam.dictation.paragraphPause") }
     }
 
     // MARK: - Types
@@ -56,6 +69,16 @@ final class DictationService {
         let text: String
         let isFinal: Bool
         let confidence: Float?
+        /// True when this event is a mid-stream paragraph break (text is empty,
+        /// the consumer should bake the current segment and insert "\n\n").
+        let isParagraphBreak: Bool
+
+        init(text: String, isFinal: Bool, confidence: Float?, isParagraphBreak: Bool = false) {
+            self.text = text
+            self.isFinal = isFinal
+            self.confidence = confidence
+            self.isParagraphBreak = isParagraphBreak
+        }
     }
 
     // MARK: - Authorization
@@ -184,16 +207,19 @@ final class DictationService {
         var consecutiveSilentBuffers = 0
         var hasReceivedSpeech = false
         var didEndAudio = false
+        var paragraphBreakEmittedThisSilence = false
         let silenceThreshold = self.silenceAmplitudeThreshold
         let sampleRate = recordingFormat.sampleRate
         let silenceTimeout = self.silenceTimeoutSeconds
+        let paragraphPause = min(self.paragraphPauseSeconds, max(silenceTimeout - 0.5, 0.5))
 
         // Calculate how many consecutive silent buffers = silence timeout
         // Each buffer is ~4800 frames at 48kHz = 0.1s
         let framesPerBuffer: Double = 4800
         let secondsPerBuffer = framesPerBuffer / sampleRate
         let silentBuffersForTimeout = Int(silenceTimeout / secondsPerBuffer)
-        logger.debug("Silence auto-stop: \(silenceTimeout)s = \(silentBuffersForTimeout) silent buffers")
+        let silentBuffersForParagraphBreak = Int(paragraphPause / secondsPerBuffer)
+        logger.debug("Silence: paragraph-break at \(paragraphPause)s (\(silentBuffersForParagraphBreak) buffers), end at \(silenceTimeout)s (\(silentBuffersForTimeout) buffers)")
 
         return AsyncStream { continuation in
             self.recognitionTask = recognizer.recognitionTask(with: request) { result, error in
@@ -247,7 +273,24 @@ final class DictationService {
                     consecutiveSilentBuffers += 1
                 } else {
                     consecutiveSilentBuffers = 0
+                    paragraphBreakEmittedThisSilence = false
                     hasReceivedSpeech = true
+                }
+
+                // Mid-stream paragraph break: shorter pause, doesn't end the session.
+                // Fires once per silence window so consecutive silent buffers past the
+                // threshold don't spam the consumer.
+                if hasReceivedSpeech
+                    && !paragraphBreakEmittedThisSilence
+                    && consecutiveSilentBuffers >= silentBuffersForParagraphBreak
+                    && consecutiveSilentBuffers < silentBuffersForTimeout {
+                    paragraphBreakEmittedThisSilence = true
+                    continuation.yield(DictationResult(
+                        text: "",
+                        isFinal: false,
+                        confidence: nil,
+                        isParagraphBreak: true
+                    ))
                 }
 
                 // Auto-stop after silence timeout (only if we've received some speech first)
@@ -283,6 +326,79 @@ final class DictationService {
         recognitionRequest = nil
         recognitionTask = nil
         logger.debug("Recognition stopped and cleaned up")
+    }
+
+    // MARK: - Accumulator
+
+    /// Builds the displayed dictation text from a stream of DictationResult events.
+    /// Encapsulates segment-collapse detection (utterance breaks within a phrase)
+    /// and paragraph-break handling (longer pauses), and strips the trailing
+    /// "new paragraph" voice command when it precedes a break.
+    ///
+    /// Lifecycle: call `reset(initialText:)` when starting a new dictation,
+    /// then feed each DictationResult through `process(_:)` and assign the
+    /// returned String to your bound text.
+    @MainActor
+    struct Accumulator {
+        /// Completed text including all baked-in segment/paragraph separators.
+        private(set) var completedText: String = ""
+        private var lastSegmentPeakLength: Int = 0
+        private var currentSegmentText: String = ""
+
+        mutating func reset(initialText: String = "") {
+            let trimmed = initialText.trimmingCharacters(in: .whitespacesAndNewlines)
+            completedText = trimmed.isEmpty ? "" : trimmed + " "
+            lastSegmentPeakLength = 0
+            currentSegmentText = ""
+        }
+
+        /// Process a result and return the new full display text.
+        mutating func process(_ result: DictationResult) -> String {
+            if result.isParagraphBreak {
+                let cleaned = Self.stripTrailingNewParagraphCommand(currentSegmentText)
+                if !cleaned.isEmpty {
+                    completedText += cleaned + "\n\n"
+                } else if !completedText.isEmpty && !completedText.hasSuffix("\n\n") {
+                    // Convert any trailing whitespace into a paragraph break.
+                    completedText = completedText
+                        .trimmingCharacters(in: .whitespacesAndNewlines) + "\n\n"
+                }
+                currentSegmentText = ""
+                lastSegmentPeakLength = 0
+                return completedText
+            }
+
+            let text = result.text
+
+            // Detect a fresh utterance via text length collapse — SFSpeechRecognizer
+            // returns a cumulative formattedString for the current utterance, then
+            // restarts shorter when a new one begins.
+            if text.count < lastSegmentPeakLength / 2 && lastSegmentPeakLength > 5 {
+                if !currentSegmentText.isEmpty {
+                    completedText += currentSegmentText + " "
+                }
+                lastSegmentPeakLength = 0
+            }
+
+            lastSegmentPeakLength = max(lastSegmentPeakLength, text.count)
+            currentSegmentText = text
+
+            return completedText + text
+        }
+
+        /// Strip a trailing "new paragraph" voice command (with optional punctuation).
+        /// Only applied at paragraph-break boundaries so a sentence like
+        /// "this is a new paragraph in my essay" — which never pauses — is preserved.
+        private static func stripTrailingNewParagraphCommand(_ text: String) -> String {
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return "" }
+            let pattern = #"(?i)\bnew\s+paragraph[\.,!?]*$"#
+            if let range = trimmed.range(of: pattern, options: .regularExpression) {
+                return String(trimmed[..<range.lowerBound])
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            return trimmed
+        }
     }
 
     // MARK: - Errors

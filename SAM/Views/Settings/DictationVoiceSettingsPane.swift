@@ -13,7 +13,7 @@ struct DictationVoiceSettingsPane: View {
 
     @State private var silenceTimeout: Double = {
         let stored = UserDefaults.standard.double(forKey: "sam.dictation.silenceTimeout")
-        return stored > 0 ? stored : 2.0
+        return stored > 0 ? stored : 4.0
     }()
 
     @State private var microphoneStatus: String = "Checking..."
@@ -56,29 +56,29 @@ struct DictationVoiceSettingsPane: View {
                         Text("Dictation")
                             .samFont(.headline)
 
-                        Text("How long SAM waits after you stop speaking before ending dictation.")
+                        Text("How long SAM waits after you stop speaking before ending dictation. A pause of about half this length inserts a paragraph break instead — or say \"new paragraph.\"")
                             .samFont(.caption)
                             .foregroundStyle(.secondary)
 
                         HStack {
-                            Text("Silence timeout")
+                            Text("End-of-dictation pause")
                             Spacer()
                             Text(String(format: "%.1fs", silenceTimeout))
                                 .foregroundStyle(.secondary)
                                 .monospacedDigit()
                         }
 
-                        Slider(value: $silenceTimeout, in: 0.5...5.0, step: 0.5)
+                        Slider(value: $silenceTimeout, in: 1.0...8.0, step: 0.5)
                             .onChange(of: silenceTimeout) { _, newValue in
                                 UserDefaults.standard.set(newValue, forKey: "sam.dictation.silenceTimeout")
                             }
 
                         HStack {
-                            Text("0.5s")
+                            Text("1.0s")
                                 .samFont(.caption2)
                                 .foregroundStyle(.tertiary)
                             Spacer()
-                            Text("5.0s")
+                            Text("8.0s")
                                 .samFont(.caption2)
                                 .foregroundStyle(.tertiary)
                         }

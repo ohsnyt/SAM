@@ -29,6 +29,12 @@ struct GoalCheckInSessionView: View {
     @State private var isGenerating: Bool = false
     @State private var errorMessage: String?
 
+    // Dictation state
+    @State private var dictationService = DictationService.shared
+    @State private var isDictating = false
+    @State private var isPolishing = false
+    @State private var dictationAccumulator = DictationService.Accumulator()
+
     var body: some View {
         VStack(spacing: 0) {
             TipView(GoalCheckInTip())
@@ -87,6 +93,11 @@ struct GoalCheckInSessionView: View {
         .task {
             let opening = await GoalCheckInService.shared.generateOpeningMessage(context: context)
             messages = [opening]
+        }
+        .onDisappear {
+            if isDictating {
+                dictationService.stopRecognition()
+            }
         }
     }
 
@@ -223,42 +234,81 @@ struct GoalCheckInSessionView: View {
     // MARK: - Input Bar
 
     private var inputBar: some View {
-        HStack(alignment: .bottom, spacing: 8) {
-            TextEditor(text: $inputText)
-                .samFont(.body)
-                .frame(minHeight: 72, maxHeight: 120)
-                .scrollContentBackground(.hidden)
-                .padding(6)
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color(nsColor: .controlBackgroundColor))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
-                )
-                .overlay(alignment: .topLeading) {
-                    if inputText.isEmpty {
-                        Text("Share what's working, what's not...")
-                            .samFont(.body)
-                            .foregroundStyle(.tertiary)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 14)
-                            .allowsHitTesting(false)
+        VStack(spacing: 6) {
+            HStack(alignment: .bottom, spacing: 8) {
+                TextEditor(text: $inputText)
+                    .samFont(.body)
+                    .frame(minHeight: 72, maxHeight: 120)
+                    .scrollContentBackground(.hidden)
+                    .padding(6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color(nsColor: .controlBackgroundColor))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
+                    )
+                    .overlay(alignment: .topLeading) {
+                        if inputText.isEmpty {
+                            Text("Share what's working, what's not...")
+                                .samFont(.body)
+                                .foregroundStyle(.tertiary)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 14)
+                                .allowsHitTesting(false)
+                        }
                     }
-                }
 
-            VStack(spacing: 8) {
-                Button {
-                    sendMessage()
-                } label: {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .samFont(.title3)
+                VStack(spacing: 8) {
+                    Button {
+                        if isDictating {
+                            stopDictation()
+                        } else {
+                            startDictation()
+                        }
+                    } label: {
+                        Image(systemName: isDictating ? "mic.fill" : "mic")
+                            .samFont(.title3)
+                            .foregroundStyle(isDictating ? .red : .secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help(isDictating ? "Stop dictation" : "Start dictation")
+                    .popoverTip(DictationTip(), arrowEdge: .trailing)
+                    .disabled(isPolishing || isGenerating)
+                    .overlay {
+                        if isDictating {
+                            Circle()
+                                .stroke(.red.opacity(0.5), lineWidth: 2)
+                                .frame(width: 24, height: 24)
+                                .scaleEffect(isDictating ? 1.3 : 1.0)
+                                .opacity(isDictating ? 0 : 1)
+                                .animation(.easeInOut(duration: 1).repeatForever(autoreverses: false), value: isDictating)
+                        }
+                    }
+
+                    Button {
+                        sendMessage()
+                    } label: {
+                        Image(systemName: "arrow.up.circle.fill")
+                            .samFont(.title3)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(inputText.isEmpty ? Color.gray.opacity(0.4) : Color.blue)
+                    .disabled(inputText.isEmpty || isGenerating)
+                    .keyboardShortcut(.return, modifiers: .command)
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(inputText.isEmpty ? Color.gray.opacity(0.4) : Color.blue)
-                .disabled(inputText.isEmpty || isGenerating)
-                .keyboardShortcut(.return, modifiers: .command)
+            }
+
+            if isPolishing {
+                HStack(spacing: 4) {
+                    ProgressView()
+                        .controlSize(.mini)
+                    Text("Polishing dictation…")
+                        .samFont(.caption2)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
             }
         }
         .padding(12)
@@ -293,11 +343,98 @@ struct GoalCheckInSessionView: View {
     }
 
     private func finishCheckIn() {
+        if isDictating {
+            dictationService.stopRecognition()
+            isDictating = false
+        }
         GoalJournalRepository.shared.summarizeAndSave(
             messages: messages,
             context: context
         )
         onDone()
+    }
+
+    // MARK: - Dictation
+
+    private func startDictation() {
+        let availability = dictationService.checkAvailability()
+
+        switch availability {
+        case .available:
+            break
+        case .notAuthorized:
+            Task {
+                let granted = await dictationService.requestAuthorization()
+                guard granted else {
+                    errorMessage = "Speech recognition permission not granted"
+                    return
+                }
+                beginDictationStream()
+            }
+            return
+        case .notAvailable:
+            errorMessage = "Speech recognition is not available"
+            return
+        case .restricted:
+            errorMessage = "Speech recognition is restricted"
+            return
+        }
+
+        beginDictationStream()
+    }
+
+    private func beginDictationStream() {
+        isDictating = true
+        errorMessage = nil
+        dictationAccumulator.reset(initialText: inputText)
+
+        Task {
+            do {
+                let stream = try await dictationService.startRecognition()
+                for await result in stream {
+                    inputText = dictationAccumulator.process(result)
+
+                    if result.isFinal {
+                        isDictating = false
+                    }
+                }
+                if isDictating {
+                    isDictating = false
+                    dictationService.stopRecognition()
+                }
+                if !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    await polishDictatedText()
+                }
+            } catch {
+                errorMessage = error.localizedDescription
+                isDictating = false
+            }
+        }
+    }
+
+    private func stopDictation() {
+        dictationService.stopRecognition()
+        isDictating = false
+
+        if !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            Task {
+                await polishDictatedText()
+            }
+        }
+    }
+
+    private func polishDictatedText() async {
+        let rawText = inputText
+        isPolishing = true
+
+        do {
+            let polished = try await NoteAnalysisService.shared.polishDictation(rawText: rawText)
+            inputText = polished
+        } catch {
+            logger.debug("Dictation polish unavailable: \(error.localizedDescription)")
+        }
+
+        isPolishing = false
     }
 
     private func handleAction(_ action: CoachingAction) {
