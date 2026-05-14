@@ -836,12 +836,14 @@ final class MeetingPrepCoordinator {
         // entire evidence table just to look at the most recent month.
         let allEvidence = try evidenceRepository.fetchOccurringBetween(thirtyDaysAgo, fortyEightHoursFromNow)
 
-        // Upcoming calendar events with linked people
+        // Upcoming calendar events with at least one non-Me attendee.
+        // Solo blocks (deep work, prep, admin) get no relationship briefing —
+        // time-allocation coaching for those belongs in the BI/digest surface.
         let upcomingEvents = allEvidence.filter { item in
             item.source == .calendar
             && item.occurredAt > now
             && item.occurredAt <= fortyEightHoursFromNow
-            && item.linkedPeople.contains(where: { !$0.isDeleted })
+            && item.linkedPeople.contains(where: { !$0.isDeleted && !$0.isMe })
         }
 
         guard !upcomingEvents.isEmpty else { return [] }
@@ -858,7 +860,10 @@ final class MeetingPrepCoordinator {
                 buildAttendeeProfile(person: person, allEvidence: allEvidence)
             }
 
-            let attendeeIDs = Set(validPeople.map(\.id))
+            // Use otherPeople (excludes Me) so personal todos the LLM tagged to
+            // the user don't surface as "Pending Actions" for every meeting Sarah
+            // attends. The user is the actor, not a relationship target.
+            let attendeeIDs = Set(otherPeople.map(\.id))
 
             let recentHistory = fetchRecentHistory(for: validPeople, allEvidence: allEvidence, limit: 5)
 
@@ -923,10 +928,11 @@ final class MeetingPrepCoordinator {
 
         let candidates = try evidenceRepository.fetchOccurringBetween(lookbackStart, now)
 
-        // Past calendar events in the 48h window
+        // Past calendar events in the 48h window with at least one non-Me attendee.
+        // Solo blocks aren't meetings — no "You met with [yourself]" follow-up card.
         let pastEvents = candidates.filter { item in
             item.source == .calendar
-            && !item.linkedPeople.isEmpty
+            && item.linkedPeople.contains(where: { !$0.isDeleted && !$0.isMe })
             && (item.endedAt ?? Calendar.current.date(byAdding: .hour, value: 1, to: item.occurredAt)!) <= now
             && (item.endedAt ?? Calendar.current.date(byAdding: .hour, value: 1, to: item.occurredAt)!) >= fortyEightHoursAgo
         }
@@ -947,7 +953,9 @@ final class MeetingPrepCoordinator {
 
         return pastEvents.compactMap { event in
             let eventEnd = event.endedAt ?? Calendar.current.date(byAdding: .hour, value: 1, to: event.occurredAt)!
-            let attendeeIDs = Set(event.linkedPeople.map(\.id))
+            // Exclude Me (and tombstoned people) so personal todos the LLM tagged
+            // to the user don't surface as follow-up items for every past meeting.
+            let attendeeIDs = Set(event.linkedPeople.filter { !$0.isDeleted && !$0.isMe }.map(\.id))
 
             // Check if a note was created after the event that references any attendee
             let hasLinkedNote = allNotes.contains { note in

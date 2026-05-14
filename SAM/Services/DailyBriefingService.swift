@@ -84,7 +84,7 @@ actor DailyBriefingService {
         )
 
         // Use Prompt Lab deployed variant if available, otherwise fall back to default
-        let deployedSystemPrompt = UserDefaults.standard.string(forKey: "sam.promptLab.morningBriefing") ?? ""
+        let deployedSystemPrompt = UserDefaults.standard.string(forKey: PromptSite.morningBriefing.userDefaultsKey) ?? ""
 
         let visualPrompt: String
         let visualSystem: String
@@ -209,7 +209,7 @@ actor DailyBriefingService {
         )
 
         // Use Prompt Lab deployed variant if available, otherwise fall back to default
-        let deployedEveningPrompt = UserDefaults.standard.string(forKey: "sam.promptLab.eveningBriefing") ?? ""
+        let deployedEveningPrompt = UserDefaults.standard.string(forKey: PromptSite.eveningBriefing.userDefaultsKey) ?? ""
 
         let visualPrompt: String
         let visualSystem: String

@@ -422,6 +422,9 @@ actor NoteAnalysisService {
         - Only extract information explicitly stated or strongly implied in the note
         - For contact_updates, only include fields that are clearly new information
         - For send_congratulations/send_reminder, draft a warm, professional message in suggested_text
+        - For action_items person_name: set this ONLY when the action is directly about that named person (e.g., "follow up with Jane about the proposal", "send John his quote"). The person must be the SUBJECT of the action, not just someone mentioned nearby in the note.
+        - For action_items person_name: NEVER set this to the note author / user / "me". The user is always the one doing the action — they are not the target. Personal todos ("read this book", "update my website", "reflect on closing techniques") MUST have person_name set to null.
+        - For action_items person_name: when an action item is generic to the user's own work (research, learning, internal admin, personal reflection) and isn't tied to a specific relationship, set person_name to null. Do not pick the most prominent name in the note as a default.
         - For discovered_relationships, flag spousal, familial, referral, or business connections mentioned in the note
         - For life_events, extract any mentioned life milestones, transitions, or personal events. Include an outreach suggestion.
         - IMPORTANT: If the note indicates that the person themselves has died or passed away, use event_type "death" with their name as person_name. Use "loss" only when the person experienced someone else's death.
