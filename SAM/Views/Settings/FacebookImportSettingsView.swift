@@ -18,6 +18,8 @@ private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "Fac
 struct FacebookImportSettingsContent: View {
 
     @State private var coordinator = FacebookImportCoordinator.shared
+    @State private var showDisconnectConfirm = false
+    @State private var hasConnectedProfile: Bool = false
 
     // MARK: - Body
 
@@ -63,9 +65,57 @@ struct FacebookImportSettingsContent: View {
                     .samFont(.caption)
                     .foregroundStyle(.red)
             }
+
+            // Disconnect (only when connected)
+            if hasConnectedProfile {
+                Divider()
+                disconnectSection
+            }
         }
         .padding(.vertical, 4)
-        .onAppear { FeatureAdoptionTracker.shared.recordUsage(.facebookImport) }
+        .onAppear {
+            FeatureAdoptionTracker.shared.recordUsage(.facebookImport)
+            refreshConnectedState()
+        }
+        .confirmationDialog(
+            "Disconnect Facebook?",
+            isPresented: $showDisconnectConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Disconnect", role: .destructive) {
+                Task {
+                    await coordinator.disconnect()
+                    refreshConnectedState()
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This clears the cached Facebook profile, the Grow analysis, the analysis snapshot, and any active watchers. Imported friends, messages, and interaction history are preserved.")
+        }
+    }
+
+    // MARK: - Disconnect Section
+
+    @ViewBuilder
+    private var disconnectSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Disconnect")
+                .samFont(.headline)
+
+            Text("Remove the Facebook association from SAM. Use this if you're switching accounts or no longer want Facebook data influencing coaching.")
+                .samFont(.caption)
+                .foregroundStyle(.secondary)
+
+            Button("Disconnect Facebook...", role: .destructive) {
+                showDisconnectConfirm = true
+            }
+        }
+    }
+
+    private func refreshConnectedState() {
+        hasConnectedProfile = UserDefaults.standard.data(forKey: "sam.userFacebookProfile") != nil
+            || coordinator.latestProfileAnalysis != nil
+            || coordinator.lastImportedAt != nil
     }
 
     // MARK: - Profile Analysis

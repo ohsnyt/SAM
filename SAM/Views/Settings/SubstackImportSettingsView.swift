@@ -21,6 +21,8 @@ struct SubstackImportSettingsContent: View {
     @State private var coordinator = SubstackImportCoordinator.shared
     @State private var feedURLInput: String = SubstackImportCoordinator.shared.feedURL
     @State private var showSubscriberImporter = false
+    @State private var showDisconnectConfirm = false
+    @State private var hasConnectedProfile: Bool = false
 
     private var isActive: Bool {
         if case .importing = coordinator.importStatus { return true }
@@ -49,6 +51,12 @@ struct SubstackImportSettingsContent: View {
 
             // Voice Summary (if available)
             voiceSummarySection
+
+            // Disconnect (only when connected)
+            if hasConnectedProfile {
+                Divider()
+                disconnectSection
+            }
         }
         .fileImporter(
             isPresented: $showSubscriberImporter,
@@ -66,7 +74,50 @@ struct SubstackImportSettingsContent: View {
             }
         }
         .dismissOnLock(isPresented: $showSubscriberImporter)
-        .onAppear { FeatureAdoptionTracker.shared.recordUsage(.substackImport) }
+        .onAppear {
+            FeatureAdoptionTracker.shared.recordUsage(.substackImport)
+            refreshConnectedState()
+        }
+        .confirmationDialog(
+            "Disconnect Substack?",
+            isPresented: $showDisconnectConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Disconnect", role: .destructive) {
+                Task {
+                    await coordinator.disconnect()
+                    feedURLInput = ""
+                    refreshConnectedState()
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This clears the cached publication profile, the Grow analysis, the feed URL, and any active watchers. Imported subscriber records and content posts are preserved.")
+        }
+    }
+
+    // MARK: - Disconnect Section
+
+    @ViewBuilder
+    private var disconnectSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Disconnect")
+                .samFont(.headline)
+
+            Text("Remove the Substack association from SAM. Use this if you've stopped using Substack or are switching to a different publication.")
+                .samFont(.caption)
+                .foregroundStyle(.secondary)
+
+            Button("Disconnect Substack...", role: .destructive) {
+                showDisconnectConfirm = true
+            }
+            .disabled(isActive)
+        }
+    }
+
+    private func refreshConnectedState() {
+        hasConnectedProfile = getSubstackProfile() != nil
+            || !coordinator.feedURL.isEmpty
     }
 
     // MARK: - Feed Section

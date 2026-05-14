@@ -143,6 +143,48 @@ actor BusinessProfileService {
         return decoded
     }
 
+    // MARK: - Profile Removal (Disconnect)
+
+    /// Clear the cached LinkedIn profile.
+    func removeLinkedInProfile() {
+        cachedLinkedInProfile = nil
+        UserDefaults.standard.removeObject(forKey: linkedInProfileKey)
+        logger.debug("Removed user LinkedIn profile")
+    }
+
+    /// Clear the cached Facebook profile and analysis snapshot.
+    func removeFacebookProfile() {
+        cachedFacebookProfile = nil
+        cachedFacebookSnapshot = nil
+        UserDefaults.standard.removeObject(forKey: facebookProfileKey)
+        UserDefaults.standard.removeObject(forKey: facebookSnapshotKey)
+        logger.debug("Removed user Facebook profile")
+    }
+
+    /// Clear the cached Substack profile.
+    func removeSubstackProfile() {
+        cachedSubstackProfile = nil
+        UserDefaults.standard.removeObject(forKey: substackProfileKey)
+        logger.debug("Removed user Substack profile")
+    }
+
+    /// Remove a single platform's entry from the multi-platform analysis store.
+    /// Platform names match `ProfileAnalysisDTO.platform` (e.g., "linkedIn", "facebook", "substack").
+    func removeProfileAnalysis(platform: String) {
+        var analyses = loadProfileAnalyses()
+        let before = analyses.count
+        analyses.removeAll { $0.platform.caseInsensitiveCompare(platform) == .orderedSame }
+        guard analyses.count != before else { return }
+        cachedAnalyses = analyses
+        if let data = try? JSONEncoder().encode(analyses) {
+            UserDefaults.standard.set(data, forKey: profileAnalysesKey)
+            logger.debug("Removed \(platform) entry from profile analyses (\(before - analyses.count) removed)")
+            Task { @MainActor in
+                NotificationCenter.default.post(name: .samProfileAnalysisDidUpdate, object: nil)
+            }
+        }
+    }
+
     // MARK: - Facebook Analysis Snapshot
 
     /// Save the Facebook analysis snapshot (import-time activity data for on-demand re-analysis).

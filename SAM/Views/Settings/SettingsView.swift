@@ -33,6 +33,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     case mail = "Mail"
     case communications = "Communications"
     case clipboardCapture = "Clipboard Capture"
+    case socialAccounts = "Social Accounts"
     // AI
     case coaching = "Coaching"
     case briefings = "Briefings"
@@ -60,6 +61,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .mail: return "envelope"
         case .communications: return "message.fill"
         case .clipboardCapture: return "doc.on.clipboard"
+        case .socialAccounts: return "person.2.crop.square.stack"
         case .coaching: return "brain.head.profile"
         case .briefings: return "text.book.closed"
         case .dictationVoice: return "mic.fill"
@@ -76,7 +78,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     var group: String {
         switch self {
         case .personalization, .appearance, .security, .companionPhone: return "General"
-        case .contacts, .calendar, .mail, .communications, .clipboardCapture: return "Data"
+        case .contacts, .calendar, .mail, .communications, .clipboardCapture, .socialAccounts: return "Data"
         case .coaching, .briefings, .dictationVoice, .promptLab: return "AI"
         case .businessType, .spheres, .compliance, .roles, .tripsAndMileage: return "Business"
         case .diagnostics: return "Advanced"
@@ -140,6 +142,8 @@ struct SettingsView: View {
             CommunicationsSettingsPane()
         case .clipboardCapture:
             ClipboardCaptureSettingsPane()
+        case .socialAccounts:
+            SocialAccountsSettingsPane()
         case .coaching:
             CoachingSettingsPane()
         case .briefings:

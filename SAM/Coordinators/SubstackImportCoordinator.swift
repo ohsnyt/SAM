@@ -798,6 +798,36 @@ final class SubstackImportCoordinator {
         }
     }
 
+    // MARK: - Disconnect
+
+    /// Disconnect Substack: clear the cached publication profile, the Grow analysis entry,
+    /// the feed URL, watermark dates, and any active watchers.
+    /// SwiftData rows (SubstackImport subscriber history, ContentPost records) are preserved.
+    func disconnect() async {
+        cancelWatchers()
+
+        let defaults = UserDefaults.standard
+        defaults.removeObject(forKey: "sam.substack.feedURL")
+        defaults.removeObject(forKey: "sam.substack.lastFeedFetchDate")
+        defaults.removeObject(forKey: "sam.substack.lastSubscriberImportDate")
+        defaults.removeObject(forKey: "sam.substack.emailWatcherActive")
+        defaults.removeObject(forKey: "sam.substack.emailWatcherStartDate")
+        defaults.removeObject(forKey: "sam.substack.fileWatcherActive")
+        defaults.removeObject(forKey: "sam.substack.fileWatcherStartDate")
+        defaults.removeObject(forKey: "sam.substack.extractedDownloadURL")
+
+        await BusinessProfileService.shared.removeSubstackProfile()
+        await BusinessProfileService.shared.removeProfileAnalysis(platform: "substack")
+
+        parsedPosts = []
+        subscriberCandidates = []
+        importStatus = .idle
+        statusMessage = ""
+        sheetPhase = .setup
+
+        logger.debug("Substack disconnected")
+    }
+
     /// Whether the mail system is available for email watching.
     var isMailAvailableForWatching: Bool {
         MailImportCoordinator.shared.mailEnabled && !MailImportCoordinator.shared.selectedAccountIDs.isEmpty

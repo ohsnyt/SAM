@@ -3024,4 +3024,23 @@ final class LinkedInImportCoordinator {
         try? FileManager.default.removeItem(at: dir)
         logger.debug("Cleaned up temp LinkedIn extract directory")
     }
+
+    // MARK: - Disconnect
+
+    /// Disconnect LinkedIn: clear the cached parsed profile, the Grow analysis entry,
+    /// and the import watermarks so a future import starts fresh.
+    /// Imported SwiftData (contacts, messages, evidence) is preserved.
+    func disconnect() async {
+        let defaults = UserDefaults.standard
+        defaults.removeObject(forKey: "sam.linkedin.messages.lastImportAt")
+        defaults.removeObject(forKey: "sam.linkedin.connections.lastImportAt")
+
+        await BusinessProfileService.shared.removeLinkedInProfile()
+        await BusinessProfileService.shared.removeProfileAnalysis(platform: "linkedIn")
+
+        clearPendingState()
+        sheetPhase = .setup
+
+        logger.debug("LinkedIn disconnected")
+    }
 }

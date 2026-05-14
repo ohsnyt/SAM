@@ -1873,4 +1873,27 @@ final class FacebookImportCoordinator {
             }
         }
     }
+
+    // MARK: - Disconnect
+
+    /// Disconnect Facebook: clear the cached parsed profile, the Grow analysis entry,
+    /// analysis snapshot, and any active watchers. Imported SwiftData is preserved.
+    func disconnect() async {
+        stopEmailWatcher()
+        stopFileWatcher()
+
+        let defaults = UserDefaults.standard
+        defaults.removeObject(forKey: "sam.facebook.emailWatcherActive")
+        defaults.removeObject(forKey: "sam.facebook.emailWatcherStartDate")
+        defaults.removeObject(forKey: "sam.facebook.fileWatcherActive")
+        defaults.removeObject(forKey: "sam.facebook.fileWatcherStartDate")
+        defaults.removeObject(forKey: "sam.facebook.extractedDownloadURL")
+
+        await BusinessProfileService.shared.removeFacebookProfile()
+        await BusinessProfileService.shared.removeProfileAnalysis(platform: "facebook")
+
+        sheetPhase = .setup
+
+        logger.debug("Facebook disconnected")
+    }
 }
