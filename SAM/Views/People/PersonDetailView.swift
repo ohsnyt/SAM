@@ -46,6 +46,12 @@ struct PersonDetailView: View {
     @State private var currentSpheres: [Sphere] = []
     @State private var availableSpheres: [Sphere] = []
     @State private var showingNewSphereSheet = false
+    /// ID of the chip currently being dragged in the sphere chip row.
+    /// Drives the dimmed-source visual cue. Cleared on drop/cancel.
+    @State private var draggingSphereID: UUID?
+    /// ID of the chip the user is currently hovering a drag over. Drives
+    /// the "insert before this one" highlight ring.
+    @State private var dropTargetSphereID: UUID?
     @State private var showingCorrectionSheet = false
     @State private var showingReferrerPicker = false
     @State private var recruitingStage: RecruitingStage?
@@ -1116,18 +1122,7 @@ struct PersonDetailView: View {
                 }
 
                 ForEach(currentSpheres, id: \.id) { sphere in
-                    if isEditingSpheres {
-                        Button {
-                            withAnimation(.easeInOut(duration: 0.15)) {
-                                removeFromSphere(sphere)
-                            }
-                        } label: {
-                            sphereChipLabel(sphere, trailing: "xmark")
-                        }
-                        .buttonStyle(.plain)
-                    } else {
-                        sphereChipLabel(sphere, trailing: nil)
-                    }
+                    sphereChipWithDragDrop(sphere)
                 }
 
                 Button {
@@ -1187,6 +1182,104 @@ struct PersonDetailView: View {
             }
         }
         .padding(.top, 2)
+    }
+
+    /// One chip in the header row, wrapped with drag-and-drop wiring so
+    /// the user can reorder per-person sphere precedence directly from
+    /// PersonDetail. The first sphere is the person's default — dragging
+    /// any chip in front of the current first chip changes which sphere
+    /// SAM falls back to when classification is ambiguous. Drop semantic
+    /// is "insert before the target chip"; the existing chevron-arrows in
+    /// the deeper Spheres section give the same control with discrete
+    /// up/down steps. Drag is enabled unconditionally when 2+ chips exist;
+    /// tap behavior (remove in edit mode) is preserved.
+    @ViewBuilder
+    private func sphereChipWithDragDrop(_ sphere: Sphere) -> some View {
+        let chip = Group {
+            if isEditingSpheres {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        removeFromSphere(sphere)
+                    }
+                } label: {
+                    sphereChipLabel(sphere, trailing: "xmark")
+                }
+                .buttonStyle(.plain)
+            } else {
+                sphereChipLabel(sphere, trailing: nil)
+            }
+        }
+
+        if currentSpheres.count >= 2 {
+            chip
+                .opacity(draggingSphereID == sphere.id ? 0.35 : 1.0)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(Color.accentColor, lineWidth: 2)
+                        .opacity(dropTargetSphereID == sphere.id ? 1 : 0)
+                )
+                .help(currentSpheres.first?.id == sphere.id
+                      ? "Default sphere — drag another chip in front to change."
+                      : "Drag in front of another chip to reorder. The first chip is the default.")
+                .draggable(sphere.id.uuidString) {
+                    sphereChipLabel(sphere, trailing: nil)
+                        .onAppear { draggingSphereID = sphere.id }
+                }
+                .dropDestination(for: String.self) { items, _ in
+                    let result = handleSphereChipDrop(items: items, targetSphereID: sphere.id)
+                    draggingSphereID = nil
+                    dropTargetSphereID = nil
+                    return result
+                } isTargeted: { hovering in
+                    if hovering {
+                        if draggingSphereID != sphere.id {
+                            dropTargetSphereID = sphere.id
+                        }
+                    } else if dropTargetSphereID == sphere.id {
+                        dropTargetSphereID = nil
+                    }
+                }
+        } else {
+            chip
+        }
+    }
+
+    /// Compute the new sphere order from a drop and persist it. Returns
+    /// true on a real move so SwiftUI accepts the drop. Idempotent on
+    /// drops onto the chip's own source.
+    private func handleSphereChipDrop(items: [String], targetSphereID: UUID) -> Bool {
+        guard let raw = items.first, let draggedID = UUID(uuidString: raw) else { return false }
+        guard draggedID != targetSphereID else { return false }
+        guard let srcIdx = currentSpheres.firstIndex(where: { $0.id == draggedID }),
+              let dstIdx = currentSpheres.firstIndex(where: { $0.id == targetSphereID })
+        else { return false }
+
+        var reordered = currentSpheres
+        let moved = reordered.remove(at: srcIdx)
+        // When the source preceded the target, removing the source shifted
+        // the target's index left by one — adjust so the dragged chip lands
+        // *before* the chip the user dropped onto.
+        let adjustedDst = srcIdx < dstIdx ? dstIdx - 1 : dstIdx
+        reordered.insert(moved, at: adjustedDst)
+
+        let newOrder = reordered.map(\.id)
+        do {
+            try SphereRepository.shared.reorderMemberships(
+                forPerson: person.id,
+                sphereOrder: newOrder
+            )
+            withAnimation(.easeInOut(duration: 0.2)) {
+                currentSpheres = reordered
+            }
+            NotificationCenter.default.post(
+                name: .samPersonDidChange,
+                object: nil,
+                userInfo: ["personID": person.id]
+            )
+            return true
+        } catch {
+            return false
+        }
     }
 
     private func sphereChipLabel(_ sphere: Sphere, trailing: String?) -> some View {
