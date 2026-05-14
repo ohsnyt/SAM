@@ -19,6 +19,11 @@ import os.log
 
 private let logger = Logger(subsystem: "com.matthewsessions.SAM", category: "BookmarkManager")
 
+private struct WhatsAppAccessValidationError: LocalizedError, Sendable {
+    let reason: String
+    var errorDescription: String? { reason }
+}
+
 @MainActor @Observable
 final class BookmarkManager {
 
@@ -216,6 +221,21 @@ final class BookmarkManager {
         let chatDB = url.appendingPathComponent("ChatStorage.sqlite")
         guard FileManager.default.fileExists(atPath: chatDB.path) else {
             logger.error("Selected directory does not contain ChatStorage.sqlite: \(url.path, privacy: .public)")
+            let selectedPath = url.path
+            let expectedFilePath = chatDB.path
+            Task { @MainActor in
+                await DiagnosticsMailService.shared.sendErrorReport(
+                    area: "WhatsApp access",
+                    context: [
+                        "selectedFolder": selectedPath,
+                        "expectedFile": expectedFilePath,
+                        "expectedFolderHint": "~/Library/Group Containers/group.net.whatsapp.WhatsApp.shared"
+                    ],
+                    error: WhatsAppAccessValidationError(
+                        reason: "Selected folder does not contain ChatStorage.sqlite"
+                    )
+                )
+            }
             return nil
         }
 

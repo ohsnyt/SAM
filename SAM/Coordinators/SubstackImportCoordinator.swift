@@ -265,6 +265,14 @@ final class SubstackImportCoordinator {
             importStatus = .failed(error.localizedDescription)
             statusMessage = error.localizedDescription
             logger.error("Subscriber import failed: \(error.localizedDescription)")
+            await DiagnosticsMailService.shared.sendErrorReport(
+                area: "Substack subscriber import",
+                context: [
+                    "selectedFile": url.lastPathComponent,
+                    "selectedPath": url.path
+                ],
+                error: error
+            )
         }
     }
 

@@ -87,6 +87,80 @@ final class DiagnosticsMailService {
         )
     }
 
+    /// Send a one-off error report. Throttled to one email per
+    /// (area + error signature) per 24h so a sticky failure
+    /// (e.g. WhatsApp bookmark rejecting every click) can't spam.
+    /// Quietly no-ops if auto-send is disabled.
+    @discardableResult
+    func sendErrorReport(
+        area: String,
+        context: [String: String] = [:],
+        error: Error
+    ) async -> Bool {
+        guard isEnabled else { return false }
+
+        let signature = errorSignature(area: area, error: error)
+        let throttleKey = "sam.diagnostics.errorReport.\(signature).lastSentAt"
+        let now = Date()
+
+        let lastSent = UserDefaults.standard.double(forKey: throttleKey)
+        if lastSent > 0, now.timeIntervalSince1970 - lastSent < 24 * 60 * 60 {
+            logger.info("DiagnosticsMail: throttled \"\(area, privacy: .public)\" — sent within last 24h")
+            return false
+        }
+
+        let appVersion = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "?"
+        let build = (Bundle.main.infoDictionary?["CFBundleVersion"] as? String) ?? "?"
+        let os = ProcessInfo.processInfo.operatingSystemVersionString
+        let host = Host.current().localizedName ?? "unknown"
+
+        var contextSection = ""
+        if !context.isEmpty {
+            contextSection = "\nContext:\n" + context
+                .sorted { $0.key < $1.key }
+                .map { "  \($0.key): \($0.value)" }
+                .joined(separator: "\n") + "\n"
+        }
+
+        let body = """
+        SAM hit an error in \(area).
+
+        Error: \(error.localizedDescription)
+        \(contextSection)
+        Time: \(ISO8601DateFormatter().string(from: now))
+        Host: \(host)
+        macOS: \(os)
+        App: \(appVersion) (\(build))
+
+        This is an automated diagnostic. The same error from
+        the same area will not re-send for 24 hours.
+        """
+
+        let subject = "[SAM Diagnostics] \(area) failed — \(shortError(error))"
+
+        let ok = await send(subject: subject, body: body, attachment: nil)
+        if ok {
+            UserDefaults.standard.set(now.timeIntervalSince1970, forKey: throttleKey)
+        }
+        return ok
+    }
+
+    /// Stable per-error key suffix. Sanitized so it's safe as a
+    /// UserDefaults key and won't collide across distinct error texts.
+    private func errorSignature(area: String, error: Error) -> String {
+        let combined = "\(area)|\(error.localizedDescription)"
+        let sanitized = combined
+            .lowercased()
+            .replacingOccurrences(of: " ", with: "_")
+            .filter { $0.isLetter || $0.isNumber || $0 == "_" || $0 == "." || $0 == "-" || $0 == "|" }
+        return String(sanitized.prefix(120))
+    }
+
+    private func shortError(_ error: Error) -> String {
+        let msg = error.localizedDescription
+        return msg.count <= 60 ? msg : String(msg.prefix(60)) + "…"
+    }
+
     /// Send the dataset audit JSON. Caller passes the encoded report.
     @discardableResult
     func sendDatasetAudit(_ jsonData: Data) async -> Bool {
