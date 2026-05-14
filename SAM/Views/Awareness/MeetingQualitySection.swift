@@ -16,30 +16,31 @@ struct MeetingQualitySection: View {
     // MARK: - Computed State
 
     /// Calendar meetings from the last 14 days that have already ended.
-    private var recentMeetings: [ScoredMeeting] {
+    /// Each entry pairs the scored meeting with its source evidence so
+    /// the card can build a CapturePayload on tap.
+    private var recentMeetings: [ScoredMeetingEntry] {
         let now = Date()
         let fourteenDaysAgo = Calendar.current.date(byAdding: .day, value: -14, to: now)!
 
-        return allEvidence
-            .filter { item in
-                item.source == .calendar
-                && item.occurredAt >= fourteenDaysAgo
-                && (item.endedAt ?? item.occurredAt) <= now
-                && item.reviewStatus.countsAsOccurred
-            }
-            .map { scoreMeeting($0) }
-            .sorted { $0.score < $1.score } // Lowest scores first
+        let filtered = allEvidence.filter { item in
+            item.source == .calendar
+            && item.occurredAt >= fourteenDaysAgo
+            && (item.endedAt ?? item.occurredAt) <= now
+            && item.reviewStatus.countsAsOccurred
+        }
+        let entries = filtered.map { ScoredMeetingEntry(scored: scoreMeeting($0), evidence: $0) }
+        return entries.sorted { $0.scored.score < $1.scored.score }
     }
 
     /// Meetings scoring below 60 that need attention.
-    private var lowScoringMeetings: [ScoredMeeting] {
-        Array(recentMeetings.filter { $0.score < 60 }.prefix(5))
+    private var lowScoringMeetings: [ScoredMeetingEntry] {
+        Array(recentMeetings.filter { $0.scored.score < 60 }.prefix(5))
     }
 
     /// Average score across all recent meetings.
     private var averageScore: Int {
         guard !recentMeetings.isEmpty else { return 0 }
-        let total = recentMeetings.reduce(0) { $0 + $1.score }
+        let total = recentMeetings.reduce(0) { $0 + $1.scored.score }
         return total / recentMeetings.count
     }
 
@@ -73,8 +74,13 @@ struct MeetingQualitySection: View {
                     congratulatoryMessage
                 } else {
                     VStack(spacing: 10) {
-                        ForEach(lowScoringMeetings) { meeting in
-                            MeetingQualityCard(meeting: meeting)
+                        ForEach(lowScoringMeetings) { entry in
+                            Button {
+                                openCaptureSheet(for: entry.evidence)
+                            } label: {
+                                MeetingQualityCard(meeting: entry.scored)
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
                     .padding()
@@ -113,6 +119,47 @@ struct MeetingQualitySection: View {
             Spacer()
         }
         .padding()
+    }
+
+    // MARK: - Capture Sheet
+
+    /// Build a CapturePayload for the meeting and route it through the
+    /// standard post-meeting capture flow. Talking points and open actions
+    /// are pulled from the matching briefing when available, mirroring
+    /// `DailyBriefingCoordinator.createMeetingNoteTemplate`.
+    private func openCaptureSheet(for event: SamEvidenceItem) {
+        let matchingBriefing = MeetingPrepCoordinator.shared.briefings.first { briefing in
+            briefing.title == event.title
+                && Calendar.current.isDate(briefing.startsAt, inSameDayAs: event.occurredAt)
+        }
+
+        let knownAttendees = event.linkedPeople.filter { !$0.isMe }
+        let attendeeInfos: [CaptureAttendeeInfo] = knownAttendees.map { person in
+            let profile = matchingBriefing?.attendees.first(where: { $0.personID == person.id })
+            return CaptureAttendeeInfo(
+                personID: person.id,
+                displayName: person.displayNameCache ?? person.displayName,
+                roleBadges: person.roleBadges,
+                pendingActionItems: profile?.pendingActionItems ?? [],
+                recentLifeEvents: profile?.recentLifeEvents ?? []
+            )
+        }
+
+        let payload = CapturePayload(
+            captureKind: .meeting,
+            eventTitle: event.title,
+            eventDate: event.occurredAt,
+            attendees: attendeeInfos,
+            talkingPoints: matchingBriefing?.talkingPoints ?? [],
+            openActionItems: matchingBriefing?.openActionItems.map(\.description) ?? [],
+            evidenceID: event.id
+        )
+
+        NotificationCenter.default.post(
+            name: .samOpenPostMeetingCapture,
+            object: nil,
+            userInfo: ["payload": payload]
+        )
     }
 
     // MARK: - Scoring
@@ -225,6 +272,12 @@ private struct ScoredMeeting: Identifiable {
     let score: Int
     let missing: [String]
     let followUpSent: Bool
+}
+
+private struct ScoredMeetingEntry: Identifiable {
+    let scored: ScoredMeeting
+    let evidence: SamEvidenceItem
+    var id: UUID { scored.id }
 }
 
 // MARK: - Meeting Quality Card
