@@ -75,7 +75,11 @@ actor SubstackProfileAnalystService {
         let promptSize = prompt.count
         logger.debug("SubstackProfileAnalyst prompt — system: \(systemSize)ch, user: \(promptSize)ch")
 
-        let responseText = try await AIService.shared.generate(prompt: prompt, systemInstruction: instructions)
+        let responseText = try await AIService.shared.generate(
+            prompt: prompt,
+            systemInstruction: instructions,
+            task: InferenceTask(label: "Substack profile", icon: "newspaper", source: "SubstackProfileAnalystService")
+        )
         logger.debug("SubstackProfileAnalyst response — \(responseText.count)ch")
 
         return try parseResponse(responseText)

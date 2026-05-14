@@ -89,7 +89,8 @@ actor GoalCheckInService {
 
         let responseText = try await AIService.shared.generateNarrative(
             prompt: prompt,
-            systemInstruction: systemInstruction
+            systemInstruction: systemInstruction,
+            task: InferenceTask(label: "Goal check-in", icon: "checklist", source: "GoalCheckInService", priority: .interactive)
         )
 
         let actions = extractActions(from: responseText)
@@ -179,7 +180,8 @@ actor GoalCheckInService {
                 let responseText = try await AIService.shared.generateNarrative(
                     prompt: prompt,
                     systemInstruction: systemInstruction,
-                    maxTokens: 512
+                    maxTokens: 512,
+                    task: InferenceTask(label: "Journal distill", icon: "text.book.closed", source: "GoalCheckInService")
                 )
 
                 if let dto = parseJournalJSON(

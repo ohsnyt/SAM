@@ -441,7 +441,8 @@ final class OutcomeBundleGenerator {
             do {
                 let draft = try await AIService.shared.generateNarrative(
                     prompt: prompt,
-                    systemInstruction: systemInstruction
+                    systemInstruction: systemInstruction,
+                    task: InferenceTask(label: "Outreach draft", icon: "envelope.badge", source: "OutcomeBundleGenerator")
                 )
                 if !draft.isEmpty {
                     bundle.combinedDraftMessage = draft

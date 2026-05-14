@@ -91,7 +91,8 @@ actor EventTopicAdvisorService {
         let responseText = try await AIService.shared.generate(
             prompt: prompt,
             systemInstruction: instructions,
-            maxTokens: 2048
+            maxTokens: 2048,
+            task: InferenceTask(label: "Event topics", icon: "calendar.badge.plus", source: "EventTopicAdvisorService")
         )
 
         return try parseResponse(responseText)
@@ -128,7 +129,8 @@ actor EventTopicAdvisorService {
             prompt: prompt,
             systemInstruction: "You write compelling event descriptions for financial education workshops. " +
                 "Educational tone, \(complianceNote2), warm and inviting.",
-            maxTokens: 256
+            maxTokens: 256,
+            task: InferenceTask(label: "Event description", icon: "calendar.badge.plus", source: "EventTopicAdvisorService", priority: .interactive)
         )
     }
 

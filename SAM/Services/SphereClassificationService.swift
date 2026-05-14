@@ -268,7 +268,8 @@ public actor SphereClassificationService {
             raw = try await AIService.shared.generate(
                 prompt: prompt,
                 systemInstruction: systemInstruction,
-                maxTokens: 256
+                maxTokens: 256,
+                task: InferenceTask(label: "Sphere classification", icon: "circle.grid.3x3", source: "SphereClassificationService")
             )
         } catch {
             logger.warning("Classifier inference failed: \(error.localizedDescription)")

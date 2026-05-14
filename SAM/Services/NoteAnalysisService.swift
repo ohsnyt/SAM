@@ -91,7 +91,11 @@ actor NoteAnalysisService {
     private func analyzeSingleChunk(content: String, roleContext: RoleContext?) async throws -> NoteAnalysisDTO {
         let instructions = await buildSystemInstructions()
         let prompt = buildPrompt(content: content, roleContext: roleContext)
-        let responseText = try await AIService.shared.generate(prompt: prompt, systemInstruction: instructions)
+        let responseText = try await AIService.shared.generate(
+            prompt: prompt,
+            systemInstruction: instructions,
+            task: InferenceTask(label: "Note analysis", icon: "note.text", source: "NoteAnalysisService")
+        )
         let analysis = try parseResponse(responseText)
         logger.debug("Analyzed chunk: \(analysis.people.count) people, \(analysis.actionItems.count) actions")
         return analysis
@@ -198,7 +202,11 @@ actor NoteAnalysisService {
             Output the corrected text exactly as dictated, with no additions, no removals of factual content, and no rephrasing.
             """
 
-        return try await AIService.shared.generateWithFoundationModels(prompt: rawText, systemInstruction: instructions)
+        return try await AIService.shared.generateWithFoundationModels(
+            prompt: rawText,
+            systemInstruction: instructions,
+            task: InferenceTask(label: "Dictation polish", icon: "mic.badge.plus", source: "NoteAnalysisService", priority: .interactive)
+        )
     }
 
     // MARK: - Relationship Summary
@@ -263,7 +271,11 @@ actor NoteAnalysisService {
             Relationship health: \(healthInfo)
             """
 
-        let responseText = try await AIService.shared.generateNarrative(prompt: prompt, systemInstruction: instructions)
+        let responseText = try await AIService.shared.generateNarrative(
+            prompt: prompt,
+            systemInstruction: instructions,
+            task: InferenceTask(label: "Relationship summary", icon: "person.text.rectangle", source: "NoteAnalysisService")
+        )
         return try parseRelationshipSummary(responseText)
     }
 
@@ -327,7 +339,11 @@ actor NoteAnalysisService {
             \(noteContent)
             """
 
-        let draft = try await AIService.shared.generateNarrative(prompt: prompt, systemInstruction: instructions)
+        let draft = try await AIService.shared.generateNarrative(
+            prompt: prompt,
+            systemInstruction: instructions,
+            task: InferenceTask(label: "Follow-up draft", icon: "envelope.badge", source: "NoteAnalysisService", priority: .interactive)
+        )
         logger.debug("Generated follow-up draft for \(personName, privacy: .private)")
         return draft
     }

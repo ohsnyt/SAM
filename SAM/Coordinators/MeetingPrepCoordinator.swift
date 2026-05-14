@@ -1204,7 +1204,10 @@ final class MeetingPrepCoordinator {
             """
 
         do {
-            let response = try await AIService.shared.generate(prompt: prompt)
+            let response = try await AIService.shared.generate(
+                prompt: prompt,
+                task: InferenceTask(label: "Talking points", icon: "bubble.left.and.bubble.right", source: "MeetingPrepCoordinator")
+            )
             return parseTalkingPoints(response)
         } catch {
             logger.debug("Talking points generation skipped: \(error.localizedDescription)")

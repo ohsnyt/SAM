@@ -974,7 +974,11 @@ final class SubstackImportCoordinator {
         let instructions = "You are a writing style analyst. Respond with only the voice summary, no preamble."
 
         do {
-            let result = try await AIService.shared.generate(prompt: prompt, systemInstruction: instructions)
+            let result = try await AIService.shared.generate(
+                prompt: prompt,
+                systemInstruction: instructions,
+                task: InferenceTask(label: "Substack voice", icon: "newspaper", source: "SubstackImportCoordinator")
+            )
             return result.trimmingCharacters(in: .whitespacesAndNewlines)
         } catch {
             logger.warning("Voice analysis failed: \(error.localizedDescription)")

@@ -106,7 +106,11 @@ actor ClipboardParsingService {
         }
 
         let (systemPrompt, userPrompt) = buildPrompt(text: clipboardText, sourceURL: sourceURL, detectedPlatform: detectedPlatform)
-        let responseText = try await AIService.shared.generate(prompt: userPrompt, systemInstruction: systemPrompt)
+        let responseText = try await AIService.shared.generate(
+            prompt: userPrompt,
+            systemInstruction: systemPrompt,
+            task: InferenceTask(label: "Clipboard parse", icon: "doc.on.clipboard", source: "ClipboardParsingService", priority: .interactive)
+        )
 
         var conversation = try parseResponse(responseText)
 

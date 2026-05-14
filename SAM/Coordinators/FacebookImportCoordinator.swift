@@ -1718,7 +1718,11 @@ final class FacebookImportCoordinator {
             """
 
         do {
-            let result = try await AIService.shared.generate(prompt: prompt, systemInstruction: instructions)
+            let result = try await AIService.shared.generate(
+                prompt: prompt,
+                systemInstruction: instructions,
+                task: InferenceTask(label: "Facebook voice", icon: "face.smiling", source: "FacebookImportCoordinator")
+            )
             return result.trimmingCharacters(in: .whitespacesAndNewlines)
         } catch {
             logger.warning("Facebook voice analysis failed: \(error.localizedDescription)")

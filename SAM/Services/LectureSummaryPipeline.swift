@@ -446,7 +446,8 @@ actor LectureSummaryPipeline {
                 LectureReasonedScaffold.self,
                 prompt: reasonerUserPrompt(scaffold: scaffold, extracts: extracts, outlineCues: outlineCues),
                 systemInstruction: Self.reasonerSystemPrompt,
-                timeout: 90
+                timeout: 90,
+                task: InferenceTask(label: "Lecture reasoning", icon: "graduationcap", source: "LectureSummaryPipeline")
             )
         } catch {
             logger.warning("Reasoner pass failed, using empty scaffold: \(error.localizedDescription)")
@@ -462,7 +463,8 @@ actor LectureSummaryPipeline {
             LectureCorePass.self,
             prompt: coreUserPrompt(reasoned: enforcedReasoned, extracts: extracts),
             systemInstruction: Self.coreSystemPrompt,
-            timeout: 90
+            timeout: 90,
+            task: InferenceTask(label: "Lecture synthesis", icon: "graduationcap", source: "LectureSummaryPipeline")
         )
 
         // 4b) Details synthesis
@@ -470,7 +472,8 @@ actor LectureSummaryPipeline {
             LectureDetailsPass.self,
             prompt: detailsUserPrompt(core: core, reasoned: enforcedReasoned, extracts: extracts),
             systemInstruction: Self.detailsSystemPrompt,
-            timeout: 90
+            timeout: 90,
+            task: InferenceTask(label: "Lecture details", icon: "graduationcap", source: "LectureSummaryPipeline")
         )
 
         // 4c) Post-synthesis keyPoint enforcement
@@ -510,7 +513,8 @@ actor LectureSummaryPipeline {
                 LectureChunkExtraction.self,
                 prompt: Self.extractPrompt(chunk: chunk, index: index, total: total),
                 systemInstruction: Self.extractSystemPrompt,
-                timeout: 90
+                timeout: 90,
+                task: InferenceTask(label: "Lecture extract", icon: "graduationcap", source: "LectureSummaryPipeline")
             )
         } catch {
             let overflow = Self.isContextWindowOverflow(error)

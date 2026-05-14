@@ -417,7 +417,8 @@ final class RegressionJudgeService {
             let response = try await AIService.shared.generate(
                 prompt: prompt,
                 systemInstruction: systemInstruction,
-                maxTokens: 600
+                maxTokens: 600,
+                task: InferenceTask(label: "Regression judge", icon: "checkmark.seal", source: "RegressionJudgeService")
             )
 
             // Extract JSON, parse verdict

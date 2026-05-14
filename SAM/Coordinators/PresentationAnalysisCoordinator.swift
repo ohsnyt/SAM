@@ -181,7 +181,8 @@ final class PresentationAnalysisCoordinator {
         let response = try await AIService.shared.generate(
             prompt: prompt,
             systemInstruction: systemInstruction,
-            maxTokens: 2048
+            maxTokens: 2048,
+            task: InferenceTask(label: "Presentation analysis", icon: "doc.richtext", source: "PresentationAnalysisCoordinator")
         )
 
         // Parse JSON response

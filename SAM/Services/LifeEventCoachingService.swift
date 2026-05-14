@@ -53,7 +53,8 @@ actor LifeEventCoachingService {
 
         let responseText = try await AIService.shared.generateNarrative(
             prompt: prompt,
-            systemInstruction: systemInstruction
+            systemInstruction: systemInstruction,
+            task: InferenceTask(label: "Life event coaching", icon: "heart.text.square", source: "LifeEventCoachingService", priority: .interactive)
         )
 
         let actions = extractActions(from: responseText, context: context)
@@ -102,7 +103,8 @@ actor LifeEventCoachingService {
 
         let responseText = try await AIService.shared.generateNarrative(
             prompt: prompt,
-            systemInstruction: systemInstruction
+            systemInstruction: systemInstruction,
+            task: InferenceTask(label: "Life event coaching", icon: "heart.text.square", source: "LifeEventCoachingService", priority: .interactive)
         )
 
         let actions = extractActions(from: responseText, context: context)

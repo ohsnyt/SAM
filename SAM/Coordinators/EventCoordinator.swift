@@ -376,7 +376,8 @@ final class EventCoordinator {
         return try await AIService.shared.generate(
             prompt: prompt,
             systemInstruction: systemInstruction,
-            maxTokens: 1024
+            maxTokens: 1024,
+            task: InferenceTask(label: "Event invitation", icon: "envelope.badge", source: "EventCoordinator")
         )
     }
 
@@ -616,7 +617,8 @@ final class EventCoordinator {
             prompt: prompt,
             systemInstruction: "You write engaging social media content for financial professionals. " +
                 "You balance educational value with event promotion. You understand platform-specific conventions.",
-            maxTokens: 1024
+            maxTokens: 1024,
+            task: InferenceTask(label: "Event social post", icon: "megaphone", source: "EventCoordinator")
         )
 
         try EventRepository.shared.upsertSocialPromotion(
@@ -1088,7 +1090,8 @@ final class EventCoordinator {
         return try await AIService.shared.generate(
             prompt: prompt,
             systemInstruction: systemInstruction,
-            maxTokens: 1024
+            maxTokens: 1024,
+            task: InferenceTask(label: "Event update", icon: "envelope.badge", source: "EventCoordinator")
         )
     }
 
@@ -1159,7 +1162,8 @@ final class EventCoordinator {
         return try await AIService.shared.generate(
             prompt: prompt,
             systemInstruction: "You write brief, friendly event reminders. Be concise and helpful.",
-            maxTokens: 256
+            maxTokens: 256,
+            task: InferenceTask(label: "Event reminder", icon: "bell.badge", source: "EventCoordinator")
         )
     }
 
@@ -1266,7 +1270,8 @@ final class EventCoordinator {
             prompt: prompt,
             systemInstruction: "You write warm, genuine follow-up messages for \(persona). " +
                 "You understand that post-event follow-up is about deepening relationships, not hard selling.",
-            maxTokens: 512
+            maxTokens: 512,
+            task: InferenceTask(label: "Event follow-up", icon: "envelope.arrow.triangle.branch", source: "EventCoordinator")
         )
     }
 
@@ -1340,7 +1345,8 @@ final class EventCoordinator {
         let response = try await AIService.shared.generate(
             prompt: prompt,
             systemInstruction: "You select relevant event attendees from a contact list. Return only valid JSON.",
-            maxTokens: 2048
+            maxTokens: 2048,
+            task: InferenceTask(label: "Event attendee suggestions", icon: "person.3.sequence", source: "EventCoordinator")
         )
 
         // Parse AI response

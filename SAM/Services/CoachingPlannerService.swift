@@ -93,7 +93,8 @@ actor CoachingPlannerService {
 
         let responseText = try await AIService.shared.generateNarrative(
             prompt: prompt,
-            systemInstruction: systemInstruction
+            systemInstruction: systemInstruction,
+            task: InferenceTask(label: "Coaching response", icon: "bubble.left.and.text.bubble.right", source: "CoachingPlannerService", priority: .interactive)
         )
 
         let actions = extractActions(from: responseText)
@@ -151,7 +152,8 @@ actor CoachingPlannerService {
 
         let responseText = try await AIService.shared.generateNarrative(
             prompt: prompt,
-            systemInstruction: systemInstruction
+            systemInstruction: systemInstruction,
+            task: InferenceTask(label: "Coaching response", icon: "bubble.left.and.text.bubble.right", source: "CoachingPlannerService", priority: .interactive)
         )
 
         let actions = extractActions(from: responseText)

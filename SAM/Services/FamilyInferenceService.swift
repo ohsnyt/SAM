@@ -148,7 +148,11 @@ actor FamilyInferenceService {
             """
 
         do {
-            let responseText = try await AIService.shared.generate(prompt: prompt, systemInstruction: systemInstruction)
+            let responseText = try await AIService.shared.generate(
+                prompt: prompt,
+                systemInstruction: systemInstruction,
+                task: InferenceTask(label: "Family inference", icon: "person.3", source: "FamilyInferenceService")
+            )
             await Self.processResponse(responseText, cluster: cluster)
         } catch {
             logger.error("Family inference AI call failed: \(error.localizedDescription)")

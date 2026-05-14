@@ -272,7 +272,11 @@ actor CrossPlatformConsistencyService {
         let promptSize = prompt.count
         logger.debug("📏 CrossPlatformConsistency prompt — system: \(systemSize)ch, user: \(promptSize)ch, total: \((systemSize+promptSize)/4)t")
 
-        let responseText = try await AIService.shared.generate(prompt: prompt, systemInstruction: instructions)
+        let responseText = try await AIService.shared.generate(
+            prompt: prompt,
+            systemInstruction: instructions,
+            task: InferenceTask(label: "Cross-platform consistency", icon: "checkmark.seal", source: "CrossPlatformConsistencyService")
+        )
         logger.debug("📏 CrossPlatformConsistency response — \(responseText.count)ch")
 
         return try parseResponse(responseText)

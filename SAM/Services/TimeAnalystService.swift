@@ -38,7 +38,11 @@ actor TimeAnalystService {
             \(data)
             """
 
-        let responseText = try await AIService.shared.generate(prompt: prompt, systemInstruction: instructions)
+        let responseText = try await AIService.shared.generate(
+            prompt: prompt,
+            systemInstruction: instructions,
+            task: InferenceTask(label: "Time analyst", icon: "clock.badge.checkmark", source: "TimeAnalystService")
+        )
         return try parseResponse(responseText)
     }
 

@@ -138,7 +138,8 @@ actor ContentAdvisorService {
         // style instructions and produces generic "Title: Subtitle" topics regardless of prompt.
         let responseText = try await AIService.shared.generateNarrative(
             prompt: prompt,
-            systemInstruction: instructions
+            systemInstruction: instructions,
+            task: InferenceTask(label: "Content topics", icon: "lightbulb", source: "ContentAdvisorService")
         )
         logger.debug("📝 Content advisor raw response (\(responseText.count) chars): \(String(responseText.prefix(500)))")
         let analysis = try parseResponse(responseText)
@@ -312,7 +313,8 @@ actor ContentAdvisorService {
         // better prose quality and no overly cautious Apple safety filters.
         var responseText = try await AIService.shared.generateNarrative(
             prompt: prompt,
-            systemInstruction: instructions
+            systemInstruction: instructions,
+            task: InferenceTask(label: "Content draft", icon: "doc.richtext", source: "ContentAdvisorService", priority: .interactive)
         )
 
         // Detect model refusal and retry with softened framing
@@ -323,7 +325,8 @@ actor ContentAdvisorService {
                 "Focus on the positive, human-interest angle."
             responseText = try await AIService.shared.generateNarrative(
                 prompt: softenedPrompt,
-                systemInstruction: instructions
+                systemInstruction: instructions,
+                task: InferenceTask(label: "Content draft", icon: "doc.richtext", source: "ContentAdvisorService", priority: .interactive)
             )
         }
         return try parseDraftResponse(responseText)

@@ -192,7 +192,8 @@ final class PromptLabCoordinator {
             let output = try await AIService.shared.generateNarrative(
                 prompt: prompt,
                 systemInstruction: variant.systemInstruction,
-                maxTokens: 4096
+                maxTokens: 4096,
+                task: InferenceTask(label: "Prompt Lab: \(variant.name)", icon: "flask", source: "PromptLabCoordinator", priority: .interactive)
             )
 
             let duration = Date().timeIntervalSince(start)

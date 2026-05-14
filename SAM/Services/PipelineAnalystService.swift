@@ -41,7 +41,11 @@ actor PipelineAnalystService {
         let systemSize = instructions.count
         let promptSize = prompt.count
         logger.debug("📏 Pipeline prompt — system: \(systemSize)ch (~\(systemSize/4)t), user: \(promptSize)ch (~\(promptSize/4)t), total: \((systemSize+promptSize)/4)t")
-        let responseText = try await AIService.shared.generate(prompt: prompt, systemInstruction: instructions)
+        let responseText = try await AIService.shared.generate(
+            prompt: prompt,
+            systemInstruction: instructions,
+            task: InferenceTask(label: "Pipeline analyst", icon: "chart.bar.xaxis", source: "PipelineAnalystService")
+        )
         logger.debug("📏 Pipeline response — \(responseText.count)ch (~\(responseText.count/4)t)")
         return try parseResponse(responseText)
     }

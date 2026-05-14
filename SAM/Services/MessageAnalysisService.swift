@@ -57,7 +57,11 @@ actor MessageAnalysisService {
         let instructions = await buildSystemInstructions()
         let prompt = buildPrompt(messages: messages, contactName: contactName, contactRole: contactRole)
 
-        let responseText = try await AIService.shared.generate(prompt: prompt, systemInstruction: instructions)
+        let responseText = try await AIService.shared.generate(
+            prompt: prompt,
+            systemInstruction: instructions,
+            task: InferenceTask(label: "Message analysis", icon: "message.badge", source: "MessageAnalysisService")
+        )
         let analysis = try parseResponse(responseText)
 
         logger.debug("Analyzed conversation with \(messages.count) messages: \(analysis.topics.count) topics")

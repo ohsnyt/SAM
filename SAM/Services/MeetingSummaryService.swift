@@ -230,7 +230,8 @@ actor MeetingSummaryService {
                 LectureSynthesis.self,
                 prompt: prompt,
                 systemInstruction: instruction,
-                timeout: 45
+                timeout: 45,
+                task: InferenceTask(label: "Meeting synthesis", icon: "doc.text.magnifyingglass", source: "MeetingSummaryService")
             )
             refined.topics = synthesis.topics
             refined.learningObjectives = synthesis.learningObjectives
@@ -270,7 +271,8 @@ actor MeetingSummaryService {
                 MeetingSummary.self,
                 prompt: prompt,
                 systemInstruction: systemInstruction,
-                timeout: 60
+                timeout: 60,
+                task: InferenceTask(label: "Meeting summary", icon: "doc.text", source: "MeetingSummaryService")
             )
         } catch {
             let overflow = Self.isContextWindowOverflow(error)

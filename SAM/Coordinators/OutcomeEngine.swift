@@ -2402,7 +2402,8 @@ final class OutcomeEngine {
                     do {
                         let nextStep = try await AIService.shared.generateNarrative(
                             prompt: prompt,
-                            systemInstruction: systemInstruction
+                            systemInstruction: systemInstruction,
+                            task: InferenceTask(label: "Outcome next step", icon: "arrow.triangle.turn.up.right.diamond", source: "OutcomeEngine")
                         )
                         // Re-fetch after AI call before mutating
                         guard let liveOutcome = try? outcomeRepo.fetch(id: outcomeID),
@@ -2538,7 +2539,8 @@ final class OutcomeEngine {
         do {
             let draft = try await AIService.shared.generateNarrative(
                 prompt: prompt,
-                systemInstruction: systemInstruction
+                systemInstruction: systemInstruction,
+                task: InferenceTask(label: "Outcome draft", icon: "arrow.triangle.turn.up.right.diamond", source: "OutcomeEngine")
             )
             // Re-fetch after AI call to avoid mutating a stale/deleted model
             guard let liveOutcome = try? outcomeRepo.fetch(id: outcomeID),

@@ -72,7 +72,8 @@ actor EventEvaluationAnalysisService {
         do {
             let response = try await AIService.shared.generate(
                 prompt: prompt,
-                systemInstruction: "You analyze workshop chat data. Return only valid JSON."
+                systemInstruction: "You analyze workshop chat data. Return only valid JSON.",
+                task: InferenceTask(label: "Workshop chat analysis", icon: "bubble.left.and.bubble.right", source: "EventEvaluationAnalysisService")
             )
             updated = applyLLMResponse(response, to: updated)
         } catch {
@@ -120,7 +121,8 @@ actor EventEvaluationAnalysisService {
 
         let response = try await AIService.shared.generate(
             prompt: prompt,
-            systemInstruction: "You are a workshop effectiveness analyst. Provide specific, actionable feedback."
+            systemInstruction: "You are a workshop effectiveness analyst. Provide specific, actionable feedback.",
+            task: InferenceTask(label: "Workshop effectiveness", icon: "chart.bar.doc.horizontal", source: "EventEvaluationAnalysisService")
         )
 
         // Split response into gaps and effective sections
@@ -165,7 +167,8 @@ actor EventEvaluationAnalysisService {
 
         return try await AIService.shared.generate(
             prompt: prompt,
-            systemInstruction: "You summarize workshop results for the presenter. Be encouraging but honest. Keep it to 3-4 sentences."
+            systemInstruction: "You summarize workshop results for the presenter. Be encouraging but honest. Keep it to 3-4 sentences.",
+            task: InferenceTask(label: "Workshop summary", icon: "doc.text.below.ecg", source: "EventEvaluationAnalysisService")
         )
     }
 

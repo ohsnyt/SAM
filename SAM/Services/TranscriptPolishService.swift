@@ -99,7 +99,8 @@ actor TranscriptPolishService {
         let responseText = try await AIService.shared.generate(
             prompt: prompt,
             systemInstruction: systemInstruction,
-            maxTokens: 4096
+            maxTokens: 4096,
+            task: InferenceTask(label: "Transcript polish", icon: "waveform.and.mic", source: "TranscriptPolishService")
         )
 
         let cleaned = Self.stripWrappers(responseText)

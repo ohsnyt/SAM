@@ -56,7 +56,11 @@ actor EmailAnalysisService {
         \(trimmedBody)
         """
 
-        let responseText = try await AIService.shared.generate(prompt: prompt, systemInstruction: instructions)
+        let responseText = try await AIService.shared.generate(
+            prompt: prompt,
+            systemInstruction: instructions,
+            task: InferenceTask(label: "Email analysis", icon: "envelope.badge.shield.half.filled", source: "EmailAnalysisService")
+        )
         return try parseResponse(responseText)
     }
 

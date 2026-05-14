@@ -87,7 +87,11 @@ actor LinkedInProfileAnalystService {
         logger.debug("LinkedInProfileAnalyst prompt — system: \(systemSize)ch (~\(systemSize/4)t), user: \(promptSize)ch (~\(promptSize/4)t), total: \((systemSize+promptSize)/4)t")
 
         // Step 6: Generate
-        let responseText = try await AIService.shared.generate(prompt: prompt, systemInstruction: instructions)
+        let responseText = try await AIService.shared.generate(
+            prompt: prompt,
+            systemInstruction: instructions,
+            task: InferenceTask(label: "LinkedIn profile", icon: "link", source: "LinkedInProfileAnalystService")
+        )
         logger.debug("LinkedInProfileAnalyst response — \(responseText.count)ch (~\(responseText.count/4)t)")
 
         // Step 7: Parse

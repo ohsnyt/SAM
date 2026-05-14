@@ -95,7 +95,11 @@ actor FacebookProfileAnalystService {
         logger.debug("FacebookProfileAnalyst prompt — system: \(systemSize)ch (~\(systemSize/4)t), user: \(promptSize)ch (~\(promptSize/4)t), total: \((systemSize+promptSize)/4)t")
 
         // Step 6: Generate
-        let responseText = try await AIService.shared.generate(prompt: prompt, systemInstruction: instructions)
+        let responseText = try await AIService.shared.generate(
+            prompt: prompt,
+            systemInstruction: instructions,
+            task: InferenceTask(label: "Facebook profile", icon: "face.smiling", source: "FacebookProfileAnalystService")
+        )
         logger.debug("FacebookProfileAnalyst response — \(responseText.count)ch (~\(responseText.count/4)t)")
 
         // Step 7: Parse

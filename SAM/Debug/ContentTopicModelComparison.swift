@@ -118,12 +118,14 @@ actor ContentTopicModelComparison {
                 output = try await AIService.shared.generateNarrative(
                     prompt: prompt,
                     systemInstruction: systemInstruction,
-                    maxTokens: 4096
+                    maxTokens: 4096,
+                    task: InferenceTask(label: "Model bench (\(name))", icon: "speedometer", source: "ContentTopicModelComparison")
                 )
             } else {
                 output = try await AIService.shared.generateWithFoundationModels(
                     prompt: prompt,
-                    systemInstruction: systemInstruction
+                    systemInstruction: systemInstruction,
+                    task: InferenceTask(label: "Model bench (\(name))", icon: "speedometer", source: "ContentTopicModelComparison")
                 )
             }
 

@@ -231,7 +231,8 @@ actor RoleCandidateAnalystService {
             responseText = try await AIService.shared.generateNarrative(
                 prompt: prompt,
                 systemInstruction: systemInstruction,
-                maxTokens: 512
+                maxTokens: 512,
+                task: InferenceTask(label: "Role candidate scoring", icon: "person.badge.key", source: "RoleCandidateAnalystService")
             )
         } catch {
             logger.warning("Scoring failed for \(person.displayName): \(error.localizedDescription)")

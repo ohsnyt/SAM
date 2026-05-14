@@ -184,7 +184,8 @@ Which event number best matches the hint? Consider partial titles, word order va
             let response = try await AIService.shared.generate(
                 prompt: prompt,
                 systemInstruction: "You match event registration emails to event names. Be conservative: reply 0 if there is no reasonable match.",
-                maxTokens: 4
+                maxTokens: 4,
+                task: InferenceTask(label: "Event match", icon: "calendar.badge.checkmark", source: "GoHighLevelRegistrationService")
             )
             let digits = response.trimmingCharacters(in: .whitespacesAndNewlines)
             if let index = Int(digits), index > 0, index <= candidates.count {
@@ -220,7 +221,8 @@ Which contact number best matches the registrant? Consider nicknames, middle nam
             let response = try await AIService.shared.generate(
                 prompt: prompt,
                 systemInstruction: "You match registration names to contact names. Be conservative: reply 0 if there is genuine ambiguity or no reasonable match.",
-                maxTokens: 4
+                maxTokens: 4,
+                task: InferenceTask(label: "Registrant match", icon: "person.badge.shield.checkmark", source: "GoHighLevelRegistrationService")
             )
             let digits = response.trimmingCharacters(in: .whitespacesAndNewlines)
             if let index = Int(digits), index > 0, index <= candidates.count {

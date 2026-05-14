@@ -162,7 +162,12 @@ actor DailyBriefingService {
 
         do {
             let visualStart = clock.now
-            let visual = try await AIService.shared.generateNarrative(prompt: visualPrompt, systemInstruction: visualSystem, priority: .interactive)
+            let visual = try await AIService.shared.generateNarrative(
+                prompt: visualPrompt,
+                systemInstruction: visualSystem,
+                priority: .interactive,
+                task: InferenceTask(label: "Morning briefing", icon: "sunrise", source: "DailyBriefingService", priority: .interactive)
+            )
             let visualElapsed = clock.now - visualStart
             logger.info("⏱️ Visual narrative complete (\(Self.formatElapsed(visualElapsed)), \(visual.count)ch)")
 
@@ -241,7 +246,12 @@ actor DailyBriefingService {
 
         // TTS narrative skipped — see comment in generateMorningNarrative.
         do {
-            let visual = try await AIService.shared.generateNarrative(prompt: visualPrompt, systemInstruction: visualSystem, priority: .interactive)
+            let visual = try await AIService.shared.generateNarrative(
+                prompt: visualPrompt,
+                systemInstruction: visualSystem,
+                priority: .interactive,
+                task: InferenceTask(label: "Evening briefing", icon: "sunset", source: "DailyBriefingService", priority: .interactive)
+            )
             return (visual, "")
         } catch {
             logger.warning("Evening narrative generation failed: \(error.localizedDescription)")

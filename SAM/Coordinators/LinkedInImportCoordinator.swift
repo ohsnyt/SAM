@@ -2990,7 +2990,11 @@ final class LinkedInImportCoordinator {
             """
 
         do {
-            let result = try await AIService.shared.generate(prompt: prompt, systemInstruction: instructions)
+            let result = try await AIService.shared.generate(
+                prompt: prompt,
+                systemInstruction: instructions,
+                task: InferenceTask(label: "LinkedIn voice", icon: "link", source: "LinkedInImportCoordinator")
+            )
             return result.trimmingCharacters(in: .whitespacesAndNewlines)
         } catch {
             logger.warning("LinkedIn voice analysis failed: \(error.localizedDescription)")
