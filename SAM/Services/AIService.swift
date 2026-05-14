@@ -112,10 +112,26 @@ actor AIService {
     /// happens immediately on the gate's actor without waiting for the
     /// caller's actor. Interactive work bypasses any pending background
     /// callers; background work waits at the tail.
-    private func runSerialized<T>(priority: Priority = .background, _ body: () async throws -> T) async throws -> T {
-        await inferenceGate.enter(priority: priority)
-        defer { Task { await inferenceGate.leave() } }
+    ///
+    /// Also publishes the task to `InferenceRegistry` so the sidebar footer
+    /// (and any future activity surface) reflects the current and queued
+    /// work without each caller having to wire its own visibility flag.
+    private func runSerialized<T>(task: InferenceTask, _ body: () async throws -> T) async throws -> T {
+        await MainActor.run { InferenceRegistry.shared.enqueue(task) }
+        await inferenceGate.enter(priority: task.priority)
+        await MainActor.run { InferenceRegistry.shared.markRunning(task) }
+        defer {
+            Task { await inferenceGate.leave() }
+            Task { @MainActor in InferenceRegistry.shared.remove(task) }
+        }
         return try await body()
+    }
+
+    /// Backward-compat overload for callers that haven't moved to the
+    /// labeled API yet. Synthesizes a generic "AI" task. Once Phase B
+    /// migration is done this overload can be removed.
+    private func runSerialized<T>(priority: Priority = .background, _ body: () async throws -> T) async throws -> T {
+        try await runSerialized(task: .generic(priority: priority), body)
     }
 
     // MARK: - Emoji / Icon Guidance
@@ -244,11 +260,13 @@ actor AIService {
         prompt: String,
         systemInstruction: String? = nil,
         maxTokens: Int? = nil,
-        priority: Priority = .background
+        priority: Priority = .background,
+        task: InferenceTask? = nil
     ) async throws -> String {
         activeGenerationCount += 1
         defer { activeGenerationCount -= 1 }
 
+        let effectiveTask = task ?? .generic(priority: priority)
         let emojiClause = Self.emojiGuidance
         let effectiveSystem = systemInstruction.map { $0 + emojiClause } ?? (emojiClause.isEmpty ? nil : String(emojiClause.dropFirst()))
 
@@ -256,14 +274,14 @@ actor AIService {
 
         switch backend {
         case .foundationModels:
-            return try await generateWithFoundationModels(prompt: prompt, systemInstruction: effectiveSystem, priority: priority)
+            return try await generateWithFoundationModels(prompt: prompt, systemInstruction: effectiveSystem, task: effectiveTask)
 
         case .mlx:
             // Try MLX first, fall back to FoundationModels on failure or if circuit is open
             let mlxReady = await MLXModelManager.shared.isSelectedModelReady()
             if mlxReady && !mlxCircuitOpen {
                 do {
-                    return try await generateWithMLX(prompt: prompt, systemInstruction: effectiveSystem, maxTokens: maxTokens, priority: priority)
+                    return try await generateWithMLX(prompt: prompt, systemInstruction: effectiveSystem, maxTokens: maxTokens, task: effectiveTask)
                 } catch {
                     mlxCircuitOpen = true
                     logger.warning("MLX generation failed (\(error.localizedDescription)) — circuit open, falling back to FoundationModels for this session")
@@ -271,11 +289,11 @@ actor AIService {
             } else if !mlxReady {
                 logger.debug("MLX model not ready — falling back to FoundationModels")
             }
-            return try await generateWithFoundationModels(prompt: prompt, systemInstruction: effectiveSystem, priority: priority)
+            return try await generateWithFoundationModels(prompt: prompt, systemInstruction: effectiveSystem, task: effectiveTask)
 
         case .hybrid:
             // Structured extraction always uses FoundationModels
-            return try await generateWithFoundationModels(prompt: prompt, systemInstruction: effectiveSystem, priority: priority)
+            return try await generateWithFoundationModels(prompt: prompt, systemInstruction: effectiveSystem, task: effectiveTask)
         }
     }
 
@@ -285,11 +303,13 @@ actor AIService {
         prompt: String,
         systemInstruction: String? = nil,
         maxTokens: Int? = nil,
-        priority: Priority = .background
+        priority: Priority = .background,
+        task: InferenceTask? = nil
     ) async throws -> String {
         activeGenerationCount += 1
         defer { activeGenerationCount -= 1 }
 
+        let effectiveTask = task ?? .generic(priority: priority)
         let emojiClause = Self.emojiGuidance
         let effectiveSystem = systemInstruction.map { $0 + emojiClause } ?? (emojiClause.isEmpty ? nil : String(emojiClause.dropFirst()))
 
@@ -297,14 +317,14 @@ actor AIService {
 
         switch backend {
         case .foundationModels:
-            return try await generateWithFoundationModels(prompt: prompt, systemInstruction: effectiveSystem, priority: priority)
+            return try await generateWithFoundationModels(prompt: prompt, systemInstruction: effectiveSystem, task: effectiveTask)
 
         case .mlx, .hybrid:
             // Prefer MLX for narrative tasks; fall back to FM if circuit is open or model not ready
             let mlxReady = await MLXModelManager.shared.isSelectedModelReady()
             if mlxReady && !mlxCircuitOpen {
                 do {
-                    return try await generateWithMLX(prompt: prompt, systemInstruction: effectiveSystem, maxTokens: maxTokens, priority: priority)
+                    return try await generateWithMLX(prompt: prompt, systemInstruction: effectiveSystem, maxTokens: maxTokens, task: effectiveTask)
                 } catch {
                     mlxCircuitOpen = true
                     logger.warning("MLX generation failed (\(error.localizedDescription)) — circuit open, falling back to FoundationModels for this session")
@@ -314,7 +334,7 @@ actor AIService {
             } else {
                 logger.debug("MLX model not ready — narrative falling back to FoundationModels")
             }
-            return try await generateWithFoundationModels(prompt: prompt, systemInstruction: effectiveSystem, priority: priority)
+            return try await generateWithFoundationModels(prompt: prompt, systemInstruction: effectiveSystem, task: effectiveTask)
         }
     }
 
@@ -337,11 +357,17 @@ actor AIService {
 
     /// Generate using Apple Intelligence (FoundationModels) regardless of active backend setting.
     /// Used for lightweight tasks like dictation polish where speed is more important than reasoning depth.
-    func generateWithFoundationModels(prompt: String, systemInstruction: String?, priority: Priority = .background) async throws -> String {
+    func generateWithFoundationModels(
+        prompt: String,
+        systemInstruction: String?,
+        priority: Priority = .background,
+        task: InferenceTask? = nil
+    ) async throws -> String {
         guard case .available = foundationModelsAvailability() else {
             throw AIError.modelUnavailable("FoundationModels not available")
         }
 
+        let effectiveTask = task ?? .generic(priority: priority)
         let session: LanguageModelSession
         if let instruction = systemInstruction {
             session = LanguageModelSession(instructions: instruction)
@@ -355,7 +381,7 @@ actor AIService {
         // more than half a minute regardless of the model's behaviour.
         // Serialised via inferenceGate so this never runs concurrently with
         // another FM/MLX call.
-        return try await runSerialized(priority: priority) {
+        return try await runSerialized(task: effectiveTask) {
             try await withThrowingTaskGroup(of: String.self) { group in
                 group.addTask {
                     let response = try await session.respond(to: prompt)
@@ -386,12 +412,14 @@ actor AIService {
         prompt: String,
         systemInstruction: String? = nil,
         timeout: TimeInterval = 30,
-        priority: Priority = .background
+        priority: Priority = .background,
+        task: InferenceTask? = nil
     ) async throws -> T {
         guard case .available = foundationModelsAvailability() else {
             throw AIError.modelUnavailable("FoundationModels not available")
         }
 
+        let effectiveTask = task ?? .generic(priority: priority)
         let session: LanguageModelSession
         if let instruction = systemInstruction {
             session = LanguageModelSession(instructions: instruction)
@@ -401,7 +429,7 @@ actor AIService {
 
         // Serialised via inferenceGate so this never runs concurrently with
         // another FM/MLX call.
-        return try await runSerialized(priority: priority) {
+        return try await runSerialized(task: effectiveTask) {
             try await withThrowingTaskGroup(of: T.self) { group in
                 group.addTask {
                     let response = try await session.respond(to: prompt, generating: T.self)
@@ -488,7 +516,14 @@ actor AIService {
     }
 
     /// Generate text using the MLX backend.
-    private func generateWithMLX(prompt: String, systemInstruction: String?, maxTokens: Int?, priority: Priority = .background) async throws -> String {
+    private func generateWithMLX(
+        prompt: String,
+        systemInstruction: String?,
+        maxTokens: Int?,
+        priority: Priority = .background,
+        task: InferenceTask? = nil
+    ) async throws -> String {
+        let effectiveTask = task ?? .generic(priority: priority)
         // Track the entire call (including C++ destructor teardown) with a single
         // increment/decrement pair.  We use a local `decremented` flag to ensure
         // exactly one decrement regardless of exit path, always paired with a
@@ -508,7 +543,7 @@ actor AIService {
             // or another MLX call. Model load + stream consumption all run inside
             // the gate; `stream` goes out of scope at end of closure so its C++
             // destructor runs while the slot is still held.
-            let rawOutput = try await runSerialized(priority: priority) { () -> String in
+            let rawOutput = try await runSerialized(task: effectiveTask) { () -> String in
                 try await ensureMLXModelLoaded()
 
                 guard let container = mlxModelContainer else {
