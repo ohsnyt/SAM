@@ -4,6 +4,44 @@
 
 ---
 
+## Shutdown stability: wait for MLX inference idle before exit (2026-05-14)
+
+**What**: Closes a race that crashed the app on quit when an MLX inference (any backend caller) was still running. The crash was a NULL deref inside `mlx::core::detail::CompilerCache::find` on a background QoS thread while the main thread was in `__cxa_finalize_ranges` → `mlx::core::scheduler::Scheduler::~Scheduler()` → `MTL::CommandBuffer::waitUntilCompleted()`. Three changes:
+
+- **`BackgroundWorkProbe.currentBlockers()`** — added `PromptLabCoordinator.shared.isRunning`. The Prompt Lab calls `AIService.generateNarrative` directly via `runSingle` / `runAll`, but its busy state wasn't represented in the probe, so an in-flight variant run wasn't blocking quit.
+- **`ShutdownCoordinator.settle()`** — now also awaits `AIService.shared.isFullyIdle` each poll cycle (`activeGenerationCount == 0 && activeMLXStreamCount == 0`). Defense-in-depth for any future call site that forgets to register with the coordinator probe — settle won't return until inference is actually idle, regardless of whether anyone's busy flag knew about it.
+- **`SAMApp.applicationShouldTerminate` / `performShutdownTeardown`** — quit always routes through `ShutdownCoordinator.settle()` now (the synchronous "no work, just terminate now" short-circuit is gone). `performShutdownTeardown` is `async` and `await`s `AIService.shared.prepareForTermination()` before `sender.reply(toApplicationShouldTerminate:)`, so the model container is dropped *before* AppKit calls `exit()` and runs C++ static destructors. The previous fire-and-forget `Task { await prepareForTermination }` could lose the race entirely.
+
+**Why**: A user clicked Quit while a Prompt Lab variant was still generating. The probe didn't know about Prompt Lab, the synchronous short-circuit returned `.terminateNow`, AppKit called `exit()`, and the in-flight Qwen3 generation's call into MLX's static `CompilerCache` raced the scheduler destructor. The two-coordinate fix (probe + counter) ensures both that inference-bearing coordinators are represented and that any *future* untracked inference path is still caught by the counter. The synchronous quit path is removed because it can never be safe — there's no way to await teardown from a sync context.
+
+**Cost**: Quit now goes through one async hop (`Task { @MainActor in await settle(); await teardown() }`) even when nothing is in flight. `settle()` returns immediately when both blockers and AI counters are clear, so the user-perceived delay is a few ms.
+
+---
+
+## Meeting Quality: cards open post-meeting capture sheet (2026-05-14)
+
+**What**: In `MeetingQualitySection` (Awareness → More → Meeting Quality), each low-scoring meeting card is now a button. Clicking it builds a `CapturePayload` from the meeting's `SamEvidenceItem` (talking points + open actions sourced from the matching `MeetingPrepCoordinator` briefing when available) and posts `.samOpenPostMeetingCapture` — the same notification the briefing/follow-up paths use to summon `PostMeetingCaptureView`. The user can fill in notes, action items, follow-up, or attendees there; the score reflows on save.
+
+- `recentMeetings` now returns `[ScoredMeetingEntry]` (a small `Identifiable` struct pairing the `ScoredMeeting` with its source `SamEvidenceItem`) so the card has a path back to the evidence row without re-querying.
+- `openCaptureSheet(for:)` mirrors `DailyBriefingCoordinator.createMeetingNoteTemplate` exactly — uses `event.linkedPeople.filter { !$0.isMe }` for attendee infos, looks up the matching briefing by `(title, occurredAt-day)` for talking points and open actions.
+- Cards wrap in `Button { … } label: { MeetingQualityCard(…) }.buttonStyle(.plain)` so the existing card styling stays intact and the click area covers the whole card.
+
+**Why**: Sarah asked for the ability to fix or fill in info on individual meetings flagged in the Meeting Quality list. The structured capture sheet already does this end-to-end (notes, action items, follow-up draft, attendee management, "did this meeting actually happen"). Reusing it via the existing notification path avoids creating a parallel quick-add flow.
+
+---
+
+## Prompt Lab + meeting/action filters: small correctness fixes (2026-05-14)
+
+**What**: Three independent fixes bundled into one entry because each is a one-liner-class change.
+
+- **Prompt Lab → Morning/Evening Briefing deploy keys aligned**. `DailyBriefingService` was reading from string-literal keys `"sam.promptLab.morningBriefing"` / `"sam.promptLab.eveningBriefing"` (camelCase) while `PromptLabCoordinator.deployVariant` was writing to `PromptSite.userDefaultsKey` which derives from `rawValue` — `"sam.promptLab.Morning Briefing"` / `"sam.promptLab.Evening Briefing"` (capitals + space). Deploying a briefing variant from the Prompt Lab silently did nothing. `DailyBriefingService.swift:87` and `:212` now read via `PromptSite.morningBriefing.userDefaultsKey` / `PromptSite.eveningBriefing.userDefaultsKey`, matching how every other consumer resolves the key.
+- **Meeting briefings exclude solo / Me-only events** (`MeetingPrepCoordinator.upcomingMeetingBriefings` / `pendingFollowUps`). Filters were `linkedPeople.contains(where: { !$0.isDeleted })`, which let solo blocks (deep work, prep, admin) through and produced "You met with [yourself]" follow-up prompts when only the Me contact was attached. Now `linkedPeople.contains(where: { !$0.isDeleted && !$0.isMe })`. Attendee ID set in both passes also filters to non-Me so Me-tagged personal todos don't surface as "Pending Actions" on every meeting.
+- **Note analysis: action_items.person_name owner discipline**. Three new prompt rules in `NoteAnalysisService.defaultNotePrompt`: (a) `person_name` is set only when the action is *about* that named person, not just nearby in the note; (b) never set `person_name` to the note author / user / "me" — they're the actor, not the target; (c) generic personal todos (research, learning, internal admin, reflection) must have `person_name: null`. Prevents the LLM from defaulting personal todos to the most prominent name in the note.
+
+**Why**: Three different surfaces, same underlying pattern — Me / user was being treated as a relationship target in places where they shouldn't be (Meeting Quality scoring & Pending Actions for solo events) or the Prompt Lab was writing somewhere nobody read (briefing prompts). Quick fixes that close visible bugs without architectural changes.
+
+---
+
 ## Sheet/modal work-loss prevention — full architecture (2026-05-14)
 
 **What**: A five-phase build that closes every path by which Sarah could lose typed work to a sheet, modal, or dialog being torn down before she finished. Covers sheet-flip displacement, app crash / force-quit, sheet-on-sheet collision, autonomous-trigger interruption, and the audio-retention crosstalk that would otherwise destroy source material under an unfinished capture.

@@ -46,7 +46,17 @@ final class ShutdownCoordinator {
         let start = Date()
         let deadline = start.addingTimeInterval(timeout)
         while Date() < deadline {
-            let blockers = BackgroundWorkProbe.currentBlockers()
+            var blockers = BackgroundWorkProbe.currentBlockers()
+            // Defense-in-depth against probe gaps: also wait for any in-flight
+            // AI generation / MLX stream regardless of which coordinator
+            // launched it. Without this, a call site that forgets to register
+            // with the probe (or runs ad-hoc inference) can race the C++
+            // static destructors at exit() and crash on the dropped
+            // CompilerCache / scheduler.
+            let aiIdle = await AIService.shared.isFullyIdle
+            if !aiIdle {
+                blockers.append("AI inference")
+            }
             if blockers.isEmpty {
                 blockedBy = []
                 progress = "Saving..."

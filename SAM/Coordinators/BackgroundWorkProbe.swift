@@ -56,6 +56,9 @@ enum BackgroundWorkProbe {
         if EventCoordinator.shared.isGeneratingDrafts {
             blockers.append("event drafts")
         }
+        if PromptLabCoordinator.shared.isRunning {
+            blockers.append("prompt lab run")
+        }
         return blockers
     }
 

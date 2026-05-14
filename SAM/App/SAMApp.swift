@@ -95,31 +95,27 @@ final class SAMAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidatio
             return .terminateLater
         }
 
-        // If background AI work is in flight (outcome generation, strategic
-        // digest, role deduction, briefing refresh, or any active import),
-        // block quit and surface the BlockingActivityOverlay until they
-        // settle. Forcing teardown while these are mid-call has previously
-        // crashed on dropped MLX containers and partially-saved SwiftData.
-        if BackgroundWorkProbe.isAnyBusy {
-            log.info("App termination requested but background work is busy — entering graceful-quit wait")
-            ShutdownCoordinator.shared.isShuttingDown = true
-            Task { @MainActor in
-                _ = await ShutdownCoordinator.shared.settle()
-                self.performShutdownTeardown()
-                sender.reply(toApplicationShouldTerminate: true)
-            }
-            return .terminateLater
+        // Always route quit through the graceful-settle path. settle() returns
+        // immediately when nothing is in flight, but routing through it
+        // guarantees the AIService idle check runs — without it, an ad-hoc
+        // inference call site that isn't represented in BackgroundWorkProbe
+        // can race the C++ static destructors at exit() and crash on the
+        // dropped MLX scheduler / CompilerCache.
+        log.info("App termination requested — entering graceful-quit wait")
+        ShutdownCoordinator.shared.isShuttingDown = true
+        Task { @MainActor in
+            _ = await ShutdownCoordinator.shared.settle()
+            await self.performShutdownTeardown()
+            sender.reply(toApplicationShouldTerminate: true)
         }
-
-        performShutdownTeardown()
-        return .terminateNow
+        return .terminateLater
     }
 
     /// Cancel timers, stop coordinators, flush SwiftData, and tear down the
-    /// MLX runtime. Shared between the immediate quit path and the deferred
-    /// `.terminateLater` path so both routes drain through identical cleanup.
+    /// MLX runtime. Awaits MLX release so the C++ scheduler/CompilerCache is
+    /// dropped before AppKit calls exit() and runs static destructors.
     @MainActor
-    private func performShutdownTeardown() {
+    private func performShutdownTeardown() async {
         log.info("App termination — running shutdown teardown")
         CrashReportService.shared.markCleanShutdown()
         HangWatchdog.shared.stop()
@@ -143,9 +139,11 @@ final class SAMAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidatio
         // automatically trigger autosave on quit, so unsaved mutations
         // from the main context would be silently lost without this call.
         try? SAMModelContainer.shared.mainContext.save()
-        // Open the MLX circuit breaker and drop the model container so any
-        // in-flight generation stream exhausts before the process exits.
-        Task { await AIService.shared.prepareForTermination() }
+        // Open the MLX circuit breaker and drop the model container before
+        // we let AppKit reply to the terminate request. Awaiting (not
+        // fire-and-forget) ensures exit()'s C++ static destructors don't
+        // race with a still-held model container.
+        await AIService.shared.prepareForTermination()
     }
 }
 
