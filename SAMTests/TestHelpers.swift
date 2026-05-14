@@ -12,12 +12,17 @@ import SwiftData
 // MARK: - In-Memory Container
 
 /// Creates an in-memory SwiftData ModelContainer for test isolation.
+/// `cloudKitDatabase: .none` matches the production app — without it,
+/// SwiftData/CoreData defaults to CloudKit integration which demands
+/// every relationship have an explicit inverse, exploding the load with
+/// a long list of cross-model warnings (`SwiftDataError.loadIssueModelContainer`).
 func makeTestContainer() throws -> ModelContainer {
     let schema = Schema(SAMSchema.allModels)
     let config = ModelConfiguration(
         "TestStore",
         schema: schema,
-        isStoredInMemoryOnly: true
+        isStoredInMemoryOnly: true,
+        cloudKitDatabase: .none
     )
     return try ModelContainer(for: schema, configurations: config)
 }
@@ -42,6 +47,7 @@ func configureAllRepositories(with container: ModelContainer) {
     ComplianceAuditRepository.shared.configure(container: container)
     EventRepository.shared.configure(container: container)
     RoleRecruitingRepository.shared.configure(container: container)
+    SphereRepository.shared.configure(container: container)
 }
 
 // MARK: - DTO Factories

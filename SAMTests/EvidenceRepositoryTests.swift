@@ -327,7 +327,7 @@ struct EvidenceRepositoryTests {
     }
 
     @Test("reresolve links evidence to people added after import")
-    func reresolveLinksAfterContactImport() throws {
+    func reresolveLinksAfterContactImport() async throws {
         let container = try makeTestContainer()
         configureAllRepositories(with: container)
 
@@ -353,14 +353,14 @@ struct EvidenceRepositoryTests {
         try PeopleRepository.shared.upsert(contact: contact)
 
         // Re-resolve
-        try EvidenceRepository.shared.reresolveParticipantsForUnlinkedEvidence()
+        try await EvidenceRepository.shared.reresolveParticipantsForUnlinkedEvidence()
 
         let afterResolve = try EvidenceRepository.shared.fetchAll()[0]
         #expect(afterResolve.linkedPeople.count == 1)
     }
 
     @Test("reresolve skips evidence already linked to people")
-    func reresolveSkipsAlreadyLinked() throws {
+    func reresolveSkipsAlreadyLinked() async throws {
         let container = try makeTestContainer()
         configureAllRepositories(with: container)
 
@@ -385,7 +385,7 @@ struct EvidenceRepositoryTests {
         #expect(before.linkedPeople.count == 1)
 
         // Re-resolve should not change anything
-        try EvidenceRepository.shared.reresolveParticipantsForUnlinkedEvidence()
+        try await EvidenceRepository.shared.reresolveParticipantsForUnlinkedEvidence()
 
         let after = try EvidenceRepository.shared.fetchAll()[0]
         #expect(after.linkedPeople.count == 1)

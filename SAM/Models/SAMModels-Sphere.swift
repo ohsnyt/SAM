@@ -196,6 +196,20 @@ public final class Sphere {
     /// user-created custom spheres until populated.
     public var classificationProfile: String = ""
 
+    /// Short, user-editable list of keyword hints surfaced to the
+    /// classifier alongside `classificationProfile`. Free-form strings —
+    /// no normalization. Empty by default; the management panel lets the
+    /// user add/remove entries.
+    public var keywordHints: [String] = []
+
+    /// User-confirmed example pool. Each entry is one evidence row that
+    /// the user explicitly confirmed (or overrode to) belongs in this
+    /// sphere. Cap is enforced by repository writes (≤ `maxExamples`),
+    /// not by the model. Drives the cold-start cap and is appended into
+    /// the classifier prompt.
+    @Relationship(deleteRule: .cascade, inverse: \SphereExample.sphere)
+    public var examples: [SphereExample] = []
+
     /// Raw storage for SphereAccentColor enum.
     public var accentColorRaw: String
 
@@ -399,5 +413,59 @@ public extension Sphere {
             defaultMode: template.defaultMode,
             sortOrder: sortOrder
         )
+    }
+
+    /// Hard cap on the user-confirmed example pool. Higher counts add
+    /// prompt-token cost without proportional classifier benefit; eight
+    /// is the sweet spot per the sphere spec.
+    static var maxExamples: Int { 8 }
+}
+
+// MARK: - SphereExample
+
+/// One user-confirmed example record contributing to a sphere's
+/// classification profile. Records are appended by the review batch (on
+/// Accept) and by `overrideProposal` (when the user picks a different
+/// sphere from the classifier's suggestion). Each carries the originating
+/// evidence ID + whether it was an override, so the rotation policy can
+/// preferentially keep examples the classifier previously got wrong.
+@Model
+public final class SphereExample {
+    @Attribute(.unique) public var id: UUID
+
+    /// The evidence row that contributed this snippet. Kept so the UI can
+    /// link from "Examples" back to the original interaction and so
+    /// telemetry can answer "which row taught the classifier this?".
+    public var evidenceID: UUID
+
+    /// Snippet text used in the classifier prompt. Typically the
+    /// evidence's `snippet`, trimmed for prompt budget.
+    public var snippet: String
+
+    /// True when this example came from `overrideProposal` — i.e., the
+    /// classifier picked a *different* sphere and the user corrected it.
+    /// Rotation policy keeps overrides preferentially because they're
+    /// the highest-signal corrections.
+    public var wasOverride: Bool
+
+    public var addedAt: Date
+
+    @Relationship(deleteRule: .nullify)
+    public var sphere: Sphere?
+
+    public init(
+        id: UUID = UUID(),
+        evidenceID: UUID,
+        snippet: String,
+        wasOverride: Bool,
+        addedAt: Date = .now,
+        sphere: Sphere? = nil
+    ) {
+        self.id = id
+        self.evidenceID = evidenceID
+        self.snippet = snippet
+        self.wasOverride = wasOverride
+        self.addedAt = addedAt
+        self.sphere = sphere
     }
 }

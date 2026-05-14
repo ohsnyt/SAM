@@ -636,6 +636,7 @@ extension RelationshipGraphCoordinator {
         case .userTask:        return "Open commitments"
         case .commitment:      return "Promise unkept"
         case .clientWithoutStewardship: return "Client without stewardship"
+        case .sphereReview:    return "Sphere classifications waiting"
         }
     }
 }

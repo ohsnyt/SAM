@@ -78,6 +78,7 @@ enum SAMSchema {
         ProcessedSessionTombstone.self,                // Prevents SAMField re-uploading sessions the user deleted on the Mac
         SamCommitment.self,                            // Block 3: commitment tracking + follow-through rate
         Sphere.self,                                   // Relationship model Phase 1: multi-Sphere context
+        SphereExample.self,                            // Sphere classification: user-confirmed example pool
         Trajectory.self,                               // Relationship model Phase 1: named arcs inside a Sphere
         TrajectoryStage.self,                          // Relationship model Phase 1: stages on a Trajectory
         PersonSphereMembership.self,                   // Relationship model Phase 1: person ↔ Sphere

@@ -222,12 +222,20 @@ private struct SphereDetailPane: View {
                 }
                 section(title: "Classification Profile") {
                     if sphere.classificationProfile.isEmpty {
-                        Text("No profile yet. SAM will classify evidence into this sphere only after you write one — until then, the sphere counts as “catch-all” and is harder to distinguish from your other spheres.")
+                        Text("No profile yet. SAM will classify evidence into this sphere only after you write one — until then, the sphere counts as \u{201c}catch-all\u{201d} and is harder to distinguish from your other spheres.")
                             .foregroundStyle(.secondary)
                     } else {
                         Text(sphere.classificationProfile)
                             .font(.callout)
                     }
+                }
+                if !sphere.keywordHints.isEmpty {
+                    section(title: "Keyword Hints") {
+                        keywordChips
+                    }
+                }
+                section(title: "Confirmed Examples (\(sphere.examples.count)/\(Sphere.maxExamples))") {
+                    examplesList
                 }
                 section(title: "Defaults") {
                     HStack {
@@ -249,6 +257,60 @@ private struct SphereDetailPane: View {
             }
             .padding(20)
         }
+    }
+
+    private var keywordChips: some View {
+        FlowLayout(spacing: 6) {
+            ForEach(sphere.keywordHints, id: \.self) { hint in
+                Text(hint)
+                    .font(.caption)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(sphere.accentColor.color.opacity(0.18), in: Capsule())
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var examplesList: some View {
+        if sphere.examples.isEmpty {
+            Text("None yet. SAM populates this pool as you confirm classifier picks in the review batch.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } else {
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(sphere.examples.sorted(by: { $0.addedAt > $1.addedAt })) { example in
+                    exampleRow(example)
+                }
+            }
+        }
+    }
+
+    private func exampleRow(_ example: SphereExample) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: example.wasOverride ? "arrow.uturn.backward.circle.fill" : "checkmark.circle.fill")
+                .foregroundStyle(example.wasOverride ? .orange : .green)
+                .help(example.wasOverride ? "User-corrected (classifier picked a different sphere)" : "User-confirmed")
+            VStack(alignment: .leading, spacing: 2) {
+                Text(example.snippet)
+                    .font(.caption)
+                    .lineLimit(2)
+                Text(example.addedAt, format: .dateTime.month().day().year().hour().minute())
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button {
+                try? SphereRepository.shared.removeExample(exampleID: example.id, fromSphere: sphere.id)
+            } label: {
+                Image(systemName: "xmark.circle")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Remove this example from the pool")
+        }
+        .padding(8)
+        .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 6))
     }
 
     private var header: some View {
@@ -426,9 +488,61 @@ private struct EditSphereSheet: View {
     @State private var name: String = ""
     @State private var purpose: String = ""
     @State private var classificationProfile: String = ""
+    @State private var keywordHints: [String] = []
+    @State private var keywordInput: String = ""
     @State private var accentColor: SphereAccentColor = .slate
     @State private var defaultMode: Mode = .stewardship
     @State private var saveError: String?
+
+    private static let minProfileChars = 40
+    /// Upper bound on the classification profile per the sphere spec.
+    /// Caps prompt-token cost and keeps the profile focused — long
+    /// rambles dilute the classifier signal.
+    private static let maxProfileChars = 500
+
+    private var trimmedProfile: String {
+        classificationProfile.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var profileMeetsMinimum: Bool {
+        trimmedProfile.count >= Self.minProfileChars
+    }
+
+    private var profileWithinMaximum: Bool {
+        trimmedProfile.count <= Self.maxProfileChars
+    }
+
+    private var canSave: Bool {
+        !name.trimmingCharacters(in: .whitespaces).isEmpty
+            && profileMeetsMinimum
+            && profileWithinMaximum
+    }
+
+    private var counterText: String {
+        if !profileWithinMaximum {
+            return "\(trimmedProfile.count) / \(Self.maxProfileChars) — trim to save"
+        }
+        if !profileMeetsMinimum {
+            return "\(trimmedProfile.count) / \(Self.minProfileChars) characters"
+        }
+        return "\(trimmedProfile.count) / \(Self.maxProfileChars) characters"
+    }
+
+    private var counterColor: Color {
+        if !profileWithinMaximum { return .red }
+        if !profileMeetsMinimum { return .orange }
+        return .secondary
+    }
+
+    private var saveButtonHelp: String {
+        if !profileWithinMaximum {
+            return "Classification profile exceeds the \(Self.maxProfileChars)-character limit. Trim before saving."
+        }
+        if !profileMeetsMinimum {
+            return "Add at least \(Self.minProfileChars) characters to the classification profile before saving."
+        }
+        return ""
+    }
 
     var body: some View {
         NavigationStack {
@@ -442,10 +556,25 @@ private struct EditSphereSheet: View {
                     TextEditor(text: $classificationProfile)
                         .frame(minHeight: 140)
                         .font(.callout)
+                    HStack {
+                        Spacer()
+                        Text(counterText)
+                            .font(.caption2)
+                            .foregroundStyle(counterColor)
+                    }
                 } header: {
                     Text("Classification profile")
                 } footer: {
-                    Text("SAM uses this to decide whether a piece of evidence (an email, a meeting, a message) belongs to this sphere when a person has memberships in multiple spheres. Concrete topics, tone cues, and exclusions help most. SAM refines this over time as you confirm classifications.")
+                    Text("SAM uses this to decide whether a piece of evidence (an email, a meeting, a message) belongs to this sphere when a person has memberships in multiple spheres. Concrete topics, tone cues, and exclusions help most. \(Self.minProfileChars)–\(Self.maxProfileChars) characters keeps the classifier focused.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Section {
+                    keywordEditor
+                } header: {
+                    Text("Keyword hints")
+                } footer: {
+                    Text("Optional shortcuts — concrete words or phrases that, when they appear in an interaction, lean SAM toward this sphere. Use sparingly.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -478,17 +607,59 @@ private struct EditSphereSheet: View {
                 ToolbarItem(placement: .primaryAction) {
                     Button("Save") { save() }
                         .keyboardShortcut(.defaultAction)
-                        .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .disabled(!canSave)
+                        .help(saveButtonHelp)
                 }
             }
             .onAppear(perform: loadFields)
         }
     }
 
+    private var keywordEditor: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if !keywordHints.isEmpty {
+                FlowLayout(spacing: 6) {
+                    ForEach(keywordHints, id: \.self) { hint in
+                        HStack(spacing: 4) {
+                            Text(hint).font(.caption)
+                            Button {
+                                keywordHints.removeAll { $0 == hint }
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(sphere.accentColor.color.opacity(0.18), in: Capsule())
+                    }
+                }
+            }
+            HStack {
+                TextField("Add a hint (press Return)", text: $keywordInput)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit(commitKeyword)
+                Button("Add", action: commitKeyword)
+                    .disabled(keywordInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+    }
+
+    private func commitKeyword() {
+        let trimmed = keywordInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        if !keywordHints.contains(where: { $0.caseInsensitiveCompare(trimmed) == .orderedSame }) {
+            keywordHints.append(trimmed)
+        }
+        keywordInput = ""
+    }
+
     private func loadFields() {
         name = sphere.name
         purpose = sphere.purpose
         classificationProfile = sphere.classificationProfile
+        keywordHints = sphere.keywordHints
         accentColor = sphere.accentColor
         defaultMode = sphere.defaultMode
     }
@@ -500,6 +671,7 @@ private struct EditSphereSheet: View {
                 name: name,
                 purpose: purpose,
                 classificationProfile: classificationProfile,
+                keywordHints: keywordHints,
                 accentColor: accentColor,
                 defaultMode: defaultMode
             )

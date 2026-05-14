@@ -368,6 +368,9 @@ struct CoachingSettingsContent: View {
                 .buttonStyle(.bordered)
             }
 
+            // ── Sphere Classifier Drift ──
+            sphereClassifierTelemetrySection
+
             // ── Muted Types ──
             if !ledger.mutedKinds.isEmpty {
                 Divider()
@@ -549,6 +552,59 @@ struct CoachingSettingsContent: View {
                 profile.updatedAt = .now
             }
             logger.debug("Coaching profile reset")
+        }
+    }
+
+    // MARK: - Sphere Classifier Telemetry
+
+    @ViewBuilder
+    private var sphereClassifierTelemetrySection: some View {
+        let counters = SphereClassifierTelemetry.shared.allCounters()
+            .filter { $0.total > 0 }
+            .sorted { $0.total > $1.total }
+        if !counters.isEmpty {
+            Divider().padding(.vertical, 4)
+            Text("Sphere Classifier")
+                .samFont(.subheadline)
+                .fontWeight(.medium)
+            Text("How often you've agreed with SAM's sphere picks. High override rates mean the sphere's classification profile or keyword hints probably need tightening.")
+                .samFont(.caption)
+                .foregroundStyle(.secondary)
+            ForEach(counters, id: \.sphereID) { counter in
+                sphereClassifierRow(counter)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func sphereClassifierRow(_ counter: SphereLearningCounters) -> some View {
+        let sphere = (try? SphereRepository.shared.fetch(id: counter.sphereID)) ?? nil
+        HStack(spacing: 8) {
+            Circle()
+                .fill(sphere?.accentColor.color ?? .secondary)
+                .frame(width: 8, height: 8)
+            Text(sphere?.name ?? "Unknown sphere")
+                .samFont(.caption)
+                .frame(width: 110, alignment: .leading)
+            if let rate = counter.acceptRate {
+                ProgressView(value: rate)
+                    .tint(rate > 0.66 ? .green : rate > 0.4 ? .yellow : .orange)
+            } else {
+                ProgressView(value: 0)
+            }
+            Text("\(counter.accept)·\(counter.override)·\(counter.dismiss)")
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .frame(width: 60, alignment: .trailing)
+                .help("Accept · Override · Dismiss")
+            Button {
+                SphereClassifierTelemetry.shared.reset(sphereID: counter.sphereID)
+            } label: {
+                Image(systemName: "arrow.counterclockwise")
+                    .samFont(.caption2)
+            }
+            .buttonStyle(.borderless)
+            .help("Reset counters for this sphere")
         }
     }
 

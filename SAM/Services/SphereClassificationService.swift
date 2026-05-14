@@ -101,23 +101,30 @@ public struct SphereClassificationCandidate: Sendable {
     public let name: String
     public let purpose: String
     public let classificationProfile: String
-    /// How many evidence rows already carry this sphere as `contextSphere`.
-    /// Drives the cold-start cap.
-    public let confirmedExampleCount: Int
+    /// User-editable keyword hints surfaced alongside the profile.
+    public let keywordHints: [String]
+    /// User-confirmed example snippets in this sphere's pool. Drives the
+    /// cold-start cap and is appended to the classifier prompt.
+    public let confirmedExamples: [String]
 
     public init(
         sphereID: UUID,
         name: String,
         purpose: String,
         classificationProfile: String,
-        confirmedExampleCount: Int
+        keywordHints: [String] = [],
+        confirmedExamples: [String] = []
     ) {
         self.sphereID = sphereID
         self.name = name
         self.purpose = purpose
         self.classificationProfile = classificationProfile
-        self.confirmedExampleCount = confirmedExampleCount
+        self.keywordHints = keywordHints
+        self.confirmedExamples = confirmedExamples
     }
+
+    /// Count used by the cold-start cap.
+    public var confirmedExampleCount: Int { confirmedExamples.count }
 }
 
 public struct SphereClassificationInput: Sendable {
@@ -204,6 +211,18 @@ public actor SphereClassificationService {
             }
             if !c.classificationProfile.isEmpty {
                 lines.append("   Belongs here when: \(c.classificationProfile)")
+            }
+            if !c.keywordHints.isEmpty {
+                lines.append("   Keyword hints: \(c.keywordHints.joined(separator: ", "))")
+            }
+            if !c.confirmedExamples.isEmpty {
+                lines.append("   User-confirmed examples:")
+                for ex in c.confirmedExamples.prefix(Sphere.maxExamples) {
+                    // One line each, snippet trimmed so the prompt stays
+                    // within the focused budget the service is built for.
+                    let trimmed = String(ex.prefix(140))
+                    lines.append("   - \(trimmed)")
+                }
             }
             return lines.joined(separator: "\n")
         }.joined(separator: "\n")

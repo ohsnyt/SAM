@@ -237,6 +237,11 @@ final class OutcomeEngine {
             await Task.yield()
             if BackupCoordinator.isRestoring { generationStatus = .idle; return }
 
+            // 20. Phase F — Stale sphere classifications waiting on the user
+            newOutcomes.append(contentsOf: perf.measureSync("OutcomeEngine.sphereReview") { scanSphereReview() })
+            await Task.yield()
+            if BackupCoordinator.isRestoring { generationStatus = .idle; return }
+
             // Classify action lanes and suggest channels
             perf.measureSync("OutcomeEngine.classifyActionLanes") {
                 for outcome in newOutcomes {
@@ -1386,6 +1391,47 @@ final class OutcomeEngine {
         return outcomes
     }
 
+    /// Phase F — Promote the sphere-classifier review queue to a Today
+    /// outcome when it's been ignored long enough that the briefing pill
+    /// alone isn't doing the job: ≥5 pending AND the oldest unreviewed
+    /// proposal is at least 7 days old. Respects the user's "skip this
+    /// week" snooze (UserDefaults key shared with the review sheet), and
+    /// dedups itself against the last 48 h so it doesn't fire on every
+    /// regeneration cycle.
+    private func scanSphereReview() -> [SamOutcome] {
+        if let snoozedAt = UserDefaults.standard.object(forKey: "samSphereReviewSkipWeek") as? Date,
+           Date().timeIntervalSince(snoozedAt) < 7 * 24 * 60 * 60 {
+            return []
+        }
+
+        let pending = SphereClassificationCoordinator.shared.pendingReviewItems()
+        guard pending.count >= 5 else { return [] }
+
+        let oldestAge: TimeInterval = pending
+            .compactMap { $0.proposedSphereAt }
+            .map { Date().timeIntervalSince($0) }
+            .max() ?? 0
+        guard oldestAge >= 7 * 86_400 else { return [] }
+        let oldestDays = Int(oldestAge / 86_400)
+
+        let isDuplicate = (try? outcomeRepo.hasSimilarOutcome(
+            kind: .sphereReview,
+            personID: nil,
+            withinHours: 48
+        )) ?? false
+        if isDuplicate { return [] }
+
+        let outcome = SamOutcome(
+            title: "Catch up on \(pending.count) sphere classifications",
+            rationale: "These have been waiting \(oldestDays) days for your call. Until you confirm them, SAM is routing the underlying interactions to each person's default sphere — your per-sphere relationship health is drifting.",
+            outcomeKind: .sphereReview,
+            priorityScore: 0.55,
+            sourceInsightSummary: "Sphere review backlog: \(pending.count) pending, oldest \(oldestDays)d",
+            suggestedNextStep: "Open the Today toolbar's review tray to confirm, override, or skip in one pass."
+        )
+        return [outcome]
+    }
+
     /// Progressive feature adoption coaching — suggests one feature at a time
     /// based on days since onboarding and whether the user has tried each feature.
     private func scanFeatureAdoption() -> [SamOutcome] {
@@ -1905,6 +1951,8 @@ final class OutcomeEngine {
             outcome.actionLane = .communicate
         case .clientWithoutStewardship:
             outcome.actionLane = .communicate
+        case .sphereReview:
+            outcome.actionLane = .record
         }
     }
 

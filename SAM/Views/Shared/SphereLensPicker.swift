@@ -20,6 +20,7 @@ import SwiftUI
 struct SphereLensPicker: View {
     @State private var coordinator = SphereLensCoordinator.shared
     @State private var spheres: [Sphere] = []
+    @State private var showingManagement = false
 
     var body: some View {
         if coordinator.isPickerAvailable {
@@ -41,6 +42,12 @@ struct SphereLensPicker: View {
                         .foregroundStyle(sphere.accentColor.color)
                     }
                 }
+                Divider()
+                Button {
+                    showingManagement = true
+                } label: {
+                    Label("Manage Spheres…", systemImage: "slider.horizontal.3")
+                }
             } label: {
                 label
             }
@@ -51,6 +58,9 @@ struct SphereLensPicker: View {
             .task { reloadSpheres() }
             .onReceive(NotificationCenter.default.publisher(for: .samSphereDidChange)) { _ in
                 reloadSpheres()
+            }
+            .sheet(isPresented: $showingManagement) {
+                SpheresManagementSheet()
             }
         }
     }

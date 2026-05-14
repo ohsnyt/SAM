@@ -25,15 +25,21 @@ struct SphereClassificationReviewSheet: View {
     @State private var coordinator = SphereClassificationCoordinator.shared
     @State private var items: [SamEvidenceItem] = []
     @State private var spheres: [Sphere] = []
+    @State private var staleEmpty: [Sphere] = []
     @State private var currentIndex: Int = 0
 
     var body: some View {
         NavigationStack {
-            Group {
-                if items.isEmpty {
-                    emptyState
-                } else {
-                    reviewBody
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    if !staleEmpty.isEmpty {
+                        staleEmptyBanner
+                    }
+                    if items.isEmpty {
+                        emptyState
+                    } else {
+                        reviewBody
+                    }
                 }
             }
             .frame(width: 620, height: 540)
@@ -44,6 +50,14 @@ struct SphereClassificationReviewSheet: View {
                         .keyboardShortcut(.escape)
                 }
                 if !items.isEmpty {
+                    ToolbarItem(placement: .automatic) {
+                        Button {
+                            skipThisWeek()
+                        } label: {
+                            Label("Skip this week", systemImage: "zzz")
+                        }
+                        .help("Hide sphere review for 7 days. SAM keeps queuing proposals in the background.")
+                    }
                     ToolbarItem(placement: .primaryAction) {
                         Text("\(currentIndex + 1) of \(items.count)")
                             .font(.callout)
@@ -53,6 +67,60 @@ struct SphereClassificationReviewSheet: View {
             }
         }
         .task { reload() }
+    }
+
+    // MARK: - Stale empty banner
+
+    private var staleEmptyBanner: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                Text("\(staleEmpty.count) sphere\(staleEmpty.count == 1 ? "" : "s") may not be earning its keep")
+                    .font(.callout.weight(.semibold))
+            }
+            Text("Added 30+ days ago and still under 3 confirmed examples. Merge into another sphere, archive, or keep and SAM will ask again in 30 days.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            ForEach(staleEmpty) { sphere in
+                HStack(spacing: 8) {
+                    Circle().fill(sphere.accentColor.color).frame(width: 8, height: 8)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(sphere.name).font(.callout.weight(.medium))
+                        Text("\(sphere.examples.count) example\(sphere.examples.count == 1 ? "" : "s") · added \(sphere.createdAt.formatted(.relative(presentation: .named)))")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("Keep") { dismissStale(sphere) }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    Button("Archive") { archiveStale(sphere) }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                }
+                .padding(.vertical, 4)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.orange.opacity(0.3)))
+        .padding([.horizontal, .top], 16)
+    }
+
+    private func archiveStale(_ sphere: Sphere) {
+        try? SphereRepository.shared.setArchived(id: sphere.id, true)
+        staleEmpty.removeAll { $0.id == sphere.id }
+    }
+
+    /// "Keep for now" — snooze this sphere for 30 days. We re-evaluate
+    /// using a UserDefaults date stamp keyed by the sphere ID so the
+    /// banner won't pester the user again until the snooze expires.
+    private func dismissStale(_ sphere: Sphere) {
+        let key = "samSphereStaleSnooze.\(sphere.id.uuidString)"
+        UserDefaults.standard.set(Date(), forKey: key)
+        staleEmpty.removeAll { $0.id == sphere.id }
     }
 
     // MARK: - Empty
@@ -81,6 +149,7 @@ struct SphereClassificationReviewSheet: View {
             spheres.first { $0.id == id }
         }
         let person = item.linkedPeople.first
+        let cluster = clusterPeers(for: item)
 
         return VStack(alignment: .leading, spacing: 18) {
             // Person + when
@@ -92,6 +161,13 @@ struct SphereClassificationReviewSheet: View {
                     Text(item.occurredAt.formatted(date: .abbreviated, time: .shortened))
                         .foregroundStyle(.secondary)
                 }
+            }
+
+            // Bulk-confirm cluster: when N other pending items share this
+            // person + proposed sphere on the same calendar day, offer one
+            // action to confirm them all.
+            if cluster.count >= 1, let proposed {
+                clusterCard(peerCount: cluster.count, proposed: proposed, peers: cluster)
             }
 
             // Evidence card
@@ -184,9 +260,91 @@ struct SphereClassificationReviewSheet: View {
     // MARK: - Helpers
 
     private func reload() {
-        items = coordinator.pendingReviewItems()
+        let weekSnooze: TimeInterval = 7 * 24 * 60 * 60
+        if let snoozedAt = UserDefaults.standard.object(forKey: Self.skipWeekKey) as? Date,
+           Date().timeIntervalSince(snoozedAt) < weekSnooze {
+            items = []
+        } else {
+            items = coordinator.pendingReviewItems()
+        }
         spheres = (try? SphereRepository.shared.fetchAll()) ?? []
+        let stale = (try? SphereRepository.shared.staleEmptySpheres()) ?? []
+        let snoozeWindow: TimeInterval = 30 * 24 * 60 * 60
+        staleEmpty = stale.filter { sphere in
+            let key = "samSphereStaleSnooze.\(sphere.id.uuidString)"
+            if let snoozedAt = UserDefaults.standard.object(forKey: key) as? Date,
+               Date().timeIntervalSince(snoozedAt) < snoozeWindow {
+                return false
+            }
+            return true
+        }
         currentIndex = 0
+    }
+
+    // MARK: - Skip this week
+
+    /// Defaults key for the user's "give me a week off" snooze on sphere
+    /// classifier reviews. Resets after 7 days; survives app restarts.
+    private static let skipWeekKey = "samSphereReviewSkipWeek"
+
+    private func skipThisWeek() {
+        UserDefaults.standard.set(Date(), forKey: Self.skipWeekKey)
+        items = []
+    }
+
+    // MARK: - Bulk-confirm cluster
+
+    /// Other pending items that share this item's linked person AND the
+    /// classifier's proposed sphere AND fall on the same calendar day.
+    /// Used to surface a "Confirm all N" affordance — the most common
+    /// case (a thread or call burst with one person on one topic).
+    private func clusterPeers(for item: SamEvidenceItem) -> [SamEvidenceItem] {
+        guard let proposedID = item.proposedSphereID,
+              let personID = item.linkedPeople.first?.id else { return [] }
+        let cal = Calendar.current
+        return items.filter { peer in
+            guard peer.id != item.id else { return false }
+            guard peer.proposedSphereID == proposedID else { return false }
+            guard peer.linkedPeople.first?.id == personID else { return false }
+            return cal.isDate(peer.occurredAt, inSameDayAs: item.occurredAt)
+        }
+    }
+
+    @ViewBuilder
+    private func clusterCard(peerCount: Int, proposed: Sphere, peers: [SamEvidenceItem]) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "rectangle.stack.fill")
+                .foregroundStyle(proposed.accentColor.color)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("\(peerCount + 1) interactions today look like \(proposed.name)")
+                    .font(.callout.weight(.semibold))
+                Text("Same person, same day, same classifier pick. Accept the whole cluster in one step.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("Accept all \(peerCount + 1)") {
+                acceptCluster(currentItem: items[currentIndex], peers: peers)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(proposed.accentColor.color.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(proposed.accentColor.color.opacity(0.25)))
+    }
+
+    private func acceptCluster(currentItem: SamEvidenceItem, peers: [SamEvidenceItem]) {
+        let allIDs: [UUID] = [currentItem.id] + peers.map(\.id)
+        let peerIDSet = Set(allIDs)
+        for id in allIDs {
+            coordinator.acceptProposal(evidenceID: id)
+        }
+        items.removeAll { peerIDSet.contains($0.id) }
+        if currentIndex >= items.count {
+            currentIndex = max(0, items.count - 1)
+        }
     }
 
     private func advance() {

@@ -69,6 +69,7 @@ final class SphereRepository {
         context.insert(sphere)
         try context.save()
         logger.debug("Created Sphere '\(name)' (id: \(sphere.id), order: \(sortOrder), bootstrap: \(isBootstrapDefault))")
+        NotificationCenter.default.post(name: .samSphereDidChange, object: nil)
         return sphere
     }
 
@@ -139,6 +140,7 @@ final class SphereRepository {
         name: String? = nil,
         purpose: String? = nil,
         classificationProfile: String? = nil,
+        keywordHints: [String]? = nil,
         accentColor: SphereAccentColor? = nil,
         defaultMode: Mode? = nil,
         defaultCadenceDays: Int?? = nil,
@@ -149,17 +151,105 @@ final class SphereRepository {
         if let name { sphere.name = name }
         if let purpose { sphere.purpose = purpose }
         if let classificationProfile { sphere.classificationProfile = classificationProfile }
+        if let keywordHints { sphere.keywordHints = keywordHints }
         if let accentColor { sphere.accentColor = accentColor }
         if let defaultMode { sphere.defaultMode = defaultMode }
         if let defaultCadenceDays { sphere.defaultCadenceDays = defaultCadenceDays }
         if let sortOrder { sphere.sortOrder = sortOrder }
         try context.save()
+        NotificationCenter.default.post(name: .samSphereDidChange, object: nil)
     }
 
     func setArchived(id: UUID, _ archived: Bool) throws {
         guard let context else { throw RepositoryError.notConfigured }
         guard let sphere = try fetch(id: id) else { return }
         sphere.archived = archived
+        try context.save()
+        NotificationCenter.default.post(name: .samSphereDidChange, object: nil)
+    }
+
+    // MARK: - Sphere: Example pool
+
+    /// Append a user-confirmed example to a sphere's classification pool.
+    /// Idempotent on `evidenceID` — re-confirming the same row does not
+    /// duplicate; an override later in the row's life *upgrades* the
+    /// existing entry's `wasOverride` flag instead of inserting a second.
+    /// When the pool exceeds `Sphere.maxExamples`, evicts the oldest
+    /// non-override first; if all entries are overrides, evicts the
+    /// oldest. Returns the inserted/updated example, or nil if the
+    /// sphere wasn't found.
+    @discardableResult
+    func recordExample(
+        sphereID: UUID,
+        evidenceID: UUID,
+        snippet: String,
+        wasOverride: Bool
+    ) throws -> SphereExample? {
+        guard let context else { throw RepositoryError.notConfigured }
+        guard let sphere = try fetch(id: sphereID) else { return nil }
+
+        let trimmed = snippet.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        // Idempotent on evidenceID — upgrade flag if needed.
+        if let existing = sphere.examples.first(where: { $0.evidenceID == evidenceID }) {
+            if wasOverride && !existing.wasOverride {
+                existing.wasOverride = true
+                existing.addedAt = .now
+                try context.save()
+            }
+            return existing
+        }
+
+        let example = SphereExample(
+            evidenceID: evidenceID,
+            snippet: trimmed,
+            wasOverride: wasOverride,
+            sphere: sphere
+        )
+        context.insert(example)
+        sphere.examples.append(example)
+
+        // Rotation: keep ≤ maxExamples. Prefer evicting non-overrides; if
+        // every entry is an override, drop the oldest.
+        if sphere.examples.count > Sphere.maxExamples {
+            let sorted = sphere.examples.sorted { $0.addedAt < $1.addedAt }
+            let oldestNonOverride = sorted.first { !$0.wasOverride }
+            let victim = oldestNonOverride ?? sorted.first
+            if let victim {
+                sphere.examples.removeAll { $0.id == victim.id }
+                context.delete(victim)
+            }
+        }
+
+        try context.save()
+        return example
+    }
+
+    /// Spheres the user added at least 30 days ago that still have fewer
+    /// than three confirmed examples. Surfaced in the EOD review batch as
+    /// "Merge or remove?" prompts — proliferation friction for spheres
+    /// that turned out not to have a real signal behind them.
+    func staleEmptySpheres(
+        olderThanDays days: Int = 30,
+        minExamples: Int = 3
+    ) throws -> [Sphere] {
+        let cutoff = Calendar.current.date(byAdding: .day, value: -days, to: .now) ?? .distantPast
+        return try fetchAll().filter { sphere in
+            !sphere.isBootstrapDefault
+                && sphere.createdAt <= cutoff
+                && sphere.examples.count < minExamples
+        }
+    }
+
+    /// Remove an example from a sphere's pool by ID. Used by management
+    /// UI when the user wants to forget a specific snippet.
+    func removeExample(exampleID: UUID, fromSphere sphereID: UUID) throws {
+        guard let context else { throw RepositoryError.notConfigured }
+        guard let sphere = try fetch(id: sphereID) else { return }
+        guard let target = sphere.examples.first(where: { $0.id == exampleID }) else { return }
+        sphere.examples.removeAll { $0.id == exampleID }
+        context.delete(target)
         try context.save()
     }
 
@@ -171,9 +261,11 @@ final class SphereRepository {
     // MARK: - PersonSphereMembership: Mutations
 
     /// Add a person to a Sphere. Idempotent — returns existing membership if any.
-    /// New memberships sort *after* the person's existing ones, so the
-    /// first sphere a person joins becomes their default and later
-    /// additions stay minority unless the user explicitly reorders.
+    /// The new membership's `order` is seeded from `Sphere.sortOrder` (the
+    /// user's global sphere ordering), so a new person added to several
+    /// spheres in one onboarding pass takes the globally-preferred sphere
+    /// as their default. Users can then reorder per-person via the chevrons
+    /// on PersonDetail without disturbing global order.
     @discardableResult
     func addMember(personID: UUID, sphereID: UUID, notes: String? = nil) throws -> PersonSphereMembership? {
         guard let context else { throw RepositoryError.notConfigured }
@@ -183,10 +275,10 @@ final class SphereRepository {
         }
 
         let person = try resolvePerson(id: personID)
-        let sphere = try fetch(id: sphereID)
-        guard person != nil, sphere != nil else { return nil }
+        guard let sphere = try fetch(id: sphereID) else { return nil }
+        guard person != nil else { return nil }
 
-        let order = try nextMembershipOrder(forPerson: personID)
+        let order = sphere.sortOrder
         let membership = PersonSphereMembership(
             person: person,
             sphere: sphere,
@@ -268,12 +360,6 @@ final class SphereRepository {
             }
         }
         try context.save()
-    }
-
-    private func nextMembershipOrder(forPerson personID: UUID) throws -> Int {
-        let existing = try memberships(forPerson: personID)
-        guard let maxOrder = existing.map(\.order).max() else { return 0 }
-        return maxOrder + 1
     }
 
     func isMember(personID: UUID, sphereID: UUID) throws -> Bool {

@@ -1144,6 +1144,7 @@ public enum OutcomeKind: String, Codable, Sendable, CaseIterable {
     case userTask          // User-created manual task or follow-up
     case commitment        // Block 3: Sarah's open commitment to someone, due soon
     case clientWithoutStewardship   // Phase 4: Funnel-terminal person lacks an active Stewardship arc
+    case sphereReview               // Phase F: pending mid-confidence sphere classifications waiting on the user
 }
 
 public enum OutcomeStatus: String, Codable, Sendable {
@@ -1173,13 +1174,14 @@ extension OutcomeKind {
         case .userTask:                   return .quick
         case .commitment:                 return .quick
         case .clientWithoutStewardship:   return .quick
+        case .sphereReview:               return .quick
         }
     }
 
     var defaultAction: OutcomeAction {
         switch self {
         case .followUp, .preparation: return .captureNote
-        case .proposal, .outreach, .growth, .training, .compliance, .contentCreation, .setup, .roleFilling, .userTask, .commitment, .clientWithoutStewardship: return .openPerson
+        case .proposal, .outreach, .growth, .training, .compliance, .contentCreation, .setup, .roleFilling, .userTask, .commitment, .clientWithoutStewardship, .sphereReview: return .openPerson
         }
     }
 
@@ -1192,6 +1194,7 @@ extension OutcomeKind {
         case .userTask: return "View"
         case .commitment: return "Resolve"
         case .clientWithoutStewardship: return "Reconnect"
+        case .sphereReview: return "Review"
         case .proposal, .outreach, .growth, .training, .compliance: return "View"
         }
     }
@@ -1205,6 +1208,7 @@ extension OutcomeKind {
         case .userTask: return "checklist"
         case .commitment: return "hand.raised"
         case .clientWithoutStewardship: return "person.crop.circle.badge.checkmark"
+        case .sphereReview: return "tray.and.arrow.down"
         case .proposal, .outreach, .growth, .training, .compliance: return "arrow.right.circle"
         }
     }

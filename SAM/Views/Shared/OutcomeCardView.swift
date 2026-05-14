@@ -512,6 +512,7 @@ extension OutcomeKind {
         case .userTask:        return "Task"
         case .commitment:      return "Commitment"
         case .clientWithoutStewardship: return "Stewardship"
+        case .sphereReview: return "Sphere Review"
         }
     }
 
@@ -530,6 +531,7 @@ extension OutcomeKind {
         case .userTask:        return .gray
         case .commitment:      return .pink
         case .clientWithoutStewardship: return .indigo
+        case .sphereReview: return .yellow
         }
     }
 
@@ -548,6 +550,7 @@ extension OutcomeKind {
         case .userTask:        return "checklist"
         case .commitment:      return "hand.raised"
         case .clientWithoutStewardship: return "person.crop.circle.badge.checkmark"
+        case .sphereReview: return "tray.and.arrow.down"
         }
     }
 }

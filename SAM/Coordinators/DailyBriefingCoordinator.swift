@@ -679,10 +679,12 @@ final class DailyBriefingCoordinator {
         let streakUpdates = gatherStreakUpdates()
         let tomorrowPreview = gatherTomorrowPreview()
         let metrics = gatherMetrics()
+        let sphereReviewAction = gatherSphereReviewAction()
 
         let briefing = SamDailyBriefing(
             briefingType: .evening,
             dateKey: todayKey,
+            priorityActions: sphereReviewAction.map { [$0] } ?? [],
             tomorrowPreview: tomorrowPreview,
             accomplishments: accomplishments,
             streakUpdates: streakUpdates
@@ -1529,6 +1531,40 @@ final class DailyBriefingCoordinator {
         }
 
         return actions
+    }
+
+    /// Sphere-classifier review nudge. Returns a single `BriefingAction`
+    /// when there are ≥3 mid-confidence proposals waiting and the user
+    /// hasn't snoozed reviews this week. Urgency escalates from "standard"
+    /// to "soon" at ≥5 pending or when the oldest proposal is ≥7 days old —
+    /// the same thresholds the OutcomeEngine uses to promote this to a
+    /// Today outcome, so the briefing copy stays in step. Phase F.
+    private func gatherSphereReviewAction() -> BriefingAction? {
+        if let snoozedAt = UserDefaults.standard.object(forKey: "samSphereReviewSkipWeek") as? Date,
+           Date().timeIntervalSince(snoozedAt) < 7 * 24 * 60 * 60 {
+            return nil
+        }
+        let pending = SphereClassificationCoordinator.shared.pendingReviewItems()
+        guard pending.count >= 3 else { return nil }
+
+        let oldestAge: TimeInterval = pending
+            .compactMap { $0.proposedSphereAt }
+            .map { Date().timeIntervalSince($0) }
+            .max() ?? 0
+        let oldestDays = Int(oldestAge / 86_400)
+        let isStale = pending.count >= 5 || oldestAge >= 7 * 86_400
+
+        var rationale = "Mid-confidence sphere picks waiting for your confirmation. Quick to review — each one tunes how SAM routes the next message."
+        if oldestDays >= 7 {
+            rationale += " Oldest has been waiting \(oldestDays) days."
+        }
+
+        return BriefingAction(
+            title: "Review \(pending.count) sphere classification\(pending.count == 1 ? "" : "s")",
+            rationale: rationale,
+            urgency: isStale ? "soon" : "standard",
+            sourceKind: "sphere_review"
+        )
     }
 
     private func gatherFollowUps() async -> [BriefingFollowUp] {

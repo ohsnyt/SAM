@@ -68,6 +68,13 @@ struct PersonDetailView: View {
     @State private var showingMergeSheet = false
     @State private var showingMailBackfillSheet = false
 
+    /// Per-sphere health-strip selection. `nil` = "All spheres" (aggregate
+    /// view, equivalent to the active SphereLens). Each non-nil value
+    /// scopes the Relationship Health metrics through `computeHealth(lens:)`
+    /// for that sphere. Tab strip is hidden when the person has < 2 active
+    /// spheres (per D6 spec).
+    @State private var perSphereHealthSelection: UUID?
+
     @Query(filter: #Predicate<SamPerson> { $0.lifecycleStatusRawValue == "active" })
     private var allPeople: [SamPerson]
 
@@ -84,6 +91,111 @@ struct PersonDetailView: View {
             for: person,
             lens: SphereLensCoordinator.shared.currentLens
         )
+    }
+
+    /// Health scoped by the per-person sphere tab strip when the user has
+    /// picked one. Falls through to the global lens (or unfiltered) when
+    /// the selection is nil. Decoupled from `personHealth` so the strip
+    /// can shift this section's metrics without disturbing the header.
+    private var perSphereHealth: RelationshipHealth {
+        let selected = perSphereHealthSelection.flatMap { id in
+            (try? SphereRepository.shared.fetch(id: id)) ?? nil
+        }
+        return MeetingPrepCoordinator.shared.computeHealth(
+            for: person,
+            lens: selected ?? SphereLensCoordinator.shared.currentLens
+        )
+    }
+
+    /// Active spheres this person belongs to. Source of truth for the
+    /// per-sphere strip's tabs.
+    private var personSpheresForStrip: [Sphere] {
+        (try? SphereRepository.shared.spheres(forPerson: person.id)) ?? []
+    }
+
+    /// Count of evidence rows on this person whose `contextSphere` matches
+    /// the given sphere — the "tagged interactions" the spec gates on
+    /// (≥10 before the strip is enabled per-sphere).
+    private func taggedEvidenceCount(forSphere sphereID: UUID) -> Int {
+        person.linkedEvidence.filter {
+            !$0.isDeleted && $0.contextSphere?.id == sphereID
+        }.count
+    }
+
+    private static let perSphereStripMinTagged: Int = 10
+
+    @ViewBuilder
+    private var perSphereHealthTabStrip: some View {
+        let spheres = personSpheresForStrip
+        if spheres.count >= 2 {
+            VStack(alignment: .leading, spacing: 6) {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        sphereTab(title: "All", color: .secondary, isSelected: perSphereHealthSelection == nil) {
+                            perSphereHealthSelection = nil
+                        }
+                        ForEach(spheres) { sphere in
+                            let count = taggedEvidenceCount(forSphere: sphere.id)
+                            let enabled = count >= Self.perSphereStripMinTagged
+                            sphereTab(
+                                title: sphere.name,
+                                color: sphere.accentColor.color,
+                                isSelected: perSphereHealthSelection == sphere.id,
+                                isEnabled: enabled,
+                                trailingHint: enabled ? nil : "\(count)/\(Self.perSphereStripMinTagged)"
+                            ) {
+                                if enabled { perSphereHealthSelection = sphere.id }
+                            }
+                        }
+                    }
+                }
+                if let selectedID = perSphereHealthSelection,
+                   taggedEvidenceCount(forSphere: selectedID) < Self.perSphereStripMinTagged {
+                    Text("Not enough tagged interactions in this sphere yet — health metrics need at least \(Self.perSphereStripMinTagged) classified rows to be meaningful.")
+                        .samFont(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.bottom, 2)
+        }
+    }
+
+    @ViewBuilder
+    private func sphereTab(
+        title: String,
+        color: Color,
+        isSelected: Bool,
+        isEnabled: Bool = true,
+        trailingHint: String? = nil,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Circle().fill(color).frame(width: 8, height: 8)
+                Text(title)
+                    .samFont(.caption)
+                    .fontWeight(isSelected ? .semibold : .regular)
+                if let trailingHint {
+                    Text(trailingHint)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(
+                isSelected
+                    ? AnyShapeStyle(color.opacity(0.18))
+                    : AnyShapeStyle(Color.secondary.opacity(0.08)),
+                in: Capsule()
+            )
+            .opacity(isEnabled ? 1.0 : 0.45)
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .help(isEnabled
+              ? "View health metrics scoped to \(title)"
+              : "\(title) needs \(Self.perSphereStripMinTagged) classified interactions before per-sphere health is meaningful.")
     }
 
     // MARK: - Body
@@ -2248,9 +2360,12 @@ struct PersonDetailView: View {
 
                     // Relationship health details
                     samSection(title: "Relationship Health") {
-                        RelationshipHealthView(
-                            health: personHealth
-                        )
+                        VStack(alignment: .leading, spacing: 10) {
+                            perSphereHealthTabStrip
+                            RelationshipHealthView(
+                                health: perSphereHealth
+                            )
+                        }
                     }
                 }
             }

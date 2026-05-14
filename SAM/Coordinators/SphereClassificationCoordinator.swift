@@ -123,15 +123,21 @@ final class SphereClassificationCoordinator {
         // 0 spheres → nothing to do. 1 sphere → fallback already handles it.
         guard spheres.count >= 2 else { return nil }
 
-        let exampleCounts = confirmedExampleCounts(forSphereIDs: spheres.map(\.id))
-
         let candidates = spheres.map { sphere in
-            SphereClassificationCandidate(
+            // Pool examples sorted newest-first so the classifier sees
+            // the most recent corrections first; cap at maxExamples to
+            // stay inside the prompt budget.
+            let examples = sphere.examples
+                .sorted { $0.addedAt > $1.addedAt }
+                .prefix(Sphere.maxExamples)
+                .map(\.snippet)
+            return SphereClassificationCandidate(
                 sphereID: sphere.id,
                 name: sphere.name,
                 purpose: sphere.purpose,
                 classificationProfile: sphere.classificationProfile,
-                confirmedExampleCount: exampleCounts[sphere.id, default: 0]
+                keywordHints: sphere.keywordHints,
+                confirmedExamples: examples
             )
         }
 
@@ -229,7 +235,9 @@ final class SphereClassificationCoordinator {
     }
 
     /// User accepted the proposal — promote it to a real
-    /// `contextSphere` and clear the proposal fields.
+    /// `contextSphere`, append the snippet to the sphere's example pool,
+    /// and clear the proposal fields. Bumps the per-sphere accept counter
+    /// for drift telemetry.
     func acceptProposal(evidenceID: UUID) {
         guard let evidence = fetchEvidence(id: evidenceID), !evidence.isDeleted else { return }
         guard let sphereID = evidence.proposedSphereID,
@@ -239,28 +247,53 @@ final class SphereClassificationCoordinator {
             return
         }
         evidence.contextSphere = sphere
+        try? SphereRepository.shared.recordExample(
+            sphereID: sphere.id,
+            evidenceID: evidence.id,
+            snippet: evidence.snippet,
+            wasOverride: false
+        )
+        SphereClassifierTelemetry.shared.recordAccept(sphereID: sphere.id)
         clearProposal(on: evidence)
         try? evidence.modelContext?.save()
     }
 
     /// User rejected the proposal — just clear the proposal fields.
     /// `contextSphere` remains nil, so the lens fallback continues to
-    /// route this evidence to the person's default sphere.
+    /// route this evidence to the person's default sphere. Also bumps a
+    /// per-sphere dismiss counter (drift telemetry, surfaced in
+    /// Settings → "What SAM Has Learned").
     func dismissProposal(evidenceID: UUID) {
         guard let evidence = fetchEvidence(id: evidenceID), !evidence.isDeleted else { return }
+        if let proposedID = evidence.proposedSphereID {
+            SphereClassifierTelemetry.shared.recordDismiss(sphereID: proposedID)
+        }
         clearProposal(on: evidence)
         try? evidence.modelContext?.save()
     }
 
     /// User picked a different sphere than the classifier suggested.
-    /// Treated as the strongest possible signal: set as `contextSphere`
-    /// with no further review.
+    /// Treated as the strongest possible signal: set as `contextSphere`,
+    /// append the snippet to the chosen sphere's example pool with
+    /// `wasOverride: true` so rotation preserves it preferentially, then
+    /// clear the proposal fields. Records an *override-out* on the
+    /// originally-proposed sphere so drift telemetry can show "this sphere
+    /// keeps grabbing things it shouldn't."
     func overrideProposal(evidenceID: UUID, with sphereID: UUID) {
         guard let evidence = fetchEvidence(id: evidenceID), !evidence.isDeleted else { return }
         guard let sphere = try? SphereRepository.shared.fetch(id: sphereID), !sphere.archived else {
             return
         }
+        if let proposedID = evidence.proposedSphereID, proposedID != sphere.id {
+            SphereClassifierTelemetry.shared.recordOverride(sphereID: proposedID)
+        }
         evidence.contextSphere = sphere
+        try? SphereRepository.shared.recordExample(
+            sphereID: sphere.id,
+            evidenceID: evidence.id,
+            snippet: evidence.snippet,
+            wasOverride: true
+        )
         clearProposal(on: evidence)
         try? evidence.modelContext?.save()
     }
@@ -282,19 +315,4 @@ final class SphereClassificationCoordinator {
         return try? context.fetch(descriptor).first
     }
 
-    /// Count evidence rows already carrying `contextSphere == sphereID`
-    /// for each sphere. Used as the cold-start input. One fetch, in-memory
-    /// grouping, so we don't N-times round-trip the store.
-    private func confirmedExampleCounts(forSphereIDs sphereIDs: [UUID]) -> [UUID: Int] {
-        let context = SAMModelContainer.shared.mainContext
-        let descriptor = FetchDescriptor<SamEvidenceItem>()
-        guard let all = try? context.fetch(descriptor) else { return [:] }
-        let wanted = Set(sphereIDs)
-        var counts: [UUID: Int] = [:]
-        for item in all {
-            guard let sid = item.contextSphere?.id, wanted.contains(sid) else { continue }
-            counts[sid, default: 0] += 1
-        }
-        return counts
-    }
 }
