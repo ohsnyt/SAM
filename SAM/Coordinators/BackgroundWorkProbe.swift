@@ -15,6 +15,16 @@ import Foundation
 enum BackgroundWorkProbe {
 
     /// Human-readable names of coordinators currently busy. Empty when idle.
+    ///
+    /// AI-only coordinators (DailyBriefingCoordinator, NoteAnalysisCoordinator,
+    /// StrategicCoordinator, PresentationAnalysisCoordinator, EventCoordinator
+    /// drafts, PromptLabCoordinator) used to be listed here. They were removed
+    /// once every AI call site started registering with `InferenceRegistry`
+    /// and `ShutdownCoordinator.settle()` started awaiting
+    /// `AIService.shared.isFullyIdle` — their busy state is now covered by
+    /// the inference counter and would just produce duplicate blocker entries.
+    /// Coordinators that wrap rule-based work (or mix rule-based with AI)
+    /// stay listed.
     static func currentBlockers() -> [String] {
         var blockers: [String] = []
         if CommunicationsImportCoordinator.shared.importStatus == .importing {
@@ -32,32 +42,11 @@ enum BackgroundWorkProbe {
         if OutcomeEngine.shared.generationStatus == .generating {
             blockers.append("outcome generation")
         }
-        if StrategicCoordinator.shared.generationStatus == .generating {
-            blockers.append("strategic digest")
-        }
         if RoleDeductionEngine.shared.deductionStatus == .running {
             blockers.append("role deduction")
         }
-        // MLX-touching coordinators — tearing down the model container while
-        // any of these are mid-inference crashes on dropped MLX containers.
-        if DailyBriefingCoordinator.shared.generationStatus == .generating {
-            blockers.append("daily briefing")
-        }
-        if NoteAnalysisCoordinator.shared.analysisStatus == .analyzing {
-            blockers.append("note analysis")
-        }
         if InsightGenerator.shared.generationStatus == .generating {
             blockers.append("insight generation")
-        }
-        let presentationStatus = PresentationAnalysisCoordinator.shared.analysisStatus
-        if presentationStatus == .extracting || presentationStatus == .analyzing {
-            blockers.append("presentation analysis")
-        }
-        if EventCoordinator.shared.isGeneratingDrafts {
-            blockers.append("event drafts")
-        }
-        if PromptLabCoordinator.shared.isRunning {
-            blockers.append("prompt lab run")
         }
         return blockers
     }
