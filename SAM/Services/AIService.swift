@@ -538,6 +538,12 @@ actor AIService {
             activeMLXStreamCount -= 1
         }
 
+        let effectiveMaxTokens = maxTokens ?? 4096
+        let startedAt = Date()
+        #if DEBUG
+        var capturedAlready = false
+        #endif
+
         do {
             // Serialised via inferenceGate so MLX never races with FoundationModels
             // or another MLX call. Model load + stream consumption all run inside
@@ -561,7 +567,7 @@ actor AIService {
 
                 var parameters = GenerateParameters()
                 parameters.temperature = 0.6
-                parameters.maxTokens = maxTokens ?? 4096
+                parameters.maxTokens = effectiveMaxTokens
 
                 let stream = try await container.generate(input: lmInput, parameters: parameters)
                 var output = ""
@@ -575,6 +581,8 @@ actor AIService {
             }
 
             var result = rawOutput.trimmingCharacters(in: .whitespacesAndNewlines)
+            let charsBeforeStrip = result.count
+            let hadThinkBlock = result.range(of: "<think>", options: .caseInsensitive) != nil
 
             // Strip Qwen3-style <think>...</think> reasoning blocks from responses
             while let thinkStart = result.range(of: "<think>", options: .caseInsensitive),
@@ -583,20 +591,74 @@ actor AIService {
                 result.removeSubrange(thinkStart.lowerBound...thinkEnd.upperBound)
                 result = result.trimmingCharacters(in: .whitespacesAndNewlines)
             }
-            // Strip orphaned opening <think> with no closing tag
+            // Strip orphaned opening <think> with no closing tag — this is the
+            // failure signature when the model burned its token budget reasoning
+            // and never emitted a final answer.
+            var endedInsideThink = false
             if let orphanStart = result.range(of: "<think>", options: .caseInsensitive) {
                 result = String(result[..<orphanStart.lowerBound])
                     .trimmingCharacters(in: .whitespacesAndNewlines)
+                endedInsideThink = true
             }
+            let charsAfterStrip = result.count
 
             await release()
 
             if result.isEmpty {
+                #if DEBUG
+                await InferenceFailureCapture.shared.record(
+                    task: effectiveTask,
+                    backend: "mlx",
+                    modelID: loadedModelID,
+                    errorClass: .emptyResponse,
+                    errorMessage: "MLX model returned empty response",
+                    durationSeconds: Date().timeIntervalSince(startedAt),
+                    maxTokensRequested: effectiveMaxTokens,
+                    hadThinkBlock: hadThinkBlock,
+                    endedInsideThink: endedInsideThink,
+                    outputCharsBeforeStrip: charsBeforeStrip,
+                    outputCharsAfterStrip: charsAfterStrip,
+                    systemPrompt: systemInstruction,
+                    userPrompt: prompt,
+                    rawOutput: rawOutput
+                )
+                capturedAlready = true
+                #endif
                 throw AIError.generationFailed("MLX model returned empty response")
             }
             return result
 
         } catch {
+            #if DEBUG
+            if !capturedAlready {
+                let errClass: InferenceFailureCapture.ErrorClass
+                if let aiErr = error as? AIError {
+                    switch aiErr {
+                    case .modelUnavailable: errClass = .modelUnavailable
+                    case .generationFailed: errClass = .streamError
+                    case .timeout:          errClass = .other
+                    }
+                } else {
+                    errClass = .streamError
+                }
+                await InferenceFailureCapture.shared.record(
+                    task: effectiveTask,
+                    backend: "mlx",
+                    modelID: loadedModelID,
+                    errorClass: errClass,
+                    errorMessage: error.localizedDescription,
+                    durationSeconds: Date().timeIntervalSince(startedAt),
+                    maxTokensRequested: effectiveMaxTokens,
+                    hadThinkBlock: false,
+                    endedInsideThink: false,
+                    outputCharsBeforeStrip: 0,
+                    outputCharsAfterStrip: 0,
+                    systemPrompt: systemInstruction,
+                    userPrompt: prompt,
+                    rawOutput: nil
+                )
+            }
+            #endif
             await release()
             throw error
         }
