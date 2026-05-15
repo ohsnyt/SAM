@@ -1534,7 +1534,13 @@ struct OnboardingView: View {
 
         case .complete:
             saveSelections()
-            await triggerImports()
+            // Fire-and-forget: imports + sphere bootstrap can take ~90s of
+            // SwiftData transformable-attribute decoding on the main actor for
+            // a real contacts dataset. Awaiting here blocked dismiss() and
+            // beachballed the onboarding sheet for ~2 minutes on first launch.
+            // The internal awaits inside triggerImports() still enforce the
+            // ordering (spheres → contacts → calendar/mail → seedOrphans → roles).
+            Task { await triggerImports() }
             dismiss()
         }
     }
